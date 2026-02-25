@@ -49,8 +49,25 @@
         return Math.max(0, Math.floor((Date.now() - start) / 1000));
     }
 
-    function driverColor(driverOrder) {
-        return DRIVER_COLORS[(driverOrder - 1) % DRIVER_COLORS.length];
+    function driverColor(id, byOrder) {
+        // Try to get DB-stored color from state.drivers
+        if (state && state.drivers) {
+            var driver;
+            if (byOrder) {
+                for (var i = 0; i < state.drivers.length; i++) {
+                    if (state.drivers[i].driver_order === id) { driver = state.drivers[i]; break; }
+                }
+            } else {
+                for (var i = 0; i < state.drivers.length; i++) {
+                    if (state.drivers[i].id === id) { driver = state.drivers[i]; break; }
+                }
+            }
+            if (driver && driver.color_hex) return driver.color_hex;
+            if (driver) return DRIVER_COLORS[(driver.driver_order - 1) % DRIVER_COLORS.length];
+        }
+        // Fallback to positional palette
+        var idx = (typeof id === 'number' ? id - 1 : 0);
+        return DRIVER_COLORS[idx % DRIVER_COLORS.length];
     }
 
     function setText(id, text) {
@@ -296,16 +313,7 @@
             else if (s.status === 'active') block.className += ' rs-stint-active';
             else block.className += ' rs-stint-planned';
 
-            var driverIdx = 0;
-            if (state.drivers) {
-                for (var i = 0; i < state.drivers.length; i++) {
-                    if (state.drivers[i].id === s.driver_id) {
-                        driverIdx = (state.drivers[i].driver_order || 1) - 1;
-                        break;
-                    }
-                }
-            }
-            block.style.background = DRIVER_COLORS[driverIdx % DRIVER_COLORS.length];
+            block.style.background = driverColor(s.driver_id, false);
             block.style.flex = '' + (s.planned_duration_s || 1);
             block.textContent = (s.driver_name || '').substring(0, 3);
             container.appendChild(block);
@@ -318,7 +326,7 @@
                 var span = document.createElement('span');
                 var swatch = document.createElement('span');
                 swatch.className = 'rs-legend-swatch';
-                swatch.style.background = driverColor(d.driver_order);
+                swatch.style.background = driverColor(d.id, false);
                 span.appendChild(swatch);
                 span.appendChild(document.createTextNode(d.driver_name));
                 legend.appendChild(span);
@@ -450,7 +458,7 @@
                 var fillEl = document.createElement('div');
                 fillEl.className = 'rs-driver-bar-fill';
                 fillEl.style.width = pct + '%';
-                fillEl.style.background = driverColor(d.driver_order);
+                fillEl.style.background = driverColor(d.id, false);
                 trackEl.appendChild(fillEl);
 
                 var timeEl = document.createElement('div');
@@ -695,40 +703,54 @@
         });
     }
 
-    // ── Layout Toggle ────────────────────────────
+    // ── Layout Toggle (enhanced with compact mode) ──
 
     var toggleContainer = document.getElementById('rs-layout-toggle');
-    var grid = document.getElementById('rs-live-root');
 
     function applyLayout(layout) {
+        var grid = document.getElementById('rs-live-root');
         if (!grid) return;
-        if (layout === 'vertical') {
-            grid.classList.add('rs-vertical');
-        } else {
-            grid.classList.remove('rs-vertical');
-        }
-        if (toggleContainer) {
-            var btns = toggleContainer.querySelectorAll('.rs-toggle-btn');
-            btns.forEach(function(btn) {
-                if (btn.getAttribute('data-layout') === layout) {
-                    btn.classList.add('rs-toggle-active');
-                } else {
-                    btn.classList.remove('rs-toggle-active');
-                }
-            });
+        grid.classList.remove('rs-vertical', 'rs-compact');
+        if (layout === 'vertical') grid.classList.add('rs-vertical');
+        if (layout === 'compact') grid.classList.add('rs-compact');
+
+        var btns = document.querySelectorAll('.rs-toggle-btn');
+        for (var i = 0; i < btns.length; i++) {
+            if (btns[i].getAttribute('data-layout') === layout) {
+                btns[i].classList.add('rs-toggle-active');
+            } else {
+                btns[i].classList.remove('rs-toggle-active');
+            }
         }
         try { localStorage.setItem('rs-live-layout', layout); } catch(e) {}
     }
 
     try {
         var saved = localStorage.getItem('rs-live-layout');
-        if (saved === 'vertical') applyLayout('vertical');
+        if (saved === 'vertical' || saved === 'compact') applyLayout(saved);
     } catch(e) {}
 
     if (toggleContainer) {
         toggleContainer.addEventListener('click', function(e) {
             var btn = e.target.closest('.rs-toggle-btn');
             if (btn) applyLayout(btn.getAttribute('data-layout'));
+        });
+    }
+
+    // ── Fullscreen Toggle ────────────────────────
+    var fsBtn = document.getElementById('rs-btn-fullscreen');
+    if (fsBtn) {
+        fsBtn.addEventListener('click', function() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(function() {});
+            } else {
+                document.exitFullscreen();
+            }
+        });
+        document.addEventListener('fullscreenchange', function() {
+            if (fsBtn) {
+                fsBtn.textContent = document.fullscreenElement ? 'Exit FS' : 'Fullscreen';
+            }
         });
     }
 
