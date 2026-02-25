@@ -762,6 +762,18 @@ class RaceStateEngine:
                 ),
             )
 
+        # Save neutralizations
+        try:
+            conn.execute("DELETE FROM race_neutralizations WHERE race_id = ?", (race_id,))
+            for n in self.neutralizations:
+                conn.execute(
+                    "INSERT INTO race_neutralizations (race_id, start_s, end_s, reason) "
+                    "VALUES (?, ?, ?, ?)",
+                    (race_id, n["start_s"], n.get("end_s"), n.get("reason", "safety_car")),
+                )
+        except Exception:
+            pass  # Pre-v24 databases
+
         conn.commit()
 
     @classmethod
@@ -842,9 +854,20 @@ class RaceStateEngine:
         except Exception:
             windows = []  # Pre-v23 databases without race_windows table
 
+        # Load neutralizations
+        try:
+            neut_rows = conn.execute(
+                "SELECT * FROM race_neutralizations WHERE race_id = ? ORDER BY start_s",
+                (race_id,),
+            ).fetchall()
+            neutralizations = [dict(r) for r in neut_rows]
+        except Exception:
+            neutralizations = []  # Pre-v24 databases
+
         engine = cls(config, drivers, raw_stints, pit_stops)
         engine.windows = windows
-        engine._cascade_from(1)  # Re-cascade with windows loaded
+        engine.neutralizations = neutralizations
+        engine._cascade_from(1)  # Re-cascade with windows and neutralizations loaded
         return engine
 
     def snapshot(self) -> dict[str, Any]:

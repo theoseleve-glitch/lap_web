@@ -947,3 +947,105 @@ class TestNeutralization:
         assert "is_neutralized" in snap
         assert snap["is_neutralized"] is False
         assert len(snap["neutralizations"]) == 1
+
+
+# ===========================================================================
+# TestNeutralizationPersistence  (Tier 6 Task 3)
+# ===========================================================================
+
+class TestNeutralizationPersistence:
+    """Neutralization save/load round-trip."""
+
+    @pytest.fixture
+    def engine_db(self):
+        from db.schema import ALL_TABLES
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        for _, ddl in ALL_TABLES:
+            conn.executescript(ddl)
+        yield conn
+        conn.close()
+
+    def _seed_race(self, conn):
+        conn.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, fuel_autonomy_s, "
+            "empty_kart_kg, full_tank_kg, min_total_kart_kg, min_pit_stop_s) "
+            "VALUES ('Test 2h', 7200, 2400, 85, 93, 160, 60)"
+        )
+        conn.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) "
+            "VALUES (1, 'Alice', 1, 65)"
+        )
+        conn.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) "
+            "VALUES (1, 'Bob', 2, 75)"
+        )
+        conn.commit()
+        return 1
+
+    def test_save_stores_neutralizations(self, engine_db):
+        race_id = self._seed_race(engine_db)
+        config = dict(engine_db.execute("SELECT * FROM race_configs WHERE race_id = 1").fetchone())
+        drivers = [dict(r) for r in engine_db.execute(
+            "SELECT * FROM race_drivers WHERE race_id = 1 ORDER BY driver_order"
+        ).fetchall()]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": drivers[0]["id"], "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints)
+        engine.neutralizations = [
+            {"start_s": 500, "end_s": 800, "reason": "safety_car"},
+            {"start_s": 2000, "end_s": 2300, "reason": "red_flag"},
+        ]
+        engine.save(engine_db, race_id)
+        rows = engine_db.execute(
+            "SELECT * FROM race_neutralizations WHERE race_id = ? ORDER BY start_s", (race_id,)
+        ).fetchall()
+        assert len(rows) == 2
+        assert rows[0]["start_s"] == 500
+        assert rows[0]["end_s"] == 800
+        assert rows[0]["reason"] == "safety_car"
+        assert rows[1]["reason"] == "red_flag"
+
+    def test_load_restores_neutralizations(self, engine_db):
+        race_id = self._seed_race(engine_db)
+        config = dict(engine_db.execute("SELECT * FROM race_configs WHERE race_id = 1").fetchone())
+        drivers = [dict(r) for r in engine_db.execute(
+            "SELECT * FROM race_drivers WHERE race_id = 1 ORDER BY driver_order"
+        ).fetchall()]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": drivers[0]["id"], "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints)
+        engine.neutralizations = [{"start_s": 500, "end_s": 800, "reason": "safety_car"}]
+        engine.save(engine_db, race_id)
+        loaded = RaceStateEngine.load(engine_db, race_id)
+        assert len(loaded.neutralizations) == 1
+        assert loaded.neutralizations[0]["start_s"] == 500
+        assert loaded.neutralizations[0]["end_s"] == 800
+
+    def test_load_applies_neutralization_to_fuel(self, engine_db):
+        race_id = self._seed_race(engine_db)
+        config = dict(engine_db.execute("SELECT * FROM race_configs WHERE race_id = 1").fetchone())
+        drivers = [dict(r) for r in engine_db.execute(
+            "SELECT * FROM race_drivers WHERE race_id = 1 ORDER BY driver_order"
+        ).fetchall()]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": drivers[0]["id"], "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints)
+        engine.save(engine_db, race_id)
+        loaded_no_sc = RaceStateEngine.load(engine_db, race_id)
+        fuel_no_sc = loaded_no_sc.stints[0].fuel_at_end_kg
+
+        engine_db.execute(
+            "INSERT INTO race_neutralizations (race_id, start_s, end_s, reason) "
+            "VALUES (?, 500, 1100, 'safety_car')", (race_id,)
+        )
+        engine_db.commit()
+        loaded_sc = RaceStateEngine.load(engine_db, race_id)
+        fuel_sc = loaded_sc.stints[0].fuel_at_end_kg
+        assert fuel_sc > fuel_no_sc
