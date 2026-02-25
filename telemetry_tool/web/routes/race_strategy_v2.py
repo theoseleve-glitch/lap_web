@@ -650,14 +650,45 @@ def api_state(race_id: int):
         import sys
         sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
         from race_state_engine import RaceStateEngine
+        from race_intelligence import analyze_race
         engine = RaceStateEngine.load(conn, race_id)
         elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+        snapshot = engine.snapshot()
         engine_data = {
             "current_fuel_kg": round(engine.current_fuel_kg(elapsed), 4),
             "current_ballast": engine.current_ballast(elapsed),
-            "fuel_model": engine.snapshot()["fuel_model"],
+            "fuel_model": snapshot["fuel_model"],
             "window_status": engine.window_status(elapsed),
+            "neutralizations": snapshot.get("neutralizations", []),
+            "is_neutralized": snapshot.get("is_neutralized", False),
         }
+        # Intelligence analysis
+        try:
+            rivals_db = _rows_to_list(conn.execute(
+                "SELECT * FROM race_rivals WHERE race_id = ? ORDER BY id", (race_id,)
+            ).fetchall())
+            rival_events_db = _rows_to_list(conn.execute(
+                "SELECT * FROM race_rival_events WHERE race_id = ? ORDER BY at_s", (race_id,)
+            ).fetchall())
+            fm = snapshot["fuel_model"]
+            engine_data["intelligence"] = analyze_race(
+                race_duration_s=race.get("race_duration_s", 0),
+                elapsed_s=elapsed,
+                race_start_ts=race.get("race_start_ts"),
+                stints=stints,
+                active_stint=active_stint,
+                drivers=drivers,
+                neutralizations=snapshot.get("neutralizations", []),
+                current_fuel_kg=engine.current_fuel_kg(elapsed),
+                burn_rate_kgs=fm.get("burn_rate_kgs", 0) if isinstance(fm, dict) else getattr(fm, "burn_rate_kgs", 0),
+                active_stint_end_s=active_stint.get("planned_end_s", 0) if active_stint else 0,
+                next_planned_pit_s=next_stint.get("planned_start_s") if next_stint else None,
+                rivals=rivals_db,
+                rival_events=rival_events_db,
+            )
+        except Exception as exc:
+            logger.debug("Intelligence analysis failed for race %d: %s", race_id, exc)
+            engine_data["intelligence"] = {}
     except Exception:
         logger.debug("Engine load failed for race %d, returning basic state", race_id)
 
@@ -1051,6 +1082,104 @@ def api_set_duration(race_id: int):
     engine.set_duration(stint_order, int(duration_s))
     engine.save(conn, race_id)
     return jsonify({"ok": True, "snapshot": engine.snapshot()})
+
+
+# ── Rival Tracker + Neutralization APIs ──────────
+
+
+@bp.route("/<int:race_id>/api/rivals")
+def api_list_rivals(race_id: int):
+    """List all rivals for a race with their events."""
+    conn = get_db_connection()
+    rivals = _rows_to_list(conn.execute(
+        "SELECT * FROM race_rivals WHERE race_id = ? ORDER BY id", (race_id,)
+    ).fetchall())
+    events = _rows_to_list(conn.execute(
+        "SELECT * FROM race_rival_events WHERE race_id = ? ORDER BY at_s", (race_id,)
+    ).fetchall())
+    # Attach events to each rival
+    for r in rivals:
+        r["events"] = [e for e in events if e["rival_id"] == r["id"]]
+    return jsonify({"rivals": rivals})
+
+
+@bp.route("/<int:race_id>/api/rivals", methods=["POST"])
+def api_add_rival(race_id: int):
+    """Add a rival team."""
+    data = request.get_json(silent=True) or {}
+    team_name = (data.get("team_name") or "").strip()
+    if not team_name:
+        return jsonify({"error": "team_name required"}), 400
+    car_number = (data.get("car_number") or "").strip()
+    notes = (data.get("notes") or "").strip()
+    conn = get_db_connection()
+    cur = conn.execute(
+        "INSERT INTO race_rivals (race_id, team_name, car_number, notes) VALUES (?,?,?,?)",
+        (race_id, team_name, car_number or None, notes or None),
+    )
+    conn.commit()
+    row = conn.execute("SELECT * FROM race_rivals WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return jsonify(dict(row))
+
+
+@bp.route("/<int:race_id>/api/rivals/<int:rival_id>/event", methods=["POST"])
+def api_add_rival_event(race_id: int, rival_id: int):
+    """Log a rival event (pit_in, pit_out, driver_change, penalty, note)."""
+    data = request.get_json(silent=True) or {}
+    event_type = data.get("event_type", "note")
+    detail = data.get("detail")
+    conn = get_db_connection()
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    at_s = data.get("at_s", elapsed)
+    conn.execute(
+        "INSERT INTO race_rival_events (race_id, rival_id, event_type, at_s, detail) VALUES (?,?,?,?,?)",
+        (race_id, rival_id, event_type, at_s, detail),
+    )
+    conn.commit()
+    return jsonify({"ok": True, "at_s": at_s})
+
+
+@bp.route("/<int:race_id>/api/rivals/<int:rival_id>", methods=["DELETE"])
+def api_delete_rival(race_id: int, rival_id: int):
+    """Delete a rival and their events."""
+    conn = get_db_connection()
+    conn.execute("DELETE FROM race_rival_events WHERE rival_id = ? AND race_id = ?", (rival_id, race_id))
+    conn.execute("DELETE FROM race_rivals WHERE id = ? AND race_id = ?", (rival_id, race_id))
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+@bp.route("/<int:race_id>/api/neutralization/start", methods=["POST"])
+def api_neutralization_start(race_id: int):
+    """Start a neutralization (safety car) period."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    data = request.get_json(silent=True) or {}
+    reason = data.get("reason", "safety_car")
+    conn = get_db_connection()
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.start_neutralization(elapsed, reason)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "is_neutralized": engine.is_neutralized, "elapsed_s": elapsed})
+
+
+@bp.route("/<int:race_id>/api/neutralization/end", methods=["POST"])
+def api_neutralization_end(race_id: int):
+    """End the active neutralization period (green flag)."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.end_neutralization(elapsed)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "is_neutralized": engine.is_neutralized, "elapsed_s": elapsed})
 
 
 # ── Helpers ──────────────────────────────────────

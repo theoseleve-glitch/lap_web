@@ -22,6 +22,33 @@ def strategy_db():
     conn.close()
 
 
+@pytest.fixture
+def client(strategy_db):
+    """Flask test client wired to the in-memory strategy_db."""
+    from web.app import create_app
+    app = create_app()
+    app.config["TESTING"] = True
+
+    # Override get_db_connection to return our in-memory DB
+    def _get_test_db(*args, **kwargs):
+        return strategy_db
+
+    # Monkey-patch the db helper everywhere it's been imported
+    import web.db
+    import web.routes.race_strategy_v2 as _routes_mod
+    original_webdb = web.db.get_db_connection
+    original_routes = _routes_mod.get_db_connection
+    web.db.get_db_connection = _get_test_db
+    _routes_mod.get_db_connection = _get_test_db
+
+    with app.test_client() as c:
+        with app.app_context():
+            yield c
+
+    web.db.get_db_connection = original_webdb
+    _routes_mod.get_db_connection = original_routes
+
+
 class TestRaceStrategySchema:
     """Phase 15 tables exist and accept inserts."""
 
@@ -870,3 +897,96 @@ class TestTier6Schema:
         assert row["event_type"] == "pit_in"
         assert row["at_s"] == 1200
         assert row["detail"] == "quick stop"
+
+
+class TestRivalAPI:
+    """Tier 6 rival CRUD endpoints."""
+
+    def _seed_live_race(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, status, race_start_ts) "
+            "VALUES ('Test Race', 7200, 'live', datetime('now'))"
+        )
+        strategy_db.commit()
+        return 1
+
+    def test_add_rival(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        resp = client.post(f"/race-strategy/{race_id}/api/rivals",
+                           json={"team_name": "Team Alpha", "car_number": "42"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["team_name"] == "Team Alpha"
+        assert "id" in data
+
+    def test_list_rivals(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        strategy_db.execute(
+            "INSERT INTO race_rivals (race_id, team_name, car_number) VALUES (?, 'X', '1')", (race_id,)
+        )
+        strategy_db.commit()
+        resp = client.get(f"/race-strategy/{race_id}/api/rivals")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data["rivals"]) == 1
+
+    def test_add_rival_event(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        strategy_db.execute(
+            "INSERT INTO race_rivals (race_id, team_name, car_number) VALUES (?, 'X', '1')", (race_id,)
+        )
+        strategy_db.commit()
+        resp = client.post(f"/race-strategy/{race_id}/api/rivals/1/event",
+                           json={"event_type": "pit_in", "detail": "quick stop"})
+        assert resp.status_code == 200
+
+    def test_delete_rival(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        strategy_db.execute(
+            "INSERT INTO race_rivals (race_id, team_name, car_number) VALUES (?, 'X', '1')", (race_id,)
+        )
+        strategy_db.commit()
+        resp = client.delete(f"/race-strategy/{race_id}/api/rivals/1")
+        assert resp.status_code == 200
+        row = strategy_db.execute("SELECT * FROM race_rivals WHERE id = 1").fetchone()
+        assert row is None
+
+
+class TestNeutralizationAPI:
+    """Tier 6 neutralization toggle endpoints."""
+
+    def _seed_live_race(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, status, race_start_ts, "
+            "fuel_autonomy_s, empty_kart_kg, full_tank_kg, min_total_kart_kg, min_pit_stop_s) "
+            "VALUES ('Test', 7200, 'live', datetime('now'), 2400, 85, 93, 160, 60)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) VALUES (1, 'A', 1, 65)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_stints (race_id, stint_order, driver_id, planned_start_s, planned_end_s, "
+            "planned_duration_s, status) VALUES (1, 1, 1, 0, 3600, 3600, 'active')"
+        )
+        strategy_db.commit()
+        return 1
+
+    def test_start_neutralization(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        resp = client.post(f"/race-strategy/{race_id}/api/neutralization/start",
+                           json={"reason": "safety_car"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["is_neutralized"] is True
+
+    def test_end_neutralization(self, client, strategy_db):
+        race_id = self._seed_live_race(strategy_db)
+        strategy_db.execute(
+            "INSERT INTO race_neutralizations (race_id, start_s, reason) VALUES (?, 500, 'safety_car')",
+            (race_id,)
+        )
+        strategy_db.commit()
+        resp = client.post(f"/race-strategy/{race_id}/api/neutralization/end")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["is_neutralized"] is False
