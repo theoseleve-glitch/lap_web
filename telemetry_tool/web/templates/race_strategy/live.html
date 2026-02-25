@@ -34,7 +34,8 @@
      data-race-start="{{ race.race_start_ts or '' }}"
      data-fuel-autonomy="{{ race.fuel_autonomy_s or 0 }}"
      data-pit-open="{{ race.pit_open_s or 0 }}"
-     data-pit-close="{{ race.pit_close_s or 0 }}">
+     data-pit-close="{{ race.pit_close_s or 0 }}"
+     data-track-name="{{ race.track_name or '' }}">
 
     <!-- 1. Race Timer -->
     <div class="rs-live-card">
@@ -85,6 +86,7 @@
     <!-- 4. Stint Order -->
     <div class="rs-live-card">
         <h3>Stint Order</h3>
+        <div id="rs-forecast-bar" class="rs-forecast-bar" style="display:none;"></div>
         <div class="rs-stint-timeline" id="rs-stint-timeline"></div>
         <div class="rs-timeline-legend" id="rs-stint-legend"></div>
     </div>
@@ -126,6 +128,37 @@
             </div>
         </div>
         <div class="rs-driver-bars" id="rs-driver-bars" style="margin-top:0.75rem;"></div>
+    </div>
+
+    <!-- 8. Weather -->
+    <div class="rs-live-card" id="rs-weather-card" style="display:none;">
+        <h3>{{ t.weather if t else 'Weather' }}</h3>
+        <div id="rs-weather-data"></div>
+        <div id="rs-weather-pace" style="font-size:0.8rem;color:var(--text-secondary);margin-top:0.5rem;"></div>
+    </div>
+
+    <!-- 9. Rain Radar -->
+    <div class="rs-live-card" id="rs-radar-card" style="display:none;">
+        <h3>Rain Radar</h3>
+        <div id="rs-radar-wrap" style="height:200px;border-radius:4px;overflow:hidden;"></div>
+    </div>
+
+    <!-- 7. TeamTalk -->
+    <div class="rs-live-card" style="grid-column: 1 / -1;">
+        <h3>{{ t.team_talk if t else 'Team Talk' }}</h3>
+        <div class="rs-chat-log" id="rs-chat-log"></div>
+        <div class="rs-chat-input">
+            <input type="text" id="rs-chat-author" placeholder="Name" style="width:100px;">
+            <select id="rs-chat-category">
+                <option value="general">General</option>
+                <option value="pit">Pit</option>
+                <option value="driver">Driver</option>
+                <option value="weather">Weather</option>
+                <option value="flag">Flag</option>
+            </select>
+            <input type="text" id="rs-chat-message" placeholder="Message..." style="flex:1;">
+            <button type="button" id="rs-chat-send" class="btn btn-primary">Send</button>
+        </div>
     </div>
 </div>
 

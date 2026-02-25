@@ -370,6 +370,19 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (20, "Phase 15 schema — race strategy (race_configs, race_drivers, race_stints, race_pit_stops)"),
     )
 
+    # Phase 21 migration: add com_channel to race_drivers (idempotent).
+    try:
+        cur.execute("ALTER TABLE race_drivers ADD COLUMN com_channel TEXT;")
+        logger.debug("Added column race_drivers.com_channel.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (21, "Phase 16 — race messages + driver com_channel"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

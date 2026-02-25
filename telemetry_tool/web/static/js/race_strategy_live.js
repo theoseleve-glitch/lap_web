@@ -326,6 +326,192 @@
         }
     }
 
+    // ── 7. TeamTalk ────────────────────────────
+
+    var CATEGORY_COLORS = {
+        pit: 'var(--red, #f85149)', weather: 'var(--blue)', flag: 'var(--yellow, #d29922)',
+        driver: 'var(--green)', general: 'var(--text-secondary)'
+    };
+    var lastMsgCount = 0;
+
+    function updateChat() {
+        if (!state || !state.messages) return;
+        var log = document.getElementById('rs-chat-log');
+        if (!log || state.messages.length === lastMsgCount) return;
+        lastMsgCount = state.messages.length;
+
+        clearChildren(log);
+        state.messages.forEach(function(m) {
+            var row = document.createElement('div');
+            row.className = 'rs-chat-row';
+            var cat = document.createElement('span');
+            cat.className = 'rs-chat-cat';
+            cat.style.color = CATEGORY_COLORS[m.category] || CATEGORY_COLORS.general;
+            cat.textContent = '[' + (m.category || 'general').toUpperCase() + ']';
+            var author = document.createElement('strong');
+            author.textContent = ' ' + m.author + ': ';
+            var text = document.createElement('span');
+            text.textContent = m.message;
+            var time = document.createElement('span');
+            time.className = 'rs-chat-time';
+            time.textContent = m.created_at ? m.created_at.substring(11, 16) : '';
+            row.appendChild(cat);
+            row.appendChild(author);
+            row.appendChild(text);
+            row.appendChild(time);
+            log.appendChild(row);
+        });
+        log.scrollTop = log.scrollHeight;
+    }
+
+    var chatSend = document.getElementById('rs-chat-send');
+    if (chatSend) {
+        chatSend.addEventListener('click', function() {
+            var author = document.getElementById('rs-chat-author').value.trim();
+            var message = document.getElementById('rs-chat-message').value.trim();
+            var category = document.getElementById('rs-chat-category').value;
+            if (!author || !message) return;
+            fetch('/race-strategy/' + RACE_ID + '/api/messages', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({author: author, message: message, category: category})
+            }).then(function() {
+                document.getElementById('rs-chat-message').value = '';
+                fetchState();
+            });
+        });
+    }
+
+    // Allow Enter key to send message
+    var chatMsg = document.getElementById('rs-chat-message');
+    if (chatMsg) {
+        chatMsg.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); if (chatSend) chatSend.click(); }
+        });
+    }
+
+    // ── 8. Weather ────────────────────────────────
+
+    var weatherData = null;
+    var TRACK_NAME = root.getAttribute('data-track-name') || '';
+
+    function fetchWeather() {
+        if (!TRACK_NAME) return;
+        fetch('/race-strategy/' + RACE_ID + '/api/weather')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.error) return;
+                weatherData = data;
+                renderWeather();
+                renderForecast();
+                renderRadar(data.lat, data.lon);
+                updateFuelWeather();
+            })
+            .catch(function() {});
+    }
+
+    function renderWeather() {
+        if (!weatherData || !weatherData.current) return;
+        var card = document.getElementById('rs-weather-card');
+        var el = document.getElementById('rs-weather-data');
+        if (!card || !el) return;
+        card.style.display = '';
+
+        var w = weatherData.current;
+        var c = weatherData.conditions || {};
+        clearChildren(el);
+
+        var items = [
+            ['Temp', (w.air_temp_c != null ? w.air_temp_c : '--') + '\u00B0C'],
+            ['Humidity', (w.humidity_pct != null ? w.humidity_pct : '--') + '%'],
+            ['Wind', w.wind_speed_mps ? (w.wind_speed_mps * 3.6).toFixed(0) + ' km/h' : '--'],
+            ['Rain', (w.rain_mm || 0) + ' mm'],
+            ['Grip', c.track_state || 'unknown']
+        ];
+        items.forEach(function(item) {
+            var row = document.createElement('div');
+            row.className = 'rs-kv';
+            row.style.fontSize = '0.85rem';
+            var label = document.createElement('span');
+            label.className = 'rs-kv-label';
+            label.textContent = item[0];
+            var val = document.createElement('span');
+            val.textContent = item[1];
+            row.appendChild(label);
+            row.appendChild(val);
+            el.appendChild(row);
+        });
+
+        var paceEl = document.getElementById('rs-weather-pace');
+        if (paceEl && c.grip_score) {
+            paceEl.textContent = 'Grip score: ' + (c.grip_score * 100).toFixed(0) + '%';
+        }
+    }
+
+    function renderForecast() {
+        if (!weatherData || !weatherData.forecast) return;
+        var bar = document.getElementById('rs-forecast-bar');
+        if (!bar) return;
+
+        var hours = weatherData.forecast.hourly || [];
+        if (!hours.length) return;
+
+        bar.style.display = 'flex';
+        clearChildren(bar);
+
+        hours.forEach(function(h) {
+            var block = document.createElement('div');
+            block.className = 'rs-forecast-hour';
+            block.style.flex = '1';
+            var rain = h.rain_mm || 0;
+            var opacity = Math.min(1, rain / 5);
+            block.style.background = 'rgba(88,166,255,' + opacity + ')';
+            block.title = (h.time || '') + ': ' + (h.air_temp_c != null ? h.air_temp_c : '--') + '\u00B0C, rain: ' + rain + 'mm';
+            bar.appendChild(block);
+        });
+    }
+
+    function renderRadar(lat, lon) {
+        if (!lat || !lon) return;
+        var card = document.getElementById('rs-radar-card');
+        var wrap = document.getElementById('rs-radar-wrap');
+        if (!card || !wrap) return;
+        card.style.display = '';
+
+        fetch('https://api.rainviewer.com/public/weather-maps.json')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (!data.radar || !data.radar.past || !data.radar.past.length) return;
+                var latest = data.radar.past[data.radar.past.length - 1];
+                var tileUrl = data.host + latest.path + '/256/6/'
+                    + Math.floor(lat / (180 / Math.pow(2, 5)))
+                    + '/' + Math.floor((lon + 180) / (360 / Math.pow(2, 6)))
+                    + '/2/1_1.png';
+                wrap.style.backgroundImage = 'url(' + tileUrl + ')';
+                wrap.style.backgroundSize = 'cover';
+                wrap.style.backgroundPosition = 'center';
+            })
+            .catch(function() {});
+    }
+
+    function updateFuelWeather() {
+        if (!weatherData || !weatherData.fuel_autonomy_adjusted_s) return;
+        if (!FUEL_AUTONOMY) return;
+        var adj = weatherData.fuel_autonomy_adjusted_s;
+        if (adj < FUEL_AUTONOMY) {
+            var el = document.getElementById('rs-fuel-autonomy');
+            if (el && el.textContent.indexOf('wet') === -1) {
+                el.textContent = el.textContent + ' (wet: ~' + fmtShort(adj) + ')';
+            }
+        }
+    }
+
+    // Fetch weather on load and every 5 minutes
+    if (TRACK_NAME) {
+        fetchWeather();
+        setInterval(fetchWeather, 300000);
+    }
+
     // ── Polling ──────────────────────────────────
 
     function fetchState() {
@@ -336,6 +522,7 @@
                 state = data;
                 updateTimeline();
                 updateStintLog();
+                updateChat();
             })
             .catch(function() {});
     }

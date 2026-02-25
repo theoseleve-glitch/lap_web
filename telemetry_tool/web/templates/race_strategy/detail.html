@@ -73,6 +73,7 @@
                     <th>Min Cumul.</th>
                     <th>Max Cumul.</th>
                     <th>Min Rest</th>
+                    <th>COM</th>
                 </tr>
             </thead>
             <tbody>
@@ -86,6 +87,7 @@
                     <td>{{ '%d:%02d' | format(d.min_cumulative_s // 60, d.min_cumulative_s % 60) if d.min_cumulative_s else '—' }}</td>
                     <td>{{ '%d:%02d' | format(d.max_cumulative_s // 60, d.max_cumulative_s % 60) if d.max_cumulative_s else '—' }}</td>
                     <td>{{ '%d:%02d' | format(d.min_rest_s // 60, d.min_rest_s % 60) if d.min_rest_s else '—' }}</td>
+                    <td>{{ d.com_channel or '—' }}</td>
                 </tr>
                 {% endfor %}
             </tbody>

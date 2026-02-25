@@ -66,9 +66,9 @@ class TestRaceStrategySchema:
         assert row["min_pit_stop_s"] == 60
         assert row["weigh_on_pit_exit"] == 0
 
-    def test_schema_version_is_20(self, strategy_db):
+    def test_schema_version_is_21(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 20
+        assert row["v"] == 21
 
 
 class TestOptimizer:
@@ -626,3 +626,131 @@ class TestRaceStrategyIntegration:
                      "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0}]
         result = optimize_stints(config, drivers)
         assert result["feasible"] is False
+
+
+class TestTier3Schema:
+    """Tier 3 schema: race_messages table and com_channel column."""
+
+    def test_race_messages_table_exists(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_messages (race_id, author, message, category) "
+            "VALUES (1, 'Engineer', 'Box box box', 'pit')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_messages WHERE race_id = 1").fetchone()
+        assert row["author"] == "Engineer"
+        assert row["category"] == "pit"
+
+    def test_race_messages_cascade_delete(self, strategy_db):
+        strategy_db.execute("PRAGMA foreign_keys = ON")
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute("INSERT INTO race_messages (race_id, author, message) VALUES (1, 'A', 'test')")
+        strategy_db.commit()
+        strategy_db.execute("DELETE FROM race_configs WHERE race_id = 1")
+        assert strategy_db.execute("SELECT COUNT(*) FROM race_messages").fetchone()[0] == 0
+
+    def test_com_channel_column_exists(self, strategy_db):
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, com_channel) "
+            "VALUES (1, 'Alice', 1, 'CH 7')"
+        )
+        row = strategy_db.execute("SELECT com_channel FROM race_drivers WHERE race_id = 1").fetchone()
+        assert row["com_channel"] == "CH 7"
+
+    def test_schema_version_is_21(self, strategy_db):
+        row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
+        assert row["v"] == 21
+
+
+class TestTeamTalk:
+    """TeamTalk message CRUD."""
+
+    def test_insert_and_retrieve_messages(self, strategy_db):
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute("INSERT INTO race_messages (race_id, author, message, category) VALUES (1, 'Eng', 'Box now', 'pit')")
+        strategy_db.execute("INSERT INTO race_messages (race_id, author, message, category) VALUES (1, 'Spotter', 'Rain in 10', 'weather')")
+        strategy_db.commit()
+        msgs = strategy_db.execute("SELECT * FROM race_messages WHERE race_id = 1 ORDER BY msg_id").fetchall()
+        assert len(msgs) == 2
+        assert msgs[0]["category"] == "pit"
+        assert msgs[1]["category"] == "weather"
+
+    def test_messages_included_in_export(self, strategy_db):
+        from web.routes.race_strategy_v2 import _build_export_dict
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute("INSERT INTO race_messages (race_id, author, message) VALUES (1, 'A', 'hello')")
+        strategy_db.commit()
+        result = _build_export_dict(strategy_db, 1)
+        assert "messages" in result
+        assert len(result["messages"]) == 1
+
+    def test_com_channel_in_export(self, strategy_db):
+        from web.routes.race_strategy_v2 import _build_export_dict
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, com_channel) "
+            "VALUES (1, 'A', 1, 'CH 5')"
+        )
+        strategy_db.commit()
+        result = _build_export_dict(strategy_db, 1)
+        assert result["drivers"][0]["com_channel"] == "CH 5"
+
+
+class TestI18n:
+    """Multilingual translation loading."""
+
+    def test_load_english(self):
+        from web.i18n import load_translations
+        t = load_translations("en")
+        assert t["race_strategy"] == "Race Strategy"
+        assert t["driver"] == "Driver"
+
+    def test_load_french(self):
+        from web.i18n import load_translations
+        t = load_translations("fr")
+        assert t["race_strategy"] == "Stratégie de Course"
+
+    def test_fallback_to_english(self):
+        from web.i18n import load_translations
+        t = load_translations("xx")
+        assert t["race_strategy"] == "Race Strategy"
+
+    def test_missing_key_returns_english(self):
+        from web.i18n import load_translations
+        t = load_translations("fr")
+        assert "race_strategy" in t
+
+
+class TestWeatherIntegration:
+    """Weather features for race strategy."""
+
+    def test_fuel_adjustment_wet(self):
+        """Wet grip factor reduces effective fuel autonomy."""
+        from wet_physics import get_grip_factor
+        grip = get_grip_factor("wet")
+        base_autonomy = 2400
+        adjusted = int(base_autonomy * grip)
+        assert adjusted < base_autonomy
+        assert adjusted > 0
+
+    def test_fuel_adjustment_dry(self):
+        """Dry conditions don't reduce autonomy."""
+        from wet_physics import get_grip_factor
+        grip = get_grip_factor("dry")
+        base_autonomy = 2400
+        adjusted = int(base_autonomy * grip)
+        assert adjusted == base_autonomy
+
+    def test_track_conditions_from_weather(self):
+        """estimate_track_conditions returns grip info."""
+        from meteo_service import estimate_track_conditions
+        weather = {
+            "air_temp_c": 20, "humidity_pct": 50, "wind_speed_mps": 3,
+            "rain_mm": 0, "cloud_cover_pct": 30
+        }
+        result = estimate_track_conditions(weather)
+        assert "track_state" in result
+        assert "grip_score" in result

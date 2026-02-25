@@ -1,8 +1,11 @@
 /**
- * theme.js — Centralized canvas color palette from CSS custom properties.
+ * theme.js — Theme detection/toggle + centralized canvas color palette.
  *
- * Reads colors from :root CSS variables so all canvas-based charts
- * use the design system rather than hardcoded hex values.
+ * Theme toggle: auto-detects system preference on first visit, saves to
+ * localStorage, prevents flash by running in <head> before CSS paints.
+ *
+ * Canvas palette: reads colors from :root CSS variables so all canvas-based
+ * charts use the design system rather than hardcoded hex values.
  *
  * Usage:
  *   var C = window.Theme.colors;
@@ -13,7 +16,45 @@
  * Also provides:
  *   window.Theme.lapColor(index) — deterministic lap palette color
  *   window.Theme.heatColor(t)    — 0..1 interpolation (green→yellow→red)
+ *   window.toggleTheme()         — toggle light/dark
  */
+
+// ── Theme detection and toggle (runs immediately) ──
+(function() {
+    var html = document.documentElement;
+
+    function getPreferred() {
+        try {
+            var saved = localStorage.getItem('theme');
+            if (saved === 'light' || saved === 'dark') return saved;
+        } catch(e) {}
+        return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    }
+
+    function applyTheme(theme) {
+        html.setAttribute('data-theme', theme);
+        try { localStorage.setItem('theme', theme); } catch(e) {}
+        var btn = document.getElementById('theme-toggle');
+        if (btn) btn.textContent = theme === 'dark' ? '\u2600' : '\u263E';
+    }
+
+    applyTheme(getPreferred());
+
+    window.toggleTheme = function() {
+        var current = html.getAttribute('data-theme') || 'dark';
+        applyTheme(current === 'dark' ? 'light' : 'dark');
+        if (window.Theme && window.Theme.hydrate) {
+            window.Theme.hydrate();
+        }
+    };
+})();
+
+// ── Language selector ──
+window.setLang = function(lang) {
+    document.cookie = 'lang=' + lang + ';path=/;max-age=31536000';
+    location.reload();
+};
+
 (function () {
     'use strict';
 

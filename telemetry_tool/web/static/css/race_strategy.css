@@ -408,3 +408,52 @@
     align-items: center;
     justify-content: center;
 }
+
+/* TeamTalk chat */
+.rs-chat-log {
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.5rem;
+}
+.rs-chat-row { padding: 0.15rem 0; }
+.rs-chat-cat { font-size: 0.7rem; font-weight: 600; }
+.rs-chat-time { float: right; font-size: 0.7rem; color: var(--text-secondary); }
+.rs-chat-input {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+}
+.rs-chat-input input, .rs-chat-input select {
+    padding: 0.3rem 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    font-size: 0.85rem;
+}
+
+/* Weather card */
+#rs-weather-card .rs-kv { display: flex; justify-content: space-between; padding: 0.15rem 0; }
+
+/* Forecast bar */
+.rs-forecast-bar {
+    display: flex;
+    height: 16px;
+    gap: 1px;
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+.rs-forecast-hour {
+    min-width: 4px;
+    border-radius: 2px;
+}
+
+/* Radar */
+#rs-radar-wrap {
+    background: var(--bg-secondary);
+}

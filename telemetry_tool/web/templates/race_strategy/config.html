@@ -84,6 +84,11 @@
                         <input type="number" step="0.1" name="driver_weight_{{ loop.index0 }}"
                                value="{{ d.weight_kg if d.weight_kg else '' }}" placeholder="70">
                     </div>
+                    <div class="form-group">
+                        <label>COM Channel</label>
+                        <input type="text" name="driver_com_{{ loop.index0 }}"
+                               value="{{ d.com_channel if d.com_channel else '' }}" placeholder="CH 7">
+                    </div>
                 </div>
                 <details class="rs-constraints-toggle">
                     <summary>Stint Constraints</summary>

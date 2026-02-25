@@ -124,6 +124,10 @@ def _build_export_dict(conn, race_id: int) -> dict:
         "SELECT * FROM race_pit_stops WHERE race_id = ? ORDER BY pit_id", (race_id,)
     ).fetchall())
 
+    messages = _rows_to_list(conn.execute(
+        "SELECT * FROM race_messages WHERE race_id = ? ORDER BY msg_id", (race_id,)
+    ).fetchall())
+
     return {
         "version": 1,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -131,6 +135,7 @@ def _build_export_dict(conn, race_id: int) -> dict:
         "drivers": drivers,
         "stints": stints,
         "pit_stops": pit_stops,
+        "messages": messages,
     }
 
 
@@ -172,13 +177,13 @@ def _import_race_from_dict(conn, data: dict) -> int:
         cur = conn.execute(
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
-                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg
-            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 new_race_id, d["driver_name"], d.get("driver_order", 1),
                 d.get("min_stint_s"), d.get("max_stint_s"),
                 d.get("min_cumulative_s"), d.get("max_cumulative_s"),
-                d.get("min_rest_s", 0), d.get("weight_kg"),
+                d.get("min_rest_s", 0), d.get("weight_kg"), d.get("com_channel"),
             ),
         )
         if old_id is not None:
@@ -216,6 +221,13 @@ def _import_race_from_dict(conn, data: dict) -> int:
                 p.get("refueled", 0), p.get("fuel_added_kg"),
                 p.get("ballast_changed", 0), p.get("notes"),
             ),
+        )
+
+    # Insert messages
+    for m in data.get("messages", []):
+        conn.execute(
+            "INSERT INTO race_messages (race_id, author, message, category) VALUES (?,?,?,?)",
+            (new_race_id, m.get("author", ""), m.get("message", ""), m.get("category", "general")),
         )
 
     return new_race_id
@@ -378,10 +390,10 @@ def duplicate(race_id: int):
         dd = dict(d)
         conn.execute(
             "INSERT INTO race_drivers (race_id, driver_name, driver_order, min_stint_s, max_stint_s, "
-            "min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg) VALUES (?,?,?,?,?,?,?,?,?)",
+            "min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (new_id, dd["driver_name"], dd["driver_order"], dd["min_stint_s"],
              dd["max_stint_s"], dd["min_cumulative_s"], dd["max_cumulative_s"],
-             dd["min_rest_s"], dd["weight_kg"]),
+             dd["min_rest_s"], dd["weight_kg"], dd.get("com_channel")),
         )
     conn.commit()
     return redirect(url_for("race_strategy_v2.detail", race_id=new_id))
@@ -608,6 +620,9 @@ def api_state(race_id: int):
     pit_stops = _rows_to_list(conn.execute(
         "SELECT * FROM race_pit_stops WHERE race_id = ? ORDER BY planned_at_s", (race_id,)
     ).fetchall())
+    messages = _rows_to_list(conn.execute(
+        "SELECT * FROM race_messages WHERE race_id = ? ORDER BY msg_id", (race_id,)
+    ).fetchall())
 
     active_stint = next((s for s in stints if s["status"] == "active"), None)
     next_stint = next((s for s in stints if s["status"] == "planned"), None)
@@ -625,6 +640,7 @@ def api_state(race_id: int):
         "drivers": drivers,
         "stints": stints,
         "pit_stops": pit_stops,
+        "messages": messages,
         "active_stint": active_stint,
         "next_stint": next_stint,
         "driver_cumulative": driver_cumulative,
@@ -727,6 +743,96 @@ def api_reoptimize(race_id: int):
     return jsonify({"ok": True, "result": result})
 
 
+@bp.route("/<int:race_id>/api/messages", methods=["GET", "POST"])
+def api_messages(race_id: int):
+    """Get or post race messages."""
+    conn = get_db_connection()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        author = data.get("author", "").strip()
+        message = data.get("message", "").strip()
+        category = data.get("category", "general")
+        if not author or not message:
+            return jsonify({"error": "author and message required"}), 400
+        conn.execute(
+            "INSERT INTO race_messages (race_id, author, message, category) VALUES (?,?,?,?)",
+            (race_id, author, message, category),
+        )
+        conn.commit()
+        return jsonify({"ok": True})
+
+    # GET: return all messages
+    msgs = _rows_to_list(conn.execute(
+        "SELECT * FROM race_messages WHERE race_id = ? ORDER BY msg_id", (race_id,)
+    ).fetchall())
+    return jsonify({"messages": msgs})
+
+
+@bp.route("/<int:race_id>/api/weather")
+def api_weather(race_id: int):
+    """Current weather + forecast + pace estimate for race track."""
+    conn = get_db_connection()
+    race = _row_to_dict(
+        conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+    )
+    if not race:
+        return jsonify({"error": "not found"}), 404
+
+    track_name = race.get("track_name")
+    if not track_name:
+        return jsonify({"error": "no track configured"}), 400
+
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+        _root = str(_Path(__file__).resolve().parents[2])
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+
+        from meteo_service import (
+            get_known_tracks, fetch_current_weather,
+            get_weather_forecast, estimate_track_conditions,
+        )
+
+        tracks = get_known_tracks(conn)
+        track = next(
+            (t for t in tracks if t.get("track_name", "").lower() == track_name.lower()),
+            None,
+        )
+        if not track or not track.get("lat") or not track.get("lon"):
+            return jsonify({"error": "track coordinates not found"}), 400
+
+        lat, lon = track["lat"], track["lon"]
+
+        # Current conditions
+        current = fetch_current_weather(lat, lon)
+        conditions = estimate_track_conditions(current) if current else {}
+
+        # Forecast
+        race_hours = max(1, (race.get("race_duration_s") or 3600) // 3600 + 1)
+        forecast = get_weather_forecast(lat, lon, hours=race_hours)
+
+        # Fuel adjustment based on grip
+        fuel_autonomy = race.get("fuel_autonomy_s")
+        adjusted_autonomy = None
+        if fuel_autonomy and conditions.get("grip_score"):
+            from wet_physics import get_grip_factor
+            grip = get_grip_factor(conditions.get("track_state", "dry"))
+            adjusted_autonomy = int(fuel_autonomy * grip)
+
+        return jsonify({
+            "current": current,
+            "conditions": conditions,
+            "forecast": forecast,
+            "fuel_autonomy_adjusted_s": adjusted_autonomy,
+            "lat": lat,
+            "lon": lon,
+        })
+    except Exception as exc:
+        logger.warning("Weather fetch failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 # ── Helpers ──────────────────────────────────────
 
 def _compute_elapsed_s(race_start_ts: str | None) -> int:
@@ -803,8 +909,8 @@ def _save_drivers(conn, race_id: int, form):
         conn.execute(
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
-                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg
-            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel
+            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (
                 race_id,
                 name.strip(),
@@ -815,6 +921,7 @@ def _save_drivers(conn, race_id: int, form):
                 _parse_duration_mmss(form.get(f"driver_max_cumulative_{i}")),
                 _parse_duration_mmss(form.get(f"driver_min_rest_{i}")) or 0,
                 _parse_float(form.get(f"driver_weight_{i}")),
+                form.get(f"driver_com_{i}") or None,
             ),
         )
         i += 1

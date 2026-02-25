@@ -14,6 +14,9 @@
     <!-- App CSS -->
     <link rel="stylesheet" href="/static/css/main.css">
 
+    <!-- Theme detection (loaded early to prevent flash of wrong theme) -->
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+
     {% block head_extra %}{% endblock %}
 </head>
 <body>
@@ -141,6 +144,17 @@
                 Coaching
             </a>
 
+            {% if supported_languages is defined and supported_languages|length > 1 %}
+            <select id="lang-picker" class="nav-lang-picker" onchange="setLang(this.value)" title="Language">
+                {% for l in supported_languages %}
+                <option value="{{ l }}" {% if l == lang %}selected{% endif %}>{{ l.upper() }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            <button type="button" id="theme-toggle" class="nav-theme-toggle"
+                    onclick="toggleTheme()" title="Toggle light/dark theme"
+                    aria-label="Toggle theme">&#x263E;</button>
+
             <a href="/analyze/" title="Upload and analyze a new session"
                class="nav-cta {% if request.endpoint and request.endpoint.startswith('analysis.') %}active{% endif %}"
                {% if request.endpoint and request.endpoint.startswith('analysis.') %}aria-current="page"{% endif %}>
@@ -182,9 +196,6 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
-
-    <!-- Theme colors (CSS vars → JS for canvas charts) -->
-    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
 
     <!-- Fetch helper (loading / error / retry) -->
     <script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>

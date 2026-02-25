@@ -14,7 +14,7 @@ import logging
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, g, jsonify, render_template, request
 
 from .config import Config
 
@@ -126,6 +126,25 @@ def create_app(config: Config | None = None) -> Flask:
             logger.debug("Registered blueprint: %s", label)
         except Exception as exc:
             logger.error("Failed to register blueprint %s (%s): %s", label, mod_name, exc)
+
+    # ── i18n: load translations on each request ──
+    @app.before_request
+    def _load_i18n():
+        from .i18n import load_translations, SUPPORTED_LANGUAGES
+        lang = request.cookies.get("lang") or request.args.get("lang", "en")
+        if lang not in SUPPORTED_LANGUAGES:
+            lang = "en"
+        g.t = load_translations(lang)
+        g.lang = lang
+        g.supported_languages = SUPPORTED_LANGUAGES
+
+    @app.context_processor
+    def _inject_i18n():
+        return {
+            "t": getattr(g, "t", {}),
+            "lang": getattr(g, "lang", "en"),
+            "supported_languages": getattr(g, "supported_languages", ["en"]),
+        }
 
     # URL-decode percent-encoded path segments (e.g. %2B → +).
     # Werkzeug does NOT auto-decode %2B in path segments, so session IDs

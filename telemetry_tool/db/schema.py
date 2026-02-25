@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -793,7 +793,8 @@ CREATE TABLE IF NOT EXISTS race_drivers (
     min_cumulative_s    INTEGER,
     max_cumulative_s    INTEGER,
     min_rest_s          INTEGER NOT NULL DEFAULT 0,
-    weight_kg           REAL
+    weight_kg           REAL,
+    com_channel         TEXT
 );
 """
 
@@ -840,5 +841,24 @@ PHASE_15_TABLES: list[tuple[str, str]] = [
     ("race_pit_stops", _RACE_PIT_STOPS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 16 tables  (Tier 3: TeamTalk — race messages)
+# ------------------------------------------------------------------
+
+_RACE_MESSAGES_TABLE = """
+CREATE TABLE IF NOT EXISTS race_messages (
+    msg_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id      INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    author       TEXT    NOT NULL,
+    message      TEXT    NOT NULL,
+    category     TEXT    DEFAULT 'general',
+    created_at   TEXT    DEFAULT (datetime('now'))
+);
+"""
+
+PHASE_16_TABLES: list[tuple[str, str]] = [
+    ("race_messages", _RACE_MESSAGES_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES
