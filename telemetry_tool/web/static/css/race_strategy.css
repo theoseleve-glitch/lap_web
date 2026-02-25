@@ -1371,6 +1371,113 @@ details[open].rs-form-section > summary::before {
 .rs-stat-card:nth-child(5) { animation-delay: 0.17s; }
 .rs-stat-card:nth-child(6) { animation-delay: 0.2s; }
 
+/* ── Stint Plan Detail — Fuel Toggles & Ballast ── */
+
+.rs-stint-row-violation {
+    background: rgba(248, 113, 113, 0.08) !important;
+    box-shadow: inset 3px 0 0 var(--red);
+}
+
+.rs-stint-row-warning {
+    background: rgba(251, 191, 36, 0.06) !important;
+    box-shadow: inset 3px 0 0 var(--yellow);
+}
+
+.rs-fuel-negative {
+    color: var(--red) !important;
+    font-weight: 700;
+}
+
+.rs-ballast-total {
+    font-size: 0.88rem;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.rs-ballast-detail {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.rs-pit-row {
+    background: var(--rs-inner-bg) !important;
+    border-top: 1px dashed rgba(255, 255, 255, 0.06);
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
+}
+
+.rs-pit-row td {
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+}
+
+.rs-fuel-toggle,
+.rs-pit-type-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0.2rem 0.55rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+    vertical-align: middle;
+    margin: 0 0.15rem;
+}
+
+.rs-fuel-toggle.rs-fuel-on {
+    background: rgba(52, 211, 153, 0.12);
+    border-color: rgba(52, 211, 153, 0.3);
+    color: var(--green);
+}
+
+.rs-fuel-toggle.rs-fuel-on:hover {
+    background: rgba(52, 211, 153, 0.2);
+    box-shadow: 0 0 8px rgba(52, 211, 153, 0.15);
+}
+
+.rs-fuel-toggle.rs-fuel-off {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+}
+
+.rs-fuel-toggle.rs-fuel-off:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.rs-pit-type-toggle.rs-pit-type-full {
+    background: rgba(96, 165, 250, 0.1);
+    border-color: rgba(96, 165, 250, 0.25);
+    color: var(--blue);
+}
+
+.rs-pit-type-toggle.rs-pit-type-full:hover {
+    background: rgba(96, 165, 250, 0.18);
+    box-shadow: 0 0 8px rgba(96, 165, 250, 0.12);
+}
+
+.rs-pit-type-toggle.rs-pit-type-quick {
+    background: rgba(251, 191, 36, 0.1);
+    border-color: rgba(251, 191, 36, 0.25);
+    color: var(--yellow);
+}
+
+.rs-pit-type-toggle.rs-pit-type-quick:hover {
+    background: rgba(251, 191, 36, 0.18);
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.12);
+}
+
+.rs-import-plan {
+    margin: 0.75rem 0 0.5rem;
+}
+
 /* ── Responsive ───────────────────────────────── */
 
 @media (max-width: 900px) {

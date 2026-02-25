@@ -95,38 +95,121 @@
         var elapsed = getElapsed();
         var stintElapsed = elapsed - (state.active_stint.actual_start_s || 0);
 
-        var fuelPct = 100;
-        if (FUEL_AUTONOMY > 0) {
-            fuelPct = Math.max(0, Math.min(100, 100 - (stintElapsed / FUEL_AUTONOMY) * 100));
+        var hasFuelModel = state.fuel_model && state.fuel_model.full_tank_kg > 0;
+        var hasCurrentFuel = state.current_fuel_kg != null && state.current_fuel_kg >= 0;
+
+        // --- Real-time fuel gauge (kg-based) ---
+        var gaugeFill = document.getElementById('rs-fuel-gauge-fill');
+        if (gaugeFill) {
+            if (hasCurrentFuel && hasFuelModel) {
+                var fuelKg = state.current_fuel_kg;
+                var fullTank = state.fuel_model.full_tank_kg;
+                var fuelPctKg = Math.max(0, Math.min(100, (fuelKg / fullTank) * 100));
+
+                gaugeFill.style.width = Math.max(fuelPctKg, 2) + '%';
+                gaugeFill.textContent = fuelKg.toFixed(1) + ' kg';
+
+                // Color thresholds
+                var colorClass = 'rs-fuel-gauge-green';
+                if (fuelPctKg < 20) colorClass = 'rs-fuel-gauge-red';
+                else if (fuelPctKg <= 50) colorClass = 'rs-fuel-gauge-yellow';
+                gaugeFill.className = 'rs-fuel-gauge-fill ' + colorClass;
+            } else {
+                // Fallback: percentage-based estimate from FUEL_AUTONOMY
+                var fuelPct = 100;
+                if (FUEL_AUTONOMY > 0) {
+                    fuelPct = Math.max(0, Math.min(100, 100 - (stintElapsed / FUEL_AUTONOMY) * 100));
+                }
+                gaugeFill.style.width = Math.max(fuelPct, 2) + '%';
+                gaugeFill.textContent = Math.round(fuelPct) + '%';
+                var fallbackClass = 'rs-fuel-gauge-green';
+                if (fuelPct < 20) fallbackClass = 'rs-fuel-gauge-red';
+                else if (fuelPct <= 50) fallbackClass = 'rs-fuel-gauge-yellow';
+                gaugeFill.className = 'rs-fuel-gauge-fill ' + fallbackClass;
+            }
         }
 
-        var bar = document.getElementById('rs-fuel-bar');
-        if (bar) {
-            bar.style.width = fuelPct + '%';
-            bar.textContent = Math.round(fuelPct) + '%';
-            bar.className = 'rs-fuel-bar ' +
-                (fuelPct < 15 ? 'rs-fuel-critical' : fuelPct < 30 ? 'rs-fuel-low' : 'rs-fuel-ok');
-        }
-
-        if (FUEL_AUTONOMY > 0) {
+        // --- Autonomy ---
+        if (hasFuelModel && state.fuel_model.fuel_autonomy_s > 0) {
+            // Engine-computed autonomy from current fuel level
+            setText('rs-fuel-autonomy', fmtShort(state.fuel_model.fuel_autonomy_s));
+        } else if (FUEL_AUTONOMY > 0) {
             var remainingFuelS = Math.max(0, FUEL_AUTONOMY - stintElapsed);
             setText('rs-fuel-autonomy', fmtShort(remainingFuelS));
         } else {
             setText('rs-fuel-autonomy', 'N/A');
         }
 
-        setText('rs-ballast', (state.active_stint.ballast_kg || 0).toFixed(1) + ' kg');
+        // --- Burn rate ---
+        if (hasFuelModel && state.fuel_model.burn_rate_kgs > 0) {
+            setText('rs-fuel-burn-rate', state.fuel_model.burn_rate_kgs.toFixed(3) + ' kg/s');
+        } else {
+            setText('rs-fuel-burn-rate', '--');
+        }
 
-        // Total weight (rough estimate)
+        // --- Ballast decomposition ---
+        var hasBallast = state.current_ballast && state.current_ballast.total_kg != null;
+        if (hasBallast) {
+            var cb = state.current_ballast;
+            setText('rs-ballast-base', 'Base: ' + (cb.base_kg || 0).toFixed(1) + ' kg');
+            setText('rs-ballast-fuel-offset', 'Fuel: ' + (cb.fuel_offset_kg || 0).toFixed(1) + ' kg');
+            setText('rs-ballast-total', cb.total_kg.toFixed(1) + ' kg');
+
+            var decompEl = document.getElementById('rs-ballast-decomp');
+            if (decompEl) decompEl.style.display = '';
+        } else {
+            // Fallback to simple ballast display
+            var simpleBallast = (state.active_stint.ballast_kg || 0);
+            setText('rs-ballast-base', 'Base: ' + simpleBallast.toFixed(1) + ' kg');
+            setText('rs-ballast-fuel-offset', 'Fuel: -- kg');
+            setText('rs-ballast-total', simpleBallast.toFixed(1) + ' kg');
+        }
+
+        // --- Pit speed badge ---
+        var pitBadge = document.getElementById('rs-pit-speed-badge');
+        if (pitBadge) {
+            if (state.race && state.race.pit_speed_kmh) {
+                pitBadge.className = 'rs-pit-speed-badge';
+                pitBadge.textContent = 'Pit: ' + state.race.pit_speed_kmh + ' km/h';
+            } else {
+                pitBadge.className = '';
+                pitBadge.textContent = '';
+            }
+        }
+
+        // --- Total weight (rough estimate) ---
         if (state.race.empty_kart_kg && state.active_stint.driver_weight_kg) {
+            var ballastTotal = hasBallast ? state.current_ballast.total_kg : (state.active_stint.ballast_kg || 0);
+            var fuelWeight = hasCurrentFuel ? state.current_fuel_kg : 0;
             var total = state.race.empty_kart_kg +
                         (state.active_stint.driver_weight_kg || 0) +
-                        (state.active_stint.ballast_kg || 0);
+                        ballastTotal +
+                        fuelWeight;
             setText('rs-total-weight', total.toFixed(1) + ' kg');
         }
     }
 
     // ── 3. Current & Next Driver ─────────────────
+
+    function findDriverById(driverId) {
+        if (!state || !state.drivers) return null;
+        for (var i = 0; i < state.drivers.length; i++) {
+            if (state.drivers[i].id === driverId) return state.drivers[i];
+        }
+        return null;
+    }
+
+    function renderComBadge(elementId, driver) {
+        var el = document.getElementById(elementId);
+        if (!el) return;
+        if (driver && driver.com_channel) {
+            el.className = 'rs-com-badge';
+            el.textContent = 'COM: Ch ' + driver.com_channel;
+        } else {
+            el.className = '';
+            el.textContent = '';
+        }
+    }
 
     function updateDrivers() {
         if (!state) return;
@@ -147,9 +230,14 @@
                 stintBar.className = 'rs-fuel-bar ' +
                     (pct > 90 ? 'rs-fuel-critical' : pct > 75 ? 'rs-fuel-low' : 'rs-fuel-ok');
             }
+
+            // COM channel badge for active driver
+            var activeDriver = findDriverById(state.active_stint.driver_id);
+            renderComBadge('rs-active-com-badge', activeDriver);
         } else {
             setText('rs-active-driver', 'No active stint');
             setText('rs-stint-elapsed', '--:--');
+            renderComBadge('rs-active-com-badge', null);
         }
 
         if (state.next_stint) {
@@ -159,9 +247,31 @@
                 var cum = (state.driver_cumulative[state.next_stint.driver_id] || 0);
                 info.textContent = ' (cumulative: ' + fmtShort(cum) + ')';
             }
+
+            // COM channel badge for next driver
+            var nextDriver = findDriverById(state.next_stint.driver_id);
+            renderComBadge('rs-next-com-badge', nextDriver);
+
+            // Ballast for next driver (so crew knows what to prepare)
+            var nextBallastEl = document.getElementById('rs-next-ballast');
+            if (nextBallastEl) {
+                var nextBallast = state.next_stint.ballast_base_kg;
+                if (nextBallast != null) {
+                    var fuelOff = state.next_stint.ballast_fuel_offset_kg || 0;
+                    var totalBallast = nextBallast + fuelOff;
+                    nextBallastEl.textContent = 'Ballast: ' + totalBallast.toFixed(1) + ' kg (base: ' + nextBallast.toFixed(1) + ' + fuel: ' + fuelOff.toFixed(1) + ')';
+                } else if (state.next_stint.ballast_kg != null) {
+                    nextBallastEl.textContent = 'Ballast: ' + state.next_stint.ballast_kg.toFixed(1) + ' kg';
+                } else {
+                    nextBallastEl.textContent = '';
+                }
+            }
         } else {
             setText('rs-next-driver', 'Last stint');
             setText('rs-next-info', '');
+            renderComBadge('rs-next-com-badge', null);
+            var nextBallastEl2 = document.getElementById('rs-next-ballast');
+            if (nextBallastEl2) nextBallastEl2.textContent = '';
         }
     }
 
@@ -234,19 +344,48 @@
             var actual = s.actual_duration_s || 0;
             var delta = actual ? actual - planned : null;
 
+            // Ballast: show decomposition if available
+            var ballastText;
+            if (s.ballast_base_kg != null) {
+                var bBase = s.ballast_base_kg || 0;
+                var bFuel = s.ballast_fuel_offset_kg || 0;
+                ballastText = (bBase + bFuel).toFixed(1) + ' kg';
+            } else {
+                ballastText = (s.ballast_kg || 0).toFixed(1) + ' kg';
+            }
+
+            // Fuel column: show fuel_at_start -> fuel_at_end if available, or refueled icon
+            var fuelText = '';
+            if (s.fuel_at_start != null && s.fuel_at_end != null) {
+                fuelText = s.fuel_at_start.toFixed(1) + ' -> ' + s.fuel_at_end.toFixed(1);
+            } else if (s.fuel_at_start != null) {
+                fuelText = s.fuel_at_start.toFixed(1) + ' kg';
+            }
+
             var cells = [
                 '' + s.stint_order,
                 s.driver_name,
                 fmtShort(planned),
-                s.status === 'completed' ? fmtShort(actual) : (s.status === 'active' ? 'running' : '—'),
-                delta !== null ? (delta >= 0 ? '+' : '') + Math.round(delta) + 's' : '—',
-                (s.ballast_kg || 0).toFixed(1) + ' kg',
+                s.status === 'completed' ? fmtShort(actual) : (s.status === 'active' ? 'running' : '\u2014'),
+                delta !== null ? (delta >= 0 ? '+' : '') + Math.round(delta) + 's' : '\u2014',
+                ballastText,
+                fuelText || '\u2014',
                 s.notes || ''
             ];
 
-            cells.forEach(function(text) {
+            cells.forEach(function(text, idx) {
                 var td = document.createElement('td');
-                td.textContent = text;
+                // Fuel column (index 6): add refuel indicator
+                if (idx === 6 && s.refueled != null) {
+                    td.textContent = text;
+                    var icon = document.createElement('span');
+                    icon.className = 'rs-stint-fuel-icon ' + (s.refueled ? 'rs-refueled' : 'rs-no-refuel');
+                    icon.textContent = s.refueled ? ' \u26FD' : '';
+                    icon.title = s.refueled ? 'Refueled' : 'No refuel';
+                    td.appendChild(icon);
+                } else {
+                    td.textContent = text;
+                }
                 tr.appendChild(td);
             });
             tbody.appendChild(tr);
