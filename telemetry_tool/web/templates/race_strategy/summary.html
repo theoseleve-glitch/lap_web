@@ -7,6 +7,7 @@
 {% endblock %}
 
 {% block content %}
+<div class="rs-page rs-page-summary">
 <div class="page-header">
     <div>
         <h1>{{ race.race_name }} — Summary</h1>
@@ -202,5 +203,6 @@
     <form method="POST" action="{{ url_for('race_strategy_v2.duplicate', race_id=race.race_id) }}" style="display:inline;">
         <button type="submit" class="btn btn-primary">Duplicate Race</button>
     </form>
+</div>
 </div>
 {% endblock %}

@@ -7,6 +7,7 @@
 {% endblock %}
 
 {% block content %}
+<div class="rs-page">
 <div class="page-header">
     <div>
         <h1>{{ 'Edit Race' if race else 'New Race' }}</h1>
@@ -243,4 +244,5 @@
 </form>
 
 <script src="{{ url_for('static', filename='js/race_strategy.js') }}"></script>
+</div>
 {% endblock %}

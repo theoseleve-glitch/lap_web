@@ -7,6 +7,7 @@
 {% endblock %}
 
 {% block content %}
+<div class="rs-page rs-page-live">
 <div class="page-header">
     <div>
         <h1>
@@ -84,7 +85,7 @@
     </div>
 
     <!-- 4. Stint Order -->
-    <div class="rs-live-card">
+    <div class="rs-live-card rs-full">
         <h3>Stint Order</h3>
         <div id="rs-forecast-bar" class="rs-forecast-bar" style="display:none;"></div>
         <div class="rs-stint-timeline" id="rs-stint-timeline"></div>
@@ -92,7 +93,7 @@
     </div>
 
     <!-- 5. Stint Log (full width) -->
-    <div class="rs-live-card" style="grid-column: 1 / -1;">
+    <div class="rs-live-card rs-full">
         <h3>Stint Log</h3>
         <table class="rs-stint-log" id="rs-stint-log">
             <thead>
@@ -111,7 +112,7 @@
     </div>
 
     <!-- 6. Race Summary -->
-    <div class="rs-live-card" style="grid-column: 1 / -1;">
+    <div class="rs-live-card rs-full">
         <h3>Race Summary</h3>
         <div style="display:flex;gap:2rem;flex-wrap:wrap;">
             <div>
@@ -144,7 +145,7 @@
     </div>
 
     <!-- 7. TeamTalk -->
-    <div class="rs-live-card" style="grid-column: 1 / -1;">
+    <div class="rs-live-card rs-full">
         <h3>{{ t.team_talk if t else 'Team Talk' }}</h3>
         <div class="rs-chat-log" id="rs-chat-log"></div>
         <div class="rs-chat-input">
@@ -173,4 +174,5 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/race_strategy_live.js') }}"></script>
+</div>
 {% endblock %}

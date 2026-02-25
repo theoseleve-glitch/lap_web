@@ -7,6 +7,7 @@
 {% endblock %}
 
 {% block content %}
+<div class="rs-page">
 <div class="page-header">
     <div>
         <h1>{{ race.race_name }}</h1>
@@ -212,4 +213,5 @@
 {% endif %}
 
 <script src="{{ url_for('static', filename='js/race_strategy.js') }}"></script>
+</div>
 {% endblock %}
