@@ -9007,7 +9007,7 @@ tr.row-selected {
 
 .dstyle-layout {
     display: grid;
-    grid-template-columns: 1fr clamp(200px, 20vw, 300px);
+    grid-template-columns: 1fr clamp(220px, 30vw, 450px);
     gap: 1.5rem;
     align-items: start;
 }

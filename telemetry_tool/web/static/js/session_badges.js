@@ -158,8 +158,6 @@
         radarSection.appendChild(_text("div", "badges-radar-label", "Category Performance"));
         var canvas = document.createElement("canvas");
         canvas.id = "badge-category-canvas";
-        canvas.width = 400;
-        canvas.height = 240;
         canvas.className = "badges-radar-canvas";
         canvas.setAttribute("aria-label", "Badge category performance radar chart");
         radarSection.appendChild(canvas);
@@ -176,15 +174,22 @@
         el.textContent = "";
         el.appendChild(frag);
 
-        setTimeout(function () { _drawCategoryRadar(data); }, 30);
+        setTimeout(function () {
+            _drawCategoryRadar(data);
+            // Register for resize observer
+            if (window.TelemetryResize) {
+                TelemetryResize.observe(radarSection);
+            }
+        }, 30);
     }
 
     function _drawCategoryRadar(data) {
         var canvas = document.getElementById("badge-category-canvas");
         if (!canvas) return;
+        canvas.__redraw = function() { _drawCategoryRadar(data); };
         var dpr = window.devicePixelRatio || 1;
-        var W = Math.min(canvas.parentElement.clientWidth || 400, 400);
-        var H = 240;
+        var W = canvas.parentElement.clientWidth || 400;
+        var H = Math.round(Math.min(W * 0.55, 500));
         canvas.width = W * dpr;
         canvas.height = H * dpr;
         canvas.style.width = W + "px";

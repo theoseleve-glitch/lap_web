@@ -155,8 +155,8 @@
         if (!canvas || labels.length === 0) return;
         canvas.__redraw = function() { _drawRadar(labels, values); };
         var dpr = window.devicePixelRatio || 1;
-        var W = Math.min(canvas.parentElement.clientWidth || 300, 300);
-        var H = 300;
+        var W = canvas.parentElement.clientWidth || 300;
+        var H = W;
         canvas.width = W * dpr;
         canvas.height = H * dpr;
         canvas.style.width = W + "px";

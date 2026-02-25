@@ -46,13 +46,13 @@
         // Segment chart canvas
         html += '<div style="margin-bottom:1rem;">';
         html += '<div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Segment Speed vs Best Lap</div>';
-        html += '<canvas id="speed-profile-canvas" width="700" height="240" style="width:100%;max-width:700px;"></canvas>';
+        html += '<canvas id="speed-profile-canvas" style="width:100%;"></canvas>';
         html += '</div>';
 
         // Time loss bar chart
         html += '<div style="margin-bottom:1rem;">';
         html += '<div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Time Loss by Segment</div>';
-        html += '<canvas id="time-loss-canvas" width="700" height="140" style="width:100%;max-width:700px;"></canvas>';
+        html += '<canvas id="time-loss-canvas" style="width:100%;"></canvas>';
         html += '</div>';
 
         // Coaching

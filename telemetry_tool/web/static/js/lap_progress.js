@@ -83,7 +83,7 @@
         // Progress chart
         html += '<div style="margin-bottom:1rem;">';
         html += '<div style="font-size:0.75rem;color:' + C.textSecondary + ';text-transform:uppercase;margin-bottom:0.3rem;">Lap Times & Running PB</div>';
-        html += '<canvas id="lap-progress-canvas" width="700" height="240" style="width:100%;max-width:700px;"></canvas>';
+        html += '<canvas id="lap-progress-canvas" style="width:100%;"></canvas>';
         html += '</div>';
 
         // Flow streaks

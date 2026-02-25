@@ -58,13 +58,13 @@
         // Canvas for histogram + KDE
         html += '<div style="margin-bottom:1rem;">';
         html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;margin-bottom:0.3rem;">Distribution</div>';
-        html += '<canvas id="dist-canvas" width="700" height="280" style="width:100%;max-width:700px;"></canvas>';
+        html += '<canvas id="dist-canvas" style="width:100%;"></canvas>';
         html += '</div>';
 
         // Box plot (mini)
         html += '<div style="margin-bottom:1rem;">';
         html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;margin-bottom:0.3rem;">Box Plot</div>';
-        html += '<canvas id="boxplot-canvas" width="700" height="60" style="width:100%;max-width:700px;"></canvas>';
+        html += '<canvas id="boxplot-canvas" style="width:100%;"></canvas>';
         html += '</div>';
 
         // Outliers
