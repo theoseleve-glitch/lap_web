@@ -128,6 +128,10 @@ def _build_export_dict(conn, race_id: int) -> dict:
         "SELECT * FROM race_messages WHERE race_id = ? ORDER BY msg_id", (race_id,)
     ).fetchall())
 
+    windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_windows WHERE race_id = ? ORDER BY window_order", (race_id,)
+    ).fetchall())
+
     return {
         "version": 1,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -136,6 +140,7 @@ def _build_export_dict(conn, race_id: int) -> dict:
         "stints": stints,
         "pit_stops": pit_stops,
         "messages": messages,
+        "windows": windows,
     }
 
 
@@ -178,13 +183,14 @@ def _import_race_from_dict(conn, data: dict) -> int:
         cur = conn.execute(
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
-                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel, color_hex
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 new_race_id, d["driver_name"], d.get("driver_order", 1),
                 d.get("min_stint_s"), d.get("max_stint_s"),
                 d.get("min_cumulative_s"), d.get("max_cumulative_s"),
                 d.get("min_rest_s", 0), d.get("weight_kg"), d.get("com_channel"),
+                d.get("color_hex"),
             ),
         )
         if old_id is not None:
@@ -231,6 +237,19 @@ def _import_race_from_dict(conn, data: dict) -> int:
             (new_race_id, m.get("author", ""), m.get("message", ""), m.get("category", "general")),
         )
 
+    # Import windows
+    for w in data.get("windows", []):
+        conn.execute(
+            "INSERT INTO race_windows (race_id, window_type, label, start_s, end_s, "
+            "refuel_allowed, driver_change_allowed, window_order) VALUES (?,?,?,?,?,?,?,?)",
+            (
+                new_race_id, w.get("window_type", "pitlane"), w.get("label"),
+                w.get("start_s", 0), w.get("end_s", 0),
+                w.get("refuel_allowed", 1), w.get("driver_change_allowed", 1),
+                w.get("window_order", 1),
+            ),
+        )
+
     return new_race_id
 
 
@@ -243,7 +262,8 @@ def new_race():
         conn = get_db_connection()
         tracks = _rows_to_list(conn.execute("SELECT track_id, track_name FROM tracks ORDER BY track_name").fetchall())
         drivers = _rows_to_list(conn.execute("SELECT driver_id, driver_name FROM drivers ORDER BY driver_name").fetchall())
-        return render_template("race_strategy/config.html", race=None, race_drivers=[], tracks=tracks, drivers=drivers)
+        return render_template("race_strategy/config.html", race=None, race_drivers=[], race_windows=[],
+                               tracks=tracks, drivers=drivers)
 
     # POST: save new race
     conn = get_db_connection()
@@ -281,8 +301,9 @@ def new_race():
     )
     race_id = cur.lastrowid
 
-    # Save drivers
+    # Save drivers and windows
     _save_drivers(conn, race_id, request.form)
+    _save_windows(conn, race_id, request.form)
 
     conn.commit()
     return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
@@ -333,9 +354,10 @@ def update_race(race_id: int):
         ),
     )
 
-    # Clear and re-save drivers
+    # Clear and re-save drivers + windows
     conn.execute("DELETE FROM race_drivers WHERE race_id = ?", (race_id,))
     _save_drivers(conn, race_id, request.form)
+    _save_windows(conn, race_id, request.form)
 
     # Clear planned stints (will need re-optimize)
     conn.execute("DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'", (race_id,))
@@ -355,10 +377,13 @@ def edit_race(race_id: int):
     race_drivers = _rows_to_list(conn.execute(
         "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)
     ).fetchall())
+    race_windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_windows WHERE race_id = ? ORDER BY window_order", (race_id,)
+    ).fetchall())
     tracks = _rows_to_list(conn.execute("SELECT track_id, track_name FROM tracks ORDER BY track_name").fetchall())
     drivers = _rows_to_list(conn.execute("SELECT driver_id, driver_name FROM drivers ORDER BY driver_name").fetchall())
     return render_template("race_strategy/config.html", race=race, race_drivers=race_drivers,
-                           tracks=tracks, drivers=drivers)
+                           race_windows=race_windows, tracks=tracks, drivers=drivers)
 
 
 @bp.route("/<int:race_id>/duplicate", methods=["POST"])
@@ -631,6 +656,7 @@ def api_state(race_id: int):
             "current_fuel_kg": round(engine.current_fuel_kg(elapsed), 4),
             "current_ballast": engine.current_ballast(elapsed),
             "fuel_model": engine.snapshot()["fuel_model"],
+            "window_status": engine.window_status(elapsed),
         }
     except Exception:
         logger.debug("Engine load failed for race %d, returning basic state", race_id)
@@ -1103,8 +1129,8 @@ def _save_drivers(conn, race_id: int, form):
         conn.execute(
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
-                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel
-            ) VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel, color_hex
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 race_id,
                 name.strip(),
@@ -1116,6 +1142,38 @@ def _save_drivers(conn, race_id: int, form):
                 _parse_duration_mmss(form.get(f"driver_min_rest_{i}")) or 0,
                 _parse_float(form.get(f"driver_weight_{i}")),
                 form.get(f"driver_com_{i}") or None,
+                form.get(f"driver_color_{i}") or None,
+            ),
+        )
+        i += 1
+
+
+def _save_windows(conn, race_id: int, form):
+    """Save race windows from form data. Expects window_type_N, window_start_N, etc."""
+    conn.execute("DELETE FROM race_windows WHERE race_id = ?", (race_id,))
+    i = 0
+    while True:
+        wtype = form.get(f"window_type_{i}")
+        if wtype is None:
+            break
+        start_raw = form.get(f"window_start_{i}")
+        end_raw = form.get(f"window_end_{i}")
+        start = _parse_duration(start_raw) if start_raw else None
+        end = _parse_duration(end_raw) if end_raw else None
+        if start is None and end is None:
+            i += 1
+            continue
+        conn.execute(
+            "INSERT INTO race_windows (race_id, window_type, label, start_s, end_s, "
+            "refuel_allowed, driver_change_allowed, window_order) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (
+                race_id, wtype,
+                form.get(f"window_label_{i}") or None,
+                start or 0, end or 0,
+                1 if form.get(f"window_refuel_{i}") else 0,
+                1 if form.get(f"window_driver_change_{i}") else 0,
+                i + 1,
             ),
         )
         i += 1
