@@ -102,9 +102,6 @@
                         <span class="nav-dropdown-icon" aria-hidden="true">&#x1F321;</span> Live Meteo
                     </a>
                     <div class="nav-dropdown-sep" role="separator"></div>
-                    <a class="nav-dropdown-item" href="/predictions/race-strategy" role="menuitem">
-                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F3CE;</span> Race Strategy
-                    </a>
                     <a class="nav-dropdown-item" href="/predictions/weight-simulator" role="menuitem">
                         <span class="nav-dropdown-icon" aria-hidden="true">&#x2696;</span> Weight Simulator
                     </a>
@@ -199,6 +196,9 @@
 
     <!-- Fetch helper (loading / error / retry) -->
     <script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>
+
+    <!-- Responsive resize observer for canvas charts -->
+    <script src="{{ url_for('static', filename='js/resize_observer.js') }}"></script>
 
     <!-- Toast notification system (global) -->
     <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
