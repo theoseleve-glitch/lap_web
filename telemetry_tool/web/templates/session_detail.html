@@ -137,6 +137,7 @@
     <button type="button" class="session-tab" data-tab="performance" role="tab" aria-selected="false" aria-controls="tab-performance" id="tab-btn-performance">Performance</button>
     <button type="button" class="session-tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="tab-analytics" id="tab-btn-analytics">Analytics</button>
     <button type="button" class="session-tab" data-tab="data" role="tab" aria-selected="false" aria-controls="tab-data" id="tab-btn-data">Lap Data</button>
+    <button type="button" class="focus-tab-btn" id="focus-tab-btn" title="Focus Mode (F)">&#x229E;</button>
 </div>
 
 <!-- ═══════════════════════════════════════════════════
@@ -225,7 +226,7 @@
 
 <!-- Achievements & Badges -->
 <section class="section">
-    <h2>Achievements & Rating <span class="tip tip-right tip-wrap" data-tip="Badges earned from this session based on pace, consistency, endurance, flow, and improvement. Aim for gold tier.">&#9432;</span></h2>
+    <h2>Achievements & Rating <span class="tip tip-right tip-wrap" data-tip="Badges earned from this session based on pace, consistency, endurance, flow, and improvement. Aim for gold tier.">&#9432;</span> <button class="focus-expand-btn" data-tool="badges" title="Focus Mode">&#x26F6;</button></h2>
     <p class="section-hint">Badges earned from this session based on pace, consistency, endurance, flow, and improvement. Aim for gold tier.</p>
     <div id="session-badges-container" aria-live="polite">
         <div class="loading-center"><div class="spinner-inline spinner-accent"></div><div class="text-secondary text-sm">Loading badges...</div></div>
@@ -234,7 +235,7 @@
 
 <!-- Performance Fingerprint -->
 <section class="section">
-    <h2>Performance Fingerprint <span class="tip tip-right tip-wrap" data-tip="Radar signature of your driving across key performance dimensions. Compare across sessions to track evolution.">&#9432;</span></h2>
+    <h2>Performance Fingerprint <span class="tip tip-right tip-wrap" data-tip="Radar signature of your driving across key performance dimensions. Compare across sessions to track evolution.">&#9432;</span> <button class="focus-expand-btn" data-tool="fingerprint" title="Focus Mode">&#x26F6;</button></h2>
     <p class="section-hint">Unique radar signature of your driving across multiple dimensions. Compare across sessions to track evolution.</p>
     <div id="fingerprint-container" class="flex-wrap-start">
         <canvas id="fingerprint-radar" class="chart-canvas" aria-label="Performance fingerprint radar chart"></canvas>
@@ -445,7 +446,7 @@
 <!-- G-G Explorer -->
 {% if gps_laps %}
 <section class="section">
-    <h2>G-G Explorer</h2>
+    <h2>G-G Explorer <button class="focus-expand-btn" data-tool="gg-diagram" title="Focus Mode">&#x26F6;</button></h2>
     <div id="gg-explorer" class="gg-explorer">
         <div class="gg-explorer-controls">
             <div class="gg-explorer-controls-left">
@@ -494,7 +495,7 @@
 
 <!-- Stint Analysis (race/sprint/endurance only) -->
 <section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
-    <h2>Stint Analysis <span class="tip tip-bottom tip-wrap" data-tip="Breaks your session into stints based on pace drops. Shows pace fade %, tyre cliff detection, and per-stint coaching.">(i)</span></h2>
+    <h2>Stint Analysis <span class="tip tip-bottom tip-wrap" data-tip="Breaks your session into stints based on pace drops. Shows pace fade %, tyre cliff detection, and per-stint coaching.">(i)</span> <button class="focus-expand-btn" data-tool="stint-analysis" title="Focus Mode">&#x26F6;</button></h2>
     <div id="stint-analysis-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading stint data...</span></div>
     </div>
@@ -567,7 +568,7 @@
 <!-- Track Map -->
 {% if gps_laps %}
 <section class="section">
-    <h2>Track Map</h2>
+    <h2>Track Map <button class="focus-expand-btn" data-tool="track-map" title="Focus Mode">&#x26F6;</button></h2>
     <div class="gps-controls">
         <label for="lap-select">Lap:</label>
         <select id="lap-select" class="form-select">
@@ -626,7 +627,7 @@
 
 <!-- Track Speed Profile -->
 <section class="section">
-    <h2>Track Speed Profile</h2>
+    <h2>Track Speed Profile <button class="focus-expand-btn" data-tool="speed-trace" title="Focus Mode">&#x26F6;</button></h2>
     <div id="speed-profile-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading speed profile...</span></div>
     </div>
@@ -643,7 +644,7 @@
 <!-- Lap Speed Overlay -->
 {% if gps_laps and gps_laps|length > 1 %}
 <section class="section">
-    <h2>Lap Speed Comparison</h2>
+    <h2>Lap Speed Comparison <button class="focus-expand-btn" data-tool="lap-overlay" title="Focus Mode">&#x26F6;</button></h2>
     <div class="lap-overlay-controls">
         <span class="text-muted mr-sm">Select laps to overlay:</span>
         {% for lap_num in gps_laps %}
@@ -666,7 +667,7 @@
 
 <!-- Lap Time Distribution -->
 <section class="section">
-    <h2>Lap Time Distribution</h2>
+    <h2>Lap Time Distribution <button class="focus-expand-btn" data-tool="lap-distribution" title="Focus Mode">&#x26F6;</button></h2>
     <div id="lap-distribution-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading distribution...</span></div>
     </div>
@@ -674,7 +675,7 @@
 
 <!-- Lap Progress Tracker -->
 <section class="section">
-    <h2>Lap Progress Tracker</h2>
+    <h2>Lap Progress Tracker <button class="focus-expand-btn" data-tool="lap-progress" title="Focus Mode">&#x26F6;</button></h2>
     <div id="lap-progress-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading progress...</span></div>
     </div>
@@ -707,7 +708,7 @@
 
 <!-- Driver Fitness & Endurance -->
 <section class="section">
-    <h2>Driver Fitness & Endurance</h2>
+    <h2>Driver Fitness & Endurance <button class="focus-expand-btn" data-tool="driver-workload" title="Focus Mode">&#x26F6;</button></h2>
     <div id="fitness-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing fitness metrics...</span></div>
     </div>
@@ -906,6 +907,16 @@
 
             // Trigger resize for canvases that may need redrawing
             window.dispatchEvent(new Event('resize'));
+
+            // Explicitly redraw canvases in the newly visible panel
+            // (ResizeObserver may miss display:none→block transitions)
+            if (target) {
+                requestAnimationFrame(function() {
+                    target.querySelectorAll('canvas').forEach(function(c) {
+                        if (typeof c.__redraw === 'function') c.__redraw();
+                    });
+                });
+            }
         }
         // Mark the initially active tab
         var initialTab = document.querySelector('.session-tab.active');
@@ -999,6 +1010,9 @@
 <script src="{{ url_for('static', filename='js/lap_distribution.js') }}"></script>
 <script src="{{ url_for('static', filename='js/comparison_matrix.js') }}"></script>
 <script src="{{ url_for('static', filename='js/cross_session.js') }}"></script>
+<script src="{{ url_for('static', filename='js/split_pane.js') }}"></script>
+<script src="{{ url_for('static', filename='js/focus_mode.js') }}"></script>
+<script src="{{ url_for('static', filename='js/focus_tools.js') }}"></script>
 {% if gps_laps and gps_laps|length >= 2 %}
 <script src="{{ url_for('static', filename='js/corner_replay_map.js') }}"></script>
 <script src="{{ url_for('static', filename='js/corner_replay_cockpit.js') }}"></script>
@@ -1467,6 +1481,26 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(function() {
                 el.innerHTML = '<p class="text-muted">Failed to load corner coaching data.</p>';
             });
+    }
+
+    // ── Focus Mode ──────────────────────────────────
+    if (window.FocusMode) {
+        document.querySelectorAll('.focus-expand-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var tool = btn.dataset.tool;
+                var panel = btn.closest('.tab-panel');
+                var tabName = panel ? panel.id.replace('tab-', '') : 'analytics';
+                FocusMode.open({ primaryTool: tool, tab: tabName });
+            });
+        });
+        var focusTabBtn = document.getElementById('focus-tab-btn');
+        if (focusTabBtn) {
+            focusTabBtn.addEventListener('click', function() {
+                var activeTab = document.querySelector('.session-tab.active');
+                var tabName = activeTab ? activeTab.dataset.tab : 'analytics';
+                FocusMode.open({ tab: tabName });
+            });
+        }
     }
 });
 </script>
