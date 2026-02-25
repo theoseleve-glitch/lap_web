@@ -141,8 +141,14 @@
 
 <!-- Stint Plan -->
 {% if stints %}
-<section class="section">
-    <h2>Stint Plan</h2>
+{% set ns = namespace(refuel_count=0) %}
+{% for p in pit_stops %}{% if p.refueled %}{% set ns.refuel_count = ns.refuel_count + 1 %}{% endif %}{% endfor %}
+<section class="section" id="rs-stint-plan">
+    <h2>Stint Plan
+        <span style="font-size:0.75rem; font-weight:500; text-transform:none; letter-spacing:0; color:var(--text-secondary); margin-left:0.75rem;">
+            Refuels: <strong style="color:var(--text-primary);">{{ ns.refuel_count }}</strong> / {{ pit_stops|length }} stops
+        </span>
+    </h2>
 
     <!-- Timeline visualization -->
     <div class="rs-timeline-wrap">
@@ -165,9 +171,9 @@
         </div>
     </div>
 
-    <!-- Stint table -->
+    <!-- Stint table with inline pit stop rows -->
     <div class="table-wrap table-scroll-wrapper">
-        <table class="data-table striped">
+        <table class="data-table" id="rs-stint-table">
             <thead>
                 <tr>
                     <th>#</th>
@@ -175,57 +181,74 @@
                     <th>Start</th>
                     <th>End</th>
                     <th>Duration</th>
+                    <th>Fuel Start</th>
+                    <th>Fuel End</th>
                     <th>Ballast</th>
                     <th>Status</th>
                 </tr>
             </thead>
             <tbody>
                 {% for s in stints %}
-                <tr>
+                {# Determine row class based on violations/warnings/fuel #}
+                {% set has_violation = (s.fuel_at_end is not none and s.fuel_at_end < 0) %}
+                {% set row_class = 'rs-stint-row-violation' if has_violation else '' %}
+                <tr class="rs-stint-row {{ row_class }}" data-stint-order="{{ s.stint_order }}">
                     <td>{{ s.stint_order }}</td>
                     <td><strong>{{ s.driver_name }}</strong></td>
                     <td>{{ '%d:%02d:%02d' | format(s.planned_start_s // 3600, (s.planned_start_s % 3600) // 60, s.planned_start_s % 60) }}</td>
                     <td>{{ '%d:%02d:%02d' | format(s.planned_end_s // 3600, (s.planned_end_s % 3600) // 60, s.planned_end_s % 60) }}</td>
                     <td>{{ '%d:%02d' | format(s.planned_duration_s // 60, s.planned_duration_s % 60) }}</td>
-                    <td>{{ '%.1f kg' | format(s.ballast_kg) if s.ballast_kg else '—' }}</td>
+                    <td>{% if s.fuel_at_start is not none %}{{ '%.1f' | format(s.fuel_at_start) }} kg{% else %}--{% endif %}</td>
+                    <td class="{{ 'rs-fuel-negative' if has_violation else '' }}">{% if s.fuel_at_end is not none %}{{ '%.1f' | format(s.fuel_at_end) }} kg{% else %}--{% endif %}</td>
+                    <td>
+                        {% if s.ballast_kg %}
+                        <span class="rs-ballast-total"><strong>{{ '%.1f' | format(s.ballast_kg) }} kg</strong></span>
+                        {% if s.ballast_base_kg is not none and s.ballast_fuel_offset_kg is not none %}
+                        <br><span class="rs-ballast-detail">Base: {{ '%.1f' | format(s.ballast_base_kg) }} + Fuel: {{ '%.1f' | format(s.ballast_fuel_offset_kg) }}</span>
+                        {% endif %}
+                        {% else %}
+                        --
+                        {% endif %}
+                    </td>
                     <td><span class="rs-status rs-status-{{ s.status }}">{{ s.status }}</span></td>
                 </tr>
+                {# Pit stop row between stints #}
+                {% if not loop.last %}
+                {% set pit_idx = loop.index0 %}
+                {% set p = pit_stops[pit_idx] if pit_idx < pit_stops|length else none %}
+                <tr class="rs-pit-row" data-after-stint="{{ s.stint_order }}">
+                    <td colspan="2" style="text-align:center;">
+                        <span style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">Pit Stop {{ loop.index }}</span>
+                    </td>
+                    <td>{% if p and p.planned_at_s %}{{ '%d:%02d:%02d' | format(p.planned_at_s // 3600, (p.planned_at_s % 3600) // 60, p.planned_at_s % 60) }}{% else %}--{% endif %}</td>
+                    <td>--</td>
+                    <td>{% if p %}{{ p.duration_s }}s{% else %}--{% endif %}</td>
+                    <td colspan="2" style="text-align:center;">
+                        {% if p %}
+                        <button type="button"
+                                class="rs-fuel-toggle {{ 'rs-fuel-on' if p.refueled else 'rs-fuel-off' }}"
+                                data-stint-order="{{ s.stint_order + 1 }}"
+                                onclick="rsToggleFuel({{ race.race_id }}, {{ s.stint_order + 1 }})">
+                            {{ 'Refuel ON' if p.refueled else 'Refuel OFF' }}
+                        </button>
+                        <button type="button"
+                                class="rs-pit-type-toggle {{ 'rs-pit-type-full' if (p.pit_type or 'full') == 'full' else 'rs-pit-type-quick' }}"
+                                data-stint-order="{{ s.stint_order + 1 }}"
+                                onclick="rsTogglePitType({{ race.race_id }}, {{ s.stint_order + 1 }}, this)">
+                            {{ (p.pit_type or 'full')|capitalize }}
+                        </button>
+                        {% else %}
+                        --
+                        {% endif %}
+                    </td>
+                    <td>{% if p %}{{ 'Yes' if p.driver_change else 'No' }}{% else %}--{% endif %}</td>
+                </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>
     </div>
 </section>
-
-<!-- Pit Stops -->
-{% if pit_stops %}
-<section class="section">
-    <h2>Pit Stops ({{ pit_stops|length }})</h2>
-    <div class="table-wrap table-scroll-wrapper">
-        <table class="data-table striped">
-            <thead>
-                <tr>
-                    <th>After Stint</th>
-                    <th>At</th>
-                    <th>Duration</th>
-                    <th>Driver Change</th>
-                    <th>Refuel</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for p in pit_stops %}
-                <tr>
-                    <td>{{ loop.index }}</td>
-                    <td>{{ '%d:%02d:%02d' | format(p.planned_at_s // 3600, (p.planned_at_s % 3600) // 60, p.planned_at_s % 60) if p.planned_at_s else '—' }}</td>
-                    <td>{{ p.duration_s }}s</td>
-                    <td>{{ 'Yes' if p.driver_change else 'No' }}</td>
-                    <td>{{ 'Yes' if p.refueled else 'No' }}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
-{% endif %}
 
 {% endif %}
 
