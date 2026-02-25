@@ -285,7 +285,8 @@ a:hover {
 .nav-links {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
+    flex-wrap: wrap;
+    gap: clamp(0.25rem, 1vw, 1rem);
 }
 
 .nav-links a {
@@ -2242,7 +2243,7 @@ textarea.form-input {
 
     .nav-links {
         width: 100%;
-        overflow-x: auto;
+        overflow: visible;
         padding-bottom: 0.25rem;
     }
 
@@ -2358,7 +2359,7 @@ textarea.form-input {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 260px;
+    min-height: clamp(160px, 25vh, 300px);
 }
 
 .style-features-list {
@@ -6993,7 +6994,7 @@ h2 .tip-wrap::after {
     display: block;
 }
 
-.rename-input { max-width: 300px; }
+.rename-input { max-width: clamp(200px, 50vw, 350px); }
 .rename-trigger { margin-top: 0.25rem; }
 
 /* ── Podium Graphic ──────────────────────── */
@@ -10099,7 +10100,7 @@ input[type="date"].form-input-inline::-webkit-calendar-picker-indicator {
 .drill-link-action {
     display: flex; gap: 0.4rem; align-items: center; margin-top: 0.4rem;
 }
-.drill-session-select { max-width: 280px; font-size: 0.8rem; }
+.drill-session-select { max-width: clamp(180px, 45vw, 300px); font-size: 0.8rem; }
 
 /* Driver badges */
 .badges-grid {
