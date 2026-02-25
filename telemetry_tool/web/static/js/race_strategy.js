@@ -73,7 +73,8 @@
         var mainRow = el('div', { className: 'form-row' }, [
             makeFormGroup('Name *', nameInput, 'flex:2'),
             el('input', { type: 'hidden', name: 'driver_order_' + idx, value: '' + (idx + 1) }),
-            makeFormGroup('Weight (kg)', makeInput('number', 'driver_weight_' + idx, '70'))
+            makeFormGroup('Weight (kg)', makeInput('number', 'driver_weight_' + idx, '70')),
+            makeFormGroup('COM Channel', makeInput('text', 'driver_com_' + idx, 'CH 7'))
         ]);
 
         var constraintRow1 = el('div', { className: 'form-row' }, [

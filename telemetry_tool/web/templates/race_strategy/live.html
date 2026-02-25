@@ -54,23 +54,44 @@
 
     <!-- 2. Fuel & Ballast -->
     <div class="rs-live-card">
-        <h3>Fuel & Ballast</h3>
-        <div class="rs-fuel-bar-wrap">
-            <div class="rs-fuel-bar rs-fuel-ok" id="rs-fuel-bar" style="width:100%;">100%</div>
+        <h3>Fuel & Ballast <span id="rs-pit-speed-badge"></span></h3>
+        <!-- Real-time fuel gauge (kg-based when available, fallback to %-based) -->
+        <div class="rs-fuel-gauge-bar" id="rs-fuel-gauge">
+            <div class="rs-fuel-gauge-fill rs-fuel-gauge-green" id="rs-fuel-gauge-fill" style="width:100%;">--</div>
         </div>
         <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-top:0.25rem;">
             <span>Autonomy: <strong id="rs-fuel-autonomy">--:--</strong></span>
-            <span>Ballast: <strong id="rs-ballast">-- kg</strong></span>
+            <span>Burn: <strong id="rs-fuel-burn-rate">--</strong></span>
+        </div>
+        <!-- Ballast decomposition -->
+        <div class="rs-ballast-decomp" id="rs-ballast-decomp">
+            <span class="rs-ballast-base" id="rs-ballast-base">Base: -- kg</span>
+            <span class="rs-ballast-plus">+</span>
+            <span class="rs-ballast-fuel-offset" id="rs-ballast-fuel-offset">Fuel: -- kg</span>
+            <span class="rs-ballast-equals">=</span>
+            <span class="rs-ballast-total" id="rs-ballast-total">-- kg</span>
         </div>
         <div style="font-size:0.85rem;margin-top:0.25rem;">
             Total kart: <strong id="rs-total-weight">-- kg</strong>
+        </div>
+        <!-- Legacy fallback elements (hidden, kept for backward compat) -->
+        <div id="rs-fuel-bar-legacy" style="display:none;">
+            <div class="rs-fuel-bar-wrap">
+                <div class="rs-fuel-bar rs-fuel-ok" id="rs-fuel-bar" style="width:100%;">100%</div>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-top:0.25rem;">
+                <span>Ballast: <strong id="rs-ballast">-- kg</strong></span>
+            </div>
         </div>
     </div>
 
     <!-- 3. Current & Next Driver -->
     <div class="rs-live-card">
         <h3>Drivers</h3>
-        <div class="rs-active-driver" id="rs-active-driver">—</div>
+        <div class="rs-active-driver">
+            <span id="rs-active-driver">—</span>
+            <span id="rs-active-com-badge"></span>
+        </div>
         <div style="font-size:0.85rem;color:var(--text-secondary);">
             In stint for: <strong id="rs-stint-elapsed">--:--</strong>
             / max <strong id="rs-stint-max">--:--</strong>
@@ -80,8 +101,10 @@
         </div>
         <div class="rs-next-driver">
             Next: <strong id="rs-next-driver">—</strong>
+            <span id="rs-next-com-badge"></span>
             <span id="rs-next-info"></span>
         </div>
+        <div class="rs-next-ballast" id="rs-next-ballast"></div>
     </div>
 
     <!-- 4. Stint Order -->
@@ -105,6 +128,7 @@
                     <th>Actual</th>
                     <th>Delta</th>
                     <th>Ballast</th>
+                    <th>Fuel</th>
                     <th>Notes</th>
                 </tr>
             </thead>

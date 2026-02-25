@@ -102,6 +102,9 @@
 <!-- Actions -->
 <div class="rs-detail-actions">
     <a href="{{ url_for('race_strategy_v2.export', race_id=race.race_id) }}" class="btn btn-ghost">Export JSON</a>
+    {% if stints %}
+    <a href="{{ url_for('race_strategy_v2.export_plan', race_id=race.race_id) }}" class="btn btn-ghost">Export Stint Plan</a>
+    {% endif %}
     {% if race.status in ('draft', 'ready') %}
     <a href="{{ url_for('race_strategy_v2.edit_race', race_id=race.race_id) }}" class="btn btn-ghost">Edit Config</a>
     <form method="POST" action="{{ url_for('race_strategy_v2.optimize', race_id=race.race_id) }}" style="display:inline;">
@@ -121,6 +124,20 @@
     <a href="{{ url_for('race_strategy_v2.summary', race_id=race.race_id) }}" class="btn btn-primary">View Summary</a>
     {% endif %}
 </div>
+
+<!-- Import Stint Plan -->
+{% if race.status in ('draft', 'ready') %}
+<div class="rs-import-plan">
+    <form method="POST" action="{{ url_for('race_strategy_v2.import_plan', race_id=race.race_id) }}" enctype="multipart/form-data" style="display:inline-flex; align-items:center; gap:0.5rem;">
+        <label class="btn btn-ghost" style="cursor:pointer; margin:0;">
+            Choose File
+            <input type="file" name="file" accept=".json" style="display:none;" onchange="this.closest('form').querySelector('.rs-import-filename').textContent = this.files[0]?.name || 'No file chosen';">
+        </label>
+        <span class="rs-import-filename" style="font-size:0.82rem; color:var(--text-secondary);">No file chosen</span>
+        <button type="submit" class="btn btn-ghost">Import Stint Plan</button>
+    </form>
+</div>
+{% endif %}
 
 <!-- Stint Plan -->
 {% if stints %}
