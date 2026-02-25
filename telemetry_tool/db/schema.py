@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 22
+SCHEMA_VERSION = 23
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -795,7 +795,8 @@ CREATE TABLE IF NOT EXISTS race_drivers (
     max_cumulative_s    INTEGER,
     min_rest_s          INTEGER NOT NULL DEFAULT 0,
     weight_kg           REAL,
-    com_channel         TEXT
+    com_channel         TEXT,
+    color_hex           TEXT
 );
 """
 
@@ -839,11 +840,26 @@ CREATE TABLE IF NOT EXISTS race_pit_stops (
 );
 """
 
+_RACE_WINDOWS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_windows (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id               INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    window_type           TEXT NOT NULL,
+    label                 TEXT,
+    start_s               INTEGER NOT NULL,
+    end_s                 INTEGER NOT NULL,
+    refuel_allowed        INTEGER NOT NULL DEFAULT 1,
+    driver_change_allowed INTEGER NOT NULL DEFAULT 1,
+    window_order          INTEGER NOT NULL DEFAULT 1
+);
+"""
+
 PHASE_15_TABLES: list[tuple[str, str]] = [
     ("race_configs", _RACE_CONFIGS_TABLE),
     ("race_drivers", _RACE_DRIVERS_TABLE),
     ("race_stints", _RACE_STINTS_TABLE),
     ("race_pit_stops", _RACE_PIT_STOPS_TABLE),
+    ("race_windows", _RACE_WINDOWS_TABLE),
 ]
 
 # ------------------------------------------------------------------

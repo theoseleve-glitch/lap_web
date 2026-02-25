@@ -409,6 +409,35 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (22, "Phase 22 schema — Tier 4 fuel-aware ballast, quick pit stops"),
     )
 
+    # Phase 23 migration: Tier 5 — race windows, driver colors.
+    # Create race_windows table (idempotent via IF NOT EXISTS).
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS race_windows (
+            id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id               INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+            window_type           TEXT NOT NULL,
+            label                 TEXT,
+            start_s               INTEGER NOT NULL,
+            end_s                 INTEGER NOT NULL,
+            refuel_allowed        INTEGER NOT NULL DEFAULT 1,
+            driver_change_allowed INTEGER NOT NULL DEFAULT 1,
+            window_order          INTEGER NOT NULL DEFAULT 1
+        );
+    """)
+    logger.debug("Ensured race_windows table exists.")
+
+    try:
+        cur.execute("ALTER TABLE race_drivers ADD COLUMN color_hex TEXT;")
+        logger.debug("Added column race_drivers.color_hex.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (23, "Phase 23 schema — Tier 5 race windows, driver colors"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

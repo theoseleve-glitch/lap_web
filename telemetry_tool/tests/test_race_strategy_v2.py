@@ -66,9 +66,47 @@ class TestRaceStrategySchema:
         assert row["min_pit_stop_s"] == 60
         assert row["weigh_on_pit_exit"] == 0
 
-    def test_schema_version_is_22(self, strategy_db):
+    def test_schema_version_is_23(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 22
+        assert row["v"] == 23
+
+    def test_race_windows_table_exists(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_windows (race_id, window_type, start_s, end_s, window_order) "
+            "VALUES (1, 'pitlane', 300, 3300, 1)"
+        )
+        row = strategy_db.execute("SELECT * FROM race_windows WHERE race_id = 1").fetchone()
+        assert row["window_type"] == "pitlane"
+        assert row["start_s"] == 300
+        assert row["end_s"] == 3300
+
+    def test_race_windows_has_rule_columns(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_windows (race_id, window_type, label, start_s, end_s, "
+            "refuel_allowed, driver_change_allowed, window_order) "
+            "VALUES (1, 'tech_stop', 'Tech 1', 1800, 2400, 0, 1, 1)"
+        )
+        row = strategy_db.execute("SELECT * FROM race_windows WHERE race_id = 1").fetchone()
+        assert row["label"] == "Tech 1"
+        assert row["refuel_allowed"] == 0
+        assert row["driver_change_allowed"] == 1
+
+    def test_race_drivers_has_color_hex_column(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, color_hex) "
+            "VALUES (1, 'Alice', 1, '#58a6ff')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_drivers WHERE race_id = 1").fetchone()
+        assert row["color_hex"] == "#58a6ff"
 
     def test_race_stints_has_ballast_decomposition_columns(self, strategy_db):
         strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
@@ -689,9 +727,9 @@ class TestTier3Schema:
         row = strategy_db.execute("SELECT com_channel FROM race_drivers WHERE race_id = 1").fetchone()
         assert row["com_channel"] == "CH 7"
 
-    def test_schema_version_is_22(self, strategy_db):
+    def test_schema_version_is_23(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 22
+        assert row["v"] == 23
 
 
 class TestTeamTalk:
