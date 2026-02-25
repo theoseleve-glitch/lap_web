@@ -1170,12 +1170,20 @@ def api_corner_replay_data(session_id: str):
         dists = ref_gps["distances"]
         lats = ref_gps["latitudes"]
         lons = ref_gps["longitudes"]
+        # Build a clean (distance, index) list for bisect — skip None gaps
+        clean_dists = [(d, i) for i, d in enumerate(dists) if d is not None]
+        clean_vals = [d for d, _ in clean_dists]
         for pr in pos_rows:
-            idx = bisect.bisect_left(dists, pr["avg_brake_m"])
+            brake_m = pr["avg_brake_m"]
+            if brake_m is None:
+                continue
+            bi = bisect.bisect_left(clean_vals, brake_m)
+            bi = min(bi, len(clean_dists) - 1)
+            idx = clean_dists[bi][1] if clean_dists else 0
             idx = min(idx, len(lats) - 1)
             corner_positions.append({
                 "corner_id": pr["corner_id"],
-                "brake_point_m": round(pr["avg_brake_m"], 1),
+                "brake_point_m": round(brake_m, 1),
                 "lat": lats[idx],
                 "lon": lons[idx],
             })
