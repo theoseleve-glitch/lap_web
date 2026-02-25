@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if race else 'New' }} Race — Race Strategy{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/race_strategy.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ 'Edit Race' if race else 'New Race' }}</h1>
+        <p>Configure your endurance race parameters, drivers, and pit strategy.</p>
+    </div>
+    <a href="{{ url_for('race_strategy_v2.index') }}" class="btn btn-ghost">&larr; Back</a>
+</div>
+
+<form method="POST"
+      action="{{ url_for('race_strategy_v2.update_race', race_id=race.race_id) if race else url_for('race_strategy_v2.new_race') }}"
+      class="rs-config-form">
+
+    <!-- ── Race Details ────────────────────────── -->
+    <section class="section rs-form-section">
+        <h2>Race Details</h2>
+        <div class="form-row">
+            <div class="form-group" style="flex:2">
+                <label for="race_name">Race Name *</label>
+                <input type="text" id="race_name" name="race_name" required
+                       value="{{ race.race_name if race else '' }}" placeholder="e.g. 3h Endurance Angerville">
+            </div>
+            <div class="form-group">
+                <label for="team_name">Team</label>
+                <input type="text" id="team_name" name="team_name"
+                       value="{{ race.team_name if race else '' }}" placeholder="e.g. Team Alpha">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="track_name">Track</label>
+                <input type="text" id="track_name" name="track_name" list="track-list"
+                       value="{{ race.track_name if race else '' }}" placeholder="Select or type">
+                <datalist id="track-list">
+                    {% for t in tracks %}
+                    <option value="{{ t.track_name }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+            <div class="form-group">
+                <label for="race_duration">Race Duration * (H:MM)</label>
+                <input type="text" id="race_duration" name="race_duration" required
+                       value="{{ '%d:%02d' | format(race.race_duration_s // 3600, (race.race_duration_s % 3600) // 60) if race else '3:00' }}"
+                       placeholder="3:00" pattern="\d+:\d{2}">
+            </div>
+            <div class="form-group">
+                <label for="desired_stints">Desired Stints</label>
+                <input type="number" id="desired_stints" name="desired_stints" min="1" max="20"
+                       value="{{ race.desired_stints if race else 4 }}">
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Drivers ─────────────────────────────── -->
+    <section class="section rs-form-section">
+        <h2>Drivers</h2>
+        <p class="rs-hint">Add drivers in rotation order. Constraints are optional — leave blank for no limit.</p>
+
+        <div id="rs-drivers-container">
+            {% set rd = race_drivers if race_drivers else [] %}
+            {% for d in rd %}
+            <div class="rs-driver-row" data-index="{{ loop.index0 }}">
+                <div class="rs-driver-header">
+                    <strong>Driver {{ loop.index }}</strong>
+                    <button type="button" class="btn btn-danger-text rs-remove-driver" title="Remove">&times;</button>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex:2">
+                        <label>Name *</label>
+                        <input type="text" name="driver_name_{{ loop.index0 }}" required value="{{ d.driver_name }}"
+                               list="known-drivers-list" placeholder="Driver name">
+                    </div>
+                    <input type="hidden" name="driver_order_{{ loop.index0 }}" value="{{ d.driver_order }}">
+                    <div class="form-group">
+                        <label>Weight (kg)</label>
+                        <input type="number" step="0.1" name="driver_weight_{{ loop.index0 }}"
+                               value="{{ d.weight_kg if d.weight_kg else '' }}" placeholder="70">
+                    </div>
+                </div>
+                <details class="rs-constraints-toggle">
+                    <summary>Stint Constraints</summary>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Min Stint (MM:SS)</label>
+                            <input type="text" name="driver_min_stint_{{ loop.index0 }}"
+                                   value="{{ '%d:%02d' | format(d.min_stint_s // 60, d.min_stint_s % 60) if d.min_stint_s else '' }}"
+                                   placeholder="20:00">
+                        </div>
+                        <div class="form-group">
+                            <label>Max Stint (MM:SS)</label>
+                            <input type="text" name="driver_max_stint_{{ loop.index0 }}"
+                                   value="{{ '%d:%02d' | format(d.max_stint_s // 60, d.max_stint_s % 60) if d.max_stint_s else '' }}"
+                                   placeholder="60:00">
+                        </div>
+                        <div class="form-group">
+                            <label>Min Rest (MM:SS)</label>
+                            <input type="text" name="driver_min_rest_{{ loop.index0 }}"
+                                   value="{{ '%d:%02d' | format(d.min_rest_s // 60, d.min_rest_s % 60) if d.min_rest_s else '' }}"
+                                   placeholder="5:00">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Min Cumulative (MM:SS)</label>
+                            <input type="text" name="driver_min_cumulative_{{ loop.index0 }}"
+                                   value="{{ '%d:%02d' | format(d.min_cumulative_s // 60, d.min_cumulative_s % 60) if d.min_cumulative_s else '' }}"
+                                   placeholder="30:00">
+                        </div>
+                        <div class="form-group">
+                            <label>Max Cumulative (MM:SS)</label>
+                            <input type="text" name="driver_max_cumulative_{{ loop.index0 }}"
+                                   value="{{ '%d:%02d' | format(d.max_cumulative_s // 60, d.max_cumulative_s % 60) if d.max_cumulative_s else '' }}"
+                                   placeholder="90:00">
+                        </div>
+                    </div>
+                </details>
+            </div>
+            {% endfor %}
+        </div>
+
+        <datalist id="known-drivers-list">
+            {% for d in drivers %}
+            <option value="{{ d.driver_name }}">
+            {% endfor %}
+        </datalist>
+
+        <button type="button" id="rs-add-driver" class="btn btn-ghost" style="margin-top:0.5rem;">+ Add Driver</button>
+    </section>
+
+    <!-- ── Pit Strategy ────────────────────────── -->
+    <section class="section rs-form-section">
+        <h2>Pit Strategy</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="min_pit_stop_s">Min Pit Stop (seconds)</label>
+                <input type="number" id="min_pit_stop_s" name="min_pit_stop_s" min="0"
+                       value="{{ race.min_pit_stop_s if race else 60 }}">
+            </div>
+            <div class="form-group">
+                <label for="pit_speed_kmh">Pit Speed (km/h)</label>
+                <input type="number" step="0.1" id="pit_speed_kmh" name="pit_speed_kmh"
+                       value="{{ race.pit_speed_kmh if race and race.pit_speed_kmh else '' }}" placeholder="30">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="mandatory_driver_change"
+                           {{ 'checked' if not race or race.mandatory_driver_change }}>
+                    Mandatory driver change at pit
+                </label>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="refueling_allowed"
+                           {{ 'checked' if not race or race.refueling_allowed }}>
+                    Refueling allowed
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Fuel & Weight ───────────────────────── -->
+    <section class="section rs-form-section">
+        <h2>Fuel & Weight</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="fuel_autonomy">Fuel Autonomy (MM:SS)</label>
+                <input type="text" id="fuel_autonomy" name="fuel_autonomy"
+                       value="{{ '%d:%02d' | format(race.fuel_autonomy_s // 60, race.fuel_autonomy_s % 60) if race and race.fuel_autonomy_s else '' }}"
+                       placeholder="40:00">
+            </div>
+            <div class="form-group">
+                <label for="empty_kart_kg">Empty Kart (kg)</label>
+                <input type="number" step="0.1" id="empty_kart_kg" name="empty_kart_kg"
+                       value="{{ race.empty_kart_kg if race and race.empty_kart_kg else '' }}" placeholder="80">
+            </div>
+            <div class="form-group">
+                <label for="full_tank_kg">Full Tank (kg)</label>
+                <input type="number" step="0.1" id="full_tank_kg" name="full_tank_kg"
+                       value="{{ race.full_tank_kg if race and race.full_tank_kg else '' }}" placeholder="92">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="min_total_kart_kg">Min Total Weight (kg)</label>
+                <input type="number" step="0.1" id="min_total_kart_kg" name="min_total_kart_kg"
+                       value="{{ race.min_total_kart_kg if race and race.min_total_kart_kg else '' }}" placeholder="165">
+            </div>
+            <div class="form-group">
+                <label for="reference_weight_kg">Reference Weight (kg)</label>
+                <input type="number" step="0.1" id="reference_weight_kg" name="reference_weight_kg"
+                       value="{{ race.reference_weight_kg if race and race.reference_weight_kg else '' }}" placeholder="165">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="weigh_on_pit_exit"
+                           {{ 'checked' if race and race.weigh_on_pit_exit }}>
+                    Weigh on pit exit
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── Qualifying (optional) ───────────────── -->
+    <details class="section rs-form-section">
+        <summary><h2 style="display:inline;">Qualifying (Optional)</h2></summary>
+        <div class="form-row" style="margin-top:0.75rem;">
+            <div class="form-group">
+                <label for="qualifying_duration">Qualifying Duration (MM:SS)</label>
+                <input type="text" id="qualifying_duration" name="qualifying_duration"
+                       value="{{ '%d:%02d' | format(race.qualifying_duration_s // 60, race.qualifying_duration_s % 60) if race and race.qualifying_duration_s else '' }}"
+                       placeholder="15:00">
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" name="refuel_after_quali"
+                           {{ 'checked' if race and race.refuel_after_quali }}>
+                    Refuel after qualifying
+                </label>
+            </div>
+        </div>
+    </details>
+
+    <!-- ── Submit ──────────────────────────────── -->
+    <div class="rs-form-actions">
+        <a href="{{ url_for('race_strategy_v2.index') }}" class="btn btn-ghost">Cancel</a>
+        <button type="submit" class="btn btn-primary">{{ 'Update Race' if race else 'Create Race' }}</button>
+    </div>
+</form>
+
+<script src="{{ url_for('static', filename='js/race_strategy.js') }}"></script>
+{% endblock %}

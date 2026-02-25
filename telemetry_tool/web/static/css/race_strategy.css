@@ -42,3 +42,311 @@
 .rs-live-info { flex: 1; }
 .rs-live-info h2 { margin: 0; font-size: 1.1rem; }
 .rs-live-meta { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem; }
+
+/* Config form */
+.rs-config-form { max-width: 860px; }
+.rs-form-section { margin-bottom: 0.5rem; }
+.rs-form-section h2 { margin-bottom: 0.5rem; font-size: 1rem; }
+.rs-hint { font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 0.75rem; }
+
+.rs-driver-row {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+}
+.rs-driver-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+.rs-constraints-toggle { margin-top: 0.5rem; }
+.rs-constraints-toggle summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.rs-form-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Detail page */
+.rs-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.rs-detail-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+}
+.rs-detail-card h3 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.rs-detail-card .rs-kv { display: flex; justify-content: space-between; font-size: 0.85rem; padding: 0.2rem 0; }
+.rs-detail-card .rs-kv-label { color: var(--text-secondary); }
+
+.rs-detail-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+/* Stint timeline */
+.rs-timeline-wrap {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+}
+.rs-timeline-bar {
+    display: flex;
+    height: 40px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+.rs-timeline-stint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    min-width: 20px;
+}
+.rs-timeline-pit {
+    width: 4px;
+    background: var(--border);
+    flex-shrink: 0;
+}
+.rs-timeline-legend {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.8rem;
+    flex-wrap: wrap;
+}
+.rs-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+}
+
+/* Driver colors */
+.rs-driver-0 { background: #58a6ff; }
+.rs-driver-1 { background: #f78166; }
+.rs-driver-2 { background: #7ee787; }
+.rs-driver-3 { background: #d2a8ff; }
+.rs-driver-4 { background: #ffa657; }
+.rs-driver-5 { background: #79c0ff; }
+
+/* Violations / warnings */
+.rs-violations {
+    border: 1px solid var(--red, #f85149);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(248, 81, 73, 0.08);
+}
+.rs-violations h4 { color: var(--red, #f85149); margin: 0 0 0.25rem; font-size: 0.85rem; }
+.rs-violations ul { margin: 0; padding-left: 1.25rem; font-size: 0.85rem; }
+
+.rs-warnings {
+    border: 1px solid var(--yellow, #d29922);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(210, 153, 34, 0.08);
+}
+.rs-warnings h4 { color: var(--yellow, #d29922); margin: 0 0 0.25rem; font-size: 0.85rem; }
+.rs-warnings ul { margin: 0; padding-left: 1.25rem; font-size: 0.85rem; }
+
+/* Live dashboard grid */
+.rs-live-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+.rs-live-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+}
+.rs-live-card h3 {
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* Timer */
+.rs-timer-display {
+    font-size: 2.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+    letter-spacing: 0.02em;
+}
+.rs-timer-remaining {
+    text-align: center;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+.rs-timer-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border);
+    margin-top: 0.5rem;
+    overflow: hidden;
+}
+.rs-timer-progress-bar {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 1s linear, background-color 0.5s;
+}
+
+/* Fuel bar */
+.rs-fuel-bar-wrap {
+    height: 24px;
+    border-radius: 4px;
+    background: var(--border);
+    overflow: hidden;
+    margin: 0.5rem 0;
+}
+.rs-fuel-bar {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 1s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #000;
+}
+.rs-fuel-ok { background: var(--green); }
+.rs-fuel-low { background: var(--yellow); }
+.rs-fuel-critical { background: var(--red, #f85149); }
+
+/* Driver card */
+.rs-active-driver {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+.rs-next-driver {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Stint log table */
+.rs-stint-log { width: 100%; font-size: 0.85rem; }
+.rs-stint-log th { text-align: left; padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); font-weight: 600; }
+.rs-stint-log td { padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--border); }
+.rs-stint-log tr.rs-active-row { background: rgba(88,166,255,0.08); }
+.rs-stint-log tr.rs-completed-row { opacity: 0.7; }
+
+/* Stint timeline (compact for live) */
+.rs-stint-timeline {
+    display: flex;
+    gap: 2px;
+    height: 32px;
+    margin-bottom: 0.5rem;
+}
+.rs-stint-block {
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #fff;
+    position: relative;
+}
+.rs-stint-block.rs-stint-planned { opacity: 0.4; }
+.rs-stint-block.rs-stint-active { outline: 2px solid #fff; animation: rs-pulse 2s infinite; }
+.rs-stint-block.rs-stint-completed { opacity: 0.85; }
+
+/* Summary page */
+.rs-summary-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+.rs-stat-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    text-align: center;
+}
+.rs-stat-value { font-size: 1.5rem; font-weight: 700; }
+.rs-stat-label { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.1rem; }
+
+/* Driver time bars (summary) */
+.rs-driver-bars { margin-bottom: 1.5rem; }
+.rs-driver-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.4rem;
+}
+.rs-driver-bar-name { width: 100px; font-size: 0.85rem; font-weight: 600; text-align: right; }
+.rs-driver-bar-track { flex: 1; height: 20px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.rs-driver-bar-fill { height: 100%; border-radius: 3px; }
+.rs-driver-bar-time { width: 60px; font-size: 0.8rem; color: var(--text-secondary); }
+
+/* Live action buttons */
+.rs-live-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+.btn-end-stint {
+    background: var(--red, #f85149);
+    color: #fff;
+    font-weight: 600;
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.btn-end-stint:hover { opacity: 0.9; }
+.btn-reoptimize {
+    background: var(--blue);
+    color: #fff;
+    font-weight: 600;
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+.btn-finish-race {
+    background: var(--text-secondary);
+    color: #fff;
+    font-weight: 600;
+    padding: 0.5rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
