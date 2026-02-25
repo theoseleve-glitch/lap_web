@@ -3800,25 +3800,45 @@ def api_race_plan():
 # Meteo / Weather API
 # ------------------------------------------------------------------
 
+
+def _resolve_track_coords(request_args, conn):
+    """Resolve lat/lon from request — by direct params or track ID."""
+    lat = request_args.get("lat", type=float)
+    lon = request_args.get("lon", type=float)
+    track_id = request_args.get("track")
+
+    if lat is not None and lon is not None:
+        return lat, lon
+
+    if track_id and track_id.startswith("db:"):
+        real_id = track_id[3:]
+        row = conn.execute(
+            "SELECT start_lat, start_lon FROM tracks WHERE track_id = :tid",
+            {"tid": real_id},
+        ).fetchone()
+        if row and row["start_lat"] is not None:
+            return row["start_lat"], row["start_lon"]
+    elif track_id and track_id.startswith("csv:"):
+        name = track_id[4:]
+        row = conn.execute(
+            "SELECT latitude, longitude FROM predefined_track_coords WHERE track_name = :n",
+            {"n": name},
+        ).fetchone()
+        if row and row["latitude"] is not None:
+            return row["latitude"], row["longitude"]
+
+    return None, None
+
+
 @bp.route("/meteo/current")
 def api_meteo_current():
     """Get current weather at coordinates or known track."""
-    track_key = request.args.get("track")
-    lat = request.args.get("lat", type=float)
-    lon = request.args.get("lon", type=float)
-
+    conn = get_db_connection()
+    lat, lon = _resolve_track_coords(request.args, conn)
+    if lat is None or lon is None:
+        return jsonify({"error": "Provide track ID or lat/lon"}), 400
     try:
-        from meteo_service import fetch_current_weather, get_known_tracks, \
-            estimate_track_conditions
-
-        if track_key:
-            conn = get_db_connection()
-            tracks = {t["id"]: t for t in get_known_tracks(conn)}
-            if track_key in tracks:
-                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
-        if lat is None or lon is None:
-            return jsonify({"error": "Provide track key or lat/lon"}), 400
-
+        from meteo_service import fetch_current_weather, estimate_track_conditions
         weather = fetch_current_weather(lat, lon)
         conditions = estimate_track_conditions(weather)
         weather["track_conditions"] = conditions
@@ -3830,25 +3850,15 @@ def api_meteo_current():
 @bp.route("/meteo/historical")
 def api_meteo_historical():
     """Get historical weather for a date at coordinates."""
-    track_key = request.args.get("track")
-    lat = request.args.get("lat", type=float)
-    lon = request.args.get("lon", type=float)
+    conn = get_db_connection()
+    lat, lon = _resolve_track_coords(request.args, conn)
     date_str = request.args.get("date", "")
-
     if not date_str:
         return jsonify({"error": "date parameter required (YYYY-MM-DD)"}), 400
-
+    if lat is None or lon is None:
+        return jsonify({"error": "Provide track ID or lat/lon"}), 400
     try:
-        from meteo_service import fetch_historical_weather, get_known_tracks
-
-        if track_key:
-            conn = get_db_connection()
-            tracks = {t["id"]: t for t in get_known_tracks(conn)}
-            if track_key in tracks:
-                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
-        if lat is None or lon is None:
-            return jsonify({"error": "Provide track key or lat/lon"}), 400
-
+        from meteo_service import fetch_historical_weather
         result = fetch_historical_weather(lat, lon, date_str)
         return jsonify(result)
     except ImportError:
@@ -3858,22 +3868,13 @@ def api_meteo_historical():
 @bp.route("/meteo/forecast")
 def api_meteo_forecast():
     """Get weather forecast for upcoming hours."""
-    track_key = request.args.get("track")
-    lat = request.args.get("lat", type=float)
-    lon = request.args.get("lon", type=float)
+    conn = get_db_connection()
+    lat, lon = _resolve_track_coords(request.args, conn)
     hours = request.args.get("hours", 12, type=int)
-
+    if lat is None or lon is None:
+        return jsonify({"error": "Provide track ID or lat/lon"}), 400
     try:
-        from meteo_service import get_weather_forecast, get_known_tracks
-
-        if track_key:
-            conn = get_db_connection()
-            tracks = {t["id"]: t for t in get_known_tracks(conn)}
-            if track_key in tracks:
-                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
-        if lat is None or lon is None:
-            return jsonify({"error": "Provide track key or lat/lon"}), 400
-
+        from meteo_service import get_weather_forecast
         result = get_weather_forecast(lat, lon, hours)
         return jsonify(result)
     except ImportError:
@@ -3882,10 +3883,34 @@ def api_meteo_forecast():
 
 @bp.route("/meteo/tracks")
 def api_meteo_tracks():
-    """Get list of known track locations for weather."""
+    """Get list of known track locations for weather (grouped format)."""
+    conn = get_db_connection()
     try:
-        from meteo_service import get_known_tracks
-        conn = get_db_connection()
-        return jsonify(get_known_tracks(conn))
+        from meteo_service import get_all_track_locations
+        return jsonify(get_all_track_locations(conn))
     except ImportError:
         return jsonify({"error": "meteo_service module not available"}), 500
+
+
+@bp.route("/meteo/pace-estimate")
+def api_meteo_pace_estimate():
+    """Estimate pace impact of current weather conditions."""
+    conn = get_db_connection()
+    track_id = request.args.get("track_id")
+    driver_id = request.args.get("driver_id", type=int)
+    if not track_id:
+        return jsonify({"error": "track_id required"}), 400
+    actual_track_id = track_id
+    if track_id.startswith("db:"):
+        actual_track_id = track_id[3:]
+    try:
+        from pace_estimator import estimate_pace
+        weather = {}
+        resolved_lat, resolved_lon = _resolve_track_coords(request.args, conn)
+        if resolved_lat is not None:
+            from meteo_service import fetch_current_weather
+            weather = fetch_current_weather(resolved_lat, resolved_lon)
+        result = estimate_pace(conn, actual_track_id, driver_id or 0, weather)
+        return jsonify(result)
+    except ImportError as e:
+        return jsonify({"error": f"Module not available: {e}"}), 500

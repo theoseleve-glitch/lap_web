@@ -56,6 +56,24 @@
     <div id="meteo-forecast-table"></div>
 </section>
 
+<!-- Lap Time Impact Panel -->
+<section class="section" id="meteo-pace-section" style="display:none;">
+    <h2>Lap Time Impact</h2>
+    <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="meteo-driver">Driver</label>
+            <select id="meteo-driver" class="form-control" style="max-width:250px;">
+                <option value="">-- Select driver --</option>
+                {% for d in drivers %}
+                <option value="{{ d.driver_id }}">{{ d.driver_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <button id="meteo-pace-btn" class="btn btn-secondary" disabled>Estimate Pace Impact</button>
+    </div>
+    <div id="meteo-pace-results"></div>
+</section>
+
 <!-- Historical Weather -->
 <section class="section">
     <h2>Historical Weather</h2>
@@ -90,15 +108,35 @@
         "very low": "#b71c1c",
     };
 
-    // Load known tracks
-    FetchHelper.fetch("/api/meteo/tracks").then(function(tracks) {
+    // Load known tracks (grouped format)
+    FetchHelper.fetch("/api/meteo/tracks").then(function(data) {
         var select = document.getElementById("meteo-track");
-        tracks.forEach(function(t) {
-            var opt = document.createElement("option");
-            opt.value = t.id;
-            opt.textContent = t.name;
-            select.appendChild(opt);
-        });
+        if (data.user_tracks && data.user_tracks.length > 0) {
+            var grp = document.createElement("optgroup");
+            grp.label = "Your Tracks";
+            data.user_tracks.forEach(function(t) {
+                var opt = document.createElement("option");
+                opt.value = t.id;
+                opt.textContent = t.name;
+                opt.dataset.lat = t.lat;
+                opt.dataset.lon = t.lon;
+                grp.appendChild(opt);
+            });
+            select.appendChild(grp);
+        }
+        if (data.predefined_tracks && data.predefined_tracks.length > 0) {
+            var grp2 = document.createElement("optgroup");
+            grp2.label = "Predefined Tracks";
+            data.predefined_tracks.forEach(function(t) {
+                var opt = document.createElement("option");
+                opt.value = t.id;
+                opt.textContent = t.name;
+                opt.dataset.lat = t.lat;
+                opt.dataset.lon = t.lon;
+                grp2.appendChild(opt);
+            });
+            select.appendChild(grp2);
+        }
     });
 
     document.getElementById("meteo-track").addEventListener("change", function() {
@@ -290,6 +328,75 @@
 
             document.getElementById("meteo-hist-results").innerHTML = html;
         });
+    });
+
+    // Pace estimate
+    document.getElementById("meteo-pace-btn").addEventListener("click", function() {
+        var trackSel = document.getElementById("meteo-track");
+        var trackId = trackSel.value;
+        var driverId = document.getElementById("meteo-driver").value;
+        if (!trackId) return;
+
+        var selectedOpt = trackSel.options[trackSel.selectedIndex];
+        var lat = selectedOpt ? selectedOpt.dataset.lat : "";
+        var lon = selectedOpt ? selectedOpt.dataset.lon : "";
+
+        var url = "/api/meteo/pace-estimate?track_id=" + encodeURIComponent(trackId);
+        if (driverId) url += "&driver_id=" + encodeURIComponent(driverId);
+        if (lat) url += "&lat=" + encodeURIComponent(lat) + "&lon=" + encodeURIComponent(lon);
+
+        FetchHelper.fetch(url).then(function(data) {
+            var container = document.getElementById("meteo-pace-results");
+            document.getElementById("meteo-pace-section").style.display = "";
+
+            if (data.estimate && data.estimate.error) {
+                container.textContent = data.estimate.error;
+                return;
+            }
+
+            var est = data.estimate || {};
+            var ctx = data.context || {};
+
+            var wrapper = document.createElement("div");
+            wrapper.style.cssText = "display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;";
+
+            function addCard(label, value, color) {
+                var card = document.createElement("div");
+                card.style.cssText = "background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;border-top:3px solid " + (color || "var(--accent)") + ";min-width:100px;flex:1;max-width:180px;";
+                var lbl = document.createElement("div");
+                lbl.style.cssText = "font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;";
+                lbl.textContent = label;
+                var val = document.createElement("div");
+                val.style.cssText = "font-size:1.1rem;font-weight:700;color:" + (color || "var(--text-primary)") + ";";
+                val.textContent = String(value);
+                card.appendChild(lbl);
+                card.appendChild(val);
+                wrapper.appendChild(card);
+            }
+
+            if (est.expected_lap_time_s != null) addCard("Est. Lap Time", est.expected_lap_time_s.toFixed(2) + "s", "var(--accent)");
+            if (est.delta_vs_dry_s != null) {
+                var dCol = est.delta_vs_dry_s > 0.5 ? "var(--red)" : (est.delta_vs_dry_s > 0.1 ? "var(--yellow)" : "var(--green)");
+                addCard("Delta vs Dry", (est.delta_vs_dry_s >= 0 ? "+" : "") + est.delta_vs_dry_s.toFixed(2) + "s", dCol);
+            }
+            if (est.grip_factor != null) addCard("Grip Factor", est.grip_factor.toFixed(2), est.grip_factor < 0.9 ? "var(--red)" : "var(--green)");
+            if (est.tier) addCard("Model", est.tier, "#888");
+            if (ctx.dry_reference_s != null) addCard("Dry Reference", ctx.dry_reference_s.toFixed(2) + "s", "var(--green)");
+            if (ctx.n_weather_sessions) addCard("Weather Sessions", ctx.n_weather_sessions, "var(--blue)");
+
+            container.replaceChildren(wrapper);
+
+            if (est.confidence != null) {
+                var note = document.createElement("div");
+                note.style.cssText = "font-size:0.8rem;color:var(--text-secondary);margin-top:0.3rem;";
+                note.textContent = "Confidence: " + (est.confidence * 100).toFixed(0) + "% | Tier: " + est.tier;
+                container.appendChild(note);
+            }
+        });
+    });
+
+    document.getElementById("meteo-track").addEventListener("change", function() {
+        document.getElementById("meteo-pace-btn").disabled = !this.value;
     });
 
     // Debounced resize redraw

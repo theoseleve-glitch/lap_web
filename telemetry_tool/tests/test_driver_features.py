@@ -1122,3 +1122,85 @@ class TestPaceEstimatorDataDriven:
         weather = {"air_temp_c": 22.0, "rain_mm": 0, "humidity_pct": 50}
         result = estimate_pace(db, "t2", 99, weather)
         assert result["estimate"]["tier"] == "physics"
+
+
+class TestMeteoAPI:
+    """Task 7: meteo API endpoints."""
+
+    def _make_app(self, db):
+        import tempfile, os
+        tmpdir = tempfile.mkdtemp()
+        db_path = os.path.join(tmpdir, "test.db")
+        file_conn = __import__("sqlite3").connect(db_path)
+        db.backup(file_conn)
+        file_conn.close()
+        from web.config import Config
+        cfg = Config()
+        cfg.DB_PATH = db_path
+        cfg.TESTING = True
+        from web.app import create_app
+        app = create_app(cfg)
+        app._tmpdir = tmpdir
+        return app
+
+    def test_meteo_tracks_returns_grouped(self, db):
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m, start_lat, start_lon) "
+            "VALUES ('trk1', 'My Track', 800, 48.59, 2.57)"
+        )
+        db.commit()
+        app = self._make_app(db)
+        with app.test_client() as c:
+            resp = c.get("/api/meteo/tracks")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert "user_tracks" in data
+            assert "predefined_tracks" in data
+            assert len(data["user_tracks"]) >= 1
+            # Our inserted track must be present
+            ids = [t["id"] for t in data["user_tracks"]]
+            assert "db:trk1" in ids
+        import shutil
+        shutil.rmtree(app._tmpdir, ignore_errors=True)
+
+    def test_meteo_current_requires_coords(self, db):
+        app = self._make_app(db)
+        with app.test_client() as c:
+            resp = c.get("/api/meteo/current")
+            assert resp.status_code == 400
+        import shutil
+        shutil.rmtree(app._tmpdir, ignore_errors=True)
+
+    def test_pace_estimate_requires_track(self, db):
+        app = self._make_app(db)
+        with app.test_client() as c:
+            resp = c.get("/api/meteo/pace-estimate")
+            assert resp.status_code == 400
+        import shutil
+        shutil.rmtree(app._tmpdir, ignore_errors=True)
+
+
+class TestRaceStrategyWeather:
+    """Task 8: race strategy uses physics-based weather delta."""
+
+    def test_weather_delta_wet_conditions(self):
+        from race_strategy import _compute_weather_delta
+        weather = {"air_temp_c": 15.0, "rain_mm": 10.0, "humidity_pct": 90, "cloud_cover_pct": 100}
+        delta = _compute_weather_delta(weather, base_time=50.0)
+        assert delta > 0, f"Wet conditions should add time, got delta={delta}"
+
+    def test_weather_delta_dry_conditions(self):
+        from race_strategy import _compute_weather_delta
+        weather = {"air_temp_c": 22.0, "rain_mm": 0, "humidity_pct": 50}
+        delta = _compute_weather_delta(weather, base_time=50.0)
+        assert abs(delta) < 0.1, f"Dry should have ~0 delta, got {delta}"
+
+    def test_weather_delta_none_weather(self):
+        from race_strategy import _compute_weather_delta
+        delta = _compute_weather_delta(None, base_time=50.0)
+        assert delta == 0.0
+
+    def test_weather_delta_empty_weather(self):
+        from race_strategy import _compute_weather_delta
+        delta = _compute_weather_delta({}, base_time=50.0)
+        assert delta == 0.0

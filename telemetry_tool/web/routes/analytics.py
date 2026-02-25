@@ -87,6 +87,10 @@ def trend_analysis():
 @bp.route("/meteo")
 def meteo_page():
     """Live and historical meteo dashboard."""
-    return render_template("meteo_dashboard.html")
+    conn = get_db_connection()
+    drivers = conn.execute(
+        "SELECT driver_id, driver_name FROM drivers ORDER BY driver_name"
+    ).fetchall()
+    return render_template("meteo_dashboard.html", drivers=[dict(d) for d in drivers])
 
 

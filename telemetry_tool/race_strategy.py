@@ -23,6 +23,24 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+
+def _compute_weather_delta(weather, base_time):
+    """Compute lap time delta from weather using physics model."""
+    if not weather or not weather.get("air_temp_c"):
+        return 0.0
+    try:
+        from pace_estimator import estimate_physics_lap_time
+        result = estimate_physics_lap_time(weather, dry_reference_s=base_time)
+        if "error" in result:
+            return 0.0
+        return result.get("delta_s", 0.0)
+    except ImportError:
+        air_temp = weather.get("air_temp_c")
+        if air_temp is not None and air_temp > 25:
+            return (air_temp - 25) * 0.01
+        return 0.0
+
+
 # ── Tire compound models (degradation per lap) ──────────────
 _TIRE_COMPOUNDS = {
     "soft": {
@@ -152,11 +170,8 @@ def simulate_race(
         # Fuel weight effect
         fuel_delta = current_fuel * fuel_effect if fuel_load > 0 else 0
 
-        # Weather effect (simplified: hotter = slightly slower)
-        temp_delta = 0.0
-        air_temp = params.get("air_temp_c")
-        if air_temp is not None and air_temp > 25:
-            temp_delta = (air_temp - 25) * 0.01  # +0.01s per degree above 25C
+        # Weather effect (physics-based via pace estimator)
+        temp_delta = _compute_weather_delta(params.get("weather"), base_time)
 
         # Compute lap time
         lap_time = base_time * tire_factor + fuel_delta + temp_delta
