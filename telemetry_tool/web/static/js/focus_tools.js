@@ -227,6 +227,108 @@
     }
 
     // -----------------------------------------------------------------
+    // _drawStaticTrack — static track outline (no speed data)
+    // Used when GPS telemetry is missing but track geometry exists.
+    // -----------------------------------------------------------------
+
+    function _drawStaticTrack(canvas, geo) {
+        var lats = geo.latitudes || [];
+        var lons = geo.longitudes || [];
+        if (lats.length < 2) { _focusMsg(canvas, 'No track geometry'); return; }
+
+        // Filter nulls
+        var allLats = [], allLons = [];
+        for (var i = 0; i < lats.length; i++) {
+            if (lats[i] !== null && lons[i] !== null) {
+                allLats.push(lats[i]);
+                allLons.push(lons[i]);
+            }
+        }
+        if (allLats.length < 2) { _focusMsg(canvas, 'Invalid track geometry'); return; }
+
+        var latMin = Math.min.apply(null, allLats);
+        var latMax = Math.max.apply(null, allLats);
+        var lonMin = Math.min.apply(null, allLons);
+        var lonMax = Math.max.apply(null, allLons);
+
+        var originLat = (latMin + latMax) / 2;
+        var mPerDegLat = 111320;
+        var mPerDegLon = 111320 * Math.cos(originLat * Math.PI / 180);
+        var rangeX = (lonMax - lonMin) * mPerDegLon;
+        var rangeY = (latMax - latMin) * mPerDegLat;
+
+        var s = _setupCanvas(canvas);
+        var ctx = s.ctx;
+        var w = s.w;
+        var h = s.h;
+
+        var pad = { top: 30, right: 30, bottom: 30, left: 30 };
+        var plotW = w - pad.left - pad.right;
+        var plotH = h - pad.top - pad.bottom;
+        var scaleX = plotW / Math.max(rangeX, 1);
+        var scaleY = plotH / Math.max(rangeY, 1);
+        var scale = Math.min(scaleX, scaleY) * 0.90;
+        var offsetX = pad.left + (plotW - rangeX * scale) / 2;
+        var offsetY = pad.top + (plotH - rangeY * scale) / 2;
+
+        function toPixel(lat, lon) {
+            var mx = (lon - lonMin) * mPerDegLon;
+            var my = (lat - latMin) * mPerDegLat;
+            return {
+                x: offsetX + mx * scale,
+                y: offsetY + (latMax - latMin) * mPerDegLat * scale - my * scale
+            };
+        }
+
+        // Background
+        ctx.fillStyle = C.bgCard || '#1e1e2e';
+        ctx.fillRect(0, 0, w, h);
+
+        // Title
+        ctx.fillStyle = C.textSecondary || '#aaa';
+        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText('Track Outline' + (geo.track_name ? ' \u2014 ' + geo.track_name : ''), w / 2, 6);
+
+        // Draw track outline (neutral color, no speed data)
+        ctx.strokeStyle = '#667788';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.8;
+        ctx.beginPath();
+        var started = false;
+        for (var j = 0; j < lats.length; j++) {
+            if (lats[j] === null || lons[j] === null) continue;
+            var p = toPixel(lats[j], lons[j]);
+            if (!started) { ctx.moveTo(p.x, p.y); started = true; }
+            else { ctx.lineTo(p.x, p.y); }
+        }
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+
+        // Start/finish marker
+        if (allLats.length > 0) {
+            var sf = toPixel(allLats[0], allLons[0]);
+            ctx.beginPath();
+            ctx.arc(sf.x, sf.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#fff';
+            ctx.fill();
+            ctx.strokeStyle = C.accent || '#f97316';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        // "No GPS data" note
+        ctx.fillStyle = C.textMuted || '#777';
+        ctx.font = '10px system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText('Track outline only \u2014 no GPS telemetry data', w / 2, h - 10);
+    }
+
+    // -----------------------------------------------------------------
     // _drawSpeedTrace — speed (km/h) vs distance line chart
     // -----------------------------------------------------------------
 
@@ -917,27 +1019,54 @@
         icon: '\uD83D\uDDFA',
         label: 'Track Map',
         tabs: ['analytics', 'corners'],
-        available: hasGps(),
+        available: hasGps() || !!(T().trackId),
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
-            var drawn = false;
-
-            function draw(data) {
-                _drawTrackMap(canvas, data);
-                drawn = true;
-            }
+            var _lastData = null;
+            var _isStatic = false;
 
             _focusMsg(canvas, 'Loading track map...');
-            var t = T();
-            var bestLap = t.bestLap || (t.gpsLaps && t.gpsLaps[0]) || 1;
-            var url = '/api/session/' + encodeURIComponent(sessionId) + '/gps/' + bestLap;
-            FetchHelper.fetch(url)
-                .then(function (data) { draw(data); })
-                .catch(function () { _focusMsg(canvas, 'Failed to load GPS data'); });
+
+            if (hasGps()) {
+                // Normal GPS drawing with speed-colored trace
+                var t = T();
+                var bestLap = t.bestLap || (t.gpsLaps && t.gpsLaps[0]) || 1;
+                var url = '/api/session/' + encodeURIComponent(sessionId) + '/gps/' + bestLap;
+                FetchHelper.fetch(url)
+                    .then(function (data) {
+                        if (data && data.latitudes && data.latitudes.length > 1) {
+                            _lastData = data;
+                            _drawTrackMap(canvas, data);
+                        } else {
+                            _focusMsg(canvas, 'No GPS data for track map');
+                        }
+                    })
+                    .catch(function () { _focusMsg(canvas, 'Failed to load GPS data'); });
+            } else if (T().trackId) {
+                // Fallback: static track outline from reference line
+                _isStatic = true;
+                FetchHelper.fetch('/api/track/' + encodeURIComponent(T().trackId) + '/geometry')
+                    .then(function (geo) {
+                        if (geo && geo.latitudes && geo.latitudes.length > 1) {
+                            _lastData = geo;
+                            _drawStaticTrack(canvas, geo);
+                        } else {
+                            _focusMsg(canvas, 'No track geometry available');
+                        }
+                    })
+                    .catch(function () { _focusMsg(canvas, 'Failed to load track geometry'); });
+            } else {
+                _focusMsg(canvas, 'No GPS or track data available');
+            }
 
             return {
                 destroy: function () { _destroyContainer(container); },
-                redraw: function () { if (drawn) { /* re-fetch would be needed; skip for resize */ } }
+                redraw: function () {
+                    if (_lastData) {
+                        if (_isStatic) _drawStaticTrack(canvas, _lastData);
+                        else _drawTrackMap(canvas, _lastData);
+                    }
+                }
             };
         }
     });

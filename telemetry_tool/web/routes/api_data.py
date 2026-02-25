@@ -181,6 +181,27 @@ def track_evolution(track_id: str):
     return jsonify({"track_id": track_id, "sessions": sessions})
 
 
+@bp.route("/track/<track_id>/geometry")
+def track_geometry(track_id: str):
+    """Return track reference line geometry for static track outline."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT track_name, reference_line FROM tracks WHERE track_id = ?",
+        (track_id,),
+    ).fetchone()
+    if not row or not row["reference_line"]:
+        return jsonify({"error": "No geometry available"}), 404
+    try:
+        geo = json.loads(row["reference_line"])
+    except (json.JSONDecodeError, TypeError):
+        return jsonify({"error": "Invalid geometry data"}), 500
+    return jsonify({
+        "track_name": row["track_name"],
+        "latitudes": geo.get("latitudes", []),
+        "longitudes": geo.get("longitudes", []),
+    })
+
+
 @bp.route("/session/<session_id>/speed_overlay")
 def speed_overlay(session_id: str):
     """
