@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}{% if weekend %}Edit{% else %}New{% endif %} Weekend — Telemetry{% endblock %}
+
+{% block head_extra %}
+<style>
+/* Toggle switch */
+.toggle-switch { position: relative; display: inline-block; width: 36px; height: 20px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider { position: absolute; cursor: pointer; inset: 0; background: var(--bg-tertiary, #333); border-radius: 20px; transition: background 0.2s; }
+.toggle-slider:before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+.toggle-switch input:checked + .toggle-slider { background: var(--accent, #ff6b35); }
+.toggle-switch input:checked + .toggle-slider:before { transform: translateX(16px); }
+
+/* Selected chips */
+.selected-chips { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 0.6rem; min-height: 28px; }
+.session-chip { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.15rem 0.5rem; border-radius: 12px; background: var(--accent, #ff6b35); color: #fff; font-size: 0.7rem; font-weight: 600; animation: chipIn 0.2s ease; }
+.session-chip .chip-remove { cursor: pointer; opacity: 0.7; font-size: 0.8rem; line-height: 1; margin-left: 0.1rem; }
+.session-chip .chip-remove:hover { opacity: 1; }
+@keyframes chipIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* Session picker */
+.session-picker-wrap { max-height: 400px; overflow-y: auto; border: 1px solid var(--border, #30363d); border-radius: 8px; }
+.session-picker-wrap table { margin: 0; border: none; }
+.session-picker-wrap thead th { position: sticky; top: 0; z-index: 2; background: var(--bg-secondary, #161b22); }
+.picker-row { cursor: pointer; transition: background 0.15s; }
+.picker-row:hover { background: rgba(255, 107, 53, 0.06); }
+.picker-row.is-selected { background: rgba(255, 107, 53, 0.08); }
+.picker-search { position: relative; margin-bottom: 0.6rem; }
+.picker-search input { padding-left: 2rem; }
+.picker-search::before { content: '\1F50D'; position: absolute; left: 0.6rem; top: 50%; transform: translateY(-50%); font-size: 0.85rem; pointer-events: none; }
+.picker-count { font-size: 0.75rem; color: var(--text-secondary); margin-left: 0.4rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('weekends.weekend_list') }}" class="breadcrumb">&larr; Weekends</a></nav>
+        <h1>{% if weekend %}Edit Weekend{% else %}New Weekend{% endif %}</h1>
+    </div>
+</div>
+
+<form method="POST" class="analysis-form" id="weekend-form">
+    <fieldset class="form-section">
+        <legend>Weekend Details</legend>
+
+        <div class="form-group">
+            <label for="name">Name</label>
+            <input type="text" id="name" name="name" required
+                   class="form-input" placeholder="e.g., CKS Round 3"
+                   value="{{ weekend.name if weekend else '' }}">
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="track_id">Track</label>
+                <select id="track_id" name="track_id" class="form-select" required>
+                    <option value="">— Select track —</option>
+                    {% for t in tracks %}
+                    <option value="{{ t.track_id }}"
+                            {% if weekend and weekend.track_id == t.track_id %}selected{% endif %}>
+                        {{ t.track_name or t.track_id }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="start_date">Start Date</label>
+                <input type="date" id="start_date" name="start_date"
+                       class="form-input"
+                       value="{{ weekend.start_date if weekend else '' }}">
+            </div>
+            <div class="form-group">
+                <label for="end_date">End Date</label>
+                <input type="date" id="end_date" name="end_date"
+                       class="form-input"
+                       value="{{ weekend.end_date if weekend else '' }}">
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="notes">Notes</label>
+            <input type="text" id="notes" name="notes"
+                   class="form-input" placeholder="Optional notes"
+                   value="{{ weekend.notes if weekend else '' }}">
+        </div>
+    </fieldset>
+
+    <!-- ═══════════════════════════════════════════════
+         SESSION PICKER
+         ═══════════════════════════════════════════════ -->
+    <fieldset class="form-section">
+        <legend>Sessions <span class="picker-count" id="picker-count"></span></legend>
+
+        <!-- Selected sessions chips -->
+        <div class="selected-chips" id="selected-chips"></div>
+
+        <!-- Search / filter bar -->
+        <div class="picker-search">
+            <input type="search" id="picker-search" class="form-input"
+                   placeholder="Search by driver, track, date, session type..."
+                   autocomplete="off">
+        </div>
+
+        <!-- Sessions table -->
+        <div class="session-picker-wrap" id="picker-table-wrap">
+            <table class="data-table compact striped" id="picker-table">
+                <caption class="sr-only">Available sessions to add</caption>
+                <thead>
+                    <tr>
+                        <th scope="col" style="width:50px;text-align:center;">Add</th>
+                        <th scope="col">Date</th>
+                        <th scope="col">Driver</th>
+                        <th scope="col">Track</th>
+                        <th scope="col">Type</th>
+                        <th scope="col" class="col-numeric">Laps</th>
+                        <th scope="col" class="col-numeric">Best</th>
+                        <th scope="col" class="col-numeric">Score</th>
+                        <th scope="col">Grade</th>
+                    </tr>
+                </thead>
+                <tbody id="picker-body">
+                    <tr><td colspan="9" style="text-align:center;padding:2rem;color:var(--text-secondary);">Loading sessions...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div style="font-size:0.72rem;color:var(--text-secondary);margin-top:0.4rem;" id="picker-hint">
+            Toggle the switch to add or remove sessions from this weekend.
+        </div>
+
+        <!-- Hidden inputs container — populated by JS -->
+        <div id="hidden-session-ids"></div>
+    </fieldset>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-primary">
+            {% if weekend %}Save Changes{% else %}Create Weekend{% endif %}
+        </button>
+        <a href="{{ url_for('weekends.weekend_list') }}" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    /* ── Date validation ── */
+    var startEl = document.getElementById('start_date');
+    var endEl = document.getElementById('end_date');
+    if (startEl && endEl) {
+        startEl.addEventListener('change', function() {
+            endEl.min = startEl.value;
+            if (!endEl.value || endEl.value < startEl.value) endEl.value = startEl.value;
+        });
+        endEl.addEventListener('change', function() {
+            if (startEl.value && endEl.value && endEl.value < startEl.value) {
+                endEl.value = startEl.value;
+                if (window.Toast) Toast.show('End date cannot be before start date', 'warning');
+            }
+        });
+        if (startEl.value) endEl.min = startEl.value;
+    }
+
+    /* ── Session Picker ── */
+    var allSessions = [];
+    var selectedIds = new Set();
+    var searchInput = document.getElementById('picker-search');
+    var tbody = document.getElementById('picker-body');
+    var chipsEl = document.getElementById('selected-chips');
+    var countEl = document.getElementById('picker-count');
+    var hiddenContainer = document.getElementById('hidden-session-ids');
+    var debounceTimer = null;
+
+    // Pre-selected sessions (for edit mode)
+    var preSelected = {{ pre_selected_ids|tojson if pre_selected_ids is defined else '[]' }};
+    preSelected.forEach(function(id) { selectedIds.add(id); });
+
+    function loadSessions(query) {
+        var url = '/api/sessions/browse?limit=200';
+        if (query && query.length >= 2) url += '&q=' + encodeURIComponent(query);
+        FetchHelper.fetch(url)
+            .then(function(data) {
+                allSessions = data || [];
+                renderTable();
+            })
+            .catch(function() {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">Failed to load sessions.</td></tr>';
+            });
+    }
+
+    function renderTable() {
+        if (allSessions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:1.5rem;color:var(--text-secondary);">No sessions found</td></tr>';
+            return;
+        }
+        var html = '';
+        allSessions.forEach(function(s) {
+            var checked = selectedIds.has(s.session_id);
+            var scoreCol = '';
+            if (s.total_score) {
+                scoreCol = s.total_score >= 80 ? '#4caf50' : s.total_score >= 60 ? '#ff9800' : s.total_score < 40 ? '#e74c3c' : 'var(--text-primary)';
+            }
+            html += '<tr class="picker-row' + (checked ? ' is-selected' : '') + '" data-sid="' + esc(s.session_id) + '">';
+            html += '<td style="text-align:center;">';
+            html += '<label class="toggle-switch"><input type="checkbox" class="picker-toggle" data-sid="' + esc(s.session_id) + '"' + (checked ? ' checked' : '') + '><span class="toggle-slider"></span></label>';
+            html += '</td>';
+            html += '<td>' + esc(s.session_date || '—') + '</td>';
+            html += '<td>' + esc(s.driver_name || '—') + '</td>';
+            html += '<td>' + esc(s.track_name || '—') + '</td>';
+            html += '<td><span class="badge badge-' + esc(s.session_type || 'practice') + '">' + esc(s.session_type || 'practice') + '</span></td>';
+            html += '<td class="col-numeric">' + (s.n_laps || '—') + '</td>';
+            html += '<td class="col-numeric">' + (s.best_lap_time_s ? s.best_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+            html += '<td class="col-numeric"' + (scoreCol ? ' style="color:' + scoreCol + ';font-weight:600;"' : '') + '>' + (s.total_score ? s.total_score.toFixed(1) : '—') + '</td>';
+            html += '<td>';
+            if (s.grade) html += '<span class="grade grade-' + esc(s.grade.charAt(0)) + '">' + esc(s.grade) + '</span>';
+            else html += '—';
+            html += '</td></tr>';
+        });
+        tbody.innerHTML = html;
+    }
+
+    function updateChips() {
+        var html = '';
+        selectedIds.forEach(function(id) {
+            // Find session info
+            var s = allSessions.find(function(x) { return x.session_id === id; });
+            var label = id;
+            if (s) {
+                label = (s.session_date || '').substring(5) + ' ' + (s.driver_name || '').split(' ')[0] + ' ' + (s.session_type || '');
+            }
+            html += '<span class="session-chip" data-sid="' + esc(id) + '">';
+            html += esc(label.trim());
+            html += ' <span class="chip-remove" data-sid="' + esc(id) + '" title="Remove">&times;</span>';
+            html += '</span>';
+        });
+        chipsEl.innerHTML = html;
+        countEl.textContent = selectedIds.size > 0 ? '(' + selectedIds.size + ' selected)' : '';
+        updateHiddenInputs();
+    }
+
+    function updateHiddenInputs() {
+        var html = '';
+        var order = 0;
+        selectedIds.forEach(function(id) {
+            html += '<input type="hidden" name="session_ids" value="' + esc(id) + '">';
+            order++;
+        });
+        hiddenContainer.innerHTML = html;
+    }
+
+    function toggleSession(sessionId, force) {
+        if (force === true || (force === undefined && !selectedIds.has(sessionId))) {
+            selectedIds.add(sessionId);
+        } else {
+            selectedIds.delete(sessionId);
+        }
+        // Update row visual
+        var row = tbody.querySelector('tr[data-sid="' + sessionId + '"]');
+        if (row) {
+            var cb = row.querySelector('.picker-toggle');
+            if (cb) cb.checked = selectedIds.has(sessionId);
+            row.classList.toggle('is-selected', selectedIds.has(sessionId));
+        }
+        updateChips();
+    }
+
+    // ── Event: toggle checkbox ──
+    document.addEventListener('change', function(e) {
+        var toggle = e.target.closest('.picker-toggle[data-sid]');
+        if (!toggle) return;
+        toggleSession(toggle.dataset.sid, toggle.checked);
+    });
+
+    // ── Event: click row (toggle) ──
+    document.addEventListener('click', function(e) {
+        var row = e.target.closest('.picker-row[data-sid]');
+        if (!row) return;
+        // Don't toggle if they clicked the switch itself
+        if (e.target.closest('.toggle-switch')) return;
+        var sid = row.dataset.sid;
+        toggleSession(sid);
+    });
+
+    // ── Event: remove chip ──
+    chipsEl.addEventListener('click', function(e) {
+        var remove = e.target.closest('.chip-remove[data-sid]');
+        if (!remove) return;
+        toggleSession(remove.dataset.sid, false);
+    });
+
+    // ── Event: search ──
+    searchInput.addEventListener('input', function() {
+        clearTimeout(debounceTimer);
+        var q = searchInput.value.trim();
+        debounceTimer = setTimeout(function() {
+            loadSessions(q);
+        }, 300);
+    });
+
+    // ── Init ──
+    loadSessions('');
+    updateChips();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Rival Comparison — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Rival Comparison</h1>
+</div>
+
+<div class="rival-form-bar">
+    <div>
+        <label class="form-label">Track</label>
+        <select id="rival-track-select" class="form-select">
+            <option value="">Select track...</option>
+            {% for t in tracks %}
+            <option value="{{ t.track_id }}">{{ t.track_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="flex-1">
+        <label class="form-label">Drivers (select 2–5)</label>
+        <div id="rival-driver-checks" class="rival-checks">
+            {% for d in drivers %}
+            <label class="rival-check-label">
+                <input type="checkbox" class="rival-driver-cb" value="{{ d.driver_id }}" data-name="{{ d.driver_name }}">
+                {{ d.driver_name }}
+            </label>
+            {% endfor %}
+        </div>
+    </div>
+    <button type="button" id="rival-compare-btn" class="btn btn-primary" title="Compare selected drivers corner-by-corner">Compare</button>
+</div>
+
+<div id="rival-results" aria-live="polite">
+    {% if not drivers or drivers|length < 2 %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F94A;</div>
+        <div class="empty-hero-title">Need more driver data</div>
+        <div class="empty-hero-desc">
+            Rival comparison shows corner-by-corner gaps between drivers at the same track.
+            You need at least 2 drivers with sessions on the same circuit. Analyze sessions for different drivers to enable this.
+        </div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% else %}
+    <p class="text-muted">Select a track and 2-5 drivers, then click <strong>Compare</strong> to see corner-by-corner performance gaps.</p>
+    {% endif %}
+</div>
+
+<div class="chart-container mt-md">
+    <canvas id="rival-chart" aria-label="Rival comparison chart"></canvas>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/rival_chart.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('rival-compare-btn').addEventListener('click', function() {
+        var trackSel = document.getElementById('rival-track-select');
+        var trackId = trackSel.value;
+        // Clear previous errors
+        document.querySelectorAll('.is-invalid').forEach(function(el) { el.classList.remove('is-invalid'); });
+        document.querySelectorAll('.form-error').forEach(function(el) { el.remove(); });
+        if (!trackId) {
+            trackSel.classList.add('is-invalid');
+            var errEl = document.createElement('span');
+            errEl.className = 'form-error';
+            errEl.textContent = 'Please select a track';
+            errEl.setAttribute('role', 'alert');
+            trackSel.parentElement.appendChild(errEl);
+            trackSel.focus();
+            return;
+        }
+        var driverIds = [];
+        document.querySelectorAll('.rival-driver-cb:checked').forEach(function(cb) {
+            driverIds.push(cb.value);
+        });
+        if (driverIds.length < 2 || driverIds.length > 5) {
+            var checksDiv = document.getElementById('rival-driver-checks');
+            var errEl2 = document.createElement('span');
+            errEl2.className = 'form-error';
+            errEl2.textContent = driverIds.length < 2 ? 'Select at least 2 drivers' : 'Maximum 5 drivers';
+            errEl2.setAttribute('role', 'alert');
+            checksDiv.parentElement.appendChild(errEl2);
+            return;
+        }
+
+        var url = '/api/rivals/compare?driver_ids=' + driverIds.join(',') + '&track_id=' + encodeURIComponent(trackId);
+        var results = document.getElementById('rival-results');
+        results.innerHTML = '<div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div>';
+
+        FetchHelper.fetch(url)
+            .then(function(data) {
+                if (data.error) { results.innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>'; return; }
+                var html = '';
+                // Rankings table
+                var ranks = data.rankings || [];
+                if (ranks.length > 0) {
+                    html += '<h3>Rankings</h3><div class="table-wrap"><table class="data-table compact"><caption class="sr-only">Rival rankings</caption><thead><tr>';
+                    html += '<th scope="col">Pos</th><th scope="col">Driver</th><th scope="col">Best Lap</th><th scope="col">Mean Lap</th><th scope="col">Gap</th><th scope="col">Score</th>';
+                    html += '</tr></thead><tbody>';
+                    ranks.forEach(function(r) {
+                        html += '<tr><td>' + r.position + '</td><td><strong>' + esc(r.driver_name) + '</strong></td>';
+                        html += '<td>' + (r.best_lap_time_s != null ? r.best_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+                        html += '<td>' + (r.mean_lap_time_s ? r.mean_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+                        html += '<td>' + (r.gap_to_leader_s > 0 ? '+' + r.gap_to_leader_s.toFixed(3) + 's' : '—') + '</td>';
+                        html += '<td>' + (r.total_score ? r.total_score.toFixed(1) : '—') + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+                results.innerHTML = html;
+                if (window.RivalChart) window.RivalChart.draw('rival-chart', data);
+            })
+            .catch(function() { results.innerHTML = '<p class="text-muted">Error loading data.</p>'; });
+    });
+});
+</script>
+{% endblock %}

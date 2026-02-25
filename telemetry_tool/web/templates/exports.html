@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}Exports — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Exports <span class="count-badge">{{ sessions|length }}</span></h1>
+    <p class="text-muted">Choose a session to build an export report.</p>
+</div>
+
+{% if sessions %}
+<div class="card-grid">
+    {% for s in sessions %}
+    <a href="{{ url_for('exports.export_builder', session_id=s.session_id) }}" class="track-card elevation-1 card-interactive">
+        <div class="track-card-header">
+            <h3>{{ s.driver_name }} — {{ s.track_name or 'Unknown Track' }}</h3>
+        </div>
+        <div class="track-card-body">
+            <div class="track-stat">
+                <span class="track-stat-label">Date</span>
+                <span class="track-stat-value">{{ s.session_date }}</span>
+            </div>
+            {% if s.session_type %}
+            <div class="track-stat">
+                <span class="track-stat-label">Type</span>
+                <span class="track-stat-value">{{ s.session_type }}</span>
+            </div>
+            {% endif %}
+            {% if s.best_lap_time_s %}
+            <div class="track-stat">
+                <span class="track-stat-label">Best Lap</span>
+                <span class="track-stat-value">{{ "%.3f"|format(s.best_lap_time_s) }}s</span>
+            </div>
+            {% endif %}
+            {% if s.total_score is not none %}
+            <div class="track-stat">
+                <span class="track-stat-label">Score</span>
+                <span class="track-stat-value">{{ "%.1f"|format(s.total_score) }}</span>
+            </div>
+            {% endif %}
+            {% if s.lap_count %}
+            <div class="track-stat">
+                <span class="track-stat-label">Laps</span>
+                <span class="track-stat-value">{{ s.lap_count }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F4E4;</div>
+    <div class="empty-hero-title">No sessions available for export</div>
+    <div class="empty-hero-desc">
+        Analyze a session first — once it appears in the dashboard you can build an export report from here.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+</div>
+{% endif %}
+{% endblock %}

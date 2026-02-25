@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Annotations — {{ session.driver_name }} {{ session.track_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_detail', session_id=session.session_id) }}" class="breadcrumb">&larr; Session</a></nav>
+        <h1>Session Annotations</h1>
+        <p class="text-muted">{{ session.driver_name }} — {{ session.track_name }} ({{ session.session_date }})</p>
+    </div>
+</div>
+
+<section class="section">
+    <h2>Add Annotation</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label class="form-label" for="ann-type">Type</label>
+            <select id="ann-type" class="form-select">
+                <option value="note">Note</option>
+                <option value="insight">Insight</option>
+                <option value="issue">Issue</option>
+                <option value="todo">To-Do</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ann-title">Title</label>
+            <input type="text" id="ann-title" class="form-input" placeholder="Short title (optional)">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ann-lap">Lap</label>
+            <input type="number" id="ann-lap" class="form-input input-narrow" placeholder="#" min="1">
+        </div>
+        <div class="form-group">
+            <label class="form-label" for="ann-tags">Tags</label>
+            <input type="text" id="ann-tags" class="form-input" placeholder="Comma-separated tags">
+        </div>
+    </div>
+    <div class="form-group">
+        <label class="form-label" for="ann-body">Content</label>
+        <textarea id="ann-body" rows="3" class="form-input" placeholder="Write your annotation..."></textarea>
+    </div>
+    <div class="form-actions mt-sm">
+        <button type="button" class="btn btn-primary" id="save-ann-btn" title="Save this annotation">Save Annotation</button>
+        <span id="ann-save-status" class="text-muted ml-sm"></span>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Annotations <span id="ann-count" class="count-badge">0</span></h2>
+    <div id="annotations-list">
+        <div class="skeleton skeleton-heading"></div>
+        <div class="skeleton skeleton-row"></div>
+        <div class="skeleton skeleton-row"></div>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var SESSION_ID = {{ session.session_id | tojson }};
+
+function loadAnnotations() {
+    FetchHelper.fetch('/api/annotations/' + encodeURIComponent(SESSION_ID))
+        .then(function(data) {
+            var list = document.getElementById('annotations-list');
+            var countBadge = document.getElementById('ann-count');
+            var anns = data.annotations || [];
+            if (countBadge) countBadge.textContent = anns.length;
+            if (anns.length === 0) {
+                list.innerHTML = '<div class="empty-hero empty-hero-compact"><div class="empty-hero-icon" aria-hidden="true">&#x1F4DD;</div><div class="empty-hero-title">No annotations yet</div><div class="empty-hero-desc">Add notes, insights, or issues for specific laps to track your observations.</div></div>';
+                return;
+            }
+            var html = '';
+            anns.forEach(function(a) {
+                var tags = (a.tags || []).map(function(t) { return '<span class="tag">' + esc(t) + '</span>'; }).join(' ');
+                var safeType = ({'note':1,'insight':1,'issue':1,'question':1}[a.annotation_type]) ? a.annotation_type : 'note';
+                html += '<div class="annotation-card annotation-' + safeType + '">'
+                    + '<div class="annotation-header">'
+                    + '<strong>' + esc(a.title || a.annotation_type) + '</strong>'
+                    + (a.lap_number ? ' <span class="badge">Lap ' + a.lap_number + '</span>' : '')
+                    + '<span class="annotation-date">' + esc(a.created_at || '') + '</span>'
+                    + '<button type="button" class="btn btn-ghost btn-sm btn-danger-text delete-annotation-btn" data-annotation-id="' + a.id + '" title="Delete this annotation" aria-label="Delete annotation">&times;</button>'
+                    + '</div>'
+                    + '<p>' + esc(a.body) + '</p>'
+                    + (tags ? '<div class="annotation-tags">' + tags + '</div>' : '')
+                    + '</div>';
+            });
+            list.innerHTML = html;
+        })
+        .catch(function(err) { console.warn('Load annotations failed:', err); if (window.Toast) Toast.show('Failed to load annotations', 'error'); });
+}
+
+document.getElementById('save-ann-btn').addEventListener('click', function() {
+    var bodyField = document.getElementById('ann-body');
+    var statusEl = document.getElementById('ann-save-status');
+    if (!bodyField.value.trim()) {
+        bodyField.classList.add('is-invalid');
+        statusEl.textContent = '';
+        return;
+    }
+    bodyField.classList.remove('is-invalid');
+    var tagsStr = document.getElementById('ann-tags').value;
+    var tags = tagsStr ? tagsStr.split(',').map(function(t) { return t.trim(); }).filter(Boolean) : [];
+    var payload = {
+        body: bodyField.value,
+        title: document.getElementById('ann-title').value || null,
+        annotation_type: document.getElementById('ann-type').value,
+        lap_number: parseInt(document.getElementById('ann-lap').value) || null,
+        tags: tags.length > 0 ? tags : null,
+    };
+    FetchHelper.fetch('/api/annotations/' + encodeURIComponent(SESSION_ID), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+    })
+    .then(function() {
+        bodyField.value = '';
+        document.getElementById('ann-title').value = '';
+        document.getElementById('ann-tags').value = '';
+        document.getElementById('ann-lap').value = '';
+        statusEl.textContent = 'Saved!';
+        statusEl.classList.add('pulse-success');
+        setTimeout(function() { statusEl.textContent = ''; statusEl.classList.remove('pulse-success'); }, 2000);
+        loadAnnotations();
+    })
+    .catch(function(err) { console.warn('Save annotation failed:', err); if (window.Toast) Toast.show('Failed to save annotation', 'error'); });
+});
+
+function deleteAnnotation(id) {
+    if (!confirm('Delete this annotation?')) return;
+    FetchHelper.fetch('/api/annotations/item/' + id, { method: 'DELETE' })
+        .then(function() { loadAnnotations(); })
+        .catch(function(err) { console.warn('Delete annotation failed:', err); if (window.Toast) Toast.show('Failed to delete annotation', 'error'); });
+}
+
+/* ── Delegated delete-annotation button ── */
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.delete-annotation-btn[data-annotation-id]');
+    if (btn) deleteAnnotation(parseInt(btn.dataset.annotationId, 10));
+});
+
+document.addEventListener('DOMContentLoaded', loadAnnotations);
+</script>
+{% endblock %}

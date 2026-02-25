@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+
+{% block title %}Driver Comparison — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('comparisons.compare_form') }}" class="breadcrumb">&larr; Compare</a></nav>
+        <h1>Driver vs Driver</h1>
+    </div>
+</div>
+
+<div class="compare-grid">
+    {% for label, d in [('A', driver_a), ('B', driver_b)] %}
+    <div class="compare-column compare-{{ label|lower }} elevation-1">
+        <div class="compare-header">
+            <span class="compare-badge">{{ label }}</span>
+            <a href="{{ url_for('drivers.driver_detail', driver_id=d.driver_id) }}">
+                {{ d.driver_name }}
+            </a>
+        </div>
+
+        <div class="meta-grid grid-cols-2">
+            <div class="meta-item">
+                <span class="meta-label">Sessions</span>
+                <span class="meta-value">{{ d.stats.n_sessions or 0 }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Total Laps</span>
+                <span class="meta-value">{{ d.stats.total_laps or 0 }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Personal Best</span>
+                <span class="meta-value highlight">
+                    {% if d.stats.best_time %}{{ "%.3f"|format(d.stats.best_time) }}s{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Avg Score</span>
+                <span class="meta-value">
+                    {% if d.stats.avg_score %}{{ "%.1f"|format(d.stats.avg_score) }}{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Best Score</span>
+                <span class="meta-value highlight">
+                    {% if d.stats.best_score %}{{ "%.1f"|format(d.stats.best_score) }}{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Avg Best Lap</span>
+                <span class="meta-value">
+                    {% if d.stats.avg_best_time_s %}{{ "%.3f"|format(d.stats.avg_best_time_s) }}s{% else %}—{% endif %}
+                </span>
+            </div>
+        </div>
+
+        {% if d.profile %}
+        <div class="meta-grid grid-cols-2 mt-sm">
+            <div class="meta-item">
+                <span class="meta-label">Pace Delta</span>
+                <span class="meta-value">
+                    {% if d.profile.pace_delta_mean_s is not none %}
+                        {{ "%+.3f"|format(d.profile.pace_delta_mean_s) }}s
+                    {% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Consistency</span>
+                <span class="meta-value">
+                    {% if d.profile.consistency_rating is not none %}
+                        {{ "%.1f"|format(d.profile.consistency_rating) }}% CV
+                    {% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Trend</span>
+                <span class="meta-value {{ 'good' if d.profile.improvement_trend == 'improving' else 'warn' if d.profile.improvement_trend == 'declining' else '' }}">
+                    {{ d.profile.improvement_trend or 'stable' }}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Class</span>
+                <span class="meta-value">{{ d.profile.kart_class or '—' }}</span>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if d.latest_style %}
+        <div class="mt-md">
+            {% set style_class = d.latest_style.style_label|lower|replace(' ', '_') %}
+            {% if 'smooth' in style_class %}
+                <span class="badge-style smooth">{{ d.latest_style.style_label }}</span>
+            {% elif 'aggressive' in style_class %}
+                <span class="badge-style aggressive">{{ d.latest_style.style_label }}</span>
+            {% elif 'conservative' in style_class %}
+                <span class="badge-style conservative">{{ d.latest_style.style_label }}</span>
+            {% elif 'adaptive' in style_class %}
+                <span class="badge-style adaptive">{{ d.latest_style.style_label }}</span>
+            {% else %}
+                <span class="badge-style">{{ d.latest_style.style_label }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Head-to-head summary -->
+{% if driver_a.stats.best_time and driver_b.stats.best_time %}
+<section class="section">
+    <h2>Head-to-Head</h2>
+    {% set time_delta = driver_a.stats.best_time - driver_b.stats.best_time %}
+    <div class="compare-delta-box elevation-2">
+        <span class="delta-icon" aria-hidden="true">&#x1F3C1;</span>
+        <div class="delta-value {{ 'delta-faster' if time_delta < 0 else 'delta-slower' if time_delta > 0 else '' }}">
+            {{ "%+.3f"|format(time_delta) }}s
+        </div>
+        <div class="delta-label">
+            {% if time_delta < 0 %}
+                {{ driver_a.driver_name }} has a faster personal best by {{ "%.3f"|format(-time_delta) }}s
+            {% elif time_delta > 0 %}
+                {{ driver_b.driver_name }} has a faster personal best by {{ "%.3f"|format(time_delta) }}s
+            {% else %}
+                Identical personal bests
+            {% endif %}
+        </div>
+        {% if driver_a.stats.avg_score and driver_b.stats.avg_score %}
+        <div class="delta-sub">
+            Avg score: {{ driver_a.driver_name }} {{ "%.1f"|format(driver_a.stats.avg_score) }} vs {{ driver_b.driver_name }} {{ "%.1f"|format(driver_b.stats.avg_score) }}
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Radar comparison -->
+{% if driver_a.latest_style or driver_b.latest_style %}
+<section class="section">
+    <h2>Driving Style Comparison</h2>
+    <div class="style-section">
+        <div class="style-radar-wrap">
+            <span class="style-radar-label">{{ driver_a.driver_name }}</span>
+            <canvas id="radar-a" aria-label="Driver A driving style radar"></canvas>
+        </div>
+        <div class="style-radar-wrap">
+            <span class="style-radar-label">{{ driver_b.driver_name }}</span>
+            <canvas id="radar-b" aria-label="Driver B driving style radar"></canvas>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Score progression overlay -->
+{% if driver_a.progression or driver_b.progression %}
+<section class="section">
+    <h2>Score Progression</h2>
+    <div class="chart-container">
+        <canvas id="compare-progression" aria-label="Score progression overlay chart"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Recent sessions table -->
+<section class="section">
+    <h2>Recent Sessions</h2>
+    <div class="compare-grid">
+        {% for label, d in [('A', driver_a), ('B', driver_b)] %}
+        <div>
+            <h3 class="mb-sm">{{ d.driver_name }}</h3>
+            <div class="table-wrap">
+                <table class="data-table compact striped">
+                    <caption class="sr-only">Driver comparison recent sessions</caption>
+                    <thead>
+                        <tr>
+                            <th scope="col">Date</th>
+                            <th scope="col">Track</th>
+                            <th scope="col" class="col-numeric">Best</th>
+                            <th scope="col" class="col-numeric">Score</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in d.recent_sessions %}
+                        <tr class="clickable-row" tabindex="0" role="link"
+                            data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                            <td>{{ s.session_date[:10] if s.session_date else '—' }}</td>
+                            <td class="font-sans">{{ s.track_name or '—' }}</td>
+                            <td class="col-numeric">{{ "%.3f"|format(s.best_lap_time_s) if s.best_lap_time_s else '—' }}</td>
+                            <td class="col-numeric">
+                                {% if s.total_score %}<span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>{% else %}—{% endif %}
+                                {% if s.grade %}<span class="grade grade-{{ s.grade[0] }}">{{ s.grade }}</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if not d.recent_sessions %}
+                        <tr><td colspan="4" class="text-center p-lg">
+                            <span class="text-muted">No sessions yet for {{ d.driver_name }}</span>
+                        </td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/progression.js') }}"></script>
+<script src="{{ url_for('static', filename='js/comparison.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    {% if driver_a.latest_style %}
+    if (window.Progression && window.Progression.drawRadar) {
+        var featA = {};
+        {% for key in ['trail_braking_depth', 'brake_point_consistency',
+                       'brake_pressure_buildup_rate', 'apex_speed_ratio',
+                       'turn_in_aggressiveness', 'throttle_onset_delay_m',
+                       'exit_acceleration_efficiency', 'line_variation_index',
+                       'early_vs_late_stint_pace', 'smoothness_composite'] %}
+        {% if driver_a.latest_style[key] is not none %}
+        featA['{{ key|replace("_", " ") }}'] = {{ driver_a.latest_style[key] }};
+        {% endif %}
+        {% endfor %}
+        window.Progression.drawRadar('radar-a', featA);
+    }
+    {% endif %}
+
+    {% if driver_b.latest_style %}
+    if (window.Progression && window.Progression.drawRadar) {
+        var featB = {};
+        {% for key in ['trail_braking_depth', 'brake_point_consistency',
+                       'brake_pressure_buildup_rate', 'apex_speed_ratio',
+                       'turn_in_aggressiveness', 'throttle_onset_delay_m',
+                       'exit_acceleration_efficiency', 'line_variation_index',
+                       'early_vs_late_stint_pace', 'smoothness_composite'] %}
+        {% if driver_b.latest_style[key] is not none %}
+        featB['{{ key|replace("_", " ") }}'] = {{ driver_b.latest_style[key] }};
+        {% endif %}
+        {% endfor %}
+        window.Progression.drawRadar('radar-b', featB);
+    }
+    {% endif %}
+
+    {% if driver_a.progression or driver_b.progression %}
+    if (window.Comparison) {
+        window.Comparison.initProgressionOverlay(
+            'compare-progression',
+            {{ driver_a.progression|tojson }},
+            {{ driver_b.progression|tojson }},
+            {{ driver_a.driver_name|tojson }},
+            {{ driver_b.driver_name|tojson }}
+        );
+    }
+    {% endif %}
+});
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+[
+  {
+    "corner_id": 1,
+    "s_start": 100.0,
+    "s_end": 200.0
+  },
+  {
+    "corner_id": 2,
+    "s_start": 400.0,
+    "s_end": 550.0
+  },
+  {
+    "corner_id": 3,
+    "s_start": 800.0,
+    "s_end": 950.0
+  }
+]

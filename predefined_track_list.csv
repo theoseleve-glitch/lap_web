@@ -1,0 +1,199 @@
+Country,Track,City,Region,LayoutName,LayoutLength_m,Direction,RentalAvailable,OwnerAvailable,Outdoor,DataQuality,Source
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Piste location (layout A)",810,Unknown,Yes,No,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Piste location (layout B)",830,Unknown,Yes,No,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Grande piste (A+B combinées)",1600,Unknown,Yes,No,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Piste compétition (licenciés)",1500,Unknown,No,Yes,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Piste juniors",,Unknown,Yes,No,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+France,Kartland Paris (Moissy-Cramayel),Moissy-Cramayel,Île-de-France,"Piste mini (3+)",,Unknown,Yes,No,Yes,Official,"https://www.kartland.fr/infrastructures.php"
+
+France,Solokart (Plessé),Plessé,Pays de la Loire,"Circuit Impressionnant",800,Unknown,Yes,Yes,Yes,Official,"https://www.solokart.com/notre-pole/"
+France,Solokart (Plessé),Plessé,Pays de la Loire,"Circuit International",1350,Unknown,Yes,Yes,Yes,Official,"https://www.solokart.com/notre-pole/"
+France,Solokart (Plessé),Plessé,Pays de la Loire,"Circuit Baby Track",,Unknown,Yes,No,Yes,Official,"https://www.solokart.com/notre-pole/"
+
+France,Sologne Karting (Salbris),Salbris,Centre-Val de Loire,"Partie réservée à la location",980,Unknown,Yes,Yes,Yes,Official,"https://www.sologne-karting.com/le-complexe-sk/le-circuit/"
+France,Sologne Karting (Salbris),Salbris,Centre-Val de Loire,"Partie réservée à la location (autre valeur publiée)",960,Unknown,Yes,Yes,Yes,Official,"https://www.sologne-karting.com/particuliers/location-individuelle/"
+France,Sologne Karting (Salbris),Salbris,Centre-Val de Loire,"Tracé total (international)",1500,Unknown,No,Yes,Yes,Official,"https://www.sologne-karting.com/le-complexe-sk/le-circuit/"
+France,Sologne Karting (Salbris),Salbris,Centre-Val de Loire,"Tracé sud (technique)",650,Unknown,Yes,Yes,Yes,Official,"https://www.sologne-karting.com/le-complexe-sk/le-circuit/"
+
+France,Karting de Muret (Karting 2 Muret),Muret,Occitanie,"Piste location",800,Unknown,Yes,No,Yes,Official,"https://www.kartingmuret.fr/club-karting/circuits-karting"
+France,Karting de Muret (Karting 2 Muret),Muret,Occitanie,"Piste compétition (licenciés)",1340,Unknown,No,Yes,Yes,Official,"https://www.kartingmuret.fr/club-karting/circuits-karting"
+France,Karting de Muret (Karting 2 Muret),Muret,Occitanie,"Piste endurance (2 pistes réunies)",2140,Unknown,Yes,Yes,Yes,Official,"https://www.kartingmuret.fr/club-karting/circuits-karting"
+
+France,Karting Belval,Belval-sous-Châtillon,Grand Est,"Piste location (particuliers)",870,Unknown,Yes,Yes,Yes,Official,"https://www.karting-belval.fr/"
+France,Karting Belval,Belval-sous-Châtillon,Grand Est,"Piste compétition",1500,Unknown,No,Yes,Yes,Official,"https://www.karting-belval.fr/"
+France,Karting Belval,Belval-sous-Châtillon,Grand Est,"Piste entraînement / stages",650,Unknown,Yes,Yes,Yes,Official,"https://www.karting-belval.fr/"
+
+France,Kart Center (Biscarrosse),Biscarrosse,Nouvelle-Aquitaine,"Piste location adulte",1300,Unknown,Yes,Yes,Yes,Tourism/Official partner,"https://www.biscagrandslacs.com/activites/sur-terre/kart-center-biscarrosse"
+France,Kart Center (Biscarrosse),Biscarrosse,Nouvelle-Aquitaine,"Piste junior",800,Unknown,Yes,No,Yes,Tourism/Official partner,"https://www.biscagrandslacs.com/activites/sur-terre/kart-center-biscarrosse"
+France,Kart Center (Biscarrosse),Biscarrosse,Nouvelle-Aquitaine,"Piste/licence FFSA (entraînement)",,Unknown,No,Yes,Yes,Tourism/Official partner,"https://www.biscagrandslacs.com/activites/sur-terre/kart-center-biscarrosse"
+
+France,BRK (Karting Yvelines 78),,Île-de-France,"Piste loisir",400,Unknown,Yes,No,Yes,Official,"https://www.brk.fr/"
+France,BRK (Karting Yvelines 78),,Île-de-France,"Piste compétition",985,Unknown,No,Yes,Yes,Official,"https://www.brk.fr/"
+
+France,Racing Kart Jade (RKJ),Saint-Michel-Chef-Chef,Pays de la Loire,"Piste adulte",700,Unknown,Yes,No,Yes,Official,"https://www.rkj.fr/le-circuit/"
+France,Racing Kart Jade (RKJ),Saint-Michel-Chef-Chef,Pays de la Loire,"Piste junior",320,Unknown,Yes,No,Yes,Official,"https://www.rkj.fr/le-circuit/"
+France,Racing Kart Jade (RKJ),Saint-Michel-Chef-Cchef,Pays de la Loire,"Piste baby",,Unknown,Yes,No,Yes,Official,"https://www.rkj.fr/le-circuit/"
+
+France,Bretagne Karting (Combrit),Combrit,Bretagne,"Circuit principal",700,Unknown,Yes,No,Yes,Official,"https://www.bretagne-karting.bzh/karting/c-3.html"
+
+France,Karting Loisirs Neuilly (KLN),Neuilly-sous-Clermont,Hauts-de-France,"Circuit principal",720,Unknown,Yes,No,Yes,Official,"https://karting-loisirs-neuilly.com/"
+
+France,Brignoles Karting Loisir,Brignoles,Provence-Alpes-Côte d’Azur,"Circuit principal",987,Unknown,Yes,Yes,Yes,Official,"https://brignoleskartingloisir.com/circuit/"
+
+France,Karting Circuit Paul Ricard (KTT),Le Castellet,Provence-Alpes-Côte d’Azur,"Tracé 1",964,Unknown,Yes,Yes,Yes,Official,"https://www.kartingcircuitpaulricard.com/"
+France,Karting Circuit Paul Ricard (KTT),Le Castellet,Provence-Alpes-Côte d’Azur,"Autres tracés (6 configurations annoncées, dont 2 anti-horaire)",,Both/Unknown,Yes,Yes,Yes,Official,"https://www.kartingcircuitpaulricard.com/"
+
+France,Circuit Sarron,,Occitanie,"Tracé (sens horaire)",1065,CW,Yes,Yes,Yes,Official,"https://www.circuit-sarron.com/karts-piste/"
+France,Circuit Sarron,,Occitanie,"Tracé (sens anti-horaire)",1065,CCW,Yes,Yes,Yes,Official,"https://www.circuit-sarron.com/karts-piste/"
+
+France,Circuit Karting Besançon (Autoreille),Autoreille,Bourgogne-Franche-Comté,"Circuit extérieur principal",1200,Unknown,Yes,Yes,Yes,Official,"https://ckbesancon.com/"
+France,Circuit Karting Besançon (Autoreille),Autoreille,Bourgogne-Franche-Comté,"Petit circuit (3–5 ans, électrique)",,Unknown,Yes,No,Yes,Official,"https://ckbesancon.com/"
+
+France,ManachaKart,Gerbépal,Grand Est,"Circuit principal",600,Unknown,Yes,No,Yes,Official,"https://manachakart.com/"
+
+France,EIA Circuit de Pont-l’Évêque,Pont-l’Évêque,Normandie,"Piste karting",800,Unknown,Yes,Unknown,Yes,Tourism office,"https://www.terredauge-tourisme.fr/fr/preparer/a-voir-a-faire/activites-sportives-familiales/eia-circuit-de-pont-leveque"
+
+France,Albi Kart Challenge (karting),Le Séquestre,Occitanie,"Piste karting (développé)",480,Unknown,Yes,Unknown,Yes,Wikipedia,"https://fr.wikipedia.org/wiki/Circuit_d%27Albi"
+
+France,ASK Angerville (piste compétition),Angerville,Île-de-France,"Piste compétition",1200,Unknown,No,Yes,Yes,Official,"https://www.askangerville.fr/le-circuit/trace-de-la-piste.html"
+France,RKO Angerville (piste location),Angerville,Île-de-France,"Piste location",750,Unknown,Yes,No,Yes,Directory snippet,"https://chronokart.net/fiche-circuit/5f538c68c5af422a1fcb804b"
+France,ASK Lohéac (piste compétition),Lohéac,Bretagne,"Piste karting (FFSA cat. 1)",1250,Unknown,No,Yes,Yes,Official,"https://www.askloheac.org/presentation-circuit"
+France,Actarus Lohéac (piste location),Lohéac,Bretagne,"Piste location",650,Unknown,Yes,No,Yes,Third-party (recent), "https://karting-jm.com/actarus-rko/"
+
+France,RKC Racing Kart de Cormeilles (layout),Cormeilles-en-Vexin,Île-de-France,"Piste location",1000,Unknown,Yes,Yes,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+France,RKC Racing Kart de Cormeilles (layout),Cormeilles-en-Vexin,Île-de-France,"Piste compétition",1200,Unknown,No,Yes,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+France,RKC Racing Kart de Cormeilles (layout),Cormeilles-en-Vexin,Île-de-France,"Piste compétition (inverse)",1200,CCW,No,Yes,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Karting Haute Picardie (layout),Arvillers,Hauts-de-France,"Piste 1300m",1300,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+France,Karting Haute Picardie (layout),Arvillers,Hauts-de-France,"Piste 600m",600,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Kart Drive (layout),Carentan-les-Marais,Normandie,"Piste (sens standard)",,CW,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+France,Kart Drive (layout),Carentan-les-Marais,Normandie,"Piste (inversé)",,CCW,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Karting de Changé (layout),Changé,Pays de la Loire,"Piste 500m",500,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Mistral Karting Montélimar (layout),Montélimar,Auvergne-Rhône-Alpes,"Piste 820m",820,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Montbrison Kart (layout),Montbrison,Auvergne-Rhône-Alpes,"Piste 714m",714,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Lessay Kart (layout),Lessay,Normandie,"Piste 1005m",1005,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Mérignac Kart (layout),Mérignac,Nouvelle-Aquitaine,"Piste 1320m",1320,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Grand Circuit du Roussillon (layout),Rivesaltes,Occitanie,"Layout 1019m",1019,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+France,Grand Circuit du Roussillon (layout),Rivesaltes,Occitanie,"Layout 1513m",1513,Unknown,Unknown,Unknown,Yes,Directory (RaceChrono), "https://my.racechrono.com/tracks?country=France"
+
+France,Pont-l’Évêque E.I.A (layout),Pont-l’Évêque,Normandie,"Piste (sens standard)",800,Unknown,Yes,Unknown,Yes,Combined sources,"https://www.terredauge-tourisme.fr/fr/preparer/a-voir-a-faire/activites-sportives-familiales/eia-circuit-de-pont-leveque https://my.racechrono.com/tracks?country=France"
+France,Pont-l’Évêque E.I.A (layout),Pont-l’Évêque,Normandie,"Piste (inverse)",800,CCW,Yes,Unknown,Yes,Directory (RaceChrono),"https://my.racechrono.com/tracks?country=France"
+
+France,Actua Kart Competition,Saint-Laurent-de-Mure,,Actua Kart (Piste Karting Competition),,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,30.07.2020 09:05
+France,Alès Kart,Alès,,Pôle Mécanique (Circuit de Kart),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,10.03.2013 07:32
+France,ASK Ancenis,Ancenis,,Circuit Roger Gaillard (Karting circuit),,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,28.01.2016 13:04
+France,Auxois Sud,Meilly-sur-Rouvres,,Circuit complexe sportif de l'Auxois (21),,Unknown,Unknown,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.07.2012 12:45
+France,Beltoise Racing Kart 970m,,,Beltoise Racing Kart 970m,970,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,13.06.2012 10:32
+France,Cahors,,,"Karthors - Circuit de Karting à Cahors (46)",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,02.08.2016 09:28
+France,Cap Karting,Circuit de Mer,,Cap Karting,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,12.03.2017 12:32
+France,Carcassone Win Kart,Carcassone,,Win Kart, Carcassone,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2013 06:33
+France,Carpentras Karting,Carpentras,,Karting de Carpentras,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,19.03.2015 14:49
+France,Caussiniojouls,,"",Karting de Caussiniojouls (34),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,11.04.2015 06:56
+France,Circuit de l'europe,Sotteville sous le val,,Circuit de l'europe (kart),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,15.02.2017 15:01
+France,Circuit Kart'Expo,Bruz,,Circuit Kart'Expo,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,29.07.2020 13:09
+France,Circuit Kart Extrem,Saint-Genis-de-Saintonge,,Circuit Kart Extrem,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,14.06.2022 15:58
+France,Circuit Philipe Alliot,Belleville-sur-Vie,,Circuit Philipe Alliot (Karting),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,13.05.2015 19:38
+France,Clotkart,Vaudoy-en-Brie,,Clotkart, kart à Vaudoy-en-Brie (77),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,15.02.2017 16:03
+France,Corcoué-sur-Logne,,,"Corcoué-sur-Logne Karting",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.06.2022 18:00
+France,Creusot,Le Creusot,,Karting Evasion, Le Creusot,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,26.07.2019 09:10
+France,Db Karting,Saint-Lyé,,Db Karting, Saint-Lyé,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.07.2019 08:57
+France,Dreux Karting,Dreux,,Le Circuit de l'ouest Parisien (Circuit Karting), Dreux (28),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,02.06.2015 17:02
+France,Dunois Kart,Lutz-en-Dunois,,Dunois Kart, Lutz-en-Dunois,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2018 20:29
+France,Elceka Grabel,,,"Grabel piste de karting",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2013 14:15
+France,Ennetières-en-Weppes,Ennetières-en-Weppes,,Lille Kartin, Englos les Géants, Ennetières-en-Weppes,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.06.2022 09:16
+France,Foulain Karting,Foulain,,Paintkart52, Foulain,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.06.2022 08:46
+France,Frejus,Frejus,,International Racing Karting, Frejus,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.08.2014 08:27
+France,Garden Karting,La Douze,,Circuit Garden Karting, La Douze (24),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,16.02.2014 10:36
+France,GP Circuit Karting,Lamballe,,GP Circuit, Karting, Lamballe,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,12.09.2014 12:51
+France,Grand Arc Karting,,,Karting du Grand Arc,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,19.08.2015 20:45
+France,Grimaud,,,"Grimaud Karting Loisir",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,29.05.2014 19:17
+France,Hague,Gréville-Hague,,Assoc Sportive de Karting du circuit de la Hague, Gréville-Hague,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,05.05.2016 05:06
+France,Hirson,Hirson,,Hirson, Pit-bike factory, Hirson,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.07.2023 05:49
+France,Jean Brun Karting,Paray-sous-Briailles,,Circuit Jean Brun Karting, Paray-sous-Briailles,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,06.09.2016 09:50
+France,Joigny,Joigny,,Made In Kart, Joigny,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,17.05.2014 17:42
+France,Karting 16,La Rochefoucauld,,Karting 16, La Rochefoucauld,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.07.2012 14:02
+France,Karting 79,Chauray,,Karting 79, Chauray,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,14.06.2022 15:54
+France,Karting Beaucaire,Beaucaire,,Circuit Espace Loisirs, Beaucaire, Languedoc-Roussillon,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,27.08.2012 13:54
+France,Karting du Mont Blanc,Passy,,Karting du Mont Blanc, Passy 74190,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,28.07.2020 14:40
+France,Karting Layrac,Layrac,,Karting de Layrac 47,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,02.08.2016 09:30
+France,Karting Magescq,Magescq,,Karting Magescq, Kart, Magescq,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,09.08.2013 13:50
+France,Kartingsudtoulois,Colombey-les-Belles,,Kartingsudtoulois, Colombey-les-Belles,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,28.07.2020 14:36
+France,Karting Windenhof,,,Piste de karting asphalte du Windenhof,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,12.09.2014 10:44
+France,Kartix,Brissac-Ganges,,Circuit national de karting de Brissac-Ganges,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,18.01.2013 11:05
+France,Kart Lavilledieu,Lavilledieu,,Karting Laumatec, Circuit de kart de Lavilledieu,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2013 13:50
+France,Landes Karting,Landes-le-Gaulois,,Landes Karting, Landes-le-Gaulois,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,29.07.2020 13:14
+France,La Roche de Glun 1250m,La Roche de Glun,,Karting la Roche de Glun (1250m),1250,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,29.01.2016 12:51
+France,Le Kart'are,Aigues-vives,,Le Kart'are, Karting Aigues-vives (09),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,09.08.2013 12:55
+France,Le Luc Prestige Karting,Le Luc,,Le Luc Prestige Karting, Le Luc,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,14.06.2022 15:37
+France,Le puits d'enfer,Les Sables-d'Olonne,,Circuit du puits d'enfer, les sables-d'olonne (85),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,13.06.2012 18:48
+France,Lezennes,Lezennes,,Circuit de Lezennes,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2018 13:46
+France,Loc Karting,Montpellier,,Piste de karting de Fréjorgues, Montpellier,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,10.03.2013 16:08
+France,Loheac Karting,Loheac,,ASK Loheac (Karting, sm),,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,12.03.2014 14:56
+France,Loisirs Neuilly (anti-horaire),Neuilly-sous-Clermont,,Karting Loisirs Neuilly (anti-horaire),,CCW,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,16.06.2015 13:26
+France,Loisirs Neuilly (horaire),Neuilly-sous-Clermont,,Karting Loisirs Neuilly (horaire),,CW,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,16.06.2015 13:25
+France,Lommerange,,,Piste de Karting de Lommerange,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2018 14:32
+France,Lubersac,Lubersac,,Jcs Karting, Lubersac,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.03.2018 14:23
+France,Lyon Location Karting,,,Circuit de Lyon (Piste de Location Karting),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,17.05.2014 17:54
+France,Magny-Cours Kart,Magny-Cours,,Circuit kart de Nevers Magny-Cours, Magny-Cours,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.10.2012 18:45
+France,Marcillat-en-Combraille,Marcillat-en-Combraille,,GTR Performance - Accrobranche - Karting, Marcillat-en-Combraille,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,04.06.2022 08:57
+France,Martigues Karting,Martigues,,Martigues, Piste de L'Oratoire,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,29.05.2014 19:15
+France,Meisenthal,Meisenthal,,Circuit Karting et Auto Meisenthal,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,26.07.2019 09:05
+France,Mirecourt Kart,Mirecourt,,Free Kart 88, Mirecourt, Juvaincourt,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,22.07.2023 12:22
+France,Mortain KArting,Mortain,,Mortain,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,10.08.2013 00:45
+France,Moto Liberté 11 (Court),Carcassonne,,Moto Liberté 11 (Court),,Unknown,Unknown,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,02.08.2016 09:25
+France,Moto Liberté 11 (Long),Carcassonne,,Moto Liberté 11 (Long),,Unknown,Unknown,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,02.08.2016 09:23
+France,Ostricourt Karting,Ostricourt,,Racing Kart JPR, Ostricourt,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2018 13:47
+France,Ouest Karting,Aunay-les-Bois,,Ouest Karting, Circuit International d'Aunay, Aunay-les-Bois,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,09.07.2016 08:26
+France,Ploumoguer,Ploumoguer,,Circuit de Karting "Villeneuve stadium", Ploumoguer,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,15.02.2017 08:30
+France,RKM 72,,,RKM - Le Mans Kart Racing,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,03.03.2018 20:26
+France,RLS Karting,Rochy-Condé,,Karting de Beauvais - RLS Karting - Oise (60), Rochy-Condé,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,26.07.2019 15:03
+France,Rognac,Rognac,,Karting de l'Etang, Rognac,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.07.2019 08:53
+France,Saint-Benoît-sur-Loire,Saint-Benoît-sur-Loire,,Karting 45, Saint-Benoît-sur-Loire,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,11.02.2018 10:21
+France,Saint-Pierre-sur-Dives,Saint-Pierre-sur-Dives,,Technikart, Circuit de Karting, Saint-Pierre-sur-Dives,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,05.05.2016 05:02
+France,Sarree,,,"Fun-Kart, Plateau de la Sarrée",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,17.11.2015 13:06
+France,Septfontaine (Competition),,,Circuit de l'Enclos (Piste de Competition),,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2015 15:38
+France,Septfontaine (Location),,,Circuit de l'Enclos (Piste de Location),,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2015 15:37
+France,Speed Fun Karting (anti-horaire),Bessines,,Speed Fun Karting (anti-horaire),,CCW,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,05.07.2014 19:19
+France,Speed Fun Karting (horaire),Bessines,,Speed Fun Karting (horaire),,CW,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,05.07.2014 19:19
+France,Speedkart 1100m,Hyères,,Speedkart 1100m,1100,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2013 07:27
+France,Speedkart 720m,Hyères,,Speedkart 720m,720,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2013 07:28
+France,Sud Karting,Bouillargues,,Sud karting, Bouillargues,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,17.08.2016 07:05
+France,Sun Karting,Sérignan,,Sun Karting, Sérignan,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,26.01.2018 14:10
+France,Teyjat,Teyjat,,Circuit Karting du Périgord, Teyjat,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,20.06.2022 17:57
+France,Trets,,,"Karting Vallée de l'Arc",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,09.08.2013 13:55
+France,Usseau,,,"Karting Loisir 86",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,05.07.2014 19:15
+France,Val d'Argenton,La Folie,,Karting Val d'Argenton, La Folie,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,14.02.2018 10:11
+France,Vendeuvre,,,Vendeuvre, circuit karting les illandes,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,21.08.2021 07:39
+France,Villars Kart (655m),Villars,,Villars Kart (655m),655,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,01.06.2015 15:10
+France,Wittenheim ASK,Wittenheim,,Wittenheim karting,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=France,19.02.2017 14:35
+
+United Kingdom,Angmering Kart,Angmering,,Angmering Raceway Go Kart Track,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,04.06.2015 14:07
+United Kingdom,Brentwood,Brentwood,,Brentwood Karting, Warley Gap, Brentwood, Essex,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,18.03.2015 20:12
+United Kingdom,Cardi Karts,,,"Cardigan Bay Karting",,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,27.08.2012 14:13
+United Kingdom,Croydon Kart,Croydon,,Croydon Kart Track, Croydon,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,18.06.2022 12:30
+United Kingdom,Daytona Milton Keynes,Milton Keynes,,Daytona Milton Keynes, Dansteed Way, Milton Keynes,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,31.07.2014 18:19
+United Kingdom,Daytona Tamworth,Tamworth,,Daytona Tamworth kart track,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,15.08.2016 08:42
+United Kingdom,Herefordshire raceway,,,Herefordshire raceway kart,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,11.07.2013 19:38
+United Kingdom,Jurby Kart Track,Isle of Man,,Jurby Kart Track, Isle of Man (Clockwise direction),,CW,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,11.03.2015 21:32
+United Kingdom,Kartsport Caxton,Caxton,,Kartsport, Caxton,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,02.02.2014 16:50
+United Kingdom,Kartworld,Skegness,,Kartworld Croft Karting, Skegness,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,18.06.2022 08:43
+United Kingdom,Kinsham Raceway,Herefordshire,,Border Kart Racing, Kinsham Raceway, Herefordshire,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,08.07.2016 14:59
+United Kingdom,Lakeside Karting,,,Lakeside Karting,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,01.06.2013 06:39
+United Kingdom,Littleferry,,,North of Scotland Kart Club,,Unknown,Unknown,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,27.02.2018 20:11
+United Kingdom,Llandow Kart Track,Cardiff,,Llandow Kart Circuit, Cardiff,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,11.07.2013 19:51
+United Kingdom,Nutts Corner (karting),Northern Ireland,,Nuts Corner Circuit (karting), Northern Ireland,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,08.08.2013 18:47
+United Kingdom,Oxford Karting,Oxford,,Oxford Karting, Sandy Lane, Oxford,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,16.09.2012 14:04
+United Kingdom,Raceland,,,Raceland International Kart Circuit, near Edinburgh, Scotland,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,24.12.2013 10:12
+United Kingdom,Red Lodge,,,Red Lodge Karting, Suffolk,,Unknown,Yes,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,21.10.2012 08:26
+United Kingdom,Rednal Raceway,,,Rednal Kart and Supermoto Track,,Unknown,Unknown,Unknown,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,31.07.2014 18:23
+United Kingdom,Sutton Circuit (Anti-clockwise),Sutton in the Elms,,Sutton Circuit (Karting circuit, Anti-clockwise),,CCW,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,02.03.2016 09:02
+United Kingdom,Sutton Circuit (Clockwise),Sutton in the Elms,,Sutton Circuit (Karting circuit, Clockwise),,CW,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,02.03.2016 09:03
+United Kingdom,Tattershall Karting,,,Tattershall Kart Centre,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,17.09.2014 11:59
+United Kingdom,Wildtracks,,,Wildtracks Kart Circuit,,Unknown,Yes,Yes,Yes,RaceChrono official track library listing,https://my.racechrono.com/tracks?country=United+Kingdom,18.06.2022 12:34

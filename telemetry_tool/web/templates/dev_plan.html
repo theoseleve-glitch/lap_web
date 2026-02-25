@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+{% block title %}Development Plans{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Driver Development Plans</h1>
+</div>
+
+<section class="section">
+    <h2>Select Driver</h2>
+    <div class="form-group driver-select-bar">
+        <label for="driver-select" class="sr-only">Select driver</label>
+        <select id="driver-select" class="form-select">
+            <option value="">Select driver...</option>
+            {% for d in drivers %}
+            <option value="{{ d.driver_id }}" {% if d.driver_id == selected_driver_id %}selected{% endif %}>{{ d.driver_name }}</option>
+            {% endfor %}
+        </select>
+    </div>
+</section>
+
+<section class="section">
+    <h2>Create New Plan</h2>
+    <div class="form-group template-grid">
+        {% for t in templates %}
+        <div class="template-card elevation-1 card-interactive" role="button" tabindex="0"
+             data-template-id="{{ t.id }}">
+            <h3>{{ t.name }}</h3>
+            <p>{{ t.description }}</p>
+            <span class="tag">{{ t.level }}</span>
+            <span class="tag">{{ t.n_weeks }} weeks</span>
+            <span class="tag">{{ t.n_drills }} drills</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Driver Progress Tracking -->
+<section class="section" id="progress-section" style="display:none;">
+    <h2>Driver Progress</h2>
+    <div id="progress-stats" style="display:flex;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;"></div>
+    <div style="margin-bottom:1rem;">
+        <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Best Lap Time Trend</div>
+        <canvas id="progress-canvas" width="700" height="220" style="width:100%;max-width:700px;" aria-label="Best lap time trend chart"></canvas>
+    </div>
+    <div style="margin-bottom:1rem;">
+        <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Score Trend</div>
+        <canvas id="score-canvas" width="700" height="160" style="width:100%;max-width:700px;" aria-label="Score trend chart"></canvas>
+    </div>
+    <div id="progress-sessions" style="margin-bottom:1rem;"></div>
+</section>
+
+<!-- Session Drill Suggestions -->
+<section class="section" id="drill-section" style="display:none;">
+    <h2>Suggested Drills <span id="drill-count" class="count-badge hidden">0</span></h2>
+    <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.8rem;">Based on your most recent session analysis</p>
+    <div id="drill-suggestions"></div>
+</section>
+
+<section class="section">
+    <h2>Active Plans <span id="plans-count" class="count-badge hidden">0</span></h2>
+    <div id="plans-list">
+        {% if selected_driver_id %}
+        <div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-row"></div>
+        {% else %}
+        <div class="empty-hero empty-hero-compact">
+            <div class="empty-hero-icon" aria-hidden="true">&#x1F4DD;</div>
+            <div class="empty-hero-title">Select a driver above</div>
+            <div class="empty-hero-desc">
+                Choose a driver to view or create their development plan. Plans include weekly drills, coaching notes,
+                and progress tracking to guide structured improvement.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getDriverId() {
+    return document.getElementById('driver-select').value;
+}
+
+function loadPlans() {
+    var driverId = getDriverId();
+    if (!driverId) return;
+    FetchHelper.fetch('/api/dev-plans/' + driverId)
+        .then(function(data) {
+            var el = document.getElementById('plans-list');
+            var plans = data.plans || [];
+            if (plans.length === 0) { el.innerHTML = '<div class="empty-hero empty-hero-compact"><div class="empty-hero-icon" aria-hidden="true">&#x1F4CB;</div><div class="empty-hero-title">No plans for this driver</div><div class="empty-hero-desc">Pick a template above to create a structured development plan with weekly drills and progress tracking.</div></div>'; return; }
+            var badge = document.getElementById('plans-count');
+            if (badge) { badge.textContent = plans.length; if (plans.length) { badge.classList.remove('hidden'); } else { badge.classList.add('hidden'); } }
+            var html = '';
+            plans.forEach(function(p) {
+                html += '<div class="plan-card">'
+                    + '<h3>' + esc(p.plan_name) + '</h3>'
+                    + '<div class="progress-bar" role="progressbar" aria-valuenow="' + p.completion_pct + '" aria-valuemin="0" aria-valuemax="100" aria-label="Plan completion"><div class="progress-fill" style="width:' + p.completion_pct + '%"></div></div>'
+                    + '<span>' + p.completion_pct + '% complete</span>'
+                    + ' <span class="tag">' + esc(p.level) + '</span>'
+                    + ' <a href="/dev-plans/' + p.id + '">View Details</a>'
+                    + ' <button type="button" class="btn-sm btn-danger delete-plan-btn" data-plan-id="' + p.id + '" aria-label="Delete plan">Delete</button>'
+                    + '</div>';
+            });
+            el.innerHTML = html;
+        })
+        .catch(function(err) { console.warn('Plans load failed:', err); });
+}
+
+function createFromTemplate(templateId) {
+    var driverId = getDriverId();
+    if (!driverId) {
+        var sel = document.getElementById('driver-select');
+        sel.classList.add('is-invalid');
+        var err = sel.parentElement.querySelector('.form-error');
+        if (!err) {
+            err = document.createElement('span');
+            err.className = 'form-error';
+            err.textContent = 'Select a driver first';
+            err.setAttribute('role', 'alert');
+            sel.parentElement.appendChild(err);
+        }
+        sel.focus();
+        return;
+    }
+    FetchHelper.fetch('/api/dev-plans/' + driverId, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ template_id: templateId }),
+    })
+    .then(function() { loadPlans(); })
+    .catch(function(err) { console.warn('Create plan failed:', err); if (window.Toast) Toast.show('Failed to create plan', 'error'); });
+}
+
+function deletePlan(id) {
+    if (!confirm('Delete this plan?')) return;
+    FetchHelper.fetch('/api/dev-plans/plan/' + id, { method: 'DELETE' })
+        .then(function() { loadPlans(); })
+        .catch(function(err) { console.warn('Delete plan failed:', err); if (window.Toast) Toast.show('Failed to delete plan', 'error'); });
+}
+
+/* ── Delegated delete-plan button ── */
+document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.delete-plan-btn[data-plan-id]');
+    if (!btn) return;
+    deletePlan(parseInt(btn.dataset.planId, 10));
+});
+
+/* ── Delegated template card click/keydown ── */
+document.addEventListener('click', function(e) {
+    var card = e.target.closest('.template-card[data-template-id]');
+    if (card) createFromTemplate(card.dataset.templateId);
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var card = e.target.closest('.template-card[data-template-id]');
+    if (card) { e.preventDefault(); createFromTemplate(card.dataset.templateId); }
+});
+
+/* ── Driver Progress ── */
+function loadProgress() {
+    var driverId = getDriverId();
+    var section = document.getElementById('progress-section');
+    if (!driverId) { if (section) section.style.display = 'none'; return; }
+    FetchHelper.fetch('/api/dev-plans/driver-progress/' + driverId)
+        .then(function(data) {
+            if (data.error) { section.style.display = 'none'; return; }
+            section.style.display = '';
+            _renderProgressStats(data);
+            setTimeout(function() {
+                _drawProgressChart(data);
+                _drawScoreChart(data);
+            }, 30);
+            _renderSessionList(data);
+            _loadLatestDrills(data);
+        })
+        .catch(function() { section.style.display = 'none'; });
+}
+
+function _renderProgressStats(data) {
+    var el = document.getElementById('progress-stats');
+    var html = '';
+    html += _statCard('Sessions', data.n_sessions, 'var(--text-primary)');
+    html += _statCard('PBs Set', data.pb_count, '#ffd700');
+    html += _statCard('Best Ever', data.best_ever_s ? data.best_ever_s.toFixed(3) + 's' : '—', '#4caf50');
+    html += _statCard('Improvement', data.total_improvement_s ? data.total_improvement_s.toFixed(3) + 's' : '—', '#36a2eb');
+    html += _statCard('Imp. %', data.improvement_pct ? data.improvement_pct.toFixed(2) + '%' : '—', '#ff6384');
+    var trendCol = data.score_trend === 'improving' ? '#4caf50' : data.score_trend === 'declining' ? '#e74c3c' : '#888';
+    var trendIcon = data.score_trend === 'improving' ? '\u25B2' : data.score_trend === 'declining' ? '\u25BC' : '\u25C6';
+    html += _statCard('Trend', trendIcon + ' ' + (data.score_trend || '—'), trendCol);
+    el.innerHTML = html;
+}
+
+function _statCard(label, value, color) {
+    return '<div style="background:var(--card-bg);border-radius:8px;padding:0.3rem 0.6rem;text-align:center;min-width:80px;">' +
+        '<div style="font-size:0.6rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div>' +
+        '<div style="font-size:0.9rem;font-weight:700;color:' + color + ';">' + value + '</div></div>';
+}
+
+function _drawProgressChart(data) {
+    var canvas = document.getElementById('progress-canvas');
+    if (!canvas || !data.sessions || data.sessions.length < 2) return;
+    var dpr = window.devicePixelRatio || 1;
+    var W = canvas.parentElement.clientWidth || 700;
+    var H = 220;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    var pad = {top: 15, right: 15, bottom: 30, left: 55};
+    var pW = W - pad.left - pad.right, pH = H - pad.top - pad.bottom;
+
+    ctx.clearRect(0, 0, W, H);
+    var ss = data.sessions;
+    var vals = ss.map(function(s) { return s.best_lap_time_s; });
+    var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
+    var range = mx - mn || 1;
+    mn -= range * 0.05; mx += range * 0.05; range = mx - mn;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 1;
+    for (var g = 0; g < 5; g++) {
+        var gy = pad.top + pH * g / 4;
+        ctx.beginPath(); ctx.moveTo(pad.left, gy); ctx.lineTo(pad.left + pW, gy); ctx.stroke();
+    }
+
+    // Best-ever envelope
+    ctx.beginPath(); ctx.fillStyle = 'rgba(76, 175, 80, 0.08)';
+    var bestVals = ss.map(function(s) { return s.best_ever || s.best_lap_time_s; });
+    for (var i = 0; i < ss.length; i++) {
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - ((bestVals[i] - mn) / range) * pH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(pad.left + pW, pad.top + pH);
+    ctx.lineTo(pad.left, pad.top + pH);
+    ctx.closePath(); ctx.fill();
+
+    // Best lap line
+    ctx.beginPath(); ctx.strokeStyle = '#36a2eb'; ctx.lineWidth = 2;
+    for (var i = 0; i < ss.length; i++) {
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - ((vals[i] - mn) / range) * pH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // PB markers
+    ss.forEach(function(s, i) {
+        if (s.is_pb) {
+            var x = pad.left + (i / (ss.length - 1)) * pW;
+            var y = pad.top + pH - ((s.best_lap_time_s - mn) / range) * pH;
+            ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#ffd700'; ctx.fill();
+            ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke();
+        }
+    });
+
+    // Mean lap line
+    ctx.beginPath(); ctx.strokeStyle = 'rgba(255,99,132,0.5)'; ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ss.forEach(function(s, i) {
+        if (!s.mean_lap_time_s) return;
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - ((s.mean_lap_time_s - mn) / range) * pH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // Axes
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.left, pad.top + pH); ctx.lineTo(pad.left + pW, pad.top + pH); ctx.stroke();
+
+    // Y-axis label
+    ctx.save(); ctx.translate(12, pad.top + pH / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillStyle = '#888'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('Lap Time (s)', 0, 0); ctx.restore();
+
+    // Legend
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillStyle = '#36a2eb'; ctx.fillText('Best Lap', W - 10, 12);
+    ctx.fillStyle = 'rgba(255,99,132,0.7)'; ctx.fillText('Mean Lap', W - 10, 24);
+    ctx.fillStyle = '#ffd700'; ctx.fillText('\u2605 PB', W - 10, 36);
+}
+
+function _drawScoreChart(data) {
+    var canvas = document.getElementById('score-canvas');
+    if (!canvas || !data.sessions) return;
+    var ss = data.sessions.filter(function(s) { return s.total_score != null; });
+    if (ss.length < 2) { canvas.style.display = 'none'; return; }
+    var dpr = window.devicePixelRatio || 1;
+    var W = canvas.parentElement.clientWidth || 700;
+    var H = 160;
+    canvas.width = W * dpr; canvas.height = H * dpr;
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    var ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    var pad = {top: 10, right: 15, bottom: 25, left: 40};
+    var pW = W - pad.left - pad.right, pH = H - pad.top - pad.bottom;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Fill area
+    ctx.beginPath(); ctx.fillStyle = 'rgba(54, 162, 235, 0.1)';
+    for (var i = 0; i < ss.length; i++) {
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - (ss[i].total_score / 100) * pH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.lineTo(pad.left + pW, pad.top + pH);
+    ctx.lineTo(pad.left, pad.top + pH);
+    ctx.closePath(); ctx.fill();
+
+    // Score line
+    ctx.beginPath(); ctx.strokeStyle = '#36a2eb'; ctx.lineWidth = 2;
+    for (var i = 0; i < ss.length; i++) {
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - (ss[i].total_score / 100) * pH;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Score dots
+    ss.forEach(function(s, i) {
+        var x = pad.left + (i / (ss.length - 1)) * pW;
+        var y = pad.top + pH - (s.total_score / 100) * pH;
+        ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2);
+        var col = s.total_score >= 80 ? '#4caf50' : s.total_score >= 50 ? '#ff9800' : '#e74c3c';
+        ctx.fillStyle = col; ctx.fill();
+    });
+
+    // Axis
+    ctx.strokeStyle = '#555'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(pad.left, pad.top + pH); ctx.lineTo(pad.left + pW, pad.top + pH); ctx.stroke();
+
+    // Y labels
+    ctx.fillStyle = '#888'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+    [0, 25, 50, 75, 100].forEach(function(v) {
+        var y = pad.top + pH - (v / 100) * pH;
+        ctx.fillText(v, pad.left - 4, y + 3);
+    });
+
+    ctx.save(); ctx.translate(8, pad.top + pH / 2); ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.fillText('Score', 0, 0); ctx.restore();
+}
+
+function _renderSessionList(data) {
+    var el = document.getElementById('progress-sessions');
+    if (!data.sessions || data.sessions.length === 0) { el.innerHTML = ''; return; }
+    var html = '<div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Session History</div>';
+    html += '<div style="max-height:250px;overflow-y:auto;"><table class="data-table compact striped"><thead><tr>' +
+        '<th>Date</th><th>Track</th><th>Type</th><th>Laps</th><th>Best</th><th>Score</th><th>PB</th></tr></thead><tbody>';
+    data.sessions.slice().reverse().forEach(function(s) {
+        var pbBadge = s.is_pb ? '<span style="color:#ffd700;font-weight:700;">\u2605</span>' : '';
+        var scoreCol = (s.total_score || 0) >= 80 ? '#4caf50' : (s.total_score || 0) >= 50 ? '#ff9800' : '#e74c3c';
+        html += '<tr>';
+        html += '<td>' + (s.session_date || '—') + '</td>';
+        html += '<td>' + esc(s.track_name || '—') + '</td>';
+        html += '<td><span class="tag">' + esc(s.session_type || '—') + '</span></td>';
+        html += '<td>' + (s.n_laps || 0) + '</td>';
+        html += '<td>' + (s.best_lap_time_s ? s.best_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+        html += '<td style="color:' + scoreCol + ';font-weight:600;">' + (s.total_score ? s.total_score.toFixed(0) : '—') + '</td>';
+        html += '<td>' + pbBadge + '</td>';
+        html += '</tr>';
+    });
+    html += '</tbody></table></div>';
+    el.innerHTML = html;
+}
+
+function _loadLatestDrills(data) {
+    var section = document.getElementById('drill-section');
+    if (!data.sessions || data.sessions.length === 0) { section.style.display = 'none'; return; }
+    var latestSid = data.sessions[data.sessions.length - 1].session_id;
+    FetchHelper.fetch('/api/dev-plans/session-drills/' + encodeURIComponent(latestSid))
+        .then(function(drillData) {
+            if (drillData.error || !drillData.suggestions || drillData.suggestions.length === 0) {
+                section.style.display = 'none'; return;
+            }
+            section.style.display = '';
+            var badge = document.getElementById('drill-count');
+            if (badge) { badge.textContent = drillData.suggestions.length; badge.classList.remove('hidden'); }
+            var el = document.getElementById('drill-suggestions');
+            var html = '';
+            var prioColors = {high: '#e74c3c', medium: '#ff9800', low: '#4caf50'};
+            drillData.suggestions.forEach(function(s) {
+                var pc = prioColors[s.priority] || '#888';
+                html += '<div style="background:var(--card-bg);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;border-left:4px solid ' + pc + ';">';
+                html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.2rem;">';
+                html += '<span style="font-weight:700;color:var(--text-primary);">' + esc(s.drill) + '</span>';
+                html += '<span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:8px;background:' + pc + '20;color:' + pc + ';font-weight:600;text-transform:uppercase;">' + esc(s.priority) + '</span>';
+                html += '</div>';
+                html += '<div style="font-size:0.78rem;color:var(--text-secondary);">' + esc(s.reason) + '</div>';
+                html += '</div>';
+            });
+            // Add session metrics summary
+            if (drillData.metrics) {
+                var m = drillData.metrics;
+                html += '<div style="margin-top:0.6rem;font-size:0.72rem;color:var(--text-secondary);">';
+                html += 'Based on latest session: Best ' + m.best_lap_s.toFixed(3) + 's | Mean ' + m.mean_lap_s.toFixed(3) + 's | CV ' + m.cv_pct.toFixed(1) + '% | Score ' + (m.score || 0).toFixed(0) + '/100';
+                html += '</div>';
+            }
+            el.innerHTML = html;
+        })
+        .catch(function() { section.style.display = 'none'; });
+}
+
+// Debounced resize redraw for progress charts
+var _devResizeTimer = null, _lastProgressData = null;
+window.addEventListener('resize', function() {
+    clearTimeout(_devResizeTimer);
+    _devResizeTimer = setTimeout(function() {
+        if (_lastProgressData) { _drawProgressChart(_lastProgressData); _drawScoreChart(_lastProgressData); }
+    }, 250);
+});
+
+// Cache progress data for resize
+var _origLoadProgress = loadProgress;
+loadProgress = function() {
+    var driverId = getDriverId();
+    var section = document.getElementById('progress-section');
+    if (!driverId) { if (section) section.style.display = 'none'; return; }
+    FetchHelper.fetch('/api/dev-plans/driver-progress/' + driverId)
+        .then(function(data) {
+            if (data.error) { section.style.display = 'none'; return; }
+            _lastProgressData = data;
+            section.style.display = '';
+            _renderProgressStats(data);
+            setTimeout(function() { _drawProgressChart(data); _drawScoreChart(data); }, 30);
+            _renderSessionList(data);
+            _loadLatestDrills(data);
+        })
+        .catch(function() { section.style.display = 'none'; });
+};
+
+document.addEventListener('DOMContentLoaded', function() {
+    var driverSel = document.getElementById('driver-select');
+    if (driverSel) {
+        driverSel.addEventListener('change', function() {
+            driverSel.classList.remove('is-invalid');
+            var errEl = driverSel.parentElement.querySelector('.form-error');
+            if (errEl) errEl.remove();
+            loadPlans();
+            loadProgress();
+        });
+    }
+    if (getDriverId()) { loadPlans(); loadProgress(); }
+});
+</script>
+{% endblock %}

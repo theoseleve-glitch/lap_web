@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Compare — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>Head-to-Head Comparison</h1>
+    </div>
+</div>
+
+{% if error %}
+<div class="flash flash-warning mb-lg" role="alert">
+    {{ error }}
+</div>
+{% endif %}
+
+<div class="compare-panels">
+    <!-- Session comparison -->
+    <section class="form-section elevation-1">
+        <legend>Compare Sessions</legend>
+        <form method="get" action="{{ url_for('comparisons.compare_sessions') }}" class="compare-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="sess-a">Session A</label>
+                    <select name="a" id="sess-a" class="form-select" required>
+                        <option value="">Select session...</option>
+                        {% for s in sessions %}
+                        <option value="{{ s.session_id }}">
+                            {{ s.session_date[:10] if s.session_date else s.session_id[:12] }}
+                            — {{ s.driver_name }}
+                            {% if s.track_name %} @ {{ s.track_name }}{% endif %}
+                            {% if s.best_lap_time_s %} ({{ "%.3f"|format(s.best_lap_time_s) }}s){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sess-b">Session B</label>
+                    <select name="b" id="sess-b" class="form-select" required>
+                        <option value="">Select session...</option>
+                        {% for s in sessions %}
+                        <option value="{{ s.session_id }}">
+                            {{ s.session_date[:10] if s.session_date else s.session_id[:12] }}
+                            — {{ s.driver_name }}
+                            {% if s.track_name %} @ {{ s.track_name }}{% endif %}
+                            {% if s.best_lap_time_s %} ({{ "%.3f"|format(s.best_lap_time_s) }}s){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions mt-md">
+                <button type="submit" class="btn btn-primary">Compare Sessions</button>
+            </div>
+        </form>
+    </section>
+
+    <!-- Driver comparison -->
+    <section class="form-section elevation-1">
+        <legend>Compare Drivers</legend>
+        <form method="get" action="{{ url_for('comparisons.compare_drivers') }}" class="compare-form">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="drv-a">Driver A</label>
+                    <select name="a" id="drv-a" class="form-select" required>
+                        <option value="">Select driver...</option>
+                        {% for d in drivers %}
+                        <option value="{{ d.driver_id }}">
+                            {{ d.driver_name }} ({{ d.n_sessions }} sessions)
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="drv-b">Driver B</label>
+                    <select name="b" id="drv-b" class="form-select" required>
+                        <option value="">Select driver...</option>
+                        {% for d in drivers %}
+                        <option value="{{ d.driver_id }}">
+                            {{ d.driver_name }} ({{ d.n_sessions }} sessions)
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-actions mt-md">
+                <button type="submit" class="btn btn-primary">Compare Drivers</button>
+            </div>
+        </form>
+    </section>
+</div>
+
+{% if not sessions %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x2194;</div>
+    <div class="empty-hero-title">Nothing to compare yet</div>
+    <div class="empty-hero-desc">
+        You need at least two analyzed sessions to use comparisons. Upload sessions from the same track to compare
+        drivers, or sessions from different dates to see your own progression.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">Upload Sessions</a>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Karts — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Karts <span class="count-badge">{{ karts|length }}</span></h1>
+    <a href="{{ url_for('karts.new_kart') }}" class="btn btn-primary">+ New Kart</a>
+</div>
+
+{% if karts %}
+<div class="card-grid">
+    {% for k in karts %}
+    <a href="{{ url_for('karts.kart_detail', kart_id=k.kart_id) }}" class="track-card elevation-1 card-interactive">
+        <div class="track-card-header">
+            <h3>{{ k.kart_name }}</h3>
+        </div>
+        <div class="track-card-body">
+            {% if k.manufacturer or k.model %}
+            <div class="track-stat">
+                <span class="track-stat-label">Model</span>
+                <span class="track-stat-value">{{ k.manufacturer or '' }} {{ k.model or '' }}</span>
+            </div>
+            {% endif %}
+            {% if k.engine %}
+            <div class="track-stat">
+                <span class="track-stat-label">Engine</span>
+                <span class="track-stat-value">{{ k.engine }}</span>
+            </div>
+            {% endif %}
+            {% if k.power_hp %}
+            <div class="track-stat">
+                <span class="track-stat-label">Power</span>
+                <span class="track-stat-value">{{ "%.0f"|format(k.power_hp) }} hp</span>
+            </div>
+            {% endif %}
+            <div class="track-stat">
+                <span class="track-stat-label">Sessions</span>
+                <span class="track-stat-value">{{ k.session_count or 0 }}</span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F3CE;</div>
+    <div class="empty-hero-title">No karts yet</div>
+    <div class="empty-hero-desc">
+        Add your karts to track performance across different equipment.
+        You can pick from a predefined list or create a custom entry.
+    </div>
+    <a href="{{ url_for('karts.new_kart') }}" class="btn btn-primary">+ New Kart</a>
+</div>
+{% endif %}
+{% endblock %}

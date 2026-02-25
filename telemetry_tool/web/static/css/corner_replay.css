@@ -1,0 +1,457 @@
+/* ═══════════════════════════════════════════════════════════════
+   Corner Replay — Animated corner-by-corner telemetry replay
+   Three modes: Corner Review, Split Comparison, Top 3 Overlay
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Container ─────────────────────────────────────────────── */
+.cr-section {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.cr-section.cr-hidden {
+    display: none;
+}
+
+/* ── Mode tabs ─────────────────────────────────────────────── */
+.cr-mode-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+.cr-mode-tab {
+    flex: 1;
+    padding: 10px 12px;
+    text-align: center;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+}
+
+.cr-mode-tab:hover {
+    color: var(--text-secondary);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.cr-mode-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: rgba(255, 107, 53, 0.05);
+}
+
+/* ── Corner pills row ──────────────────────────────────────── */
+.cr-corner-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-primary);
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.cr-corner-pill {
+    flex-shrink: 0;
+    padding: 4px 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.cr-corner-pill:hover {
+    border-color: var(--text-muted);
+    color: var(--text-primary);
+}
+
+.cr-corner-pill.active {
+    border-color: var(--accent);
+    background: rgba(255, 107, 53, 0.12);
+    color: var(--accent);
+}
+
+.cr-corner-nav-btn {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.cr-corner-nav-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.cr-corner-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+/* ── Main viewport grid ────────────────────────────────────── */
+.cr-viewport {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 340px;
+}
+
+.cr-viewport.cr-mode-top3 {
+    grid-template-columns: 1fr;
+}
+
+/* ── Map panel ─────────────────────────────────────────────── */
+.cr-map-panel {
+    position: relative;
+    border-right: 1px solid var(--border);
+    background: var(--bg-card);
+    min-height: 340px;
+}
+
+.cr-viewport.cr-mode-top3 .cr-map-panel {
+    border-right: none;
+}
+
+.cr-map-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── Cockpit panel ─────────────────────────────────────────── */
+.cr-cockpit-panel {
+    position: relative;
+    background: var(--bg-card);
+    min-height: 340px;
+}
+
+.cr-cockpit-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── Split comparison: dual cockpit ────────────────────────── */
+.cr-split-cockpit {
+    display: flex;
+    flex-direction: column;
+}
+
+.cr-split-cockpit-half {
+    position: relative;
+    flex: 1;
+    min-height: 170px;
+}
+
+.cr-split-cockpit-half + .cr-split-cockpit-half {
+    border-top: 1px solid var(--border);
+}
+
+.cr-split-label {
+    position: absolute;
+    top: 6px;
+    left: 10px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.cr-split-label-a {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+}
+
+.cr-split-label-b {
+    background: rgba(0, 200, 255, 0.12);
+    color: #00c8ff;
+}
+
+/* ── Time delta badge ──────────────────────────────────────── */
+.cr-delta-badge {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    padding: 3px 10px;
+    border-radius: 6px;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.cr-delta-badge.visible {
+    opacity: 1;
+}
+
+.cr-delta-badge.ahead {
+    background: rgba(63, 185, 80, 0.2);
+    color: #3fb950;
+}
+
+.cr-delta-badge.behind {
+    background: rgba(248, 81, 73, 0.2);
+    color: #f85149;
+}
+
+/* ── Top 3 legend ──────────────────────────────────────────── */
+.cr-top3-legend {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+.cr-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.cr-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.cr-legend-time {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-muted);
+}
+
+/* ── Controls bar ──────────────────────────────────────────── */
+.cr-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-primary);
+}
+
+.cr-play-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    border: 1px solid var(--accent);
+    background: rgba(255, 107, 53, 0.1);
+    color: var(--accent);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.cr-play-btn:hover {
+    background: rgba(255, 107, 53, 0.25);
+}
+
+/* ── Scrubber ──────────────────────────────────────────────── */
+.cr-scrubber-wrap {
+    flex: 1;
+    position: relative;
+    height: 20px;
+    display: flex;
+    align-items: center;
+}
+
+.cr-scrubber-track {
+    width: 100%;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    position: relative;
+}
+
+.cr-scrubber-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    pointer-events: none;
+}
+
+.cr-scrubber-thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    background: var(--accent);
+    border: 2px solid var(--bg-primary);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    z-index: 1;
+}
+
+.cr-scrubber-thumb:active {
+    cursor: grabbing;
+    transform: translate(-50%, -50%) scale(1.2);
+}
+
+/* ── Speed selector ────────────────────────────────────────── */
+.cr-speed-btn {
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-variant-numeric: tabular-nums;
+}
+
+.cr-speed-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: rgba(255, 107, 53, 0.1);
+}
+
+/* ── Lap selector dropdowns ────────────────────────────────── */
+.cr-lap-select {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    cursor: pointer;
+    max-width: 110px;
+}
+
+.cr-lap-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.cr-lap-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.cr-lap-group.cr-hidden {
+    display: none;
+}
+
+/* ── Loading / empty states ────────────────────────────────── */
+.cr-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    grid-column: 1 / -1;
+}
+
+.cr-loading .spinner-inline {
+    width: 22px;
+    height: 22px;
+}
+
+/* ── Corner info overlay (on map) ──────────────────────────── */
+.cr-corner-info {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    pointer-events: none;
+    z-index: 2;
+}
+
+.cr-corner-info-name {
+    font-weight: 700;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+}
+
+/* ── Responsive ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .cr-viewport {
+        grid-template-columns: 1fr;
+    }
+
+    .cr-map-panel {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        min-height: 240px;
+    }
+
+    .cr-cockpit-panel {
+        min-height: 280px;
+    }
+
+    .cr-controls {
+        flex-wrap: wrap;
+    }
+
+    .cr-corner-bar {
+        padding: 6px 8px;
+    }
+
+    .cr-mode-tab {
+        font-size: 0.68rem;
+        padding: 8px 6px;
+    }
+}
+
+@media (max-width: 480px) {
+    .cr-viewport {
+        min-height: 280px;
+    }
+
+    .cr-map-panel, .cr-cockpit-panel {
+        min-height: 220px;
+    }
+}

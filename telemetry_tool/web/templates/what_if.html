@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}What-If Simulator — {{ session.session_id[:16] }}{% endblock %}
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_detail', session_id=session.session_id) }}" class="breadcrumb">&larr; Session</a></nav>
+        <h1>What-If Simulator</h1>
+    </div>
+</div>
+<p class="form-hint">Adjust corner speeds to predict lap time changes. Use the sliders below to see how modifications at each corner affect your overall lap time.</p>
+<div id="whatif-controls" class="mb-md">
+    <div class="skeleton skeleton-heading"></div>
+    <div class="skeleton skeleton-row"></div>
+    <div class="skeleton skeleton-row"></div>
+    <div class="skeleton skeleton-row"></div>
+</div>
+<div class="meta-grid hidden" id="whatif-results" aria-live="polite">
+    <div class="meta-item"><span class="meta-label">Baseline</span><span class="meta-value" id="wf-baseline">—</span></div>
+    <div class="meta-item"><span class="meta-label">Predicted</span><span class="meta-value highlight" id="wf-predicted">—</span></div>
+    <div class="meta-item"><span class="meta-label">Delta</span><span class="meta-value" id="wf-delta">—</span></div>
+</div>
+<div class="chart-container"><canvas id="whatif-chart" aria-label="What-if simulation speed profile"></canvas></div>
+{% endblock %}
+{% block scripts %}
+<script>
+var SESSION_ID = {{ session.session_id|tojson }};
+document.addEventListener('DOMContentLoaded', function() {
+    FetchHelper.fetch('/api/session/' + encodeURIComponent(SESSION_ID) + '/corner-metrics/summary')
+        .then(function(data) {
+            if (data.error) { document.getElementById('whatif-controls').innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>'; return; }
+            var html = '<div class="wf-corner-grid">';
+            (Array.isArray(data) ? data : []).forEach(function(c) {
+                html += '<div class="wf-corner-row">';
+                html += '<span class="wf-corner-label">Corner ' + esc(c.corner_id) + '</span>';
+                html += '<input type="range" class="wf-slider wf-slider-track" data-cid="' + c.corner_id + '" min="-20" max="20" value="0">';
+                html += '<span class="wf-val" data-cid="' + c.corner_id + '">0%</span>';
+                html += '</div>';
+            });
+            html += '</div><button type="button" id="wf-simulate" class="btn btn-primary mt-md" title="Run simulation with current adjustments">Simulate</button>';
+            document.getElementById('whatif-controls').innerHTML = html;
+
+            document.querySelectorAll('.wf-slider').forEach(function(s) {
+                s.addEventListener('input', function() {
+                    document.querySelector('.wf-val[data-cid="' + s.dataset.cid + '"]').textContent = s.value + '%';
+                });
+            });
+
+            document.getElementById('wf-simulate').addEventListener('click', function() {
+                var btn = document.getElementById('wf-simulate');
+                btn.disabled = true; btn.textContent = 'Simulating...';
+                var adjustments = [];
+                document.querySelectorAll('.wf-slider').forEach(function(s) {
+                    adjustments.push({corner_id: parseInt(s.dataset.cid), speed_pct_change: parseInt(s.value)});
+                });
+                FetchHelper.fetch('/api/session/' + encodeURIComponent(SESSION_ID) + '/what-if', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({adjustments: adjustments})
+                }).then(function(res) {
+                    btn.disabled = false; btn.textContent = 'Simulate';
+                    if (res.error) return;
+                    document.getElementById('whatif-results').classList.remove('hidden');
+                    document.getElementById('wf-baseline').textContent = res.baseline_time_s != null ? res.baseline_time_s.toFixed(3) + 's' : '—';
+                    document.getElementById('wf-predicted').textContent = res.predicted_time_s != null ? res.predicted_time_s.toFixed(3) + 's' : '—';
+                    var d = res.delta_s || 0;
+                    document.getElementById('wf-delta').textContent = (d >= 0 ? '+' : '') + d.toFixed(3) + 's (' + (res.delta_pct != null ? res.delta_pct.toFixed(2) : '0.00') + '%)';
+                }).catch(function(err) {
+                    btn.disabled = false; btn.textContent = 'Simulate';
+                    if (window.Toast) Toast.show('Simulation failed', 'error');
+                });
+            });
+        })
+        .catch(function(err) {
+            console.warn('Load corner metrics failed:', err);
+            document.getElementById('whatif-controls').innerHTML = '<p class="text-muted">Failed to load corner data.</p>';
+        });
+});
+</script>
+{% endblock %}

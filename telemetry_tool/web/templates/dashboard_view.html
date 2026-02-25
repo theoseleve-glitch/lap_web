@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}{{ dashboard.dashboard_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="/dashboards/" class="breadcrumb">&larr; Dashboards</a></nav>
+        <h1>{{ dashboard.dashboard_name }}</h1>
+    </div>
+</div>
+
+<div id="dashboard-grid" class="dashboard-grid">
+    {% for widget in dashboard.layout %}
+    <div class="dashboard-widget elevation-1"
+         data-col-span="{{ widget.w }}" data-row-span="{{ widget.h }}"
+         data-type="{{ widget.type }}"
+         data-params='{{ widget.params | tojson }}'>
+        <div class="widget-header">{{ widget.type | replace('_', ' ') | title }}</div>
+        <div class="widget-body" id="widget-{{ loop.index0 }}">
+            <div class="skeleton skeleton-row"></div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    'use strict';
+
+    // Apply grid spans via CSS custom properties instead of inline styles
+    var widgets = document.querySelectorAll('.dashboard-widget[data-col-span]');
+    widgets.forEach(function(w) {
+        w.style.gridColumn = 'span ' + (w.dataset.colSpan || 4);
+        w.style.gridRow = 'span ' + (w.dataset.rowSpan || 2);
+    });
+
+    // Widget renderers for common types
+    var RENDERERS = {
+        recent_sessions: function(data, body) {
+            if (!data.sessions || data.sessions.length === 0) {
+                body.innerHTML = '<div class="no-data"><div class="no-data-text">No recent sessions</div></div>';
+                return;
+            }
+            var html = '<table class="data-table compact striped"><caption class="sr-only">Recent sessions</caption><thead><tr>';
+            html += '<th scope="col">Date</th><th scope="col">Track</th><th scope="col">Driver</th><th scope="col" class="col-numeric">Best</th>';
+            html += '</tr></thead><tbody>';
+            data.sessions.forEach(function(s) {
+                html += '<tr>';
+                html += '<td>' + esc(s.session_date || '—') + '</td>';
+                html += '<td>' + esc(s.track_name || '—') + '</td>';
+                html += '<td>' + esc(s.driver_name || '—') + '</td>';
+                html += '<td class="col-numeric">' + (s.best_lap_time_s ? s.best_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        },
+
+        data_health_summary: function(data, body) {
+            if (!data.avg_score && data.avg_score !== 0) {
+                body.innerHTML = '<div class="no-data"><div class="no-data-text">No health data</div></div>';
+                return;
+            }
+            var scoreClass = data.avg_score >= 80 ? 'text-green' : data.avg_score >= 50 ? 'text-yellow' : 'text-red';
+            var html = '<div class="meta-grid grid-cols-2">';
+            html += '<div class="meta-item"><span class="meta-label">Avg Quality</span>';
+            html += '<span class="meta-value ' + scoreClass + '">' + (data.avg_score || 0).toFixed(0) + '%</span></div>';
+            html += '<div class="meta-item"><span class="meta-label">Sessions</span>';
+            html += '<span class="meta-value">' + (data.total || 0) + '</span></div>';
+            if (data.good_count !== undefined) {
+                html += '<div class="meta-item"><span class="meta-label">Good</span>';
+                html += '<span class="meta-value text-green">' + data.good_count + '</span></div>';
+            }
+            if (data.poor_count !== undefined) {
+                html += '<div class="meta-item"><span class="meta-label">Poor</span>';
+                html += '<span class="meta-value text-red">' + data.poor_count + '</span></div>';
+            }
+            html += '</div>';
+            body.innerHTML = html;
+        },
+
+        leaderboard: function(data, body) {
+            if (!data.leaders || data.leaders.length === 0) {
+                body.innerHTML = '<div class="no-data"><div class="no-data-text">No leaderboard data</div></div>';
+                return;
+            }
+            var html = '<table class="data-table compact striped"><caption class="sr-only">Leaderboard</caption><thead><tr>';
+            html += '<th scope="col">#</th><th scope="col">Driver</th><th scope="col" class="col-numeric">Best</th><th scope="col" class="col-numeric">Score</th>';
+            html += '</tr></thead><tbody>';
+            data.leaders.forEach(function(d, i) {
+                html += '<tr>';
+                html += '<td>' + (i + 1) + '</td>';
+                html += '<td>' + esc(d.driver_name || '—') + '</td>';
+                html += '<td class="col-numeric">' + (d.best_time ? d.best_time.toFixed(3) + 's' : '—') + '</td>';
+                html += '<td class="col-numeric">' + (d.best_score ? d.best_score.toFixed(1) : '—') + '</td>';
+                html += '</tr>';
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        },
+    };
+
+    // Default renderer — render data as formatted key-value pairs
+    function defaultRenderer(data, body) {
+        var html = '<div class="widget-data-list">';
+        var keys = Object.keys(data);
+        if (keys.length === 0) {
+            body.innerHTML = '<div class="no-data"><div class="no-data-text">No data</div></div>';
+            return;
+        }
+        keys.forEach(function(k) {
+            var val = data[k];
+            if (val === null || val === undefined) val = '—';
+            else if (typeof val === 'object') val = JSON.stringify(val).substring(0, 80);
+            else if (typeof val === 'number') val = Number.isInteger(val) ? val : val.toFixed(3);
+            html += '<div class="widget-data-row">';
+            html += '<span class="widget-data-key">' + esc(k.replace(/_/g, ' ')) + '</span>';
+            html += '<span class="widget-data-val">' + esc(String(val)) + '</span>';
+            html += '</div>';
+        });
+        html += '</div>';
+        body.innerHTML = html;
+    }
+
+    // Load each widget
+    document.addEventListener('DOMContentLoaded', function() {
+        var widgetEls = document.querySelectorAll('.dashboard-widget');
+        widgetEls.forEach(function(w, idx) {
+            var type = w.dataset.type;
+            var params = JSON.parse(w.dataset.params || '{}');
+            FetchHelper.fetch('/api/dashboards/widget-data', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ widget_type: type, params: params }),
+            })
+            .then(function(data) {
+                var body = document.getElementById('widget-' + idx);
+                if (!body) return;
+                if (data.error) {
+                    body.innerHTML = '<div class="fetch-error"><div class="fetch-error-message">' +
+                        esc(data.error) + '</div></div>';
+                    return;
+                }
+                var renderer = RENDERERS[type] || defaultRenderer;
+                renderer(data, body);
+            })
+            .catch(function(err) {
+                console.warn('Widget load failed (' + type + '):', err);
+                var body = document.getElementById('widget-' + idx);
+                if (body) {
+                    body.innerHTML = '<div class="fetch-error"><div class="fetch-error-message">' +
+                        'Failed to load widget</div></div>';
+                }
+            });
+        });
+    });
+})();
+</script>
+{% endblock %}

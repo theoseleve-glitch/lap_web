@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+
+{% block title %}{{ driver.driver_name }} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('drivers.driver_list') }}" class="breadcrumb">&larr; Drivers</a></nav>
+        <h1>{{ driver.driver_name }}
+            {% if latest_style %}
+                <span class="badge badge-style">{{ latest_style.style_label }}</span>
+            {% endif %}
+        </h1>
+    </div>
+</div>
+
+<!-- Profile summary stats -->
+<div class="meta-grid">
+    <div class="meta-item">
+        <span class="meta-label">Sessions</span>
+        <span class="meta-value">{{ profile.total_sessions or sessions|length }}</span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Total Laps</span>
+        <span class="meta-value">{{ profile.total_laps or 0 }}</span>
+    </div>
+    {% if best_ever and best_ever.best_pct %}
+    <div class="meta-item">
+        <span class="meta-label">Peak Performance</span>
+        <span class="meta-value highlight">{{ "%.1f"|format(best_ever.best_pct) }}%
+            <span class="text-muted text-sm">at {{ best_ever.best_track_name }}</span>
+        </span>
+    </div>
+    {% elif best_ever and best_ever.best_absolute_s %}
+    <div class="meta-item">
+        <span class="meta-label">Best Ever</span>
+        <span class="meta-value highlight">{{ "%.3f"|format(best_ever.best_absolute_s) }}s</span>
+    </div>
+    {% elif profile.best_ever_time_s %}
+    <div class="meta-item">
+        <span class="meta-label">Best Ever</span>
+        <span class="meta-value highlight">{{ "%.3f"|format(profile.best_ever_time_s) }}s</span>
+    </div>
+    {% endif %}
+    {% if profile.pace_delta_mean_s is not none and profile.pace_delta_mean_s %}
+    <div class="meta-item">
+        <span class="meta-label">Pace Delta (avg)</span>
+        <span class="meta-value">{{ "%.3f"|format(profile.pace_delta_mean_s) }}s</span>
+    </div>
+    {% endif %}
+    {% if profile.consistency_rating is not none and profile.consistency_rating %}
+    <div class="meta-item">
+        <span class="meta-label">Consistency</span>
+        <span class="meta-value">{{ "%.1f"|format(profile.consistency_rating) }}%</span>
+    </div>
+    {% endif %}
+    {% if profile.aggression_index is not none and profile.aggression_index %}
+    <div class="meta-item">
+        <span class="meta-label">Aggression</span>
+        <span class="meta-value">{{ "%.2f"|format(profile.aggression_index) }}</span>
+    </div>
+    {% endif %}
+    {% if profile.smoothness_index is not none and profile.smoothness_index %}
+    <div class="meta-item">
+        <span class="meta-label">Smoothness</span>
+        <span class="meta-value">{{ "%.2f"|format(profile.smoothness_index) }}</span>
+    </div>
+    {% endif %}
+</div>
+
+{% if best_ever and best_ever.records_held %}
+<section class="section">
+    <h2>Track Records Held</h2>
+    <div class="records-held-list">
+        {% for rec in best_ever.records_held %}
+        <div class="record-held-item">
+            <a href="{{ url_for('tracks.track_detail', track_id=rec.track_id) }}">{{ rec.track_name }}</a>
+            — {{ "%.3f"|format(rec.record_time_s) }}s
+            {% if rec.vehicle_class and rec.vehicle_class != 'default' %}({{ rec.vehicle_class }}){% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Editable profile fields -->
+<section class="section" aria-labelledby="heading-driver-details">
+    <h2 id="heading-driver-details">Driver Details</h2>
+    <div class="profile-editor" data-driver-id="{{ driver.driver_id }}">
+        <div class="form-row">
+            <div class="form-group">
+                <label>Weight (kg)</label>
+                <input type="number" class="editable-field" data-field="weight_kg"
+                       value="{{ profile.weight_kg or '' }}" step="0.1">
+            </div>
+            <div class="form-group">
+                <label>Kart Class</label>
+                <input type="text" class="editable-field" data-field="kart_class"
+                       value="{{ profile.kart_class or '' }}" placeholder="e.g. Senior, Junior">
+            </div>
+            <div class="form-group">
+                <label>Experience Level</label>
+                <select class="editable-field" data-field="experience_level">
+                    <option value="">—</option>
+                    {% for lvl in ['Beginner', 'Intermediate', 'Advanced', 'Expert', 'Professional'] %}
+                    <option value="{{ lvl }}" {% if profile.experience_level == lvl %}selected{% endif %}>
+                        {{ lvl }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" class="grid-col-full">
+                <label>Goals</label>
+                <textarea class="editable-field" data-field="goals" rows="2"
+                          placeholder="What are you working towards?">{{ profile.goals or '' }}</textarea>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group" class="grid-col-full">
+                <label>Notes</label>
+                <textarea class="editable-field" data-field="custom_notes" rows="2"
+                          placeholder="Personal notes, setup preferences...">{{ profile.custom_notes or '' }}</textarea>
+            </div>
+        </div>
+        <div id="save-status" class="text-muted mt-sm" role="status" aria-live="polite" aria-atomic="true"></div>
+    </div>
+</section>
+
+<!-- Driving Style Radar -->
+{% if latest_style %}
+<section class="section">
+    <h2>Driving Style: {{ latest_style.style_label }}
+        {% if latest_style.style_confidence %}
+            <span class="text-muted">({{ "%.0f"|format(latest_style.style_confidence * 100) }}% confidence)</span>
+        {% endif %}
+    </h2>
+
+    <div class="style-section">
+        <!-- Radar chart -->
+        <div class="chart-container relative">
+            <canvas id="style-radar" aria-label="Driving style radar chart"></canvas>
+        </div>
+
+        <!-- Strengths & Weaknesses -->
+        <div>
+            {% if latest_style.strengths %}
+            <div class="insight-box good">
+                <h3>Strengths</h3>
+                <ul>
+                    {% for s in latest_style.strengths %}
+                    <li>{{ s }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            {% if latest_style.weaknesses %}
+            <div class="insight-box warn">
+                <h3>Areas to Improve</h3>
+                <ul>
+                    {% for w in latest_style.weaknesses %}
+                    <li>{{ w }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Progression Charts -->
+{% if progression %}
+<section class="section">
+    <h2>Progression Over Time</h2>
+    <div class="chart-container relative">
+        <canvas id="progression-chart" aria-label="Lap time progression chart"></canvas>
+    </div>
+    <div class="chart-container relative mt-md">
+        <canvas id="score-progression-chart" aria-label="Score progression chart"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Session History -->
+<section class="section" aria-labelledby="heading-session-history">
+    <div class="section-header">
+        <h2 id="heading-session-history">Session History <span class="count-badge">{{ sessions|length }}</span></h2>
+    </div>
+
+    {% if sessions %}
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped">
+            <caption class="sr-only">Driver session history</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Track</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best Lap</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                    <th scope="col">Grade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr class="clickable-row" tabindex="0" role="link"
+                    aria-label="Session {{ s.session_date or '—' }} at {{ s.track_name or 'unknown track' }}"
+                    data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                    <td>{{ s.session_date or '—' }}</td>
+                    <td>{{ s.track_name or s.track_id or '—' }}</td>
+                    <td><span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span></td>
+                    <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                    <td class="col-numeric">{% if s.best_lap_time_s %}{{ "%.3f"|format(s.best_lap_time_s) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if s.total_score %}<span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>{% else %}—{% endif %}</td>
+                    <td>
+                        {% if s.grade %}
+                            <span class="grade grade-{{ s.grade[0] }}">{{ s.grade }}</span>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F3CE;</div>
+        <div class="empty-hero-title">No sessions for this driver</div>
+        <div class="empty-hero-desc">Analyze sessions with this driver's name to build their profile, progression, and driving style analysis.</div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Delete Driver -->
+<section class="section">
+    <details class="danger-zone">
+        <summary class="btn btn-ghost btn-sm text-red">Delete Driver</summary>
+        <form method="POST" action="{{ url_for('drivers.delete_driver', driver_id=driver.driver_id) }}"
+              class="inline-form" style="margin-top:0.5rem;">
+            <p class="text-muted text-sm">
+                This will permanently delete all sessions, laps, scores, progression, and style data.
+                Type <strong>{{ driver.driver_name }}</strong> to confirm.
+            </p>
+            <div class="form-row items-center">
+                <input type="text" name="confirm_name" class="form-input"
+                       placeholder="Type driver name to confirm" autocomplete="off" required>
+                <button type="submit" class="btn btn-danger btn-sm">Delete Permanently</button>
+            </div>
+        </form>
+    </details>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/driver_editor.js') }}"></script>
+<script src="{{ url_for('static', filename='js/progression.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Inline editor
+    if (window.DriverEditor) {
+        window.DriverEditor.init({{ driver.driver_id }});
+    }
+
+    {% if latest_style %}
+    // Radar chart for driving style features
+    if (window.Progression && window.Progression.drawRadar) {
+        window.Progression.drawRadar('style-radar', {
+            trail_braking:     {{ latest_style.trail_braking_depth or 0 }},
+            brake_consistency: {{ latest_style.brake_point_consistency or 0 }},
+            brake_buildup:     {{ latest_style.brake_pressure_buildup_rate or 0 }},
+            apex_speed:        {{ latest_style.apex_speed_ratio or 0 }},
+            turn_in:           {{ latest_style.turn_in_aggressiveness or 0 }},
+            throttle_patience: {{ latest_style.throttle_onset_delay_m or 0 }},
+            exit_efficiency:   {{ latest_style.exit_acceleration_efficiency or 0 }},
+            line_variation:    {{ latest_style.line_variation_index or 0 }},
+            stint_management:  {{ latest_style.early_vs_late_stint_pace or 0 }},
+            smoothness:        {{ latest_style.smoothness_composite or 0 }},
+        });
+    }
+    {% endif %}
+
+    {% if progression %}
+    // Progression time-series
+    if (window.Progression && window.Progression.init) {
+        window.Progression.init(
+            'progression-chart',
+            'score-progression-chart',
+            {{ driver.driver_id }}
+        );
+    }
+    {% endif %}
+});
+</script>
+{% endblock %}

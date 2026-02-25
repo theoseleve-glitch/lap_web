@@ -1,0 +1,29 @@
+{
+  "training_samples": 1000,
+  "mae": 0.312,
+  "created_at": "2026-02-14T19:57:08.802554+00:00",
+  "feature_list": [
+    "lap_time_s",
+    "sector_1_s",
+    "sector_2_s",
+    "sector_3_s",
+    "tyre_age_laps",
+    "tyre_compound",
+    "fuel_load_kg",
+    "air_temp_c",
+    "track_temp_c",
+    "humidity_pct",
+    "wind_speed_ms",
+    "track_status",
+    "drs_available",
+    "ers_deployed_pct",
+    "gap_ahead_s",
+    "gap_behind_s",
+    "pit_stop_count",
+    "starting_grid_pos"
+  ],
+  "notes": "baseline Ridge",
+  "model_type": "lap_time",
+  "identifier": "VER",
+  "version": "v1"
+}

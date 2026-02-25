@@ -1,0 +1,12 @@
+Telemetry Analysis Platform
+============================
+
+This software is provided for personal and educational use.
+
+By installing this software you agree to:
+- Use the software at your own risk
+- Not redistribute modified versions without permission
+- Acknowledge that the developers are not liable for any data loss
+
+Copyright (c) 2024 Telemetry Analysis Team
+All rights reserved.

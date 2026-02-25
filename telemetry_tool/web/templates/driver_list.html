@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Drivers — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Drivers <span class="count-badge">{{ drivers|length }}</span></h1>
+</div>
+
+{% if drivers %}
+<div class="card-grid">
+    {% for d in drivers %}
+    <a href="{{ url_for('drivers.driver_detail', driver_id=d.driver_id) }}" class="track-card elevation-1 card-interactive">
+        <div class="track-card-header">
+            <h3>{{ d.driver_name }}</h3>
+        </div>
+        <div class="track-card-body">
+            <div class="track-stat">
+                <span class="track-stat-label">Sessions</span>
+                <span class="track-stat-value">{{ d.session_count or 0 }}</span>
+            </div>
+            {% if d.personal_best_s %}
+            <div class="track-stat">
+                <span class="track-stat-label">Personal Best</span>
+                <span class="track-stat-value">{{ "%.3f"|format(d.personal_best_s) }}s</span>
+            </div>
+            {% endif %}
+            {% if d.mean_score %}
+            <div class="track-stat">
+                <span class="track-stat-label">Avg Score</span>
+                <span class="track-stat-value">{{ "%.1f"|format(d.mean_score) }}</span>
+            </div>
+            {% endif %}
+            {% if d.style_label %}
+            <div class="track-stat">
+                <span class="track-stat-label">Style</span>
+                <span class="badge badge-style">{{ d.style_label }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F464;</div>
+    <div class="empty-hero-title">No drivers yet</div>
+    <div class="empty-hero-desc">
+        Driver profiles are created automatically when you run an analysis. Each driver gets personal bests,
+        average scores, driving style classification, and progress tracking across sessions.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+</div>
+{% endif %}
+{% endblock %}

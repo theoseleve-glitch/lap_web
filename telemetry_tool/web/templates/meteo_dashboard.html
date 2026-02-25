@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}Live Meteo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="/analytics/" class="breadcrumb">&larr; Analytics</a></nav>
+        <h1>Live Meteo Dashboard</h1>
+        <p>Current weather, forecast, and historical conditions at track locations.</p>
+    </div>
+</div>
+
+<!-- Track selector -->
+<section class="section">
+    <h2>Select Track</h2>
+    <div class="form-group">
+        <select id="meteo-track" class="form-control" style="max-width:400px;">
+            <option value="">-- Select a track --</option>
+        </select>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+        <button id="meteo-current-btn" class="btn btn-primary" disabled>Get Current Weather</button>
+        <button id="meteo-forecast-btn" class="btn btn-secondary" disabled>12h Forecast</button>
+        <label class="toggle-label" style="display:inline-flex;align-items:center;gap:0.4rem;margin-left:0.5rem;font-size:0.85rem;cursor:pointer;">
+            <input type="checkbox" id="meteo-auto-refresh" style="accent-color:var(--accent);width:16px;height:16px;">
+            Auto-refresh
+        </label>
+        <select id="meteo-refresh-interval" class="form-control" style="max-width:110px;padding:0.25rem 0.4rem;font-size:0.8rem;" disabled>
+            <option value="60">1 min</option>
+            <option value="180">3 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="600">10 min</option>
+        </select>
+        <span id="meteo-countdown" style="font-size:0.8rem;color:var(--text-secondary);min-width:100px;display:none;"></span>
+    </div>
+</section>
+
+<div class="grid-2">
+    <!-- Current Weather Panel -->
+    <section class="section" id="meteo-current-section" style="display:none;">
+        <h2>Current Conditions</h2>
+        <div id="meteo-current-results"></div>
+    </section>
+
+    <!-- Track Conditions Panel -->
+    <section class="section" id="meteo-conditions-section" style="display:none;">
+        <h2>Track Conditions</h2>
+        <div id="meteo-conditions-results"></div>
+    </section>
+</div>
+
+<!-- Forecast Panel -->
+<section class="section" id="meteo-forecast-section" style="display:none;">
+    <h2>Weather Forecast</h2>
+    <canvas id="meteo-forecast-canvas" width="900" height="260" style="width:100%;max-width:900px;" aria-label="Weather forecast chart"></canvas>
+    <div id="meteo-forecast-table"></div>
+</section>
+
+<!-- Historical Weather -->
+<section class="section">
+    <h2>Historical Weather</h2>
+    <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;">
+        <div class="form-group" style="margin-bottom:0;">
+            <label for="meteo-hist-date">Date</label>
+            <input type="date" id="meteo-hist-date" class="form-control" style="max-width:200px;">
+        </div>
+        <button id="meteo-hist-btn" class="btn btn-secondary" disabled>Look Up Past Weather</button>
+    </div>
+    <div id="meteo-hist-results" style="margin-top:1rem;"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    "use strict";
+
+    function _card(label, value, color) {
+        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;' +
+            'border-top:3px solid ' + (color || 'var(--accent)') + ';min-width:100px;flex:1;max-width:160px;">' +
+            '<div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;">' + esc(label) + '</div>' +
+            '<div style="font-size:1.1rem;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + esc(String(value)) + '</div></div>';
+    }
+
+    var GRIP_COLORS = {
+        excellent: "var(--green)",
+        good: "#4caf50",
+        moderate: "var(--yellow)",
+        low: "var(--red)",
+        "very low": "#b71c1c",
+    };
+
+    // Load known tracks
+    FetchHelper.fetch("/api/meteo/tracks").then(function(tracks) {
+        var select = document.getElementById("meteo-track");
+        tracks.forEach(function(t) {
+            var opt = document.createElement("option");
+            opt.value = t.id;
+            opt.textContent = t.name;
+            select.appendChild(opt);
+        });
+    });
+
+    document.getElementById("meteo-track").addEventListener("change", function() {
+        var btns = ["meteo-current-btn", "meteo-forecast-btn", "meteo-hist-btn"];
+        btns.forEach(function(id) {
+            document.getElementById(id).disabled = !this.value;
+        }.bind(this));
+    });
+
+    // Current weather
+    document.getElementById("meteo-current-btn").addEventListener("click", function() {
+        var track = document.getElementById("meteo-track").value;
+        if (!track) return;
+
+        FetchHelper.fetch("/api/meteo/current?track=" + encodeURIComponent(track))
+        .then(function(data) {
+            if (data.error) {
+                document.getElementById("meteo-current-results").innerHTML = '<div class="no-data"><div class="no-data-text">Weather service unavailable: ' + esc(data.error) + '</div></div>';
+                document.getElementById("meteo-current-section").style.display = "";
+                return;
+            }
+
+            var html = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
+            if (data.air_temp_c != null) html += _card("Air Temp", data.air_temp_c.toFixed(1) + "\u00B0C", "var(--accent)");
+            if (data.humidity_pct != null) html += _card("Humidity", data.humidity_pct + "%", "var(--blue)");
+            if (data.wind_speed_mps != null) html += _card("Wind", data.wind_speed_mps.toFixed(1) + " m/s", "#888");
+            if (data.rain_mm != null) html += _card("Rain", data.rain_mm.toFixed(1) + " mm", data.rain_mm > 0 ? "var(--blue)" : "var(--green)");
+            if (data.description) html += _card("Sky", data.description, "#888");
+            html += '</div>';
+
+            if (data.is_raining) {
+                html += '<div class="plan-callout plan-callout-coaching" style="border-left-color:var(--blue);">' +
+                    '<strong>&#127783; Rain detected!</strong> Consider wet tires and adjusted braking points.</div>';
+            }
+
+            document.getElementById("meteo-current-results").innerHTML = html;
+            document.getElementById("meteo-current-section").style.display = "";
+
+            // Track conditions
+            if (data.track_conditions && !data.track_conditions.error) {
+                var tc = data.track_conditions;
+                var gcol = GRIP_COLORS[tc.grip_level] || "var(--text-secondary)";
+                var chtml = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
+                chtml += _card("Track Temp", tc.track_temp_est_c.toFixed(1) + "\u00B0C", "var(--accent)");
+                chtml += _card("Grip", tc.grip_level, gcol);
+                chtml += _card("Grip Score", tc.grip_score + "/100", gcol);
+                chtml += _card("Track State", tc.track_state, tc.track_state === "dry" ? "var(--green)" : "var(--blue)");
+                chtml += _card("Tire Rec.", tc.recommended_compound, "var(--yellow)");
+                chtml += '</div>';
+                if (tc.coaching) {
+                    chtml += '<div class="plan-callout plan-callout-coaching">' +
+                        '<strong>&#127942; Track Coaching:</strong> ' + esc(tc.coaching) + '</div>';
+                }
+                document.getElementById("meteo-conditions-results").innerHTML = chtml;
+                document.getElementById("meteo-conditions-section").style.display = "";
+            }
+        });
+    });
+
+    // Forecast
+    document.getElementById("meteo-forecast-btn").addEventListener("click", function() {
+        var track = document.getElementById("meteo-track").value;
+        if (!track) return;
+
+        FetchHelper.fetch("/api/meteo/forecast?track=" + encodeURIComponent(track) + "&hours=12")
+        .then(function(data) {
+            if (data.error || !data.forecast) {
+                document.getElementById("meteo-forecast-section").style.display = "";
+                document.getElementById("meteo-forecast-table").innerHTML = '<div class="no-data"><div class="no-data-text">Forecast unavailable</div></div>';
+                return;
+            }
+
+            document.getElementById("meteo-forecast-section").style.display = "";
+            _drawForecastChart(data.forecast);
+
+            // Rain risk badge
+            var riskColor = {high: "var(--red)", moderate: "var(--yellow)", low: "var(--green)", minimal: "var(--green)"};
+            var html = '<div style="margin-top:0.5rem;font-size:0.9rem;">Rain Risk: <strong style="color:' +
+                (riskColor[data.rain_risk] || "#888") + ';">' + esc(data.rain_risk) + '</strong>' +
+                ' (max ' + data.max_rain_probability_pct + '% probability)</div>';
+            document.getElementById("meteo-forecast-table").innerHTML = html;
+        });
+    });
+
+    function _drawForecastChart(forecast) {
+        var canvas = document.getElementById("meteo-forecast-canvas");
+        if (!canvas) return;
+        var dpr = window.devicePixelRatio || 1;
+        var W = canvas.parentElement.clientWidth || 900;
+        var H = 260;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+        var ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+
+        var pad = {top: 25, right: 20, bottom: 45, left: 50};
+        var plotW = W - pad.left - pad.right;
+        var plotH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        var n = forecast.length;
+        if (n === 0) return;
+
+        var temps = forecast.map(function(f) { return f.air_temp_c || 0; });
+        var minT = Math.min.apply(null, temps) - 2;
+        var maxT = Math.max.apply(null, temps) + 2;
+        var rangeT = maxT - minT || 1;
+
+        // Temperature line
+        ctx.beginPath();
+        ctx.strokeStyle = "#e74c3c";
+        ctx.lineWidth = 2;
+        for (var i = 0; i < n; i++) {
+            var x = pad.left + (i / (n - 1)) * plotW;
+            var y = pad.top + plotH - ((temps[i] - minT) / rangeT) * plotH;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Rain probability bars
+        forecast.forEach(function(f, i) {
+            var x = pad.left + (i / n) * plotW;
+            var bw = plotW / n * 0.6;
+            var prob = f.rain_prob_pct || 0;
+            var bh = (prob / 100) * plotH * 0.3;
+
+            ctx.fillStyle = "rgba(54, 162, 235, 0.4)";
+            ctx.fillRect(x, pad.top + plotH - bh, bw, bh);
+        });
+
+        // X labels (times)
+        ctx.fillStyle = "#888";
+        ctx.font = "10px system-ui";
+        ctx.textAlign = "center";
+        for (var i = 0; i < n; i += Math.max(1, Math.floor(n / 8))) {
+            var time = forecast[i].time || "";
+            var label = time.split("T")[1] || time;
+            label = label.substring(0, 5);
+            var x = pad.left + (i / (n - 1)) * plotW;
+            ctx.fillText(label, x, H - pad.bottom + 15);
+        }
+
+        // Y labels
+        ctx.textAlign = "right";
+        for (var t = Math.ceil(minT); t <= maxT; t += Math.max(1, Math.round(rangeT / 5))) {
+            var yy = pad.top + plotH - ((t - minT) / rangeT) * plotH;
+            ctx.fillText(t + "\u00B0C", pad.left - 5, yy + 4);
+        }
+
+        // Legend
+        ctx.fillStyle = "#e74c3c";
+        ctx.fillRect(W - 140, 8, 12, 3);
+        ctx.fillStyle = "#aaa";
+        ctx.textAlign = "left";
+        ctx.font = "10px system-ui";
+        ctx.fillText("Temperature", W - 124, 14);
+
+        ctx.fillStyle = "rgba(54, 162, 235, 0.6)";
+        ctx.fillRect(W - 140, 22, 12, 8);
+        ctx.fillStyle = "#aaa";
+        ctx.fillText("Rain %", W - 124, 30);
+    }
+
+    // Historical weather
+    document.getElementById("meteo-hist-btn").addEventListener("click", function() {
+        var track = document.getElementById("meteo-track").value;
+        var date = document.getElementById("meteo-hist-date").value;
+        if (!track || !date) return;
+
+        FetchHelper.fetch("/api/meteo/historical?track=" + encodeURIComponent(track) + "&date=" + encodeURIComponent(date))
+        .then(function(data) {
+            if (data.error) {
+                document.getElementById("meteo-hist-results").innerHTML = '<div class="no-data"><div class="no-data-text">Historical data unavailable: ' + esc(data.error) + '</div></div>';
+                return;
+            }
+
+            var s = data.summary || {};
+            var html = '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
+            if (s.temp_min_c != null) html += _card("Min Temp", s.temp_min_c + "\u00B0C", "var(--blue)");
+            if (s.temp_max_c != null) html += _card("Max Temp", s.temp_max_c + "\u00B0C", "var(--red)");
+            if (s.temp_mean_c != null) html += _card("Avg Temp", s.temp_mean_c + "\u00B0C", "var(--accent)");
+            if (s.humidity_mean_pct != null) html += _card("Avg Humidity", s.humidity_mean_pct + "%", "var(--blue)");
+            html += _card("Rain", s.had_rain ? "Yes (" + s.total_rain_mm + "mm)" : "No", s.had_rain ? "var(--blue)" : "var(--green)");
+            html += '</div>';
+
+            document.getElementById("meteo-hist-results").innerHTML = html;
+        });
+    });
+
+    // Debounced resize redraw
+    var _meteoResizeTimer = null, _lastForecast = null;
+    var _origDrawForecast = _drawForecastChart;
+    _drawForecastChart = function(forecast) { _lastForecast = forecast; _origDrawForecast(forecast); };
+    window.addEventListener("resize", function() {
+        clearTimeout(_meteoResizeTimer);
+        _meteoResizeTimer = setTimeout(function() { if (_lastForecast) _origDrawForecast(_lastForecast); }, 250);
+    });
+
+    // ── Auto-refresh ──
+    var _autoRefreshTimer = null;
+    var _countdownTimer = null;
+    var _countdownRemaining = 0;
+    var autoCheckbox = document.getElementById("meteo-auto-refresh");
+    var intervalSelect = document.getElementById("meteo-refresh-interval");
+    var countdownEl = document.getElementById("meteo-countdown");
+
+    function _startAutoRefresh() {
+        _stopAutoRefresh();
+        var seconds = parseInt(intervalSelect.value) || 300;
+        _countdownRemaining = seconds;
+        countdownEl.style.display = "";
+        _updateCountdown();
+
+        _countdownTimer = setInterval(function() {
+            _countdownRemaining--;
+            if (_countdownRemaining <= 0) {
+                // Trigger refresh
+                var track = document.getElementById("meteo-track").value;
+                if (track) {
+                    document.getElementById("meteo-current-btn").click();
+                }
+                _countdownRemaining = parseInt(intervalSelect.value) || 300;
+            }
+            _updateCountdown();
+        }, 1000);
+    }
+
+    function _stopAutoRefresh() {
+        if (_countdownTimer) clearInterval(_countdownTimer);
+        _countdownTimer = null;
+        countdownEl.style.display = "none";
+    }
+
+    function _updateCountdown() {
+        var m = Math.floor(_countdownRemaining / 60);
+        var s = _countdownRemaining % 60;
+        countdownEl.textContent = "Next refresh: " + m + ":" + (s < 10 ? "0" : "") + s;
+    }
+
+    autoCheckbox.addEventListener("change", function() {
+        intervalSelect.disabled = !autoCheckbox.checked;
+        if (autoCheckbox.checked) {
+            var track = document.getElementById("meteo-track").value;
+            if (!track) {
+                if (window.Toast) Toast.show("Select a track first", "warning");
+                autoCheckbox.checked = false;
+                intervalSelect.disabled = true;
+                return;
+            }
+            _startAutoRefresh();
+            if (window.Toast) Toast.show("Auto-refresh enabled", "success");
+        } else {
+            _stopAutoRefresh();
+        }
+    });
+
+    intervalSelect.addEventListener("change", function() {
+        if (autoCheckbox.checked) _startAutoRefresh();
+    });
+
+    // Stop auto-refresh if track changes
+    document.getElementById("meteo-track").addEventListener("change", function() {
+        if (autoCheckbox.checked) {
+            _stopAutoRefresh();
+            autoCheckbox.checked = false;
+            intervalSelect.disabled = true;
+        }
+    });
+})();
+</script>
+{% endblock %}

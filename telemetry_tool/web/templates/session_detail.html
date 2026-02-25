@@ -1,0 +1,1442 @@
+{% extends "base.html" %}
+
+{% block title %}{{ session.csv_filename or session.session_id[:16] }} — Telemetry{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/corner_replay.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/speed_trace_zoom.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/gg_explorer.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_list') }}" class="breadcrumb">&larr; Sessions</a></nav>
+        <h1>
+            {{ session.csv_filename or session.session_id[:16] }}
+            {% if session.grade %}
+                <span class="grade grade-{{ session.grade[0] }}">{{ session.grade }}</span>
+            {% endif %}
+        </h1>
+    </div>
+    {% if session.html_report_path %}
+    <a href="{{ url_for('sessions.session_report', session_id=session.session_id) }}"
+       class="btn btn-ghost" target="_blank" rel="noopener noreferrer">View Full Report <span class="sr-only">(opens in new tab)</span></a>
+    {% endif %}
+</div>
+
+<!-- Session metadata -->
+<div class="meta-grid">
+    <div class="meta-item">
+        <span class="meta-label">Driver</span>
+        <span class="meta-value">{{ session.driver_name or '—' }}</span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Track</span>
+        <span class="meta-value">
+            {% if session.track_id %}
+                <a href="{{ url_for('tracks.track_detail', track_id=session.track_id) }}">
+                    {{ session.track_name or session.track_id }}
+                </a>
+            {% else %}
+                —
+            {% endif %}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Type</span>
+        <span class="badge badge-{{ session.session_type or 'practice' }}">
+            {{ session.session_type or 'practice' }}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Condition</span>
+        <span class="badge badge-{{ session.track_state or 'dry' }}">
+            {{ session.track_state or 'dry' }}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Laps</span>
+        <span class="meta-value">{{ session.n_laps or '—' }}</span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Best Lap</span>
+        <span class="meta-value highlight">
+            {% if session.best_lap_time_s %}
+                {{ "%.3f"|format(session.best_lap_time_s) }}s
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Mean Lap</span>
+        <span class="meta-value">
+            {% if session.mean_lap_time_s %}
+                {{ "%.3f"|format(session.mean_lap_time_s) }}s
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Score</span>
+        <span class="meta-value highlight {% if session.total_score %}{% if session.total_score >= 80 %}text-green{% elif session.total_score >= 60 %}text-yellow{% elif session.total_score < 40 %}text-red{% endif %}{% endif %}">
+            {% if session.total_score %}
+                {% if session.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif session.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(session.total_score) }}
+            {% else %}—{% endif %}
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Kart</span>
+        <span class="meta-value">
+            {% if kart %}
+                <a href="{{ url_for('karts.kart_detail', kart_id=kart.kart_id) }}">{{ kart.kart_name }}</a>
+            {% else %}
+                <form method="POST" action="{{ url_for('sessions.set_session_kart', session_id=session.session_id) }}"
+                      class="inline-form" style="display:inline;">
+                    <select name="kart_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;display:inline-block;">
+                        <option value="">— None —</option>
+                        {% for k in karts %}
+                        <option value="{{ k.kart_id }}">{{ k.kart_name }}</option>
+                        {% endfor %}
+                    </select>
+                </form>
+            {% endif %}
+        </span>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     TAB NAVIGATION
+     ═══════════════════════════════════════════════════ -->
+<div class="session-tabs" id="session-tabs" role="tablist" aria-label="Session detail tabs">
+    <button type="button" class="session-tab active" data-tab="overview" role="tab" aria-selected="true" aria-controls="tab-overview" id="tab-btn-overview">Overview</button>
+    <button type="button" class="session-tab" data-tab="corners" role="tab" aria-selected="false" aria-controls="tab-corners" id="tab-btn-corners">Corners & Coaching</button>
+    <button type="button" class="session-tab" data-tab="performance" role="tab" aria-selected="false" aria-controls="tab-performance" id="tab-btn-performance">Performance</button>
+    <button type="button" class="session-tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="tab-analytics" id="tab-btn-analytics">Analytics</button>
+    <button type="button" class="session-tab" data-tab="data" role="tab" aria-selected="false" aria-controls="tab-data" id="tab-btn-data">Lap Data</button>
+</div>
+
+<!-- ═══════════════════════════════════════════════════
+     TAB 1: OVERVIEW — Score, Style, Theoretical, Debrief, Badges
+     ═══════════════════════════════════════════════════ -->
+<div class="tab-panel active" id="tab-overview" role="tabpanel" aria-labelledby="tab-btn-overview">
+
+<!-- Score breakdown -->
+{% if score %}
+<section class="section">
+    <h2>Score Breakdown <span class="tip tip-right tip-wrap" data-tip="Weighted score from pace, consistency, execution, and robustness &mdash; each pillar measures a different dimension of performance">&#9432;</span></h2>
+    <p class="section-hint">Your overall performance scored across four pillars. Hover each label for a breakdown of what it measures.</p>
+    <div class="score-bars">
+        {% set score_items = [
+            ('Pace', score.pace_score, score.pace_max, 'How close to theoretical best lap time'),
+            ('Consistency', score.consistency_score, score.consistency_max, 'Lap-to-lap time variation and repeatability'),
+            ('Execution', score.execution_score, score.execution_max, 'Corner precision, brake and throttle technique'),
+            ('Robustness', score.robustness_score, score.robustness_max, 'Performance under changing conditions and fatigue'),
+        ] %}
+        {% for name, val, max_val, tip_text in score_items %}
+        {% if val is not none and max_val %}
+        {% set pct = (val / max_val * 100)|round %}
+        <div class="score-bar-row">
+            <span class="score-bar-label tip tip-right" data-tip="{{ tip_text }}">{{ name }}</span>
+            <div class="score-bar-track" role="progressbar" aria-valuenow="{{ "%.1f"|format(val) }}" aria-valuemin="0" aria-valuemax="{{ "%.0f"|format(max_val) }}" aria-label="{{ name }} score">
+                <div class="score-bar-fill {% if pct >= 80 %}score-excellent{% elif pct >= 60 %}score-good{% elif pct >= 40 %}score-average{% else %}score-poor{% endif %}" style="width: {{ pct }}%"></div>
+            </div>
+            <span class="score-bar-value">{{ "%.1f"|format(val) }} / {{ "%.0f"|format(max_val) }}</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+        {% if score.adaptation_score is not none %}
+        <div class="score-bar-row">
+            <span class="score-bar-label tip tip-right" data-tip="Improvement over the session duration">Adaptation</span>
+            <div class="score-bar-track" role="progressbar" aria-valuenow="{{ "%.1f"|format(score.adaptation_score) }}" aria-valuemin="0" aria-valuemax="10" aria-label="Adaptation score">
+                <div class="score-bar-fill accent" style="width: {{ (score.adaptation_score * 10)|round }}%"></div>
+            </div>
+            <span class="score-bar-value">{{ "%.1f"|format(score.adaptation_score) }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if score.strengths %}
+    <div class="insight-box good">
+        <h3>Strengths</h3>
+        <ul>
+            {% for s in score.strengths %}
+            <li>{{ s }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if score.weaknesses %}
+    <div class="insight-box warn">
+        <h3>Areas to Improve</h3>
+        <ul>
+            {% for w in score.weaknesses %}
+            <li>{{ w }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- Driving Style (JS-rendered) -->
+<section class="section">
+    <h2>
+        Driving Style
+        <span class="tip tip-right tip-wrap" data-tip="Your driving fingerprint &mdash; 10 input behaviors analyzed across all laps">&#9432;</span>
+    </h2>
+    <div id="driving-style-container" aria-live="polite">
+        <div class="loading-center"><div class="spinner-inline spinner-accent"></div><div class="text-secondary text-sm">Loading driving style...</div></div>
+    </div>
+</section>
+
+<!-- Session Debrief / Summary -->
+<section class="section">
+    <h2>Session Debrief <span class="tip tip-right tip-wrap" data-tip="AI-generated performance report with highlights, key metrics, areas to improve, and your next-session action plan">&#9432;</span></h2>
+    <p class="section-hint">AI-generated performance report with highlights, key metrics, areas to improve, and your next-session action plan.</p>
+    <div id="summary-report-container" aria-live="polite">
+        <div class="loading-center"><div class="spinner-inline spinner-accent"></div><div class="text-secondary text-sm">Loading session summary...</div></div>
+    </div>
+</section>
+
+<!-- Achievements & Badges -->
+<section class="section">
+    <h2>Achievements & Rating <span class="tip tip-right tip-wrap" data-tip="Badges earned from this session based on pace, consistency, endurance, flow, and improvement. Aim for gold tier.">&#9432;</span></h2>
+    <p class="section-hint">Badges earned from this session based on pace, consistency, endurance, flow, and improvement. Aim for gold tier.</p>
+    <div id="session-badges-container" aria-live="polite">
+        <div class="loading-center"><div class="spinner-inline spinner-accent"></div><div class="text-secondary text-sm">Loading badges...</div></div>
+    </div>
+</section>
+
+<!-- Performance Fingerprint -->
+<section class="section">
+    <h2>Performance Fingerprint <span class="tip tip-right tip-wrap" data-tip="Radar signature of your driving across key performance dimensions. Compare across sessions to track evolution.">&#9432;</span></h2>
+    <p class="section-hint">Unique radar signature of your driving across multiple dimensions. Compare across sessions to track evolution.</p>
+    <div id="fingerprint-container" class="flex-wrap-start">
+        <canvas id="fingerprint-radar" width="380" height="380" class="chart-canvas" aria-label="Performance fingerprint radar chart"></canvas>
+        <div id="fingerprint-stats" class="chart-sidebar">
+            <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading fingerprint...</span></div>
+        </div>
+    </div>
+</section>
+
+</div><!-- end tab-overview -->
+
+<!-- ═══════════════════════════════════════════════════
+     TAB 2: CORNERS & COACHING
+     ═══════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-corners" role="tabpanel" aria-labelledby="tab-btn-corners">
+
+<!-- Corner Replay — Animated corner-by-corner telemetry replay -->
+{% if gps_laps and gps_laps|length >= 2 %}
+<section class="section">
+    <h2>Key Corners Replay</h2>
+    <p class="section-hint">Animated corner-by-corner replay. Review technique with virtual cockpit gauges, compare two laps side-by-side, or overlay the 3 fastest laps.</p>
+    <div class="cr-section" id="corner-replay-root">
+        <!-- Mode tabs -->
+        <div class="cr-mode-bar">
+            <button class="cr-mode-tab active" data-cr-mode="review">Corner Review</button>
+            <button class="cr-mode-tab" data-cr-mode="split">Split Comparison</button>
+            <button class="cr-mode-tab" data-cr-mode="top3">Top 3 Overlay</button>
+        </div>
+
+        <!-- Corner pills -->
+        <div class="cr-corner-bar" id="cr-corner-bar">
+            <button class="cr-corner-nav-btn" id="cr-prev-corner" title="Previous corner">&lsaquo;</button>
+            <div id="cr-corner-pills" style="display:flex;gap:4px;overflow-x:auto;"></div>
+            <button class="cr-corner-nav-btn" id="cr-next-corner" title="Next corner">&rsaquo;</button>
+        </div>
+
+        <!-- Viewport: map + cockpit -->
+        <div class="cr-viewport" id="cr-viewport">
+            <!-- Map side -->
+            <div class="cr-map-panel" id="cr-map-panel">
+                <div class="cr-corner-info" id="cr-corner-info">
+                    <div class="cr-corner-info-name" id="cr-corner-name"></div>
+                </div>
+                <canvas class="cr-map-canvas" id="cr-map-canvas"></canvas>
+            </div>
+            <!-- Cockpit side (review + split modes) -->
+            <div class="cr-cockpit-panel" id="cr-cockpit-panel">
+                <!-- Single cockpit (review mode) -->
+                <canvas class="cr-cockpit-canvas" id="cr-cockpit-canvas"></canvas>
+                <!-- Split cockpits (split mode) -->
+                <div class="cr-split-cockpit" id="cr-split-cockpit" style="display:none;">
+                    <div class="cr-split-cockpit-half">
+                        <span class="cr-split-label cr-split-label-a" id="cr-split-label-a">Lap A</span>
+                        <canvas class="cr-cockpit-canvas" id="cr-cockpit-a"></canvas>
+                    </div>
+                    <div class="cr-split-cockpit-half">
+                        <span class="cr-split-label cr-split-label-b" id="cr-split-label-b">Lap B</span>
+                        <canvas class="cr-cockpit-canvas" id="cr-cockpit-b"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Time delta (split mode) -->
+        <div class="cr-delta-badge" id="cr-delta-badge"></div>
+
+        <!-- Top 3 legend (top3 mode) -->
+        <div class="cr-top3-legend" id="cr-top3-legend" style="display:none;"></div>
+
+        <!-- Controls bar -->
+        <div class="cr-controls">
+            <button class="cr-play-btn" id="cr-play-btn" title="Play / Pause">&#9654;</button>
+            <div class="cr-scrubber-wrap" id="cr-scrubber-wrap">
+                <div class="cr-scrubber-track" id="cr-scrubber-track">
+                    <div class="cr-scrubber-fill" id="cr-scrubber-fill" style="width:0"></div>
+                    <div class="cr-scrubber-thumb" id="cr-scrubber-thumb" style="left:0"></div>
+                </div>
+            </div>
+            <div style="display:flex;gap:3px;">
+                <button class="cr-speed-btn" data-cr-speed="0.25">0.25x</button>
+                <button class="cr-speed-btn" data-cr-speed="0.5">0.5x</button>
+                <button class="cr-speed-btn active" data-cr-speed="1">1x</button>
+                <button class="cr-speed-btn" data-cr-speed="2">2x</button>
+            </div>
+            <div class="cr-lap-group" id="cr-lap-a-group">
+                <span>Lap:</span>
+                <select class="cr-lap-select" id="cr-lap-a-select"></select>
+            </div>
+            <div class="cr-lap-group cr-hidden" id="cr-lap-b-group">
+                <span>vs:</span>
+                <select class="cr-lap-select" id="cr-lap-b-select"></select>
+            </div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Theoretical Lap -->
+{% if theoretical %}
+<section class="section">
+    <h2>Theoretical Lap</h2>
+    <div class="meta-grid mb-md">
+        <div class="meta-item">
+            <span class="meta-label">Theoretical Time</span>
+            <span class="meta-value highlight">
+                {% if theoretical.theoretical_time_s %}
+                    {{ "%.3f"|format(theoretical.theoretical_time_s) }}s
+                {% else %}—{% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Actual Best</span>
+            <span class="meta-value">
+                {% if theoretical.actual_best_time_s %}
+                    {{ "%.3f"|format(theoretical.actual_best_time_s) }}s
+                {% else %}—{% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Gap</span>
+            <span class="meta-value {% if theoretical.gap_pct is not none %}{% if theoretical.gap_pct <= 1.0 %}good{% elif theoretical.gap_pct <= 3.0 %}warn{% endif %}{% endif %}">
+                {% if theoretical.gap_pct is not none %}
+                    +{{ "%.2f"|format(theoretical.gap_pct) }}%
+                {% else %}—{% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Method</span>
+            <span class="meta-value">{{ theoretical.simulation_method or '—' }}</span>
+        </div>
+    </div>
+    {% if theoretical.speed_profile_json %}
+    <p class="form-hint mb-sm">
+        Theoretical speed envelope is shown as a dashed gold line on the speed chart below.
+    </p>
+    {% endif %}
+</section>
+{% endif %}
+
+<!-- Track Layout — Corner Overview Map -->
+{% if gps_laps %}
+<section class="section">
+    <h2>Track Layout</h2>
+    <p class="text-secondary text-sm" style="margin-bottom: 0.5rem;">
+        Corner markers are color-coded by time loss (green = minimal, red = high).
+    </p>
+    <div class="chart-container relative">
+        <canvas id="corner-map-view-canvas" aria-label="Track layout with corner markers"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Corner Coaching -->
+{% if gps_laps %}
+<section class="section">
+    <h2>Corner Coaching</h2>
+    <div id="corner-coaching-content">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading corner coaching...</span></div>
+    </div>
+</section>
+
+<!-- Key Corner Selection -->
+{% if session.track_id %}
+<section class="section" id="key-corners-section">
+    <h2>Key Corners <span class="text-muted text-sm">(focus areas)</span></h2>
+    <p class="text-secondary text-sm" style="margin-bottom:0.75rem;">
+        Mark the corners you want to focus on for improvement. These will be highlighted in coaching reports.
+    </p>
+    <div id="key-corners-picker">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading corners...</span></div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Brake Precision (hidden if no data) -->
+<section class="section" id="brake-section" style="display:none;">
+    <h2>Brake Precision</h2>
+    <div class="chart-container relative">
+        <canvas id="brake-scatter-chart" aria-label="Brake precision scatter plot"></canvas>
+    </div>
+</section>
+
+<!-- Throttle Onset Map (hidden if no data) -->
+<section class="section" id="throttle-section" style="display:none;">
+    <h2>Throttle Onset Map</h2>
+    <div class="chart-container relative">
+        <canvas id="throttle-heatmap-chart" aria-label="Throttle onset heatmap"></canvas>
+    </div>
+</section>
+
+<!-- Consistency Heatmap (hidden if no data) -->
+<section class="section" id="consistency-section" style="display:none;">
+    <h2>Consistency Heatmap</h2>
+    <div class="chart-container relative">
+        <canvas id="consistency-heatmap-chart" aria-label="Lap consistency heatmap"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Corner Mastery -->
+<section class="section">
+    <h2>Corner Mastery Report Card</h2>
+    <div id="corner-mastery-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading corner mastery...</span></div>
+    </div>
+</section>
+
+<!-- G-G Explorer -->
+{% if gps_laps %}
+<section class="section">
+    <h2>G-G Explorer</h2>
+    <div id="gg-explorer" class="gg-explorer">
+        <div class="gg-explorer-controls">
+            <div class="gg-explorer-controls-left">
+                <div class="gg-mode-group" id="gg-mode-group">
+                    <button class="gg-mode-btn active" data-mode="all">All</button>
+                    <button class="gg-mode-btn" data-mode="single">Single</button>
+                    <button class="gg-mode-btn" data-mode="compare">Compare</button>
+                </div>
+                <label id="gg-primary-label" style="display:none">
+                    Lap <select id="gg-primary-select" class="form-select-sm"></select>
+                </label>
+                <label id="gg-compare-label" style="display:none">
+                    vs <select id="gg-compare-select" class="form-select-sm"></select>
+                </label>
+            </div>
+            <div class="gg-explorer-controls-right">
+                <span id="gg-stats" class="text-muted text-xs"></span>
+            </div>
+        </div>
+        <div class="gg-explorer-body">
+            <div class="gg-explorer-gg-wrap">
+                <canvas id="gg-explorer-canvas"></canvas>
+                <div class="gg-explorer-tooltip"></div>
+            </div>
+            <div class="gg-explorer-map-wrap">
+                <canvas id="gg-explorer-minimap"></canvas>
+            </div>
+        </div>
+        <div class="gg-explorer-info" id="gg-info-bar">
+            <span class="text-muted text-xs">Click a point to see its track position</span>
+        </div>
+        <div id="gg-loading" class="no-data p-lg" style="position:absolute;inset:0;z-index:5;background:var(--bg-card, #1a1f2e)">
+            <div class="spinner-inline spinner-accent"></div>
+            <div class="text-secondary text-sm">Loading acceleration data...</div>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+</div><!-- end tab-corners -->
+
+<!-- ═══════════════════════════════════════════════════
+     TAB 3: PERFORMANCE — Stints, Fatigue, Endurance, Predictions
+     ═══════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-performance" role="tabpanel" aria-labelledby="tab-btn-performance">
+
+<!-- Stint Analysis (race/sprint/endurance only) -->
+<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
+    <h2>Stint Analysis <span class="tip tip-bottom tip-wrap" data-tip="Breaks your session into stints based on pace drops. Shows pace fade %, tyre cliff detection, and per-stint coaching.">(i)</span></h2>
+    <div id="stint-analysis-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading stint data...</span></div>
+    </div>
+    <div class="chart-container relative min-h-200">
+        <canvas id="stint-pace-chart" aria-label="Stint pace chart"></canvas>
+    </div>
+</section>
+
+<!-- Race Pace Simulator (non-race only) -->
+<section class="section" data-non-race-only="true">
+    <h2>Race Pace Simulator <span class="tip tip-bottom tip-wrap" data-tip="Simulate race outcomes using your session data. Define race parameters and driver factors, then click Simulate.">(i)</span></h2>
+    <div id="pace-simulator-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading simulator...</span></div>
+    </div>
+</section>
+
+<!-- Optimal Pit Window (race types only) -->
+<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
+    <h2>Optimal Pit Window <span class="tip tip-bottom tip-wrap" data-tip="Calculates the best lap range to pit based on stint degradation and pit loss time.">(i)</span></h2>
+    <div id="pit-window-container">
+        <div class="flex-wrap-start">
+            <canvas id="pit-window-chart" width="560" height="280" class="chart-canvas" aria-label="Optimal pit window chart"></canvas>
+            <div id="pit-window-stats" class="chart-sidebar">
+                <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading pit window analysis...</span></div>
+            </div>
+        </div>
+        <div id="pit-window-coaching" class="coaching-below"></div>
+    </div>
+</section>
+
+<!-- Tyre Performance (race types only) -->
+<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
+    <h2>Tyre Performance <span class="tip tip-bottom tip-wrap" data-tip="Compares grip and pace across stint phases (early/mid/late) to reveal tyre compound behaviour.">(i)</span></h2>
+    <div id="tyre-analysis-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading tyre analysis...</span></div>
+    </div>
+</section>
+
+<!-- Driver Workload -->
+<section class="section">
+    <h2>Driver Workload <span class="tip tip-bottom tip-wrap" data-tip="Estimates physical and cognitive load per lap. Flags fatigue onset when complexity increases without pace improvement.">(i)</span></h2>
+    <div id="workload-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading workload data...</span></div>
+    </div>
+</section>
+
+<!-- Session Timeline -->
+<section class="section">
+    <h2>Session Timeline <span class="tip tip-bottom tip-wrap" data-tip="Chronological view of key events — pace changes, incidents, pit stops — across the full session.">(i)</span></h2>
+    <div id="session-timeline-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading timeline...</span></div>
+    </div>
+</section>
+
+<!-- Tire Degradation Analysis -->
+<section class="section" data-endurance-only="true">
+    <h2>Tire Degradation Analysis <span class="tip tip-bottom tip-wrap" data-tip="Analyses lap time trends to detect degradation rate, tyre cliff, and optimal stint length. Only available for 6h+ endurance sessions.">(i)</span></h2>
+    <div id="tire-deg-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing tire degradation...</span></div>
+    </div>
+</section>
+
+</div><!-- end tab-performance -->
+
+<!-- ═══════════════════════════════════════════════════
+     TAB 4: ANALYTICS — Comparisons, Trends, Sectors, Speed
+     ═══════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-analytics" role="tabpanel" aria-labelledby="tab-btn-analytics">
+
+<!-- Track Map -->
+{% if gps_laps %}
+<section class="section">
+    <h2>Track Map</h2>
+    <div class="gps-controls">
+        <label for="lap-select">Lap:</label>
+        <select id="lap-select" class="form-select">
+            {% for lap_num in gps_laps %}
+            <option value="{{ lap_num }}" {% if lap_num == best_lap %}selected{% endif %}>
+                Lap {{ lap_num }}{% if lap_num == best_lap %} (Best){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <span class="overlay-legend">
+            <label><input type="checkbox" id="toggle-all-laps" checked> All Laps</label>
+        </span>
+    </div>
+    <div class="chart-container relative">
+        <canvas id="track-map-canvas" aria-label="Track map with GPS overlay"></canvas>
+    </div>
+
+    <!-- Speed chart with zoom selection overlay -->
+    <div class="chart-container" id="speed-chart-wrapper">
+        <canvas id="speed-chart" aria-label="Speed vs distance chart"></canvas>
+        <div id="chart-crosshair" class="chart-crosshair"></div>
+        <div id="chart-tooltip" class="chart-tooltip"></div>
+        <div class="speed-chart-selection-overlay">
+            <div id="speed-chart-selection-rect" class="speed-chart-selection-rect"></div>
+        </div>
+        <span id="speed-chart-drag-hint" class="speed-chart-drag-hint">Click &amp; drag to zoom</span>
+    </div>
+    <div id="speed-chart-corner-markers" class="speed-chart-corner-markers"></div>
+
+    <!-- Speed Trace Zoom Detail -->
+    <div id="speed-zoom-panel" class="speed-zoom-panel" style="display:none;">
+        <div class="speed-zoom-controls">
+            <div class="speed-zoom-controls-left">
+                <label>Primary:
+                    <select id="speed-zoom-primary" class="form-select form-select-sm"></select>
+                </label>
+                <label>Compare:
+                    <select id="speed-zoom-compare" class="form-select form-select-sm">
+                        <option value="">&mdash; none &mdash;</option>
+                    </select>
+                </label>
+            </div>
+            <div class="speed-zoom-controls-right">
+                <div id="speed-zoom-corner-pills" class="speed-zoom-corner-pills"></div>
+                <button type="button" id="speed-zoom-reset" class="btn btn-xs">Reset Zoom</button>
+            </div>
+        </div>
+        <div class="speed-zoom-canvas-wrap relative">
+            <canvas id="speed-zoom-canvas" aria-label="Zoomed speed trace detail"></canvas>
+            <div id="speed-zoom-tooltip"></div>
+        </div>
+        <div id="speed-zoom-legend" class="speed-zoom-legend"></div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Track Speed Profile -->
+<section class="section">
+    <h2>Track Speed Profile</h2>
+    <div id="speed-profile-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading speed profile...</span></div>
+    </div>
+</section>
+
+<!-- Sector Performance -->
+<section class="section">
+    <h2>Sector Performance</h2>
+    <div id="sector-analysis-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading sector analysis...</span></div>
+    </div>
+</section>
+
+<!-- Lap Speed Overlay -->
+{% if gps_laps and gps_laps|length > 1 %}
+<section class="section">
+    <h2>Lap Speed Comparison</h2>
+    <div class="lap-overlay-controls">
+        <span class="text-muted mr-sm">Select laps to overlay:</span>
+        {% for lap_num in gps_laps %}
+        <label class="lap-overlay-label">
+            <input type="checkbox" class="lap-overlay-cb" data-lap="{{ lap_num }}"
+                   {% if lap_num == best_lap %}checked{% endif %}>
+            <span class="lap-color-swatch" data-lap="{{ lap_num }}"></span>
+            Lap {{ lap_num }}{% if lap_num == best_lap %} (Best){% endif %}
+        </label>
+        {% endfor %}
+        <button type="button" id="overlay-select-all" class="btn btn-xs ml-sm">All</button>
+        <button type="button" id="overlay-clear-all" class="btn btn-xs">None</button>
+    </div>
+    <div class="chart-container relative">
+        <canvas id="speed-overlay-chart" aria-label="Lap speed overlay comparison"></canvas>
+        <div id="overlay-legend" class="overlay-legend-box"></div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Lap Time Distribution -->
+<section class="section">
+    <h2>Lap Time Distribution</h2>
+    <div id="lap-distribution-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading distribution...</span></div>
+    </div>
+</section>
+
+<!-- Lap Progress Tracker -->
+<section class="section">
+    <h2>Lap Progress Tracker</h2>
+    <div id="lap-progress-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading progress...</span></div>
+    </div>
+</section>
+
+<!-- Session Comparison Matrix -->
+<section class="section">
+    <h2>Session Comparison Matrix</h2>
+    <div id="comparison-matrix-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading comparison...</span></div>
+    </div>
+</section>
+
+<!-- Cross-Session Comparison -->
+<section class="section">
+    <h2>Cross-Session Comparison</h2>
+    <div id="cross-session-metrics">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading comparison data...</span></div>
+    </div>
+</section>
+
+{% if gps_laps %}
+<section class="section">
+    <h2>Cross-Session Speed Overlay</h2>
+    <div class="chart-container relative">
+        <canvas id="cross-session-overlay-chart" aria-label="Cross-session speed overlay"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Driver Fitness & Endurance -->
+<section class="section">
+    <h2>Driver Fitness & Endurance</h2>
+    <div id="fitness-container">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing fitness metrics...</span></div>
+    </div>
+</section>
+
+<!-- Development Drill Suggestions -->
+<section class="section">
+    <h2>Suggested Development Drills</h2>
+    <div id="session-drill-suggestions">
+        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing session...</span></div>
+    </div>
+</section>
+
+</div><!-- end tab-analytics -->
+
+<!-- ═══════════════════════════════════════════════════
+     TAB 5: LAP DATA — Tables, Charts, Conditions
+     ═══════════════════════════════════════════════════ -->
+<div class="tab-panel" id="tab-data" role="tabpanel" aria-labelledby="tab-btn-data">
+
+<!-- Performance Summary KPIs -->
+{% if laps %}
+<section class="section">
+    <h2>Performance Summary</h2>
+    <div class="meta-grid meta-grid-auto">
+        <div class="meta-item">
+            <span class="meta-label">Best Lap</span>
+            <span class="meta-value highlight">
+                {% if session.best_lap_time_s %}{{ "%.3f"|format(session.best_lap_time_s) }}s{% else %}—{% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Mean Lap</span>
+            <span class="meta-value">
+                {% if session.mean_lap_time_s %}{{ "%.3f"|format(session.mean_lap_time_s) }}s{% else %}—{% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Std Deviation</span>
+            <span class="meta-value" id="kpi-std-dev">—</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Consistency %</span>
+            <span class="meta-value" id="kpi-consistency">—</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Best vs Mean</span>
+            <span class="meta-value" id="kpi-best-mean-gap">—</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Top 25% Avg</span>
+            <span class="meta-value" id="kpi-top-quartile">—</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Improvement</span>
+            <span class="meta-value" id="kpi-improvement">—</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Valid Laps</span>
+            <span class="meta-value" id="kpi-valid-laps">—</span>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Lap Times Chart -->
+<section class="section">
+    <h2>Lap Times</h2>
+    <div class="chart-container relative">
+        <canvas id="lap-times-chart" aria-label="Lap times bar chart"></canvas>
+        <div id="lap-time-tooltip" class="lap-time-tooltip"></div>
+    </div>
+</section>
+
+<!-- Lap Table -->
+{% if laps %}
+<section class="section">
+    <h2>Lap Data</h2>
+    <div class="table-wrap">
+        <table class="data-table compact striped">
+            <caption class="sr-only">Lap times and telemetry data</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Lap</th>
+                    <th scope="col" class="col-numeric">Time (s)</th>
+                    <th scope="col" class="col-numeric">Avg Speed (km/h)</th>
+                    <th scope="col" class="col-numeric">Max Speed (km/h)</th>
+                    <th scope="col" class="col-numeric">Max Braking (G)</th>
+                    <th scope="col" class="col-numeric">Max Accel (G)</th>
+                    <th scope="col" class="col-numeric">Line (m)</th>
+                    <th scope="col">Phase</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lap in laps %}
+                <tr class="{% if lap.is_best %}best-lap{% endif %}{% if not lap.is_valid %} invalid-lap{% endif %}{% if lap.is_joker %} joker-lap{% endif %}">
+                    <td>
+                        {{ lap.lap_number }}
+                        {% if lap.is_best %}<span class="badge badge-best">Best</span>{% endif %}
+                        {% if lap.is_joker %}<span class="badge badge-joker" title="Joker lap — alternative track section{% if lap.line_length_m %} ({{ '%.0f'|format(lap.line_length_m) }}m){% endif %}">J</span>
+                        {% elif not lap.is_valid %}<span class="badge {% if lap.invalid_reason == 'Pitted lap' %}badge-pit{% else %}badge-invalid{% endif %}">{{ lap.invalid_reason or 'Invalid' }}</span>{% endif %}
+                    </td>
+                    <td class="col-numeric">{{ "%.3f"|format(lap.lap_time_s) if lap.lap_time_s else '—' }}</td>
+                    <td class="col-numeric">{{ "%.1f"|format(lap.speed_mean_mps * 3.6) if lap.speed_mean_mps else '—' }}</td>
+                    <td class="col-numeric">{{ "%.1f"|format(lap.speed_max_mps * 3.6) if lap.speed_max_mps else '—' }}</td>
+                    <td class="col-numeric">{{ "%.2f"|format(lap.braking_max_mps2 / 9.81) if lap.braking_max_mps2 else '—' }}</td>
+                    <td class="col-numeric">{{ "%.2f"|format(lap.accel_max_mps2 / 9.81) if lap.accel_max_mps2 else '—' }}</td>
+                    <td class="col-numeric">{{ "%.0f"|format(lap.line_length_m) if lap.line_length_m else '—' }}</td>
+                    <td>{{ lap.phase_id if lap.phase_id is not none else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- Condition Phases -->
+{% if phases %}
+<section class="section">
+    <h2>Track Condition Phases</h2>
+    <div class="phases-timeline">
+        {% for p in phases %}
+        <div class="phase-block phase-{{ p.label|lower if p.label else 'unknown' }}">
+            <div class="phase-label">{{ p.label or 'Phase ' + p.phase_id|string }}</div>
+            <div class="phase-laps">Laps {{ p.lap_start }}–{{ p.lap_end }}</div>
+            {% if p.median_pace_s %}
+            <div class="phase-pace">Median: {{ "%.3f"|format(p.median_pace_s) }}s</div>
+            {% endif %}
+            {% if p.confidence %}
+            <div class="phase-conf">Conf: {{ "%.0f"|format(p.confidence * 100) }}%</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+</div><!-- end tab-data -->
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Pass data to JS via global variables.
+    window.TELEMETRY = {
+        sessionId: {{ session.session_id|tojson }},
+        trackId: {{ (session.track_id or '')|tojson }},
+        sessionType: {{ (session.session_type or 'practice')|tojson }},
+        totalSessionTime: {{ total_session_time|tojson }},
+        {% if gps_laps %}
+        gpsLaps: {{ gps_laps|tojson }},
+        bestLap: {{ best_lap|tojson }},
+        {% endif %}
+    };
+
+    // ── Tab switching with lazy-load ────────────────────
+    // Modules listen for 'tab:activate' on their container to defer API calls.
+    // This prevents 20+ simultaneous fetches on page load.
+    window.TELEMETRY = window.TELEMETRY || {};
+    window.TELEMETRY._activeTabs = {};
+    window.TELEMETRY.isTabActive = function(tabName) {
+        return !!window.TELEMETRY._activeTabs[tabName];
+    };
+
+    (function() {
+        var tabs = document.querySelectorAll('.session-tab');
+        var panels = document.querySelectorAll('.tab-panel');
+
+        function activateTab(tab) {
+            var targetId = 'tab-' + tab.dataset.tab;
+
+            // Update tab active state & ARIA
+            tabs.forEach(function(t) {
+                t.classList.remove('active');
+                t.setAttribute('aria-selected', 'false');
+                t.setAttribute('tabindex', '-1');
+            });
+            tab.classList.add('active');
+            tab.setAttribute('aria-selected', 'true');
+            tab.setAttribute('tabindex', '0');
+
+            // Update panel visibility
+            panels.forEach(function(p) { p.classList.remove('active'); });
+            var target = document.getElementById(targetId);
+            if (target) target.classList.add('active');
+
+            // Track active tabs and dispatch lazy-load event
+            window.TELEMETRY._activeTabs[tab.dataset.tab] = true;
+            if (target) {
+                target.dispatchEvent(new CustomEvent('tab:activate', { bubbles: true }));
+            }
+
+            // Save preference
+            try { sessionStorage.setItem('session_active_tab', tab.dataset.tab); } catch(e) {}
+
+            // Trigger resize for canvases that may need redrawing
+            window.dispatchEvent(new Event('resize'));
+        }
+        // Mark the initially active tab
+        var initialTab = document.querySelector('.session-tab.active');
+        if (initialTab) window.TELEMETRY._activeTabs[initialTab.dataset.tab] = true;
+
+        tabs.forEach(function(tab, i) {
+            tab.addEventListener('click', function() { activateTab(tab); });
+
+            // Arrow key navigation within tabs
+            tab.addEventListener('keydown', function(e) {
+                var idx = Array.prototype.indexOf.call(tabs, tab);
+                var nextIdx = -1;
+
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    nextIdx = idx < tabs.length - 1 ? idx + 1 : 0;
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    nextIdx = idx > 0 ? idx - 1 : tabs.length - 1;
+                } else if (e.key === 'Home') {
+                    e.preventDefault();
+                    nextIdx = 0;
+                } else if (e.key === 'End') {
+                    e.preventDefault();
+                    nextIdx = tabs.length - 1;
+                }
+
+                if (nextIdx >= 0) {
+                    activateTab(tabs[nextIdx]);
+                    tabs[nextIdx].focus();
+                }
+            });
+
+            // Set initial tabindex: only active tab is tabbable
+            if (!tab.classList.contains('active')) {
+                tab.setAttribute('tabindex', '-1');
+            }
+        });
+
+        // Restore saved tab
+        try {
+            var saved = sessionStorage.getItem('session_active_tab');
+            if (saved) {
+                var savedTab = document.querySelector('.session-tab[data-tab="' + saved + '"]');
+                if (savedTab) activateTab(savedTab);
+            }
+        } catch(e) {}
+
+        // Handle hash-based tab selection (#corners, #performance, etc.)
+        var hash = window.location.hash.replace('#', '');
+        if (hash) {
+            var hashTab = document.querySelector('.session-tab[data-tab="' + hash + '"]');
+            if (hashTab) activateTab(hashTab);
+        }
+    })();
+</script>
+{% if gps_laps %}
+<script src="{{ url_for('static', filename='js/track_map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chart_sync.js') }}"></script>
+<script src="{{ url_for('static', filename='js/speed_trace_zoom.js') }}"></script>
+<script src="{{ url_for('static', filename='js/gg_explorer.js') }}"></script>
+<script>
+    (function () {
+        var T = window.TELEMETRY;
+        if (T && T.sessionId) {
+            window.GGExplorer.init('gg-explorer', T.sessionId);
+        }
+    })();
+</script>
+<script src="{{ url_for('static', filename='js/lap_overlay.js') }}"></script>
+<script src="{{ url_for('static', filename='js/corner_map_view.js') }}"></script>
+<script src="{{ url_for('static', filename='js/brake_scatter.js') }}"></script>
+<script src="{{ url_for('static', filename='js/throttle_heatmap.js') }}"></script>
+<script src="{{ url_for('static', filename='js/consistency_heatmap.js') }}"></script>
+{% endif %}
+<script src="{{ url_for('static', filename='js/stint_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/corner_mastery.js') }}"></script>
+<script src="{{ url_for('static', filename='js/fingerprint_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pit_window_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/pace_simulator.js') }}"></script>
+<script src="{{ url_for('static', filename='js/session_timeline.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sector_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tyre_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/summary_report.js') }}"></script>
+<script src="{{ url_for('static', filename='js/workload_chart.js') }}"></script>
+<script src="{{ url_for('static', filename='js/session_badges.js') }}"></script>
+<script src="{{ url_for('static', filename='js/driving_style.js') }}"></script>
+<script src="{{ url_for('static', filename='js/lap_progress.js') }}"></script>
+<script src="{{ url_for('static', filename='js/speed_profile.js') }}"></script>
+<script src="{{ url_for('static', filename='js/lap_distribution.js') }}"></script>
+<script src="{{ url_for('static', filename='js/comparison_matrix.js') }}"></script>
+<script src="{{ url_for('static', filename='js/cross_session.js') }}"></script>
+{% if gps_laps and gps_laps|length >= 2 %}
+<script src="{{ url_for('static', filename='js/corner_replay_map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/corner_replay_cockpit.js') }}"></script>
+<script src="{{ url_for('static', filename='js/corner_replay_controls.js') }}"></script>
+<script src="{{ url_for('static', filename='js/corner_replay.js') }}"></script>
+{% endif %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var sid = window.TELEMETRY.sessionId;
+
+    // ── Race-only sections guard ─────────────────────
+    // Hide performance sections that only apply to race-type sessions
+    (function() {
+        var sessionType = {{ (session.session_type or 'practice')|tojson }};
+        var raceOnlySections = document.querySelectorAll('.stint-race-only');
+        raceOnlySections.forEach(function(sec) {
+            var allowedTypes = (sec.getAttribute('data-race-types') || '').split(',');
+            if (allowedTypes.indexOf(sessionType) === -1) {
+                sec.style.display = 'none';
+            }
+        });
+    })();
+
+    // ── Endurance 6h+ sections guard ─────────────────
+    // Hide sections that only apply to 6h+ endurance sessions
+    (function() {
+        var sessionType = {{ (session.session_type or 'practice')|tojson }};
+        var totalTime = {{ total_session_time|tojson }};
+        var ENDURANCE_TYPES = ['endurance', 'endurance_race', 'endurance_stint'];
+        var MIN_DURATION_S = 21600; // 6 hours
+
+        var enduranceSections = document.querySelectorAll('[data-endurance-only]');
+        enduranceSections.forEach(function(sec) {
+            var isEndurance = ENDURANCE_TYPES.indexOf(sessionType) !== -1;
+            var isLongEnough = totalTime >= MIN_DURATION_S;
+            if (!isEndurance || !isLongEnough) {
+                sec.style.display = 'none';
+            }
+        });
+    })();
+
+    // ── Non-race sections guard ──────────────────
+    // Hide sections that only apply to non-race sessions (e.g., simulator)
+    (function() {
+        var sessionType = {{ (session.session_type or 'practice')|tojson }};
+        var RACE_TYPES = ['race', 'sprint', 'endurance', 'sprint_race',
+                          'feature_race', 'endurance_race', 'endurance_stint',
+                          'heat', 'final'];
+
+        var nonRaceSections = document.querySelectorAll('[data-non-race-only]');
+        nonRaceSections.forEach(function(sec) {
+            if (RACE_TYPES.indexOf(sessionType) !== -1) {
+                sec.style.display = 'none';
+            }
+        });
+    })();
+
+    // ── Responsive chart resize ──────────────────────
+    // Debounced resize handler to redraw canvas charts when window resizes
+    (function() {
+        var _resizeTimer = null;
+        window.addEventListener('resize', function() {
+            clearTimeout(_resizeTimer);
+            _resizeTimer = setTimeout(function() {
+                // Trigger resize event for all chart modules that support it
+                var canvases = document.querySelectorAll('.chart-container canvas, .chart-canvas');
+                canvases.forEach(function(c) {
+                    if (c.offsetParent === null) return; // skip hidden
+                    c.dispatchEvent(new CustomEvent('chart:resize'));
+                });
+            }, 250);
+        });
+    })();
+
+    if (window.CrossSession) {
+        window.CrossSession.initMetrics('cross-session-metrics', sid);
+        {% if gps_laps %}
+        window.CrossSession.initOverlay('cross-session-overlay-chart', sid);
+        {% endif %}
+    }
+
+    // ── Session Drill Suggestions ──
+    (function() {
+        var drillEl = document.getElementById('session-drill-suggestions');
+        if (!drillEl) return;
+        FetchHelper.fetch('/api/dev-plans/session-drills/' + encodeURIComponent(sid))
+            .then(function(data) {
+                if (data.error || !data.suggestions || data.suggestions.length === 0) {
+                    drillEl.innerHTML = '<div class="no-data"><div class="no-data-text">No specific drill suggestions for this session.</div></div>';
+                    return;
+                }
+                var prioColors = {high: '#e74c3c', medium: '#ff9800', low: '#4caf50'};
+                var html = '';
+                data.suggestions.forEach(function(s) {
+                    var pc = prioColors[s.priority] || '#888';
+                    html += '<div style="background:var(--card-bg);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:0.5rem;border-left:4px solid ' + pc + ';">';
+                    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.2rem;">';
+                    html += '<span style="font-weight:700;color:var(--text-primary);">' + esc(s.drill) + '</span>';
+                    html += '<span style="font-size:0.65rem;padding:0.1rem 0.4rem;border-radius:8px;background:' + pc + '20;color:' + pc + ';font-weight:600;text-transform:uppercase;">' + esc(s.priority) + '</span>';
+                    html += '</div>';
+                    html += '<div style="font-size:0.78rem;color:var(--text-secondary);">' + esc(s.reason) + '</div>';
+                    html += '</div>';
+                });
+                if (data.metrics) {
+                    var m = data.metrics;
+                    html += '<div style="margin-top:0.6rem;font-size:0.72rem;color:var(--text-secondary);">';
+                    html += 'Analysis: Best ' + m.best_lap_s.toFixed(3) + 's | Mean ' + m.mean_lap_s.toFixed(3) + 's | CV ' + m.cv_pct.toFixed(1) + '% | Score ' + (m.score || 0).toFixed(0) + '/100';
+                    html += '</div>';
+                }
+                drillEl.innerHTML = html;
+            })
+            .catch(function() {
+                drillEl.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load drill suggestions.</div></div>';
+            });
+    })();
+
+    // ── Tire Degradation Analysis ──
+    (function() {
+        var el = document.getElementById('tire-deg-container');
+        if (!el) return;
+        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/tire-degradation')
+            .then(function(data) {
+                if (data.error) { el.innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>'; return; }
+                var html = '';
+                // Overall stats
+                var o = data.overall || {};
+                html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">';
+                html += _fitCard('Stints', (data.stints || []).length, 'var(--text-primary)');
+                html += _fitCard('Avg Deg', o.avg_degradation_rate ? o.avg_degradation_rate.toFixed(3) + ' s/lap' : '—', '#ff6384');
+                html += _fitCard('Opt Length', o.optimal_stint_length ? o.optimal_stint_length + ' laps' : '—', '#36a2eb');
+                html += _fitCard('Tire Life', o.tire_life && o.tire_life.estimated_laps_remaining ? o.tire_life.estimated_laps_remaining + ' laps' : '—', '#4caf50');
+                html += '</div>';
+                // Stints table
+                if (data.stints && data.stints.length > 0) {
+                    html += '<div style="max-height:200px;overflow-y:auto;"><table class="data-table compact striped"><thead><tr>';
+                    html += '<th>Stint</th><th>Laps</th><th>Avg Pace</th><th>Deg Rate</th><th>Cliff</th></tr></thead><tbody>';
+                    data.stints.forEach(function(st, i) {
+                        html += '<tr><td>' + (i + 1) + '</td>';
+                        html += '<td>' + (st.lap_start || '?') + '-' + (st.lap_end || '?') + ' (' + (st.n_laps || 0) + ')</td>';
+                        html += '<td>' + (st.avg_pace_s ? st.avg_pace_s.toFixed(3) + 's' : '—') + '</td>';
+                        html += '<td style="color:' + (st.degradation_rate_s_per_lap > 0.05 ? '#e74c3c' : st.degradation_rate_s_per_lap > 0.02 ? '#ff9800' : '#4caf50') + ';">';
+                        html += (st.degradation_rate_s_per_lap != null ? st.degradation_rate_s_per_lap.toFixed(3) + ' s/lap' : '—') + '</td>';
+                        html += '<td>' + (st.cliff_detected ? '<span style="color:#e74c3c;">Lap ' + st.cliff_lap + '</span>' : '<span style="color:#4caf50;">No</span>') + '</td></tr>';
+                    });
+                    html += '</tbody></table></div>';
+                }
+                // Coaching
+                if (data.coaching && data.coaching.length > 0) {
+                    html += '<div style="margin-top:0.6rem;">';
+                    data.coaching.forEach(function(tip) {
+                        html += '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.2rem;">• ' + esc(tip) + '</div>';
+                    });
+                    html += '</div>';
+                }
+                el.innerHTML = html;
+            })
+            .catch(function() { el.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load tire degradation data.</div></div>'; });
+    })();
+
+    // ── Driver Fitness & Endurance ──
+    (function() {
+        var el = document.getElementById('fitness-container');
+        if (!el) return;
+        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/fitness')
+            .then(function(data) {
+                if (data.error) { el.innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>'; return; }
+                var html = '';
+                // Overall score
+                var fs = data.overall_fitness_score;
+                var fsCol = fs >= 80 ? '#4caf50' : fs >= 60 ? '#ff9800' : '#e74c3c';
+                html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">';
+                html += _fitCard('Fitness', isFinite(fs) ? fs.toFixed(0) + '/100' : '—', fsCol);
+                // Sub-scores
+                var end = data.endurance || {};
+                var conc = data.concentration || {};
+                var react = data.reaction || {};
+                html += _fitCard('Endurance', isFinite(end.endurance_score) ? end.endurance_score.toFixed(0) : '—', '#36a2eb');
+                html += _fitCard('Concentration', isFinite(conc.concentration_score) ? conc.concentration_score.toFixed(0) : '—', '#9966ff');
+                html += _fitCard('Reaction', isFinite(react.reaction_score) ? react.reaction_score.toFixed(0) : '—', '#ff6384');
+                html += '</div>';
+                // Endurance details
+                if (end.pace_fade_pct !== undefined) {
+                    html += '<div style="font-size:0.8rem;margin-bottom:0.4rem;">';
+                    var fadeCol = Math.abs(end.pace_fade_pct) < 1 ? '#4caf50' : Math.abs(end.pace_fade_pct) < 3 ? '#ff9800' : '#e74c3c';
+                    html += 'Pace fade: <span style="color:' + fadeCol + ';font-weight:600;">' + end.pace_fade_pct.toFixed(2) + '%</span>';
+                    if (end.fatigue_onset_lap) html += ' | Fatigue onset: <span style="font-weight:600;">Lap ' + end.fatigue_onset_lap + '</span>';
+                    if (conc.drop_laps && conc.drop_laps.length > 0) html += ' | Concentration drops: <span style="font-weight:600;">' + conc.drop_laps.length + '</span>';
+                    if (react.avg_recovery_laps !== undefined && isFinite(react.avg_recovery_laps)) html += ' | Avg recovery: <span style="font-weight:600;">' + react.avg_recovery_laps.toFixed(1) + ' laps</span>';
+                    html += '</div>';
+                }
+                // Quarter breakdown
+                if (end.quarters && end.quarters.length > 0) {
+                    html += '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem;">';
+                    end.quarters.forEach(function(q, i) {
+                        var qCol = q.cv_pct < 1.5 ? '#4caf50' : q.cv_pct < 3 ? '#ff9800' : '#e74c3c';
+                        html += '<div style="background:var(--card-bg);border-radius:6px;padding:0.2rem 0.5rem;text-align:center;min-width:70px;">';
+                        html += '<div style="font-size:0.6rem;color:var(--text-secondary);">Q' + (i + 1) + '</div>';
+                        html += '<div style="font-size:0.8rem;font-weight:600;">' + q.mean_pace_s.toFixed(3) + 's</div>';
+                        html += '<div style="font-size:0.6rem;color:' + qCol + ';">CV ' + q.cv_pct.toFixed(1) + '%</div>';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                }
+                // Coaching
+                if (data.coaching) {
+                    html += '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.3rem;">' + esc(data.coaching) + '</div>';
+                }
+                el.innerHTML = html;
+            })
+            .catch(function() { el.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load fitness data.</div></div>'; });
+    })();
+
+    // ── Helper for fitness/degradation stat cards ──
+    function _fitCard(label, value, color) {
+        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.3rem 0.6rem;text-align:center;min-width:85px;">' +
+            '<div style="font-size:0.6rem;color:var(--text-secondary);text-transform:uppercase;">' + esc(label) + '</div>' +
+            '<div style="font-size:0.9rem;font-weight:700;color:' + color + ';">' + esc(String(value)) + '</div></div>';
+    }
+
+    {% if gps_laps %}
+    if (window.TrackMap) {
+        window.TrackMap.init('track-map-canvas', sid);
+    }
+    if (window.LapOverlay) {
+        window.LapOverlay.init();
+    }
+    // Init chart modules; show parent section only if data loads
+    function _showSectionOnData(sectionId, canvasId) {
+        var canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        var observer = new MutationObserver(function(muts) {
+            // If canvas parent has rendered content (not error/empty), show section
+            var container = canvas.parentElement;
+            if (!container) return;
+            var errEl = container.querySelector('.fetch-error, .no-data');
+            if (!errEl && canvas.width > 0 && canvas.height > 0) {
+                var sec = document.getElementById(sectionId);
+                if (sec) sec.style.display = '';
+                observer.disconnect();
+            }
+        });
+        observer.observe(canvas.parentElement, { childList: true, subtree: true });
+        // Fallback: show after 4s if canvas was drawn
+        setTimeout(function() {
+            observer.disconnect();
+            var container = canvas.parentElement;
+            if (!container) return;
+            var errEl = container.querySelector('.fetch-error, .no-data');
+            if (!errEl) {
+                var sec = document.getElementById(sectionId);
+                if (sec) sec.style.display = '';
+            }
+        }, 4000);
+    }
+    if (window.BrakeScatter) {
+        _showSectionOnData('brake-section', 'brake-scatter-chart');
+        window.BrakeScatter.init('brake-scatter-chart', sid);
+    }
+    if (window.ThrottleHeatmap) {
+        _showSectionOnData('throttle-section', 'throttle-heatmap-chart');
+        window.ThrottleHeatmap.init('throttle-heatmap-chart', sid);
+    }
+    if (window.ConsistencyHeatmap) {
+        _showSectionOnData('consistency-section', 'consistency-heatmap-chart');
+        window.ConsistencyHeatmap.init('consistency-heatmap-chart', sid);
+    }
+    // Init corner map view lazily when Corners tab is activated
+    if (window.CornerMapView) {
+        var _cornerMapInited = false;
+        var _cornerPanel = document.getElementById('tab-corners');
+        function _initCornerMap() {
+            if (_cornerMapInited) return;
+            // Wait until the container has a reasonable width (tab layout settled)
+            var _canvas = document.getElementById('corner-map-view-canvas');
+            var _container = _canvas ? _canvas.parentElement : null;
+            if (_container && _container.clientWidth > 100) {
+                _cornerMapInited = true;
+                window.CornerMapView.init('corner-map-view-canvas', sid);
+            } else {
+                // Poll until layout is ready (max 2s)
+                var _tries = 0;
+                var _poll = setInterval(function() {
+                    _tries++;
+                    if (_container && _container.clientWidth > 100) {
+                        clearInterval(_poll);
+                        _cornerMapInited = true;
+                        window.CornerMapView.init('corner-map-view-canvas', sid);
+                    } else if (_tries > 40) {
+                        clearInterval(_poll);
+                    }
+                }, 50);
+            }
+        }
+        // If tab is already active (e.g. saved preference), init immediately
+        if (_cornerPanel && _cornerPanel.classList.contains('active')) {
+            _initCornerMap();
+        } else if (_cornerPanel) {
+            _cornerPanel.addEventListener('tab:activate', _initCornerMap, { once: true });
+        }
+    }
+    // Load corner coaching
+    _loadCornerCoaching(sid);
+    // Load key corner picker
+    _loadKeyCornerPicker(sid);
+    // Compute performance KPIs
+    _computeKPIs(sid);
+    {% endif %}
+
+    function _computeKPIs(sid) {
+        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/lap_times')
+            .then(function(data) {
+                var laps = data.laps || [];
+                var validTimes = [];
+                laps.forEach(function(l) {
+                    if (l.is_valid !== false && l.lap_time_s) validTimes.push(l.lap_time_s);
+                });
+                if (validTimes.length < 2) return;
+
+                var n = validTimes.length;
+                var sum = validTimes.reduce(function(a,b){return a+b;}, 0);
+                var mean = sum / n;
+                var best = Math.min.apply(null, validTimes);
+                var variance = validTimes.reduce(function(a,b){return a + (b-mean)*(b-mean);}, 0) / (n - 1);
+                var stdDev = Math.sqrt(variance);
+                var consistency = Math.max(0, 100 * (1 - stdDev / mean));
+
+                var sorted = validTimes.slice().sort(function(a,b){return a-b;});
+                var top25n = Math.max(1, Math.ceil(n * 0.25));
+                var top25 = sorted.slice(0, top25n);
+                var top25avg = top25.reduce(function(a,b){return a+b;}, 0) / top25.length;
+
+                var first5 = validTimes.slice(0, Math.min(5, n));
+                var last5 = validTimes.slice(-Math.min(5, n));
+                var f5avg = first5.reduce(function(a,b){return a+b;}, 0) / first5.length;
+                var l5avg = last5.reduce(function(a,b){return a+b;}, 0) / last5.length;
+                var improvement = ((f5avg - l5avg) / f5avg * 100);
+
+                _setKPI('kpi-std-dev', stdDev.toFixed(3) + 's');
+                _setKPI('kpi-consistency', consistency.toFixed(1) + '%');
+                _setKPI('kpi-best-mean-gap', '+' + ((mean - best) / best * 100).toFixed(2) + '%');
+                _setKPI('kpi-top-quartile', top25avg.toFixed(3) + 's');
+                _setKPI('kpi-improvement', (improvement >= 0 ? '+' : '') + improvement.toFixed(2) + '%');
+                _setKPI('kpi-valid-laps', n + '/' + laps.length);
+            })
+            .catch(function(err) { console.warn('KPI load failed:', err); });
+    }
+    function _setKPI(id, val) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = val;
+    }
+
+    function _loadKeyCornerPicker(sid) {
+        var pickerEl = document.getElementById('key-corners-picker');
+        var trackId = window.TELEMETRY.trackId;
+        if (!pickerEl || !trackId) return;
+
+        // Fetch corner summary + existing key corners in parallel
+        Promise.all([
+            FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/corner-metrics/summary'),
+            FetchHelper.fetch('/api/track/' + encodeURIComponent(trackId) + '/key-corners')
+        ]).then(function(results) {
+            var cornerSummary = results[0];
+            var keyCorners = results[1];
+            if (!cornerSummary || cornerSummary.error) {
+                pickerEl.innerHTML = '<div class="no-data"><div class="no-data-text">No corner data available yet. Analyse a session first.</div></div>';
+                return;
+            }
+            var corners = Array.isArray(cornerSummary) ? cornerSummary : [];
+            var keySet = {};
+            (Array.isArray(keyCorners) ? keyCorners : []).forEach(function(k) {
+                keySet[k.corner_id] = k.label || '';
+            });
+
+            var html = '<div class="key-corner-grid">';
+            corners.forEach(function(c) {
+                var isKey = c.corner_id in keySet;
+                var loss = c.avg_time_loss_ms ? c.avg_time_loss_ms.toFixed(0) + 'ms loss' : '';
+                html += '<label class="key-corner-chip' + (isKey ? ' active' : '') + '">';
+                html += '<input type="checkbox" data-corner="' + c.corner_id + '"' + (isKey ? ' checked' : '') + '>';
+                html += '<span class="chip-label">C' + c.corner_id + '</span>';
+                if (loss) html += '<span class="chip-stat">' + loss + '</span>';
+                html += '</label>';
+            });
+            html += '</div>';
+            html += '<button type="button" class="btn btn-primary btn-sm" id="save-key-corners" style="margin-top:0.75rem;">Save Key Corners</button>';
+            html += '<span id="key-corners-status" class="text-sm text-muted" style="margin-left:0.5rem;"></span>';
+            pickerEl.innerHTML = html;
+
+            // Save handler
+            document.getElementById('save-key-corners').addEventListener('click', function() {
+                var selected = [];
+                pickerEl.querySelectorAll('input[type="checkbox"]:checked').forEach(function(cb) {
+                    selected.push({ corner_id: parseInt(cb.dataset.corner), label: '' });
+                });
+                var statusEl = document.getElementById('key-corners-status');
+                statusEl.textContent = 'Saving...';
+                fetch('/api/track/' + encodeURIComponent(trackId) + '/key-corners', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ corners: selected })
+                }).then(function(r) { return r.json(); })
+                  .then(function(d) {
+                      statusEl.textContent = d.ok ? 'Saved ' + d.count + ' key corner(s)' : 'Error saving';
+                      setTimeout(function() { statusEl.textContent = ''; }, 3000);
+                  })
+                  .catch(function() { statusEl.textContent = 'Failed to save'; });
+            });
+
+            // Toggle active class on click
+            pickerEl.querySelectorAll('.key-corner-chip input').forEach(function(cb) {
+                cb.addEventListener('change', function() {
+                    cb.closest('.key-corner-chip').classList.toggle('active', cb.checked);
+                });
+            });
+        }).catch(function() {
+            pickerEl.innerHTML = '<div class="no-data"><div class="no-data-text">Failed to load corner data.</div></div>';
+        });
+    }
+
+    function _loadCornerCoaching(sid) {
+        var el = document.getElementById('corner-coaching-content');
+        if (!el) return;
+        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/corner-coaching')
+            .then(function(data) {
+                if (data.error) {
+                    el.innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>';
+                    return;
+                }
+                var html = '';
+                if (data.style) {
+                    html += '<p class="form-hint">Style: <strong>' + esc(data.style) +
+                            '</strong> | Session: <strong>' + esc(data.session_type) + '</strong></p>';
+                }
+                var corners = data.corners || [];
+                if (corners.length === 0) {
+                    el.innerHTML = '<div class="no-data"><div class="no-data-text">No corner data available.</div></div>';
+                    return;
+                }
+                html += '<div class="table-wrap table-wrap-sticky"><table class="data-table compact"><caption class="sr-only">Corner coaching data</caption><thead><tr>';
+                html += '<th scope="col">Corner</th><th scope="col">Avg Entry (km/h)</th><th scope="col">Avg Apex (km/h)</th>';
+                html += '<th scope="col">Avg Exit (km/h)</th><th scope="col">Avg Grip %</th>';
+                html += '<th scope="col">Avg Loss (ms)</th><th scope="col">Coaching Hint</th></tr></thead><tbody>';
+                corners.forEach(function(c) {
+                    var lossClass = (c.avg_time_loss_ms || 0) > 50 ? 'text-yellow' :
+                                    (c.avg_time_loss_ms || 0) > 20 ? 'stat-value-ok' : '';
+                    html += '<tr>';
+                    html += '<td><strong>C' + c.corner_id + '</strong></td>';
+                    html += '<td>' + (c.avg_entry_speed ? (c.avg_entry_speed * 3.6).toFixed(1) : '—') + '</td>';
+                    html += '<td>' + (c.avg_apex_speed ? (c.avg_apex_speed * 3.6).toFixed(1) : '—') + '</td>';
+                    html += '<td>' + (c.avg_exit_speed ? (c.avg_exit_speed * 3.6).toFixed(1) : '—') + '</td>';
+                    html += '<td>' + (c.avg_grip ? (c.avg_grip * 100).toFixed(0) + '%' : '—') + '</td>';
+                    html += '<td class="' + lossClass + '">' +
+                            (c.avg_time_loss_ms ? c.avg_time_loss_ms.toFixed(1) : '—') + '</td>';
+                    html += '<td class="text-muted coaching-hint-cell">' +
+                            esc(c.coaching_hint || '—') + '</td>';
+                    html += '</tr>';
+                });
+                html += '</tbody></table></div>';
+                el.innerHTML = html;
+            })
+            .catch(function() {
+                el.innerHTML = '<p class="text-muted">Failed to load corner coaching data.</p>';
+            });
+    }
+});
+</script>
+{% endblock %}

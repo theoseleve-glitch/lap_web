@@ -1,0 +1,376 @@
+{% extends "base.html" %}
+{% block title %}Race Strategy Planner{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="/analytics/" class="breadcrumb">&larr; Analytics</a></nav>
+        <h1>Race Strategy Planner</h1>
+        <p>Optimise pit stops, tire compounds, and fuel load for minimum race time.</p>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- Input Panel -->
+    <section class="section">
+        <h2>Race Parameters</h2>
+
+        <!-- Load from telemetry -->
+        <div style="background:var(--bg-tertiary,#161b22);border-radius:8px;padding:0.6rem 0.8rem;margin-bottom:1rem;">
+            <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.4rem;">Load from Telemetry Data</div>
+            <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:end;">
+                <div class="form-group" style="margin:0;min-width:140px;">
+                    <label for="rs-driver" style="font-size:0.75rem;">Driver</label>
+                    <select id="rs-driver" class="form-control" style="padding:0.25rem 0.4rem;font-size:0.85rem;">
+                        <option value="">Select driver...</option>
+                        {% for d in drivers %}
+                        <option value="{{ d.driver_id }}">{{ d.driver_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-group" style="margin:0;min-width:140px;">
+                    <label for="rs-track" style="font-size:0.75rem;">Track</label>
+                    <select id="rs-track" class="form-control" style="padding:0.25rem 0.4rem;font-size:0.85rem;">
+                        <option value="">Select track...</option>
+                        {% for t in tracks %}
+                        <option value="{{ t.track_id }}">{{ t.track_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" id="rs-load-telemetry" class="btn btn-secondary" style="font-size:0.8rem;padding:0.3rem 0.7rem;">Load Data</button>
+            </div>
+            <div id="rs-telemetry-hint" style="font-size:0.72rem;color:var(--text-secondary);margin-top:0.3rem;"></div>
+        </div>
+
+        <div class="form-group">
+            <label for="rs-laps">Race Distance (laps)</label>
+            <input type="number" id="rs-laps" class="form-control" value="25" min="3" max="200">
+        </div>
+        <div class="form-group">
+            <label for="rs-base-time">Base Lap Time (seconds)</label>
+            <input type="number" id="rs-base-time" class="form-control" step="0.001" value="65.000" min="10" max="600">
+        </div>
+        <div class="form-group">
+            <label for="rs-pit-loss">Pit Stop Time Loss (seconds)</label>
+            <input type="number" id="rs-pit-loss" class="form-control" step="0.5" value="25" min="5" max="120">
+        </div>
+
+        <h3 style="margin-top:1.5rem;">Tire Compounds</h3>
+        <div class="form-group">
+            <label>Available Compounds</label>
+            <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+                <label class="checkbox-label"><input type="checkbox" class="rs-compound" value="soft" checked> Soft</label>
+                <label class="checkbox-label"><input type="checkbox" class="rs-compound" value="medium" checked> Medium</label>
+                <label class="checkbox-label"><input type="checkbox" class="rs-compound" value="hard" checked> Hard</label>
+                <label class="checkbox-label"><input type="checkbox" class="rs-compound" value="wet"> Wet</label>
+                <label class="checkbox-label"><input type="checkbox" class="rs-compound" value="inter"> Intermediate</label>
+            </div>
+        </div>
+
+        <h3 style="margin-top:1.5rem;">Fuel (optional)</h3>
+        <div class="form-group">
+            <label for="rs-fuel">Starting Fuel Load (kg)</label>
+            <input type="number" id="rs-fuel" class="form-control" step="0.5" value="0" min="0" max="150">
+        </div>
+        <div class="form-group">
+            <label for="rs-fuel-per-lap">Fuel Consumption (kg/lap)</label>
+            <input type="number" id="rs-fuel-per-lap" class="form-control" step="0.1" value="0" min="0" max="10">
+        </div>
+
+        <h3 style="margin-top:1.5rem;">Strategy Options</h3>
+        <div class="form-group">
+            <label for="rs-max-stops">Maximum Pit Stops</label>
+            <select id="rs-max-stops" class="form-control">
+                <option value="1">1 stop max</option>
+                <option value="2" selected>2 stops max</option>
+                <option value="3">3 stops max</option>
+            </select>
+        </div>
+
+        <button id="rs-plan-btn" class="btn btn-primary" style="width:100%;margin-top:1.5rem;">Find Optimal Strategy</button>
+    </section>
+
+    <!-- Results Panel -->
+    <section class="section">
+        <h2>Strategy Results</h2>
+        <div id="rs-results">
+            <div class="no-data"><div class="no-data-text">Configure race parameters and click "Find Optimal Strategy".</div></div>
+        </div>
+    </section>
+</div>
+
+<!-- Lap-by-lap simulation chart -->
+<section class="section" id="rs-sim-section" style="display:none;">
+    <h2>Optimal Strategy — Lap-by-Lap Simulation</h2>
+    <canvas id="rs-lap-canvas" width="900" height="280" style="width:100%;max-width:900px;" aria-label="Race strategy lap-by-lap simulation chart"></canvas>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    "use strict";
+
+    var COMPOUND_COLORS = {
+        soft: "#e74c3c",
+        medium: "#ffd700",
+        hard: "#ccc",
+        wet: "#36a2eb",
+        inter: "#4caf50",
+    };
+
+    // ── Load from Telemetry ──
+    document.getElementById("rs-load-telemetry").addEventListener("click", function() {
+        var driverId = document.getElementById("rs-driver").value;
+        var trackId = document.getElementById("rs-track").value;
+        var hintEl = document.getElementById("rs-telemetry-hint");
+
+        if (!driverId || !trackId) {
+            if (window.Toast) Toast.show("Select both driver and track", "warning");
+            return;
+        }
+
+        hintEl.textContent = "Loading tire data...";
+        FetchHelper.fetch("/api/race-strategy/tire-data/" + driverId + "/" + encodeURIComponent(trackId))
+            .then(function(data) {
+                if (data.error) {
+                    hintEl.textContent = data.error;
+                    hintEl.style.color = "var(--red)";
+                    return;
+                }
+                hintEl.style.color = "var(--green)";
+                var hints = [];
+                hints.push(data.n_sessions + " session(s) analyzed");
+
+                // Auto-fill base lap time from optimal stint data
+                if (data.optimal_stint && data.optimal_stint.optimal_lap_time_s) {
+                    document.getElementById("rs-base-time").value = data.optimal_stint.optimal_lap_time_s.toFixed(3);
+                    hints.push("Base lap: " + data.optimal_stint.optimal_lap_time_s.toFixed(3) + "s");
+                }
+
+                // Show degradation info
+                if (data.avg_degradation_rate_s_per_lap) {
+                    hints.push("Tire deg: " + data.avg_degradation_rate_s_per_lap.toFixed(4) + " s/lap");
+                }
+                if (data.tire_life && data.tire_life.estimated_life_laps) {
+                    hints.push("Tire life: ~" + data.tire_life.estimated_life_laps + " laps");
+                }
+                if (data.optimal_stint && data.optimal_stint.recommended_stint_length) {
+                    hints.push("Optimal stint: " + data.optimal_stint.recommended_stint_length + " laps");
+                }
+
+                hintEl.textContent = hints.join(" | ");
+                if (window.Toast) Toast.show("Telemetry data loaded!", "success");
+            })
+            .catch(function(err) {
+                hintEl.textContent = "Failed to load tire data";
+                hintEl.style.color = "var(--red)";
+            });
+    });
+
+    document.getElementById("rs-plan-btn").addEventListener("click", function() {
+        var compounds = [];
+        document.querySelectorAll(".rs-compound:checked").forEach(function(cb) {
+            compounds.push(cb.value);
+        });
+
+        var params = {
+            race_laps: parseInt(document.getElementById("rs-laps").value) || 25,
+            base_lap_time_s: parseFloat(document.getElementById("rs-base-time").value) || 65,
+            pit_loss_s: parseFloat(document.getElementById("rs-pit-loss").value) || 25,
+            available_compounds: compounds.length ? compounds : ["medium"],
+            fuel_load_kg: parseFloat(document.getElementById("rs-fuel").value) || 0,
+            fuel_per_lap_kg: parseFloat(document.getElementById("rs-fuel-per-lap").value) || 0,
+            max_stops: parseInt(document.getElementById("rs-max-stops").value) || 2,
+        };
+
+        FetchHelper.fetch("/api/race-strategy/plan", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(params),
+        }).then(function(data) {
+            if (data.error) {
+                document.getElementById("rs-results").innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>';
+                return;
+            }
+            _renderResults(data, params);
+        });
+    });
+
+    function _renderResults(data, params) {
+        var html = '';
+
+        // Compound info
+        if (data.available_compounds) {
+            html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
+            data.available_compounds.forEach(function(c) {
+                var col = COMPOUND_COLORS[c.id] || "#888";
+                html += '<div style="background:var(--card-bg);border-radius:6px;padding:0.3rem 0.6rem;' +
+                    'border-left:4px solid ' + col + ';font-size:0.8rem;">';
+                html += '<strong style="color:' + col + ';">' + esc(c.label) + '</strong>';
+                html += ' &middot; Cliff: L' + c.cliff_lap;
+                html += ' &middot; Optimal: L' + c.optimal_life[0] + '-' + c.optimal_life[1];
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+
+        // Top strategies table
+        html += '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.3rem;">' +
+            data.n_strategies_evaluated + ' strategies evaluated</div>';
+        html += '<table class="data-table"><thead><tr>';
+        html += '<th></th><th>Strategy</th><th>Total Time</th><th>Gap to Best</th><th>Best Lap</th></tr></thead><tbody>';
+
+        var bestTime = data.strategies[0] ? data.strategies[0].total_time_s : 0;
+        data.strategies.forEach(function(s, i) {
+            var isBest = i === 0;
+            var gap = s.total_time_s - bestTime;
+            html += '<tr' + (isBest ? ' style="background:rgba(76,175,80,0.1);"' : '') + '>';
+            html += '<td>' + (isBest ? '&#127942;' : (i + 1)) + '</td>';
+            html += '<td><strong>' + esc(s.name) + '</strong></td>';
+            html += '<td>' + _formatTime(s.total_time_s) + '</td>';
+            html += '<td style="color:' + (gap > 0 ? 'var(--red)' : 'var(--green)') + ';">' +
+                (gap > 0 ? '+' : '') + gap.toFixed(3) + 's</td>';
+            html += '<td>' + s.best_lap_s.toFixed(3) + 's</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+
+        document.getElementById("rs-results").innerHTML = html;
+
+        // Simulate the optimal strategy for the chart
+        if (data.optimal) {
+            var simParams = Object.assign({}, params, {
+                tire_compound: data.optimal.compounds_used[0],
+                pit_stops: data.optimal.pit_stops,
+            });
+            FetchHelper.fetch("/api/race-strategy/simulate", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify(simParams),
+            }).then(function(simData) {
+                if (simData.lap_data) {
+                    document.getElementById("rs-sim-section").style.display = "";
+                    _drawLapChart(simData, data.optimal);
+                }
+            });
+        }
+    }
+
+    function _drawLapChart(simData, strategy) {
+        var canvas = document.getElementById("rs-lap-canvas");
+        if (!canvas) return;
+        var dpr = window.devicePixelRatio || 1;
+        var W = canvas.parentElement.clientWidth || 900;
+        var H = 280;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+        var ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+
+        var pad = {top: 25, right: 20, bottom: 35, left: 60};
+        var plotW = W - pad.left - pad.right;
+        var plotH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        var laps = simData.lap_data;
+        var n = laps.length;
+        var times = laps.map(function(l) { return l.time_s; });
+        var minT = Math.min.apply(null, times) * 0.998;
+        var maxT = Math.max.apply(null, times) * 1.002;
+        var range = maxT - minT || 1;
+
+        // Determine stint compound for each lap
+        var stints = simData.stints || [];
+
+        // Draw bars colored by compound
+        var barW = plotW / n * 0.8;
+        var gap = plotW / n;
+
+        laps.forEach(function(l, i) {
+            var x = pad.left + i * gap;
+            var barH = ((l.time_s - minT) / range) * plotH;
+            var y = pad.top + plotH - barH;
+
+            // Find compound for this lap
+            var comp = "medium";
+            for (var s = 0; s < stints.length; s++) {
+                if (l.lap >= stints[s].start_lap && l.lap <= stints[s].end_lap) {
+                    comp = stints[s].compound;
+                    break;
+                }
+            }
+            ctx.fillStyle = COMPOUND_COLORS[comp] || "#888";
+            ctx.globalAlpha = 0.7;
+            ctx.fillRect(x, y, barW, barH);
+            ctx.globalAlpha = 1.0;
+        });
+
+        // Pit stop markers
+        var pitLaps = (strategy.pit_stops || []).map(function(ps) { return ps.lap; });
+        pitLaps.forEach(function(pl) {
+            var x = pad.left + (pl - 1) * gap + barW / 2;
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 2;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(x, pad.top);
+            ctx.lineTo(x, pad.top + plotH);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 10px system-ui";
+            ctx.textAlign = "center";
+            ctx.fillText("PIT", x, pad.top - 5);
+        });
+
+        // X axis labels
+        ctx.fillStyle = "#888";
+        ctx.font = "10px system-ui";
+        ctx.textAlign = "center";
+        var labelStep = n > 40 ? 5 : n > 20 ? 2 : 1;
+        for (var i = 0; i < n; i += labelStep) {
+            ctx.fillText("L" + (i + 1), pad.left + i * gap + barW / 2, H - pad.bottom + 15);
+        }
+
+        // Y axis
+        ctx.textAlign = "right";
+        for (var t = Math.ceil(minT); t <= maxT; t += Math.max(0.5, range / 5)) {
+            var yy = pad.top + plotH - ((t - minT) / range) * plotH;
+            ctx.fillText(t.toFixed(1) + "s", pad.left - 5, yy + 4);
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(pad.left, yy);
+            ctx.lineTo(W - pad.right, yy);
+            ctx.stroke();
+        }
+    }
+
+    function _formatTime(totalSeconds) {
+        var minutes = Math.floor(totalSeconds / 60);
+        var secs = totalSeconds % 60;
+        return minutes + ":" + (secs < 10 ? "0" : "") + secs.toFixed(3);
+    }
+
+    // Debounced resize redraw
+    var _rsResizeTimer = null;
+    var _lastSimData = null, _lastStrategy = null;
+    var _origDrawLap = _drawLapChart;
+    _drawLapChart = function(simData, strategy) {
+        _lastSimData = simData; _lastStrategy = strategy;
+        _origDrawLap(simData, strategy);
+    };
+    window.addEventListener("resize", function() {
+        clearTimeout(_rsResizeTimer);
+        _rsResizeTimer = setTimeout(function() {
+            if (_lastSimData && _lastStrategy) _origDrawLap(_lastSimData, _lastStrategy);
+        }, 250);
+    });
+})();
+</script>
+{% endblock %}

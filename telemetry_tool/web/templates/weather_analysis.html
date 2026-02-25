@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}Weather Analysis — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Weather & Pace Correlation</h1>
+</div>
+
+<div class="filter-bar">
+    <div>
+        <label class="form-label">Track</label>
+        <select id="weather-track-select" class="form-select">
+            <option value="">Select track...</option>
+            {% for t in tracks %}
+            <option value="{{ t.track_id }}" {% if t.track_id == selected_track %}selected{% endif %}>
+                {{ t.track_name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Driver (optional)</label>
+        <select id="weather-driver-select" class="form-select">
+            <option value="">All drivers</option>
+            {% for d in drivers %}
+            <option value="{{ d.driver_id }}" {% if d.driver_id == selected_driver %}selected{% endif %}>
+                {{ d.driver_name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="button" id="weather-analyze-btn" class="btn btn-primary" title="Analyze weather-pace correlation">Analyze</button>
+</div>
+
+<div id="weather-results" aria-live="polite">
+    {% if not tracks %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x26C5;</div>
+        <div class="empty-hero-title">No track data available</div>
+        <div class="empty-hero-desc">
+            Weather analysis compares temperature, humidity, and conditions against your lap pace.
+            Analyze sessions with weather data to unlock this feature.
+        </div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% else %}
+    <p class="text-muted">Select a track and click <strong>Analyze</strong> to see how temperature, humidity, and wind affect your lap pace.</p>
+    {% endif %}
+</div>
+
+<div class="chart-container mt-md">
+    <canvas id="weather-chart" aria-label="Weather-pace correlation chart"></canvas>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/weather_chart.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var btn = document.getElementById('weather-analyze-btn');
+    btn.addEventListener('click', function() {
+        var trackSel = document.getElementById('weather-track-select');
+        var trackId = trackSel.value;
+        var driverId = document.getElementById('weather-driver-select').value;
+        trackSel.classList.remove('is-invalid');
+        var prevErr = trackSel.parentElement.querySelector('.form-error');
+        if (prevErr) prevErr.remove();
+        if (!trackId) {
+            trackSel.classList.add('is-invalid');
+            var errEl = document.createElement('span');
+            errEl.className = 'form-error';
+            errEl.textContent = 'Please select a track';
+            errEl.setAttribute('role', 'alert');
+            trackSel.parentElement.appendChild(errEl);
+            trackSel.focus();
+            return;
+        }
+        var url = '/api/weather-correlation/' + encodeURIComponent(trackId);
+        if (driverId) url += '?driver_id=' + driverId;
+
+        var results = document.getElementById('weather-results');
+        results.innerHTML = '<div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-line" style="width:80%"></div><div class="skeleton skeleton-chart" style="margin-top:1rem"></div>';
+
+        FetchHelper.fetch(url)
+            .then(function(data) {
+                if (data.error === 'insufficient_sessions') {
+                    results.innerHTML = '<div class="empty-hero empty-hero-compact">' +
+                        '<div class="empty-hero-icon" aria-hidden="true">&#x1F4CA;</div>' +
+                        '<div class="empty-hero-title">Not Enough Data Yet</div>' +
+                        '<div class="empty-hero-desc">' + esc(data.message) + '</div>' +
+                        '<div class="meta-grid mt-md" style="justify-content:center">' +
+                        '<div class="meta-item"><span class="meta-label">Sessions</span>' +
+                        '<span class="meta-value">' + data.session_count + ' / ' + data.min_required + '</span></div>' +
+                        '</div>' +
+                        '<a href="' + "{{ url_for('analysis.analyze_form') }}" + '" class="btn btn-primary mt-md">+ New Analysis</a>' +
+                        '</div>';
+                    return;
+                }
+                if (data.error) {
+                    results.innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>';
+                    return;
+                }
+                var html = '<h3>Summary</h3><p>' + esc(data.summary || 'No findings.') + '</p>';
+                var corr = data.correlations || {};
+                html += '<div class="table-wrap"><table class="data-table compact"><caption class="sr-only">Weather-pace correlations</caption><thead><tr>';
+                html += '<th scope="col">Variable</th><th scope="col">r</th><th scope="col">Samples</th><th scope="col">Interpretation</th>';
+                html += '</tr></thead><tbody>';
+                for (var key in corr) {
+                    var c = corr[key];
+                    html += '<tr><td>' + esc(c.label || key) + '</td>';
+                    html += '<td>' + (c.r !== null ? c.r.toFixed(3) : '—') + '</td>';
+                    html += '<td>' + c.n + '</td>';
+                    html += '<td>' + esc(c.interpretation) + '</td></tr>';
+                }
+                html += '</tbody></table></div>';
+                results.innerHTML = html;
+
+                if (window.WeatherChart) {
+                    window.WeatherChart.draw('weather-chart', data);
+                }
+            })
+            .catch(function() {
+                results.innerHTML = '<p class="text-muted">Error loading data.</p>';
+            });
+    });
+});
+</script>
+{% endblock %}

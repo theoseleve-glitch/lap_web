@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Session Comparison — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('comparisons.compare_form') }}" class="breadcrumb">&larr; Compare</a></nav>
+        <h1>Session vs Session</h1>
+    </div>
+</div>
+
+<!-- Side-by-side summary -->
+<div class="compare-grid">
+    {% for label, s in [('A', session_a), ('B', session_b)] %}
+    <div class="compare-column compare-{{ label|lower }} elevation-1">
+        <div class="compare-header">
+            <span class="compare-badge">{{ label }}</span>
+            <a href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                {{ s.session_date[:10] if s.session_date else s.session_id[:12] }}
+            </a>
+        </div>
+        <div class="meta-grid grid-cols-2">
+            <div class="meta-item">
+                <span class="meta-label">Driver</span>
+                <span class="meta-value">{{ s.driver_name or '—' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Track</span>
+                <span class="meta-value">{{ s.track_name or s.track_id or '—' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Best Lap</span>
+                <span class="meta-value highlight">
+                    {% if s.best_lap_time_s %}{{ "%.3f"|format(s.best_lap_time_s) }}s{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Mean Lap</span>
+                <span class="meta-value">
+                    {% if s.mean_lap_time_s %}{{ "%.3f"|format(s.mean_lap_time_s) }}s{% else %}—{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Laps</span>
+                <span class="meta-value">{{ s.n_laps or '—' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Score</span>
+                <span class="meta-value highlight">
+                    {% if s.total_score %}{{ "%.1f"|format(s.total_score) }}{% else %}—{% endif %}
+                    {% if s.grade %}<span class="grade grade-{{ s.grade[0] }}">{{ s.grade }}</span>{% endif %}
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Type</span>
+                <span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span>
+            </div>
+            <div class="meta-item">
+                <span class="meta-label">Condition</span>
+                <span class="badge badge-{{ s.track_state or 'dry' }}">{{ s.track_state or 'dry' }}</span>
+            </div>
+        </div>
+
+        {% if s.score %}
+        <div class="score-bars">
+            {% set score_items = [
+                ('Pace', s.score.pace_score, s.score.pace_max),
+                ('Consistency', s.score.consistency_score, s.score.consistency_max),
+                ('Execution', s.score.execution_score, s.score.execution_max),
+                ('Robustness', s.score.robustness_score, s.score.robustness_max),
+            ] %}
+            {% for name, val, max_val in score_items %}
+            {% if val is not none and max_val %}
+            {% set pct = (val / max_val * 100)|round %}
+            {% set color_class = 'score-excellent' if pct >= 80 else 'score-good' if pct >= 60 else 'score-average' if pct >= 40 else 'score-poor' %}
+            <div class="score-bar-row">
+                <span class="score-bar-label">{{ name }}</span>
+                <div class="score-bar-track" role="progressbar" aria-valuenow="{{ "%.1f"|format(val) }}" aria-valuemin="0" aria-valuemax="{{ "%.0f"|format(max_val) }}" aria-label="{{ name }} score">
+                    <div class="score-bar-fill {{ color_class }}" style="width: {{ pct }}%"></div>
+                </div>
+                <span class="score-bar-value">{{ "%.1f"|format(val) }}</span>
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if s.driving_style %}
+        <div class="mt-sm">
+            {% set style_class = s.driving_style.style_label|lower|replace(' ', '_') %}
+            {% if 'smooth' in style_class %}
+                <span class="badge-style smooth">{{ s.driving_style.style_label }}</span>
+            {% elif 'aggressive' in style_class %}
+                <span class="badge-style aggressive">{{ s.driving_style.style_label }}</span>
+            {% elif 'conservative' in style_class %}
+                <span class="badge-style conservative">{{ s.driving_style.style_label }}</span>
+            {% elif 'adaptive' in style_class %}
+                <span class="badge-style adaptive">{{ s.driving_style.style_label }}</span>
+            {% else %}
+                <span class="badge-style">{{ s.driving_style.style_label }}</span>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Delta summary -->
+{% if session_a.best_lap_time_s and session_b.best_lap_time_s %}
+<section class="section">
+    <h2>Best Lap Delta</h2>
+    {% set delta = session_a.best_lap_time_s - session_b.best_lap_time_s %}
+    <div class="compare-delta-box elevation-2">
+        <span class="delta-icon" aria-hidden="true">{% if delta < 0 %}&#x1F3C6;{% elif delta > 0 %}&#x1F3C6;{% else %}&#x1F91D;{% endif %}</span>
+        <div class="delta-value {{ 'delta-faster' if delta < 0 else 'delta-slower' if delta > 0 else '' }}">
+            {{ "%+.3f"|format(delta) }}s
+        </div>
+        <div class="delta-label">
+            {% if delta < 0 %}
+                Session A is faster by {{ "%.3f"|format(-delta) }}s
+            {% elif delta > 0 %}
+                Session B is faster by {{ "%.3f"|format(delta) }}s
+            {% else %}
+                Identical best lap times
+            {% endif %}
+        </div>
+        {% if session_a.mean_lap_time_s and session_b.mean_lap_time_s %}
+        {% set mean_delta = session_a.mean_lap_time_s - session_b.mean_lap_time_s %}
+        <div class="delta-sub">
+            Mean lap delta: {{ "%+.3f"|format(mean_delta) }}s
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<!-- Score comparison -->
+{% if session_a.total_score and session_b.total_score %}
+{% set score_delta = session_a.total_score - session_b.total_score %}
+<section class="section">
+    <h2>Score Delta</h2>
+    <div class="compare-delta-box elevation-1">
+        <div class="delta-value delta-display {{ 'delta-faster' if score_delta > 0 else 'delta-slower' if score_delta < 0 else '' }}">
+            {{ "%+.1f"|format(score_delta) }}
+        </div>
+        <div class="delta-label">
+            {% if score_delta > 0 %}
+                Session A scored higher by {{ "%.1f"|format(score_delta) }} points
+            {% elif score_delta < 0 %}
+                Session B scored higher by {{ "%.1f"|format(-score_delta) }} points
+            {% else %}
+                Identical scores
+            {% endif %}
+        </div>
+    </div>
+</section>
+{% endif %}
+{% endif %}
+
+<!-- Speed overlay -->
+<section class="section">
+    <h2>Speed Overlay — Best Laps</h2>
+    <div class="chart-container relative">
+        <canvas id="compare-speed-overlay" aria-label="Speed overlay comparing best laps"></canvas>
+    </div>
+</section>
+
+<!-- Lap times side-by-side -->
+<section class="section">
+    <h2>Lap Times</h2>
+    <div class="chart-container">
+        <canvas id="compare-lap-times" aria-label="Lap times comparison chart"></canvas>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/comparison.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.Comparison) {
+        window.Comparison.initSpeedOverlay(
+            'compare-speed-overlay',
+            {{ session_a.session_id|tojson }},
+            {{ session_b.session_id|tojson }}
+        );
+        window.Comparison.initLapTimeChart(
+            'compare-lap-times',
+            {{ session_a.laps|tojson }},
+            {{ session_b.laps|tojson }},
+            {{ (session_a.session_date[:10] if session_a.session_date else 'A')|tojson }},
+            {{ (session_b.session_date[:10] if session_b.session_date else 'B')|tojson }}
+        );
+    }
+});
+</script>
+{% endblock %}

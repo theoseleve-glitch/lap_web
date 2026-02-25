@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Telemetry Dashboard{% endblock %}</title>
+    <meta name="description" content="Motorsport telemetry analysis dashboard — lap times, GPS traces, driving style, corner analysis, and performance scoring.">
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+          crossorigin="" />
+
+    <!-- App CSS -->
+    <link rel="stylesheet" href="/static/css/main.css">
+
+    {% block head_extra %}{% endblock %}
+</head>
+<body>
+    <!-- Skip link for keyboard navigation -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <noscript>
+        <div style="background:#1a1f2e;color:#e6edf3;padding:2rem;text-align:center;font-family:sans-serif;">
+            <h1>JavaScript Required</h1>
+            <p>This telemetry analysis dashboard requires JavaScript to function. Please enable JavaScript in your browser settings.</p>
+        </div>
+    </noscript>
+
+    <!-- Navigation -->
+    <nav class="top-nav" aria-label="Main navigation">
+        <div class="nav-brand">
+            <span class="nav-icon" aria-hidden="true">&#x1F3CE;</span>
+            <a href="/">Telemetry</a>
+        </div>
+
+        <!-- Mobile hamburger -->
+        <button type="button" class="nav-hamburger" id="nav-hamburger" aria-label="Toggle menu" aria-expanded="false" aria-controls="nav-links">
+            <span></span><span></span><span></span>
+        </button>
+
+        <div class="nav-links" id="nav-links" role="menubar">
+            <a href="/"
+               class="{% if request.endpoint == 'dashboard.index' %}active{% endif %}"
+               {% if request.endpoint == 'dashboard.index' %}aria-current="page"{% endif %}>
+                Dashboard
+            </a>
+            <a href="/sessions/"
+               class="{% if request.endpoint and request.endpoint.startswith('sessions.') %}active{% endif %}"
+               {% if request.endpoint and request.endpoint.startswith('sessions.') %}aria-current="page"{% endif %}>
+                Sessions
+            </a>
+
+            <!-- Data dropdown: Tracks, Karts, Drivers, Weekends -->
+            <div class="nav-dropdown-wrap">
+                <a class="nav-dropdown-trigger {% if request.endpoint and (request.endpoint.startswith('tracks.') or request.endpoint.startswith('karts.') or request.endpoint.startswith('drivers.') or request.endpoint.startswith('weekends.')) %}active{% endif %}"
+                   tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
+                   {% if request.endpoint and (request.endpoint.startswith('tracks.') or request.endpoint.startswith('karts.') or request.endpoint.startswith('drivers.') or request.endpoint.startswith('weekends.')) %}aria-current="page"{% endif %}>
+                    Data <span aria-hidden="true">&#x25BE;</span>
+                </a>
+                <div class="nav-dropdown nav-dropdown-menu" role="menu">
+                    <a class="nav-dropdown-item" href="/tracks/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F3C1;</span> Tracks
+                    </a>
+                    <a class="nav-dropdown-item" href="/karts/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F3CE;</span> Karts
+                    </a>
+                    <a class="nav-dropdown-item" href="/drivers/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F464;</span> Drivers
+                    </a>
+                    <a class="nav-dropdown-item" href="/weekends/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F4C5;</span> Weekends
+                    </a>
+                </div>
+            </div>
+
+            <!-- Analysis dropdown: Compare, Leaderboard, Analytics sub-items -->
+            <div class="nav-dropdown-wrap">
+                <a class="nav-dropdown-trigger {% if request.endpoint and (request.endpoint.startswith('comparisons.') or request.endpoint.startswith('leaderboard.') or request.endpoint.startswith('analytics.')) %}active{% endif %}"
+                   tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
+                   {% if request.endpoint and (request.endpoint.startswith('comparisons.') or request.endpoint.startswith('leaderboard.') or request.endpoint.startswith('analytics.')) %}aria-current="page"{% endif %}>
+                    Analysis <span aria-hidden="true">&#x25BE;</span>
+                </a>
+                <div class="nav-dropdown nav-dropdown-menu" role="menu">
+                    <a class="nav-dropdown-item" href="/compare/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x2194;</span> Compare Sessions
+                    </a>
+                    <a class="nav-dropdown-item" href="/leaderboard/" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F3C6;</span> Leaderboard
+                    </a>
+                    <div class="nav-dropdown-sep" role="separator"></div>
+                    <a class="nav-dropdown-item" href="/analytics/weather" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x26C5;</span> Weather &amp; Pace
+                    </a>
+                    <a class="nav-dropdown-item" href="/analytics/trends" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F4C8;</span> Pace Trends
+                    </a>
+                    <a class="nav-dropdown-item" href="/analytics/meteo" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F321;</span> Live Meteo
+                    </a>
+                    <a class="nav-dropdown-item" href="/analytics/sector-comparison" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F50D;</span> Sector Comparison
+                    </a>
+                    <div class="nav-dropdown-sep" role="separator"></div>
+                    <a class="nav-dropdown-item" href="/predictions/race-strategy" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x1F3CE;</span> Race Strategy
+                    </a>
+                    <a class="nav-dropdown-item" href="/predictions/weight-simulator" role="menuitem">
+                        <span class="nav-dropdown-icon" aria-hidden="true">&#x2696;</span> Weight Simulator
+                    </a>
+                </div>
+            </div>
+
+            <!-- Visualize with session search dropdown -->
+            <div class="nav-dropdown-wrap">
+                <a id="viz-nav-trigger"
+                   class="nav-dropdown-trigger {% if request.endpoint and request.endpoint.startswith('visualize.') %}active{% endif %}"
+                   tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
+                   {% if request.endpoint and request.endpoint.startswith('visualize.') %}aria-current="page"{% endif %}>
+                    Visualize <span aria-hidden="true">&#x25BE;</span>
+                </a>
+                <div class="nav-dropdown" id="viz-nav-dropdown" role="menu">
+                    <div class="nav-dropdown-search">
+                        <input type="search" id="viz-nav-search" placeholder="Search sessions..."
+                               autocomplete="off" aria-label="Search sessions to visualize">
+                    </div>
+                    <div class="nav-dropdown-list" id="viz-nav-list" aria-live="polite">
+                        <div class="nav-dropdown-empty"><div class="skeleton skeleton-row" style="margin:0;width:80%;"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Coaching: Dev Plans -->
+            <a href="/dev-plans/"
+               class="{% if request.endpoint and request.endpoint.startswith('dev_plans.') %}active{% endif %}"
+               {% if request.endpoint and request.endpoint.startswith('dev_plans.') %}aria-current="page"{% endif %}>
+                Coaching
+            </a>
+
+            <a href="/analyze/" title="Upload and analyze a new session"
+               class="nav-cta {% if request.endpoint and request.endpoint.startswith('analysis.') %}active{% endif %}"
+               {% if request.endpoint and request.endpoint.startswith('analysis.') %}aria-current="page"{% endif %}>
+                + Analyze
+            </a>
+        </div>
+    </nav>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-container" role="alert" aria-live="polite">
+        {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">
+            {{ message }}
+            <button type="button" class="flash-close" aria-label="Dismiss message">&times;</button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Main content -->
+    <main class="main-content" id="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Scroll to top button -->
+    <button type="button" class="scroll-top" id="scroll-top" aria-label="Scroll to top" title="Back to top">
+        &#x2191;
+    </button>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <span>Telemetry Analysis Platform</span>
+    </footer>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+            crossorigin=""></script>
+
+    <!-- Theme colors (CSS vars → JS for canvas charts) -->
+    <script src="{{ url_for('static', filename='js/theme.js') }}"></script>
+
+    <!-- Fetch helper (loading / error / retry) -->
+    <script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>
+
+    <!-- Toast notification system (global) -->
+    <script src="{{ url_for('static', filename='js/toast.js') }}"></script>
+
+    {% block scripts %}{% endblock %}
+
+    <!-- Global XSS escape helper -->
+    <script>
+    window.esc = function(s) {
+        if (s == null) return '';
+        var d = document.createElement('div');
+        d.textContent = String(s);
+        return d.innerHTML;
+    };
+    </script>
+
+    <!-- Navigation dropdowns + hamburger + visualize search -->
+    <script>
+    (function() {
+        // ── Utility: update aria-expanded ─────────────
+        function setExpanded(trigger, isOpen) {
+            if (trigger) trigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        }
+
+        function closeAllDropdowns() {
+            document.querySelectorAll('.nav-dropdown.open, .nav-dropdown-menu.open').forEach(function(m) {
+                m.classList.remove('open');
+            });
+            // Reset all aria-expanded
+            document.querySelectorAll('.nav-dropdown-trigger[aria-expanded="true"]').forEach(function(t) {
+                setExpanded(t, false);
+            });
+        }
+
+        // ── Hamburger toggle ──────────────────────────
+        var hamburger = document.getElementById('nav-hamburger');
+        var navLinks = document.getElementById('nav-links');
+        if (hamburger && navLinks) {
+            hamburger.addEventListener('click', function() {
+                var isOpen = navLinks.classList.toggle('nav-open');
+                hamburger.classList.toggle('open');
+                setExpanded(hamburger, isOpen);
+            });
+        }
+
+        // ── Generic dropdown hover/click ──────────────
+        var dropdownWraps = document.querySelectorAll('.nav-dropdown-wrap');
+        dropdownWraps.forEach(function(wrap) {
+            var trigger = wrap.querySelector('.nav-dropdown-trigger');
+            var menu = wrap.querySelector('.nav-dropdown-menu');
+            if (!trigger || !menu) return;
+
+            // Desktop hover — open on mouseenter, close on mouseleave (with delay)
+            var hoverTimer = null;
+            wrap.addEventListener('mouseenter', function() {
+                if (window.innerWidth < 768) return; // skip on mobile
+                clearTimeout(hoverTimer);
+                // Close other dropdowns
+                dropdownWraps.forEach(function(otherWrap) {
+                    if (otherWrap !== wrap) {
+                        var om = otherWrap.querySelector('.nav-dropdown-menu');
+                        var ot = otherWrap.querySelector('.nav-dropdown-trigger');
+                        if (om) om.classList.remove('open');
+                        setExpanded(ot, false);
+                    }
+                });
+                menu.classList.add('open');
+                setExpanded(trigger, true);
+            });
+            wrap.addEventListener('mouseleave', function() {
+                if (window.innerWidth < 768) return;
+                hoverTimer = setTimeout(function() {
+                    menu.classList.remove('open');
+                    setExpanded(trigger, false);
+                }, 200);
+            });
+
+            // Click toggle (for mobile)
+            trigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                // Close other open dropdowns first
+                dropdownWraps.forEach(function(otherWrap) {
+                    if (otherWrap !== wrap) {
+                        var otherMenu = otherWrap.querySelector('.nav-dropdown-menu');
+                        var otherTrigger = otherWrap.querySelector('.nav-dropdown-trigger');
+                        if (otherMenu) otherMenu.classList.remove('open');
+                        setExpanded(otherTrigger, false);
+                    }
+                });
+                var isOpen = menu.classList.toggle('open');
+                setExpanded(trigger, isOpen);
+            });
+
+            // Keyboard navigation inside dropdown
+            trigger.addEventListener('keydown', function(e) {
+                if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    if (!menu.classList.contains('open')) {
+                        menu.classList.add('open');
+                        setExpanded(trigger, true);
+                    }
+                    var firstItem = menu.querySelector('.nav-dropdown-item');
+                    if (firstItem) firstItem.focus();
+                }
+            });
+
+            // Arrow keys inside menu items
+            menu.addEventListener('keydown', function(e) {
+                var items = menu.querySelectorAll('.nav-dropdown-item');
+                var current = document.activeElement;
+                var idx = Array.prototype.indexOf.call(items, current);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    var next = idx < items.length - 1 ? idx + 1 : 0;
+                    items[next].focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    var prev = idx > 0 ? idx - 1 : items.length - 1;
+                    items[prev].focus();
+                } else if (e.key === 'Escape') {
+                    menu.classList.remove('open');
+                    setExpanded(trigger, false);
+                    trigger.focus();
+                }
+            });
+        });
+
+        // Close all dropdowns on click outside
+        document.addEventListener('click', function(e) {
+            dropdownWraps.forEach(function(wrap) {
+                if (!wrap.contains(e.target)) {
+                    var menu = wrap.querySelector('.nav-dropdown, .nav-dropdown-menu');
+                    var trigger = wrap.querySelector('.nav-dropdown-trigger');
+                    if (menu) menu.classList.remove('open');
+                    setExpanded(trigger, false);
+                }
+            });
+        });
+
+        // Close all on Escape
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeAllDropdowns();
+                if (navLinks) navLinks.classList.remove('nav-open');
+                if (hamburger) {
+                    hamburger.classList.remove('open');
+                    setExpanded(hamburger, false);
+                }
+            }
+        });
+
+        // ── Visualize session search dropdown ─────────
+        var vizTrigger = document.getElementById('viz-nav-trigger');
+        var vizDropdown = document.getElementById('viz-nav-dropdown');
+        var vizList = document.getElementById('viz-nav-list');
+        var vizSearch = document.getElementById('viz-nav-search');
+        if (!vizTrigger || !vizDropdown) return;
+
+        var loaded = false;
+        var debounceTimer = null;
+
+        vizTrigger.addEventListener('click', function(e) {
+            e.preventDefault();
+            // Close other menus
+            closeAllDropdowns();
+            var isOpen = vizDropdown.classList.contains('open');
+            vizDropdown.classList.toggle('open');
+            setExpanded(vizTrigger, !isOpen);
+            if (!isOpen && !loaded) fetchRecent();
+            if (!isOpen && vizSearch) setTimeout(function() { vizSearch.focus(); }, 50);
+        });
+
+        function fetchRecent() {
+            FetchHelper.fetch('/api/sessions/recent?limit=10')
+                .then(function(data) {
+                    loaded = true;
+                    renderList(Array.isArray(data) ? data : (data.sessions || []));
+                })
+                .catch(function() {
+                    vizList.innerHTML = '<div class="nav-dropdown-empty">Error loading sessions.</div>';
+                });
+        }
+
+        function renderList(sessions) {
+            if (sessions.length === 0) {
+                vizList.innerHTML = '<div class="nav-dropdown-empty">No sessions found.</div>';
+                return;
+            }
+            var html = '';
+            sessions.forEach(function(s) {
+                html += '<a class="nav-dropdown-item" href="/visualize/' + encodeURIComponent(s.session_id) + '">'
+                    + '<div>' + esc(s.driver_name || 'Unknown') + ' &mdash; ' + esc(s.track_name || 'Unknown track') + '</div>'
+                    + '<div class="session-meta">'
+                    + esc(s.session_date || '') + ' &middot; '
+                    + (s.n_laps || '?') + ' laps'
+                    + (s.best_lap_time_s ? ' &middot; Best: ' + s.best_lap_time_s.toFixed(3) + 's' : '')
+                    + (s.grade ? ' &middot; ' + esc(s.grade) : '')
+                    + '</div></a>';
+            });
+            vizList.innerHTML = html;
+        }
+
+        if (vizSearch) {
+            vizSearch.addEventListener('input', function() {
+                clearTimeout(debounceTimer);
+                var q = vizSearch.value.trim();
+                if (q.length === 0) { fetchRecent(); return; }
+                if (q.length < 2) return;
+                debounceTimer = setTimeout(function() {
+                    FetchHelper.fetch('/api/sessions/search?q=' + encodeURIComponent(q))
+                        .then(function(results) {
+                            renderList(results.map(function(s) {
+                                return { session_id: s.session_id, driver_name: s.driver_name,
+                                    track_name: s.track_name, session_date: s.session_date,
+                                    n_laps: s.n_laps, best_lap_time_s: s.best_lap_time_s, grade: s.grade };
+                            }));
+                        })
+                        .catch(function() { renderList([]); });
+                }, 250);
+            });
+
+            // Keyboard: Escape closes and returns focus, ArrowDown enters list
+            vizSearch.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') {
+                    vizDropdown.classList.remove('open');
+                    setExpanded(vizTrigger, false);
+                    vizTrigger.focus();
+                    e.stopPropagation(); // prevent global handler double-firing
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    var firstItem = vizList.querySelector('.nav-dropdown-item');
+                    if (firstItem) firstItem.focus();
+                }
+            });
+
+            // Arrow keys inside the viz result list
+            vizList.addEventListener('keydown', function(e) {
+                var items = vizList.querySelectorAll('.nav-dropdown-item');
+                var current = document.activeElement;
+                var idx = Array.prototype.indexOf.call(items, current);
+
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    var next = idx < items.length - 1 ? idx + 1 : 0;
+                    items[next].focus();
+                } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (idx <= 0) { vizSearch.focus(); }
+                    else { items[idx - 1].focus(); }
+                } else if (e.key === 'Escape') {
+                    vizDropdown.classList.remove('open');
+                    setExpanded(vizTrigger, false);
+                    vizTrigger.focus();
+                    e.stopPropagation();
+                }
+            });
+        }
+
+    })();
+
+    // ── Scroll to top button ────────────────────
+    (function() {
+        var btn = document.getElementById('scroll-top');
+        if (!btn) return;
+
+        window.addEventListener('scroll', function() {
+            if (window.scrollY > 400) {
+                btn.classList.add('visible');
+            } else {
+                btn.classList.remove('visible');
+            }
+        }, { passive: true });
+
+        btn.addEventListener('click', function() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+    })();
+
+    // ── Global form submit loading state ────
+    (function() {
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            if (!form || form.tagName !== 'FORM') return;
+            // Skip forms that handle their own loading (e.g. analyze-form)
+            if (form.id === 'analyze-form') return;
+
+            var btn = form.querySelector('button[type="submit"]:not(.btn-loading)');
+            if (btn && !btn.disabled) {
+                btn.classList.add('btn-loading');
+                btn.disabled = true;
+                // Auto-restore after 30s in case form doesn't navigate
+                setTimeout(function() {
+                    btn.classList.remove('btn-loading');
+                    btn.disabled = false;
+                }, 30000);
+            }
+        });
+    })();
+
+    // ── Table scroll detection ──────────────
+    (function() {
+        document.querySelectorAll('.table-wrap').forEach(function(wrap) {
+            function checkScroll() {
+                var hasScroll = wrap.scrollWidth > wrap.clientWidth + 1;
+                wrap.classList.toggle('has-scroll', hasScroll);
+            }
+            checkScroll();
+            wrap.addEventListener('scroll', checkScroll, { passive: true });
+            window.addEventListener('resize', checkScroll);
+        });
+    })();
+
+    /* ── Delegated clickable-row handler ─────────── */
+    (function() {
+        document.addEventListener('click', function(e) {
+            var row = e.target.closest('.clickable-row[data-href]');
+            if (!row) return;
+            // Skip clicks on interactive elements or checkbox cells inside the row
+            if (e.target.closest('a, button, input, select, textarea, .btn, .col-checkbox')) return;
+            window.location = row.dataset.href;
+        });
+        document.addEventListener('keydown', function(e) {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            var row = e.target.closest('.clickable-row[data-href]');
+            if (!row) return;
+            if (e.key === ' ') e.preventDefault(); // Prevent page scroll
+            window.location = row.dataset.href;
+        });
+    })();
+
+    /* ── Delegated flash-close handler ──────────── */
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.flash-close')) {
+            var flash = e.target.closest('.flash');
+            if (flash) flash.remove();
+        }
+    });
+
+    /* ── Sync aria-invalid with .is-invalid class ── */
+    (function() {
+        var observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(m) {
+                if (m.type !== 'attributes' || m.attributeName !== 'class') return;
+                var el = m.target;
+                if (!(el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) return;
+                if (el.classList.contains('is-invalid')) {
+                    el.setAttribute('aria-invalid', 'true');
+                } else {
+                    el.removeAttribute('aria-invalid');
+                }
+            });
+        });
+        observer.observe(document.body, { attributes: true, attributeFilter: ['class'], subtree: true });
+    })();
+
+    /* ── Delegated data-confirm handler ─────────── */
+    /* Forms with data-confirm="message" show a confirm dialog before submitting */
+    (function() {
+        document.addEventListener('submit', function(e) {
+            var form = e.target.closest('form[data-confirm]');
+            if (!form) return;
+            if (!confirm(form.dataset.confirm)) {
+                e.preventDefault();
+            }
+        });
+    })();
+
+    /* ── Lightweight form validation feedback ──────── */
+    /* Adds .invalid class and .form-error messages for required fields on submit */
+    (function() {
+        document.addEventListener('submit', function(e) {
+            var form = e.target;
+            if (!form || form.hasAttribute('novalidate')) return;
+            var invalids = form.querySelectorAll(':invalid');
+            if (invalids.length === 0) return;
+            e.preventDefault();
+            // Clear previous errors
+            form.querySelectorAll('.form-error').forEach(function(el) { el.remove(); });
+            form.querySelectorAll('.invalid').forEach(function(el) { el.classList.remove('invalid'); });
+            // Mark each invalid field
+            invalids.forEach(function(input) {
+                input.classList.add('invalid');
+                var msg = input.validationMessage || 'This field is required';
+                var err = document.createElement('div');
+                err.className = 'form-error';
+                err.setAttribute('role', 'alert');
+                err.textContent = msg;
+                input.parentNode.insertBefore(err, input.nextSibling);
+            });
+            // Focus first invalid
+            invalids[0].focus();
+        });
+        // Clear error on input
+        document.addEventListener('input', function(e) {
+            if (e.target.classList.contains('invalid')) {
+                e.target.classList.remove('invalid');
+                var err = e.target.parentNode.querySelector('.form-error');
+                if (err) err.remove();
+            }
+        });
+    })();
+    </script>
+
+
+</body>
+</html>

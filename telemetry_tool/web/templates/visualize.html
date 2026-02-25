@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Visualize — {{ session.session_id }}{% endblock %}
+
+{% block content %}
+<div class="viz-header">
+    <div class="viz-header-left">
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_detail', session_id=session.session_id) }}" class="breadcrumb">&larr; Session</a></nav>
+        <h1>Visualization Mode</h1>
+    </div>
+    <div class="viz-header-meta">
+        <span class="viz-header-meta-text">{{ session.driver_name or '' }} &middot; {{ session.track_name or '' }} &middot; {{ session.session_date or '' }}</span>
+    </div>
+</div>
+
+<div class="viz-layout">
+    <!-- ═══ SIDEBAR ═══ -->
+    <aside class="viz-sidebar" id="viz-sidebar">
+        <!-- Session info -->
+        <div class="viz-section">
+            <h2 class="heading-sm">Session</h2>
+            <div class="viz-session-info">
+                <div><span class="meta-label">Driver</span> {{ session.driver_name or '—' }}</div>
+                <div><span class="meta-label">Track</span> {{ session.track_name or '—' }}</div>
+                <div><span class="meta-label">Date</span> {{ session.session_date or '—' }}</div>
+                <div><span class="meta-label">Type</span>
+                    <span class="badge badge-{{ session.session_type or 'practice' }}">{{ session.session_type or 'practice' }}</span>
+                </div>
+                {% if session.grade %}
+                <div><span class="meta-label">Grade</span>
+                    <span class="grade grade-{{ session.grade[0] }}">{{ session.grade }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Lap list -->
+        <div class="viz-section">
+            <h2 class="heading-sm">Laps</h2>
+            <div class="viz-quick-btns">
+                <button type="button" class="btn btn-xs" id="viz-select-all">All</button>
+                <button type="button" class="btn btn-xs" id="viz-select-none">None</button>
+                <button type="button" class="btn btn-xs" id="viz-select-best">Best</button>
+            </div>
+            <div id="viz-lap-list">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+
+        <!-- Sector times -->
+        <div class="viz-section" id="viz-sector-section">
+            <h2 class="heading-sm">Sector Times</h2>
+            <div id="viz-sector-table-wrap">
+                <p class="viz-ref-hint">Click the reference line on the map to add sector splits.</p>
+            </div>
+        </div>
+
+        <!-- Quick stats -->
+        <div class="viz-section">
+            <h2 class="heading-sm">Statistics</h2>
+            <div id="viz-stats">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </aside>
+
+    <!-- ═══ MAIN ═══ -->
+    <div class="viz-main">
+        <!-- GPS Map -->
+        <div class="viz-map-container" id="viz-map"></div>
+
+        <!-- Speed chart -->
+        <div class="viz-chart-container">
+            <canvas id="viz-speed-chart" aria-label="Speed vs distance chart"></canvas>
+        </div>
+
+        <!-- G-G diagram -->
+        <div class="viz-chart-container">
+            <canvas id="viz-gg-chart" aria-label="G-G acceleration diagram"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    window.VIZ_DATA = {
+        sessionId:  {{ session.session_id|tojson }},
+        sessions:   {{ sessions_json|safe }},
+        gpsLaps:    {{ gps_laps|tojson }},
+        bestLap:    {{ best_lap|tojson }},
+        laps:       {{ laps_json|safe }},
+        hasSectors: {{ has_sectors|tojson }},
+        hasRefLine: {{ has_ref_line|tojson }},
+        multiMode:  {{ multi_mode|tojson }},
+    };
+</script>
+<script src="{{ url_for('static', filename='js/visualize.js') }}"></script>
+{% endblock %}

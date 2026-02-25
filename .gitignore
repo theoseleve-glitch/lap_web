@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# PyInstaller
+*.spec
+
+# Database
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# Cache
+.ingest_cache/
+.pytest_cache/
+
+# Claude Code
+.claude/
+
+# Data (raw telemetry files)
+data/raw/
+Results/
+
+# OS
+nul
+Thumbs.db
+.DS_Store
+
+# Temporary test/run scripts
+_run_tests*.py
+_test_output.txt
+_launch_app.py
+_runtime_hook_console.py
+_run_tests_and_app.py

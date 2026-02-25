@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Telemetry{% endblock %}
+
+{% block content %}
+{% set is_empty = (stats.total_sessions or 0) == 0 %}
+
+{% if is_empty %}
+<!-- ═══ Welcome hero for first-time users ═══ -->
+<div class="welcome-hero">
+    <div class="welcome-hero-icon" aria-hidden="true">&#x1F3CE;</div>
+    <h1>Welcome to Telemetry</h1>
+    <p class="welcome-subtitle">
+        Analyze your kart racing sessions, track your progress, and get coaching insights to shave seconds off your lap times.
+    </p>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary btn-lg">Upload Your First Session</a>
+
+    <!-- How it works steps -->
+    <div class="empty-steps">
+        <div class="empty-step">
+            <span class="empty-step-num">1</span>
+            <div class="empty-step-title">Upload CSV</div>
+            <div class="empty-step-desc">Export telemetry data from RaceChrono or similar apps and upload the CSV file.</div>
+        </div>
+        <div class="empty-step">
+            <span class="empty-step-num">2</span>
+            <div class="empty-step-title">Auto-Analysis</div>
+            <div class="empty-step-desc">The 14-stage pipeline detects laps, computes scores, and generates coaching insights.</div>
+        </div>
+        <div class="empty-step">
+            <span class="empty-step-num">3</span>
+            <div class="empty-step-title">Improve</div>
+            <div class="empty-step-desc">Review your score breakdown, corner analysis, and follow personalized development plans.</div>
+        </div>
+    </div>
+</div>
+
+<!-- Feature discovery cards -->
+<div class="feature-hints">
+    <div class="feature-hint elevation-1 card-interactive">
+        <div class="feature-hint-icon" aria-hidden="true">&#x1F4CA;</div>
+        <div class="feature-hint-title">Scoring & Grading</div>
+        <div class="feature-hint-desc">Get a 0-100 score across pace, consistency, execution, and robustness — plus a letter grade from S to D.</div>
+    </div>
+    <div class="feature-hint elevation-1 card-interactive">
+        <div class="feature-hint-icon" aria-hidden="true">&#x1F3AF;</div>
+        <div class="feature-hint-title">Corner-by-Corner</div>
+        <div class="feature-hint-desc">Brake precision scatter plots, throttle maps, and per-corner coaching hints to find time.</div>
+    </div>
+    <div class="feature-hint elevation-1 card-interactive">
+        <div class="feature-hint-icon" aria-hidden="true">&#x1F4C8;</div>
+        <div class="feature-hint-title">Progress Tracking</div>
+        <div class="feature-hint-desc">Multi-session trends, weather correlations, and pace predictions to see your improvement over time.</div>
+    </div>
+    <div class="feature-hint elevation-1 card-interactive">
+        <div class="feature-hint-icon" aria-hidden="true">&#x1F3C6;</div>
+        <div class="feature-hint-title">Leaderboard & Rivals</div>
+        <div class="feature-hint-desc">Compare your performance against other drivers, see where you gain or lose time.</div>
+    </div>
+</div>
+
+{% else %}
+<!-- ═══ Normal dashboard (has data) ═══ -->
+<div class="page-header">
+    <h1>Dashboard</h1>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+</div>
+
+<!-- Stats cards -->
+<div class="stats-grid">
+    <div class="stat-card elevation-1 card-interactive tip" data-tip="Total analyzed sessions in database">
+        <div class="stat-value">{{ stats.total_sessions or 0 }}</div>
+        <div class="stat-label">Sessions</div>
+    </div>
+    <div class="stat-card elevation-1 card-interactive tip" data-tip="Unique drivers tracked">
+        <div class="stat-value">{{ stats.total_drivers or 0 }}</div>
+        <div class="stat-label">Drivers</div>
+    </div>
+    <div class="stat-card elevation-1 card-interactive tip" data-tip="Distinct tracks driven on">
+        <div class="stat-value">{{ stats.total_tracks or 0 }}</div>
+        <div class="stat-label">Tracks</div>
+    </div>
+    <div class="stat-card elevation-1 card-interactive tip" data-tip="Total laps across all sessions">
+        <div class="stat-value">{{ stats.total_laps or 0 }}</div>
+        <div class="stat-label">Total Laps</div>
+    </div>
+    {% if stats.best_score %}
+    <div class="stat-card accent elevation-2 card-interactive tip" data-tip="Highest overall score (0-100)">
+        <div class="stat-value">{{ "%.1f"|format(stats.best_score) }}</div>
+        <div class="stat-label">Best Score</div>
+    </div>
+    {% endif %}
+    {% if stats.avg_score %}
+    <div class="stat-card elevation-1 card-interactive tip" data-tip="Average score across all sessions">
+        <div class="stat-value">{{ "%.1f"|format(stats.avg_score) }}</div>
+        <div class="stat-label">Avg Score</div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent sessions -->
+<section class="section" aria-labelledby="heading-recent-sessions">
+    <div class="section-header">
+        <h2 id="heading-recent-sessions">Recent Sessions</h2>
+        <a href="{{ url_for('sessions.session_list') }}" class="btn btn-ghost">View All</a>
+    </div>
+
+    {% if recent_sessions %}
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped">
+            <caption class="sr-only">Recent sessions overview</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Track</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best Lap</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                    <th scope="col">Grade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in recent_sessions %}
+                <tr class="clickable-row" tabindex="0" role="link"
+                    data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}"
+                    aria-label="Session {{ s.session_date or '' }} — {{ s.driver_name or 'Unknown' }}">
+                    <td>{{ s.session_date or '—' }}</td>
+                    <td>{{ s.driver_name or '—' }}</td>
+                    <td>{{ s.track_name or s.track_id or '—' }}</td>
+                    <td><span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span></td>
+                    <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                    <td class="col-numeric">
+                        {% if s.best_lap_time_s %}
+                            {{ "%.3f"|format(s.best_lap_time_s) }}s
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td class="col-numeric">
+                        {% if s.total_score %}
+                            <span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if s.grade %}
+                            <span class="grade grade-{{ s.grade[0] if s.grade else '' }}">{{ s.grade }}</span>
+                        {% else %}
+                            —
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F4C4;</div>
+        <div class="empty-hero-title">No recent sessions</div>
+        <div class="empty-hero-desc">Your analyzed sessions will appear here. Upload a CSV to get started.</div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+{% endblock %}

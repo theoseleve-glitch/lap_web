@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}{% if kart %}Edit {{ kart.kart_name }}{% else %}New Kart{% endif %} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('karts.kart_list') }}" class="breadcrumb">&larr; Karts</a></nav>
+        <h1>{% if kart %}Edit {{ kart.kart_name }}{% else %}New Kart{% endif %}</h1>
+    </div>
+</div>
+
+<form method="POST" class="form-card elevation-1"
+      action="{% if kart %}{{ url_for('karts.edit_kart', kart_id=kart.kart_id) }}{% else %}{{ url_for('karts.new_kart') }}{% endif %}">
+    {% if not kart %}
+    <!-- Predefined kart selector -->
+    <div class="form-group">
+        <label for="predefined-kart-select">Start from predefined kart (optional)</label>
+        <select id="predefined-kart-select" class="form-select" onchange="fillFromPredefined(this)">
+            <option value="">-- Custom kart --</option>
+            {% for segment, karts_in_seg in predefined.items() %}
+            <optgroup label="{{ segment }}">
+                {% for pk in karts_in_seg %}
+                <option value="{{ pk.predefined_kart_id }}"
+                        data-manufacturer="{{ pk.manufacturer or '' }}"
+                        data-model="{{ pk.model or '' }}"
+                        data-engine="{{ pk.engine or '' }}"
+                        data-power="{{ pk.power_hp or '' }}"
+                        data-weight="{{ pk.kart_weight_kg or '' }}">
+                    {{ pk.manufacturer or '' }} {{ pk.model or '' }}
+                    {% if pk.engine %}({{ pk.engine }}){% endif %}
+                    {% if pk.power_hp %} — {{ pk.power_hp|int }}hp{% endif %}
+                </option>
+                {% endfor %}
+            </optgroup>
+            {% endfor %}
+        </select>
+        <input type="hidden" name="predefined_kart_id" id="predefined-kart-id" value="">
+    </div>
+    {% endif %}
+
+    <div class="form-group">
+        <label for="kart_name">Kart Name *</label>
+        <input type="text" id="kart_name" name="kart_name" class="form-input" required
+               value="{{ kart.kart_name if kart else '' }}" placeholder="e.g. My Sodi RT8">
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="manufacturer">Manufacturer</label>
+            <input type="text" id="manufacturer" name="manufacturer" class="form-input"
+                   value="{{ kart.manufacturer if kart else '' }}" placeholder="e.g. Sodi">
+        </div>
+        <div class="form-group">
+            <label for="model">Model</label>
+            <input type="text" id="model" name="model" class="form-input"
+                   value="{{ kart.model if kart else '' }}" placeholder="e.g. RT8">
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="engine">Engine</label>
+            <input type="text" id="engine" name="engine" class="form-input"
+                   value="{{ kart.engine if kart else '' }}" placeholder="e.g. Rotax Max">
+        </div>
+        <div class="form-group">
+            <label for="power_hp">Power (hp)</label>
+            <input type="number" id="power_hp" name="power_hp" class="form-input" step="0.1"
+                   value="{{ kart.power_hp if kart and kart.power_hp else '' }}">
+        </div>
+        <div class="form-group">
+            <label for="kart_weight_kg">Weight (kg)</label>
+            <input type="number" id="kart_weight_kg" name="kart_weight_kg" class="form-input" step="0.1"
+                   value="{{ kart.kart_weight_kg if kart and kart.kart_weight_kg else '' }}">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes" class="form-input" rows="3"
+                  placeholder="Any additional notes about this kart">{{ kart.notes if kart and kart.notes else '' }}</textarea>
+    </div>
+
+    <div class="form-group form-col-end">
+        <button type="submit" class="btn btn-primary">{% if kart %}Save Changes{% else %}Create Kart{% endif %}</button>
+        <a href="{{ url_for('karts.kart_list') }}" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function fillFromPredefined(sel) {
+    var opt = sel.options[sel.selectedIndex];
+    document.getElementById('predefined-kart-id').value = opt.value || '';
+    if (opt.value) {
+        document.getElementById('manufacturer').value = opt.dataset.manufacturer || '';
+        document.getElementById('model').value = opt.dataset.model || '';
+        document.getElementById('engine').value = opt.dataset.engine || '';
+        document.getElementById('power_hp').value = opt.dataset.power || '';
+        document.getElementById('kart_weight_kg').value = opt.dataset.weight || '';
+        if (!document.getElementById('kart_name').value) {
+            document.getElementById('kart_name').value = (opt.dataset.manufacturer || '') + ' ' + (opt.dataset.model || '');
+        }
+    }
+}
+</script>
+{% endblock %}

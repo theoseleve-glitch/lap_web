@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Custom Dashboards{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Custom Dashboards</h1>
+    <button type="button" class="btn btn-primary" id="new-dashboard-btn">+ New Dashboard</button>
+</div>
+
+<!-- Inline create form (hidden by default) -->
+<div class="inline-create-form hidden" id="create-dashboard-form">
+    <div class="form-row items-center">
+        <div class="form-group form-col-wide">
+            <input type="text" id="new-dashboard-name" class="form-input"
+                   placeholder="Dashboard name" maxlength="100"
+                   aria-label="New dashboard name">
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" id="create-dashboard-confirm">Create</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="create-dashboard-cancel">Cancel</button>
+    </div>
+</div>
+
+<section class="section">
+    <h2>Your Dashboards {% if dashboards %}<span class="count-badge">{{ dashboards|length }}</span>{% endif %}</h2>
+    <div id="dashboards-list">
+        {% if dashboards %}
+        {% for db in dashboards %}
+        <div class="dashboard-card elevation-1 card-interactive">
+            <h3>{{ db.dashboard_name }}{% if db.is_default %} <span class="tag">Default</span>{% endif %}</h3>
+            <p>{{ db.layout|length }} widgets</p>
+            <a href="/dashboards/{{ db.id }}" class="btn btn-secondary">Open</a>
+            <button type="button" class="btn-sm btn-danger delete-dashboard-btn" data-id="{{ db.id }}" aria-label="Delete dashboard">Delete</button>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="empty-hero empty-hero-compact">
+            <div class="empty-hero-icon" aria-hidden="true">&#x1F4CA;</div>
+            <div class="empty-hero-title">No custom dashboards yet</div>
+            <div class="empty-hero-desc">
+                Build your own dashboard with widgets for recent sessions, data health, pace trends, and more.
+                Click "+ New Dashboard" above to create your first one.
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</section>
+
+<section class="section">
+    <h2>Available Widgets</h2>
+    <div class="widget-grid">
+        {% for w in widgets %}
+        <div class="widget-card elevation-1 card-interactive" data-type="{{ w.type }}">
+            <h3>{{ w.name }}</h3>
+            <p>{{ w.description }}</p>
+            <span class="tag">{{ w.category }}</span>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var newBtn = document.getElementById('new-dashboard-btn');
+    var formWrap = document.getElementById('create-dashboard-form');
+    var nameInput = document.getElementById('new-dashboard-name');
+    var confirmBtn = document.getElementById('create-dashboard-confirm');
+    var cancelBtn = document.getElementById('create-dashboard-cancel');
+
+    function showCreateForm() {
+        formWrap.classList.remove('hidden');
+        newBtn.classList.add('hidden');
+        nameInput.value = '';
+        nameInput.focus();
+    }
+
+    function hideCreateForm() {
+        formWrap.classList.add('hidden');
+        newBtn.classList.remove('hidden');
+    }
+
+    function submitCreate() {
+        var name = nameInput.value.trim();
+        if (!name) { nameInput.classList.add('is-invalid'); nameInput.focus(); return; }
+        nameInput.classList.remove('is-invalid');
+        confirmBtn.disabled = true;
+        confirmBtn.textContent = 'Creating...';
+        FetchHelper.fetch('/api/dashboards', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: name, layout: [
+                { type: 'recent_sessions', x: 0, y: 0, w: 6, h: 3, params: {} },
+                { type: 'data_health_summary', x: 6, y: 0, w: 4, h: 3, params: {} },
+            ]}),
+        })
+        .then(function(data) {
+            if (data.id) window.location.href = '/dashboards/' + data.id;
+        })
+        .catch(function(err) {
+            console.warn('Create dashboard failed:', err);
+            if (window.Toast) Toast.show('Failed to create dashboard', 'error');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = 'Create';
+        });
+    }
+
+    if (newBtn) newBtn.addEventListener('click', showCreateForm);
+    if (cancelBtn) cancelBtn.addEventListener('click', hideCreateForm);
+    if (confirmBtn) confirmBtn.addEventListener('click', submitCreate);
+    if (nameInput) {
+        nameInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') { e.preventDefault(); submitCreate(); }
+            if (e.key === 'Escape') hideCreateForm();
+        });
+        nameInput.addEventListener('input', function() { nameInput.classList.remove('is-invalid'); });
+    }
+
+    /* ── Delete dashboard via data attribute ── */
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.delete-dashboard-btn');
+        if (!btn) return;
+        var id = btn.dataset.id;
+        if (!confirm('Delete this dashboard?')) return;
+        FetchHelper.fetch('/api/dashboards/' + id, { method: 'DELETE' })
+            .then(function() { location.reload(); })
+            .catch(function(err) {
+                console.warn('Delete dashboard failed:', err);
+                if (window.Toast) Toast.show('Failed to delete dashboard', 'error');
+            });
+    });
+})();
+</script>
+{% endblock %}

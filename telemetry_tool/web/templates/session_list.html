@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+
+{% block title %}Sessions — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Sessions <span class="count-badge">{{ total }}</span></h1>
+</div>
+
+{% if sessions %}
+<div class="batch-actions">
+    <button type="button" id="batch-reanalyze-btn" class="btn btn-ghost compare-btn-compact" disabled title="Select sessions to re-analyze">
+        Re-Analyze Selected
+    </button>
+    <button type="button" id="batch-delete-btn" class="btn btn-ghost compare-btn-compact btn-danger-text" disabled title="Select sessions to delete">
+        Delete Selected
+    </button>
+    <span id="batch-count" class="form-hint"></span>
+    <span id="batch-status" class="form-hint batch-status" aria-live="polite"></span>
+</div>
+<div class="table-wrap table-wrap-sticky">
+    <table class="data-table striped" id="sessions-table">
+        <caption class="sr-only">All telemetry sessions</caption>
+        <thead>
+            <tr>
+                <th scope="col" class="col-checkbox"><input type="checkbox" id="select-all-sessions" aria-label="Select all sessions" title="Select all"></th>
+                <th scope="col" class="sortable">Date</th>
+                <th scope="col" class="sortable">Driver</th>
+                <th scope="col" class="sortable">Track</th>
+                <th scope="col" class="sortable">Type</th>
+                <th scope="col" class="sortable">Condition</th>
+                <th scope="col" class="col-numeric sortable">Laps</th>
+                <th scope="col" class="col-numeric sortable">Best Lap</th>
+                <th scope="col" class="col-numeric sortable">Mean Lap</th>
+                <th scope="col" class="col-numeric sortable">Score</th>
+                <th scope="col" class="sortable">Grade</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in sessions %}
+            <tr class="clickable-row" data-session-id="{{ s.session_id }}" tabindex="0"
+                role="link" aria-label="Session {{ s.session_date or s.session_id[:12] }} — {{ s.driver_name or 'Unknown' }}"
+                data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                <td class="col-checkbox">
+                    <input type="checkbox" class="session-checkbox" value="{{ s.session_id }}">
+                </td>
+                <td>{{ s.session_date or '—' }}</td>
+                <td>{{ s.driver_name or '—' }}</td>
+                <td>{{ s.track_name or s.track_id or '—' }}</td>
+                <td><span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span></td>
+                <td><span class="badge badge-{{ s.track_state or 'dry' }}">{{ s.track_state or 'dry' }}</span></td>
+                <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                <td class="col-numeric">
+                    {% if s.best_lap_time_s %}
+                        {{ "%.3f"|format(s.best_lap_time_s) }}s
+                    {% else %}—{% endif %}
+                </td>
+                <td class="col-numeric">
+                    {% if s.mean_lap_time_s %}
+                        {{ "%.3f"|format(s.mean_lap_time_s) }}s
+                    {% else %}—{% endif %}
+                </td>
+                <td class="col-numeric">
+                    {% if s.total_score %}
+                        <span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if s.grade %}
+                        <span class="grade grade-{{ s.grade[0] if s.grade else '' }}">{{ s.grade }}</span>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Pagination -->
+{% if total_pages > 1 %}
+<nav class="pagination" aria-label="Session list pagination">
+    {% if page > 1 %}
+        <a href="?page={{ page - 1 }}" class="btn btn-ghost" aria-label="Previous page">&laquo; Prev</a>
+    {% endif %}
+    <span class="page-info" aria-current="page">Page {{ page }} of {{ total_pages }}</span>
+    {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}" class="btn btn-ghost" aria-label="Next page">Next &raquo;</a>
+    {% endif %}
+</nav>
+{% endif %}
+
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F3CE;</div>
+    <div class="empty-hero-title">No sessions yet</div>
+    <div class="empty-hero-desc">
+        This is where all your analyzed sessions will appear. Each session gets a score, grade, and detailed breakdown.
+        Upload a RaceChrono CSV to get started.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    <a href="/" class="btn btn-ghost">Back to Dashboard</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>
+<script src="{{ url_for('static', filename='js/context_menu.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    ContextMenu.init('#sessions-table tbody', 'tr[data-session-id]', function(row) {
+        var sid = row.getAttribute('data-session-id');
+        return [
+            { label: 'Open Session', icon: '&#x1F4C4;', action: function() {
+                window.location = '/sessions/' + encodeURIComponent(sid);
+            }},
+            { label: 'Open in Visualize', icon: '&#x1F3CE;', action: function() {
+                window.location = '/visualize/' + encodeURIComponent(sid);
+            }},
+            { separator: true },
+            { label: 'Copy Session ID', icon: '&#x1F4CB;', action: function() {
+                navigator.clipboard.writeText(sid).catch(function() {});
+            }},
+            { separator: true },
+            { label: 'Delete Session', icon: '&#x1F5D1;', action: function() {
+                if (!confirm('Delete session "' + sid.substring(0, 24) + '..."?\n\nThis will permanently remove all analysis data for this session.')) return;
+                FetchHelper.fetch('/api/session/' + encodeURIComponent(sid), { method: 'DELETE' })
+                    .then(function(data) {
+                        if (data.ok) {
+                            var nextFocus = row.nextElementSibling || row.previousElementSibling;
+                            row.style.transition = 'opacity 0.3s';
+                            row.style.opacity = '0';
+                            setTimeout(function() {
+                                row.remove();
+                                if (nextFocus && nextFocus.getAttribute('tabindex')) nextFocus.focus();
+                            }, 300);
+                        } else {
+                            if (window.Toast) window.Toast.show(data.error || 'Unknown error', 'error');
+                        }
+                    })
+                    .catch(function(err) {
+                        if (window.Toast) window.Toast.show('Delete failed: ' + err.message, 'error');
+                    });
+            }},
+        ];
+    });
+
+    // ── Batch re-analyze ──
+    var batchBtn = document.getElementById('batch-reanalyze-btn');
+    var batchCount = document.getElementById('batch-count');
+    var batchStatus = document.getElementById('batch-status');
+    var selectAll = document.getElementById('select-all-sessions');
+
+    var deleteBtn = document.getElementById('batch-delete-btn');
+
+    function updateBatchState() {
+        var checked = document.querySelectorAll('.session-checkbox:checked');
+        var n = checked.length;
+        if (batchBtn) {
+            batchBtn.disabled = n < 1;
+            batchBtn.setAttribute('aria-disabled', n < 1 ? 'true' : 'false');
+            batchBtn.textContent = n < 1
+                ? 'Re-Analyze Selected'
+                : 'Re-Analyze ' + n + ' Session' + (n > 1 ? 's' : '');
+        }
+        if (deleteBtn) {
+            deleteBtn.disabled = n < 1;
+            deleteBtn.setAttribute('aria-disabled', n < 1 ? 'true' : 'false');
+            deleteBtn.textContent = n < 1
+                ? 'Delete Selected'
+                : 'Delete ' + n + ' Session' + (n > 1 ? 's' : '');
+        }
+        if (batchCount) batchCount.textContent = n > 0 ? n + ' selected' : '';
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            var boxes = document.querySelectorAll('.session-checkbox');
+            boxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+            updateBatchState();
+        });
+    }
+
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('session-checkbox')) updateBatchState();
+    });
+
+    if (batchBtn) {
+        batchBtn.addEventListener('click', function() {
+            var checked = document.querySelectorAll('.session-checkbox:checked');
+            var ids = [];
+            checked.forEach(function(cb) { ids.push(cb.value); });
+            if (ids.length === 0) return;
+
+            batchBtn.disabled = true;
+            batchBtn.textContent = 'Analyzing...';
+            if (batchStatus) batchStatus.textContent = 'Running batch analysis...';
+
+            FetchHelper.fetch('/api/batch-reanalyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_ids: ids }),
+            })
+            .then(function(data) {
+                if (data.error) {
+                    if (batchStatus) batchStatus.textContent = 'Error: ' + data.error;
+                } else {
+                    if (batchStatus) {
+                        batchStatus.textContent = 'Done: ' + data.completed + '/' + data.total
+                            + ' succeeded (' + data.elapsed_s + 's)';
+                    }
+                    // Reload page after a brief delay
+                    setTimeout(function() { window.location.reload(); }, 2000);
+                }
+            })
+            .catch(function(err) {
+                if (batchStatus) batchStatus.textContent = 'Error: ' + err.message;
+            })
+            .finally(function() {
+                batchBtn.disabled = false;
+                updateBatchState();
+            });
+        });
+    }
+
+    // ── Batch delete ──
+    if (deleteBtn) {
+        deleteBtn.addEventListener('click', function() {
+            var checked = document.querySelectorAll('.session-checkbox:checked');
+            var ids = [];
+            checked.forEach(function(cb) { ids.push(cb.value); });
+            if (ids.length === 0) return;
+
+            if (!confirm('Delete ' + ids.length + ' session' + (ids.length > 1 ? 's' : '') + '?\n\nThis will permanently remove all analysis data for the selected sessions.')) return;
+
+            deleteBtn.disabled = true;
+            deleteBtn.textContent = 'Deleting...';
+            if (batchStatus) batchStatus.textContent = 'Deleting sessions...';
+
+            var completed = 0, failed = 0;
+            var promises = ids.map(function(sid) {
+                return FetchHelper.fetch('/api/session/' + encodeURIComponent(sid), { method: 'DELETE' })
+                    .then(function(data) {
+                        if (data.ok) {
+                            completed++;
+                            var row = document.querySelector('tr[data-session-id="' + sid + '"]');
+                            if (row) { row.style.opacity = '0.3'; }
+                        } else { failed++; }
+                    })
+                    .catch(function() { failed++; });
+            });
+
+            Promise.all(promises).then(function() {
+                if (batchStatus) {
+                    batchStatus.textContent = 'Deleted ' + completed + '/' + ids.length +
+                        (failed > 0 ? ' (' + failed + ' failed)' : '');
+                }
+                if (completed > 0) {
+                    setTimeout(function() { window.location.reload(); }, 1000);
+                }
+                deleteBtn.disabled = false;
+                updateBatchState();
+            });
+        });
+    }
+});
+</script>
+<script>
+(function() {
+    var table = document.getElementById('sessions-table');
+    if (!table) return;
+
+    var thead = table.querySelector('thead');
+    var tbody = table.querySelector('tbody');
+    var numericCols = {6: true, 7: true, 8: true, 9: true};
+
+    thead.addEventListener('click', function(e) {
+        var th = e.target.closest('th.sortable');
+        if (!th) return;
+
+        // Determine column index
+        var ths = Array.prototype.slice.call(th.parentElement.children);
+        var colIndex = ths.indexOf(th);
+
+        // Determine sort direction
+        var isAsc = th.classList.contains('sort-asc');
+        var direction = isAsc ? -1 : 1; // toggle: if currently asc, go desc
+
+        // Remove sort classes from all headers
+        var allSortable = thead.querySelectorAll('th.sortable');
+        for (var i = 0; i < allSortable.length; i++) {
+            allSortable[i].classList.remove('sort-asc', 'sort-desc');
+        }
+
+        // Set class on clicked header
+        th.classList.add(direction === 1 ? 'sort-asc' : 'sort-desc');
+
+        // Gather rows
+        var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
+
+        var isNumeric = numericCols[colIndex] || false;
+
+        rows.sort(function(a, b) {
+            var cellA = a.children[colIndex];
+            var cellB = b.children[colIndex];
+            var textA = (cellA ? cellA.textContent : '').trim();
+            var textB = (cellB ? cellB.textContent : '').trim();
+
+            if (isNumeric) {
+                // Strip trailing 's' (e.g. "62.345s") and parse
+                var numA = parseFloat(textA.replace(/s$/i, '')) || 0;
+                var numB = parseFloat(textB.replace(/s$/i, '')) || 0;
+                // Treat em-dash or empty as very large so they sort last
+                if (textA === '' || textA === '\u2014') numA = direction === 1 ? Infinity : -Infinity;
+                if (textB === '' || textB === '\u2014') numB = direction === 1 ? Infinity : -Infinity;
+                return (numA - numB) * direction;
+            } else {
+                // Treat em-dash or empty as 'zzz' so they sort last
+                var valA = (textA === '' || textA === '\u2014') ? '\uffff' : textA.toLowerCase();
+                var valB = (textB === '' || textB === '\u2014') ? '\uffff' : textB.toLowerCase();
+                if (valA < valB) return -1 * direction;
+                if (valA > valB) return 1 * direction;
+                return 0;
+            }
+        });
+
+        // Re-append sorted rows
+        for (var j = 0; j < rows.length; j++) {
+            tbody.appendChild(rows[j]);
+        }
+    });
+})();
+</script>
+{% endblock %}

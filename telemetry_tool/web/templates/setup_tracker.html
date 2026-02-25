@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Setup Tracker — Telemetry{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Setup Correlation Tracker</h1></div>
+<div class="filter-bar">
+    <div>
+        <label class="form-label">Driver</label>
+        <select id="setup-driver" class="form-select">
+            <option value="">Select driver...</option>
+            {% for d in drivers %}<option value="{{ d.driver_id }}">{{ d.driver_name }}</option>{% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Track</label>
+        <select id="setup-track" class="form-select">
+            <option value="">Select track...</option>
+            {% for t in tracks %}<option value="{{ t.track_id }}">{{ t.track_name }}</option>{% endfor %}
+        </select>
+    </div>
+    <button type="button" id="setup-analyze" class="btn btn-primary" title="Analyze setup-performance correlations">Analyze</button>
+</div>
+<div id="setup-results" aria-live="polite"><p class="text-muted">Select a driver and track, then click <strong>Analyze</strong> to see how setup parameters (tire pressure, camber, ride height) correlate with lap time.</p></div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('setup-analyze').addEventListener('click', function() {
+    var btn = document.getElementById('setup-analyze');
+    var driverSel = document.getElementById('setup-driver');
+    var trackSel = document.getElementById('setup-track');
+    var driverId = driverSel.value;
+    var trackId = trackSel.value;
+    [driverSel, trackSel].forEach(function(s) { s.classList.remove('is-invalid'); });
+    document.querySelectorAll('.form-error').forEach(function(e) { e.remove(); });
+    var hasError = false;
+    if (!driverId) {
+        driverSel.classList.add('is-invalid');
+        var err1 = document.createElement('span');
+        err1.className = 'form-error'; err1.textContent = 'Select a driver';
+        err1.setAttribute('role', 'alert');
+        driverSel.parentElement.appendChild(err1);
+        hasError = true;
+    }
+    if (!trackId) {
+        trackSel.classList.add('is-invalid');
+        var err2 = document.createElement('span');
+        err2.className = 'form-error'; err2.textContent = 'Select a track';
+        err2.setAttribute('role', 'alert');
+        trackSel.parentElement.appendChild(err2);
+        hasError = true;
+    }
+    if (hasError) return;
+    btn.disabled = true; btn.textContent = 'Analyzing...';
+    var el = document.getElementById('setup-results');
+    el.innerHTML = '<div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div>';
+    FetchHelper.fetch('/api/setup-correlation/' + driverId + '/' + encodeURIComponent(trackId))
+        .then(function(data) {
+            btn.disabled = false; btn.textContent = 'Analyze';
+            if (data.error) { el.innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>'; return; }
+            var html = '<h2>Setup Correlations (' + data.n_sessions + ' sessions)</h2>';
+            var corr = data.correlations || {};
+            html += '<div class="table-wrap"><table class="data-table compact"><caption class="sr-only">Setup correlations</caption><thead><tr>';
+            html += '<th scope="col">Parameter</th><th scope="col">r</th><th scope="col">Impact</th><th scope="col">Direction</th></tr></thead><tbody>';
+            for (var k in corr) {
+                var c = corr[k];
+                html += '<tr><td>' + esc(k.replace(/_/g,' ')) + '</td><td>' + (c.r != null ? c.r.toFixed(3) : '—') + '</td>';
+                html += '<td>' + (c.impact != null ? c.impact.toFixed(4) + ' s/unit' : '—') + '</td><td>' + esc(c.direction) + '</td></tr>';
+            }
+            html += '</tbody></table></div>';
+            if (data.recommendations && data.recommendations.length > 0) {
+                html += '<div class="insight-box good"><h2 class="heading-sm">Recommendations</h2><ul>';
+                data.recommendations.forEach(function(r) { html += '<li>' + esc(r) + '</li>'; });
+                html += '</ul></div>';
+            }
+            el.innerHTML = html;
+        }).catch(function(err) {
+            btn.disabled = false; btn.textContent = 'Analyze';
+            if (window.Toast) Toast.show('Analysis failed', 'error');
+        });
+});
+</script>
+{% endblock %}

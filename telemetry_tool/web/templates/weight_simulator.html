@@ -1,0 +1,340 @@
+{% extends "base.html" %}
+{% block title %}Weight Simulator{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="/predictions/setup-tracker" class="breadcrumb">&larr; Setup Tracker</a></nav>
+        <h1>Weight Impact Simulator</h1>
+        <p>Simulate how vehicle weight changes affect lap time through acceleration, braking, and cornering phases.</p>
+    </div>
+</div>
+
+<div class="grid-2">
+    <!-- Input Panel -->
+    <section class="section">
+        <h2>Baseline Parameters</h2>
+
+        <!-- Auto-populate from driver profile -->
+        <div class="form-group">
+            <label for="ws-driver">Load from Driver Profile</label>
+            <select id="ws-driver" class="form-control" style="max-width:300px;">
+                <option value="">— Manual entry —</option>
+            </select>
+            <span class="form-hint" id="ws-driver-hint" style="font-size:0.75rem;color:var(--text-secondary);"></span>
+        </div>
+
+        <div class="form-group">
+            <label for="ws-lap-time">Best Lap Time (seconds)</label>
+            <input type="number" id="ws-lap-time" class="form-control" step="0.001" value="65.000" min="10" max="600">
+        </div>
+        <div class="form-group">
+            <label for="ws-weight">Current Weight — Vehicle + Driver (kg)</label>
+            <input type="number" id="ws-weight" class="form-control" step="0.5" value="150" min="50" max="2000">
+        </div>
+        <div class="form-group">
+            <label for="ws-class">Vehicle Class</label>
+            <select id="ws-class" class="form-control">
+                <option value="kart">Kart</option>
+                <option value="formula">Formula / Single Seater</option>
+                <option value="gt">GT Car</option>
+                <option value="touring">Touring Car</option>
+                <option value="default" selected>Other / Default</option>
+            </select>
+        </div>
+
+        <h3 style="margin-top:1.5rem;">Weight Change</h3>
+        <div class="form-group">
+            <label for="ws-delta">Weight Delta (kg) — positive = heavier, negative = lighter</label>
+            <input type="range" id="ws-delta" min="-30" max="30" value="5" step="0.5"
+                   style="width:100%;" oninput="document.getElementById('ws-delta-val').textContent = this.value + ' kg'">
+            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--text-secondary);">
+                <span>-30 kg</span>
+                <strong id="ws-delta-val" style="color:var(--accent);">5 kg</strong>
+                <span>+30 kg</span>
+            </div>
+        </div>
+
+        <button id="ws-simulate-btn" class="btn btn-primary" style="width:100%;margin-top:1rem;">Simulate Weight Change</button>
+
+        <h3 style="margin-top:2rem;">Multi-Scenario Comparison</h3>
+        <button id="ws-scenarios-btn" class="btn btn-secondary" style="width:100%;">Compare -10, -5, 0, +5, +10 kg</button>
+    </section>
+
+    <!-- Results Panel -->
+    <section class="section">
+        <h2>Simulation Results</h2>
+        <div id="ws-results">
+            <div class="no-data"><div class="no-data-text">Click "Simulate" to see weight impact results.</div></div>
+        </div>
+    </section>
+</div>
+
+<!-- Scenarios comparison chart -->
+<section class="section" id="ws-scenarios-section" style="display:none;">
+    <h2>Multi-Scenario Comparison</h2>
+    <canvas id="ws-scenarios-canvas" width="900" height="300" style="width:100%;max-width:900px;" aria-label="Weight scenarios comparison chart"></canvas>
+    <div id="ws-scenarios-table"></div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    "use strict";
+
+    function _card(label, value, color) {
+        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;' +
+            'border-top:3px solid ' + (color || 'var(--accent)') + ';min-width:100px;flex:1;max-width:160px;">' +
+            '<div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;">' + esc(label) + '</div>' +
+            '<div style="font-size:1.1rem;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + esc(String(value)) + '</div></div>';
+    }
+
+    // ── Load drivers for auto-populate ──
+    var driverSelect = document.getElementById("ws-driver");
+    var driverHint = document.getElementById("ws-driver-hint");
+    var _driverData = {};
+
+    FetchHelper.fetch("/api/drivers/brief").then(function(drivers) {
+        (drivers || []).forEach(function(d) {
+            if (!d.driver_name) return;
+            var label = d.driver_name;
+            if (d.weight_kg) label += " (" + d.weight_kg + " kg)";
+            var opt = document.createElement("option");
+            opt.value = d.driver_id;
+            opt.textContent = label;
+            driverSelect.appendChild(opt);
+            _driverData[d.driver_id] = d;
+        });
+    }).catch(function() { /* ignore */ });
+
+    driverSelect.addEventListener("change", function() {
+        var did = driverSelect.value;
+        if (!did || !_driverData[did]) {
+            driverHint.textContent = "";
+            return;
+        }
+        var d = _driverData[did];
+        var hints = [];
+        if (d.weight_kg) {
+            document.getElementById("ws-weight").value = d.weight_kg;
+            hints.push("Weight set to " + d.weight_kg + " kg from profile");
+        }
+        if (d.overall_best_lap) {
+            document.getElementById("ws-lap-time").value = d.overall_best_lap.toFixed(3);
+            hints.push("Lap time set to " + d.overall_best_lap.toFixed(3) + "s (overall best)");
+        }
+        if (d.kart_class) {
+            // Try to match vehicle class
+            var classMap = {"mini": "kart", "cadet": "kart", "junior": "kart", "senior": "kart", "ok": "kart", "kz": "kart"};
+            var mapped = classMap[(d.kart_class || "").toLowerCase()] || "kart";
+            document.getElementById("ws-class").value = mapped;
+            hints.push("Class: " + d.kart_class);
+        }
+        driverHint.textContent = hints.join(" | ");
+        if (window.Toast && hints.length > 0) Toast.show("Loaded " + d.driver_name + "'s profile data", "success");
+    });
+
+    document.getElementById("ws-simulate-btn").addEventListener("click", function() {
+        var lapTime = parseFloat(document.getElementById("ws-lap-time").value) || 65;
+        var weight = parseFloat(document.getElementById("ws-weight").value) || 150;
+        var delta = parseFloat(document.getElementById("ws-delta").value) || 0;
+        var vclass = document.getElementById("ws-class").value;
+
+        FetchHelper.fetch("/api/weight-simulation", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                lap_time_s: lapTime,
+                weight_kg: weight,
+                weight_delta_kg: delta,
+                vehicle_class: vclass,
+            }),
+        }).then(function(data) {
+            if (data.error) {
+                document.getElementById("ws-results").innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>';
+                return;
+            }
+            var html = '';
+
+            // Summary cards
+            html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1.5rem;">';
+            html += _card("Baseline", data.baseline_time_s.toFixed(3) + "s", "var(--blue)");
+            html += _card("Predicted", data.predicted_time_s.toFixed(3) + "s", data.delta_s > 0 ? "var(--red)" : "var(--green)");
+            html += _card("Delta", (data.delta_s > 0 ? "+" : "") + data.delta_s.toFixed(3) + "s", data.delta_s > 0 ? "var(--red)" : "var(--green)");
+            html += _card("Sensitivity", data.sensitivity_s_per_kg.toFixed(4) + " s/kg", "var(--accent)");
+            html += '</div>';
+
+            // Breakdown
+            if (data.breakdown) {
+                var bd = data.breakdown;
+                html += '<h3>Phase Breakdown</h3>';
+                html += '<div style="margin-bottom:1rem;">';
+
+                var phases = [
+                    {label: "Acceleration", val: bd.acceleration_delta_s, pct: bd.acceleration_pct, color: "var(--green)"},
+                    {label: "Braking", val: bd.braking_delta_s, pct: bd.braking_pct, color: "var(--red)"},
+                    {label: "Cornering", val: bd.cornering_delta_s, pct: bd.cornering_pct, color: "var(--blue)"},
+                ];
+                phases.forEach(function(p) {
+                    var barW = Math.min(100, Math.abs(p.val) / (Math.abs(data.delta_s) || 1) * 100);
+                    html += '<div style="margin-bottom:0.5rem;">';
+                    html += '<div style="display:flex;justify-content:space-between;font-size:0.85rem;">';
+                    html += '<span>' + p.label + ' (' + p.pct + '%)</span>';
+                    html += '<span style="color:' + p.color + ';">' + (p.val > 0 ? "+" : "") + p.val.toFixed(4) + 's</span>';
+                    html += '</div>';
+                    html += '<div style="background:var(--bg-secondary);height:8px;border-radius:4px;overflow:hidden;">';
+                    html += '<div style="width:' + barW + '%;height:100%;background:' + p.color + ';border-radius:4px;"></div>';
+                    html += '</div></div>';
+                });
+                html += '</div>';
+            }
+
+            // Empirical range
+            if (data.empirical_range) {
+                var er = data.empirical_range;
+                html += '<h3>Empirical Reference (' + esc(er.vehicle_class) + ')</h3>';
+                html += '<div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:0.5rem;">';
+                html += 'Expected s/kg range: ' + er.low_s_per_kg.toFixed(4) + ' - ' + er.high_s_per_kg.toFixed(4);
+                html += ' (typical: ' + er.typical_s_per_kg.toFixed(4) + ')';
+                html += '</div>';
+            }
+
+            // Coaching
+            if (data.coaching) {
+                html += '<div class="plan-callout plan-callout-coaching" style="margin-top:1rem;">';
+                html += '<strong>&#127942; Coaching:</strong> ' + esc(data.coaching);
+                html += '</div>';
+            }
+
+            document.getElementById("ws-results").innerHTML = html;
+        });
+    });
+
+    document.getElementById("ws-scenarios-btn").addEventListener("click", function() {
+        var lapTime = parseFloat(document.getElementById("ws-lap-time").value) || 65;
+        var weight = parseFloat(document.getElementById("ws-weight").value) || 150;
+        var vclass = document.getElementById("ws-class").value;
+
+        FetchHelper.fetch("/api/weight-scenarios", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                lap_time_s: lapTime,
+                weight_kg: weight,
+                vehicle_class: vclass,
+                scenarios: [
+                    {name: "-10 kg", weight_delta_kg: -10},
+                    {name: "-5 kg", weight_delta_kg: -5},
+                    {name: "Baseline", weight_delta_kg: 0},
+                    {name: "+5 kg", weight_delta_kg: 5},
+                    {name: "+10 kg", weight_delta_kg: 10},
+                    {name: "+15 kg", weight_delta_kg: 15},
+                    {name: "+20 kg", weight_delta_kg: 20},
+                ],
+            }),
+        }).then(function(data) {
+            if (!data.scenarios) return;
+            document.getElementById("ws-scenarios-section").style.display = "";
+            _drawScenariosChart(data.scenarios);
+            _drawScenariosTable(data.scenarios);
+        });
+    });
+
+    function _drawScenariosChart(scenarios) {
+        var canvas = document.getElementById("ws-scenarios-canvas");
+        if (!canvas) return;
+        var dpr = window.devicePixelRatio || 1;
+        var W = canvas.parentElement.clientWidth || 900;
+        var H = 300;
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + "px";
+        canvas.style.height = H + "px";
+        var ctx = canvas.getContext("2d");
+        ctx.scale(dpr, dpr);
+
+        var pad = {top: 30, right: 20, bottom: 50, left: 70};
+        var plotW = W - pad.left - pad.right;
+        var plotH = H - pad.top - pad.bottom;
+
+        ctx.clearRect(0, 0, W, H);
+
+        var times = scenarios.map(function(s) { return s.predicted_time_s; });
+        var minT = Math.min.apply(null, times) - 0.1;
+        var maxT = Math.max.apply(null, times) + 0.1;
+        var range = maxT - minT || 1;
+
+        var barW = plotW / scenarios.length * 0.6;
+        var gap = plotW / scenarios.length;
+
+        scenarios.forEach(function(s, i) {
+            var x = pad.left + i * gap + (gap - barW) / 2;
+            var barH = ((s.predicted_time_s - minT) / range) * plotH;
+            var y = pad.top + plotH - barH;
+
+            var color = s.delta_s > 0.001 ? "rgba(231, 76, 60, 0.7)" :
+                        s.delta_s < -0.001 ? "rgba(76, 175, 80, 0.7)" : "rgba(54, 162, 235, 0.7)";
+            ctx.fillStyle = color;
+            ctx.fillRect(x, y, barW, barH);
+
+            // Label
+            ctx.fillStyle = "#ccc";
+            ctx.font = "11px system-ui";
+            ctx.textAlign = "center";
+            ctx.fillText(s.scenario_name, x + barW / 2, H - pad.bottom + 15);
+            ctx.fillText(s.predicted_time_s.toFixed(3) + "s", x + barW / 2, y - 5);
+
+            // Delta label
+            if (Math.abs(s.delta_s) > 0.0005) {
+                ctx.fillStyle = s.delta_s > 0 ? "#e74c3c" : "#4caf50";
+                ctx.font = "bold 10px system-ui";
+                ctx.fillText((s.delta_s > 0 ? "+" : "") + s.delta_s.toFixed(3), x + barW / 2, y - 18);
+            }
+        });
+
+        // Y axis
+        ctx.strokeStyle = "#555";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, pad.top);
+        ctx.lineTo(pad.left, pad.top + plotH);
+        ctx.stroke();
+
+        ctx.fillStyle = "#888";
+        ctx.font = "11px system-ui";
+        ctx.textAlign = "right";
+        for (var t = Math.ceil(minT * 10) / 10; t <= maxT; t += (range / 5)) {
+            var yy = pad.top + plotH - ((t - minT) / range) * plotH;
+            ctx.fillText(t.toFixed(2), pad.left - 5, yy + 4);
+        }
+    }
+
+    function _drawScenariosTable(scenarios) {
+        var html = '<table class="data-table" style="margin-top:1rem;">';
+        html += '<thead><tr><th>Scenario</th><th>Weight</th><th>Predicted</th><th>Delta</th><th>Sensitivity</th></tr></thead><tbody>';
+        scenarios.forEach(function(s) {
+            var cls = s.delta_s > 0.001 ? 'style="color:var(--red);"' : s.delta_s < -0.001 ? 'style="color:var(--green);"' : '';
+            html += '<tr>';
+            html += '<td><strong>' + esc(s.scenario_name) + '</strong></td>';
+            html += '<td>' + (s.weight_new_kg || 0).toFixed(1) + ' kg</td>';
+            html += '<td>' + s.predicted_time_s.toFixed(3) + 's</td>';
+            html += '<td ' + cls + '>' + (s.delta_s > 0 ? "+" : "") + s.delta_s.toFixed(3) + 's</td>';
+            html += '<td>' + (s.sensitivity_s_per_kg || 0).toFixed(4) + ' s/kg</td>';
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        document.getElementById("ws-scenarios-table").innerHTML = html;
+    }
+
+    // Debounced resize redraw
+    var _wsResizeTimer = null, _lastScenarios = null;
+    var _origDrawScenarios = _drawScenariosChart;
+    _drawScenariosChart = function(scenarios) { _lastScenarios = scenarios; _origDrawScenarios(scenarios); };
+    window.addEventListener("resize", function() {
+        clearTimeout(_wsResizeTimer);
+        _wsResizeTimer = setTimeout(function() { if (_lastScenarios) _origDrawScenarios(_lastScenarios); }, 250);
+    });
+})();
+</script>
+{% endblock %}

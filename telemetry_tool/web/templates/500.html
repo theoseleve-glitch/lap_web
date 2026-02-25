@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error — Telemetry{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="error-icon" aria-hidden="true">&#x26A0;&#xFE0F;</div>
+    <div class="error-code">500</div>
+    <h1>Something Went Wrong</h1>
+    <p class="error-desc">
+        An internal error occurred while processing your request.
+        This is usually temporary — please try again in a moment.
+    </p>
+    <div class="error-actions">
+        <a href="{{ url_for('dashboard.index') }}" class="btn btn-primary">Dashboard</a>
+        <button type="button" class="btn btn-ghost js-reload">Retry</button>
+        <button type="button" class="btn btn-ghost js-go-back">Go Back</button>
+    </div>
+    <p class="error-hint">
+        If this keeps happening, check the server logs for details.
+    </p>
+</div>
+
+<script>
+document.querySelectorAll('.js-go-back').forEach(function(btn) {
+    btn.addEventListener('click', function() { history.back(); });
+});
+document.querySelectorAll('.js-reload').forEach(function(btn) {
+    btn.addEventListener('click', function() { location.reload(); });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Export — {{ session.driver_name }} {{ session.track_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_detail', session_id=session.session_id) }}" class="breadcrumb">&larr; Session</a></nav>
+        <h1>Export Session Report</h1>
+        <p class="text-muted">{{ session.driver_name }} — {{ session.track_name }} ({{ session.session_date }})</p>
+    </div>
+</div>
+
+<section class="section">
+    <h2>Select Sections</h2>
+    <fieldset class="export-sections">
+        <legend class="sr-only">Select sections to include in export</legend>
+        {% for s in sections %}
+        <label class="export-section-item">
+            <input type="checkbox" name="sections" value="{{ s.id }}" {% if s.default %}checked{% endif %}>
+            {{ s.name }}
+        </label>
+        {% endfor %}
+    </fieldset>
+</section>
+
+<section class="section">
+    <h2>Format & Generate</h2>
+    <div class="form-row items-center">
+        <div class="form-group">
+            <label class="form-label">Output Format</label>
+            <select id="export-format" class="form-select">
+                <option value="markdown">Markdown</option>
+            </select>
+        </div>
+        <div class="form-group form-col-end">
+            <button type="button" class="btn btn-primary" id="generate-export-btn" title="Generate export with selected sections">Generate Export</button>
+        </div>
+    </div>
+</section>
+
+<section class="section hidden" id="export-output" aria-live="polite">
+    <div class="section-header">
+        <h2>Export Preview</h2>
+        <div class="action-group">
+            <button type="button" class="btn btn-ghost" id="copy-export-btn" title="Copy export content to clipboard">Copy to Clipboard</button>
+            <span id="copy-status" class="text-muted ml-sm"></span>
+        </div>
+    </div>
+    <pre id="export-content" class="export-preview-pre"></pre>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var SESSION_ID = {{ session.session_id | tojson }};
+
+document.getElementById('generate-export-btn').addEventListener('click', function() {
+    var btn = this;
+    btn.disabled = true;
+    var checks = document.querySelectorAll('input[name="sections"]:checked');
+    var sections = [];
+    checks.forEach(function(c) { sections.push(c.value); });
+    var fmt = document.getElementById('export-format').value;
+
+    var outputSection = document.getElementById('export-output');
+    var contentEl = document.getElementById('export-content');
+    contentEl.textContent = '';
+    outputSection.classList.remove('hidden');
+    contentEl.innerHTML = '<div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-row"></div>';
+
+    FetchHelper.fetch('/api/export/session/' + encodeURIComponent(SESSION_ID), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ sections: sections, format: fmt }),
+    })
+    .then(function(data) {
+        contentEl.textContent = data.content || 'No content generated.';
+        btn.disabled = false;
+    })
+    .catch(function() {
+        contentEl.innerHTML = '<span class="text-muted">Error generating export.</span>';
+        btn.disabled = false;
+    });
+});
+
+document.getElementById('copy-export-btn').addEventListener('click', function() {
+    var text = document.getElementById('export-content').textContent;
+    var statusEl = document.getElementById('copy-status');
+    navigator.clipboard.writeText(text).then(function() {
+        statusEl.textContent = 'Copied!';
+        statusEl.classList.add('pulse-success');
+        setTimeout(function() { statusEl.textContent = ''; statusEl.classList.remove('pulse-success'); }, 2000);
+    }).catch(function() {
+        statusEl.textContent = 'Copy failed';
+        statusEl.classList.add('pulse-error');
+        setTimeout(function() { statusEl.textContent = ''; statusEl.classList.remove('pulse-error'); }, 2000);
+    });
+});
+</script>
+{% endblock %}

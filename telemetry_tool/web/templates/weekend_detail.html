@@ -1,0 +1,685 @@
+{% extends "base.html" %}
+
+{% block title %}{{ weekend.name }} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('weekends.weekend_list') }}" class="breadcrumb">&larr; Weekends</a></nav>
+        <h1>{{ weekend.name or 'Weekend' }}</h1>
+    </div>
+    <div class="action-group">
+        <a href="{{ url_for('weekends.weekend_edit', weekend_id=weekend.weekend_id) }}" class="btn btn-ghost">Edit</a>
+        <form method="POST" action="{{ url_for('weekends.weekend_delete', weekend_id=weekend.weekend_id) }}"
+              data-confirm="Delete this weekend?" class="inline-delete-form">
+            <button type="submit" class="btn btn-ghost btn-danger-text">Delete</button>
+        </form>
+    </div>
+</div>
+
+<!-- Metadata -->
+<div class="meta-grid">
+    {% if weekend.track_name %}
+    <div class="meta-item">
+        <span class="meta-label">Track</span>
+        <span class="meta-value">
+            {% if weekend.track_id %}
+            <a href="{{ url_for('tracks.track_detail', track_id=weekend.track_id) }}">{{ weekend.track_name }}</a>
+            {% else %}
+            {{ weekend.track_name }}
+            {% endif %}
+        </span>
+    </div>
+    {% endif %}
+    {% if weekend.start_date %}
+    <div class="meta-item">
+        <span class="meta-label">Dates</span>
+        <span class="meta-value">{{ weekend.start_date }}{% if weekend.end_date %} — {{ weekend.end_date }}{% endif %}</span>
+    </div>
+    {% endif %}
+    {% if summary %}
+    <div class="meta-item">
+        <span class="meta-label">Total Laps</span>
+        <span class="meta-value">{{ summary.total_laps or 0 }}</span>
+    </div>
+    {% if summary.best_time_s %}
+    <div class="meta-item">
+        <span class="meta-label">Best Lap</span>
+        <span class="meta-value highlight">{{ "%.3f"|format(summary.best_time_s) }}s</span>
+    </div>
+    {% endif %}
+    {% if summary.best_score %}
+    <div class="meta-item">
+        <span class="meta-label">Best Score</span>
+        <span class="meta-value highlight">{{ "%.1f"|format(summary.best_score) }}</span>
+    </div>
+    {% endif %}
+    {% if summary.pace_delta_s is defined and summary.pace_delta_s is not none %}
+    <div class="meta-item">
+        <span class="meta-label">Pace Change</span>
+        <span class="meta-value {% if summary.pace_improved is defined and summary.pace_improved %}text-green{% else %}text-yellow{% endif %}">
+            {% if summary.pace_improved is defined and summary.pace_improved %}<span aria-hidden="true">&#9650; </span>{% endif %}{{ "%+.3f"|format(summary.pace_delta_s) }}s
+        </span>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+
+{% if weekend.notes %}
+<div class="weekend-notes">
+    <h3>&#x1F4DD; Notes</h3>
+    <p>{{ weekend.notes }}</p>
+</div>
+{% endif %}
+
+<!-- Sessions in this weekend -->
+<section class="section" aria-labelledby="heading-weekend-sessions">
+    <div class="section-header">
+        <h2 id="heading-weekend-sessions">Sessions <span class="count-badge">{{ sessions|length }}</span></h2>
+    </div>
+
+    {% if sessions %}
+    <div class="compare-toolbar">
+        <button type="button" id="compare-selected-btn" class="btn btn-primary compare-btn-compact" disabled title="Select at least 2 sessions to compare">
+            Compare Selected in Visualize
+        </button>
+        <span id="compare-count" class="form-hint"></span>
+    </div>
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped" id="weekend-sessions-table">
+            <caption class="sr-only">Weekend sessions</caption>
+            <thead>
+                <tr>
+                    <th scope="col" class="col-checkbox"><input type="checkbox" id="select-all-sessions" aria-label="Select all sessions" title="Select all"></th>
+                    <th scope="col" class="col-order">Order</th>
+                    <th scope="col">#</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best Lap</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                    <th scope="col">Grade</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr data-session-id="{{ s.session_id }}" draggable="true">
+                    <td class="col-checkbox">
+                        <input type="checkbox" class="session-checkbox" value="{{ s.session_id }}">
+                    </td>
+                    <td class="col-order">
+                        <button class="btn-icon reorder-btn" data-sid="{{ s.session_id }}" data-dir="up"
+                                {% if loop.first %}disabled{% endif %} title="Move up">&#x25B2;</button>
+                        <button class="btn-icon reorder-btn" data-sid="{{ s.session_id }}" data-dir="down"
+                                {% if loop.last %}disabled{% endif %} title="Move down">&#x25BC;</button>
+                    </td>
+                    <td>{{ s.session_order + 1 }}</td>
+                    <td>
+                        <a href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                            {{ s.session_date or '—' }}
+                        </a>
+                    </td>
+                    <td>{{ s.driver_name or '—' }}</td>
+                    <td><span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span></td>
+                    <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                    <td class="col-numeric">{% if s.best_lap_time_s %}{{ "%.3f"|format(s.best_lap_time_s) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if s.total_score %}<span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>{% else %}—{% endif %}</td>
+                    <td>
+                        {% if s.grade %}<span class="grade grade-{{ s.grade[0] }}">{{ s.grade }}</span>{% else %}—{% endif %}
+                    </td>
+                    <td>
+                        <form method="POST"
+                              action="{{ url_for('weekends.weekend_remove_session', weekend_id=weekend.weekend_id) }}"
+                              class="inline-delete-form"
+                              data-confirm="Remove this session from the weekend?">
+                            <input type="hidden" name="session_id" value="{{ s.session_id }}">
+                            <button type="submit" class="btn btn-ghost btn-compact btn-danger-text">
+                                Remove
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F3CE;</div>
+        <div class="empty-hero-title">No sessions added yet</div>
+        <div class="empty-hero-desc">Search and add sessions below to build your weekend timeline. You can then compare them side-by-side and track progression.</div>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Add session — interactive picker -->
+<section class="section" aria-labelledby="heading-add-session">
+    <h2 id="heading-add-session">Add Session</h2>
+    <div style="margin-bottom:0.6rem;">
+        <input type="search" id="add-session-search" class="form-input"
+               placeholder="Search by driver, track, date, session type..."
+               autocomplete="off" style="max-width:480px;">
+    </div>
+    <div id="add-session-table-wrap" style="max-height:350px;overflow-y:auto;border:1px solid var(--border,#30363d);border-radius:8px;">
+        <table class="data-table compact striped" id="add-session-table">
+            <caption class="sr-only">Available sessions to add</caption>
+            <thead>
+                <tr>
+                    <th scope="col" style="width:80px;text-align:center;">Add</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Track</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                    <th scope="col">Grade</th>
+                </tr>
+            </thead>
+            <tbody id="add-session-body">
+                <tr><td colspan="9" style="text-align:center;padding:1.5rem;color:var(--text-secondary);">Loading sessions...</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div style="font-size:0.72rem;color:var(--text-secondary);margin-top:0.4rem;">
+        Click a row or the Add button to instantly add a session to this weekend.
+    </div>
+</section>
+
+<!-- Improvement Summary -->
+{% if insights and insights.improvement_pct is not none %}
+<section class="section">
+    <h2>Weekend Improvement</h2>
+    <div class="meta-grid">
+        <div class="meta-item">
+            <span class="meta-label">Avg Time Change</span>
+            <span class="meta-value {% if insights.improvement_pct > 0 %}text-green{% elif insights.improvement_pct < 0 %}text-red{% endif %}">
+                {% if insights.improvement_pct > 0 %}&#9650; {% elif insights.improvement_pct < 0 %}&#9660; {% endif %}{{ "%.2f"|format(insights.improvement_pct) }}%
+            </span>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+<!-- Consistency Breakdown -->
+{% if insights and insights.consistency_breakdown %}
+<section class="section">
+    <h2>Consistency Breakdown</h2>
+    <div class="table-wrap">
+        <table class="data-table striped">
+            <thead>
+                <tr>
+                    <th>Session</th>
+                    <th>Driver</th>
+                    <th class="col-numeric">Laps</th>
+                    <th class="col-numeric">Mean</th>
+                    <th class="col-numeric">Best</th>
+                    <th class="col-numeric">Worst</th>
+                    <th class="col-numeric">CV%</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cb in insights.consistency_breakdown %}
+                <tr{% if loop.index0 == insights.best_session_idx %} class="text-green"{% elif loop.index0 == insights.worst_session_idx %} class="text-yellow"{% endif %}>
+                    <td>{{ cb.session_date or cb.session_id }}</td>
+                    <td>{{ cb.driver_name or '—' }}</td>
+                    <td class="col-numeric">{{ cb.n_laps }}</td>
+                    <td class="col-numeric">{% if cb.mean_time %}{{ "%.3f"|format(cb.mean_time) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if cb.best %}{{ "%.3f"|format(cb.best) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if cb.worst %}{{ "%.3f"|format(cb.worst) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if cb.cv_pct is not none %}{{ "%.2f"|format(cb.cv_pct) }}%{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+<!-- Lap Time Heatmap -->
+{% if insights and insights.heatmap_data %}
+<section class="section">
+    <h2>Lap Time Heatmap</h2>
+    <div class="heatmap-wrap">
+        <canvas id="weekend-heatmap" aria-label="Lap time heatmap"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Score progression chart -->
+{% if summary and summary.score_progression and summary.score_progression|length > 1 %}
+<section class="section" aria-labelledby="heading-score-progression">
+    <h2 id="heading-score-progression">Score Progression</h2>
+    <div class="chart-container">
+        <canvas id="score-progression-chart" aria-label="Weekend score progression chart"></canvas>
+    </div>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<!-- Interactive Add Session Picker -->
+<script>
+(function() {
+    var weekendId = {{ weekend.weekend_id }};
+    var searchInput = document.getElementById('add-session-search');
+    var tbody = document.getElementById('add-session-body');
+    var debounceTimer = null;
+
+    // IDs already in this weekend (to exclude from results)
+    var existingIds = new Set();
+    {% for s in sessions %}
+    existingIds.add({{ s.session_id|tojson }});
+    {% endfor %}
+
+    function loadSessions(query) {
+        var url = '/api/sessions/browse?limit=100';
+        if (query && query.length >= 2) url += '&q=' + encodeURIComponent(query);
+        // Exclude already-added sessions
+        if (existingIds.size > 0) {
+            var exArr = [];
+            existingIds.forEach(function(id) { exArr.push(id); });
+            url += '&exclude=' + encodeURIComponent(exArr.join(','));
+        }
+        FetchHelper.fetch(url)
+            .then(function(data) { renderTable(data || []); })
+            .catch(function() {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-secondary);">Failed to load sessions.</td></tr>';
+            });
+    }
+
+    function renderTable(sessions) {
+        if (sessions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;padding:1.5rem;color:var(--text-secondary);">No sessions found</td></tr>';
+            return;
+        }
+        var html = '';
+        sessions.forEach(function(s) {
+            var scoreCol = '';
+            if (s.total_score) {
+                scoreCol = s.total_score >= 80 ? '#4caf50' : s.total_score >= 60 ? '#ff9800' : s.total_score < 40 ? '#e74c3c' : 'var(--text-primary)';
+            }
+            html += '<tr class="add-session-row" data-sid="' + esc(s.session_id) + '" style="cursor:pointer;transition:background 0.15s;">';
+            html += '<td style="text-align:center;">';
+            html += '<button type="button" class="btn btn-primary btn-compact add-session-btn" data-sid="' + esc(s.session_id) + '" style="font-size:0.7rem;padding:0.15rem 0.5rem;">Add</button>';
+            html += '</td>';
+            html += '<td>' + esc(s.session_date || '—') + '</td>';
+            html += '<td>' + esc(s.driver_name || '—') + '</td>';
+            html += '<td>' + esc(s.track_name || '—') + '</td>';
+            html += '<td><span class="badge badge-' + esc(s.session_type || 'practice') + '">' + esc(s.session_type || 'practice') + '</span></td>';
+            html += '<td class="col-numeric">' + (s.n_laps || '—') + '</td>';
+            html += '<td class="col-numeric">' + (s.best_lap_time_s ? s.best_lap_time_s.toFixed(3) + 's' : '—') + '</td>';
+            html += '<td class="col-numeric"' + (scoreCol ? ' style="color:' + scoreCol + ';font-weight:600;"' : '') + '>' + (s.total_score ? s.total_score.toFixed(1) : '—') + '</td>';
+            html += '<td>';
+            if (s.grade) html += '<span class="grade grade-' + esc(s.grade.charAt(0)) + '">' + esc(s.grade) + '</span>';
+            else html += '—';
+            html += '</td></tr>';
+        });
+        tbody.innerHTML = html;
+    }
+
+    function addSession(sessionId) {
+        var nextOrder = existingIds.size;
+        var formData = new FormData();
+        formData.append('session_id', sessionId);
+        formData.append('session_order', nextOrder);
+
+        fetch('{{ url_for("weekends.weekend_add_session", weekend_id=weekend.weekend_id) }}', {
+            method: 'POST',
+            body: formData,
+            redirect: 'follow',
+        }).then(function(resp) {
+            if (resp.ok || resp.redirected) {
+                // Session added — reload page to show updated table
+                if (window.Toast) Toast.show('Session added!', 'success');
+                existingIds.add(sessionId);
+                // Remove the row with animation
+                var row = tbody.querySelector('tr[data-sid="' + sessionId + '"]');
+                if (row) {
+                    row.style.transition = 'opacity 0.3s, transform 0.3s';
+                    row.style.opacity = '0';
+                    row.style.transform = 'translateX(20px)';
+                    setTimeout(function() { row.remove(); }, 300);
+                }
+                // Reload page after short delay to show updated session list
+                setTimeout(function() { window.location.reload(); }, 600);
+            } else {
+                if (window.Toast) Toast.show('Failed to add session', 'error');
+            }
+        }).catch(function() {
+            if (window.Toast) Toast.show('Failed to add session', 'error');
+        });
+    }
+
+    // Click on Add button
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.add-session-btn[data-sid]');
+        if (btn) {
+            e.stopPropagation();
+            addSession(btn.dataset.sid);
+            return;
+        }
+        // Click on row (not button) also adds
+        var row = e.target.closest('.add-session-row[data-sid]');
+        if (row) {
+            addSession(row.dataset.sid);
+        }
+    });
+
+    // Hover effect for rows
+    document.addEventListener('mouseover', function(e) {
+        var row = e.target.closest('.add-session-row');
+        if (row) row.style.background = 'rgba(255, 107, 53, 0.06)';
+    });
+    document.addEventListener('mouseout', function(e) {
+        var row = e.target.closest('.add-session-row');
+        if (row) row.style.background = '';
+    });
+
+    // Search with debounce
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(debounceTimer);
+            var q = searchInput.value.trim();
+            debounceTimer = setTimeout(function() { loadSessions(q); }, 300);
+        });
+    }
+
+    // Initial load
+    loadSessions('');
+})();
+</script>
+<!-- Context menu for session rows -->
+<script src="{{ url_for('static', filename='js/context_menu.js') }}"></script>
+<script>
+(function() {
+    // ── Multi-select for Compare ──
+    var compareBtn = document.getElementById('compare-selected-btn');
+    var countEl = document.getElementById('compare-count');
+    var selectAll = document.getElementById('select-all-sessions');
+
+    function updateCompareState() {
+        var checked = document.querySelectorAll('.session-checkbox:checked');
+        var n = checked.length;
+        if (compareBtn) {
+            compareBtn.disabled = n < 2;
+            compareBtn.setAttribute('aria-disabled', n < 2 ? 'true' : 'false');
+            compareBtn.textContent = n < 2
+                ? 'Compare Selected in Visualize'
+                : 'Compare ' + n + ' Sessions in Visualize';
+        }
+        if (countEl) {
+            countEl.textContent = n > 0 ? n + ' selected' : '';
+        }
+    }
+
+    if (selectAll) {
+        selectAll.addEventListener('change', function() {
+            var boxes = document.querySelectorAll('.session-checkbox');
+            boxes.forEach(function(cb) { cb.checked = selectAll.checked; });
+            updateCompareState();
+        });
+    }
+
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('session-checkbox')) {
+            updateCompareState();
+        }
+    });
+
+    if (compareBtn) {
+        compareBtn.addEventListener('click', function() {
+            var checked = document.querySelectorAll('.session-checkbox:checked');
+            var ids = [];
+            checked.forEach(function(cb) { ids.push(cb.value); });
+            if (ids.length >= 2) {
+                window.location = '/visualize/multi?sessions=' + ids.join(',');
+            }
+        });
+    }
+
+    // ── Context menu ──
+    document.addEventListener('DOMContentLoaded', function() {
+        ContextMenu.init('#weekend-sessions-table tbody', 'tr[data-session-id]', function(row) {
+            var sid = row.getAttribute('data-session-id');
+            return [
+                { label: 'Open Session', icon: '&#x1F4C4;', action: function() {
+                    window.location = '/sessions/' + encodeURIComponent(sid);
+                }},
+                { label: 'Open in Visualize', icon: '&#x1F3CE;', action: function() {
+                    window.location = '/visualize/' + encodeURIComponent(sid);
+                }},
+                { separator: true },
+                { label: 'Copy Session ID', icon: '&#x1F4CB;', action: function() {
+                    navigator.clipboard.writeText(sid).catch(function() {});
+                }},
+            ];
+        });
+    });
+})();
+</script>
+<!-- Session Reorder: arrows + drag-and-drop -->
+<script>
+(function() {
+    var weekendId = {{ weekend.weekend_id }};
+    var table = document.getElementById('weekend-sessions-table');
+    if (!table) return;
+    var tbody = table.querySelector('tbody');
+
+    // Arrow button click.
+    document.addEventListener('click', function(e) {
+        var btn = e.target.closest('.reorder-btn');
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        var sid = btn.dataset.sid;
+        var dir = btn.dataset.dir;
+        fetch('/weekends/' + weekendId + '/reorder', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_id: sid, direction: dir}),
+        }).then(function(r) {
+            if (r.ok) window.location.reload();
+        });
+    });
+
+    // Drag and drop.
+    var dragRow = null;
+    tbody.addEventListener('dragstart', function(e) {
+        dragRow = e.target.closest('tr[data-session-id]');
+        if (dragRow) {
+            dragRow.style.opacity = '0.4';
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', dragRow.dataset.sessionId);
+        }
+    });
+    tbody.addEventListener('dragend', function() {
+        if (dragRow) { dragRow.style.opacity = ''; dragRow = null; }
+    });
+    tbody.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        var target = e.target.closest('tr[data-session-id]');
+        if (target && target !== dragRow) {
+            target.style.borderTop = '2px solid var(--accent, #f97316)';
+        }
+    });
+    tbody.addEventListener('dragleave', function(e) {
+        var target = e.target.closest('tr[data-session-id]');
+        if (target) target.style.borderTop = '';
+    });
+    tbody.addEventListener('drop', function(e) {
+        e.preventDefault();
+        var target = e.target.closest('tr[data-session-id]');
+        if (target) target.style.borderTop = '';
+        if (!dragRow || !target || target === dragRow) return;
+
+        // Reorder DOM.
+        tbody.insertBefore(dragRow, target);
+
+        // Collect new order.
+        var rows = tbody.querySelectorAll('tr[data-session-id]');
+        var ids = [];
+        rows.forEach(function(r) { ids.push(r.dataset.sessionId); });
+
+        fetch('/weekends/' + weekendId + '/reorder_all', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({session_ids: ids}),
+        }).then(function(r) {
+            if (r.ok) window.location.reload();
+        });
+    });
+})();
+</script>
+{% if insights and insights.heatmap_data %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var canvas = document.getElementById('weekend-heatmap');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var C = window.Theme ? window.Theme.colors : {};
+    var heatmap = {{ insights.heatmap_data|tojson }};
+    if (!heatmap || heatmap.length === 0) return;
+
+    var maxLaps = 0;
+    heatmap.forEach(function(row) { if (row.deltas.length > maxLaps) maxLaps = row.deltas.length; });
+
+    var cellW = 28, cellH = 24;
+    var labelW = 100, topPad = 20;
+    var dpr = window.devicePixelRatio || 1;
+    var w = labelW + maxLaps * cellW + 10;
+    var h = topPad + heatmap.length * cellH + 10;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.scale(dpr, dpr);
+
+    // Find max delta for color scaling.
+    var maxDelta = 0;
+    heatmap.forEach(function(row) {
+        row.deltas.forEach(function(d) { if (d !== null && d > maxDelta) maxDelta = d; });
+    });
+    if (maxDelta === 0) maxDelta = 1;
+
+    // Column headers.
+    ctx.fillStyle = C.textSecondary || '#8b949e';
+    ctx.font = '10px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    for (var c = 0; c < maxLaps; c++) {
+        ctx.fillText('L' + (c + 1), labelW + c * cellW + cellW / 2, topPad - 5);
+    }
+
+    // Rows.
+    heatmap.forEach(function(row, ri) {
+        var y = topPad + ri * cellH;
+
+        // Row label.
+        ctx.fillStyle = C.textSecondary || '#8b949e';
+        ctx.font = '10px -apple-system, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText('S' + (ri + 1), labelW - 6, y + cellH / 2 + 3);
+
+        // Cells.
+        row.deltas.forEach(function(d, ci) {
+            var x = labelW + ci * cellW;
+            if (d === null) {
+                ctx.fillStyle = C.bgCard || '#1a1f2e';
+            } else {
+                var t = Math.min(d / maxDelta, 1);
+                // Green (best) → yellow → red (worst).
+                var r = Math.round(t < 0.5 ? t * 2 * 255 : 255);
+                var g = Math.round(t < 0.5 ? 255 : (1 - (t - 0.5) * 2) * 255);
+                ctx.fillStyle = 'rgba(' + r + ',' + g + ',0,0.7)';
+            }
+            ctx.fillRect(x + 1, y + 1, cellW - 2, cellH - 2);
+
+            // Value text.
+            if (d !== null) {
+                ctx.fillStyle = '#fff';
+                ctx.font = '9px -apple-system, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(d < 10 ? d.toFixed(2) : d.toFixed(1), x + cellW / 2, y + cellH / 2 + 3);
+            }
+        });
+    });
+});
+</script>
+{% endif %}
+{% if summary and summary.score_progression and summary.score_progression|length > 1 %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var canvas = document.getElementById('score-progression-chart');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var C = window.Theme ? window.Theme.colors : {};
+    var scores = {{ summary.score_progression|tojson }};
+
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.parentElement.clientWidth - 32;
+    var h = 200;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.scale(dpr, dpr);
+
+    var pad = { top: 20, right: 20, bottom: 30, left: 50 };
+    var pW = w - pad.left - pad.right;
+    var pH = h - pad.top - pad.bottom;
+
+    var yMin = Math.min.apply(null, scores) * 0.95;
+    var yMax = Math.max.apply(null, scores) * 1.05;
+
+    function xToP(i) { return pad.left + (i / (scores.length - 1)) * pW; }
+    function yToP(v) { return pad.top + pH - (v - yMin) / (yMax - yMin) * pH; }
+
+    ctx.fillStyle = C.bgCard || '#1a1f2e';
+    ctx.fillRect(0, 0, w, h);
+
+    // Line
+    ctx.strokeStyle = C.accent || '#ff6b35';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var i = 0; i < scores.length; i++) {
+        var x = xToP(i), y = yToP(scores[i]);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Dots
+    for (var i = 0; i < scores.length; i++) {
+        ctx.fillStyle = C.accent || '#ff6b35';
+        ctx.beginPath();
+        ctx.arc(xToP(i), yToP(scores[i]), 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Label
+        ctx.fillStyle = C.textSecondary || '#8b949e';
+        ctx.font = '10px -apple-system, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('S' + (i+1), xToP(i), pad.top + pH + 16);
+    }
+
+    // Y axis
+    ctx.fillStyle = C.textSecondary || '#8b949e';
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    var ySteps = 4;
+    for (var i = 0; i <= ySteps; i++) {
+        var v = yMin + (yMax - yMin) * (i / ySteps);
+        ctx.fillText(v.toFixed(0), pad.left - 8, yToP(v));
+        ctx.strokeStyle = C.border || '#30363d';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, yToP(v));
+        ctx.lineTo(w - pad.right, yToP(v));
+        ctx.stroke();
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

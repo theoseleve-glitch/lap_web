@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}{{ plan.plan_name }}{% endblock %}
+
+{% block head_extra %}
+<style>
+@keyframes fadeInScale {
+    from { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+    to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="/dev-plans/" class="breadcrumb">&larr; Development Plans</a></nav>
+        <h1>{{ plan.plan_name }}</h1>
+        <p>Level: <span class="tag tag-{{ plan.level }}">{{ plan.level }}</span> | Progress: {{ plan.completion_pct }}%</p>
+    </div>
+</div>
+
+<!-- Overall progress bar -->
+<div class="plan-progress" role="progressbar" aria-valuenow="{{ plan.completion_pct }}" aria-valuemin="0" aria-valuemax="100" aria-label="Overall plan progress">
+    <div class="plan-progress-fill progress-fill" style="width:{{ plan.completion_pct }}%"></div>
+</div>
+
+<!-- Plan description (if from enriched template) -->
+{% if plan.weeks and plan.weeks[0] is mapping and plan.weeks[0].get('focus') %}
+<div class="plan-about">
+    <strong>About This Plan:</strong>
+    {{ plan.get('description', '') if plan.get is defined else '' }}
+</div>
+{% endif %}
+
+{% for week in plan.weeks %}
+{% set week_idx = loop.index0 %}
+<section class="section plan-week">
+    <!-- Week Header -->
+    <div class="plan-week-header">
+        <div class="plan-week-num">W{{ week.week }}</div>
+        <div>
+            <h2 class="plan-week-title">{{ week.title }}</h2>
+            {% if week.get is defined and week.get('focus') %}
+            <p class="plan-week-focus">{{ week.focus }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Week coaching notes -->
+    {% if week.get is defined and week.get('coaching_notes') %}
+    <div class="plan-callout plan-callout-coaching">
+        <strong>&#127942; Coach's Note:</strong> {{ week.coaching_notes }}
+    </div>
+    {% endif %}
+
+    <!-- Week warm-up -->
+    {% if week.get is defined and week.get('warmup') %}
+    <div class="plan-callout plan-callout-warmup">
+        <strong>&#9728; Warm-Up:</strong> {{ week.warmup }}
+    </div>
+    {% endif %}
+
+    <!-- Drills -->
+    <ol class="plan-drill-list">
+        {% for drill in week.drills %}
+        {% set drill_idx = loop.index0 %}
+        {% set done = false %}
+        {% if week_idx < plan.progress|length and drill_idx < plan.progress[week_idx]|length %}
+            {% set done = plan.progress[week_idx][drill_idx] %}
+        {% endif %}
+
+        <li class="plan-drill {% if done %}done{% endif %}">
+
+            <!-- Drill header with checkbox -->
+            <div class="plan-drill-header">
+                <label class="plan-drill-label">
+                    <input type="checkbox" class="plan-drill-checkbox" {% if done %}checked{% endif %}
+                           data-plan-id="{{ plan.id }}" data-week="{{ week_idx }}" data-drill="{{ drill_idx }}">
+                    <strong class="plan-drill-name">
+                        {% if done %}&#10003; {% endif %}{{ drill.name }}
+                    </strong>
+                </label>
+                <!-- Difficulty & Duration badges -->
+                <div class="plan-drill-badges">
+                    {% if drill.get is defined and drill.get('difficulty') %}
+                    <span class="plan-badge-difficulty">
+                        {% for star in range(drill.difficulty) %}&#9733;{% endfor %}{% for star in range(5 - drill.difficulty) %}&#9734;{% endfor %}
+                    </span>
+                    {% endif %}
+                    {% if drill.get is defined and drill.get('duration') %}
+                    <span class="plan-badge-duration">
+                        &#9201; {{ drill.duration }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Short description -->
+            <p class="plan-drill-desc">{{ drill.description }}</p>
+
+            <!-- Target badge -->
+            {% if drill.target %}
+            <div class="plan-target">
+                <span class="plan-target-badge">
+                    &#127919; Target: {{ drill.target }}
+                </span>
+                {% if drill.metric and drill.metric != 'n/a' %}
+                <span class="plan-metric-badge">
+                    Metric: {{ drill.metric }}
+                </span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Detailed instructions (expandable) -->
+            {% if drill.get is defined and drill.get('detailed_instructions') %}
+            <details class="plan-details plan-details-instructions" {% if not done %}open{% endif %}>
+                <summary>&#128214; Detailed Instructions</summary>
+                <div class="plan-details-body">
+                    <p class="plan-details-text">{{ drill.detailed_instructions }}</p>
+
+                    <!-- Step-by-step -->
+                    {% if drill.get('steps') %}
+                    <div class="plan-steps-label">Step-by-Step</div>
+                    <ol class="plan-steps-list">
+                        {% for step in drill.steps %}
+                        <li>{{ step }}</li>
+                        {% endfor %}
+                    </ol>
+                    {% endif %}
+                </div>
+            </details>
+            {% endif %}
+
+            <!-- Tips -->
+            {% if drill.get is defined and drill.get('tips') %}
+            <details class="plan-details plan-details-tips">
+                <summary>&#128161; Tips & Coaching ({{ drill.tips|length }})</summary>
+                <div class="plan-details-body">
+                    <ul class="plan-tips-list">
+                        {% for tip in drill.tips %}
+                        <li>{{ tip }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </details>
+            {% endif %}
+
+            <!-- Common mistakes -->
+            {% if drill.get is defined and drill.get('common_mistakes') %}
+            <details class="plan-details plan-details-mistakes">
+                <summary>&#9888; Common Mistakes ({{ drill.common_mistakes|length }})</summary>
+                <div class="plan-details-body">
+                    <ul class="plan-mistakes-list">
+                        {% for mistake in drill.common_mistakes %}
+                        <li>{{ mistake }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </details>
+            {% endif %}
+
+            <!-- Success criteria -->
+            {% if drill.get is defined and drill.get('success_criteria') %}
+            <div class="plan-success">
+                <div class="plan-success-label">&#10004; Success Criteria</div>
+                <div class="plan-success-text">{{ drill.success_criteria }}</div>
+            </div>
+            {% endif %}
+
+        </li>
+        {% endfor %}
+    </ol>
+</section>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleDrill(planId, weekIdx, drillIdx, completed) {
+    // Find the drill card before the async call
+    var cb = document.querySelector('.plan-drill-checkbox[data-plan-id="' + planId + '"][data-week="' + weekIdx + '"][data-drill="' + drillIdx + '"]');
+    var drillLi = cb ? cb.closest('.plan-drill') : null;
+
+    FetchHelper.fetch('/api/dev-plans/plan/' + planId + '/progress', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ week_index: weekIdx, drill_index: drillIdx, completed: completed }),
+    })
+    .then(function(data) {
+        if (data.completion_pct !== undefined) {
+            // Animate progress bar
+            var fill = document.querySelector('.plan-progress-fill');
+            if (fill) {
+                fill.style.transition = 'width 0.5s ease';
+                fill.style.width = data.completion_pct + '%';
+            }
+            // Update header text
+            var header = document.querySelector('.page-header p');
+            if (header) {
+                var safeLevel = ({'beginner':1,'intermediate':1,'advanced':1,'race_prep':1,'consistency':1}[data.level]) ? data.level : 'unknown';
+                header.innerHTML = 'Level: <span class="tag tag-' + safeLevel + '">' + esc(data.level) + '</span> | Progress: ' + data.completion_pct + '%';
+            }
+        }
+        // Update drill card visually without page reload
+        if (drillLi) {
+            if (completed) {
+                drillLi.classList.add('done');
+                // Add checkmark to drill name if not present
+                var nameEl = drillLi.querySelector('.plan-drill-name');
+                if (nameEl && nameEl.textContent.indexOf('\u2713') < 0) {
+                    nameEl.insertAdjacentHTML('afterbegin', '&#10003; ');
+                }
+                // Completion animation: brief green flash
+                drillLi.style.transition = 'background 0.4s ease, opacity 0.3s ease';
+                drillLi.style.background = 'rgba(34, 197, 94, 0.15)';
+                setTimeout(function() { drillLi.style.background = ''; }, 800);
+            } else {
+                drillLi.classList.remove('done');
+                // Remove checkmark from drill name
+                var nameEl = drillLi.querySelector('.plan-drill-name');
+                if (nameEl) {
+                    nameEl.innerHTML = nameEl.innerHTML.replace(/&#10003;\s*|\u2713\s*/g, '');
+                }
+                drillLi.style.background = '';
+            }
+        }
+        // Show completion celebration at 100%
+        if (data.completion_pct >= 100) {
+            _showCompletionBadge();
+        }
+    })
+    .catch(function(err) { console.warn('Toggle drill failed:', err); if (window.Toast) Toast.show('Failed to update drill', 'error'); });
+}
+
+function _showCompletionBadge() {
+    // Brief celebration overlay
+    var existing = document.getElementById('completion-celebration');
+    if (existing) existing.remove();
+    var overlay = document.createElement('div');
+    overlay.id = 'completion-celebration';
+    overlay.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+        'background:rgba(0,0,0,0.85);color:#fff;padding:2rem 3rem;border-radius:16px;z-index:9999;' +
+        'text-align:center;font-size:1.2rem;animation:fadeInScale 0.5s ease;';
+    overlay.innerHTML = '<div style="font-size:3rem;margin-bottom:0.5rem;">&#127942;</div>' +
+        '<div style="font-weight:700;margin-bottom:0.3rem;">Plan Complete!</div>' +
+        '<div style="font-size:0.85rem;color:#aaa;">All drills finished. Great work!</div>';
+    document.body.appendChild(overlay);
+    setTimeout(function() {
+        overlay.style.transition = 'opacity 0.6s ease';
+        overlay.style.opacity = '0';
+        setTimeout(function() { overlay.remove(); }, 700);
+    }, 2500);
+}
+
+/* ── Delegated drill checkbox handler ── */
+document.addEventListener('change', function(e) {
+    var cb = e.target.closest('.plan-drill-checkbox[data-plan-id]');
+    if (!cb) return;
+    toggleDrill(
+        parseInt(cb.dataset.planId, 10),
+        parseInt(cb.dataset.week, 10),
+        parseInt(cb.dataset.drill, 10),
+        cb.checked
+    );
+});
+</script>
+{% endblock %}

@@ -1,0 +1,26 @@
+[
+  {
+    "track_id": "CKS",
+    "lap_length_m": 641.79,
+    "bbox": {
+      "lat_min": 47.2626987,
+      "lat_max": 47.2645343,
+      "lon_min": -1.7025852,
+      "lon_max": -1.7011237
+    },
+    "start_lat": 47.263795,
+    "start_lon": -1.701627
+  },
+  {
+    "track_id": "CKS_2",
+    "lap_length_m": 641.8619999999992,
+    "bbox": {
+      "lat_min": 47.2626987,
+      "lat_max": 47.2645343,
+      "lon_min": -1.7025852,
+      "lon_max": -1.7011237
+    },
+    "start_lat": 47.263795,
+    "start_lon": -1.701627
+  }
+]

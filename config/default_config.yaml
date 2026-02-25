@@ -1,0 +1,51 @@
+# kart_envelope default configuration
+# All values shown are the built-in defaults.
+# Override only the ones you need to change.
+
+gps:
+  gps_min_satellites: 5
+  gps_max_accuracy_m: 3.0
+  gps_max_speed_mps: 45.0
+  gps_max_accel_mps2: 40.0
+
+resampling:
+  resample_ds_m: 0.5
+  resample_min_points: 200
+
+lap_selection:
+  outlap_ratio: 1.5
+  min_lap_distance_m: 100.0
+  max_missing_ratio: 0.20
+  min_clean_laps: 3
+
+envelope:
+  envelope_speed_bins: 15
+  envelope_quantile_lat: 0.95
+  envelope_quantile_trac: 0.98
+  envelope_quantile_brake: 0.95
+  envelope_min_samples_per_bin: 8
+  envelope_smooth_hw: 2
+  envelope_combined_p_init: 1.6
+  envelope_gps_correction: 1.20
+  envelope_traction_floor_mps2: 4.41
+  envelope_lateral_floor_mps2: 5.89
+
+inference:
+  scalar_mu_lo: 0.5
+  scalar_mu_hi: 1.5
+  scalar_p_lo: 0.3
+  scalar_p_hi: 2.0
+  scalar_b_lo: 0.5
+  scalar_b_hi: 1.5
+  scalar_regularisation: 0.10
+
+solver:
+  solver_max_speed_mps: 45.0
+  solver_min_speed_mps: 1.0
+  solver_wrap_iterations: 6
+  solver_wrap_tol_mps: 0.02
+
+calibration:
+  cal_alpha_lo: 0.8
+  cal_alpha_hi: 1.2
+  cal_regularisation: 0.5

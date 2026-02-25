@@ -1,0 +1,262 @@
+/* ── Speed Trace Zoom ─────────────────────────────── */
+
+/* Selection overlay on existing speed chart */
+.speed-chart-selection-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 3;
+}
+
+.speed-chart-selection-rect {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: rgba(59, 130, 246, 0.15);
+    border-left: 2px solid rgba(59, 130, 246, 0.6);
+    border-right: 2px solid rgba(59, 130, 246, 0.6);
+    pointer-events: none;
+    display: none;
+}
+
+/* Make the speed chart container position:relative for overlay */
+#speed-chart-wrapper {
+    position: relative;
+    cursor: crosshair;
+}
+
+/* Corner markers row below speed chart */
+.speed-chart-corner-markers {
+    display: flex;
+    position: relative;
+    height: 22px;
+    margin-top: -2px;
+    padding-left: 60px;  /* match chart pad.left */
+    padding-right: 20px; /* match chart pad.right */
+    user-select: none;
+}
+
+.speed-chart-corner-marker {
+    position: absolute;
+    transform: translateX(-50%);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: opacity 0.15s;
+}
+
+.speed-chart-corner-marker:hover {
+    opacity: 1 !important;
+}
+
+.speed-chart-corner-marker-tick {
+    width: 2px;
+    height: 6px;
+    background: var(--accent, #ff6b35);
+    border-radius: 1px;
+}
+
+.speed-chart-corner-marker-label {
+    font-size: 10px;
+    color: var(--accent, #ff6b35);
+    font-weight: 600;
+    line-height: 1;
+    margin-top: 1px;
+    white-space: nowrap;
+}
+
+.speed-chart-corner-marker.active .speed-chart-corner-marker-tick {
+    background: var(--text-primary, #fff);
+    height: 8px;
+}
+
+.speed-chart-corner-marker.active .speed-chart-corner-marker-label {
+    color: var(--text-primary, #fff);
+}
+
+/* Drag hint text */
+.speed-chart-drag-hint {
+    position: absolute;
+    bottom: 6px;
+    right: 24px;
+    font-size: 10px;
+    color: var(--text-tertiary, #555);
+    pointer-events: none;
+    z-index: 2;
+    opacity: 0.7;
+    transition: opacity 0.3s;
+}
+
+#speed-chart-wrapper:hover .speed-chart-drag-hint {
+    opacity: 1;
+}
+
+/* ── Zoom Detail Panel ────────────────────────────── */
+
+.speed-zoom-panel {
+    margin-top: 12px;
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    background: var(--bg-card, #1a1f2e);
+    overflow: hidden;
+    animation: szp-slideIn 0.25s ease-out;
+}
+
+@keyframes szp-slideIn {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.speed-zoom-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border, #30363d);
+    background: var(--bg-secondary, #161b22);
+    flex-wrap: wrap;
+}
+
+.speed-zoom-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.speed-zoom-controls-left label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary, #8b949e);
+    white-space: nowrap;
+}
+
+.speed-zoom-controls-left .form-select-sm {
+    padding: 2px 6px;
+    font-size: 12px;
+    min-width: 80px;
+    background: var(--bg-card, #1a1f2e);
+    color: var(--text-primary, #e6edf3);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 4px;
+}
+
+.speed-zoom-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Corner pills in zoom controls */
+.speed-zoom-corner-pills {
+    display: flex;
+    gap: 4px;
+}
+
+.speed-zoom-corner-pill {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid var(--border, #30363d);
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.speed-zoom-corner-pill:hover {
+    border-color: var(--accent, #ff6b35);
+    color: var(--accent, #ff6b35);
+}
+
+.speed-zoom-corner-pill.active {
+    background: var(--accent, #ff6b35);
+    border-color: var(--accent, #ff6b35);
+    color: #fff;
+}
+
+/* Zoom canvas area */
+.speed-zoom-canvas-wrap {
+    position: relative;
+    padding: 0 16px 0 16px;
+}
+
+#speed-zoom-canvas {
+    display: block;
+    width: 100%;
+}
+
+.speed-zoom-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--text-secondary, #8b949e);
+    border-top: 1px solid var(--border, #30363d);
+    flex-wrap: wrap;
+    min-height: 28px;
+}
+
+.speed-zoom-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.speed-zoom-legend-swatch {
+    display: inline-block;
+    width: 16px;
+    height: 3px;
+    border-radius: 1px;
+    vertical-align: middle;
+}
+
+/* Zoom range indicator text */
+.speed-zoom-range-text {
+    font-size: 11px;
+    color: var(--text-tertiary, #555);
+    margin-left: auto;
+}
+
+/* ── Tooltip in zoomed view ───────────────────────── */
+#speed-zoom-tooltip {
+    position: absolute;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.88);
+    color: var(--text-primary, #e6edf3);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    pointer-events: none;
+    line-height: 1.5;
+    white-space: nowrap;
+    border: 1px solid var(--border, #30363d);
+    display: none;
+}
+
+/* ── Responsive ───────────────────────────────────── */
+@media (max-width: 768px) {
+    .speed-zoom-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .speed-zoom-controls-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .speed-chart-drag-hint {
+        display: none;
+    }
+}

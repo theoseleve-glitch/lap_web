@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Search Annotations{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Search Annotations</h1>
+</div>
+
+<section class="section">
+    <div class="filter-bar">
+        <div class="flex-1">
+            <label class="form-label" for="search-q">Search Query</label>
+            <input type="search" id="search-q" class="form-input" placeholder="Search by keyword, tag, or driver name..."
+                   aria-label="Search annotations">
+        </div>
+        <button type="button" class="btn btn-primary" id="search-btn" title="Search annotations">Search</button>
+    </div>
+    <div id="search-results">
+        <p class="text-muted">Type a keyword and click <strong>Search</strong> to find annotations across all sessions.</p>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('search-btn').addEventListener('click', doSearch);
+document.getElementById('search-q').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doSearch();
+});
+
+function doSearch() {
+    var input = document.getElementById('search-q');
+    var q = input.value.trim();
+    // Inline validation
+    input.classList.remove('is-invalid');
+    var prevErr = input.parentElement.querySelector('.form-error');
+    if (prevErr) prevErr.remove();
+    if (!q) {
+        input.classList.add('is-invalid');
+        var errEl = document.createElement('span');
+        errEl.className = 'form-error';
+        errEl.textContent = 'Enter a search term';
+        errEl.setAttribute('role', 'alert');
+        input.parentElement.appendChild(errEl);
+        input.focus();
+        return;
+    }
+    var el = document.getElementById('search-results');
+    el.innerHTML = '<div class="skeleton skeleton-heading"></div><div class="skeleton skeleton-row"></div><div class="skeleton skeleton-row"></div>';
+    FetchHelper.fetch('/api/annotations/search?q=' + encodeURIComponent(q))
+        .then(function(data) {
+            var results = data.results || [];
+            if (results.length === 0) {
+                el.innerHTML = '<div class="empty-hero empty-hero-compact"><div class="empty-hero-icon" aria-hidden="true">&#x1F50D;</div><div class="empty-hero-title">No results found</div><div class="empty-hero-desc">Try different keywords or check your spelling.</div></div>';
+                return;
+            }
+            var html = '<p class="text-muted mb-sm">' + results.length + ' result' + (results.length !== 1 ? 's' : '') + ' found</p>';
+            results.forEach(function(r) {
+                html += '<div class="annotation-card">'
+                    + '<div class="annotation-header">'
+                    + '<strong>' + esc(r.title || r.annotation_type) + '</strong>'
+                    + '<span class="text-muted">' + esc(r.driver_name || '') + ' @ ' + esc(r.track_name || '') + ' (' + esc(r.session_date || '') + ')</span>'
+                    + '</div>'
+                    + '<p>' + esc(r.body) + '</p>'
+                    + '<a href="/annotations/session/' + encodeURIComponent(r.session_id) + '" class="btn btn-ghost btn-sm">View Session Annotations &rarr;</a>'
+                    + '</div>';
+            });
+            el.innerHTML = html;
+        })
+        .catch(function() {
+            el.innerHTML = '<p class="text-muted">Error searching annotations.</p>';
+        });
+}
+
+// Auto-clear validation on input
+document.getElementById('search-q').addEventListener('input', function() {
+    this.classList.remove('is-invalid');
+    var err = this.parentElement.querySelector('.form-error');
+    if (err) err.remove();
+});
+</script>
+{% endblock %}

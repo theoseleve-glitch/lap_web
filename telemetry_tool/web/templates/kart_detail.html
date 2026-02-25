@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+
+{% block title %}{{ kart.kart_name }} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('karts.kart_list') }}" class="breadcrumb">&larr; Karts</a></nav>
+        <h1>{{ kart.kart_name }}</h1>
+    </div>
+    <div>
+        <a href="{{ url_for('karts.edit_kart', kart_id=kart.kart_id) }}" class="btn btn-ghost btn-sm">Edit</a>
+    </div>
+</div>
+
+<!-- Kart specs -->
+<div class="meta-grid">
+    {% if kart.manufacturer %}
+    <div class="meta-item">
+        <span class="meta-label">Manufacturer</span>
+        <span class="meta-value">{{ kart.manufacturer }}</span>
+    </div>
+    {% endif %}
+    {% if kart.model %}
+    <div class="meta-item">
+        <span class="meta-label">Model</span>
+        <span class="meta-value">{{ kart.model }}</span>
+    </div>
+    {% endif %}
+    {% if kart.engine %}
+    <div class="meta-item">
+        <span class="meta-label">Engine</span>
+        <span class="meta-value">{{ kart.engine }}</span>
+    </div>
+    {% endif %}
+    {% if kart.power_hp %}
+    <div class="meta-item">
+        <span class="meta-label">Power</span>
+        <span class="meta-value">{{ "%.0f"|format(kart.power_hp) }} hp</span>
+    </div>
+    {% endif %}
+    {% if kart.kart_weight_kg %}
+    <div class="meta-item">
+        <span class="meta-label">Weight</span>
+        <span class="meta-value">{{ "%.1f"|format(kart.kart_weight_kg) }} kg</span>
+    </div>
+    {% endif %}
+    {% if kart.notes %}
+    <div class="meta-item">
+        <span class="meta-label">Notes</span>
+        <span class="meta-value">{{ kart.notes }}</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Sessions with this kart -->
+<section class="section" aria-labelledby="heading-kart-sessions">
+    <div class="section-header">
+        <h2 id="heading-kart-sessions">Sessions <span class="count-badge">{{ sessions|length }}</span></h2>
+    </div>
+
+    {% if sessions %}
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped">
+            <caption class="sr-only">Sessions using this kart</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Track</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best Lap</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr class="clickable-row" tabindex="0" role="link"
+                    data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                    <td>{{ s.session_date or '—' }}</td>
+                    <td>{{ s.driver_name or '—' }}</td>
+                    <td>{{ s.track_name_display or '—' }}</td>
+                    <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                    <td class="col-numeric">{% if s.best_lap_time_s %}{{ "%.3f"|format(s.best_lap_time_s) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if s.total_score %}{{ "%.1f"|format(s.total_score) }}{% else %}—{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F4CA;</div>
+        <div class="empty-hero-title">No sessions with this kart</div>
+        <div class="empty-hero-desc">Link a session to this kart from the session detail page.</div>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Delete Kart -->
+<section class="section">
+    <details class="danger-zone">
+        <summary class="btn btn-ghost btn-sm text-red">Delete Kart</summary>
+        <form method="POST" action="{{ url_for('karts.remove_kart', kart_id=kart.kart_id) }}"
+              class="inline-form" style="margin-top:0.5rem;"
+              data-confirm="Delete kart '{{ kart.kart_name }}'? Sessions will be unlinked but not deleted.">
+            <p class="text-muted text-sm">
+                Sessions will be unlinked but not deleted.
+            </p>
+            <button type="submit" class="btn btn-danger btn-sm">Delete Kart</button>
+        </form>
+    </details>
+</section>
+{% endblock %}

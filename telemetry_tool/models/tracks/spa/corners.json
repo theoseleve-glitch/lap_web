@@ -1,0 +1,12 @@
+[
+  {
+    "corner_id": 1,
+    "s_start": 100,
+    "s_end": 200
+  },
+  {
+    "corner_id": 2,
+    "s_start": 400,
+    "s_end": 550
+  }
+]

@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Data Health — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Data Health Dashboard</h1>
+</div>
+
+<!-- Summary cards -->
+<div class="meta-grid">
+    <div class="meta-item">
+        <span class="meta-label">Sessions Analyzed</span>
+        <span class="meta-value">{{ total }}</span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Average Quality</span>
+        <span class="meta-value {% if avg_score >= 80 %}text-green{% elif avg_score < 50 %}text-yellow{% endif %}">
+            <span class="status-dot {% if avg_score >= 80 %}excellent{% elif avg_score >= 50 %}average{% else %}poor{% endif %}" aria-hidden="true"></span>{% if avg_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif avg_score < 50 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ avg_score }}% <span class="sr-only">({% if avg_score >= 80 %}excellent{% elif avg_score >= 50 %}average{% else %}poor{% endif %})</span>
+        </span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Good Quality</span>
+        <span class="meta-value text-green"><span class="status-dot excellent" aria-hidden="true"></span><span aria-hidden="true">&#9650; </span>{{ good_count }} <span class="sr-only">(good quality)</span></span>
+    </div>
+    <div class="meta-item">
+        <span class="meta-label">Poor Quality</span>
+        <span class="meta-value text-yellow"><span class="status-dot poor" aria-hidden="true"></span><span aria-hidden="true">&#9660; </span>{{ poor_count }} <span class="sr-only">(poor quality)</span></span>
+    </div>
+</div>
+
+<!-- Quality chart -->
+{% if sessions %}
+<section class="section">
+    <h2>Quality Distribution</h2>
+    <div class="chart-container">
+        <canvas id="health-chart" aria-label="Data quality distribution chart"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Sessions table -->
+<section class="section">
+    <div class="section-header">
+        <h2>Sessions <span class="count-badge">{{ total }}</span></h2>
+    </div>
+
+    {% if sessions %}
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped">
+            <caption class="sr-only">Data quality scores by session</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Session</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Track</th>
+                    <th scope="col" class="col-numeric">GPS Quality</th>
+                    <th scope="col" class="col-numeric">Accel Quality</th>
+                    <th scope="col" class="col-numeric">Channels</th>
+                    <th scope="col" class="col-numeric">Gaps</th>
+                    <th scope="col" class="col-numeric">Overall</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr class="clickable-row" tabindex="0" role="link"
+                    aria-label="Data health for {{ s.session_id[:20] }}"
+                    data-href="{{ url_for('data_health.data_health_detail', session_id=s.session_id) }}">
+                    <td>{{ s.session_id[:20] }}</td>
+                    <td>{{ s.session_date or '—' }}</td>
+                    <td>{{ s.driver_name or '—' }}</td>
+                    <td>{{ s.track_name or '—' }}</td>
+                    <td>
+                        <span class="quality-badge {% if s.gps_quality >= 80 %}quality-good{% elif s.gps_quality >= 50 %}quality-ok{% else %}quality-poor{% endif %}">
+                            {{ "%.0f"|format(s.gps_quality or 0) }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="quality-badge {% if s.accel_quality >= 80 %}quality-good{% elif s.accel_quality >= 50 %}quality-ok{% else %}quality-poor{% endif %}">
+                            {{ "%.0f"|format(s.accel_quality or 0) }}
+                        </span>
+                    </td>
+                    <td class="col-numeric">{{ s.channel_count or 0 }}</td>
+                    <td class="col-numeric">{{ s.data_gaps or 0 }}</td>
+                    <td>
+                        <span class="quality-badge quality-lg {% if s.overall_score >= 80 %}quality-good{% elif s.overall_score >= 50 %}quality-ok{% else %}quality-poor{% endif %}">
+                            {{ "%.0f"|format(s.overall_score or 0) }}%
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero">
+        <div class="empty-hero-icon" aria-hidden="true">&#x2705;</div>
+        <div class="empty-hero-title">No data quality reports yet</div>
+        <div class="empty-hero-desc">
+            Data health checks evaluate the GPS accuracy, accelerometer quality, channel completeness, and data gaps
+            of each session. Run an analysis to see quality scores here.
+        </div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Quality badge styles in main.css -->
+{% endblock %}
+
+{% block scripts %}
+{% if sessions %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var canvas = document.getElementById('health-chart');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var C = window.Theme ? window.Theme.colors : {};
+
+    var scores = {{ sessions|map(attribute='overall_score')|list|tojson }};
+    var labels = {{ sessions|map(attribute='session_id')|list|tojson }};
+
+    var dpr = window.devicePixelRatio || 1;
+    var w = canvas.parentElement.clientWidth - 32;
+    var h = 200;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    ctx.scale(dpr, dpr);
+
+    var pad = { top: 20, right: 20, bottom: 30, left: 50 };
+    var pW = w - pad.left - pad.right;
+    var pH = h - pad.top - pad.bottom;
+
+    ctx.fillStyle = C.bgCard || '#1a1f2e';
+    ctx.fillRect(0, 0, w, h);
+
+    if (scores.length === 0) return;
+
+    var barW = Math.max(2, Math.min(20, (pW / scores.length) - 2));
+    var maxScore = 100;
+
+    for (var i = 0; i < scores.length; i++) {
+        var s = scores[i] || 0;
+        var barH = (s / maxScore) * pH;
+        var x = pad.left + (i / scores.length) * pW;
+        var y = pad.top + pH - barH;
+
+        // Color based on score
+        if (s >= 80) ctx.fillStyle = C.green || '#3fb950';
+        else if (s >= 50) ctx.fillStyle = C.yellow || '#d29922';
+        else ctx.fillStyle = C.red || '#f85149';
+
+        ctx.fillRect(x, y, barW, barH);
+    }
+
+    // Y axis labels
+    ctx.fillStyle = C.textSecondary || '#8b949e';
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (var v = 0; v <= 100; v += 25) {
+        var yPos = pad.top + pH - (v / 100) * pH;
+        ctx.fillText(v + '%', pad.left - 8, yPos);
+        ctx.strokeStyle = C.border || '#30363d';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(pad.left, yPos);
+        ctx.lineTo(w - pad.right, yPos);
+        ctx.stroke();
+    }
+
+    // X axis label
+    ctx.textAlign = 'center';
+    ctx.fillText('Sessions (sorted by quality)', w / 2, h - 5);
+});
+</script>
+{% endif %}
+{% endblock %}

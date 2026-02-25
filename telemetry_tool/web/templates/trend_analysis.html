@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+
+{% block title %}Trend Analysis — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Pace Trend Analysis</h1>
+</div>
+
+<div class="filter-bar">
+    <div>
+        <label class="form-label">Driver</label>
+        <select id="trend-driver-select" class="form-select">
+            <option value="">Select driver...</option>
+            {% for d in drivers %}
+            <option value="{{ d.driver_id }}" {% if d.driver_id == selected_driver %}selected{% endif %}>
+                {{ d.driver_name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="form-label">Track (optional)</label>
+        <select id="trend-track-select" class="form-select">
+            <option value="">All tracks</option>
+            {% for t in tracks %}
+            <option value="{{ t.track_id }}" {% if t.track_id == selected_track %}selected{% endif %}>
+                {{ t.track_name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="button" id="trend-analyze-btn" class="btn btn-primary" title="Analyze pace trends for the selected driver">Analyze</button>
+</div>
+
+<div id="trend-results" aria-live="polite">
+    {% if not drivers %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F4C8;</div>
+        <div class="empty-hero-title">No driver data available</div>
+        <div class="empty-hero-desc">
+            Pace trend analysis tracks your improvement over multiple sessions, detects plateaus,
+            and predicts future performance. Analyze at least 3 sessions to see meaningful trends.
+        </div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% else %}
+    <p class="text-muted">Select a driver and click <strong>Analyze</strong> to see pace trends, improvement rates, and plateau detection across sessions.</p>
+    {% endif %}
+</div>
+
+<div class="chart-container mt-md">
+    <canvas id="trend-chart" aria-label="Pace trend analysis chart"></canvas>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/trend_chart.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-clear validation on change
+    document.getElementById('trend-driver-select').addEventListener('change', function() {
+        this.classList.remove('is-invalid');
+        var err = this.parentElement.querySelector('.form-error');
+        if (err) err.remove();
+    });
+    document.getElementById('trend-analyze-btn').addEventListener('click', function() {
+        var driverSel = document.getElementById('trend-driver-select');
+        var driverId = driverSel.value;
+        var trackId = document.getElementById('trend-track-select').value;
+        driverSel.classList.remove('is-invalid');
+        var prevErr = driverSel.parentElement.querySelector('.form-error');
+        if (prevErr) prevErr.remove();
+        if (!driverId) {
+            driverSel.classList.add('is-invalid');
+            var errEl = document.createElement('span');
+            errEl.className = 'form-error';
+            errEl.textContent = 'Please select a driver';
+            errEl.setAttribute('role', 'alert');
+            driverSel.parentElement.appendChild(errEl);
+            driverSel.focus();
+            return;
+        }
+        var url = '/api/trends/' + driverId;
+        if (trackId) url += '?track_id=' + encodeURIComponent(trackId);
+
+        var results = document.getElementById('trend-results');
+        results.innerHTML = '<div class="meta-grid"><div class="meta-item"><span class="skeleton skeleton-line" style="width:60%"></span><span class="skeleton skeleton-stat"></span></div><div class="meta-item"><span class="skeleton skeleton-line" style="width:40%"></span><span class="skeleton skeleton-stat"></span></div><div class="meta-item"><span class="skeleton skeleton-line" style="width:70%"></span><span class="skeleton skeleton-stat"></span></div><div class="meta-item"><span class="skeleton skeleton-line" style="width:50%"></span><span class="skeleton skeleton-stat"></span></div></div>';
+
+        FetchHelper.fetch(url)
+            .then(function(data) {
+                if (data.error) {
+                    results.innerHTML = '<p class="text-muted">' + esc(data.error) + '</p>';
+                    return;
+                }
+                var html = '<div class="meta-grid">';
+                html += '<div class="meta-item"><span class="meta-label">Sessions</span><span class="meta-value">' + data.sessions_count + '</span></div>';
+                html += '<div class="meta-item"><span class="meta-label">R²</span><span class="meta-value">' + (data.r_squared || 0).toFixed(3) + '</span></div>';
+                html += '<div class="meta-item"><span class="meta-label">Improvement</span><span class="meta-value">' + (data.improvement_rate || 0).toFixed(3) + ' s/session</span></div>';
+                var p = data.plateau || {};
+                html += '<div class="meta-item"><span class="meta-label">Plateau</span><span class="meta-value">' + (p.is_plateau ? 'Yes' : 'No') + '</span></div>';
+                html += '</div>';
+                if (p.reason) html += '<p class="form-hint">' + esc(p.reason) + '</p>';
+                results.innerHTML = html;
+                if (window.TrendChart) window.TrendChart.draw('trend-chart', data);
+            })
+            .catch(function() { results.innerHTML = '<p class="text-muted">Error loading data.</p>'; });
+    });
+});
+</script>
+{% endblock %}

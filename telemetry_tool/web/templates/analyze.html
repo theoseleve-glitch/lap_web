@@ -1,0 +1,508 @@
+{% extends "base.html" %}
+
+{% block title %}New Analysis — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>New Analysis</h1>
+</div>
+
+<!-- Step indicator -->
+<div class="wizard-steps" id="wizard-steps">
+    <div class="wizard-step active" data-step="1">
+        <span class="wizard-step-num">1</span>
+        <span class="wizard-step-label">Select Data</span>
+    </div>
+    <div class="wizard-step-line"></div>
+    <div class="wizard-step" data-step="2">
+        <span class="wizard-step-num">2</span>
+        <span class="wizard-step-label">Configure</span>
+    </div>
+    <div class="wizard-step-line"></div>
+    <div class="wizard-step" data-step="3">
+        <span class="wizard-step-num">3</span>
+        <span class="wizard-step-label">Analyze</span>
+    </div>
+</div>
+
+<form method="POST" enctype="multipart/form-data" class="analysis-form" id="analyze-form" novalidate>
+    <!-- STEP 1: CSV source — In-app file browser -->
+    <fieldset class="form-section wizard-panel" data-panel="1">
+        <legend>Data Source</legend>
+        <div class="file-browser" id="file-browser">
+            <div class="file-browser-toolbar">
+                <span class="file-browser-title">data/raw/</span>
+                <label class="btn btn-xs file-upload-label">
+                    Upload CSV
+                    <input type="file" id="csv-upload" name="csv_upload" accept=".csv" class="hidden">
+                </label>
+            </div>
+            <div class="file-browser-list" id="file-list" aria-live="polite">
+                <!-- Populated by JS from /api/files/list -->
+                <div class="file-browser-empty">Loading files...</div>
+            </div>
+            <div class="file-browser-drop" id="file-drop">
+                Drop CSV files here to upload
+            </div>
+            <input type="hidden" name="csv_file" id="selected-file-hidden"
+                   {% if selected_file %}value="{{ selected_file }}"{% endif %}>
+            <div id="selected-file-info" class="form-hint selected-file-info hidden"></div>
+        </div>
+        <!-- Upload progress bar -->
+        <div class="upload-progress-wrap hidden" id="upload-progress-wrap">
+            <div class="upload-progress-bar">
+                <div class="upload-progress-fill" id="upload-progress-fill"></div>
+            </div>
+            <span class="upload-progress-text" id="upload-progress-text">Uploading...</span>
+        </div>
+
+        <div class="wizard-nav mt-md">
+            <span></span>
+            <button type="button" class="btn btn-primary" id="step1-next">Next: Configure</button>
+        </div>
+    </fieldset>
+
+    <!-- STEP 2: Session metadata, Drivers, Track, Kart -->
+    <fieldset class="form-section wizard-panel hidden" data-panel="2">
+        <legend>Session Info</legend>
+
+        <!-- File reminder banner -->
+        <div id="file-reminder-banner" class="session-info-banner hidden">
+            <span class="session-info-banner-icon">&#128196;</span>
+            <span id="file-reminder-text"></span>
+        </div>
+
+        <!-- Session type + Report type hint -->
+        <div class="config-card">
+            <div class="config-card-header">Session</div>
+            <div class="config-card-body">
+                <div class="form-row">
+                    <div class="form-group" style="flex:1;">
+                        <label for="session-type">Session Type</label>
+                        <select id="session-type" name="session_type" class="form-select">
+                            <option value="practice" selected>Practice</option>
+                            <option value="qualifying">Qualifying</option>
+                            <option value="race">Race</option>
+                            <option value="warmup">Warm-up</option>
+                            <option value="sprint">Sprint</option>
+                            <option value="endurance">Endurance</option>
+                            <option value="test">Test</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label for="session-date">Session Date</label>
+                        <input type="date" id="session-date" name="session_date" class="form-input">
+                    </div>
+                </div>
+                <!-- Report type hint per session type -->
+                <div id="session-type-hint" class="config-hint">
+                    <span class="config-hint-label">Report focus:</span>
+                    <span id="session-type-hint-text">Consistency analysis, lap-to-lap progression, driving style breakdown</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Track conditions (compact pill-style, hidden in endurance mode) -->
+        <div class="config-card" id="standard-conditions-group">
+            <div class="config-card-header">Track Conditions</div>
+            <div class="config-card-body">
+                <div class="condition-pills" id="track-conditions">
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="dry" checked><span>Dry</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="wet"><span>Wet</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="damp"><span>Damp</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="mixed"><span>Mixed</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="drying"><span>Drying</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="greasy"><span>Greasy</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="flooded"><span>Flooded</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="dusty"><span>Dusty</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="cold"><span>Cold</span></label>
+                    <label class="condition-pill"><input type="checkbox" name="track_conditions" value="hot"><span>Hot</span></label>
+                </div>
+                <input type="hidden" name="track_state" id="track-state-hidden" value="dry">
+            </div>
+        </div>
+
+        <!-- Driver selection with dropdown -->
+        <div class="config-card" id="standard-drivers-group">
+            <div class="config-card-header">Driver</div>
+            <div class="config-card-body">
+                <div id="drivers-container">
+                    <div class="driver-row" data-driver-index="0">
+                        <div class="driver-row-fields">
+                            <div class="form-group" style="flex:2;min-width:180px;">
+                                <label>Driver</label>
+                                <div class="driver-select-wrap">
+                                    <select class="form-select driver-select" data-idx="0">
+                                        <option value="">-- Select or type new --</option>
+                                        {% for d in drivers %}
+                                        <option value="{{ d.driver_name }}">{{ d.driver_name }} ({{ d.session_count }} sessions)</option>
+                                        {% endfor %}
+                                        <option value="__new__">+ New Driver</option>
+                                    </select>
+                                    <input type="text" name="driver_name_0" value=""
+                                           class="form-input driver-name-input hidden" placeholder="Enter driver name"
+                                           autocomplete="name" data-idx="0">
+                                </div>
+                                <span class="driver-match-hint hidden" data-idx="0"></span>
+                            </div>
+                            <div class="form-group driver-col-action">
+                                <button type="button" class="btn btn-xs remove-driver-btn" hidden aria-label="Remove driver">&#10005;</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" id="add-driver-btn" class="btn btn-xs mt-sm">+ Add Driver</button>
+                <input type="hidden" name="driver_name" id="primary-driver-hidden" value="">
+            </div>
+        </div>
+
+        <!-- Endurance Stints (shown only when session_type === endurance) -->
+        <div class="config-card hidden" id="endurance-stints-group">
+            <div class="config-card-header">Endurance Stints</div>
+            <div class="config-card-body">
+                <p class="form-hint" style="margin-bottom:0.6rem;">
+                    Define each stint: who is driving, how many laps, and what the track conditions were.
+                    Lap ranges are computed automatically from the stint order.
+                </p>
+                <div id="stints-container">
+                    <!-- Stint rows injected by JS -->
+                </div>
+                <button type="button" id="add-stint-btn" class="btn btn-xs mt-sm" style="margin-bottom:0.3rem;">
+                    + Add Stint
+                </button>
+                <div id="stints-summary" style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.3rem;"></div>
+            </div>
+        </div>
+
+        <!-- Track selection with "New Track" option -->
+        <div class="config-card">
+            <div class="config-card-header">Track</div>
+            <div class="config-card-body">
+                <div class="form-row">
+                    <div class="form-group" style="flex:2;">
+                        <label for="track-name">Track</label>
+                        <select id="track-name" name="track_name" class="form-select" aria-describedby="hint-track-name">
+                            <option value="">-- Select track --</option>
+                            {% if tracks %}
+                            {% for t in tracks %}
+                            <option value="{{ t.track_name }}" data-track-id="{{ t.track_id }}" data-has-joker="{{ t.has_joker or 0 }}">{{ t.track_name }}{% if t.lap_length_m %} ({{ t.lap_length_m|int }}m){% endif %}</option>
+                            {% endfor %}
+                            {% endif %}
+                            <option value="__new__">+ New Track</option>
+                            <option value="__predefined__" disabled style="font-style:italic;color:var(--text-muted);">--- Predefined tracks ---</option>
+                        </select>
+                        <!-- New track name input (shown when "New Track" selected) -->
+                        <input type="text" id="new-track-name" class="form-input hidden mt-sm"
+                               placeholder="Enter new track name" style="max-width:350px;">
+                    </div>
+                </div>
+                <!-- Predefined track search (hidden until user picks __predefined__) -->
+                <div id="predefined-track-search" class="hidden mt-sm">
+                    <input type="text" id="predefined-track-filter" class="form-input"
+                           placeholder="Search predefined tracks by name, city, country..."
+                           style="max-width:400px;">
+                    <div id="predefined-track-results" class="predefined-results" style="max-height:200px;overflow-y:auto;margin-top:0.4rem;"></div>
+                </div>
+                <!-- Joker lap detection -->
+                <div class="mt-sm" id="joker-lap-group">
+                    <label class="cb-label">
+                        <input type="checkbox" id="enable-joker" name="enable_joker" value="1">
+                        Enable Joker Lap Detection
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Kart Model selection -->
+        <div class="config-card">
+            <div class="config-card-header">Kart Model</div>
+            <div class="config-card-body">
+                <select id="kart-model-select" class="form-select">
+                    <option value="">-- Select kart model --</option>
+                    <option value="__new__">+ New / Custom Kart</option>
+                    <!-- Populated by JS from /api/predefined-karts -->
+                </select>
+                <input type="hidden" name="kart_model" id="kart-model-hidden" value="">
+                <input type="text" id="new-kart-name" class="form-input hidden mt-sm"
+                       placeholder="Enter custom kart description" style="max-width:350px;">
+                <div id="kart-specs" class="kart-specs-summary hidden mt-sm"></div>
+            </div>
+        </div>
+
+        <!-- Lap range — only for endurance stints -->
+        <div id="lap-range-section" class="config-card hidden">
+            <div class="config-card-header">Lap Range</div>
+            <div class="config-card-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="lap-start">Start Lap</label>
+                        <input type="number" id="lap-start" name="lap_start"
+                               min="1" class="form-input" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="lap-end">End Lap</label>
+                        <input type="number" id="lap-end" name="lap_end"
+                               min="1" class="form-input" placeholder="999">
+                    </div>
+                </div>
+                <span class="form-hint">Leave blank to analyze all laps.</span>
+            </div>
+        </div>
+
+        <div class="wizard-nav mt-lg">
+            <button type="button" class="btn btn-ghost" id="step2-back">Back</button>
+            <button type="submit" class="btn btn-primary btn-lg" id="submit-btn">
+                Run Analysis
+            </button>
+        </div>
+    </fieldset>
+
+    <!-- STEP 3: Analysis in progress (shown after submit) -->
+    <div class="wizard-panel hidden" data-panel="3">
+
+        <!-- Corner picker (hidden until track layout is ready) -->
+        <div id="corner-picker-panel" class="corner-picker-panel hidden">
+            <h2 class="corner-picker-title">Select Areas of Interest</h2>
+            <p class="corner-picker-hint">
+                Click anywhere on the track map to mark points of interest for detailed analysis.
+                Select 3 to 8 points. These will be saved with the track for future sessions.
+            </p>
+            <div class="corner-picker-map-wrap">
+                <canvas id="corner-picker-canvas" aria-label="Track map — click to select areas of interest"></canvas>
+            </div>
+            <div class="corner-picker-footer">
+                <span id="corner-picker-status" class="corner-picker-status">Select at least 3 points</span>
+                <button type="button" id="corner-picker-confirm" class="btn btn-primary" disabled>
+                    Confirm Selection
+                </button>
+            </div>
+        </div>
+
+        <!-- Joker lap confirmation (hidden until joker candidate detected) -->
+        <div id="joker-confirm-panel" class="joker-confirm-panel hidden">
+            <h2 class="joker-confirm-title">Joker Lap Detected</h2>
+            <p class="joker-confirm-hint">
+                The pipeline detected a possible joker lap. Review the data below and confirm or reject.
+                <strong>Analysis is paused</strong> until you respond.
+            </p>
+            <div class="joker-confirm-table-wrap">
+                <table class="table table-compact" id="joker-laps-table">
+                    <thead>
+                        <tr>
+                            <th></th>
+                            <th>Lap</th>
+                            <th>Distance (m)</th>
+                            <th>&Delta; Distance</th>
+                            <th>Time (s)</th>
+                            <th>&Delta; Time</th>
+                            <th>Confidence</th>
+                        </tr>
+                    </thead>
+                    <tbody id="joker-laps-tbody">
+                        <!-- Populated by JS -->
+                    </tbody>
+                </table>
+            </div>
+            <div class="joker-confirm-footer">
+                <span id="joker-confirm-status" class="joker-confirm-status">Select the joker lap and confirm</span>
+                <div class="joker-confirm-actions">
+                    <button type="button" id="joker-reject-btn" class="btn btn-ghost">No Joker Lap</button>
+                    <button type="button" id="joker-confirm-btn" class="btn btn-primary">Confirm Joker Lap</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="analysis-progress-panel" id="analysis-progress">
+            <div class="analysis-progress-icon" aria-hidden="true">&#x2699;</div>
+            <h2 class="analysis-progress-title">Analyzing Session</h2>
+            <p class="analysis-progress-subtitle" id="analysis-stage-text" role="status" aria-live="polite">Preparing data...</p>
+
+            <!-- Pipeline stages progress -->
+            <div class="pipeline-stages" id="pipeline-stages">
+                <div class="pipeline-stage" data-stage="1">
+                    <span class="pipeline-stage-dot active"></span>
+                    <span>Loading CSV</span>
+                </div>
+                <div class="pipeline-stage" data-stage="2">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Detecting laps</span>
+                </div>
+                <div class="pipeline-stage" data-stage="3">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Building track layout</span>
+                </div>
+                <div class="pipeline-stage" data-stage="4">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Computing physics</span>
+                </div>
+                <div class="pipeline-stage" data-stage="5">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Corner analysis</span>
+                </div>
+                <div class="pipeline-stage" data-stage="6">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Scoring</span>
+                </div>
+                <div class="pipeline-stage" data-stage="7">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Generating report</span>
+                </div>
+                <div class="pipeline-stage" data-stage="8">
+                    <span class="pipeline-stage-dot"></span>
+                    <span>Saving to database</span>
+                </div>
+            </div>
+
+            <!-- Overall progress bar -->
+            <div class="analysis-overall-bar">
+                <div class="analysis-overall-fill" id="analysis-overall-fill" style="width:5%;"></div>
+            </div>
+            <p class="analysis-elapsed" id="analysis-elapsed">Elapsed: 0s</p>
+        </div>
+    </div>
+</form>
+
+<!-- Inline styles for new config-card layout and condition pills -->
+<style>
+.session-info-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.8rem;
+    background: var(--bg-tertiary, #161b22);
+    border: 1px solid var(--border, #333);
+    border-left: 3px solid var(--accent, #f97316);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary, #aaa);
+}
+.session-info-banner-icon { font-size: 1.1rem; }
+
+.config-card {
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border, #333);
+    border-radius: 10px;
+    margin-bottom: 0.8rem;
+    overflow: hidden;
+}
+.config-card-header {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent, #f97316);
+    background: var(--bg-tertiary, #161b22);
+    border-bottom: 1px solid var(--border, #333);
+}
+.config-card-body {
+    padding: 0.75rem 0.9rem;
+}
+
+.config-hint {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: rgba(249, 115, 22, 0.08);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: var(--text-secondary, #aaa);
+}
+.config-hint-label {
+    font-weight: 600;
+    color: var(--accent, #f97316);
+    white-space: nowrap;
+}
+
+/* Condition pills — compact toggles */
+.condition-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+.condition-pill {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    margin: 0;
+}
+.condition-pill input[type="checkbox"] {
+    display: none;
+}
+.condition-pill span {
+    display: inline-block;
+    padding: 0.25rem 0.65rem;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: var(--bg-tertiary, #161b22);
+    border: 1px solid var(--border, #333);
+    color: var(--text-secondary, #aaa);
+    transition: all 0.15s;
+    user-select: none;
+}
+.condition-pill input:checked + span {
+    background: var(--accent, #f97316);
+    border-color: var(--accent, #f97316);
+    color: #fff;
+}
+.condition-pill:hover span {
+    border-color: var(--accent, #f97316);
+}
+
+/* Driver row modern layout */
+.driver-row { margin-bottom: 0.4rem; }
+.driver-row-fields {
+    display: flex;
+    gap: 0.5rem;
+    align-items: flex-end;
+}
+.driver-select-wrap { position: relative; }
+.driver-match-hint {
+    font-size: 0.72rem;
+    color: var(--yellow, #e2b93d);
+    margin-top: 0.2rem;
+    display: block;
+}
+
+/* Kart specs summary */
+.kart-specs-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary, #aaa);
+}
+.kart-spec-tag {
+    padding: 0.2rem 0.5rem;
+    background: var(--bg-tertiary, #161b22);
+    border: 1px solid var(--border, #333);
+    border-radius: 6px;
+}
+
+/* Predefined track results */
+.predefined-results .predefined-track-item {
+    padding: 0.35rem 0.6rem;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    transition: background 0.1s;
+}
+.predefined-results .predefined-track-item:hover {
+    background: var(--bg-tertiary, #161b22);
+}
+.predefined-results .predefined-track-item .track-country {
+    font-size: 0.7rem;
+    color: var(--text-muted, #777);
+    margin-left: 0.4rem;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/corner_picker_map.js') }}"></script>
+<script src="{{ url_for('static', filename='js/analyze_form.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}Leaderboard — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>
+            Leaderboard
+            {% if track_name %}<small class="text-muted subtitle">{{ track_name }}</small>{% endif %}
+            <span class="count-badge">{{ leaders|length }} drivers</span>
+        </h1>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="filter-bar leaderboard-filters">
+    <form method="get" aria-label="Leaderboard filters">
+        <label for="track-filter" class="filter-label">Track:</label>
+        <select name="track" id="track-filter" class="form-select w-auto" aria-label="Filter by track">
+            <option value="">All Tracks</option>
+            {% for t in tracks %}
+            <option value="{{ t.track_id }}" {% if t.track_id == selected_track %}selected{% endif %}>
+                {{ t.track_name }} ({{ t.n_sessions }})
+            </option>
+            {% endfor %}
+        </select>
+
+        <label for="sort-filter" class="filter-label">Sort:</label>
+        <select name="sort" id="sort-filter" class="form-select w-auto" aria-label="Sort leaderboard by">
+            <option value="best_time" {% if sort_by == 'best_time' %}selected{% endif %}>Best Lap</option>
+            <option value="avg_score" {% if sort_by == 'avg_score' %}selected{% endif %}>Avg Score</option>
+            <option value="sessions" {% if sort_by == 'sessions' %}selected{% endif %}>Most Sessions</option>
+        </select>
+    </form>
+</div>
+
+{% if leaders %}
+<div class="table-wrap table-wrap-sticky">
+    <table class="data-table striped">
+        <caption class="sr-only">Driver leaderboard rankings</caption>
+        <thead>
+            <tr>
+                <th scope="col">#</th>
+                <th scope="col">Driver</th>
+                <th scope="col" class="col-numeric">Best Lap</th>
+                <th scope="col" class="col-numeric">Avg Score</th>
+                <th scope="col" class="col-numeric">Best Score</th>
+                <th scope="col" class="col-numeric">Sessions</th>
+                <th scope="col" class="col-numeric">Laps</th>
+                <th scope="col">Style</th>
+                <th scope="col">Trend</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for d in leaders %}
+            <tr class="clickable-row {% if loop.index <= 3 %}podium-{{ loop.index }}{% endif %}"
+                tabindex="0" role="link" aria-label="{{ d.driver_name }} — Rank {{ d.rank }}"
+                data-href="{{ url_for('drivers.driver_detail', driver_id=d.driver_id) }}">
+                <td>
+                    <span class="rank-badge rank-{{ d.rank }}">
+                        {% if d.rank == 1 %}&#x1F947;{% elif d.rank == 2 %}&#x1F948;{% elif d.rank == 3 %}&#x1F949;{% else %}{{ d.rank }}{% endif %}
+                    </span>
+                </td>
+                <td class="driver-name-cell">
+                    {{ d.driver_name }}
+                </td>
+                <td class="col-numeric {% if loop.index == 1 %}highlight{% endif %}">
+                    {% if d.best_time_s %}{{ "%.3f"|format(d.best_time_s) }}s{% else %}—{% endif %}
+                </td>
+                <td class="col-numeric">{% if d.avg_score %}<span class="{% if d.avg_score >= 80 %}text-green{% elif d.avg_score >= 60 %}text-yellow{% elif d.avg_score < 40 %}text-red{% endif %}">{% if d.avg_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif d.avg_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(d.avg_score) }}</span>{% else %}—{% endif %}</td>
+                <td class="col-numeric">{% if d.best_score %}<span class="{% if d.best_score >= 80 %}text-green{% elif d.best_score >= 60 %}text-yellow{% elif d.best_score < 40 %}text-red{% endif %}">{% if d.best_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif d.best_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(d.best_score) }}</span>{% else %}—{% endif %}</td>
+                <td class="col-numeric">{{ d.session_count }}</td>
+                <td class="col-numeric">{{ d.total_laps or 0 }}</td>
+                <td>
+                    {% if d.style_label %}
+                        {% set style_class = d.style_label|lower|replace(' ', '_') %}
+                        {% if 'smooth' in style_class %}
+                            <span class="badge-style smooth">{{ d.style_label }}</span>
+                        {% elif 'aggressive' in style_class %}
+                            <span class="badge-style aggressive">{{ d.style_label }}</span>
+                        {% elif 'conservative' in style_class %}
+                            <span class="badge-style conservative">{{ d.style_label }}</span>
+                        {% elif 'adaptive' in style_class %}
+                            <span class="badge-style adaptive">{{ d.style_label }}</span>
+                        {% else %}
+                            <span class="badge-style">{{ d.style_label }}</span>
+                        {% endif %}
+                    {% else %}—{% endif %}
+                </td>
+                <td>
+                    {% if d.trend == 'improving' %}
+                        <span class="trend-up">&#x2191; Improving</span>
+                    {% elif d.trend == 'declining' %}
+                        <span class="trend-down">&#x2193; Declining</span>
+                    {% elif d.trend %}
+                        <span class="trend-stable">&#x2192; Stable</span>
+                    {% else %}—{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F3C6;</div>
+    <div class="empty-hero-title">Leaderboard is empty</div>
+    <div class="empty-hero-desc">
+        The leaderboard ranks drivers by best lap time, score, or session count.
+        Analyze at least one session to see drivers appear on the board. Multiple sessions build a richer picture.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">Run Your First Analysis</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+/* ── Auto-submit leaderboard filters on change ── */
+(function() {
+    var form = document.querySelector('.leaderboard-filters form');
+    if (!form) return;
+    form.addEventListener('change', function(e) {
+        if (e.target.matches('#track-filter, #sort-filter')) {
+            form.submit();
+        }
+    });
+})();
+</script>
+{% endblock %}

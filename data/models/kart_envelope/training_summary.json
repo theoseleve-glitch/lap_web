@@ -1,0 +1,34 @@
+{
+  "envelopes": {
+    "CKS/Sodi_SR_4T_270cc": {
+      "path": "C:\\Users\\Admin\\Documents\\Telemetry\\Analysis\\V2_claude_ai\\data\\models\\kart_envelope\\CKS\\Sodi_SR_4T_270cc\\envelope.json",
+      "n_sessions": 3,
+      "n_laps": 54,
+      "p_combined": 1.2
+    },
+    "OK/Sodi_SR5_390cc": {
+      "path": "C:\\Users\\Admin\\Documents\\Telemetry\\Analysis\\V2_claude_ai\\data\\models\\kart_envelope\\OK\\Sodi_SR5_390cc\\envelope.json",
+      "n_sessions": 5,
+      "n_laps": 42,
+      "p_combined": 1.2
+    },
+    "MKR/Sodi_RT10_270cc": {
+      "path": "C:\\Users\\Admin\\Documents\\Telemetry\\Analysis\\V2_claude_ai\\data\\models\\kart_envelope\\MKR\\Sodi_RT10_270cc\\envelope.json",
+      "n_sessions": 2,
+      "n_laps": 143,
+      "p_combined": 1.3
+    },
+    "JV/Sodikart_SR4_390cc": {
+      "path": "C:\\Users\\Admin\\Documents\\Telemetry\\Analysis\\V2_claude_ai\\data\\models\\kart_envelope\\JV\\Sodikart_SR4_390cc\\envelope.json",
+      "n_sessions": 3,
+      "n_laps": 28,
+      "p_combined": 1.3
+    },
+    "SLK/Sodikart_Rotax_125cc_2T": {
+      "path": "C:\\Users\\Admin\\Documents\\Telemetry\\Analysis\\V2_claude_ai\\data\\models\\kart_envelope\\SLK\\Sodikart_Rotax_125cc_2T\\envelope.json",
+      "n_sessions": 1,
+      "n_laps": 6,
+      "p_combined": 1.2
+    }
+  }
+}

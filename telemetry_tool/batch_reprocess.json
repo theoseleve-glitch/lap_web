@@ -1,0 +1,7 @@
+{
+    "session_type": "practice",
+    "track_state": "dry",
+    "drivers": [
+        {"name": "Driver", "lap_range": null}
+    ]
+}

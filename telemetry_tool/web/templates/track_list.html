@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Tracks — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Tracks <span class="count-badge">{{ tracks|length }}</span></h1>
+</div>
+
+{% if tracks %}
+<div class="card-grid">
+    {% for t in tracks %}
+    <a href="{{ url_for('tracks.track_detail', track_id=t.track_id) }}" class="track-card elevation-1 card-interactive">
+        <div class="track-card-header">
+            <h3>{{ t.track_name or t.track_id }}</h3>
+        </div>
+        <div class="track-card-body">
+            {% if t.lap_length_m %}
+            <div class="track-stat">
+                <span class="track-stat-label">Length</span>
+                <span class="track-stat-value">{{ "%.0f"|format(t.lap_length_m) }}m</span>
+            </div>
+            {% endif %}
+            {% if t.lap_count %}
+            <div class="track-stat">
+                <span class="track-stat-label">Data Laps</span>
+                <span class="track-stat-value">{{ t.lap_count }}</span>
+            </div>
+            {% endif %}
+            {% if t.start_lat and t.start_lon %}
+            <div class="track-stat">
+                <span class="track-stat-label">Location</span>
+                <span class="track-stat-value">{{ "%.4f"|format(t.start_lat) }}, {{ "%.4f"|format(t.start_lon) }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </a>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-hero">
+    <div class="empty-hero-icon" aria-hidden="true">&#x1F3C1;</div>
+    <div class="empty-hero-title">No tracks detected yet</div>
+    <div class="empty-hero-desc">
+        Tracks are created automatically when you analyze a session — the GPS data is used to identify the circuit,
+        its corners, and start/finish line. Upload your first session to see your track appear here.
+    </div>
+    <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+</div>
+{% endif %}
+{% endblock %}

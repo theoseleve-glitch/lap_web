@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Data Health — {{ session.session_id }} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('data_health.data_health_list') }}" class="breadcrumb">&larr; Data Health</a></nav>
+        <h1>Data Health Report</h1>
+    </div>
+</div>
+
+<!-- Session info -->
+<div class="meta-grid">
+    <div class="meta-item">
+        <span class="meta-label">Session</span>
+        <span class="meta-value">
+            <a href="{{ url_for('sessions.session_detail', session_id=session.session_id) }}">
+                {{ session.session_id[:30] }}
+            </a>
+        </span>
+    </div>
+    {% if session.driver_name %}
+    <div class="meta-item">
+        <span class="meta-label">Driver</span>
+        <span class="meta-value">{{ session.driver_name }}</span>
+    </div>
+    {% endif %}
+    {% if session.track_name %}
+    <div class="meta-item">
+        <span class="meta-label">Track</span>
+        <span class="meta-value">{{ session.track_name }}</span>
+    </div>
+    {% endif %}
+    {% if session.session_date %}
+    <div class="meta-item">
+        <span class="meta-label">Date</span>
+        <span class="meta-value">{{ session.session_date }}</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Overall score -->
+<section class="section">
+    <h2>Overall Quality Score</h2>
+    <div class="score-display elevation-2">
+        <span class="status-dot {% if session.overall_score >= 80 %}excellent{% elif session.overall_score >= 50 %}average{% else %}poor{% endif %}"></span>
+        <span class="score-big {% if session.overall_score >= 80 %}text-green{% elif session.overall_score >= 50 %}{% else %}text-yellow{% endif %}">
+            {{ "%.0f"|format(session.overall_score or 0) }}%
+        </span>
+    </div>
+</section>
+
+<!-- Component scores -->
+<section class="section">
+    <h2>Component Scores</h2>
+    <div class="meta-grid">
+        <div class="meta-item">
+            <span class="meta-label">GPS Quality</span>
+            <span class="meta-value {% if session.gps_quality >= 80 %}text-green{% elif session.gps_quality < 50 %}text-yellow{% endif %}">
+                <span class="status-dot {% if session.gps_quality >= 80 %}excellent{% elif session.gps_quality >= 50 %}average{% else %}poor{% endif %}"></span>{{ "%.1f"|format(session.gps_quality or 0) }}%
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Accelerometer Quality</span>
+            <span class="meta-value {% if session.accel_quality >= 80 %}text-green{% elif session.accel_quality < 50 %}text-yellow{% endif %}">
+                <span class="status-dot {% if session.accel_quality >= 80 %}excellent{% elif session.accel_quality >= 50 %}average{% else %}poor{% endif %}"></span>{{ "%.1f"|format(session.accel_quality or 0) }}%
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Channels</span>
+            <span class="meta-value">{{ session.channel_count or 0 }}</span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Data Gaps</span>
+            <span class="meta-value {% if session.data_gaps > 5 %}text-yellow{% endif %}">
+                {{ session.data_gaps or 0 }}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Total Samples</span>
+            <span class="meta-value">{{ session.total_samples or 0 }}</span>
+        </div>
+    </div>
+</section>
+
+<!-- Missing channels -->
+{% if session.missing_channels %}
+<section class="section">
+    <div class="insight-box border-red">
+        <h3>Missing Channels</h3>
+        <p class="text-secondary">
+            {% for ch in session.missing_channels.split(',') %}
+            <span class="badge badge-practice dh-missing-badge">{{ ch.strip() }}</span>
+            {% endfor %}
+        </p>
+    </div>
+</section>
+{% endif %}
+
+<!-- Detailed report -->
+{% if report %}
+<section class="section">
+    <h2>Detailed Report</h2>
+
+    {% if report.gps %}
+    <div class="insight-box good border-blue mb-md">
+        <h3>GPS Analysis</h3>
+        <div class="meta-grid">
+            {% if report.gps.nan_ratio is defined %}
+            <div class="meta-item">
+                <span class="meta-label">NaN Ratio</span>
+                <span class="meta-value">{{ "%.2f"|format(report.gps.nan_ratio * 100) }}%</span>
+            </div>
+            {% endif %}
+            {% if report.gps.avg_points is defined %}
+            <div class="meta-item">
+                <span class="meta-label">Avg Points/Lap</span>
+                <span class="meta-value">{{ "%.0f"|format(report.gps.avg_points) }}</span>
+            </div>
+            {% endif %}
+            {% if report.gps.nan_score is defined %}
+            <div class="meta-item">
+                <span class="meta-label">NaN Score</span>
+                <span class="meta-value">{{ "%.1f"|format(report.gps.nan_score) }}</span>
+            </div>
+            {% endif %}
+            {% if report.gps.density_score is defined %}
+            <div class="meta-item">
+                <span class="meta-label">Density Score</span>
+                <span class="meta-value">{{ "%.1f"|format(report.gps.density_score) }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+
+    {% if report.accel %}
+    <div class="insight-box good border-blue mb-md">
+        <h3>Accelerometer Analysis</h3>
+        <div class="meta-grid">
+            {% if report.accel.column_count is defined %}
+            <div class="meta-item">
+                <span class="meta-label">Accel Columns</span>
+                <span class="meta-value">{{ report.accel.column_count }}</span>
+            </div>
+            {% endif %}
+            {% if report.accel.nan_ratio is defined %}
+            <div class="meta-item">
+                <span class="meta-label">NaN Ratio</span>
+                <span class="meta-value">{{ "%.2f"|format(report.accel.nan_ratio * 100) }}%</span>
+            </div>
+            {% endif %}
+            {% if report.accel.range_score is defined %}
+            <div class="meta-item">
+                <span class="meta-label">Range Score</span>
+                <span class="meta-value">{{ "%.1f"|format(report.accel.range_score) }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</section>
+{% endif %}
+
+{% endblock %}

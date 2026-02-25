@@ -1,0 +1,194 @@
+/* ── G-G Explorer ────────────────────────────── */
+
+.gg-explorer {
+    position: relative;
+    border: 1px solid var(--border, #30363d);
+    border-radius: 8px;
+    background: var(--bg-card, #1a1f2e);
+    overflow: hidden;
+}
+
+/* Controls bar */
+.gg-explorer-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border, #30363d);
+    background: var(--bg-secondary, #161b22);
+    flex-wrap: wrap;
+}
+
+.gg-explorer-controls-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.gg-explorer-controls-left label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-secondary, #8b949e);
+    white-space: nowrap;
+}
+
+.gg-explorer-controls-left .form-select-sm {
+    padding: 2px 6px;
+    font-size: 12px;
+    min-width: 80px;
+    background: var(--bg-card, #1a1f2e);
+    color: var(--text-primary, #e6edf3);
+    border: 1px solid var(--border, #30363d);
+    border-radius: 4px;
+}
+
+.gg-explorer-controls-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Mode pill group */
+.gg-mode-group {
+    display: inline-flex;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border, #30363d);
+}
+
+.gg-mode-btn {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-right: 1px solid var(--border, #30363d);
+    background: transparent;
+    color: var(--text-secondary, #8b949e);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.gg-mode-btn:last-child {
+    border-right: none;
+}
+
+.gg-mode-btn:hover {
+    background: rgba(139, 148, 158, 0.1);
+    color: var(--text-primary, #e6edf3);
+}
+
+.gg-mode-btn.active {
+    background: var(--accent, #ff6b35);
+    color: #fff;
+}
+
+/* Side-by-side canvas layout */
+.gg-explorer-body {
+    display: flex;
+    min-height: 350px;
+}
+
+.gg-explorer-gg-wrap {
+    flex: 3;
+    position: relative;
+    border-right: 1px solid var(--border, #30363d);
+    min-width: 0;
+}
+
+.gg-explorer-map-wrap {
+    flex: 2;
+    position: relative;
+    min-width: 0;
+}
+
+#gg-explorer-canvas {
+    display: block;
+    width: 100%;
+}
+
+#gg-explorer-minimap {
+    display: block;
+    width: 100%;
+}
+
+/* Info bar */
+.gg-explorer-info {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--text-secondary, #8b949e);
+    border-top: 1px solid var(--border, #30363d);
+    min-height: 28px;
+    flex-wrap: wrap;
+}
+
+/* Legend row */
+.gg-explorer-legend {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--text-secondary, #8b949e);
+}
+
+.gg-explorer-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.gg-explorer-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
+/* Tooltip */
+.gg-explorer-tooltip {
+    position: absolute;
+    display: none;
+    background: rgba(0, 0, 0, 0.88);
+    color: var(--text-primary, #e6edf3);
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    pointer-events: none;
+    border: 1px solid var(--border, #30363d);
+    z-index: 10;
+    white-space: nowrap;
+    line-height: 1.5;
+}
+
+/* ── Responsive ─────────────────────────────── */
+@media (max-width: 768px) {
+    .gg-explorer-body {
+        flex-direction: column;
+    }
+
+    .gg-explorer-gg-wrap {
+        flex: none;
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border, #30363d);
+    }
+
+    .gg-explorer-map-wrap {
+        flex: none;
+        width: 100%;
+    }
+
+    .gg-explorer-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

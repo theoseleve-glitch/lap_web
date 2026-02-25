@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+
+{% block title %}{{ track.track_name or track.track_id }} — Telemetry{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <nav aria-label="Breadcrumb"><a href="{{ url_for('tracks.track_list') }}" class="breadcrumb">&larr; Tracks</a></nav>
+        <h1 id="track-title">{{ track.track_name or track.track_id }}</h1>
+        <form method="POST" action="{{ url_for('tracks.rename_track', track_id=track.track_id) }}"
+              class="inline-form rename-form-wrap" id="rename-form">
+            <div class="form-row items-center">
+                <input type="text" name="track_name" class="form-input rename-input"
+                       value="{{ track.track_name or track.track_id }}"
+                       placeholder="Enter new track name"
+                       aria-label="New track name">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="cancel-rename">Cancel</button>
+            </div>
+        </form>
+        <button type="button" class="btn btn-ghost btn-sm rename-trigger" id="rename-btn">
+            Rename Track
+        </button>
+    </div>
+</div>
+<!-- Track info -->
+<div class="meta-grid">
+    {% if track.lap_length_m %}
+    <div class="meta-item">
+        <span class="meta-label">Lap Length</span>
+        <span class="meta-value">{{ "%.0f"|format(track.lap_length_m) }}m</span>
+    </div>
+    {% endif %}
+    {% if track.lap_count %}
+    <div class="meta-item">
+        <span class="meta-label">Known Laps</span>
+        <span class="meta-value">{{ track.lap_count }}</span>
+    </div>
+    {% endif %}
+    {% if track.start_lat and track.start_lon %}
+    <div class="meta-item">
+        <span class="meta-label">Start/Finish</span>
+        <span class="meta-value">{{ "%.5f"|format(track.start_lat) }}, {{ "%.5f"|format(track.start_lon) }}</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Joker Lap Configuration -->
+<section class="section">
+    <h2>Joker Lap Settings</h2>
+    <form method="POST" action="{{ url_for('tracks.update_joker', track_id=track.track_id) }}"
+          class="inline-form">
+        <div class="form-row items-center">
+            <div class="form-group">
+                <label class="toggle-label" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                    <input type="checkbox" name="has_joker" value="1"
+                           {% if track.has_joker %}checked{% endif %}
+                           id="joker-toggle">
+                    Track has joker section
+                </label>
+            </div>
+            <div class="form-group" id="joker-delta-fields"
+                 {% if not track.has_joker %}style="display:none;"{% endif %}>
+                <label for="joker_distance_delta_m">Expected distance delta (m)</label>
+                <input type="number" id="joker_distance_delta_m"
+                       name="joker_distance_delta_m"
+                       class="form-input" step="0.1"
+                       value="{{ track.joker_distance_delta_m or '' }}"
+                       placeholder="e.g. 50.0">
+            </div>
+            <div class="form-group" id="joker-time-field"
+                 {% if not track.has_joker %}style="display:none;"{% endif %}>
+                <label for="joker_time_delta_s">Expected time delta (s)</label>
+                <input type="number" id="joker_time_delta_s"
+                       name="joker_time_delta_s"
+                       class="form-input" step="0.01"
+                       value="{{ track.joker_time_delta_s or '' }}"
+                       placeholder="e.g. 2.5">
+            </div>
+            <div class="form-group form-col-end">
+                <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </div>
+        </div>
+    </form>
+</section>
+
+<!-- Track map (if coordinates available) -->
+{% if track.bbox_lat_min and track.bbox_lon_min %}
+<section class="section">
+    <h2>Track Layout</h2>
+    <div id="track-map" class="gps-map gps-map-tall"
+         data-bbox='{{ [track.bbox_lat_min, track.bbox_lon_min, track.bbox_lat_max, track.bbox_lon_max]|tojson }}'
+         data-center='{{ [(track.start_lat or (track.bbox_lat_min + track.bbox_lat_max)/2),
+                          (track.start_lon or (track.bbox_lon_min + track.bbox_lon_max)/2)]|tojson }}'
+         data-sectors='{{ sectors|tojson }}'>
+    </div>
+    <!-- Save bar for dragged S/F marker -->
+    <form id="sf-save-bar" method="post"
+          action="{{ url_for('tracks.update_start_finish', track_id=track.track_id) }}"
+          style="display:none; margin-top:0.5rem;" class="form-row items-center">
+        <input type="hidden" name="action" value="update">
+        <input type="hidden" name="lat" id="sf-lat">
+        <input type="hidden" name="lon" id="sf-lon">
+        <span class="text-muted">New S/F position set &mdash;</span>
+        <button type="submit" class="btn btn-primary btn-sm">Save Position</button>
+        {% if track.original_start_lat %}
+        <button type="submit" name="action" value="reset" class="btn btn-ghost btn-sm">Reset to Auto-Detected</button>
+        {% endif %}
+    </form>
+
+    <!-- Sectors -->
+    <div style="margin-top:1rem;">
+        <h3>Sectors <span class="count-badge">{{ sectors|length }}</span></h3>
+        {% if sectors %}
+        <div class="tag-group" style="margin-bottom:0.5rem;">
+            {% for s in sectors %}
+            <span class="tag">
+                {{ s.label }} ({{ "%.5f"|format(s.latitude) }}, {{ "%.5f"|format(s.longitude) }})
+                <form method="POST" style="display:inline;"
+                      action="{{ url_for('tracks.remove_sector', track_id=track.track_id, sector_id=s.id) }}"
+                      class="inline-delete-form" data-confirm="Delete sector {{ s.label }}?">
+                    <button type="submit" class="btn-icon" aria-label="Delete {{ s.label }}" title="Delete">&times;</button>
+                </form>
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <p class="text-muted text-sm">Click the map to add a sector split point.</p>
+    </div>
+</section>
+{% endif %}
+
+<!-- Track Records -->
+<section class="section" aria-labelledby="heading-track-records">
+    <div class="section-header">
+        <h2 id="heading-track-records">Track Records <span class="count-badge">{{ records|length }}</span></h2>
+    </div>
+
+    {% if records %}
+    <!-- Podium: top 3 records -->
+    {% set top3 = records[:3] %}
+    <div class="podium" aria-label="Top 3 track records">
+        {% if top3|length >= 2 %}
+        <div class="podium-step podium-2nd">
+            <div class="podium-rank">2</div>
+            <div class="podium-time">{{ "%.3f"|format(top3[1].record_time_s) }}s</div>
+            <div class="podium-name">{{ top3[1].record_holder or 'Unknown' }}</div>
+            {% if top3[1].record_date %}<div class="podium-date">{{ top3[1].record_date }}</div>{% endif %}
+            <div class="podium-bar podium-bar-2nd"></div>
+        </div>
+        {% endif %}
+        {% if top3|length >= 1 %}
+        <div class="podium-step podium-1st">
+            <div class="podium-rank">1</div>
+            <div class="podium-time">{{ "%.3f"|format(top3[0].record_time_s) }}s</div>
+            <div class="podium-name">{{ top3[0].record_holder or 'Unknown' }}</div>
+            {% if top3[0].record_date %}<div class="podium-date">{{ top3[0].record_date }}</div>{% endif %}
+            <div class="podium-bar podium-bar-1st"></div>
+        </div>
+        {% endif %}
+        {% if top3|length >= 3 %}
+        <div class="podium-step podium-3rd">
+            <div class="podium-rank">3</div>
+            <div class="podium-time">{{ "%.3f"|format(top3[2].record_time_s) }}s</div>
+            <div class="podium-name">{{ top3[2].record_holder or 'Unknown' }}</div>
+            {% if top3[2].record_date %}<div class="podium-date">{{ top3[2].record_date }}</div>{% endif %}
+            <div class="podium-bar podium-bar-3rd"></div>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if records|length > 3 %}
+    <div class="table-wrap" style="margin-top:1.5rem;">
+        <table class="data-table compact striped">
+            <caption class="sr-only">All track records</caption>
+            <thead>
+                <tr>
+                    <th scope="col" class="col-numeric">#</th>
+                    <th scope="col" class="col-numeric">Time</th>
+                    <th scope="col">Holder</th>
+                    <th scope="col">Date</th>
+                    <th scope="col">Class</th>
+                    <th scope="col">Source</th>
+                    <th scope="col"></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td class="col-numeric text-muted">{{ loop.index }}</td>
+                    <td class="col-numeric highlight">{{ "%.3f"|format(r.record_time_s) }}s</td>
+                    <td>{{ r.record_holder or '—' }}</td>
+                    <td>{{ r.record_date or '—' }}</td>
+                    <td>{{ r.vehicle_class or '—' }}</td>
+                    <td>{{ r.source or '—' }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('tracks.remove_record', track_id=track.track_id, record_id=r.id) }}"
+                              class="inline-delete-form" data-confirm="Delete this record?">
+                            <button type="submit" class="btn btn-ghost btn-sm" aria-label="Delete record" title="Delete record">&times;</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <!-- Small delete links for the podium records when 3 or fewer -->
+    <div style="text-align:center; margin-top: 0.5rem;">
+        {% for r in records %}
+        <form method="POST" action="{{ url_for('tracks.remove_record', track_id=track.track_id, record_id=r.id) }}"
+              class="inline-delete-form" style="display:inline;" data-confirm="Delete record for {{ r.record_holder or 'this entry' }}?">
+            <button type="submit" class="btn btn-ghost btn-sm" aria-label="Delete record {{ loop.index }}" title="Delete {{ r.record_holder or 'record' }}">&times; {{ r.record_holder or '#' ~ loop.index }}</button>
+        </form>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F3C5;</div>
+        <div class="empty-hero-title">No records yet</div>
+        <div class="empty-hero-desc">Add official lap records for this track to compare against your personal bests. Click "+ Add Record" below.</div>
+    </div>
+    {% endif %}
+
+    <!-- Add record form -->
+    <details class="add-record-wrap">
+        <summary class="btn btn-ghost btn-sm">+ Add Record</summary>
+        <form method="POST" action="{{ url_for('tracks.add_record', track_id=track.track_id) }}"
+              class="inline-form add-record-body">
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="record_time_s">Time (s)</label>
+                    <input type="number" id="record_time_s" name="record_time_s" class="form-input" step="0.001" required>
+                </div>
+                <div class="form-group">
+                    <label for="record_holder">Holder</label>
+                    <input type="text" id="record_holder" name="record_holder" class="form-input" placeholder="Driver name" autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label for="record_date">Date</label>
+                    <input type="date" id="record_date" name="record_date" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="vehicle_class">Class</label>
+                    <input type="text" id="vehicle_class" name="vehicle_class" class="form-input" placeholder="e.g. Senior">
+                </div>
+                <div class="form-group">
+                    <label for="source">Source</label>
+                    <input type="text" id="source" name="source" class="form-input" placeholder="e.g. Official timing">
+                </div>
+                <div class="form-group form-col-end">
+                    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+                </div>
+            </div>
+        </form>
+    </details>
+</section>
+
+<!-- Track Evolution Chart -->
+{% if sessions|length > 1 %}
+<section class="section">
+    <h2>Lap Time Evolution</h2>
+    <div class="chart-container relative">
+        <canvas id="evolution-chart" aria-label="Lap time evolution chart"></canvas>
+    </div>
+</section>
+{% endif %}
+
+<!-- Sessions at this track -->
+<section class="section" aria-labelledby="heading-track-sessions">
+    <div class="section-header">
+        <h2 id="heading-track-sessions">Sessions at this Track <span class="count-badge">{{ sessions|length }}</span></h2>
+    </div>
+
+    {% if sessions %}
+    <div class="table-wrap table-wrap-sticky">
+        <table class="data-table striped">
+            <caption class="sr-only">Track sessions</caption>
+            <thead>
+                <tr>
+                    <th scope="col">Date</th>
+                    <th scope="col">Driver</th>
+                    <th scope="col">Type</th>
+                    <th scope="col" class="col-numeric">Laps</th>
+                    <th scope="col" class="col-numeric">Best Lap</th>
+                    <th scope="col" class="col-numeric">Score</th>
+                    <th scope="col">Grade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in sessions %}
+                <tr class="clickable-row" tabindex="0" role="link"
+                    aria-label="Session {{ s.session_date or '—' }} — {{ s.driver_name or 'Unknown' }}"
+                    data-href="{{ url_for('sessions.session_detail', session_id=s.session_id) }}">
+                    <td>{{ s.session_date or '—' }}</td>
+                    <td>{{ s.driver_name or '—' }}</td>
+                    <td><span class="badge badge-{{ s.session_type or 'practice' }}">{{ s.session_type or 'practice' }}</span></td>
+                    <td class="col-numeric">{{ s.n_laps or '—' }}</td>
+                    <td class="col-numeric">{% if s.best_lap_time_s %}{{ "%.3f"|format(s.best_lap_time_s) }}s{% else %}—{% endif %}</td>
+                    <td class="col-numeric">{% if s.total_score %}<span class="{% if s.total_score >= 80 %}text-green{% elif s.total_score >= 60 %}text-yellow{% elif s.total_score < 40 %}text-red{% endif %}">{% if s.total_score >= 80 %}<span aria-hidden="true">&#9650; </span>{% elif s.total_score < 40 %}<span aria-hidden="true">&#9660; </span>{% endif %}{{ "%.1f"|format(s.total_score) }}</span>{% else %}—{% endif %}</td>
+                    <td>
+                        {% if s.grade %}
+                            <span class="grade grade-{{ s.grade[0] }}">{{ s.grade }}</span>
+                        {% else %}—{% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-hero empty-hero-compact">
+        <div class="empty-hero-icon" aria-hidden="true">&#x1F4CA;</div>
+        <div class="empty-hero-title">No sessions at this track</div>
+        <div class="empty-hero-desc">Upload and analyze a session from this track to see your laps, scores, and progress here.</div>
+        <a href="{{ url_for('analysis.analyze_form') }}" class="btn btn-primary">+ New Analysis</a>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Delete Track -->
+<section class="section">
+    <details class="danger-zone">
+        <summary class="btn btn-ghost btn-sm text-red">Delete Track</summary>
+        <form method="POST" action="{{ url_for('tracks.delete_track', track_id=track.track_id) }}"
+              class="inline-form" style="margin-top:0.5rem;">
+            <p class="text-muted text-sm">
+                This will permanently delete this track and all {{ sessions|length }} session(s), laps, scores, and related data.
+                Type <strong>{{ track.track_name or track.track_id }}</strong> to confirm.
+            </p>
+            <div class="form-row items-center">
+                <input type="text" name="confirm_name" class="form-input"
+                       placeholder="Type track name to confirm" autocomplete="off" required>
+                <button type="submit" class="btn btn-danger btn-sm">Delete Permanently</button>
+            </div>
+        </form>
+    </details>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var btn = document.getElementById('rename-btn');
+    var form = document.getElementById('rename-form');
+    var cancel = document.getElementById('cancel-rename');
+    if (btn && form) {
+        btn.addEventListener('click', function() { form.classList.add('visible'); btn.classList.add('hidden'); });
+    }
+    if (cancel && form && btn) {
+        cancel.addEventListener('click', function() { form.classList.remove('visible'); btn.classList.remove('hidden'); });
+    }
+})();
+// Joker toggle: show/hide delta fields
+(function() {
+    var cb = document.getElementById('joker-toggle');
+    var dFields = document.getElementById('joker-delta-fields');
+    var tField = document.getElementById('joker-time-field');
+    if (cb && dFields) {
+        cb.addEventListener('change', function() {
+            dFields.style.display = cb.checked ? '' : 'none';
+            if (tField) tField.style.display = cb.checked ? '' : 'none';
+        });
+    }
+})();
+</script>
+{% if track.bbox_lat_min and track.bbox_lon_min %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var mapEl = document.getElementById('track-map');
+    if (!mapEl) return;
+    var bbox = JSON.parse(mapEl.dataset.bbox);
+    var center = JSON.parse(mapEl.dataset.center);
+    var sectors = JSON.parse(mapEl.dataset.sectors || '[]');
+
+    var map = L.map('track-map').setView(center, 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
+
+    map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], {padding: [30, 30]});
+
+    // Draggable start/finish marker.
+    if (center[0] && center[1]) {
+        var sfIcon = L.divIcon({
+            className: 'sf-marker-icon',
+            html: '<div style="width:16px;height:16px;background:#ff6b35;border:2px solid #fff;border-radius:50%;box-shadow:0 0 4px rgba(0,0,0,0.5);"></div>',
+            iconSize: [16, 16], iconAnchor: [8, 8]
+        });
+        var startMarker = L.marker(center, {draggable: true, icon: sfIcon}).addTo(map);
+        startMarker.bindPopup('Start / Finish (drag to move)');
+
+        var saveBar = document.getElementById('sf-save-bar');
+        var sfLat = document.getElementById('sf-lat');
+        var sfLon = document.getElementById('sf-lon');
+
+        startMarker.on('dragend', function(e) {
+            var pos = e.target.getLatLng();
+            sfLat.value = pos.lat.toFixed(7);
+            sfLon.value = pos.lng.toFixed(7);
+            if (saveBar) saveBar.style.display = 'flex';
+        });
+    }
+
+    // Draw existing sector markers.
+    sectors.forEach(function(s) {
+        var sIcon = L.divIcon({
+            className: 'sector-marker-icon',
+            html: '<div style="width:22px;height:22px;background:#2196f3;color:#fff;border-radius:50%;text-align:center;line-height:22px;font-size:11px;font-weight:bold;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,0.4);">' + s.label + '</div>',
+            iconSize: [22, 22], iconAnchor: [11, 11]
+        });
+        L.marker([s.latitude, s.longitude], {icon: sIcon}).addTo(map)
+            .bindPopup(s.label + (s.distance_m ? ' (' + s.distance_m.toFixed(0) + 'm)' : ''));
+    });
+
+    // Click map to add sector: creates a hidden form submit.
+    map.on('click', function(e) {
+        if (!confirm('Add sector split at (' + e.latlng.lat.toFixed(5) + ', ' + e.latlng.lng.toFixed(5) + ')?')) return;
+        var form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '{{ url_for("tracks.add_sector", track_id=track.track_id) }}';
+        var latIn = document.createElement('input'); latIn.type = 'hidden'; latIn.name = 'lat'; latIn.value = e.latlng.lat;
+        var lonIn = document.createElement('input'); lonIn.type = 'hidden'; lonIn.name = 'lon'; lonIn.value = e.latlng.lng;
+        form.appendChild(latIn); form.appendChild(lonIn);
+        document.body.appendChild(form);
+        form.submit();
+    });
+});
+</script>
+{% endif %}
+
+{% if sessions|length > 1 %}
+<script src="{{ url_for('static', filename='js/track_evolution.js') }}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.TrackEvolution) {
+        window.TrackEvolution.init('evolution-chart', {{ track.track_id|tojson }});
+    }
+});
+</script>
+{% endif %}
+{% endblock %}
