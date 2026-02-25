@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -284,3 +285,234 @@ class TestCurrentFuel:
         engine = _make_engine()
         s1 = engine.stints[0]
         assert abs(engine.current_fuel_kg(2360) - s1.fuel_at_end_kg) < 1e-6
+
+
+# ===========================================================================
+# TestConstraintValidation  (Task 4)
+# ===========================================================================
+
+class TestConstraintValidation:
+    """Constraint validation logic in _validate_constraints."""
+
+    def _make_engine(self, drivers=None, config_overrides=None, stints=None, pit_stops=None):
+        config = {
+            "race_duration_s": 7200, "desired_stints": 3, "min_pit_stop_s": 60,
+            "fuel_autonomy_s": 2400, "empty_kart_kg": 85.0, "full_tank_kg": 93.0,
+            "min_total_kart_kg": 160.0, "qualifying_duration_s": 0, "refuel_after_quali": 0,
+            "refueling_allowed": 1, "mandatory_driver_change": 0,
+            **(config_overrides or {}),
+        }
+        if drivers is None:
+            drivers = [
+                {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65.0,
+                 "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+                 "max_cumulative_s": None, "min_rest_s": 0},
+                {"id": 2, "driver_name": "Bob", "driver_order": 2, "weight_kg": 75.0,
+                 "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+                 "max_cumulative_s": None, "min_rest_s": 0},
+            ]
+        if stints is None:
+            stints = [
+                {"stint_order": 1, "driver_id": 1, "driver_name": "Alice",
+                 "planned_start_s": 0, "planned_end_s": 2360, "planned_duration_s": 2360},
+                {"stint_order": 2, "driver_id": 2, "driver_name": "Bob",
+                 "planned_start_s": 2420, "planned_end_s": 4780, "planned_duration_s": 2360},
+                {"stint_order": 3, "driver_id": 1, "driver_name": "Alice",
+                 "planned_start_s": 4840, "planned_end_s": 7200, "planned_duration_s": 2360},
+            ]
+        if pit_stops is None:
+            pit_stops = [
+                {"after_stint": 1, "at_s": 2360, "duration_s": 60, "refuel": True,
+                 "driver_change": True, "pit_type": "full"},
+                {"after_stint": 2, "at_s": 4780, "duration_s": 60, "refuel": True,
+                 "driver_change": True, "pit_type": "full"},
+            ]
+        return RaceStateEngine(config, drivers, stints, pit_stops)
+
+    def test_fuel_exhaustion_violation(self):
+        engine = self._make_engine(config_overrides={"fuel_autonomy_s": 1000})
+        assert any("Fuel runs out" in v for v in engine.stints[0].violations)
+
+    def test_mandatory_driver_change_violation(self):
+        stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 2360, "planned_duration_s": 2360},
+            {"stint_order": 2, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 2420, "planned_end_s": 4780, "planned_duration_s": 2360},
+            {"stint_order": 3, "driver_id": 2, "driver_name": "Bob",
+             "planned_start_s": 4840, "planned_end_s": 7200, "planned_duration_s": 2360},
+        ]
+        engine = self._make_engine(
+            config_overrides={"mandatory_driver_change": 1}, stints=stints
+        )
+        assert any("Mandatory driver change" in v for v in engine.stints[1].violations)
+
+    def test_min_rest_time_violation(self):
+        drivers = [
+            {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": None, "min_rest_s": 300},
+            {"id": 2, "driver_name": "Bob", "driver_order": 2, "weight_kg": 75.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3000, "planned_duration_s": 3000},
+            {"stint_order": 2, "driver_id": 2, "driver_name": "Bob",
+             "planned_start_s": 3060, "planned_end_s": 3180, "planned_duration_s": 120},
+            {"stint_order": 3, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 3240, "planned_end_s": 7200, "planned_duration_s": 3960},
+        ]
+        engine = self._make_engine(drivers=drivers, stints=stints)
+        # Alice rest: 3240 - 3000 = 240s < 300s -> violation
+        assert any("rest" in v.lower() for v in engine.stints[2].violations)
+
+    def test_cumulative_max_exceeded_violation(self):
+        drivers = [
+            {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": 3000, "min_rest_s": 0},
+            {"id": 2, "driver_name": "Bob", "driver_order": 2, "weight_kg": 75.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        engine = self._make_engine(drivers=drivers)
+        # Alice: 2360 + 2360 = 4720 > 3000
+        assert any("exceeds max" in v.lower() for v in engine.stints[2].violations)
+
+    def test_cumulative_90_percent_warning(self):
+        drivers = [
+            {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": 5000, "min_rest_s": 0},
+            {"id": 2, "driver_name": "Bob", "driver_order": 2, "weight_kg": 75.0,
+             "min_stint_s": None, "max_stint_s": None, "min_cumulative_s": None,
+             "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        engine = self._make_engine(drivers=drivers)
+        # Alice: 2360 + 2360 = 4720, 90% of 5000 = 4500 -> warning
+        assert any("90%" in w for w in engine.stints[2].warnings)
+
+    def test_no_violations_on_valid_plan(self):
+        engine = self._make_engine()
+        for s in engine.stints:
+            assert s.violations == [], f"Stint {s.stint_order}: {s.violations}"
+
+    def test_set_driver_recascades_ballast(self):
+        engine = self._make_engine()
+        original = engine.stints[1].ballast_kg
+        engine.set_driver(2, 1)  # Stint 2 -> Alice (lighter, so more ballast)
+        assert engine.stints[1].ballast_kg != original
+
+    def test_set_duration_rebuilds_timeline(self):
+        engine = self._make_engine()
+        engine.set_duration(1, 1800)  # Shorten stint 1
+        assert engine.stints[0].planned_end_s == 1800
+        assert engine.stints[1].planned_start_s == 1860  # 1800 + 60 pit
+
+    def test_set_pit_type_quick_disables_refuel(self):
+        engine = self._make_engine()
+        engine.set_pit_type(2, "quick")
+        assert engine.stints[1].refueled_before is False
+
+
+# ===========================================================================
+# TestEnginePersistence  (Task 5)
+# ===========================================================================
+
+@pytest.fixture
+def engine_db():
+    from db.migrate import ensure_schema
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    ensure_schema(conn)
+    yield conn
+    conn.close()
+
+
+class TestEnginePersistence:
+    """Engine save/load round-trip, snapshot, and export."""
+
+    def _seed_race(self, conn):
+        conn.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, fuel_autonomy_s, "
+            "empty_kart_kg, full_tank_kg, min_total_kart_kg, min_pit_stop_s) "
+            "VALUES ('Test 2h', 7200, 2400, 85, 93, 160, 60)"
+        )
+        conn.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) "
+            "VALUES (1, 'Alice', 1, 65)"
+        )
+        conn.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) "
+            "VALUES (1, 'Bob', 2, 75)"
+        )
+        conn.commit()
+        return 1
+
+    def test_save_and_load_round_trip(self, engine_db):
+        race_id = self._seed_race(engine_db)
+        config = dict(
+            engine_db.execute(
+                "SELECT * FROM race_configs WHERE race_id = 1"
+            ).fetchone()
+        )
+        drivers = [
+            dict(r) for r in engine_db.execute(
+                "SELECT * FROM race_drivers WHERE race_id = 1 ORDER BY driver_order"
+            ).fetchall()
+        ]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": drivers[0]["id"], "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 2360, "planned_duration_s": 2360},
+            {"stint_order": 2, "driver_id": drivers[1]["id"], "driver_name": "Bob",
+             "planned_start_s": 2420, "planned_end_s": 4780, "planned_duration_s": 2360},
+        ]
+        pit_stops = [
+            {"after_stint": 1, "at_s": 2360, "duration_s": 60, "refuel": True,
+             "driver_change": True, "pit_type": "full"},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints, pit_stops)
+        engine.save(engine_db, race_id)
+        loaded = RaceStateEngine.load(engine_db, race_id)
+        assert len(loaded.stints) == 2
+        assert abs(
+            loaded.stints[0].fuel_at_start_kg - engine.stints[0].fuel_at_start_kg
+        ) < 0.01
+        assert loaded.stints[0].ballast_kg == engine.stints[0].ballast_kg
+
+    def test_snapshot_returns_full_state(self):
+        config = {
+            "race_duration_s": 3600, "fuel_autonomy_s": 2400, "empty_kart_kg": 85,
+            "full_tank_kg": 93, "min_total_kart_kg": 160, "min_pit_stop_s": 60,
+            "refuel_after_quali": 0, "qualifying_duration_s": 0, "refueling_allowed": 1,
+        }
+        drivers = [{"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 65}]
+        stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "A",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, stints, [])
+        snap = engine.snapshot()
+        assert "stints" in snap
+        assert "fuel_model" in snap
+        assert snap["stints"][0]["ballast_base_kg"] is not None
+
+    def test_stint_plan_export_format(self):
+        config = {
+            "race_duration_s": 3600, "fuel_autonomy_s": 2400, "empty_kart_kg": 85,
+            "full_tank_kg": 93, "min_total_kart_kg": 160, "min_pit_stop_s": 60,
+            "refuel_after_quali": 0, "qualifying_duration_s": 0, "refueling_allowed": 1,
+        }
+        drivers = [{"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 65}]
+        stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "A",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, stints, [])
+        export = engine.stint_plan_export("Test Race")
+        assert export["format"] == "stint-plan-v1"
+        assert export["race_name"] == "Test Race"
+        assert len(export["stints"]) == 1
+        assert "ballast_kg" in export["stints"][0]
