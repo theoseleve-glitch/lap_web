@@ -1326,7 +1326,8 @@ a:hover {
     border-radius: var(--radius-lg);
     padding: 1.15rem;
     margin-bottom: 1rem;
-    min-height: 120px;
+    width: 100%;
+    aspect-ratio: 2 / 1;
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -1334,9 +1335,16 @@ a:hover {
 }
 
 .chart-container canvas {
-    max-width: 100%;
     display: block;
+    width: 100%;
+    height: 100%;
 }
+
+/* Chart aspect-ratio modifiers */
+.chart-container--wide    { aspect-ratio: 5 / 2; }
+.chart-container--tall    { aspect-ratio: 3 / 2; }
+.chart-container--square  { aspect-ratio: 1 / 1; max-width: clamp(240px, 40vw, 420px); }
+.chart-container--short   { aspect-ratio: 3 / 1; }
 
 /* Chart header/title inside container */
 .chart-header {
@@ -3097,8 +3105,8 @@ details > summary:hover {
 }
 
 .viz-map-container {
-    height: 45vh;
-    min-height: 320px;
+    width: 100%;
+    aspect-ratio: 2 / 1;
     border-radius: var(--radius, 8px);
     overflow: hidden;
     border: 1px solid var(--border);
@@ -3109,8 +3117,8 @@ details > summary:hover {
 }
 
 .viz-chart-container {
-    height: 300px;
-    min-height: 260px;
+    width: 100%;
+    aspect-ratio: 2 / 1;
     position: relative;
     background: var(--bg-card);
     border-radius: var(--radius, 8px);
@@ -3120,9 +3128,10 @@ details > summary:hover {
 }
 
 .viz-chart-container:last-child {
-    /* G-G diagram — make it taller and closer to square */
-    height: 400px;
-    min-height: 350px;
+    /* G-G diagram — square aspect ratio */
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    max-width: clamp(300px, 50vw, 500px);
 }
 
 .viz-header {
@@ -4030,7 +4039,7 @@ details > summary:hover {
 }
 
 .skeleton-card {
-    height: 120px;
+    aspect-ratio: 3 / 1;
     border-radius: var(--radius);
 }
 
@@ -4083,7 +4092,7 @@ details > summary:hover {
 
 /* Skeleton chart */
 .skeleton-chart {
-    height: 250px;
+    aspect-ratio: 2 / 1;
     border-radius: var(--radius);
     margin-bottom: 1rem;
 }
@@ -4815,12 +4824,6 @@ details > summary:hover {
     /* ── Pipeline progress ───────────────── */
     .analysis-progress-panel {
         padding: 2rem 1rem;
-    }
-
-    /* ── Chart containers ────────────────── */
-    .chart-container {
-        height: 200px;
-        margin: 0 -0.5rem;
     }
 
     /* ── Score detail rows ───────────────── */
@@ -6349,11 +6352,6 @@ textarea.editable-field {
    ══════════════════════════════════════════ */
 
 @media (min-width: 481px) and (max-width: 768px) {
-    /* ── Charts get more height on tablets ─── */
-    .chart-container {
-        height: 250px;
-    }
-
     /* ── Card grids: 2 columns on tablet ──── */
     .card-grid {
         grid-template-columns: repeat(2, 1fr);
@@ -6405,10 +6403,6 @@ textarea.editable-field {
         font-size: 2rem;
     }
 
-    .chart-container {
-        height: 180px;
-    }
-
     /* Reduce vertical gaps */
     .section {
         margin-bottom: 0.75rem;
@@ -6441,10 +6435,6 @@ textarea.editable-field {
 
     .page-header h1 {
         font-size: 2rem;
-    }
-
-    .chart-container {
-        height: 350px;
     }
 
     .data-table {
@@ -7941,7 +7931,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
 }
 
 .skeleton-card {
-    height: 120px;
+    aspect-ratio: 3 / 1;
     border-radius: var(--radius);
 }
 
@@ -7951,7 +7941,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
 }
 
 .skeleton-chart {
-    height: 200px;
+    aspect-ratio: 2 / 1;
     border-radius: var(--radius);
 }
 
