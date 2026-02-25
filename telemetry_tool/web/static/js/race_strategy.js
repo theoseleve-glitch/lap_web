@@ -7,6 +7,8 @@
 (function() {
     'use strict';
 
+    var DRIVER_COLORS = ['#58a6ff','#f78166','#7ee787','#d2a8ff','#ffa657','#79c0ff'];
+
     var container = document.getElementById('rs-drivers-container');
     var addBtn    = document.getElementById('rs-add-driver');
     if (!container || !addBtn) return;
@@ -73,11 +75,20 @@
         nameInput.setAttribute('required', '');
         nameInput.setAttribute('list', 'known-drivers-list');
 
+        var defaultColor = DRIVER_COLORS[idx % DRIVER_COLORS.length];
+        var colorInput = el('input', {
+            type: 'color',
+            name: 'driver_color_' + idx,
+            value: defaultColor,
+            style: 'width:40px;height:30px;padding:0;border:none;cursor:pointer;'
+        });
+
         var mainRow = el('div', { className: 'form-row' }, [
             makeFormGroup('Name *', nameInput, 'flex:2'),
             el('input', { type: 'hidden', name: 'driver_order_' + idx, value: '' + (idx + 1) }),
             makeFormGroup('Weight (kg)', makeInput('number', 'driver_weight_' + idx, '70')),
-            makeFormGroup('COM Channel', makeInput('text', 'driver_com_' + idx, 'CH 7'))
+            makeFormGroup('COM Channel', makeInput('text', 'driver_com_' + idx, 'CH 7')),
+            makeFormGroup('Color', colorInput, 'width:60px')
         ]);
 
         var constraintRow1 = el('div', { className: 'form-row' }, [
@@ -110,6 +121,136 @@
         if (e.target.classList.contains('rs-remove-driver')) {
             var row = e.target.closest('.rs-driver-row');
             if (row) row.remove();
+        }
+    });
+})();
+
+/* ── Config Page: Pit Window Rows ─────────────── */
+(function() {
+    'use strict';
+
+    var windowList = document.getElementById('rs-windows-list');
+    var addWindowBtn = document.getElementById('rs-add-window');
+    if (!addWindowBtn || !windowList) return;
+
+    var windowIdx = windowList.querySelectorAll('.rs-window-row').length;
+
+    function createWindowRow(idx) {
+        var row = document.createElement('div');
+        row.className = 'rs-window-row form-row';
+        row.setAttribute('data-window-idx', idx);
+
+        // Type select
+        var typeGroup = document.createElement('div');
+        typeGroup.className = 'form-group';
+        var typeLabel = document.createElement('label');
+        typeLabel.textContent = 'Type';
+        var typeSelect = document.createElement('select');
+        typeSelect.name = 'window_type_' + idx;
+        var types = [
+            { value: 'pitlane', text: 'Pit Lane' },
+            { value: 'refuel', text: 'Refuel' },
+            { value: 'tech_stop', text: 'Tech Stop' }
+        ];
+        types.forEach(function(t) {
+            var opt = document.createElement('option');
+            opt.value = t.value;
+            opt.textContent = t.text;
+            typeSelect.appendChild(opt);
+        });
+        typeGroup.appendChild(typeLabel);
+        typeGroup.appendChild(typeSelect);
+
+        // Label input
+        var labelGroup = document.createElement('div');
+        labelGroup.className = 'form-group';
+        var labelLabel = document.createElement('label');
+        labelLabel.textContent = 'Label';
+        var labelInput = document.createElement('input');
+        labelInput.type = 'text';
+        labelInput.name = 'window_label_' + idx;
+        labelInput.placeholder = 'Window ' + (idx + 1);
+        labelGroup.appendChild(labelLabel);
+        labelGroup.appendChild(labelInput);
+
+        // Start input
+        var startGroup = document.createElement('div');
+        startGroup.className = 'form-group';
+        var startLabel = document.createElement('label');
+        startLabel.textContent = 'Start (H:MM)';
+        var startInput = document.createElement('input');
+        startInput.type = 'text';
+        startInput.name = 'window_start_' + idx;
+        startInput.placeholder = '0:30';
+        startGroup.appendChild(startLabel);
+        startGroup.appendChild(startInput);
+
+        // End input
+        var endGroup = document.createElement('div');
+        endGroup.className = 'form-group';
+        var endLabel = document.createElement('label');
+        endLabel.textContent = 'End (H:MM)';
+        var endInput = document.createElement('input');
+        endInput.type = 'text';
+        endInput.name = 'window_end_' + idx;
+        endInput.placeholder = '3:00';
+        endGroup.appendChild(endLabel);
+        endGroup.appendChild(endInput);
+
+        // Rules group (hidden by default, shown for tech_stop)
+        var rulesGroup = document.createElement('div');
+        rulesGroup.className = 'form-group rs-window-rules';
+        rulesGroup.style.display = 'none';
+        var refuelLabel = document.createElement('label');
+        var refuelCheck = document.createElement('input');
+        refuelCheck.type = 'checkbox';
+        refuelCheck.name = 'window_refuel_' + idx;
+        refuelLabel.appendChild(refuelCheck);
+        refuelLabel.appendChild(document.createTextNode(' Refuel'));
+        var driverChangeLabel = document.createElement('label');
+        var driverChangeCheck = document.createElement('input');
+        driverChangeCheck.type = 'checkbox';
+        driverChangeCheck.name = 'window_driver_change_' + idx;
+        driverChangeLabel.appendChild(driverChangeCheck);
+        driverChangeLabel.appendChild(document.createTextNode(' Driver Change'));
+        rulesGroup.appendChild(refuelLabel);
+        rulesGroup.appendChild(driverChangeLabel);
+
+        // Remove button
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'btn btn-ghost rs-remove-window';
+        removeBtn.title = 'Remove';
+        removeBtn.textContent = '\u00D7';
+
+        row.appendChild(typeGroup);
+        row.appendChild(labelGroup);
+        row.appendChild(startGroup);
+        row.appendChild(endGroup);
+        row.appendChild(rulesGroup);
+        row.appendChild(removeBtn);
+
+        return row;
+    }
+
+    addWindowBtn.addEventListener('click', function() {
+        var idx = windowIdx++;
+        windowList.appendChild(createWindowRow(idx));
+    });
+
+    windowList.addEventListener('click', function(e) {
+        if (e.target.classList.contains('rs-remove-window')) {
+            e.target.closest('.rs-window-row').remove();
+        }
+    });
+
+    // Show/hide tech_stop rule checkboxes based on type selection
+    windowList.addEventListener('change', function(e) {
+        if (e.target.tagName === 'SELECT') {
+            var rules = e.target.closest('.rs-window-row').querySelector('.rs-window-rules');
+            if (rules) {
+                rules.style.display = e.target.value === 'tech_stop' ? '' : 'none';
+            }
         }
     });
 })();

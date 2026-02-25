@@ -90,6 +90,12 @@
                         <input type="text" name="driver_com_{{ loop.index0 }}"
                                value="{{ d.com_channel if d.com_channel else '' }}" placeholder="CH 7">
                     </div>
+                    <div class="form-group" style="width:60px;">
+                        <label>Color</label>
+                        <input type="color" name="driver_color_{{ loop.index0 }}"
+                               value="{{ d.color_hex or '#58a6ff' }}"
+                               style="width:40px;height:30px;padding:0;border:none;cursor:pointer;">
+                    </div>
                 </div>
                 <details class="rs-constraints-toggle">
                     <summary>Stint Constraints</summary>
@@ -177,6 +183,50 @@
                 </label>
             </div>
         </div>
+    </section>
+
+    <!-- ── Pit Windows ────────────────────────── -->
+    <section class="section rs-form-section">
+        <h2>Pit Windows</h2>
+        <p style="font-size:0.85rem;color:var(--text-secondary);">
+            Define time ranges for pit lane, refueling, and mandatory technical stops.
+        </p>
+        <div id="rs-windows-list">
+            {% for w in race_windows %}
+            <div class="rs-window-row form-row" data-window-idx="{{ loop.index0 }}">
+                <div class="form-group">
+                    <label>Type</label>
+                    <select name="window_type_{{ loop.index0 }}">
+                        <option value="pitlane" {{ 'selected' if w.window_type == 'pitlane' }}>Pit Lane</option>
+                        <option value="refuel" {{ 'selected' if w.window_type == 'refuel' }}>Refuel</option>
+                        <option value="tech_stop" {{ 'selected' if w.window_type == 'tech_stop' }}>Tech Stop</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Label</label>
+                    <input type="text" name="window_label_{{ loop.index0 }}" value="{{ w.label or '' }}" placeholder="Window 1">
+                </div>
+                <div class="form-group">
+                    <label>Start (H:MM)</label>
+                    <input type="text" name="window_start_{{ loop.index0 }}"
+                           value="{{ '%d:%02d' | format(w.start_s // 3600, (w.start_s % 3600) // 60) if w.start_s else '' }}"
+                           placeholder="0:30">
+                </div>
+                <div class="form-group">
+                    <label>End (H:MM)</label>
+                    <input type="text" name="window_end_{{ loop.index0 }}"
+                           value="{{ '%d:%02d' | format(w.end_s // 3600, (w.end_s % 3600) // 60) if w.end_s else '' }}"
+                           placeholder="3:00">
+                </div>
+                <div class="form-group rs-window-rules" style="{{ '' if w.window_type == 'tech_stop' else 'display:none' }}">
+                    <label><input type="checkbox" name="window_refuel_{{ loop.index0 }}" {{ 'checked' if w.refuel_allowed }}> Refuel</label>
+                    <label><input type="checkbox" name="window_driver_change_{{ loop.index0 }}" {{ 'checked' if w.driver_change_allowed }}> Driver Change</label>
+                </div>
+                <button type="button" class="btn btn-ghost rs-remove-window" title="Remove">&times;</button>
+            </div>
+            {% endfor %}
+        </div>
+        <button type="button" id="rs-add-window" class="btn btn-ghost" style="margin-top:0.5rem;">+ Add Window</button>
     </section>
 
     <!-- ── Fuel & Weight ───────────────────────── -->
