@@ -383,6 +383,32 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (21, "Phase 16 — race messages + driver com_channel"),
     )
 
+    # Phase 22 migration: Tier 4 — fuel-aware ballast, quick pit stops.
+    try:
+        cur.execute("ALTER TABLE race_configs ADD COLUMN quick_pit_stop_s INTEGER;")
+        logger.debug("Added column race_configs.quick_pit_stop_s.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    for col in ("ballast_base_kg REAL", "ballast_fuel_offset_kg REAL", "fuel_burn_rate_kgs REAL"):
+        try:
+            cur.execute(f"ALTER TABLE race_stints ADD COLUMN {col};")
+            logger.debug("Added column race_stints.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    try:
+        cur.execute("ALTER TABLE race_pit_stops ADD COLUMN pit_type TEXT NOT NULL DEFAULT 'full';")
+        logger.debug("Added column race_pit_stops.pit_type.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (22, "Phase 22 schema — Tier 4 fuel-aware ballast, quick pit stops"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

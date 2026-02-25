@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 21
+SCHEMA_VERSION = 22
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -775,6 +775,7 @@ CREATE TABLE IF NOT EXISTS race_configs (
     refuel_after_quali  INTEGER NOT NULL DEFAULT 0,
     mandatory_driver_change INTEGER NOT NULL DEFAULT 1,
     refueling_allowed   INTEGER NOT NULL DEFAULT 1,
+    quick_pit_stop_s    INTEGER,
     race_start_ts       TEXT,
     status              TEXT    NOT NULL DEFAULT 'draft',
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -813,6 +814,9 @@ CREATE TABLE IF NOT EXISTS race_stints (
     fuel_at_start       REAL,
     fuel_at_end         REAL,
     ballast_kg          REAL,
+    ballast_base_kg         REAL,
+    ballast_fuel_offset_kg  REAL,
+    fuel_burn_rate_kgs      REAL,
     notes               TEXT,
     status              TEXT NOT NULL DEFAULT 'planned'
 );
@@ -830,7 +834,8 @@ CREATE TABLE IF NOT EXISTS race_pit_stops (
     refueled            INTEGER NOT NULL DEFAULT 0,
     fuel_added_kg       REAL,
     ballast_changed     INTEGER NOT NULL DEFAULT 0,
-    notes               TEXT
+    notes               TEXT,
+    pit_type            TEXT NOT NULL DEFAULT 'full'
 );
 """
 

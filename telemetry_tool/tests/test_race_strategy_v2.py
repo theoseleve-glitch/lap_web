@@ -66,9 +66,38 @@ class TestRaceStrategySchema:
         assert row["min_pit_stop_s"] == 60
         assert row["weigh_on_pit_exit"] == 0
 
-    def test_schema_version_is_21(self, strategy_db):
+    def test_schema_version_is_22(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 21
+        assert row["v"] == 22
+
+    def test_race_stints_has_ballast_decomposition_columns(self, strategy_db):
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute("INSERT INTO race_drivers (race_id, driver_name, driver_order) VALUES (1, 'A', 1)")
+        strategy_db.execute(
+            "INSERT INTO race_stints (race_id, stint_order, driver_id, ballast_base_kg, "
+            "ballast_fuel_offset_kg, fuel_burn_rate_kgs, status) VALUES (1, 1, 1, 2.0, 1.5, 0.003, 'planned')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_stints WHERE race_id = 1").fetchone()
+        assert row["ballast_base_kg"] == 2.0
+        assert row["ballast_fuel_offset_kg"] == 1.5
+        assert row["fuel_burn_rate_kgs"] == 0.003
+
+    def test_race_configs_has_quick_pit_stop_column(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, quick_pit_stop_s) VALUES ('R', 3600, 30)"
+        )
+        row = strategy_db.execute("SELECT * FROM race_configs WHERE race_id = 1").fetchone()
+        assert row["quick_pit_stop_s"] == 30
+
+    def test_race_pit_stops_has_pit_type_column(self, strategy_db):
+        strategy_db.execute("INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)")
+        strategy_db.execute("INSERT INTO race_drivers (race_id, driver_name, driver_order) VALUES (1, 'A', 1)")
+        strategy_db.execute("INSERT INTO race_stints (race_id, stint_order, driver_id, status) VALUES (1, 1, 1, 'planned')")
+        strategy_db.execute(
+            "INSERT INTO race_pit_stops (race_id, stint_id, driver_change, refueled, pit_type) VALUES (1, 1, 1, 0, 'quick')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_pit_stops WHERE race_id = 1").fetchone()
+        assert row["pit_type"] == "quick"
 
 
 class TestOptimizer:
@@ -660,9 +689,9 @@ class TestTier3Schema:
         row = strategy_db.execute("SELECT com_channel FROM race_drivers WHERE race_id = 1").fetchone()
         assert row["com_channel"] == "CH 7"
 
-    def test_schema_version_is_21(self, strategy_db):
+    def test_schema_version_is_22(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 21
+        assert row["v"] == 22
 
 
 class TestTeamTalk:
