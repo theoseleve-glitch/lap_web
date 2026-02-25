@@ -177,6 +177,26 @@ class RaceStateEngine:
             after = ps["after_stint"]
             self._pit_type_map[after + 1] = ps.get("pit_type", "full")
 
+        # Race windows (populated by load() or externally)
+        self.windows: list[dict] = []
+
+        # Legacy pit window migration: create virtual pitlane window from config
+        pit_open = config.get("pit_open_s")
+        pit_close = config.get("pit_close_s")
+        race_dur = config.get("race_duration_s") or 0
+        if (pit_open or pit_close) and not self.windows:
+            start = pit_open or 0
+            end = (race_dur - pit_close) if pit_close else race_dur
+            self.windows.append({
+                "window_type": "pitlane",
+                "label": "Pit Window (legacy)",
+                "start_s": start,
+                "end_s": end,
+                "refuel_allowed": 1,
+                "driver_change_allowed": 1,
+                "window_order": 1,
+            })
+
         # Run initial cascade from stint 1
         if self.stints:
             self._cascade_from(1)
@@ -228,6 +248,14 @@ class RaceStateEngine:
         """Get driver dict by ID."""
         return self.drivers.get(driver_id, {"id": driver_id, "driver_name": "Unknown", "weight_kg": 0.0})
 
+    def _is_in_any_window(self, window_type: str, time_s: int) -> bool:
+        """Return True if time_s is inside any window of the given type.
+        Returns True if no windows of that type exist (permissive default)."""
+        typed = [w for w in self.windows if w['window_type'] == window_type]
+        if not typed:
+            return True
+        return any(w['start_s'] <= time_s <= w['end_s'] for w in typed)
+
     def _cascade_from(self, from_order: int) -> None:
         """Propagate fuel and ballast from *from_order* onward.
 
@@ -241,6 +269,8 @@ class RaceStateEngine:
             self._calc_fuel_state(s)
             self._calc_ballast(s)
             self._validate_constraints(s)
+
+        self._validate_tech_stops()
 
     def _calc_fuel_state(self, stint: StintState) -> None:
         """Calculate fuel_at_start and fuel_at_end for a stint.
@@ -349,6 +379,41 @@ class RaceStateEngine:
             elif cumulative > max_cum * 0.9:
                 stint.warnings.append(
                     f"{driver['driver_name']}: {cumulative}s is 90%+ of max {max_cum}s"
+                )
+
+        # 5. Pit window check (warning): pit stop outside pitlane windows
+        if stint.stint_order > 1:
+            pit_time_s = stint.planned_start_s
+            if not self._is_in_any_window('pitlane', pit_time_s):
+                stint.warnings.append(
+                    f"Pit stop at {int(pit_time_s)}s outside pit lane window"
+                )
+
+        # 6. Refuel window check (violation): refuel outside refuel windows
+        if stint.refueled_before and stint.stint_order > 1:
+            pit_time_s = stint.planned_start_s
+            if not self._is_in_any_window('refuel', pit_time_s):
+                stint.violations.append(
+                    f"Refuel at {int(pit_time_s)}s outside refuel window"
+                )
+
+    def _validate_tech_stops(self) -> None:
+        """Check that each tech_stop window has at least one pit stop inside it."""
+        tech_windows = [w for w in self.windows if w['window_type'] == 'tech_stop']
+        for w in tech_windows:
+            has_stop = any(
+                w['start_s'] <= s.planned_start_s <= w['end_s']
+                for s in self.stints if s.stint_order > 1
+            )
+            if not has_stop:
+                label = w.get('label') or 'Tech Stop'
+                target = min(
+                    self.stints,
+                    key=lambda s: abs(s.planned_end_s - w['start_s'])
+                )
+                target.violations.append(
+                    f"No pit stop in tech window '{label}' "
+                    f"({int(w['start_s'])}s \u2013 {int(w['end_s'])}s)"
                 )
 
     # -- public mutation API ------------------------------------------------
@@ -654,7 +719,20 @@ class RaceStateEngine:
                 "pit_type": rd.get("pit_type", "full"),
             })
 
-        return cls(config, drivers, raw_stints, pit_stops)
+        # Load windows
+        try:
+            window_rows = conn.execute(
+                "SELECT * FROM race_windows WHERE race_id = ? ORDER BY window_order",
+                (race_id,),
+            ).fetchall()
+            windows = [dict(r) for r in window_rows]
+        except Exception:
+            windows = []  # Pre-v23 databases without race_windows table
+
+        engine = cls(config, drivers, raw_stints, pit_stops)
+        engine.windows = windows
+        engine._cascade_from(1)  # Re-cascade with windows loaded
+        return engine
 
     def snapshot(self) -> dict[str, Any]:
         """Return a complete in-memory snapshot of engine state.

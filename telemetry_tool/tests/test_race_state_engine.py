@@ -516,3 +516,162 @@ class TestEnginePersistence:
         assert export["race_name"] == "Test Race"
         assert len(export["stints"]) == 1
         assert "ballast_kg" in export["stints"][0]
+
+
+# ===========================================================================
+# TestWindowValidation  (Tasks 2-4)
+# ===========================================================================
+
+class TestWindowValidation:
+    """Tests for race window validation in RaceStateEngine."""
+
+    def _make_engine_with_windows(self, windows=None):
+        """Create a 3-stint engine with optional race windows."""
+        config = {
+            "race_duration_s": 3600,
+            "empty_kart_kg": 85,
+            "full_tank_kg": 93,
+            "min_total_kart_kg": 160,
+            "fuel_autonomy_s": 2400,
+            "min_pit_stop_s": 60,
+            "mandatory_driver_change": 0,
+            "refueling_allowed": 1,
+            "pit_open_s": None,
+            "pit_close_s": None,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65},
+            {"id": 2, "driver_name": "Bob", "driver_order": 2, "weight_kg": 75},
+        ]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 1200, "planned_duration_s": 1200},
+            {"stint_order": 2, "driver_id": 2, "driver_name": "Bob",
+             "planned_start_s": 1260, "planned_end_s": 2460, "planned_duration_s": 1200},
+            {"stint_order": 3, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 2520, "planned_end_s": 3600, "planned_duration_s": 1080},
+        ]
+        pit_stops = [
+            {"after_stint": 1, "refuel": True, "driver_change": True, "pit_type": "full"},
+            {"after_stint": 2, "refuel": True, "driver_change": True, "pit_type": "full"},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints, pit_stops)
+        if windows:
+            engine.windows = windows
+            engine._cascade_from(1)  # Re-cascade to apply window validation
+        return engine
+
+    # Task 2 tests: _is_in_any_window helper
+    def test_no_windows_means_no_restriction(self):
+        engine = self._make_engine_with_windows(windows=[])
+        for s in engine.stints:
+            assert not any("window" in v.lower() for v in s.violations)
+            assert not any("window" in w.lower() for w in s.warnings)
+
+    def test_is_in_any_window_true_when_inside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "pitlane", "start_s": 1000, "end_s": 3000},
+        ])
+        assert engine._is_in_any_window("pitlane", 1500) is True
+
+    def test_is_in_any_window_false_when_outside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "pitlane", "start_s": 1000, "end_s": 3000},
+        ])
+        assert engine._is_in_any_window("pitlane", 500) is False
+
+    def test_is_in_any_window_true_when_no_windows_of_type(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "refuel", "start_s": 1000, "end_s": 3000},
+        ])
+        assert engine._is_in_any_window("pitlane", 500) is True
+
+    def test_is_in_any_window_multiple_windows(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "refuel", "start_s": 500, "end_s": 1000},
+            {"window_type": "refuel", "start_s": 2000, "end_s": 3000},
+        ])
+        assert engine._is_in_any_window("refuel", 800) is True
+        assert engine._is_in_any_window("refuel", 2500) is True
+        assert engine._is_in_any_window("refuel", 1500) is False
+
+    # Task 3 tests: pit window warnings + refuel violations
+    def test_pitlane_window_warning_when_pit_outside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "pitlane", "start_s": 2000, "end_s": 3500},
+        ])
+        stint2 = engine.stints[1]  # starts at 1260, outside 2000-3500
+        assert any("pit" in w.lower() and "window" in w.lower() for w in stint2.warnings)
+
+    def test_pitlane_window_no_warning_when_inside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "pitlane", "start_s": 1000, "end_s": 3500},
+        ])
+        stint2 = engine.stints[1]
+        assert not any("pit" in w.lower() and "window" in w.lower() for w in stint2.warnings)
+
+    def test_refuel_window_violation_when_refuel_outside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "refuel", "start_s": 2000, "end_s": 3500},
+        ])
+        stint2 = engine.stints[1]  # starts at 1260, refueled, outside 2000-3500
+        assert any("refuel" in v.lower() and "window" in v.lower() for v in stint2.violations)
+
+    def test_refuel_window_no_violation_when_not_refueled(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "refuel", "start_s": 2000, "end_s": 3500},
+        ])
+        engine.toggle_fuel(2)  # Turn off refueling for stint 2
+        stint2 = engine.stints[1]
+        assert not any("refuel" in v.lower() and "window" in v.lower() for v in stint2.violations)
+
+    def test_refuel_window_no_violation_when_inside(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "refuel", "start_s": 1000, "end_s": 3500},
+        ])
+        stint2 = engine.stints[1]
+        assert not any("refuel" in v.lower() and "window" in v.lower() for v in stint2.violations)
+
+    # Task 4 tests: tech stop validation + legacy migration
+    def test_tech_stop_violation_when_no_stop_in_window(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "tech_stop", "label": "Tech 1",
+             "start_s": 100, "end_s": 200},
+        ])
+        all_violations = []
+        for s in engine.stints:
+            all_violations.extend(s.violations)
+        assert any("tech" in v.lower() for v in all_violations)
+
+    def test_tech_stop_no_violation_when_stop_in_window(self):
+        engine = self._make_engine_with_windows(windows=[
+            {"window_type": "tech_stop", "label": "Tech 1",
+             "start_s": 1200, "end_s": 1400},
+        ])
+        all_violations = []
+        for s in engine.stints:
+            all_violations.extend(s.violations)
+        assert not any("tech" in v.lower() for v in all_violations)
+
+    def test_legacy_pit_open_close_creates_virtual_window(self):
+        config = {
+            "race_duration_s": 3600,
+            "empty_kart_kg": 85, "full_tank_kg": 93,
+            "min_total_kart_kg": 160, "fuel_autonomy_s": 2400,
+            "min_pit_stop_s": 60, "mandatory_driver_change": 0,
+            "refueling_allowed": 1,
+            "pit_open_s": 600,
+            "pit_close_s": 300,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "Alice", "driver_order": 1, "weight_kg": 65},
+        ]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": 1, "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        engine = RaceStateEngine(config, drivers, raw_stints, [])
+        assert len(engine.windows) == 1
+        assert engine.windows[0]["window_type"] == "pitlane"
+        assert engine.windows[0]["start_s"] == 600
+        assert engine.windows[0]["end_s"] == 3300  # 3600 - 300
