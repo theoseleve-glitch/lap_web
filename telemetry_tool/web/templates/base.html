@@ -127,6 +127,13 @@
                 </div>
             </div>
 
+            <!-- Endurance Race Strategy -->
+            <a href="/race-strategy/"
+               class="{% if request.endpoint and request.endpoint.startswith('race_strategy_v2.') %}active{% endif %}"
+               {% if request.endpoint and request.endpoint.startswith('race_strategy_v2.') %}aria-current="page"{% endif %}>
+                Race Strategy
+            </a>
+
             <!-- Coaching: Dev Plans -->
             <a href="/dev-plans/"
                class="{% if request.endpoint and request.endpoint.startswith('dev_plans.') %}active{% endif %}"

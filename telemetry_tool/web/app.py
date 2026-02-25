@@ -114,6 +114,7 @@ def create_app(config: Config | None = None) -> Flask:
         # ('.routes.exports',          'bp', 'exports_bp'),      # Removed per audit
         ('.routes.karts',              'bp', 'karts_bp'),
         ('.routes.ingest',             'bp', 'ingest_bp'),        # Streaming ingest SSE (INGEST_V2)
+        ('.routes.race_strategy_v2',   'bp', 'race_strategy_v2_bp'),
     ]
 
     import importlib

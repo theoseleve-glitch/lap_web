@@ -1,0 +1,44 @@
+/* Race Strategy — Endurance race management styles */
+
+/* Status badges */
+.rs-status {
+    display: inline-block;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.rs-status-draft { background: rgba(150,150,150,0.15); color: var(--text-secondary); }
+.rs-status-ready { background: rgba(88,166,255,0.15); color: var(--blue); }
+.rs-status-live  { background: rgba(63,185,80,0.15); color: var(--green); animation: rs-pulse 2s infinite; }
+.rs-status-finished { background: rgba(150,150,150,0.1); color: var(--text-secondary); }
+
+@keyframes rs-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Live hero card on index */
+.rs-live-hero {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid var(--green);
+    border-radius: 8px;
+    padding: 1rem 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.rs-live-badge {
+    background: var(--green);
+    color: #000;
+    padding: 0.25rem 0.6rem;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 0.8rem;
+    animation: rs-pulse 2s infinite;
+}
+.rs-live-info { flex: 1; }
+.rs-live-info h2 { margin: 0; font-size: 1.1rem; }
+.rs-live-meta { font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.2rem; }
