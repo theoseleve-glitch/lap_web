@@ -382,11 +382,13 @@
 
         /* Friction circle */
         var cx = _xToPixel(0), cy = _yToPixel(0);
-        var rPx = (_state.frictionR / axisMax) * (pW / 2);
-        ctx.strokeStyle = 'rgba(139, 148, 158, 0.8)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash([6, 4]);
-        ctx.beginPath(); ctx.arc(cx, cy, rPx, 0, 2 * Math.PI); ctx.stroke();
+        var rPx = axisMax > 0 ? (_state.frictionR / axisMax) * (pW / 2) : 0;
+        if (rPx > 0) {
+            ctx.strokeStyle = 'rgba(139, 148, 158, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath(); ctx.arc(cx, cy, rPx, 0, 2 * Math.PI); ctx.stroke();
+        }
         ctx.setLineDash([]);
 
         /* Render based on mode */
