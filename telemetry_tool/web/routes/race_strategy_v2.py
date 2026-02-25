@@ -436,10 +436,11 @@ def detail(race_id: int):
 
 @bp.route("/<int:race_id>/optimize", methods=["POST"])
 def optimize(race_id: int):
-    """Run optimizer and save planned stints."""
+    """Run optimizer and save planned stints with fuel-aware ballast."""
     import sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
     from race_strategy_v2 import optimize_stints
+    from race_state_engine import RaceStateEngine
 
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
@@ -452,30 +453,9 @@ def optimize(race_id: int):
 
     result = optimize_stints(race, drivers)
 
-    # Clear existing planned stints
-    conn.execute("DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'", (race_id,))
-    conn.execute("DELETE FROM race_pit_stops WHERE race_id = ?", (race_id,))
-
-    # Save new stints
-    for s in result["stints"]:
-        conn.execute(
-            """INSERT INTO race_stints (race_id, stint_order, driver_id,
-                planned_start_s, planned_end_s, planned_duration_s, ballast_kg, status)
-            VALUES (?,?,?,?,?,?,?,'planned')""",
-            (race_id, s["stint_order"], s["driver_id"],
-             s["planned_start_s"], s["planned_end_s"],
-             s["planned_duration_s"], s.get("ballast_kg", 0)),
-        )
-
-    # Save pit stops
-    for p in result["pit_stops"]:
-        conn.execute(
-            """INSERT INTO race_pit_stops (race_id, planned_at_s, duration_s,
-                driver_change, refueled)
-            VALUES (?,?,?,?,?)""",
-            (race_id, p["at_s"], p["duration_s"],
-             1 if p["driver_change"] else 0, 1 if p["refuel"] else 0),
-        )
+    # Wrap in engine for fuel/ballast cascade
+    engine = RaceStateEngine(race, drivers, result["stints"], result["pit_stops"])
+    engine.save(conn, race_id)
 
     # Update status to ready if feasible
     new_status = "ready" if result["feasible"] else "draft"
@@ -635,6 +615,22 @@ def api_state(race_id: int):
             dur = s.get("actual_duration_s") or s.get("planned_duration_s") or 0
             driver_cumulative[did] = driver_cumulative.get(did, 0) + dur
 
+    # Engine-computed real-time data (fuel, ballast, fuel model)
+    engine_data = {}
+    try:
+        import sys
+        sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+        from race_state_engine import RaceStateEngine
+        engine = RaceStateEngine.load(conn, race_id)
+        elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+        engine_data = {
+            "current_fuel_kg": round(engine.current_fuel_kg(elapsed), 4),
+            "current_ballast": engine.current_ballast(elapsed),
+            "fuel_model": engine.snapshot()["fuel_model"],
+        }
+    except Exception:
+        logger.debug("Engine load failed for race %d, returning basic state", race_id)
+
     return jsonify({
         "race": race,
         "drivers": drivers,
@@ -644,6 +640,7 @@ def api_state(race_id: int):
         "active_stint": active_stint,
         "next_stint": next_stint,
         "driver_cumulative": driver_cumulative,
+        **engine_data,
     })
 
 
@@ -713,6 +710,7 @@ def api_reoptimize(race_id: int):
     import sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
     from race_strategy_v2 import reoptimize_remaining
+    from race_state_engine import RaceStateEngine
 
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
@@ -727,20 +725,31 @@ def api_reoptimize(race_id: int):
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     result = reoptimize_remaining(race, drivers, completed, elapsed)
 
-    # Replace planned stints
+    # Clear planned stints only
     conn.execute("DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'", (race_id,))
-    for s in result["stints"]:
-        conn.execute(
-            """INSERT INTO race_stints (race_id, stint_order, driver_id,
-                planned_start_s, planned_end_s, planned_duration_s, ballast_kg, status)
-            VALUES (?,?,?,?,?,?,?,'planned')""",
-            (race_id, s["stint_order"], s["driver_id"],
-             s["planned_start_s"], s["planned_end_s"],
-             s["planned_duration_s"], s.get("ballast_kg", 0)),
-        )
-    conn.commit()
 
-    return jsonify({"ok": True, "result": result})
+    # Wrap in engine for fuel/ballast cascade on new stints
+    all_stints = completed + result["stints"]
+    engine = RaceStateEngine(race, drivers, all_stints, result["pit_stops"])
+
+    # Save only the NEW planned stints (completed already in DB)
+    for s in engine.stints:
+        if s.stint_order > len(completed):
+            conn.execute(
+                """INSERT INTO race_stints (race_id, stint_order, driver_id,
+                    planned_start_s, planned_end_s, planned_duration_s,
+                    fuel_at_start, fuel_at_end, ballast_kg,
+                    ballast_base_kg, ballast_fuel_offset_kg, fuel_burn_rate_kgs,
+                    status)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                (race_id, s.stint_order, s.driver_id,
+                 s.planned_start_s, s.planned_end_s, s.planned_duration_s,
+                 round(s.fuel_at_start_kg, 4), round(s.fuel_at_end_kg, 4),
+                 s.ballast_kg, s.ballast_base_kg, s.ballast_fuel_offset_kg,
+                 engine.fuel_model.burn_rate_kgs),
+            )
+    conn.commit()
+    return jsonify({"ok": True, "result": engine.snapshot()})
 
 
 @bp.route("/<int:race_id>/api/messages", methods=["GET", "POST"])
@@ -831,6 +840,187 @@ def api_weather(race_id: int):
     except Exception as exc:
         logger.warning("Weather fetch failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+# ── Stint Plan Export / Import ────────────────────
+
+@bp.route("/<int:race_id>/export-plan")
+def export_plan(race_id: int):
+    """Export stint plan only (lightweight) as JSON download."""
+    import re
+    import sys
+    from flask import Response
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+
+    conn = get_db_connection()
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        abort(404)
+    try:
+        engine = RaceStateEngine.load(conn, race_id)
+    except Exception:
+        abort(400)
+    data = engine.stint_plan_export(race.get("race_name", ""))
+    payload = json.dumps(data, indent=2, default=str)
+    slug = re.sub(r'[^a-z0-9]+', '-', race["race_name"].lower()).strip('-')
+    filename = f"stint-plan-{slug}.json"
+    return Response(payload, mimetype="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@bp.route("/<int:race_id>/import-plan", methods=["POST"])
+def import_plan(race_id: int):
+    """Import stint plan into existing race. Matches drivers by name."""
+    import sys
+    from flask import flash
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+
+    conn = get_db_connection()
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        abort(404)
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
+    try:
+        data = json.loads(file.read().decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        flash("Invalid JSON file.", "error")
+        return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
+    if data.get("format") != "stint-plan-v1":
+        flash("Unsupported plan format.", "error")
+        return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
+    drivers = _rows_to_list(conn.execute(
+        "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)
+    ).fetchall())
+    name_to_id = {d["driver_name"].lower(): d["id"] for d in drivers}
+
+    raw_stints = []
+    warnings = []
+    for s in data.get("stints", []):
+        driver_name = s.get("driver_name", "")
+        driver_id = name_to_id.get(driver_name.lower())
+        if not driver_id:
+            warnings.append(f"Driver '{driver_name}' not found in race")
+            driver_id = drivers[0]["id"] if drivers else None
+        if driver_id:
+            raw_stints.append({
+                "stint_order": s["stint_order"],
+                "driver_id": driver_id,
+                "driver_name": driver_name,
+                "planned_duration_s": s["planned_duration_s"],
+                "planned_start_s": 0,
+                "planned_end_s": 0,
+            })
+
+    # Rebuild timeline
+    pit_time = race.get("min_pit_stop_s") or 60
+    pit_stops = []
+    clock = 0
+    for i, s in enumerate(raw_stints):
+        s["planned_start_s"] = clock
+        s["planned_end_s"] = clock + s["planned_duration_s"]
+        clock += s["planned_duration_s"]
+        if i < len(raw_stints) - 1:
+            ps_list = data.get("pit_stops", [])
+            p = ps_list[i] if i < len(ps_list) else {}
+            pit_stops.append({
+                "after_stint": i + 1,
+                "at_s": clock,
+                "duration_s": p.get("duration_s", pit_time),
+                "driver_change": p.get("driver_change", True),
+                "refuel": p.get("refueled", True),
+                "pit_type": p.get("pit_type", "full"),
+            })
+            clock += p.get("duration_s", pit_time)
+
+    engine = RaceStateEngine(race, drivers, raw_stints, pit_stops)
+    engine.save(conn, race_id)
+
+    for w in warnings:
+        flash(w, "warning")
+
+    return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
+
+# ── Cascade Mutation APIs ────────────────────────
+
+@bp.route("/<int:race_id>/api/toggle-fuel", methods=["POST"])
+def api_toggle_fuel(race_id: int):
+    """Toggle refuel on a pit stop. Triggers cascade."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    if not stint_order:
+        return jsonify({"error": "stint_order required"}), 400
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.toggle_fuel(stint_order)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "snapshot": engine.snapshot()})
+
+
+@bp.route("/<int:race_id>/api/set-pit-type", methods=["POST"])
+def api_set_pit_type(race_id: int):
+    """Set pit stop type (full/quick). Triggers cascade."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    pit_type = data.get("pit_type", "full")
+    if not stint_order or pit_type not in ("full", "quick"):
+        return jsonify({"error": "stint_order and valid pit_type required"}), 400
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.set_pit_type(stint_order, pit_type)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "snapshot": engine.snapshot()})
+
+
+@bp.route("/<int:race_id>/api/set-driver", methods=["POST"])
+def api_set_driver(race_id: int):
+    """Change driver on a stint. Triggers cascade."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    driver_id = data.get("driver_id")
+    if not stint_order or not driver_id:
+        return jsonify({"error": "stint_order and driver_id required"}), 400
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.set_driver(stint_order, driver_id)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "snapshot": engine.snapshot()})
+
+
+@bp.route("/<int:race_id>/api/set-duration", methods=["POST"])
+def api_set_duration(race_id: int):
+    """Edit stint duration. Triggers cascade."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    duration_s = data.get("duration_s")
+    if not stint_order or duration_s is None:
+        return jsonify({"error": "stint_order and duration_s required"}), 400
+    engine = RaceStateEngine.load(conn, race_id)
+    engine.set_duration(stint_order, int(duration_s))
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "snapshot": engine.snapshot()})
 
 
 # ── Helpers ──────────────────────────────────────
