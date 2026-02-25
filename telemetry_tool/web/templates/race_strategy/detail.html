@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}{{ race.race_name }} — Race Strategy{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/race_strategy.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>{{ race.race_name }}</h1>
+        <p>
+            <span class="rs-status rs-status-{{ race.status }}">{{ race.status }}</span>
+            {% if race.team_name %} · {{ race.team_name }}{% endif %}
+            {% if race.track_name %} · {{ race.track_name }}{% endif %}
+        </p>
+    </div>
+    <a href="{{ url_for('race_strategy_v2.index') }}" class="btn btn-ghost">&larr; Back</a>
+</div>
+
+<!-- Config Summary -->
+<div class="rs-detail-grid">
+    <div class="rs-detail-card">
+        <h3>Race</h3>
+        <div class="rs-kv"><span class="rs-kv-label">Duration</span><span>{{ '%d:%02d' | format(race.race_duration_s // 3600, (race.race_duration_s % 3600) // 60) }}</span></div>
+        <div class="rs-kv"><span class="rs-kv-label">Desired Stints</span><span>{{ race.desired_stints }}</span></div>
+        <div class="rs-kv"><span class="rs-kv-label">Min Pit Stop</span><span>{{ race.min_pit_stop_s }}s</span></div>
+        {% if race.fuel_autonomy_s %}
+        <div class="rs-kv"><span class="rs-kv-label">Fuel Autonomy</span><span>{{ '%d:%02d' | format(race.fuel_autonomy_s // 60, race.fuel_autonomy_s % 60) }}</span></div>
+        {% endif %}
+    </div>
+    <div class="rs-detail-card">
+        <h3>Weight</h3>
+        {% if race.empty_kart_kg %}
+        <div class="rs-kv"><span class="rs-kv-label">Empty Kart</span><span>{{ '%.1f' | format(race.empty_kart_kg) }} kg</span></div>
+        {% endif %}
+        {% if race.full_tank_kg %}
+        <div class="rs-kv"><span class="rs-kv-label">Full Tank</span><span>{{ '%.1f' | format(race.full_tank_kg) }} kg</span></div>
+        {% endif %}
+        {% if race.min_total_kart_kg %}
+        <div class="rs-kv"><span class="rs-kv-label">Min Total</span><span>{{ '%.1f' | format(race.min_total_kart_kg) }} kg</span></div>
+        {% endif %}
+        {% if not race.empty_kart_kg and not race.min_total_kart_kg %}
+        <div class="rs-kv"><span class="rs-kv-label">Not configured</span><span>—</span></div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Drivers -->
+<section class="section">
+    <h2>Drivers ({{ drivers|length }})</h2>
+    {% if drivers %}
+    <div class="table-wrap">
+        <table class="data-table striped">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Name</th>
+                    <th>Weight</th>
+                    <th>Min Stint</th>
+                    <th>Max Stint</th>
+                    <th>Min Cumul.</th>
+                    <th>Max Cumul.</th>
+                    <th>Min Rest</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in drivers %}
+                <tr>
+                    <td>{{ d.driver_order }}</td>
+                    <td><strong>{{ d.driver_name }}</strong></td>
+                    <td>{{ '%.1f kg' | format(d.weight_kg) if d.weight_kg else '—' }}</td>
+                    <td>{{ '%d:%02d' | format(d.min_stint_s // 60, d.min_stint_s % 60) if d.min_stint_s else '—' }}</td>
+                    <td>{{ '%d:%02d' | format(d.max_stint_s // 60, d.max_stint_s % 60) if d.max_stint_s else '—' }}</td>
+                    <td>{{ '%d:%02d' | format(d.min_cumulative_s // 60, d.min_cumulative_s % 60) if d.min_cumulative_s else '—' }}</td>
+                    <td>{{ '%d:%02d' | format(d.max_cumulative_s // 60, d.max_cumulative_s % 60) if d.max_cumulative_s else '—' }}</td>
+                    <td>{{ '%d:%02d' | format(d.min_rest_s // 60, d.min_rest_s % 60) if d.min_rest_s else '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="no-data"><div class="no-data-text">No drivers added yet.</div></div>
+    {% endif %}
+</section>
+
+<!-- Actions -->
+<div class="rs-detail-actions">
+    {% if race.status in ('draft', 'ready') %}
+    <a href="{{ url_for('race_strategy_v2.edit_race', race_id=race.race_id) }}" class="btn btn-ghost">Edit Config</a>
+    <form method="POST" action="{{ url_for('race_strategy_v2.optimize', race_id=race.race_id) }}" style="display:inline;">
+        <button type="submit" class="btn btn-primary">Optimize Stints</button>
+    </form>
+    {% endif %}
+    {% if race.status == 'ready' %}
+    <form method="POST" action="{{ url_for('race_strategy_v2.go_live', race_id=race.race_id) }}" style="display:inline;"
+          onsubmit="return confirm('Start the race? This will begin the live timer.');">
+        <button type="submit" class="btn btn-primary" style="background:var(--green);color:#000;">Go Live</button>
+    </form>
+    {% endif %}
+    {% if race.status == 'live' %}
+    <a href="{{ url_for('race_strategy_v2.live', race_id=race.race_id) }}" class="btn btn-primary">Open Live Dashboard</a>
+    {% endif %}
+    {% if race.status == 'finished' %}
+    <a href="{{ url_for('race_strategy_v2.summary', race_id=race.race_id) }}" class="btn btn-primary">View Summary</a>
+    {% endif %}
+</div>
+
+<!-- Stint Plan -->
+{% if stints %}
+<section class="section">
+    <h2>Stint Plan</h2>
+
+    <!-- Timeline visualization -->
+    <div class="rs-timeline-wrap">
+        <div class="rs-timeline-bar">
+            {% for s in stints %}
+            <div class="rs-timeline-stint rs-driver-{{ drivers|selectattr('id', 'eq', s.driver_id)|map(attribute='driver_order')|first|default(0) - 1 }}"
+                 style="flex: {{ s.planned_duration_s }};"
+                 title="{{ s.driver_name }}: {{ '%d:%02d' | format(s.planned_duration_s // 60, s.planned_duration_s % 60) }}">
+                {{ s.driver_name[:3] }}
+            </div>
+            {% if not loop.last %}
+            <div class="rs-timeline-pit" title="Pit stop: {{ race.min_pit_stop_s }}s"></div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        <div class="rs-timeline-legend">
+            {% for d in drivers %}
+            <span><span class="rs-legend-swatch rs-driver-{{ d.driver_order - 1 }}"></span>{{ d.driver_name }}</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Stint table -->
+    <div class="table-wrap">
+        <table class="data-table striped">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Driver</th>
+                    <th>Start</th>
+                    <th>End</th>
+                    <th>Duration</th>
+                    <th>Ballast</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in stints %}
+                <tr>
+                    <td>{{ s.stint_order }}</td>
+                    <td><strong>{{ s.driver_name }}</strong></td>
+                    <td>{{ '%d:%02d:%02d' | format(s.planned_start_s // 3600, (s.planned_start_s % 3600) // 60, s.planned_start_s % 60) }}</td>
+                    <td>{{ '%d:%02d:%02d' | format(s.planned_end_s // 3600, (s.planned_end_s % 3600) // 60, s.planned_end_s % 60) }}</td>
+                    <td>{{ '%d:%02d' | format(s.planned_duration_s // 60, s.planned_duration_s % 60) }}</td>
+                    <td>{{ '%.1f kg' | format(s.ballast_kg) if s.ballast_kg else '—' }}</td>
+                    <td><span class="rs-status rs-status-{{ s.status }}">{{ s.status }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+
+<!-- Pit Stops -->
+{% if pit_stops %}
+<section class="section">
+    <h2>Pit Stops ({{ pit_stops|length }})</h2>
+    <div class="table-wrap">
+        <table class="data-table striped">
+            <thead>
+                <tr>
+                    <th>After Stint</th>
+                    <th>At</th>
+                    <th>Duration</th>
+                    <th>Driver Change</th>
+                    <th>Refuel</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in pit_stops %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ '%d:%02d:%02d' | format(p.planned_at_s // 3600, (p.planned_at_s % 3600) // 60, p.planned_at_s % 60) if p.planned_at_s else '—' }}</td>
+                    <td>{{ p.duration_s }}s</td>
+                    <td>{{ 'Yes' if p.driver_change else 'No' }}</td>
+                    <td>{{ 'Yes' if p.refueled else 'No' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endif %}
+
+{% endif %}
+
+<script src="{{ url_for('static', filename='js/race_strategy.js') }}"></script>
+{% endblock %}
