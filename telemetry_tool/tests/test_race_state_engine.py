@@ -675,3 +675,185 @@ class TestWindowValidation:
         assert engine.windows[0]["window_type"] == "pitlane"
         assert engine.windows[0]["start_s"] == 600
         assert engine.windows[0]["end_s"] == 3300  # 3600 - 300
+
+
+# ===========================================================================
+# TestWindowStatus  (Task 5)
+# ===========================================================================
+
+class TestWindowStatus:
+    """Tests for window_status() query method."""
+
+    def _make_engine_with_windows(self, windows):
+        config = {
+            "race_duration_s": 3600, "empty_kart_kg": 85, "full_tank_kg": 93,
+            "min_total_kart_kg": 160, "fuel_autonomy_s": 2400,
+            "min_pit_stop_s": 60, "mandatory_driver_change": 0,
+            "refueling_allowed": 1, "pit_open_s": None, "pit_close_s": None,
+        }
+        drivers = [{"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 65}]
+        stints = [{"stint_order": 1, "driver_id": 1, "driver_name": "A",
+                   "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600}]
+        engine = RaceStateEngine(config, drivers, stints, [])
+        engine.windows = windows
+        return engine
+
+    def test_empty_windows_returns_all_none_status(self):
+        engine = self._make_engine_with_windows([])
+        status = engine.window_status(1000)
+        types = {s['type'] for s in status}
+        assert 'pitlane' in types
+        assert 'refuel' in types
+        assert 'tech_stop' in types
+        for s in status:
+            assert s['status'] == 'none'
+
+    def test_window_before_open(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "pitlane", "start_s": 600, "end_s": 3000, "label": "Pit"},
+        ])
+        status = engine.window_status(300)
+        pit = next(s for s in status if s['type'] == 'pitlane')
+        assert pit['status'] == 'before'
+        assert pit['countdown_s'] == 300
+
+    def test_window_open(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "pitlane", "start_s": 600, "end_s": 3000, "label": "Pit"},
+        ])
+        status = engine.window_status(1000)
+        pit = next(s for s in status if s['type'] == 'pitlane')
+        assert pit['status'] == 'open'
+        assert pit['countdown_s'] == 2000
+
+    def test_window_closing_within_5_min(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "refuel", "start_s": 600, "end_s": 3000, "label": "R1"},
+        ])
+        status = engine.window_status(2800)
+        refuel = next(s for s in status if s['type'] == 'refuel')
+        assert refuel['status'] == 'closing'
+        assert refuel['countdown_s'] == 200
+
+    def test_window_closed(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "refuel", "start_s": 600, "end_s": 3000, "label": "R1"},
+        ])
+        status = engine.window_status(3100)
+        refuel = next(s for s in status if s['type'] == 'refuel')
+        assert refuel['status'] == 'closed'
+
+    def test_multiple_windows_same_type_picks_active_or_next(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "refuel", "start_s": 300, "end_s": 900, "label": "R1"},
+            {"window_type": "refuel", "start_s": 1800, "end_s": 2700, "label": "R2"},
+        ])
+        status = engine.window_status(1200)
+        refuel = next(s for s in status if s['type'] == 'refuel')
+        assert refuel['status'] == 'before'
+        assert refuel['label'] == 'R2'
+        assert refuel['countdown_s'] == 600
+
+    def test_snapshot_includes_windows(self):
+        engine = self._make_engine_with_windows([
+            {"window_type": "pitlane", "start_s": 600, "end_s": 3000, "label": "Pit"},
+        ])
+        snap = engine.snapshot()
+        assert "windows" in snap
+        assert len(snap["windows"]) == 1
+        assert snap["windows"][0]["window_type"] == "pitlane"
+
+
+# ===========================================================================
+# TestWindowPersistence  (Task 6)
+# ===========================================================================
+
+class TestWindowPersistence:
+    """Tests for window save/load round-trip."""
+
+    def _seed_race(self, conn):
+        conn.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, fuel_autonomy_s, "
+            "empty_kart_kg, full_tank_kg, min_total_kart_kg, min_pit_stop_s) "
+            "VALUES ('Test 1h', 3600, 2400, 85, 93, 160, 60)"
+        )
+        conn.execute(
+            "INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) "
+            "VALUES (1, 'Alice', 1, 65)"
+        )
+        conn.commit()
+        return 1
+
+    def _make_engine(self, conn):
+        config = dict(
+            conn.execute(
+                "SELECT * FROM race_configs WHERE race_id = 1"
+            ).fetchone()
+        )
+        drivers = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM race_drivers WHERE race_id = 1 ORDER BY driver_order"
+            ).fetchall()
+        ]
+        raw_stints = [
+            {"stint_order": 1, "driver_id": drivers[0]["id"], "driver_name": "Alice",
+             "planned_start_s": 0, "planned_end_s": 3600, "planned_duration_s": 3600},
+        ]
+        return RaceStateEngine(config, drivers, raw_stints, [])
+
+    def test_save_and_load_preserves_windows(self, engine_db):
+        """Windows survive a save/load round-trip."""
+        race_id = self._seed_race(engine_db)
+        engine = self._make_engine(engine_db)
+        engine.windows = [
+            {"window_type": "pitlane", "label": "Pit 1",
+             "start_s": 600, "end_s": 3000, "refuel_allowed": 1,
+             "driver_change_allowed": 1, "window_order": 1},
+            {"window_type": "refuel", "label": "Refuel 1",
+             "start_s": 600, "end_s": 1800, "refuel_allowed": 1,
+             "driver_change_allowed": 1, "window_order": 2},
+        ]
+        engine.save(engine_db, race_id)
+
+        loaded = RaceStateEngine.load(engine_db, race_id)
+        assert len(loaded.windows) == 2
+        assert loaded.windows[0]["window_type"] == "pitlane"
+        assert loaded.windows[1]["window_type"] == "refuel"
+
+    def test_save_overwrites_previous_windows(self, engine_db):
+        """Saving twice replaces previous windows, not appends."""
+        race_id = self._seed_race(engine_db)
+        engine = self._make_engine(engine_db)
+
+        engine.windows = [
+            {"window_type": "pitlane", "label": "Pit 1",
+             "start_s": 600, "end_s": 3000, "window_order": 1},
+        ]
+        engine.save(engine_db, race_id)
+
+        engine.windows = [
+            {"window_type": "refuel", "label": "Refuel Only",
+             "start_s": 900, "end_s": 2700, "window_order": 1},
+        ]
+        engine.save(engine_db, race_id)
+
+        loaded = RaceStateEngine.load(engine_db, race_id)
+        assert len(loaded.windows) == 1
+        assert loaded.windows[0]["window_type"] == "refuel"
+
+    def test_save_with_no_windows(self, engine_db):
+        """Saving with empty windows list clears any previously stored."""
+        race_id = self._seed_race(engine_db)
+        engine = self._make_engine(engine_db)
+
+        engine.windows = [
+            {"window_type": "pitlane", "label": "Pit 1",
+             "start_s": 600, "end_s": 3000, "window_order": 1},
+        ]
+        engine.save(engine_db, race_id)
+
+        engine.windows = []
+        engine.save(engine_db, race_id)
+
+        loaded = RaceStateEngine.load(engine_db, race_id)
+        assert len(loaded.windows) == 0

@@ -473,6 +473,63 @@ class RaceStateEngine:
         self._refuel_map[stint_order] = not current
         self._cascade_from(stint_order)
 
+    # -- window status query API -------------------------------------------
+
+    def window_status(self, elapsed_s: float) -> list[dict]:
+        """Compute live status for each window type.
+
+        Returns a list with one entry per window type (pitlane, refuel, tech_stop).
+        Each entry: {type, label, status: 'none'|'before'|'open'|'closing'|'closed', countdown_s}
+        """
+        CLOSING_THRESHOLD = 300  # 5 minutes
+
+        result = []
+        for wtype in ('pitlane', 'refuel', 'tech_stop'):
+            typed = sorted(
+                [w for w in self.windows if w['window_type'] == wtype],
+                key=lambda w: w['start_s'],
+            )
+            if not typed:
+                result.append({"type": wtype, "label": "", "status": "none", "countdown_s": 0})
+                continue
+
+            # Find the active or next upcoming window
+            active = None
+            upcoming = None
+            for w in typed:
+                if w['start_s'] <= elapsed_s <= w['end_s']:
+                    active = w
+                    break
+                elif w['start_s'] > elapsed_s and upcoming is None:
+                    upcoming = w
+
+            if active:
+                remaining = active['end_s'] - elapsed_s
+                status = 'closing' if remaining <= CLOSING_THRESHOLD else 'open'
+                result.append({
+                    "type": wtype,
+                    "label": active.get('label', ''),
+                    "status": status,
+                    "countdown_s": int(remaining),
+                })
+            elif upcoming:
+                result.append({
+                    "type": wtype,
+                    "label": upcoming.get('label', ''),
+                    "status": "before",
+                    "countdown_s": int(upcoming['start_s'] - elapsed_s),
+                })
+            else:
+                # All windows of this type have ended
+                result.append({
+                    "type": wtype,
+                    "label": typed[-1].get('label', ''),
+                    "status": "closed",
+                    "countdown_s": 0,
+                })
+
+        return result
+
     # -- real-time interpolation API ----------------------------------------
 
     def current_fuel_kg(self, elapsed_s: float) -> float:
@@ -649,6 +706,26 @@ class RaceStateEngine:
                 ),
             )
 
+        # Save windows
+        cur.execute("DELETE FROM race_windows WHERE race_id = ?", (race_id,))
+        for w in self.windows:
+            cur.execute(
+                "INSERT INTO race_windows "
+                "(race_id, window_type, label, start_s, end_s, "
+                " refuel_allowed, driver_change_allowed, window_order) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    race_id,
+                    w.get("window_type", "pitlane"),
+                    w.get("label"),
+                    w["start_s"],
+                    w["end_s"],
+                    w.get("refuel_allowed", 1),
+                    w.get("driver_change_allowed", 1),
+                    w.get("window_order", 1),
+                ),
+            )
+
         conn.commit()
 
     @classmethod
@@ -765,6 +842,7 @@ class RaceStateEngine:
             "stints": stint_dicts,
             "refuel_map": dict(self._refuel_map),
             "pit_type_map": dict(self._pit_type_map),
+            "windows": self.windows,
         }
 
     def stint_plan_export(self, race_name: str) -> dict[str, Any]:
