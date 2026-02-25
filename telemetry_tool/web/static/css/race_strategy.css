@@ -1568,3 +1568,33 @@ details[open].rs-form-section > summary::before {
         gap: var(--space-xs);
     }
 }
+
+/* ── Compact Pit Wall Mode ─────────────────── */
+.rs-live-grid.rs-compact {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem;
+}
+.rs-live-grid.rs-compact > .rs-live-card.rs-full,
+.rs-live-grid.rs-compact > #rs-weather-card,
+.rs-live-grid.rs-compact > #rs-radar-card {
+    display: none;
+}
+.rs-live-grid.rs-compact > .rs-window-status-bar {
+    grid-column: 1 / -1;
+    display: grid;
+}
+.rs-live-grid.rs-compact > .rs-live-card {
+    grid-column: span 1;
+}
+
+/* ── Fullscreen ────────────────────────────── */
+:fullscreen .rs-page-live {
+    padding: 1rem;
+    background: var(--bg-primary);
+}
+:fullscreen .page-header h1 {
+    font-size: 1.2rem;
+}
+:fullscreen .rs-live-grid.rs-compact .rs-live-card {
+    min-height: auto;
+}

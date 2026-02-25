@@ -849,6 +849,14 @@
         }
     }
 
+    // ── Wall Clock ───────────────────────────────
+    function updateWallClock() {
+        var el = document.getElementById('rs-wall-clock');
+        if (!el) return;
+        var now = new Date();
+        el.textContent = pad2(now.getHours()) + ':' + pad2(now.getMinutes()) + ':' + pad2(now.getSeconds());
+    }
+
     // ── Init ─────────────────────────────────────
 
     fetchState();
@@ -860,6 +868,7 @@
         updateDrivers();
         updateSummary();
         updateWindowStatus();
+        updateWallClock();
     }, 1000);
 
     // Server poll (2s)
