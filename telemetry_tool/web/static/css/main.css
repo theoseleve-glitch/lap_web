@@ -1017,6 +1017,18 @@ a:hover {
     font-style: italic;
 }
 
+/* ── Table scroll wrapper for responsive tables ── */
+.table-scroll-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius-sm);
+}
+.table-scroll-wrapper table {
+    min-width: 600px;
+    width: 100%;
+}
+
 /* ── Badges ───────────────────────────────── */
 
 .badge {
@@ -3087,7 +3099,7 @@ details > summary:hover {
 .viz-layout {
     display: flex;
     height: calc(100vh - 56px - 40px);
-    overflow: hidden;
+    overflow: visible;
 }
 
 .viz-sidebar {
