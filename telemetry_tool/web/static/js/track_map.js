@@ -74,23 +74,21 @@
 
     // ── Projection: lat/lon → canvas pixel ──
     function _computeProjection() {
-        var allLats = [], allLons = [];
+        var latMin = Infinity, latMax = -Infinity;
+        var lonMin = Infinity, lonMax = -Infinity;
         Object.keys(allGpsData).forEach(function (k) {
             var d = allGpsData[k];
             if (!d.latitudes) return;
             for (var i = 0; i < d.latitudes.length; i++) {
                 if (d.latitudes[i] !== null && d.longitudes[i] !== null) {
-                    allLats.push(d.latitudes[i]);
-                    allLons.push(d.longitudes[i]);
+                    if (d.latitudes[i] < latMin) latMin = d.latitudes[i];
+                    if (d.latitudes[i] > latMax) latMax = d.latitudes[i];
+                    if (d.longitudes[i] < lonMin) lonMin = d.longitudes[i];
+                    if (d.longitudes[i] > lonMax) lonMax = d.longitudes[i];
                 }
             }
         });
-        if (allLats.length === 0) return;
-
-        var latMin = Math.min.apply(null, allLats);
-        var latMax = Math.max.apply(null, allLats);
-        var lonMin = Math.min.apply(null, allLons);
-        var lonMax = Math.max.apply(null, allLons);
+        if (latMin === Infinity) return;
 
         var originLat = (latMin + latMax) / 2;
         var originLon = (lonMin + lonMax) / 2;
@@ -202,17 +200,19 @@
         ctx.fillText('Track Map — ' + selectedLaps.length + ' Lap' +
             (selectedLaps.length !== 1 ? 's' : ''), w / 2, 22);
 
-        // Find global speed range
-        var allSpeeds = [];
+        // Find global speed range (loop-based to avoid call stack overflow on large sessions)
+        var minSpd = Infinity, maxSpd = -Infinity;
         selectedLaps.forEach(function (ln) {
             var d = allGpsData[ln];
             if (!d || !d.speeds) return;
-            d.speeds.forEach(function (s) {
-                if (s !== null && isFinite(s)) allSpeeds.push(s);
-            });
+            for (var si = 0; si < d.speeds.length; si++) {
+                if (d.speeds[si] !== null && isFinite(d.speeds[si])) {
+                    if (d.speeds[si] < minSpd) minSpd = d.speeds[si];
+                    if (d.speeds[si] > maxSpd) maxSpd = d.speeds[si];
+                }
+            }
         });
-        var minSpd = allSpeeds.length > 0 ? Math.min.apply(null, allSpeeds) : 0;
-        var maxSpd = allSpeeds.length > 0 ? Math.max.apply(null, allSpeeds) : 1;
+        if (minSpd === Infinity) { minSpd = 0; maxSpd = 1; }
 
         // Draw non-best laps first (faint)
         selectedLaps.forEach(function (ln, idx) {
