@@ -1598,3 +1598,225 @@ details[open].rs-form-section > summary::before {
 :fullscreen .rs-live-grid.rs-compact .rs-live-card {
     min-height: auto;
 }
+
+/* ── Neutralization (Safety Car) ────────────── */
+
+.rs-btn-sc {
+    padding: 0.35rem 0.8rem;
+    border: 1px solid rgba(255, 200, 50, 0.3);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    font-weight: 700;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rs-btn-sc:hover { background: rgba(255, 200, 50, 0.1); }
+
+.rs-btn-sc-active {
+    background: rgba(255, 200, 50, 0.2) !important;
+    border-color: #ffc832;
+    color: #ffc832;
+    animation: rs-sc-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes rs-sc-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 200, 50, 0.3); }
+    50% { box-shadow: 0 0 12px 4px rgba(255, 200, 50, 0.15); }
+}
+
+.rs-sc-banner {
+    background: linear-gradient(90deg, rgba(255, 200, 50, 0.15) 0%, rgba(255, 200, 50, 0.08) 100%);
+    border: 1px solid rgba(255, 200, 50, 0.3);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    text-align: center;
+    font-weight: 700;
+    color: #ffc832;
+    animation: rs-sc-banner-pulse 2s ease-in-out infinite;
+}
+
+@keyframes rs-sc-banner-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.rs-sc-icon {
+    display: inline-block;
+    background: #ffc832;
+    color: #000;
+    border-radius: 4px;
+    padding: 0 0.4rem;
+    margin-right: 0.5rem;
+    font-size: 0.85rem;
+}
+
+/* ── Intelligence Row ───────────────────────── */
+
+.rs-intel-row {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    padding: 1rem !important;
+}
+
+.rs-intel-card {
+    background: var(--rs-inner-bg);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+}
+
+.rs-intel-card h4 {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.rs-intel-metric {
+    font-size: 1.5rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 0.25rem;
+}
+
+.rs-intel-detail {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.rs-ahead { color: var(--green, #7ee787) !important; }
+.rs-behind { color: var(--red, #f85149) !important; }
+.rs-on-plan { color: var(--text-secondary) !important; }
+.rs-fuel-critical { color: var(--red, #f85149) !important; font-weight: 700; }
+.rs-fuel-warning { color: var(--yellow, #d29922) !important; }
+
+/* ── Alert Toast Strip ──────────────────────── */
+
+.rs-alert-strip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rs-alert-toast {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    animation: rs-toast-slide 0.3s ease-out;
+    cursor: pointer;
+}
+
+.rs-alert-toast.rs-alert-high {
+    background: rgba(248, 81, 73, 0.15);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+    color: var(--red, #f85149);
+}
+
+.rs-alert-toast.rs-alert-medium {
+    background: rgba(210, 169, 34, 0.15);
+    border: 1px solid rgba(210, 169, 34, 0.3);
+    color: var(--yellow, #d29922);
+}
+
+.rs-alert-toast.rs-alert-low {
+    background: rgba(126, 231, 135, 0.15);
+    border: 1px solid rgba(126, 231, 135, 0.3);
+    color: var(--green, #7ee787);
+}
+
+@keyframes rs-toast-slide {
+    from { transform: translateY(-8px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+/* ── Notification Bell ──────────────────────── */
+
+.rs-btn-bell {
+    padding: 0.35rem 0.6rem;
+    border: 1px solid var(--rs-card-border);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: opacity 0.2s;
+}
+
+.rs-btn-bell.muted { opacity: 0.4; }
+
+/* ── Rival Tracker Panel ────────────────────── */
+
+.rs-rival-add {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    align-items: center;
+}
+
+.rs-rival-card {
+    background: var(--rs-inner-bg);
+    border: 1px solid var(--rs-card-border);
+    border-radius: 8px;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.rs-rival-header {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.2rem;
+}
+
+.rs-rival-stats {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.35rem;
+}
+
+.rs-rival-actions {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+}
+
+.rs-rival-del {
+    color: var(--red, #f85149) !important;
+    margin-left: auto;
+}
+
+.btn-xs {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+}
+
+/* ── Alert History ──────────────────────────── */
+
+.rs-alert-history {
+    max-height: 200px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+}
+
+/* ── Compact Mode Overrides ─────────────────── */
+
+.rs-compact .rs-rivals-panel,
+.rs-compact .rs-intel-row,
+.rs-compact .rs-alert-strip,
+.rs-compact #rs-alert-history-panel {
+    display: none !important;
+}
+
+/* ── Intelligence Row Responsive ────────────── */
+
+@media (max-width: 768px) {
+    .rs-intel-row {
+        grid-template-columns: 1fr !important;
+    }
+}

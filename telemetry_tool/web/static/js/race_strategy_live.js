@@ -659,6 +659,257 @@
         setInterval(fetchWeather, 300000);
     }
 
+    // ── Neutralization ───────────────────────────
+
+    function toggleNeutralization() {
+        var isNeutralized = state && state.is_neutralized;
+        var endpoint = isNeutralized ? 'end' : 'start';
+        fetch('/race-strategy/' + RACE_ID + '/api/neutralization/' + endpoint, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({reason: 'safety_car'})
+        })
+        .then(function(r) { return r.json(); })
+        .then(function() { fetchState(); });
+    }
+
+    function updateNeutralizationUI() {
+        var banner = document.getElementById('rs-sc-banner');
+        var btn = document.getElementById('rs-btn-sc');
+        if (!banner || !btn) return;
+
+        var isNeutralized = state && state.is_neutralized;
+        banner.style.display = isNeutralized ? '' : 'none';
+        if (isNeutralized) {
+            btn.classList.add('rs-btn-sc-active');
+        } else {
+            btn.classList.remove('rs-btn-sc-active');
+        }
+    }
+
+    var scBtn = document.getElementById('rs-btn-sc');
+    if (scBtn) {
+        scBtn.addEventListener('click', function() {
+            var action = (state && state.is_neutralized) ? 'End Safety Car?' : 'Deploy Safety Car?';
+            if (!confirm(action)) return;
+            toggleNeutralization();
+        });
+    }
+
+    // ── Intelligence Display ─────────────────────
+
+    function updateIntelligence() {
+        if (!state || !state.intelligence) return;
+        var intel = state.intelligence;
+
+        // Finish prediction
+        if (intel.finish) {
+            var f = intel.finish;
+            setText('rs-intel-completion', f.completion_pct + '%');
+            setText('rs-intel-remaining', 'Remaining: ' + fmtTime(f.remaining_s));
+
+            var statusEl = document.getElementById('rs-intel-pace-status');
+            if (statusEl) {
+                statusEl.textContent = f.pace_status;
+                statusEl.className = 'rs-intel-detail';
+                if (f.pace_status === 'AHEAD') statusEl.classList.add('rs-ahead');
+                else if (f.pace_status === 'BEHIND') statusEl.classList.add('rs-behind');
+                else statusEl.classList.add('rs-on-plan');
+
+                if (f.pace_delta_s && f.pace_delta_s !== 0) {
+                    statusEl.textContent += ' (' + (f.pace_delta_s > 0 ? '+' : '') + f.pace_delta_s + 's)';
+                }
+            }
+        }
+
+        // Fuel alerts
+        if (intel.fuel) {
+            var fu = intel.fuel;
+            var fuelStatusEl = document.getElementById('rs-intel-fuel-status');
+            if (fuelStatusEl) {
+                fuelStatusEl.textContent = fu.fuel_status.toUpperCase();
+                fuelStatusEl.className = 'rs-intel-metric';
+                if (fu.fuel_status === 'critical') fuelStatusEl.classList.add('rs-fuel-critical');
+                else if (fu.fuel_status === 'warning') fuelStatusEl.classList.add('rs-fuel-warning');
+            }
+            setText('rs-intel-fuel-remaining', fmtShort(fu.fuel_remaining_s) + ' to empty');
+            var pitEl = document.getElementById('rs-intel-can-reach-pit');
+            if (pitEl) {
+                if (fu.can_reach_pit) {
+                    pitEl.textContent = 'Can reach pit';
+                    pitEl.className = 'rs-intel-detail rs-ahead';
+                } else {
+                    pitEl.textContent = 'Cannot reach pit! Short by ' + fu.shortfall_s + 's';
+                    pitEl.className = 'rs-intel-detail rs-fuel-critical';
+                }
+            }
+        }
+
+        // Pace analysis
+        if (intel.pace) {
+            var p = intel.pace;
+            var trendEl = document.getElementById('rs-intel-pace-trend');
+            if (trendEl) {
+                trendEl.textContent = p.pace_trend.charAt(0).toUpperCase() + p.pace_trend.slice(1);
+                trendEl.className = 'rs-intel-metric';
+                if (p.pace_trend === 'degrading') trendEl.classList.add('rs-fuel-warning');
+                else if (p.pace_trend === 'improving') trendEl.classList.add('rs-ahead');
+            }
+            var ownEl = document.getElementById('rs-intel-pace-vs-own');
+            if (ownEl && p.pace_vs_own_avg_s != null) {
+                ownEl.textContent = 'vs own avg: ' + (p.pace_vs_own_avg_s > 0 ? '+' : '') + p.pace_vs_own_avg_s + 's';
+            }
+            var recEl = document.getElementById('rs-intel-recommendation');
+            if (recEl) {
+                recEl.textContent = p.recommendation || '';
+                if (p.recommendation) recEl.classList.add('rs-fuel-warning');
+            }
+        }
+
+        // Swap suggestion (show as toast-like banner if present)
+        if (intel.swap && intel.swap.suggest_swap) {
+            var swapBanner = document.getElementById('rs-intel-recommendation');
+            if (swapBanner) {
+                swapBanner.textContent = 'SWAP: ' + intel.swap.reason + ' → ' + intel.swap.next_driver;
+                swapBanner.className = 'rs-intel-detail rs-fuel-warning';
+            }
+        }
+    }
+
+    // ── Rival Tracker ────────────────────────────
+
+    function fetchRivals() {
+        fetch('/race-strategy/' + RACE_ID + '/api/rivals')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                renderRivals(data.rivals || []);
+            })
+            .catch(function() {});
+    }
+
+    function renderRivals(rivals) {
+        var list = document.getElementById('rs-rival-list');
+        if (!list) return;
+        clearChildren(list);
+
+        if (!rivals.length) {
+            var empty = document.createElement('div');
+            empty.style.cssText = 'color:var(--text-secondary);font-size:0.85rem;padding:0.5rem 0;';
+            empty.textContent = 'No rivals tracked yet. Add a competitor above.';
+            list.appendChild(empty);
+            return;
+        }
+
+        var intel = (state && state.intelligence && state.intelligence.rivals) || [];
+
+        rivals.forEach(function(r) {
+            var card = document.createElement('div');
+            card.className = 'rs-rival-card';
+
+            // Find intelligence analysis for this rival
+            var analysis = null;
+            for (var i = 0; i < intel.length; i++) {
+                if (intel[i].rival_id === r.id) { analysis = intel[i]; break; }
+            }
+
+            var header = document.createElement('div');
+            header.className = 'rs-rival-header';
+            header.textContent = (r.car_number ? '#' + r.car_number + ' ' : '') + r.team_name;
+
+            var stats = document.createElement('div');
+            stats.className = 'rs-rival-stats';
+            if (analysis) {
+                stats.textContent = analysis.estimated_pits + ' pits';
+                if (analysis.avg_stint_s) {
+                    stats.textContent += ' | ~' + fmtShort(analysis.avg_stint_s) + ' stints';
+                }
+                if (analysis.last_activity_s != null) {
+                    stats.textContent += ' | Last: ' + fmtShort(analysis.last_activity_s) + ' ago';
+                }
+            } else {
+                stats.textContent = (r.events || []).length + ' events logged';
+            }
+
+            var actions = document.createElement('div');
+            actions.className = 'rs-rival-actions';
+            var eventTypes = ['pit_in', 'pit_out', 'driver_change', 'penalty'];
+            eventTypes.forEach(function(et) {
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'btn btn-ghost btn-xs';
+                btn.textContent = et.replace('_', ' ');
+                btn.addEventListener('click', function() {
+                    logRivalEvent(r.id, et);
+                });
+                actions.appendChild(btn);
+            });
+
+            var delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.className = 'btn btn-ghost btn-xs rs-rival-del';
+            delBtn.textContent = 'X';
+            delBtn.title = 'Remove rival';
+            delBtn.addEventListener('click', function() {
+                if (!confirm('Remove ' + r.team_name + '?')) return;
+                deleteRival(r.id);
+            });
+            actions.appendChild(delBtn);
+
+            card.appendChild(header);
+            card.appendChild(stats);
+            card.appendChild(actions);
+            list.appendChild(card);
+        });
+    }
+
+    function logRivalEvent(rivalId, eventType) {
+        fetch('/race-strategy/' + RACE_ID + '/api/rivals/' + rivalId + '/event', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({event_type: eventType})
+        })
+        .then(function() { fetchRivals(); });
+    }
+
+    function deleteRival(rivalId) {
+        fetch('/race-strategy/' + RACE_ID + '/api/rivals/' + rivalId, {
+            method: 'DELETE'
+        })
+        .then(function() { fetchRivals(); });
+    }
+
+    // Add rival button handler
+    var addRivalBtn = document.getElementById('rs-rival-add-btn');
+    if (addRivalBtn) {
+        addRivalBtn.addEventListener('click', function() {
+            var team = document.getElementById('rs-rival-team').value.trim();
+            var car = document.getElementById('rs-rival-car').value.trim();
+            if (!team) return;
+            fetch('/race-strategy/' + RACE_ID + '/api/rivals', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({team_name: team, car_number: car})
+            })
+            .then(function() {
+                document.getElementById('rs-rival-team').value = '';
+                document.getElementById('rs-rival-car').value = '';
+                fetchRivals();
+            });
+        });
+    }
+
+    // Collapse toggle
+    var rivalsToggle = document.getElementById('rs-rivals-toggle');
+    if (rivalsToggle) {
+        rivalsToggle.addEventListener('click', function() {
+            var content = document.getElementById('rs-rivals-content');
+            if (!content) return;
+            var hidden = content.style.display === 'none';
+            content.style.display = hidden ? '' : 'none';
+            rivalsToggle.textContent = hidden ? 'Collapse' : 'Expand';
+        });
+    }
+
     // ── Polling ──────────────────────────────────
 
     function fetchState() {
@@ -670,6 +921,8 @@
                 updateTimeline();
                 updateStintLog();
                 updateChat();
+                updateNeutralizationUI();
+                updateIntelligence();
             })
             .catch(function() {});
     }
@@ -861,6 +1114,10 @@
 
     fetchState();
 
+    // Fetch rivals on load and every 10s
+    fetchRivals();
+    setInterval(fetchRivals, 10000);
+
     // Client-side timer tick (1s)
     setInterval(function() {
         updateTimer();
@@ -869,6 +1126,8 @@
         updateSummary();
         updateWindowStatus();
         updateWallClock();
+        updateNeutralizationUI();
+        updateIntelligence();
     }, 1000);
 
     // Server poll (2s)

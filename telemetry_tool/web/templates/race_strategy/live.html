@@ -26,6 +26,8 @@
             <button type="button" class="rs-toggle-btn" data-layout="vertical" title="Vertical view">Vertical</button>
             <button type="button" class="rs-toggle-btn" data-layout="compact" title="Pit Wall mode">Pit Wall</button>
         </div>
+        <button type="button" class="rs-btn-sc" id="rs-btn-sc" title="Toggle Safety Car">SC</button>
+        <button type="button" class="rs-btn-bell" id="rs-btn-bell" title="Toggle alert sounds">Bell</button>
         <button type="button" class="btn btn-ghost" id="rs-btn-fullscreen" title="Toggle fullscreen">Fullscreen</button>
         <a href="{{ url_for('race_strategy_v2.detail', race_id=race.race_id) }}" class="btn btn-ghost">Detail</a>
     </div>
@@ -59,6 +61,15 @@
             <div class="rs-window-card-countdown"></div>
         </div>
     </div>
+
+    <!-- Neutralization Banner -->
+    <div class="rs-sc-banner rs-full" id="rs-sc-banner" style="display:none;">
+        <span class="rs-sc-icon">SC</span>
+        <span id="rs-sc-text">SAFETY CAR DEPLOYED</span>
+    </div>
+
+    <!-- Alert Toast Strip -->
+    <div class="rs-alert-strip rs-full" id="rs-alert-strip"></div>
 
     <!-- 1. Race Timer -->
     <div class="rs-live-card">
@@ -127,6 +138,28 @@
             <span id="rs-next-info"></span>
         </div>
         <div class="rs-next-ballast" id="rs-next-ballast"></div>
+    </div>
+
+    <!-- Intelligence Row -->
+    <div class="rs-live-card rs-full rs-intel-row" id="rs-intel-row">
+        <div class="rs-intel-card" id="rs-intel-finish">
+            <h4>Race Progress</h4>
+            <div class="rs-intel-metric" id="rs-intel-completion">--</div>
+            <div class="rs-intel-detail" id="rs-intel-remaining">Remaining: --</div>
+            <div class="rs-intel-detail" id="rs-intel-pace-status">--</div>
+        </div>
+        <div class="rs-intel-card" id="rs-intel-fuel-alert">
+            <h4>Fuel Status</h4>
+            <div class="rs-intel-metric" id="rs-intel-fuel-status">OK</div>
+            <div class="rs-intel-detail" id="rs-intel-fuel-remaining">-- to empty</div>
+            <div class="rs-intel-detail" id="rs-intel-can-reach-pit">--</div>
+        </div>
+        <div class="rs-intel-card" id="rs-intel-pace">
+            <h4>Pace Analysis</h4>
+            <div class="rs-intel-metric" id="rs-intel-pace-trend">--</div>
+            <div class="rs-intel-detail" id="rs-intel-pace-vs-own">vs own: --</div>
+            <div class="rs-intel-detail" id="rs-intel-recommendation"></div>
+        </div>
     </div>
 
     <!-- 4. Stint Order -->
@@ -208,6 +241,28 @@
             <input type="text" id="rs-chat-message" placeholder="Message..." style="flex:1;">
             <button type="button" id="rs-chat-send" class="btn btn-primary">Send</button>
         </div>
+    </div>
+
+    <!-- Rival Tracker -->
+    <div class="rs-live-card rs-full rs-rivals-panel" id="rs-rivals-panel">
+        <h3>
+            Rival Tracker
+            <button type="button" class="btn btn-ghost btn-sm" id="rs-rivals-toggle" style="float:right;">Collapse</button>
+        </h3>
+        <div id="rs-rivals-content">
+            <div class="rs-rival-add" id="rs-rival-add">
+                <input type="text" id="rs-rival-team" placeholder="Team name" style="width:150px;">
+                <input type="text" id="rs-rival-car" placeholder="Car #" style="width:60px;">
+                <button type="button" class="btn btn-primary btn-sm" id="rs-rival-add-btn">Add</button>
+            </div>
+            <div id="rs-rival-list"></div>
+        </div>
+    </div>
+
+    <!-- Alert History -->
+    <div class="rs-live-card rs-full" id="rs-alert-history-panel" style="display:none;">
+        <h3>Alert Log</h3>
+        <div id="rs-alert-history" class="rs-alert-history"></div>
     </div>
 </div>
 
