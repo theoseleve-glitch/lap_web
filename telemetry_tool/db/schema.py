@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -751,5 +751,94 @@ PHASE_14_TABLES: list[tuple[str, str]] = [
     ("predefined_track_coords", _PREDEFINED_TRACK_COORDS_TABLE),
 ]
 
+# ── Phase 15: Race Strategy (endurance race management) ──────────────
+
+_RACE_CONFIGS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_configs (
+    race_id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_name           TEXT    NOT NULL,
+    track_name          TEXT,
+    team_name           TEXT,
+    race_duration_s     INTEGER NOT NULL,
+    reference_weight_kg REAL,
+    desired_stints      INTEGER NOT NULL DEFAULT 4,
+    fuel_autonomy_s     INTEGER,
+    min_pit_stop_s      INTEGER NOT NULL DEFAULT 60,
+    pit_speed_kmh       REAL,
+    pit_open_s          INTEGER,
+    pit_close_s         INTEGER,
+    empty_kart_kg       REAL,
+    full_tank_kg        REAL,
+    min_total_kart_kg   REAL,
+    weigh_on_pit_exit   INTEGER NOT NULL DEFAULT 0,
+    qualifying_duration_s INTEGER,
+    refuel_after_quali  INTEGER NOT NULL DEFAULT 0,
+    mandatory_driver_change INTEGER NOT NULL DEFAULT 1,
+    refueling_allowed   INTEGER NOT NULL DEFAULT 1,
+    race_start_ts       TEXT,
+    status              TEXT    NOT NULL DEFAULT 'draft',
+    created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_RACE_DRIVERS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_drivers (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id             INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    driver_name         TEXT    NOT NULL,
+    driver_order        INTEGER NOT NULL,
+    min_stint_s         INTEGER,
+    max_stint_s         INTEGER,
+    min_cumulative_s    INTEGER,
+    max_cumulative_s    INTEGER,
+    min_rest_s          INTEGER NOT NULL DEFAULT 0,
+    weight_kg           REAL
+);
+"""
+
+_RACE_STINTS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_stints (
+    stint_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id             INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    stint_order         INTEGER NOT NULL,
+    driver_id           INTEGER NOT NULL REFERENCES race_drivers(id),
+    planned_start_s     INTEGER,
+    planned_end_s       INTEGER,
+    planned_duration_s  INTEGER,
+    actual_start_s      INTEGER,
+    actual_end_s        INTEGER,
+    actual_duration_s   INTEGER,
+    fuel_at_start       REAL,
+    fuel_at_end         REAL,
+    ballast_kg          REAL,
+    notes               TEXT,
+    status              TEXT NOT NULL DEFAULT 'planned'
+);
+"""
+
+_RACE_PIT_STOPS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_pit_stops (
+    pit_id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id             INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    stint_id            INTEGER REFERENCES race_stints(stint_id),
+    planned_at_s        INTEGER,
+    actual_at_s         INTEGER,
+    duration_s          INTEGER,
+    driver_change       INTEGER NOT NULL DEFAULT 1,
+    refueled            INTEGER NOT NULL DEFAULT 0,
+    fuel_added_kg       REAL,
+    ballast_changed     INTEGER NOT NULL DEFAULT 0,
+    notes               TEXT
+);
+"""
+
+PHASE_15_TABLES: list[tuple[str, str]] = [
+    ("race_configs", _RACE_CONFIGS_TABLE),
+    ("race_drivers", _RACE_DRIVERS_TABLE),
+    ("race_stints", _RACE_STINTS_TABLE),
+    ("race_pit_stops", _RACE_PIT_STOPS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES

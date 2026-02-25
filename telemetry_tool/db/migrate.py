@@ -364,6 +364,12 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (19, "Phase 19 schema — predefined_track_coords geocoding cache"),
     )
 
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (20, "Phase 15 schema — race strategy (race_configs, race_drivers, race_stints, race_pit_stops)"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)
