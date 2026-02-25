@@ -27,8 +27,6 @@ def analytics_index():
              "desc": "Pit stop and tire strategy planner with fuel model"},
             {"name": "Weight Simulator", "url": "/predictions/weight-simulator",
              "desc": "Simulate weight change impact on lap times"},
-            {"name": "Sector Comparison", "url": "/analytics/sector-comparison",
-             "desc": "Compare sector performance across sessions"},
         ],
     )
 
@@ -92,19 +90,3 @@ def meteo_page():
     return render_template("meteo_dashboard.html")
 
 
-@bp.route("/sector-comparison")
-def sector_comparison_page():
-    """Cross-session sector comparison page."""
-    conn = get_db_connection()
-    drivers = conn.execute(
-        "SELECT driver_id, driver_name FROM drivers ORDER BY driver_name"
-    ).fetchall()
-    tracks = conn.execute(
-        "SELECT track_id, track_name FROM tracks ORDER BY track_name"
-    ).fetchall()
-
-    return render_template(
-        "sector_comparison.html",
-        drivers=[dict(d) for d in drivers],
-        tracks=[dict(t) for t in tracks],
-    )

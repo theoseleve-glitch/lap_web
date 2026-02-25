@@ -169,6 +169,124 @@ class TestBestEverRelative:
         assert result["records_held"][0]["track_name"] == "Track A"
 
 
+def _seed_two_drivers(db):
+    """Helper: seed two drivers with sessions, profiles, and progression."""
+    db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Alice')")
+    db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (2, 'Bob')")
+    db.execute(
+        "INSERT INTO tracks (track_id, track_name, lap_length_m) "
+        "VALUES ('t1', 'TestTrack', 500)"
+    )
+    # Alice: 3 sessions, faster, more consistent
+    for i in range(1, 4):
+        sid = f"a{i}"
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_type, session_date, best_lap_time_s, n_laps, total_score) "
+            "VALUES (?, ?, 1, 't1', 'practice', ?, ?, 10, ?)",
+            (sid, f"a{i}.csv", f"2026-01-0{i}", 45.0 - i * 0.1, 70.0 + i * 5),
+        )
+        db.execute(
+            "INSERT INTO driver_progression (driver_id, session_id, session_date, "
+            "total_score, n_laps) VALUES (1, ?, ?, ?, 10)",
+            (sid, f"2026-01-0{i}", 70.0 + i * 5),
+        )
+    # Bob: 2 sessions, slower, less consistent
+    for i in range(1, 3):
+        sid = f"b{i}"
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_type, session_date, best_lap_time_s, n_laps, total_score) "
+            "VALUES (?, ?, 2, 't1', 'practice', ?, ?, 8, ?)",
+            (sid, f"b{i}.csv", f"2026-01-0{i}", 46.0 + i * 0.2, 60.0 + i * 2),
+        )
+        db.execute(
+            "INSERT INTO driver_progression (driver_id, session_id, session_date, "
+            "total_score, n_laps) VALUES (2, ?, ?, ?, 8)",
+            (sid, f"2026-01-0{i}", 60.0 + i * 2),
+        )
+    # Alice profile with consistency
+    db.execute(
+        "INSERT INTO driver_profiles (driver_id, consistency_rating) VALUES (1, 2.5)"
+    )
+    db.execute(
+        "INSERT INTO driver_profiles (driver_id, consistency_rating) VALUES (2, 5.1)"
+    )
+    db.commit()
+
+
+class TestHeadToHead:
+    def test_build_h2h_returns_five_metrics(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        assert len(rows) == 5
+        keys = [r["key"] for r in rows]
+        assert keys == ["pace", "consistency", "avg_score", "total_laps", "progression"]
+
+    def test_pace_winner_is_lower(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        pace_row = rows[0]
+        # Alice has lower best time → winner
+        assert pace_row["winner"] == "a"
+
+    def test_consistency_winner_is_lower_cv(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        cons_row = rows[1]
+        # Alice has 2.5% CV vs Bob 5.1% → Alice wins
+        assert cons_row["winner"] == "a"
+
+    def test_avg_score_winner(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        score_row = rows[2]
+        # Alice avg ~80 vs Bob avg ~63 → Alice
+        assert score_row["winner"] == "a"
+
+    def test_total_laps_winner(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        laps_row = rows[3]
+        # Alice: 3*10=30, Bob: 2*8=16 → Alice
+        assert laps_row["winner"] == "a"
+        assert laps_row["val_a"] == 30
+        assert laps_row["val_b"] == 16
+
+    def test_progression_rate_computed(self, db):
+        from web.routes.comparisons import _driver_summary, _build_h2h
+
+        _seed_two_drivers(db)
+        a = _driver_summary(db, 1)
+        b = _driver_summary(db, 2)
+        rows = _build_h2h(a, b)
+        prog_row = rows[4]
+        # Alice: 75→80→85, slope=5. Bob: 62→64, slope=2.
+        assert prog_row["val_a"] is not None
+        assert prog_row["val_b"] is not None
+        assert prog_row["winner"] == "a"  # Higher slope is better
+
+
 class TestConsistencyRating:
     def test_consistency_stored_as_pct(self, db):
         """consistency_rating should be raw CV% (e.g. 2.5 meaning 2.5%)."""
