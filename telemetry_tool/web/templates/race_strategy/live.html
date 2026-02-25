@@ -38,6 +38,25 @@
      data-pit-close="{{ race.pit_close_s or 0 }}"
      data-track-name="{{ race.track_name or '' }}">
 
+    <!-- 0. Window Status Bar -->
+    <div class="rs-window-status-bar rs-full" id="rs-window-bar">
+        <div class="rs-window-card rs-window-none" id="rs-window-pitlane">
+            <div class="rs-window-card-type">PIT LANE</div>
+            <div class="rs-window-card-status">Not configured</div>
+            <div class="rs-window-card-countdown"></div>
+        </div>
+        <div class="rs-window-card rs-window-none" id="rs-window-refuel">
+            <div class="rs-window-card-type">REFUEL</div>
+            <div class="rs-window-card-status">Not configured</div>
+            <div class="rs-window-card-countdown"></div>
+        </div>
+        <div class="rs-window-card rs-window-none" id="rs-window-tech_stop">
+            <div class="rs-window-card-type">TECH STOP</div>
+            <div class="rs-window-card-status">Not configured</div>
+            <div class="rs-window-card-countdown"></div>
+        </div>
+    </div>
+
     <!-- 1. Race Timer -->
     <div class="rs-live-card">
         <h3>Race Timer</h3>

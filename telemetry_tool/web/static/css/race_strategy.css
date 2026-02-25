@@ -1478,6 +1478,67 @@ details[open].rs-form-section > summary::before {
     margin: 0.75rem 0 0.5rem;
 }
 
+/* ── Window Status Bar ─────────────────────── */
+.rs-window-status-bar {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+    grid-column: 1 / -1;
+}
+.rs-window-card {
+    padding: 0.75rem;
+    border-radius: 6px;
+    text-align: center;
+    border: 2px solid transparent;
+    transition: all 0.3s;
+}
+.rs-window-card-type {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 0.25rem;
+}
+.rs-window-card-status {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+.rs-window-card-countdown {
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+    margin-top: 0.15rem;
+}
+.rs-window-none {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-color: var(--border);
+}
+.rs-window-before {
+    background: rgba(255, 200, 50, 0.1);
+    color: #ffc832;
+    border-color: #ffc832;
+}
+.rs-window-open {
+    background: rgba(126, 231, 135, 0.1);
+    color: #7ee787;
+    border-color: #7ee787;
+}
+.rs-window-closing {
+    background: rgba(255, 166, 87, 0.15);
+    color: #ffa657;
+    border-color: #ffa657;
+    animation: rs-window-pulse 1s infinite;
+}
+.rs-window-closed {
+    background: rgba(248, 81, 73, 0.1);
+    color: #f85149;
+    border-color: #f85149;
+}
+@keyframes rs-window-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
 /* ── Responsive ───────────────────────────────── */
 
 @media (max-width: 900px) {

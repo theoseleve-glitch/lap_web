@@ -732,9 +732,62 @@
         });
     }
 
+    // ── Window Status Bar (Tier 5) ────────────────
+    function updateWindowStatus() {
+        if (!state || !state.window_status) {
+            // Fallback to legacy single pit window banner
+            updatePitWindowLegacy();
+            return;
+        }
+        var bar = document.getElementById('rs-window-bar');
+        if (!bar) return;
+
+        // Hide legacy banner if window_status is available
+        var legacyBanner = document.getElementById('rs-pit-window-banner');
+        if (legacyBanner) legacyBanner.style.display = 'none';
+
+        state.window_status.forEach(function(ws) {
+            var card = document.getElementById('rs-window-' + ws.type);
+            if (!card) return;
+
+            var statusEl = card.querySelector('.rs-window-card-status');
+            var countdownEl = card.querySelector('.rs-window-card-countdown');
+
+            card.className = 'rs-window-card rs-window-' + ws.status;
+
+            if (ws.status === 'none') {
+                statusEl.textContent = 'Not configured';
+                countdownEl.textContent = '';
+            } else if (ws.status === 'before') {
+                statusEl.textContent = 'Opens in';
+                countdownEl.textContent = fmtShort(ws.countdown_s);
+            } else if (ws.status === 'open') {
+                statusEl.textContent = 'OPEN';
+                countdownEl.textContent = 'Closes in ' + fmtShort(ws.countdown_s);
+            } else if (ws.status === 'closing') {
+                statusEl.textContent = 'CLOSING';
+                countdownEl.textContent = fmtShort(ws.countdown_s);
+            } else if (ws.status === 'closed') {
+                statusEl.textContent = 'CLOSED';
+                countdownEl.textContent = '';
+            }
+        });
+
+        // Update end-stint button warning based on pitlane status
+        var pitStatus = state.window_status.find(function(w) { return w.type === 'pitlane'; });
+        var endBtn = document.getElementById('rs-btn-end-stint');
+        if (endBtn && pitStatus) {
+            if (pitStatus.status === 'before' || pitStatus.status === 'closed') {
+                endBtn.classList.add('rs-btn-pit-warning');
+            } else {
+                endBtn.classList.remove('rs-btn-pit-warning');
+            }
+        }
+    }
+
     // ── Pit Window Banner ────────────────────────
 
-    function updatePitWindow() {
+    function updatePitWindowLegacy() {
         var banner = document.getElementById('rs-pit-window-banner');
         var endBtn = document.getElementById('rs-btn-end-stint');
         if (!banner) return;
@@ -784,7 +837,7 @@
         updateFuel();
         updateDrivers();
         updateSummary();
-        updatePitWindow();
+        updateWindowStatus();
     }, 1000);
 
     // Server poll (2s)
