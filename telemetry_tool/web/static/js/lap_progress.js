@@ -116,6 +116,7 @@
     function _drawChart(data) {
         var canvas = document.getElementById("lap-progress-canvas");
         if (!canvas) return;
+        canvas.__redraw = function() { _drawChart(data); };
         var dpr = window.devicePixelRatio || 1;
         var W = canvas.parentElement.clientWidth || 700;
         var H = 240;

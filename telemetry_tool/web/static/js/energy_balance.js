@@ -66,6 +66,7 @@
     function _drawEnergyBars(data) {
         var canvas = document.getElementById("energy-balance-canvas");
         if (!canvas) return;
+        canvas.__redraw = function() { _drawEnergyBars(data); };
         var dpr = window.devicePixelRatio || 1;
         var W = canvas.parentElement.clientWidth || 700;
         var H = 220;

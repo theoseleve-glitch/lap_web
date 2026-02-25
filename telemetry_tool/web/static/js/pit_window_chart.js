@@ -284,6 +284,18 @@
             drawChart(ctx, cw, ch, data);
             renderStats(statsEl, data);
             if (coachEl) renderCoaching(coachEl, data);
+
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() {
+                var dpr2 = window.devicePixelRatio || 1;
+                var cw2 = canvas.clientWidth || 560;
+                var ch2 = canvas.clientHeight || 280;
+                canvas.width = cw2 * dpr2;
+                canvas.height = ch2 * dpr2;
+                var ctx2 = canvas.getContext("2d");
+                ctx2.scale(dpr2, dpr2);
+                drawChart(ctx2, cw2, ch2, data);
+            };
         }, {
             loadingText: 'Loading pit window\u2026',
         });

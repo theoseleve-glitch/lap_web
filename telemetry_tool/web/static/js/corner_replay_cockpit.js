@@ -49,6 +49,9 @@
         var dims = _setup(_canvas, _ctx);
         if (!dims) return;
 
+        // Register __redraw for ResizeObserver (replays last call)
+        _canvas.__redraw = function() { render(data, opts); };
+
         var ctx = _ctx;
         opts = opts || {};
         data = _normalizeData(data);
@@ -103,6 +106,9 @@
         var ctx = canvas.getContext('2d');
         var dims = _setup(canvas, ctx);
         if (!dims) return;
+
+        // Register __redraw for ResizeObserver (replays last call)
+        canvas.__redraw = function() { renderCompact(canvasId, data, opts); };
 
         opts = opts || {};
         data = _normalizeData(data);

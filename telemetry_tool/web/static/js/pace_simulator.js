@@ -321,6 +321,17 @@
         ctx.scale(dpr, dpr);
 
         drawChart(ctx, cw, ch, result);
+        canvas.__redraw = function() {
+            var rdpr = window.devicePixelRatio || 1;
+            var rcw = canvas.parentElement.clientWidth || 560;
+            var rch = canvas.clientHeight || 280;
+            canvas.width = rcw * rdpr;
+            canvas.height = rch * rdpr;
+            canvas.style.width = rcw + "px";
+            var rctx = canvas.getContext("2d");
+            rctx.scale(rdpr, rdpr);
+            drawChart(rctx, rcw, rch, result);
+        };
         renderStats(statsEl, result);
         renderCoaching(coachEl, result);
 

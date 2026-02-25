@@ -153,6 +153,7 @@
     function _drawRadar(labels, values) {
         var canvas = document.getElementById("dstyle-radar-canvas");
         if (!canvas || labels.length === 0) return;
+        canvas.__redraw = function() { _drawRadar(labels, values); };
         var dpr = window.devicePixelRatio || 1;
         var W = Math.min(canvas.parentElement.clientWidth || 300, 300);
         var H = 300;

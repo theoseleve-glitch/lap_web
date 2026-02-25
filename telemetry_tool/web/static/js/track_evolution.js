@@ -79,6 +79,8 @@
             'border:1px solid ' + (C.border || '#30363d') + ';z-index:10;white-space:nowrap;';
         container.appendChild(tooltip);
 
+        canvas.__redraw = function() { resize(); };
+
         function fetchData() {
             FetchHelper.fetch('/api/track/' + encodeURIComponent(trackId) + '/evolution')
                 .then(function (json) {

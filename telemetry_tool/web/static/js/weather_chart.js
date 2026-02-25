@@ -9,6 +9,7 @@
     function draw(canvasId, data) {
         var canvas = document.getElementById(canvasId);
         if (!canvas) return;
+        canvas.__redraw = function() { draw(canvasId, data); };
         var scatter = data.scatter_data || {};
         var keys = Object.keys(scatter);
         if (keys.length === 0) return;

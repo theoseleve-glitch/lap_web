@@ -66,6 +66,11 @@
         var dims = _setupCanvas();
         if (!dims) return;
 
+        // Register __redraw for ResizeObserver (replays last call)
+        if (_canvas) {
+            _canvas.__redraw = function() { renderReview(cornerWindow, progress, lapA, refLaps); };
+        }
+
         var proj = _cornerProjection(dims, cornerWindow, lapA);
         if (!proj) return;
 
@@ -90,6 +95,11 @@
     function renderDual(cornerWindow, progress, lapA, lapB, deltaText) {
         var dims = _setupCanvas();
         if (!dims) return;
+
+        // Register __redraw for ResizeObserver (replays last call)
+        if (_canvas) {
+            _canvas.__redraw = function() { renderDual(cornerWindow, progress, lapA, lapB, deltaText); };
+        }
 
         var proj = _cornerProjection(dims, cornerWindow, lapA);
         if (!proj) return;
@@ -117,6 +127,11 @@
     function renderTriple(cornerWindow, progress, top3Laps) {
         var dims = _setupCanvas();
         if (!dims) return;
+
+        // Register __redraw for ResizeObserver (replays last call)
+        if (_canvas) {
+            _canvas.__redraw = function() { renderTriple(cornerWindow, progress, top3Laps); };
+        }
 
         var proj = _cornerProjection(dims, cornerWindow, top3Laps[0]);
         if (!proj) return;

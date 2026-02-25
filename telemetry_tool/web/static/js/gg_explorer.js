@@ -133,6 +133,18 @@
             _sizeCanvases();
             _computeGGBounds(_state.allGGData.accel_lat, _state.allGGData.accel_long);
             _drawAll();
+
+            // Register __redraw for ResizeObserver on both canvases
+            _ggCanvas.__redraw = function() {
+                if (!_state.allGGData) return;
+                _sizeCanvases();
+                _drawAll();
+            };
+            _mapCanvas.__redraw = function() {
+                if (!_state.allGGData) return;
+                _sizeCanvases();
+                _drawAll();
+            };
         }).catch(function () {
             _showNoData('Failed to load acceleration data.');
         });

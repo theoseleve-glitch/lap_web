@@ -401,6 +401,9 @@
         }
 
         if (legendEl) legendEl.innerHTML = legendHtml;
+
+        // Register __redraw for ResizeObserver
+        canvas.__redraw = function() { draw(); };
     }
 
     function niceRange(lo, hi, count) {

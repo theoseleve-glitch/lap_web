@@ -21,6 +21,8 @@
         FetchHelper.load(container, url, function(data) {
             if (data.error) { _showMessage(canvas, data.error); return; }
             _draw(canvas, data);
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() { _draw(canvas, data); };
         }, {
             loadingText: 'Loading brake precision\u2026',
             emptyCheck: function(d) { return !d || !d.corners || d.corners.length === 0; },

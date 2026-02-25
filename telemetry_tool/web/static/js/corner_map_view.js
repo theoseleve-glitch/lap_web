@@ -59,6 +59,9 @@
             );
 
             _render(canvas, ctx, gps, cornerInfo);
+
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() { _render(canvas, ctx, gps, cornerInfo); };
         });
     }
 

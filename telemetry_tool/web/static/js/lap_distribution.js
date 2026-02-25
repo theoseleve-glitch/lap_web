@@ -96,6 +96,16 @@
         setTimeout(function () {
             _drawHistogram(data);
             _drawBoxplot(data);
+
+            // Register __redraw for ResizeObserver on dynamically created canvases
+            var distCanvas = document.getElementById("dist-canvas");
+            if (distCanvas) {
+                distCanvas.__redraw = function() { _drawHistogram(data); };
+            }
+            var boxCanvas = document.getElementById("boxplot-canvas");
+            if (boxCanvas) {
+                boxCanvas.__redraw = function() { _drawBoxplot(data); };
+            }
         }, 30);
     }
 

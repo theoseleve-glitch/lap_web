@@ -153,6 +153,8 @@
             }
         }
 
+        canvas.__redraw = function() { resize(); };
+
         var _progResizeTimer;
         window.addEventListener('resize', function () {
             clearTimeout(_progResizeTimer);
@@ -203,6 +205,7 @@
 
         function drawTimeSeries(canvas, prog, field, yLabel, color, invertY) {
             if (!prog || prog.length < 1) return;
+            canvas.__redraw = function() { drawTimeSeries(canvas, prog, field, yLabel, color, invertY); };
 
             var ctx = canvas.getContext('2d');
             var container = canvas.parentElement;

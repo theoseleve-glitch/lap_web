@@ -429,6 +429,7 @@
             canvas = document.getElementById('viz-speed-chart');
             if (!canvas) return;
             ctx = canvas.getContext('2d');
+            canvas.__redraw = function() { draw(); };
 
             canvas.addEventListener('mousemove', function (e) {
                 var rect = canvas.getBoundingClientRect();
@@ -865,6 +866,7 @@
             canvas = document.getElementById('viz-gg-chart');
             if (!canvas) return;
             ctx = canvas.getContext('2d');
+            canvas.__redraw = function() { draw(); };
             canvas.style.cursor = 'crosshair';
             canvas.addEventListener('mousemove', function (e) {
                 if (_ggDragging) {

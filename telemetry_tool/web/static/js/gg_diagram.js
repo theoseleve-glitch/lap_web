@@ -330,6 +330,19 @@
         // Initial render.
         render();
 
+        // Register __redraw for ResizeObserver
+        canvas.__redraw = function() {
+            w = canvas.parentElement.clientWidth - 32;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.width = w + 'px';
+            canvas.style.height = h + 'px';
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.scale(dpr, dpr);
+            pW = w - pad.left - pad.right;
+            render();
+        };
+
         // ── Zoom (mouse wheel) ────────────────────────
         canvas.addEventListener('wheel', function (e) {
             e.preventDefault();

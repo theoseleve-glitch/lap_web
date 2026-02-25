@@ -12,6 +12,9 @@
         var points = data.trend_points || [];
         if (points.length === 0) return;
 
+        // Register __redraw for ResizeObserver
+        canvas.__redraw = function() { draw(canvasId, data); };
+
         var W = canvas.parentElement.clientWidth || 700;
         var H = 350;
         var dpr = window.devicePixelRatio || 1;

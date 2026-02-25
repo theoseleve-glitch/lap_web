@@ -63,6 +63,12 @@
             _draw();
             _setupEvents();
             _setupControls();
+
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() {
+                _computeProjection();
+                _draw();
+            };
         });
     }
 

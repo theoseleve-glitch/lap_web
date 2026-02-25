@@ -55,6 +55,7 @@
                 if (keys.length === 0) return;
 
                 drawSpeedOverlay(canvas, traces, keys);
+                canvas.__redraw = function() { drawSpeedOverlay(canvas, traces, keys); };
             })
             .catch(function (err) {
                 console.warn('Comparison speed overlay load failed:', err);
@@ -203,6 +204,7 @@
     function initLapTimeChart(canvasId, lapsA, lapsB, labelA, labelB) {
         var canvas = document.getElementById(canvasId);
         if (!canvas) return;
+        canvas.__redraw = function() { initLapTimeChart(canvasId, lapsA, lapsB, labelA, labelB); };
 
         var timesA = lapsA.filter(function (l) { return l.lap_time_s != null; })
                          .map(function (l) { return { n: l.lap_number, t: l.lap_time_s }; });
@@ -326,6 +328,7 @@
     function initProgressionOverlay(canvasId, progA, progB, nameA, nameB) {
         var canvas = document.getElementById(canvasId);
         if (!canvas) return;
+        canvas.__redraw = function() { initProgressionOverlay(canvasId, progA, progB, nameA, nameB); };
 
         var ctx = canvas.getContext('2d');
         var container = canvas.parentElement;

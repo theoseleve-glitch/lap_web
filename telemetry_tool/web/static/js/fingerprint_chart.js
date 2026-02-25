@@ -211,6 +211,18 @@
 
             drawRadar(ctx, w, h, values, labels);
             renderStats(statsEl, data);
+
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() {
+                var dpr2 = window.devicePixelRatio || 1;
+                var w2 = canvas.clientWidth || 380;
+                var h2 = canvas.clientHeight || 380;
+                canvas.width = w2 * dpr2;
+                canvas.height = h2 * dpr2;
+                var ctx2 = canvas.getContext("2d");
+                ctx2.scale(dpr2, dpr2);
+                drawRadar(ctx2, w2, h2, values, labels);
+            };
         }, {
             loadingText: 'Loading fingerprint\u2026',
         });

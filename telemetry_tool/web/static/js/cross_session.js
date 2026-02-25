@@ -139,6 +139,9 @@
             canvas.style.height = '280px';
             ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
             draw();
+
+            // Register __redraw for ResizeObserver
+            canvas.__redraw = function() { resize(); };
         }
 
         function draw() {

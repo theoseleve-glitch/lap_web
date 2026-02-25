@@ -9,6 +9,7 @@
     function draw(canvasId, data) {
         var canvas = document.getElementById(canvasId);
         if (!canvas) return;
+        canvas.__redraw = function() { draw(canvasId, data); };
         var rankings = data.rankings || [];
         if (rankings.length === 0) return;
 

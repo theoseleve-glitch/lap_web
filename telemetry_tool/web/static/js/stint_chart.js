@@ -122,6 +122,11 @@
 
         // Draw stint timeline chart
         drawStintChart(metrics);
+
+        // Register __redraw for ResizeObserver
+        if (canvas) {
+            canvas.__redraw = function() { drawStintChart(metrics); };
+        }
     }
 
     // Keep last metrics for resize redraws

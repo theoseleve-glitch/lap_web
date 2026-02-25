@@ -809,6 +809,9 @@
 
         // ── Legend ────────────────────────────────────
         _updateLegend();
+
+        // Register __redraw for ResizeObserver
+        canvas.__redraw = function() { _drawZoomedChart(); };
     }
 
     // ── Legend ────────────────────────────────────────

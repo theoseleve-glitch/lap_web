@@ -69,6 +69,16 @@
         setTimeout(function () {
             _drawSpeedChart(data);
             _drawTimeLoss(data);
+
+            // Register __redraw for ResizeObserver on dynamically created canvases
+            var spCanvas = document.getElementById("speed-profile-canvas");
+            if (spCanvas) {
+                spCanvas.__redraw = function() { _drawSpeedChart(data); };
+            }
+            var tlCanvas = document.getElementById("time-loss-canvas");
+            if (tlCanvas) {
+                tlCanvas.__redraw = function() { _drawTimeLoss(data); };
+            }
         }, 30);
     }
 
