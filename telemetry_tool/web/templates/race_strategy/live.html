@@ -18,7 +18,11 @@
             {{ '%d:%02d' | format(race.race_duration_s // 3600, (race.race_duration_s % 3600) // 60) }} race
         </p>
     </div>
-    <div style="display:flex;gap:0.5rem;">
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+        <div class="rs-layout-toggle" id="rs-layout-toggle">
+            <button type="button" class="rs-toggle-btn rs-toggle-active" data-layout="grid" title="Grid view">Grid</button>
+            <button type="button" class="rs-toggle-btn" data-layout="vertical" title="Vertical view">Vertical</button>
+        </div>
         <a href="{{ url_for('race_strategy_v2.detail', race_id=race.race_id) }}" class="btn btn-ghost">Detail</a>
     </div>
 </div>
@@ -28,7 +32,9 @@
      data-race-id="{{ race.race_id }}"
      data-race-duration="{{ race.race_duration_s }}"
      data-race-start="{{ race.race_start_ts or '' }}"
-     data-fuel-autonomy="{{ race.fuel_autonomy_s or 0 }}">
+     data-fuel-autonomy="{{ race.fuel_autonomy_s or 0 }}"
+     data-pit-open="{{ race.pit_open_s or 0 }}"
+     data-pit-close="{{ race.pit_close_s or 0 }}">
 
     <!-- 1. Race Timer -->
     <div class="rs-live-card">
@@ -41,6 +47,7 @@
         <div style="text-align:center;margin-top:0.5rem;font-size:0.85rem;">
             Stint <span id="rs-stint-current">-</span> of <span id="rs-stint-total">-</span>
         </div>
+        <div id="rs-pit-window-banner" class="rs-pit-banner" style="display:none;"></div>
     </div>
 
     <!-- 2. Fuel & Ballast -->

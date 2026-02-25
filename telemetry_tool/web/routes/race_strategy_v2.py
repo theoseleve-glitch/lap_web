@@ -54,6 +54,173 @@ def index():
     )
 
 
+# ── Import / Export ──────────────────────────────
+
+@bp.route("/<int:race_id>/export")
+def export(race_id: int):
+    """Export race as JSON file download."""
+    import re
+
+    from flask import Response
+
+    conn = get_db_connection()
+    race = conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+    if not race:
+        abort(404)
+
+    data = _build_export_dict(conn, race_id)
+    payload = json.dumps(data, indent=2, default=str)
+
+    slug = re.sub(r'[^a-z0-9]+', '-', race["race_name"].lower()).strip('-')
+    date = (race["created_at"] or "")[:10]
+    filename = f"race-{slug}-{date}.json"
+
+    return Response(
+        payload,
+        mimetype="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@bp.route("/import", methods=["POST"])
+def import_race():
+    """Import race from JSON file upload."""
+    from flask import flash
+
+    file = request.files.get("file")
+    if not file or not file.filename:
+        flash("No file selected.", "error")
+        return redirect(url_for("race_strategy_v2.index"))
+
+    try:
+        data = json.loads(file.read().decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        flash("Invalid JSON file.", "error")
+        return redirect(url_for("race_strategy_v2.index"))
+
+    conn = get_db_connection()
+    try:
+        race_id = _import_race_from_dict(conn, data)
+        conn.commit()
+    except ValueError as e:
+        flash(f"Import failed: {e}", "error")
+        return redirect(url_for("race_strategy_v2.index"))
+
+    return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
+
+def _build_export_dict(conn, race_id: int) -> dict:
+    """Build the full export dictionary for a race."""
+    from datetime import datetime, timezone
+
+    race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    drivers = _rows_to_list(conn.execute(
+        "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)
+    ).fetchall())
+    stints = _rows_to_list(conn.execute(
+        "SELECT * FROM race_stints WHERE race_id = ? ORDER BY stint_order", (race_id,)
+    ).fetchall())
+    pit_stops = _rows_to_list(conn.execute(
+        "SELECT * FROM race_pit_stops WHERE race_id = ? ORDER BY pit_id", (race_id,)
+    ).fetchall())
+
+    return {
+        "version": 1,
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "race": race,
+        "drivers": drivers,
+        "stints": stints,
+        "pit_stops": pit_stops,
+    }
+
+
+def _import_race_from_dict(conn, data: dict) -> int:
+    """Import a race from an export dict. Returns new race_id."""
+    race = data.get("race", {})
+    if not race.get("race_name"):
+        raise ValueError("Missing required field: race_name")
+    if not race.get("race_duration_s"):
+        raise ValueError("Missing required field: race_duration_s")
+
+    cur = conn.execute(
+        """INSERT INTO race_configs (
+            race_name, track_name, team_name, race_duration_s,
+            reference_weight_kg, desired_stints, fuel_autonomy_s,
+            min_pit_stop_s, pit_speed_kmh, pit_open_s, pit_close_s,
+            empty_kart_kg, full_tank_kg, min_total_kart_kg,
+            weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
+            mandatory_driver_change, refueling_allowed, status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        (
+            race.get("race_name"), race.get("track_name"), race.get("team_name"),
+            race["race_duration_s"], race.get("reference_weight_kg"),
+            race.get("desired_stints", 4), race.get("fuel_autonomy_s"),
+            race.get("min_pit_stop_s", 60), race.get("pit_speed_kmh"),
+            race.get("pit_open_s"), race.get("pit_close_s"),
+            race.get("empty_kart_kg"), race.get("full_tank_kg"),
+            race.get("min_total_kart_kg"), race.get("weigh_on_pit_exit", 0),
+            race.get("qualifying_duration_s"), race.get("refuel_after_quali", 0),
+            race.get("mandatory_driver_change", 1), race.get("refueling_allowed", 1),
+        ),
+    )
+    new_race_id = cur.lastrowid
+
+    # Insert drivers, building old_id -> new_id map
+    id_map = {}
+    for d in data.get("drivers", []):
+        old_id = d.get("id")
+        cur = conn.execute(
+            """INSERT INTO race_drivers (
+                race_id, driver_name, driver_order, min_stint_s, max_stint_s,
+                min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                new_race_id, d["driver_name"], d.get("driver_order", 1),
+                d.get("min_stint_s"), d.get("max_stint_s"),
+                d.get("min_cumulative_s"), d.get("max_cumulative_s"),
+                d.get("min_rest_s", 0), d.get("weight_kg"),
+            ),
+        )
+        if old_id is not None:
+            id_map[old_id] = cur.lastrowid
+
+    # Insert stints with remapped driver IDs
+    for s in data.get("stints", []):
+        old_driver_id = s.get("driver_id")
+        new_driver_id = id_map.get(old_driver_id, old_driver_id)
+        conn.execute(
+            """INSERT INTO race_stints (
+                race_id, stint_order, driver_id, planned_start_s, planned_end_s,
+                planned_duration_s, actual_start_s, actual_end_s, actual_duration_s,
+                ballast_kg, notes, status
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                new_race_id, s.get("stint_order", 1), new_driver_id,
+                s.get("planned_start_s"), s.get("planned_end_s"),
+                s.get("planned_duration_s"), s.get("actual_start_s"),
+                s.get("actual_end_s"), s.get("actual_duration_s"),
+                s.get("ballast_kg", 0), s.get("notes"), s.get("status", "planned"),
+            ),
+        )
+
+    # Insert pit stops
+    for p in data.get("pit_stops", []):
+        conn.execute(
+            """INSERT INTO race_pit_stops (
+                race_id, planned_at_s, actual_at_s, duration_s,
+                driver_change, refueled, fuel_added_kg, ballast_changed, notes
+            ) VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                new_race_id, p.get("planned_at_s"), p.get("actual_at_s"),
+                p.get("duration_s"), p.get("driver_change", 1),
+                p.get("refueled", 0), p.get("fuel_added_kg"),
+                p.get("ballast_changed", 0), p.get("notes"),
+            ),
+        )
+
+    return new_race_id
+
+
 # ── Config Form (New / Edit / CRUD) ──────────────────────
 
 @bp.route("/new", methods=["GET", "POST"])

@@ -213,6 +213,258 @@ class TestBallastCalculator:
         assert result == 0.0  # Already over minimum
 
 
+class TestImportExport:
+    """JSON import/export for race configs."""
+
+    def test_export_structure(self, strategy_db):
+        """Export produces valid JSON with all sections."""
+        from web.routes.race_strategy_v2 import _build_export_dict
+
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, desired_stints) VALUES ('Export Test', 7200, 4)"
+        )
+        strategy_db.execute("INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) VALUES (1, 'A', 1, 70)")
+        strategy_db.execute("INSERT INTO race_stints (race_id, stint_order, driver_id, planned_duration_s, status) VALUES (1, 1, 1, 1800, 'planned')")
+        strategy_db.execute("INSERT INTO race_pit_stops (race_id, driver_change, refueled) VALUES (1, 1, 0)")
+        strategy_db.commit()
+
+        result = _build_export_dict(strategy_db, 1)
+        assert result["version"] == 1
+        assert result["race"]["race_name"] == "Export Test"
+        assert len(result["drivers"]) == 1
+        assert len(result["stints"]) == 1
+        assert len(result["pit_stops"]) == 1
+
+    def test_import_creates_race(self, strategy_db):
+        """Import JSON creates a new race in draft status."""
+        from web.routes.race_strategy_v2 import _import_race_from_dict
+
+        data = {
+            "version": 1,
+            "race": {
+                "race_name": "Imported Race",
+                "race_duration_s": 10800,
+                "desired_stints": 3,
+                "min_pit_stop_s": 60,
+                "status": "finished",
+            },
+            "drivers": [
+                {"driver_name": "Alice", "driver_order": 1, "weight_kg": 70,
+                 "min_stint_s": None, "max_stint_s": None,
+                 "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+                {"driver_name": "Bob", "driver_order": 2, "weight_kg": 80,
+                 "min_stint_s": None, "max_stint_s": None,
+                 "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+            ],
+            "stints": [],
+            "pit_stops": [],
+        }
+
+        race_id = _import_race_from_dict(strategy_db, data)
+        assert race_id >= 1
+
+        race = strategy_db.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+        assert race["race_name"] == "Imported Race"
+        assert race["status"] == "draft"  # Always draft on import
+
+        drivers = strategy_db.execute("SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)).fetchall()
+        assert len(drivers) == 2
+        assert drivers[0]["driver_name"] == "Alice"
+
+    def test_import_remaps_driver_ids_in_stints(self, strategy_db):
+        """Import remaps old driver IDs to new auto-increment IDs."""
+        from web.routes.race_strategy_v2 import _import_race_from_dict
+
+        data = {
+            "version": 1,
+            "race": {"race_name": "Remap Test", "race_duration_s": 3600, "min_pit_stop_s": 60},
+            "drivers": [
+                {"id": 99, "driver_name": "Old", "driver_order": 1, "weight_kg": 70,
+                 "min_stint_s": None, "max_stint_s": None,
+                 "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+            ],
+            "stints": [
+                {"stint_order": 1, "driver_id": 99, "planned_duration_s": 1800,
+                 "planned_start_s": 0, "planned_end_s": 1800, "status": "planned",
+                 "ballast_kg": 0, "actual_start_s": None, "actual_end_s": None,
+                 "actual_duration_s": None, "notes": None},
+            ],
+            "pit_stops": [],
+        }
+
+        race_id = _import_race_from_dict(strategy_db, data)
+        stints = strategy_db.execute("SELECT * FROM race_stints WHERE race_id = ?", (race_id,)).fetchall()
+        assert len(stints) == 1
+        # The driver_id should be the NEW auto-increment id, not 99
+        new_driver = strategy_db.execute("SELECT id FROM race_drivers WHERE race_id = ?", (race_id,)).fetchone()
+        assert stints[0]["driver_id"] == new_driver["id"]
+
+    def test_import_rejects_missing_name(self, strategy_db):
+        """Import rejects JSON without race_name."""
+        from web.routes.race_strategy_v2 import _import_race_from_dict
+
+        data = {"version": 1, "race": {"race_duration_s": 3600}, "drivers": [], "stints": [], "pit_stops": []}
+        with pytest.raises(ValueError, match="race_name"):
+            _import_race_from_dict(strategy_db, data)
+
+    def test_roundtrip_export_import(self, strategy_db):
+        """Export then import produces equivalent race."""
+        from web.routes.race_strategy_v2 import _build_export_dict, _import_race_from_dict
+
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s, desired_stints, team_name) "
+            "VALUES ('Roundtrip', 7200, 4, 'Team X')"
+        )
+        strategy_db.execute("INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) VALUES (1, 'A', 1, 70)")
+        strategy_db.execute("INSERT INTO race_drivers (race_id, driver_name, driver_order, weight_kg) VALUES (1, 'B', 2, 80)")
+        strategy_db.commit()
+
+        exported = _build_export_dict(strategy_db, 1)
+        new_id = _import_race_from_dict(strategy_db, exported)
+
+        new_race = dict(strategy_db.execute("SELECT * FROM race_configs WHERE race_id = ?", (new_id,)).fetchone())
+        assert new_race["race_name"] == "Roundtrip"
+        assert new_race["team_name"] == "Team X"
+        assert new_race["race_duration_s"] == 7200
+
+        new_drivers = strategy_db.execute("SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (new_id,)).fetchall()
+        assert len(new_drivers) == 2
+
+
+class TestQualifyingFuel:
+    """Qualifying fuel deduction in optimizer."""
+
+    def test_qualifying_no_refuel_reduces_first_stint(self):
+        """Without refuel-after-quali, first stint fuel is reduced."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 7200,
+            "desired_stints": 2,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": 2400,
+            "qualifying_duration_s": 600,
+            "refuel_after_quali": 0,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        assert result["feasible"] is True
+        # First stint should be capped at fuel_autonomy - qualifying_duration
+        assert result["stints"][0]["planned_duration_s"] <= 2400 - 600
+
+    def test_qualifying_with_refuel_no_change(self):
+        """With refuel-after-quali, first stint uses full autonomy."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 7200,
+            "desired_stints": 2,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": 2400,
+            "qualifying_duration_s": 600,
+            "refuel_after_quali": 1,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        assert result["feasible"] is True
+        assert result["stints"][0]["planned_duration_s"] <= 2400
+
+    def test_qualifying_no_fuel_autonomy_no_effect(self):
+        """Without fuel_autonomy_s, qualifying has no optimizer effect."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 7200,
+            "desired_stints": 2,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": None,
+            "qualifying_duration_s": 600,
+            "refuel_after_quali": 0,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        assert result["feasible"] is True
+
+
+class TestPitWindows:
+    """Pit window enforcement in optimizer."""
+
+    def test_pit_open_delays_first_pit(self):
+        """First pit stop should not happen before pit_open_s."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 7200,
+            "desired_stints": 3,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": None,
+            "pit_open_s": 1800,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+            {"id": 2, "driver_name": "B", "driver_order": 2, "weight_kg": 80,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        assert result["feasible"] is True
+        # First pit stop (end of stint 1) should be >= pit_open_s
+        assert result["stints"][0]["planned_end_s"] >= 1800
+
+    def test_pit_close_ensures_last_pit_before_close(self):
+        """Last pit stop should happen before pit_close_s from end."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 7200,
+            "desired_stints": 3,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": None,
+            "pit_close_s": 1800,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+            {"id": 2, "driver_name": "B", "driver_order": 2, "weight_kg": 80,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        assert result["feasible"] is True
+        if result["pit_stops"]:
+            last_pit = result["pit_stops"][-1]
+            assert last_pit["at_s"] <= 5400
+
+    def test_pit_window_warning_when_violated(self):
+        """When constraints force a pit outside window, add warning."""
+        from race_strategy_v2 import optimize_stints
+        config = {
+            "race_duration_s": 3600,
+            "desired_stints": 4,
+            "min_pit_stop_s": 60,
+            "fuel_autonomy_s": None,
+            "pit_open_s": 2400,
+        }
+        drivers = [
+            {"id": 1, "driver_name": "A", "driver_order": 1, "weight_kg": 70,
+             "min_stint_s": None, "max_stint_s": None,
+             "min_cumulative_s": None, "max_cumulative_s": None, "min_rest_s": 0},
+        ]
+        result = optimize_stints(config, drivers)
+        pit_warnings = [w for w in result["warnings"] if "pit window" in w.lower()]
+        assert len(pit_warnings) > 0 or result["stints"][0]["planned_end_s"] >= 2400
+
+
 class TestRaceStrategyIntegration:
     """Integration tests for the race strategy lifecycle."""
 

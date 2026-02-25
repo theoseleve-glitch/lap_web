@@ -350,3 +350,61 @@
     cursor: pointer;
     font-size: 0.9rem;
 }
+
+/* Layout toggle */
+.rs-layout-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+.rs-toggle-btn {
+    background: transparent;
+    border: none;
+    padding: 0.25rem 0.6rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.rs-toggle-btn.rs-toggle-active {
+    background: var(--blue);
+    color: #fff;
+}
+
+/* Vertical layout */
+.rs-live-grid.rs-vertical {
+    grid-template-columns: 1fr;
+}
+
+/* Pit window banner */
+.rs-pit-banner {
+    text-align: center;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 0.5rem;
+}
+.rs-pit-banner-before { background: rgba(150,150,150,0.15); color: var(--text-secondary); }
+.rs-pit-banner-open { background: rgba(63,185,80,0.2); color: var(--green); }
+.rs-pit-banner-closing { background: rgba(210,153,34,0.2); color: var(--yellow, #d29922); }
+.rs-pit-banner-closed { background: rgba(248,81,73,0.15); color: var(--red, #f85149); }
+
+/* End stint warning */
+.rs-btn-pit-warning { position: relative; }
+.rs-btn-pit-warning::after {
+    content: '!';
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--yellow, #d29922);
+    color: #000;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    font-size: 0.7rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}

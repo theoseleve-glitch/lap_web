@@ -12,7 +12,14 @@
         <h1>Race Strategy</h1>
         <p>Plan and manage endurance races with stint optimization, live timing, and driver management.</p>
     </div>
-    <a href="{{ url_for('race_strategy_v2.new_race') }}" class="btn btn-primary">+ New Race</a>
+    <div style="display:flex;gap:0.5rem;align-items:center;">
+        <form method="POST" action="{{ url_for('race_strategy_v2.import_race') }}" enctype="multipart/form-data"
+              style="display:flex;gap:0.5rem;align-items:center;">
+            <input type="file" name="file" accept=".json" required style="max-width:200px;">
+            <button type="submit" class="btn btn-ghost">Import</button>
+        </form>
+        <a href="{{ url_for('race_strategy_v2.new_race') }}" class="btn btn-primary">+ New Race</a>
+    </div>
 </div>
 
 {% if live_race %}

@@ -59,6 +59,18 @@ def optimize_stints(
     pit_time = config.get("min_pit_stop_s") or 60
     fuel_autonomy = config.get("fuel_autonomy_s")
 
+    # Qualifying fuel deduction: first stint has less fuel if not refueled after quali
+    quali_duration = config.get("qualifying_duration_s") or 0
+    refuel_after_quali = config.get("refuel_after_quali", 0)
+    first_stint_autonomy = fuel_autonomy
+    if fuel_autonomy and quali_duration and not refuel_after_quali:
+        first_stint_autonomy = max(0, fuel_autonomy - quali_duration)
+
+    # Pit window boundaries
+    pit_open = config.get("pit_open_s")
+    pit_close_before_end = config.get("pit_close_s")
+    pit_close = (race_duration - pit_close_before_end) if pit_close_before_end else None
+
     if not drivers:
         return {"feasible": False, "stints": [], "pit_stops": [],
                 "driver_summary": {}, "violations": ["No drivers configured"],
@@ -69,12 +81,15 @@ def optimize_stints(
 
     # Auto-increase stints if fuel autonomy requires it
     if fuel_autonomy:
+        eff_first = first_stint_autonomy or fuel_autonomy
         while True:
             n_pits = n_stints - 1
             drive_time = race_duration - n_pits * pit_time
             if drive_time <= 0:
                 break
-            if drive_time / n_stints <= fuel_autonomy:
+            # Check both: average stint fits AND total capacity covers drive time
+            max_capacity = eff_first + (n_stints - 1) * fuel_autonomy
+            if drive_time / n_stints <= fuel_autonomy and max_capacity >= drive_time:
                 break
             n_stints += 1
 
@@ -117,9 +132,10 @@ def optimize_stints(
         if d_min and duration < d_min:
             duration = d_min
 
-        # Apply fuel autonomy
-        if fuel_autonomy and duration > fuel_autonomy:
-            duration = fuel_autonomy
+        # Apply fuel autonomy (reduced for first stint if qualifying without refuel)
+        effective_autonomy = first_stint_autonomy if i == 0 else fuel_autonomy
+        if effective_autonomy and duration > effective_autonomy:
+            duration = effective_autonomy
 
         # Check driver cumulative max
         d_cum_max = driver.get("max_cumulative_s")
@@ -169,7 +185,8 @@ def optimize_stints(
         for i, s in enumerate(stints):
             did = s["driver_id"]
             driver = next(d for d in drivers if d["id"] == did)
-            cap = _stint_cap(driver, fuel_autonomy)
+            eff_autonomy = first_stint_autonomy if i == 0 else fuel_autonomy
+            cap = _stint_cap(driver, eff_autonomy)
             room = cap - s["planned_duration_s"] if cap else slack
             if room > 0:
                 expandable.append((i, room))
@@ -196,6 +213,32 @@ def optimize_stints(
         cumulative = {}
         for s in stints:
             cumulative[s["driver_id"]] = cumulative.get(s["driver_id"], 0) + s["planned_duration_s"]
+
+    # Pit window enforcement: adjust stint boundaries
+    if pit_open and len(stints) > 1:
+        first_stint = stints[0]
+        if first_stint["planned_end_s"] < pit_open:
+            deficit = pit_open - first_stint["planned_end_s"]
+            first_stint["planned_duration_s"] += deficit
+            first_stint["planned_end_s"] = pit_open
+            # Rebuild clock from first stint
+            clock = first_stint["planned_end_s"] + pit_time
+            for j in range(1, len(stints)):
+                stints[j]["planned_start_s"] = round(clock)
+                stints[j]["planned_end_s"] = round(clock + stints[j]["planned_duration_s"])
+                clock += stints[j]["planned_duration_s"]
+                if j < len(stints) - 1:
+                    clock += pit_time
+
+    if pit_close and len(stints) > 1:
+        last_pit_idx = len(stints) - 2
+        last_pit_at = stints[last_pit_idx]["planned_end_s"]
+        if last_pit_at > pit_close:
+            overshoot = last_pit_at - pit_close
+            stints[last_pit_idx]["planned_duration_s"] -= overshoot
+            stints[last_pit_idx]["planned_end_s"] -= overshoot
+            stints[-1]["planned_start_s"] -= overshoot
+            stints[-1]["planned_duration_s"] += overshoot
 
     # Check feasibility: total assigned drive time
     total_assigned = sum(s["planned_duration_s"] for s in stints)
@@ -225,6 +268,16 @@ def optimize_stints(
             "driver_change": stints[i]["driver_id"] != stints[i + 1]["driver_id"],
             "refuel": True,
         })
+
+    # Check pit window violations
+    if pit_open:
+        for p in pit_stops:
+            if p["at_s"] < pit_open:
+                warnings.append(f"Pit stop at {p['at_s']}s is before pit window opens at {pit_open}s")
+    if pit_close:
+        for p in pit_stops:
+            if p["at_s"] > pit_close:
+                warnings.append(f"Pit stop at {p['at_s']}s is after pit window closes at {pit_close}s")
 
     # Build driver summary
     driver_summary = {}

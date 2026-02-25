@@ -13,6 +13,10 @@
     var RACE_START    = root.getAttribute('data-race-start');
     var FUEL_AUTONOMY = parseInt(root.getAttribute('data-fuel-autonomy'), 10) || 0;
 
+    var PIT_OPEN  = parseInt(root.getAttribute('data-pit-open'), 10) || 0;
+    var PIT_CLOSE_BEFORE_END = parseInt(root.getAttribute('data-pit-close'), 10) || 0;
+    var PIT_CLOSE = PIT_CLOSE_BEFORE_END ? RACE_DURATION - PIT_CLOSE_BEFORE_END : 0;
+
     var DRIVER_COLORS = ['#58a6ff','#f78166','#7ee787','#d2a8ff','#ffa657','#79c0ff'];
     var POLL_INTERVAL = 2000;
 
@@ -365,6 +369,85 @@
         });
     }
 
+    // ── Layout Toggle ────────────────────────────
+
+    var toggleContainer = document.getElementById('rs-layout-toggle');
+    var grid = document.getElementById('rs-live-root');
+
+    function applyLayout(layout) {
+        if (!grid) return;
+        if (layout === 'vertical') {
+            grid.classList.add('rs-vertical');
+        } else {
+            grid.classList.remove('rs-vertical');
+        }
+        if (toggleContainer) {
+            var btns = toggleContainer.querySelectorAll('.rs-toggle-btn');
+            btns.forEach(function(btn) {
+                if (btn.getAttribute('data-layout') === layout) {
+                    btn.classList.add('rs-toggle-active');
+                } else {
+                    btn.classList.remove('rs-toggle-active');
+                }
+            });
+        }
+        try { localStorage.setItem('rs-live-layout', layout); } catch(e) {}
+    }
+
+    try {
+        var saved = localStorage.getItem('rs-live-layout');
+        if (saved === 'vertical') applyLayout('vertical');
+    } catch(e) {}
+
+    if (toggleContainer) {
+        toggleContainer.addEventListener('click', function(e) {
+            var btn = e.target.closest('.rs-toggle-btn');
+            if (btn) applyLayout(btn.getAttribute('data-layout'));
+        });
+    }
+
+    // ── Pit Window Banner ────────────────────────
+
+    function updatePitWindow() {
+        var banner = document.getElementById('rs-pit-window-banner');
+        var endBtn = document.getElementById('rs-btn-end-stint');
+        if (!banner) return;
+        if (!PIT_OPEN && !PIT_CLOSE) { banner.style.display = 'none'; return; }
+
+        var elapsed = getElapsed();
+        banner.style.display = 'block';
+
+        var outsideWindow = false;
+
+        if (PIT_OPEN && elapsed < PIT_OPEN) {
+            var until = PIT_OPEN - elapsed;
+            banner.textContent = 'Pit window opens in ' + fmtShort(until);
+            banner.className = 'rs-pit-banner rs-pit-banner-before';
+            outsideWindow = true;
+        } else if (PIT_CLOSE && elapsed > PIT_CLOSE) {
+            banner.textContent = 'PIT WINDOW CLOSED';
+            banner.className = 'rs-pit-banner rs-pit-banner-closed';
+            outsideWindow = true;
+        } else if (PIT_CLOSE && PIT_CLOSE - elapsed < 300) {
+            var left = PIT_CLOSE - elapsed;
+            banner.textContent = 'Pit window closes in ' + fmtShort(left);
+            banner.className = 'rs-pit-banner rs-pit-banner-closing';
+        } else if (PIT_OPEN && elapsed >= PIT_OPEN) {
+            banner.textContent = 'PIT WINDOW OPEN';
+            banner.className = 'rs-pit-banner rs-pit-banner-open';
+        } else {
+            banner.style.display = 'none';
+        }
+
+        if (endBtn) {
+            if (outsideWindow) {
+                endBtn.classList.add('rs-btn-pit-warning');
+            } else {
+                endBtn.classList.remove('rs-btn-pit-warning');
+            }
+        }
+    }
+
     // ── Init ─────────────────────────────────────
 
     fetchState();
@@ -375,6 +458,7 @@
         updateFuel();
         updateDrivers();
         updateSummary();
+        updatePitWindow();
     }, 1000);
 
     // Server poll (2s)

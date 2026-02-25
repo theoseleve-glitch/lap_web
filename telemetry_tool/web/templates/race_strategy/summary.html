@@ -197,6 +197,7 @@
 
 <!-- Actions -->
 <div class="rs-detail-actions">
+    <a href="{{ url_for('race_strategy_v2.export', race_id=race.race_id) }}" class="btn btn-ghost">Export JSON</a>
     <a href="{{ url_for('race_strategy_v2.detail', race_id=race.race_id) }}" class="btn btn-ghost">View Config</a>
     <form method="POST" action="{{ url_for('race_strategy_v2.duplicate', race_id=race.race_id) }}" style="display:inline;">
         <button type="submit" class="btn btn-primary">Duplicate Race</button>

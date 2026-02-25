@@ -45,6 +45,16 @@
         <div class="rs-kv"><span class="rs-kv-label">Not configured</span><span>—</span></div>
         {% endif %}
     </div>
+    {% if race.qualifying_duration_s %}
+    <div class="rs-detail-card">
+        <h3>Qualifying</h3>
+        <div class="rs-kv"><span class="rs-kv-label">Duration</span><span>{{ '%d:%02d' | format(race.qualifying_duration_s // 60, race.qualifying_duration_s % 60) }}</span></div>
+        <div class="rs-kv"><span class="rs-kv-label">Refuel After</span><span>{{ 'Yes' if race.refuel_after_quali else 'No' }}</span></div>
+        {% if race.fuel_autonomy_s and not race.refuel_after_quali %}
+        <div class="rs-kv"><span class="rs-kv-label">First Stint Fuel</span><span>{{ '%d:%02d' | format((race.fuel_autonomy_s - race.qualifying_duration_s) // 60, (race.fuel_autonomy_s - race.qualifying_duration_s) % 60) }}</span></div>
+        {% endif %}
+    </div>
+    {% endif %}
 </div>
 
 <!-- Drivers -->
@@ -88,6 +98,7 @@
 
 <!-- Actions -->
 <div class="rs-detail-actions">
+    <a href="{{ url_for('race_strategy_v2.export', race_id=race.race_id) }}" class="btn btn-ghost">Export JSON</a>
     {% if race.status in ('draft', 'ready') %}
     <a href="{{ url_for('race_strategy_v2.edit_race', race_id=race.race_id) }}" class="btn btn-ghost">Edit Config</a>
     <form method="POST" action="{{ url_for('race_strategy_v2.optimize', race_id=race.race_id) }}" style="display:inline;">
