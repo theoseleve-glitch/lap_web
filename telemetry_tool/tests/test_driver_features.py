@@ -844,3 +844,90 @@ class TestDriverBadgesOnProfile:
             resp = client.get("/drivers/1")
             assert resp.status_code == 200
             assert b"Speed Plan" in resp.data
+
+
+class TestMeteoSchema:
+    """Task 1: predefined_track_coords table exists after migration."""
+
+    def test_predefined_track_coords_table_exists(self, db):
+        row = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='predefined_track_coords'"
+        ).fetchone()
+        assert row is not None, "predefined_track_coords table not created"
+
+    def test_predefined_track_coords_columns(self, db):
+        cols = {r[1] for r in db.execute("PRAGMA table_info(predefined_track_coords)").fetchall()}
+        assert "track_name" in cols
+        assert "city" in cols
+        assert "country" in cols
+        assert "latitude" in cols
+        assert "longitude" in cols
+        assert "geocoded_at" in cols
+
+    def test_schema_version_19(self, db):
+        row = db.execute("SELECT version FROM schema_version WHERE version = 19").fetchone()
+        assert row is not None
+
+
+class TestTrackGeocoder:
+    """Task 2: geocoding predefined track venues."""
+
+    def test_parse_predefined_csv_unique_venues(self, db):
+        # Cache all pre-existing CSV-imported tracks so they don't pollute our test.
+        from track_geocoder import get_ungeocoded_venues, cache_geocode_result
+        for v in get_ungeocoded_venues(db):
+            cache_geocode_result(db, v["track_name"], v.get("city", ""), "FR", 0.0, 0.0)
+        db.commit()
+
+        # Now insert our test tracks — duplicates should collapse via DISTINCT.
+        db.execute(
+            "INSERT INTO predefined_tracks (track_name, city, country) VALUES (?, ?, ?)",
+            ("Kartland Paris", "Moissy-Cramayel", "France"),
+        )
+        db.execute(
+            "INSERT INTO predefined_tracks (track_name, city, country) VALUES (?, ?, ?)",
+            ("Kartland Paris", "Moissy-Cramayel", "France"),
+        )
+        db.execute(
+            "INSERT INTO predefined_tracks (track_name, city, country) VALUES (?, ?, ?)",
+            ("Solokart", "Plessé", "France"),
+        )
+        db.commit()
+        venues = get_ungeocoded_venues(db)
+        names = [v["track_name"] for v in venues]
+        assert len(venues) == 2
+        assert "Kartland Paris" in names
+        assert "Solokart" in names
+
+    def test_cache_geocode_result(self, db):
+        from track_geocoder import cache_geocode_result
+        cache_geocode_result(db, "Kartland Paris", "Moissy-Cramayel", "FR", 48.5926, 2.5741)
+        db.commit()
+        row = db.execute(
+            "SELECT latitude, longitude FROM predefined_track_coords WHERE track_name = ?",
+            ("Kartland Paris",),
+        ).fetchone()
+        assert row is not None
+        assert abs(row["latitude"] - 48.5926) < 0.001
+        assert abs(row["longitude"] - 2.5741) < 0.001
+
+    def test_cache_is_idempotent(self, db):
+        from track_geocoder import cache_geocode_result
+        cache_geocode_result(db, "Kartland Paris", "Moissy-Cramayel", "FR", 48.5926, 2.5741)
+        cache_geocode_result(db, "Kartland Paris", "Moissy-Cramayel", "FR", 48.5926, 2.5741)
+        db.commit()
+        count = db.execute(
+            "SELECT COUNT(*) FROM predefined_track_coords WHERE track_name = ?",
+            ("Kartland Paris",),
+        ).fetchone()[0]
+        assert count == 1
+
+    def test_get_cached_coords(self, db):
+        from track_geocoder import cache_geocode_result, get_cached_coords
+        cache_geocode_result(db, "Kartland Paris", "Moissy-Cramayel", "FR", 48.59, 2.57)
+        cache_geocode_result(db, "Solokart", "Plessé", "FR", 47.53, -1.86)
+        db.commit()
+        coords = get_cached_coords(db)
+        assert len(coords) == 2
+        by_name = {c["track_name"]: c for c in coords}
+        assert abs(by_name["Kartland Paris"]["latitude"] - 48.59) < 0.01

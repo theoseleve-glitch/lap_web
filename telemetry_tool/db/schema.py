@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 18
+SCHEMA_VERSION = 19
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -732,5 +732,24 @@ PHASE_13_TABLES: list[tuple[str, str]] = [
     ("track_sectors",     _TRACK_SECTORS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 14 tables (meteo geocoding cache)
+# ------------------------------------------------------------------
+
+_PREDEFINED_TRACK_COORDS_TABLE = """
+CREATE TABLE IF NOT EXISTS predefined_track_coords (
+    track_name   TEXT PRIMARY KEY,
+    city         TEXT,
+    country      TEXT DEFAULT 'FR',
+    latitude     REAL,
+    longitude    REAL,
+    geocoded_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+PHASE_14_TABLES: list[tuple[str, str]] = [
+    ("predefined_track_coords", _PREDEFINED_TRACK_COORDS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES
