@@ -2279,8 +2279,19 @@ def api_driving_style(session_id: str):
     if not row["driver_id"]:
         return jsonify({"error": "No driver linked to session"}), 404
 
-    from .models import get_driving_style
+    from web.models import get_driving_style
     style = get_driving_style(conn, row["driver_id"], session_id)
+    if not style:
+        # Fallback: driver may have been reassigned after analysis ran.
+        # Try session_id-only lookup since it uniquely identifies the data.
+        fb = conn.execute(
+            "SELECT * FROM driving_style_features WHERE session_id = :sid",
+            {"sid": session_id},
+        ).fetchone()
+        if fb:
+            style = dict(fb)
+            style["strengths"] = json.loads(style.get("strengths_json") or "[]")
+            style["weaknesses"] = json.loads(style.get("weaknesses_json") or "[]")
     if not style:
         return jsonify({"error": "No driving style data for this session"}), 404
 
