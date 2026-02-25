@@ -1125,13 +1125,19 @@ def api_add_rival(race_id: int):
 @bp.route("/<int:race_id>/api/rivals/<int:rival_id>/event", methods=["POST"])
 def api_add_rival_event(race_id: int, rival_id: int):
     """Log a rival event (pit_in, pit_out, driver_change, penalty, note)."""
+    _VALID_EVENT_TYPES = {"pit_in", "pit_out", "driver_change", "penalty", "note"}
     data = request.get_json(silent=True) or {}
     event_type = data.get("event_type", "note")
+    if event_type not in _VALID_EVENT_TYPES:
+        return jsonify({"error": f"event_type must be one of: {', '.join(sorted(_VALID_EVENT_TYPES))}"}), 400
     detail = data.get("detail")
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
-    at_s = data.get("at_s", elapsed)
+    try:
+        at_s = int(data.get("at_s", elapsed))
+    except (ValueError, TypeError):
+        at_s = elapsed
     conn.execute(
         "INSERT INTO race_rival_events (race_id, rival_id, event_type, at_s, detail) VALUES (?,?,?,?,?)",
         (race_id, rival_id, event_type, at_s, detail),
@@ -1160,6 +1166,8 @@ def api_neutralization_start(race_id: int):
     reason = data.get("reason", "safety_car")
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        return jsonify({"error": "not found"}), 404
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     engine = RaceStateEngine.load(conn, race_id)
     engine.start_neutralization(elapsed, reason)
@@ -1175,6 +1183,8 @@ def api_neutralization_end(race_id: int):
     from race_state_engine import RaceStateEngine
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        return jsonify({"error": "not found"}), 404
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     engine = RaceStateEngine.load(conn, race_id)
     engine.end_neutralization(elapsed)
