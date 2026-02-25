@@ -317,7 +317,8 @@
 
     function _msg(canvas, ctx, text) {
         var dpr = window.devicePixelRatio || 1;
-        var w = (canvas.parentElement ? canvas.parentElement.clientWidth : 400) - 8;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || (canvas.parentElement ? canvas.parentElement.clientWidth : 400);
         canvas.width = w * dpr;
         canvas.height = 160 * dpr;
         canvas.style.width = w + 'px';

@@ -481,7 +481,8 @@
     function _msg(text) {
         if (!canvas) return;
         var dpr = window.devicePixelRatio || 1;
-        var w = (canvas.parentElement ? canvas.parentElement.clientWidth : 400) - 8;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || (canvas.parentElement ? canvas.parentElement.clientWidth : 400);
         canvas.width = w * dpr;
         canvas.height = 180 * dpr;
         canvas.style.width = w + 'px';

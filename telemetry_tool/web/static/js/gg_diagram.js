@@ -76,7 +76,8 @@
 
         var ctx = canvas.getContext('2d');
         var dpr = window.devicePixelRatio || 1;
-        var w = canvas.parentElement.clientWidth - 32;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
 
         // If width is 0 (tab just became visible, layout pending), retry after frame
         if (w <= 0) {
@@ -332,7 +333,8 @@
 
         // Register __redraw for ResizeObserver
         canvas.__redraw = function() {
-            w = canvas.parentElement.clientWidth - 32;
+            canvas.style.width = '';
+            w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
             canvas.width = w * dpr;
             canvas.height = h * dpr;
             canvas.style.width = w + 'px';
@@ -513,7 +515,8 @@
         window.addEventListener('resize', function () {
             clearTimeout(_ggResizeTimer);
             _ggResizeTimer = setTimeout(function () {
-                w = canvas.parentElement.clientWidth - 32;
+                canvas.style.width = '';
+                w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
                 canvas.width = w * dpr;
                 canvas.height = h * dpr;
                 canvas.style.width = w + 'px';

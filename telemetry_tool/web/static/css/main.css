@@ -334,9 +334,9 @@ a:hover {
 /* ── Main content ─────────────────────────── */
 
 .main-content {
-    width: clamp(360px, 95vw, 1400px);
-    margin: 0 auto;
-    padding: 2rem;
+    width: 100%;
+    margin: 0;
+    padding: 1rem 1.25rem;
     flex: 1;
 }
 
@@ -6433,9 +6433,7 @@ textarea.editable-field {
 
 @media (min-width: 1600px) {
     .main-content {
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 2rem 3rem;
+        padding: 1rem 2rem;
     }
 
     .stats-grid {

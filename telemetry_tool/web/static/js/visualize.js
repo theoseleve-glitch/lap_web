@@ -469,8 +469,10 @@
             var pad = { top: 20, right: showDelta ? 60 : 20, bottom: 35, left: 55 };
 
             var dpr = window.devicePixelRatio || 1;
-            var w = canvas.parentElement.clientWidth - 16;
-            var h = canvas.parentElement.clientHeight - 16;
+            canvas.style.width = '';
+            canvas.style.height = '';
+            var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
+            var h = canvas.clientHeight || canvas.parentElement.clientHeight || 400;
             canvas.width = w * dpr;
             canvas.height = h * dpr;
             canvas.style.width = w + 'px';
@@ -932,8 +934,10 @@
         function draw() {
             if (!canvas || !ctx) return;
             var dpr = window.devicePixelRatio || 1;
-            var w = canvas.parentElement.clientWidth - 16;
-            var h = canvas.parentElement.clientHeight - 16;
+            canvas.style.width = '';
+            canvas.style.height = '';
+            var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
+            var h = canvas.clientHeight || canvas.parentElement.clientHeight || 400;
             canvas.width = w * dpr;
             canvas.height = h * dpr;
             canvas.style.width = w + 'px';

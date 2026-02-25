@@ -24,6 +24,7 @@
     var chartData = null;      // { distances, speeds }
     var chartBounds = null;    // { xMin, xMax, yMin, yMax, plotX, plotY, plotW, plotH }
     var theoreticalData = null; // { distances, speeds } from API
+    var _lastLaps = null;      // Stored for lap-times __redraw
 
     // ── Public API ──────────────────────────────────
     window.ChartSync = {
@@ -126,8 +127,10 @@
         if (!speedCtx || !chartData) return;
 
         var canvas = speedCanvas;
+        canvas.__redraw = function() { drawSpeedChart(); };
         var dpr = window.devicePixelRatio || 1;
-        var w = canvas.parentElement.clientWidth - 32;  // account for padding
+        canvas.style.width = '';  // Reset to let CSS 100% take effect
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
         var h = 250;
         canvas.width = w * dpr;
         canvas.height = h * dpr;
@@ -435,10 +438,13 @@
 
     function drawLapTimesChart(laps) {
         if (!lapCtx || !laps || laps.length === 0) return;
+        _lastLaps = laps;  // Store for __redraw
 
         var canvas = lapCanvas;
+        canvas.__redraw = function() { drawLapTimesChart(_lastLaps); };
         var dpr = window.devicePixelRatio || 1;
-        var w = canvas.parentElement.clientWidth - 32;
+        canvas.style.width = '';  // Reset to let CSS 100% take effect
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
         var h = 250;
         canvas.width = w * dpr;
         canvas.height = h * dpr;

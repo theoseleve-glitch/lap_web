@@ -103,7 +103,8 @@
         var rangeY = (latMax - latMin) * mPerDegLat;
 
         var dpr = window.devicePixelRatio || 1;
-        var w = (canvas.parentElement.clientWidth || 700) - 16;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
         var h = Math.max(400, Math.min(600, w * 0.75));
         canvas.width = w * dpr;
         canvas.height = h * dpr;
@@ -373,7 +374,8 @@
     function _msg(msg) {
         if (!canvas) return;
         var dpr = window.devicePixelRatio || 1;
-        var w = (canvas.parentElement.clientWidth || 600) - 16;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 600;
         canvas.width = w * dpr;
         canvas.height = 200 * dpr;
         canvas.style.width = w + 'px';

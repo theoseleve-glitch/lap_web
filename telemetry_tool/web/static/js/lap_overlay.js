@@ -231,7 +231,8 @@
     function clearChart() {
         if (!ctx || !canvas) return;
         var dpr = window.devicePixelRatio || 1;
-        var w = canvas.parentElement.clientWidth - 32;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
         var h = 280;
         canvas.width = w * dpr;
         canvas.height = h * dpr;
@@ -252,7 +253,8 @@
 
         var showDelta = selectedLaps.length === 2;
         var dpr = window.devicePixelRatio || 1;
-        var w = canvas.parentElement.clientWidth - 32;
+        canvas.style.width = '';
+        var w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
         var h = 280;
         canvas.width = w * dpr;
         canvas.height = h * dpr;
