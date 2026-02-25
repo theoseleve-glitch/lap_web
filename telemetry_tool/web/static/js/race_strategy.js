@@ -1,6 +1,9 @@
 /**
- * race_strategy.js — Config page interactions (dynamic driver rows).
+ * race_strategy.js — Config page interactions (dynamic driver rows)
+ * and detail page interactions (fuel toggles, pit type toggles).
  */
+
+/* ── Config Page: Dynamic Driver Rows ──────────── */
 (function() {
     'use strict';
 
@@ -109,8 +112,11 @@
             if (row) row.remove();
         }
     });
+})();
 
-    // Clickable table rows (for index page)
+/* ── Shared: Clickable Table Rows ─────────────── */
+(function() {
+    'use strict';
     document.querySelectorAll('.clickable-row').forEach(function(row) {
         row.style.cursor = 'pointer';
         row.addEventListener('click', function(e) {
@@ -119,3 +125,63 @@
         });
     });
 })();
+
+/* ── Detail Page: Fuel Toggle & Pit Type APIs ──── */
+
+/**
+ * Toggle refuel on/off for the pit stop before a given stint.
+ * Calls POST /<race_id>/api/toggle-fuel and reloads on success.
+ *
+ * @param {number} raceId  - The race_configs.race_id
+ * @param {number} stintOrder - The stint_order that this pit stop feeds into
+ */
+function rsToggleFuel(raceId, stintOrder) {
+    'use strict';
+    fetch('/race-strategy/' + raceId + '/api/toggle-fuel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stint_order: stintOrder })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.ok) {
+            // Reload the page to reflect cascade changes (fuel, ballast, violations)
+            window.location.reload();
+        } else {
+            console.error('toggle-fuel error:', data.error);
+        }
+    })
+    .catch(function(err) {
+        console.error('toggle-fuel fetch failed:', err);
+    });
+}
+
+/**
+ * Cycle pit type between "full" and "quick" for a pit stop.
+ * Calls POST /<race_id>/api/set-pit-type and reloads on success.
+ *
+ * @param {number} raceId  - The race_configs.race_id
+ * @param {number} stintOrder - The stint_order that this pit stop feeds into
+ * @param {HTMLElement} btn - The button element (for reading current state)
+ */
+function rsTogglePitType(raceId, stintOrder, btn) {
+    'use strict';
+    var currentType = btn.classList.contains('rs-pit-type-full') ? 'full' : 'quick';
+    var newType = currentType === 'full' ? 'quick' : 'full';
+    fetch('/race-strategy/' + raceId + '/api/set-pit-type', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stint_order: stintOrder, pit_type: newType })
+    })
+    .then(function(resp) { return resp.json(); })
+    .then(function(data) {
+        if (data.ok) {
+            window.location.reload();
+        } else {
+            console.error('set-pit-type error:', data.error);
+        }
+    })
+    .catch(function(err) {
+        console.error('set-pit-type fetch failed:', err);
+    });
+}
