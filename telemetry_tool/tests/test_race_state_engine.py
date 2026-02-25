@@ -857,3 +857,93 @@ class TestWindowPersistence:
 
         loaded = RaceStateEngine.load(engine_db, race_id)
         assert len(loaded.windows) == 0
+
+
+# ===========================================================================
+# TestNeutralization  (Tier 6 Task 2)
+# ===========================================================================
+
+class TestNeutralization:
+    """Safety car / neutralization — fuel burn pause during cascade."""
+
+    def test_neutralized_overlap_no_periods(self):
+        engine = _make_engine()
+        engine.neutralizations = []
+        assert engine._neutralized_overlap(0, 2360) == 0.0
+
+    def test_neutralized_overlap_full_overlap(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 500, "end_s": 1000}]
+        assert engine._neutralized_overlap(0, 2360) == 500.0
+
+    def test_neutralized_overlap_partial_overlap(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 2000, "end_s": 3000}]
+        assert engine._neutralized_overlap(0, 2360) == 360.0
+
+    def test_neutralized_overlap_no_overlap(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 3000, "end_s": 4000}]
+        assert engine._neutralized_overlap(0, 2360) == 0.0
+
+    def test_neutralized_overlap_open_period(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 1000}]
+        assert engine._neutralized_overlap(0, 2360) == 1360.0
+
+    def test_neutralized_overlap_multiple_periods(self):
+        engine = _make_engine()
+        engine.neutralizations = [
+            {"start_s": 100, "end_s": 200},
+            {"start_s": 500, "end_s": 700},
+        ]
+        assert engine._neutralized_overlap(0, 2360) == 300.0
+
+    def test_fuel_cascade_with_neutralization(self):
+        engine = _make_engine()
+        fuel_no_sc = engine.stints[0].fuel_at_end_kg
+        engine.neutralizations = [{"start_s": 500, "end_s": 1100}]
+        engine._cascade_from(1)
+        fuel_with_sc = engine.stints[0].fuel_at_end_kg
+        saved = engine.fuel_model.burn_rate_kgs * 600
+        assert abs(fuel_with_sc - (fuel_no_sc + saved)) < 0.001
+
+    def test_start_neutralization(self):
+        engine = _make_engine()
+        engine.neutralizations = []
+        engine.start_neutralization(1000.0, "safety_car")
+        assert len(engine.neutralizations) == 1
+        assert engine.neutralizations[0]["start_s"] == 1000
+        assert engine.neutralizations[0].get("end_s") is None
+        assert engine.neutralizations[0]["reason"] == "safety_car"
+
+    def test_end_neutralization(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 1000, "reason": "safety_car"}]
+        engine.end_neutralization(1500.0)
+        assert engine.neutralizations[0]["end_s"] == 1500
+
+    def test_end_neutralization_noop_when_none_open(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 1000, "end_s": 1500, "reason": "safety_car"}]
+        engine.end_neutralization(2000.0)
+        assert engine.neutralizations[0]["end_s"] == 1500
+
+    def test_is_neutralized_true_when_open(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 1000, "reason": "safety_car"}]
+        assert engine.is_neutralized is True
+
+    def test_is_neutralized_false_when_all_closed(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 1000, "end_s": 1500, "reason": "safety_car"}]
+        assert engine.is_neutralized is False
+
+    def test_snapshot_includes_neutralizations(self):
+        engine = _make_engine()
+        engine.neutralizations = [{"start_s": 500, "end_s": 800, "reason": "safety_car"}]
+        snap = engine.snapshot()
+        assert "neutralizations" in snap
+        assert "is_neutralized" in snap
+        assert snap["is_neutralized"] is False
+        assert len(snap["neutralizations"]) == 1

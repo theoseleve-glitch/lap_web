@@ -180,6 +180,9 @@ class RaceStateEngine:
         # Race windows (populated by load() or externally)
         self.windows: list[dict] = []
 
+        # Neutralization periods (safety car, red flag, etc.)
+        self.neutralizations: list[dict] = []
+
         # Legacy pit window migration: create virtual pitlane window from config
         pit_open = config.get("pit_open_s")
         pit_close = config.get("pit_close_s")
@@ -256,6 +259,18 @@ class RaceStateEngine:
             return True
         return any(w['start_s'] <= time_s <= w['end_s'] for w in typed)
 
+    def _neutralized_overlap(self, stint_start_s: int, stint_end_s: int) -> float:
+        """Total neutralized seconds within a stint's time range."""
+        total = 0.0
+        for n in self.neutralizations:
+            ns = n["start_s"]
+            ne = n.get("end_s") or stint_end_s
+            overlap_start = max(stint_start_s, ns)
+            overlap_end = min(stint_end_s, ne)
+            if overlap_end > overlap_start:
+                total += overlap_end - overlap_start
+        return total
+
     def _cascade_from(self, from_order: int) -> None:
         """Propagate fuel and ballast from *from_order* onward.
 
@@ -295,7 +310,10 @@ class RaceStateEngine:
                 stint.fuel_at_start_kg = 0.0
 
         # Fuel consumed during the stint (may go negative)
-        consumed = fm.burn_rate_kgs * stint.planned_duration_s
+        # Subtract neutralized time — no fuel burn under safety car
+        sc_overlap = self._neutralized_overlap(stint.planned_start_s, stint.planned_end_s)
+        effective_burn_s = max(0.0, stint.planned_duration_s - sc_overlap)
+        consumed = fm.burn_rate_kgs * effective_burn_s
         stint.fuel_at_end_kg = stint.fuel_at_start_kg - consumed
 
     def _calc_ballast(self, stint: StintState) -> None:
@@ -472,6 +490,24 @@ class RaceStateEngine:
         current = self._refuel_map.get(stint_order, True)
         self._refuel_map[stint_order] = not current
         self._cascade_from(stint_order)
+
+    def start_neutralization(self, elapsed_s: float, reason: str = "safety_car") -> None:
+        """Begin a neutralization period (safety car, red flag, etc.)."""
+        self.neutralizations.append({"start_s": int(elapsed_s), "reason": reason})
+        self._cascade_from(1)
+
+    def end_neutralization(self, elapsed_s: float) -> None:
+        """Close the first open neutralization period."""
+        for n in self.neutralizations:
+            if n.get("end_s") is None:
+                n["end_s"] = int(elapsed_s)
+                self._cascade_from(1)
+                return
+
+    @property
+    def is_neutralized(self) -> bool:
+        """True if any neutralization period is currently open (no end_s)."""
+        return any(n.get("end_s") is None for n in self.neutralizations)
 
     # -- window status query API -------------------------------------------
 
@@ -843,6 +879,8 @@ class RaceStateEngine:
             "refuel_map": dict(self._refuel_map),
             "pit_type_map": dict(self._pit_type_map),
             "windows": self.windows,
+            "neutralizations": self.neutralizations,
+            "is_neutralized": self.is_neutralized,
         }
 
     def stint_plan_export(self, race_name: str) -> dict[str, Any]:
