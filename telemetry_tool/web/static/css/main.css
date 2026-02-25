@@ -329,8 +329,7 @@ a:hover {
 /* ── Main content ─────────────────────────── */
 
 .main-content {
-    max-width: 1280px;
-    width: 100%;
+    width: clamp(360px, 95vw, 1400px);
     margin: 0 auto;
     padding: 2rem;
     flex: 1;
@@ -457,7 +456,7 @@ a:hover {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(120px, 15vw, 180px), 1fr));
     gap: 1rem;
     margin-bottom: 2rem;
 }
@@ -1058,7 +1057,7 @@ a:hover {
 
 .meta-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(140px, 18vw, 200px), 1fr));
     gap: 0.75rem;
     margin-bottom: 2rem;
 }
@@ -1291,8 +1290,8 @@ a:hover {
 }
 
 .gps-map {
-    height: 450px;
     width: 100%;
+    aspect-ratio: 16 / 9;
     background: var(--bg-tertiary);
 }
 
@@ -1510,7 +1509,7 @@ a:hover {
 
 .card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 30vw, 320px), 1fr));
     gap: 1rem;
 }
 
@@ -1773,7 +1772,7 @@ textarea.form-input {
 
 .form-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(140px, 18vw, 200px), 1fr));
     gap: 1rem;
 }
 
@@ -2021,7 +2020,7 @@ textarea.form-input {
 /* Feature hints row */
 .feature-hints {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(160px, 22vw, 240px), 1fr));
     gap: 1rem;
     margin-top: 1.5rem;
 }
@@ -2251,10 +2250,6 @@ textarea.form-input {
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .gps-map {
-        height: 300px;
-    }
-
     .form-row {
         grid-template-columns: 1fr;
     }
@@ -2340,7 +2335,7 @@ textarea.form-input {
 
 .style-section {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 40vw, 500px), 1fr));
     gap: 1.2rem;
 }
 @media (max-width: 700px) {
@@ -2406,7 +2401,7 @@ textarea.form-input {
 
 .compare-panels {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 40vw, 500px), 1fr));
     gap: 1.5rem;
     margin-bottom: 2rem;
 }
@@ -2416,7 +2411,7 @@ textarea.form-input {
 
 .compare-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 40vw, 500px), 1fr));
     gap: 1.5rem;
     margin-bottom: 2rem;
 }
@@ -3502,7 +3497,7 @@ details > summary:hover {
 
 .dashboard-card { background: var(--bg-card); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; }
 .dashboard-card h3 { margin: 0; flex: 1; }
-.widget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.widget-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(180px, 22vw, 260px), 1fr)); gap: 12px; }
 .widget-card { background: var(--bg-card); border-radius: var(--radius); padding: 12px; }
 .widget-card h3 { margin: 0 0 4px; font-size: 0.95em; }
 .widget-card p { font-size: 0.85em; color: var(--text-secondary); margin: 0 0 6px; }
@@ -3511,7 +3506,7 @@ details > summary:hover {
    Batch 5: Export builder
    ══════════════════════════════════════════ */
 
-.export-sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.export-sections { display: grid; grid-template-columns: repeat(auto-fill, minmax(clamp(160px, 22vw, 240px), 1fr)); gap: 8px; }
 .export-section-item { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--bg-card); border-radius: 6px; cursor: pointer; }
 
 /* ══════════════════════════════════════════
@@ -4042,7 +4037,7 @@ details > summary:hover {
 /* Skeleton stat grid */
 .skeleton-stats {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 15vw, 180px), 1fr));
     gap: 1rem;
     margin-bottom: 1.5rem;
 }
@@ -5719,7 +5714,7 @@ textarea.editable-field {
 
 .grid-2col {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 40vw, 500px), 1fr));
     gap: 1rem;
 }
 
@@ -6437,11 +6432,11 @@ textarea.editable-field {
     }
 
     .stats-grid {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(clamp(160px, 22vw, 240px), 1fr));
     }
 
     .meta-grid {
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(clamp(180px, 22vw, 260px), 1fr));
     }
 
     .page-header h1 {
@@ -7144,7 +7139,7 @@ h2 .tip-wrap::after {
 .chart-container-rel { position: relative; }
 
 /* Track map height */
-.gps-map-tall { height: 400px; }
+.gps-map-tall { aspect-ratio: 4 / 3; }
 
 /* Order input width */
 .input-narrow { width: 80px; }
@@ -7886,7 +7881,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
 /* Performance summary grid — auto-fit for KPIs */
 .meta-grid-auto {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(clamp(100px, 14vw, 160px), 1fr));
     gap: 0.75rem;
 }
 
@@ -8334,7 +8329,7 @@ textarea {
 @media (min-width: 1200px) {
     /* Wider meta grid on large screens */
     .meta-grid-auto {
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(clamp(140px, 18vw, 200px), 1fr));
     }
 
     /* Wider compare columns */
@@ -9013,7 +9008,7 @@ tr.row-selected {
 
 .dstyle-layout {
     display: grid;
-    grid-template-columns: 1fr 300px;
+    grid-template-columns: 1fr clamp(200px, 20vw, 300px);
     gap: 1.5rem;
     align-items: start;
 }
@@ -9078,7 +9073,7 @@ tr.row-selected {
 
 .dstyle-insights {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(clamp(280px, 40vw, 500px), 1fr));
     gap: 1rem;
     margin-top: 1rem;
 }
@@ -9201,7 +9196,7 @@ tr.row-selected {
 /* Highlight cards */
 .debrief-highlights {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 28vw, 300px), 1fr));
     gap: 0.8rem;
     margin-bottom: 0.6rem;
 }
@@ -9378,7 +9373,7 @@ tr.row-selected {
 
 .debrief-actions-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 30vw, 320px), 1fr));
     gap: 0.8rem;
 }
 
@@ -9585,7 +9580,7 @@ tr.row-selected {
 /* Badge cards grid — premium */
 .badges-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(200px, 26vw, 280px), 1fr));
     gap: 0.8rem;
     margin-bottom: 1.2rem;
 }
@@ -9881,7 +9876,7 @@ tr.row-selected {
 /* Kart card grid */
 .kart-card-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(220px, 28vw, 300px), 1fr));
     gap: 1rem;
 }
 .kart-card {
