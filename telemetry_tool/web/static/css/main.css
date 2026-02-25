@@ -214,7 +214,7 @@ html {
 }
 
 html {
-    font-size: 15px;
+    font-size: clamp(0.85rem, 0.8rem + 0.25vw, 1rem);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -229,6 +229,10 @@ body {
     flex-direction: column;
     letter-spacing: -0.005em;
 }
+
+h1, .h1 { font-size: clamp(1.25rem, 1rem + 1.5vw, 2rem); }
+h2, .h2 { font-size: clamp(1.1rem, 0.9rem + 1vw, 1.5rem); }
+h3, .h3 { font-size: clamp(1rem, 0.85rem + 0.7vw, 1.25rem); }
 
 a {
     color: var(--accent);
@@ -288,7 +292,7 @@ a:hover {
     color: var(--text-secondary);
     padding: 0.5rem 1rem;
     border-radius: var(--radius-sm);
-    font-size: 0.9rem;
+    font-size: clamp(0.75rem, 0.7rem + 0.3vw, 0.95rem);
     font-weight: 500;
     transition: all var(--transition);
 }
@@ -525,7 +529,7 @@ a:hover {
 }
 
 .stat-value {
-    font-size: 2rem;
+    font-size: clamp(1.4rem, 1rem + 2vw, 2.5rem);
     font-weight: 700;
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
@@ -4652,10 +4656,6 @@ details > summary:hover {
         padding: 0.75rem;
     }
 
-    .stat-value {
-        font-size: 1.3rem;
-    }
-
     .stat-label {
         font-size: 0.72rem;
     }
@@ -8274,10 +8274,6 @@ textarea {
     /* Compact stat cards */
     .stat-card {
         padding: 0.75rem;
-    }
-
-    .stat-value {
-        font-size: 1.5rem;
     }
 
     /* Smaller page header */
