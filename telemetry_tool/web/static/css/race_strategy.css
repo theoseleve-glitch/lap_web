@@ -1820,3 +1820,27 @@ details[open].rs-form-section > summary::before {
         grid-template-columns: 1fr !important;
     }
 }
+
+/* ── Alert Badge ────────────────────────────── */
+
+.rs-badge {
+    display: inline-block;
+    background: var(--red, #f85149);
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    border-radius: 8px;
+    padding: 0 0.3rem;
+    min-width: 14px;
+    text-align: center;
+    vertical-align: top;
+    margin-left: 2px;
+}
+
+.rs-alert-history-entry {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--rs-card-border);
+    font-size: 0.8rem;
+}

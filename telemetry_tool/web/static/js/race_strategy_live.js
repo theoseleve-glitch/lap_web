@@ -659,6 +659,235 @@
         setInterval(fetchWeather, 300000);
     }
 
+    // ── Alert Manager ────────────────────────────
+
+    var AlertManager = (function() {
+        function AM() {
+            this.previousState = {};
+            this.muted = false;
+            this.cooldowns = {};
+            this.audioCtx = null;
+            this.history = [];
+            this.COOLDOWN_MS = 30000;
+            this.MAX_HISTORY = 20;
+
+            // Restore muted state from localStorage
+            try { this.muted = localStorage.getItem('rs-alert-muted') === '1'; } catch(e) {}
+            this._updateBellUI();
+        }
+
+        AM.prototype.playTone = function(freq, durationMs, type) {
+            if (this.muted) return;
+            try {
+                if (!this.audioCtx) {
+                    this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                var osc = this.audioCtx.createOscillator();
+                var gain = this.audioCtx.createGain();
+                osc.connect(gain);
+                gain.connect(this.audioCtx.destination);
+                osc.type = type || 'sine';
+                osc.frequency.value = freq;
+                gain.gain.value = 0.15;
+                gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + durationMs / 1000);
+                osc.start();
+                osc.stop(this.audioCtx.currentTime + durationMs / 1000);
+            } catch(e) {}
+        };
+
+        AM.prototype._canFire = function(type) {
+            var now = Date.now();
+            if (this.cooldowns[type] && now - this.cooldowns[type] < this.COOLDOWN_MS) return false;
+            this.cooldowns[type] = now;
+            return true;
+        };
+
+        AM.prototype.notify = function(type, title, body, priority) {
+            if (!this._canFire(type)) return;
+
+            // Toast
+            this._showToast(type, title + ': ' + body, priority);
+
+            // Browser notification
+            if (!this.muted && window.Notification && Notification.permission === 'granted') {
+                try { new Notification(title, { body: body, tag: type }); } catch(e) {}
+            }
+
+            // History
+            this.history.unshift({
+                type: type,
+                title: title,
+                body: body,
+                priority: priority,
+                time: new Date().toLocaleTimeString()
+            });
+            if (this.history.length > this.MAX_HISTORY) this.history.pop();
+            this._updateHistory();
+            this._updateBadge();
+        };
+
+        AM.prototype._showToast = function(type, message, priority) {
+            var strip = document.getElementById('rs-alert-strip');
+            if (!strip) return;
+
+            var toast = document.createElement('div');
+            toast.className = 'rs-alert-toast rs-alert-' + (priority || 'medium');
+
+            var text = document.createElement('span');
+            text.textContent = message;
+            toast.appendChild(text);
+
+            var dismiss = document.createElement('span');
+            dismiss.textContent = '\u00D7';
+            dismiss.style.cssText = 'margin-left:auto;cursor:pointer;font-weight:700;';
+            dismiss.addEventListener('click', function() { toast.remove(); });
+            toast.appendChild(dismiss);
+
+            strip.insertBefore(toast, strip.firstChild);
+
+            // Auto-dismiss after 8s
+            setTimeout(function() {
+                if (toast.parentNode) toast.remove();
+            }, 8000);
+        };
+
+        AM.prototype._updateHistory = function() {
+            var panel = document.getElementById('rs-alert-history-panel');
+            var container = document.getElementById('rs-alert-history');
+            if (!container) return;
+
+            if (this.history.length > 0 && panel) panel.style.display = '';
+
+            clearChildren(container);
+            for (var i = 0; i < this.history.length; i++) {
+                var h = this.history[i];
+                var row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:0.5rem;padding:0.2rem 0;border-bottom:1px solid var(--rs-card-border);';
+                var time = document.createElement('span');
+                time.style.color = 'var(--text-secondary)';
+                time.textContent = h.time;
+                var msg = document.createElement('span');
+                msg.textContent = h.title + ': ' + h.body;
+                row.appendChild(time);
+                row.appendChild(msg);
+                container.appendChild(row);
+            }
+        };
+
+        AM.prototype._updateBadge = function() {
+            var bell = document.getElementById('rs-btn-bell');
+            if (!bell) return;
+            var count = this.history.length;
+            var badge = bell.querySelector('.rs-badge');
+            if (count > 0) {
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'rs-badge';
+                    bell.appendChild(badge);
+                }
+                badge.textContent = count > 9 ? '9+' : '' + count;
+            } else if (badge) {
+                badge.remove();
+            }
+        };
+
+        AM.prototype._updateBellUI = function() {
+            var bell = document.getElementById('rs-btn-bell');
+            if (!bell) return;
+            if (this.muted) {
+                bell.classList.add('muted');
+                bell.textContent = 'Muted';
+            } else {
+                bell.classList.remove('muted');
+                bell.textContent = 'Bell';
+            }
+        };
+
+        AM.prototype.toggleMute = function() {
+            this.muted = !this.muted;
+            try { localStorage.setItem('rs-alert-muted', this.muted ? '1' : '0'); } catch(e) {}
+            this._updateBellUI();
+        };
+
+        AM.prototype.check = function(newState) {
+            if (!newState) return;
+            var prev = this.previousState;
+
+            // 1. Fuel status transitions
+            var prevFuel = (prev.intelligence && prev.intelligence.fuel) ? prev.intelligence.fuel.fuel_status : 'ok';
+            var newFuel = (newState.intelligence && newState.intelligence.fuel) ? newState.intelligence.fuel.fuel_status : 'ok';
+            if (prevFuel !== newFuel) {
+                if (newFuel === 'critical') {
+                    this.notify('fuel_critical', 'FUEL CRITICAL', 'Less than 2 minutes of fuel remaining!', 'high');
+                    this.playTone(880, 600, 'square');
+                } else if (newFuel === 'warning' && prevFuel === 'ok') {
+                    this.notify('fuel_warning', 'Fuel Warning', 'Less than 5 minutes of fuel remaining', 'medium');
+                    this.playTone(660, 400, 'sine');
+                }
+            }
+
+            // 2. Window status transitions
+            if (newState.window_status && prev.window_status) {
+                for (var i = 0; i < newState.window_status.length; i++) {
+                    var nw = newState.window_status[i];
+                    var pw = null;
+                    for (var j = 0; j < prev.window_status.length; j++) {
+                        if (prev.window_status[j].type === nw.type) { pw = prev.window_status[j]; break; }
+                    }
+                    if (!pw) continue;
+                    if (pw.status !== 'open' && nw.status === 'open') {
+                        this.notify('window_open_' + nw.type, 'Pit Window Open', nw.type.replace('_', ' ') + ' window is now OPEN', 'high');
+                        this.playTone(523, 200, 'sine');
+                        setTimeout(function() { this.playTone(659, 200, 'sine'); }.bind(this), 250);
+                    }
+                    if (pw.status !== 'closing' && nw.status === 'closing') {
+                        this.notify('window_closing_' + nw.type, 'Pit Window Closing', nw.type.replace('_', ' ') + ' window closing soon!', 'high');
+                        this.playTone(880, 150, 'sawtooth');
+                        setTimeout(function() { this.playTone(880, 150, 'sawtooth'); }.bind(this), 200);
+                    }
+                }
+            }
+
+            // 3. Neutralization start/end
+            var prevNeut = !!prev.is_neutralized;
+            var newNeut = !!newState.is_neutralized;
+            if (!prevNeut && newNeut) {
+                this.notify('sc_start', 'Safety Car', 'Neutralization period started', 'high');
+                this.playTone(440, 800, 'sawtooth');
+            } else if (prevNeut && !newNeut) {
+                this.notify('sc_end', 'Green Flag', 'Neutralization ended — racing resumes', 'high');
+                this.playTone(523, 300, 'sine');
+                setTimeout(function() { this.playTone(659, 300, 'sine'); }.bind(this), 350);
+            }
+
+            // 4. Swap suggestion appearance
+            var prevSwap = prev.intelligence && prev.intelligence.swap;
+            var newSwap = newState.intelligence && newState.intelligence.swap;
+            if (!prevSwap && newSwap && newSwap.suggest_swap) {
+                this.notify('swap', 'Swap Suggestion', newSwap.reason + ' — consider ' + newSwap.next_driver, 'medium');
+                this.playTone(587, 300, 'sine');
+            }
+
+            // 5. Stint time limit (90% of max)
+            if (newState.active_stint) {
+                var elapsed = getElapsed();
+                var stintElapsed = elapsed - (newState.active_stint.actual_start_s || 0);
+                var maxStint = newState.active_stint.planned_duration_s || 0;
+                if (maxStint > 0 && stintElapsed > maxStint * 0.9) {
+                    this.notify('stint_limit', 'Stint Limit', 'Over 90% of planned stint time used', 'medium');
+                    this.playTone(740, 300, 'sine');
+                }
+            }
+
+            // Save current state for next comparison
+            this.previousState = JSON.parse(JSON.stringify(newState));
+        };
+
+        return AM;
+    })();
+
+    var alertManager = new AlertManager();
+
     // ── Neutralization ───────────────────────────
 
     function toggleNeutralization() {
@@ -693,6 +922,13 @@
             var action = (state && state.is_neutralized) ? 'End Safety Car?' : 'Deploy Safety Car?';
             if (!confirm(action)) return;
             toggleNeutralization();
+        });
+    }
+
+    var bellBtn = document.getElementById('rs-btn-bell');
+    if (bellBtn) {
+        bellBtn.addEventListener('click', function() {
+            alertManager.toggleMute();
         });
     }
 
@@ -923,6 +1159,7 @@
                 updateChat();
                 updateNeutralizationUI();
                 updateIntelligence();
+                alertManager.check(state);
             })
             .catch(function() {});
     }
@@ -1111,6 +1348,14 @@
     }
 
     // ── Init ─────────────────────────────────────
+
+    // Request notification permission on first user interaction
+    document.addEventListener('click', function requestNotifPerm() {
+        if (window.Notification && Notification.permission === 'default') {
+            Notification.requestPermission();
+        }
+        document.removeEventListener('click', requestNotifPerm);
+    }, { once: true });
 
     fetchState();
 
