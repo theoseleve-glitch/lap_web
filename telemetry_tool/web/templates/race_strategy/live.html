@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}LIVE — {{ race.race_name }}{% endblock %}
+
+{% block head_extra %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/race_strategy.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div>
+        <h1>
+            <span class="rs-live-badge">LIVE</span>
+            {{ race.race_name }}
+        </h1>
+        <p>
+            {% if race.team_name %}{{ race.team_name }} · {% endif %}
+            {{ '%d:%02d' | format(race.race_duration_s // 3600, (race.race_duration_s % 3600) // 60) }} race
+        </p>
+    </div>
+    <div style="display:flex;gap:0.5rem;">
+        <a href="{{ url_for('race_strategy_v2.detail', race_id=race.race_id) }}" class="btn btn-ghost">Detail</a>
+    </div>
+</div>
+
+<!-- 6-Component Grid -->
+<div class="rs-live-grid" id="rs-live-root"
+     data-race-id="{{ race.race_id }}"
+     data-race-duration="{{ race.race_duration_s }}"
+     data-race-start="{{ race.race_start_ts or '' }}"
+     data-fuel-autonomy="{{ race.fuel_autonomy_s or 0 }}">
+
+    <!-- 1. Race Timer -->
+    <div class="rs-live-card">
+        <h3>Race Timer</h3>
+        <div class="rs-timer-display" id="rs-timer-elapsed">0:00:00</div>
+        <div class="rs-timer-remaining" id="rs-timer-remaining">Remaining: --:--:--</div>
+        <div class="rs-timer-progress">
+            <div class="rs-timer-progress-bar" id="rs-timer-bar" style="width:0%;background:var(--green);"></div>
+        </div>
+        <div style="text-align:center;margin-top:0.5rem;font-size:0.85rem;">
+            Stint <span id="rs-stint-current">-</span> of <span id="rs-stint-total">-</span>
+        </div>
+    </div>
+
+    <!-- 2. Fuel & Ballast -->
+    <div class="rs-live-card">
+        <h3>Fuel & Ballast</h3>
+        <div class="rs-fuel-bar-wrap">
+            <div class="rs-fuel-bar rs-fuel-ok" id="rs-fuel-bar" style="width:100%;">100%</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:0.85rem;margin-top:0.25rem;">
+            <span>Autonomy: <strong id="rs-fuel-autonomy">--:--</strong></span>
+            <span>Ballast: <strong id="rs-ballast">-- kg</strong></span>
+        </div>
+        <div style="font-size:0.85rem;margin-top:0.25rem;">
+            Total kart: <strong id="rs-total-weight">-- kg</strong>
+        </div>
+    </div>
+
+    <!-- 3. Current & Next Driver -->
+    <div class="rs-live-card">
+        <h3>Drivers</h3>
+        <div class="rs-active-driver" id="rs-active-driver">—</div>
+        <div style="font-size:0.85rem;color:var(--text-secondary);">
+            In stint for: <strong id="rs-stint-elapsed">--:--</strong>
+            / max <strong id="rs-stint-max">--:--</strong>
+        </div>
+        <div class="rs-fuel-bar-wrap" style="height:8px;margin:0.5rem 0;">
+            <div class="rs-fuel-bar rs-fuel-ok" id="rs-stint-bar" style="width:0%;height:100%;"></div>
+        </div>
+        <div class="rs-next-driver">
+            Next: <strong id="rs-next-driver">—</strong>
+            <span id="rs-next-info"></span>
+        </div>
+    </div>
+
+    <!-- 4. Stint Order -->
+    <div class="rs-live-card">
+        <h3>Stint Order</h3>
+        <div class="rs-stint-timeline" id="rs-stint-timeline"></div>
+        <div class="rs-timeline-legend" id="rs-stint-legend"></div>
+    </div>
+
+    <!-- 5. Stint Log (full width) -->
+    <div class="rs-live-card" style="grid-column: 1 / -1;">
+        <h3>Stint Log</h3>
+        <table class="rs-stint-log" id="rs-stint-log">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Driver</th>
+                    <th>Planned</th>
+                    <th>Actual</th>
+                    <th>Delta</th>
+                    <th>Ballast</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody id="rs-stint-log-body"></tbody>
+        </table>
+    </div>
+
+    <!-- 6. Race Summary -->
+    <div class="rs-live-card" style="grid-column: 1 / -1;">
+        <h3>Race Summary</h3>
+        <div style="display:flex;gap:2rem;flex-wrap:wrap;">
+            <div>
+                <span style="font-size:0.85rem;color:var(--text-secondary);">Elapsed / Remaining</span>
+                <div style="font-weight:600;" id="rs-summary-time">--:-- / --:--</div>
+            </div>
+            <div>
+                <span style="font-size:0.85rem;color:var(--text-secondary);">Pit Stops</span>
+                <div style="font-weight:600;" id="rs-summary-pits">0</div>
+            </div>
+            <div>
+                <span style="font-size:0.85rem;color:var(--text-secondary);">Strategy</span>
+                <div style="font-weight:600;" id="rs-summary-health">ON PLAN</div>
+            </div>
+        </div>
+        <div class="rs-driver-bars" id="rs-driver-bars" style="margin-top:0.75rem;"></div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="rs-live-actions">
+    <button type="button" class="btn-end-stint" id="rs-btn-end-stint">End Stint</button>
+    <button type="button" class="btn-reoptimize" id="rs-btn-reoptimize">Re-Optimize</button>
+    <form method="POST" action="{{ url_for('race_strategy_v2.finish', race_id=race.race_id) }}" style="display:inline;"
+          onsubmit="return confirm('Finish the race? This cannot be undone.');">
+        <button type="submit" class="btn-finish-race">Finish Race</button>
+    </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/race_strategy_live.js') }}"></script>
+{% endblock %}
