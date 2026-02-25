@@ -1215,7 +1215,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         var qCol = q.cv_pct < 1.5 ? '#4caf50' : q.cv_pct < 3 ? '#ff9800' : '#e74c3c';
                         html += '<div style="background:var(--card-bg);border-radius:6px;padding:0.2rem 0.5rem;text-align:center;min-width:70px;">';
                         html += '<div style="font-size:0.6rem;color:var(--text-secondary);">Q' + (i + 1) + '</div>';
-                        html += '<div style="font-size:0.8rem;font-weight:600;">' + q.mean_pace_s.toFixed(3) + 's</div>';
+                        html += '<div style="font-size:0.8rem;font-weight:600;">' + (q.mean_pace_s || q.mean_pace || 0).toFixed(3) + 's</div>';
                         html += '<div style="font-size:0.6rem;color:' + qCol + ';">CV ' + q.cv_pct.toFixed(1) + '%</div>';
                         html += '</div>';
                     });

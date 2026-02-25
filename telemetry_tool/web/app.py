@@ -14,9 +14,37 @@ import logging
 import sys
 from pathlib import Path
 
+import math
+
 from flask import Flask, g, jsonify, render_template, request
+from flask.json.provider import DefaultJSONProvider
 
 from .config import Config
+
+
+class _NaNSafeJSONProvider(DefaultJSONProvider):
+    """JSON provider that replaces NaN/Infinity with null.
+
+    Python's json.dumps allows NaN by default, but NaN is not valid JSON
+    per RFC 8259 and causes SyntaxError in browser JSON.parse().
+    """
+
+    def dumps(self, obj, **kwargs):
+        kwargs.setdefault("default", self.default)
+        # Use allow_nan=False so json.dumps raises on NaN, then handle it
+        # via a custom default. But simpler: sanitize before encoding.
+        return super().dumps(_sanitize_nan(obj), **kwargs)
+
+
+def _sanitize_nan(obj):
+    """Recursively replace NaN/Infinity with None for JSON safety."""
+    if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
+        return None
+    if isinstance(obj, dict):
+        return {k: _sanitize_nan(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_nan(v) for v in obj]
+    return obj
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +91,8 @@ def create_app(config: Config | None = None) -> Flask:
         template_folder=str(web_dir / "templates"),
         static_folder=str(web_dir / "static"),
     )
+    app.json_provider_class = _NaNSafeJSONProvider
+    app.json = _NaNSafeJSONProvider(app)
 
     # Load configuration.
     app.config.from_mapping(
