@@ -66,9 +66,9 @@ class TestRaceStrategySchema:
         assert row["min_pit_stop_s"] == 60
         assert row["weigh_on_pit_exit"] == 0
 
-    def test_schema_version_is_23(self, strategy_db):
+    def test_schema_version_is_24(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 23
+        assert row["v"] == 24
 
     def test_race_windows_table_exists(self, strategy_db):
         strategy_db.execute(
@@ -727,9 +727,9 @@ class TestTier3Schema:
         row = strategy_db.execute("SELECT com_channel FROM race_drivers WHERE race_id = 1").fetchone()
         assert row["com_channel"] == "CH 7"
 
-    def test_schema_version_is_23(self, strategy_db):
+    def test_schema_version_is_24(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 23
+        assert row["v"] == 24
 
 
 class TestTeamTalk:
@@ -821,3 +821,52 @@ class TestWeatherIntegration:
         result = estimate_track_conditions(weather)
         assert "track_state" in result
         assert "grip_score" in result
+
+
+class TestTier6Schema:
+    """Tier 6 schema — neutralizations, rivals, rival events."""
+
+    def test_schema_version_is_24(self, strategy_db):
+        row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
+        assert row["v"] == 24
+
+    def test_race_neutralizations_table_exists(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_neutralizations (race_id, start_s, reason) "
+            "VALUES (1, 600, 'safety_car')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_neutralizations WHERE race_id = 1").fetchone()
+        assert row["start_s"] == 600
+        assert row["end_s"] is None
+        assert row["reason"] == "safety_car"
+
+    def test_race_rivals_table_exists(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_rivals (race_id, team_name, car_number) "
+            "VALUES (1, 'Team Alpha', '42')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_rivals WHERE race_id = 1").fetchone()
+        assert row["team_name"] == "Team Alpha"
+        assert row["car_number"] == "42"
+
+    def test_race_rival_events_table_exists(self, strategy_db):
+        strategy_db.execute(
+            "INSERT INTO race_configs (race_name, race_duration_s) VALUES ('R', 3600)"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_rivals (race_id, team_name, car_number) VALUES (1, 'X', '1')"
+        )
+        strategy_db.execute(
+            "INSERT INTO race_rival_events (race_id, rival_id, event_type, at_s, detail) "
+            "VALUES (1, 1, 'pit_in', 1200, 'quick stop')"
+        )
+        row = strategy_db.execute("SELECT * FROM race_rival_events WHERE race_id = 1").fetchone()
+        assert row["event_type"] == "pit_in"
+        assert row["at_s"] == 1200
+        assert row["detail"] == "quick stop"

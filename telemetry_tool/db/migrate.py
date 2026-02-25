@@ -438,6 +438,46 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (23, "Phase 23 schema — Tier 5 race windows, driver colors"),
     )
 
+    # Phase 24 migration: Tier 6 — neutralizations, rivals, rival events.
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS race_neutralizations (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id    INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+            start_s    INTEGER NOT NULL,
+            end_s      INTEGER,
+            reason     TEXT    NOT NULL DEFAULT 'safety_car',
+            created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS race_rivals (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id     INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+            team_name   TEXT    NOT NULL,
+            car_number  TEXT    NOT NULL,
+            notes       TEXT,
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS race_rival_events (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            race_id     INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+            rival_id    INTEGER NOT NULL REFERENCES race_rivals(id) ON DELETE CASCADE,
+            event_type  TEXT    NOT NULL,
+            at_s        INTEGER NOT NULL,
+            detail      TEXT,
+            created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+        );
+    """)
+    logger.debug("Ensured race_neutralizations, race_rivals, race_rival_events tables exist.")
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (24, "Phase 24 schema — Tier 6 neutralizations, rivals, rival events"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

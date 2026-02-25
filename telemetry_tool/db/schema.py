@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 23
+SCHEMA_VERSION = 24
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -881,5 +881,49 @@ PHASE_16_TABLES: list[tuple[str, str]] = [
     ("race_messages", _RACE_MESSAGES_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 17 tables  (Tier 6: Live Race Intelligence — neutralizations, rivals)
+# ------------------------------------------------------------------
+
+_RACE_NEUTRALIZATIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_neutralizations (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id    INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    start_s    INTEGER NOT NULL,
+    end_s      INTEGER,
+    reason     TEXT    NOT NULL DEFAULT 'safety_car',
+    created_at TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_RACE_RIVALS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_rivals (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id     INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    team_name   TEXT    NOT NULL,
+    car_number  TEXT    NOT NULL,
+    notes       TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_RACE_RIVAL_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_rival_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id     INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    rival_id    INTEGER NOT NULL REFERENCES race_rivals(id) ON DELETE CASCADE,
+    event_type  TEXT    NOT NULL,
+    at_s        INTEGER NOT NULL,
+    detail      TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+PHASE_17_TABLES: list[tuple[str, str]] = [
+    ("race_neutralizations", _RACE_NEUTRALIZATIONS_TABLE),
+    ("race_rivals",          _RACE_RIVALS_TABLE),
+    ("race_rival_events",    _RACE_RIVAL_EVENTS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES
