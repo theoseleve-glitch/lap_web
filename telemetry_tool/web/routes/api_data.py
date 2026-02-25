@@ -3809,12 +3809,14 @@ def api_meteo_current():
 
     try:
         from meteo_service import fetch_current_weather, get_known_tracks, \
-            estimate_track_conditions, _TRACK_COORDS
+            estimate_track_conditions
 
-        if track_key and track_key in _TRACK_COORDS:
-            coords = _TRACK_COORDS[track_key]
-            lat, lon = coords["lat"], coords["lon"]
-        elif lat is None or lon is None:
+        if track_key:
+            conn = get_db_connection()
+            tracks = {t["id"]: t for t in get_known_tracks(conn)}
+            if track_key in tracks:
+                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
+        if lat is None or lon is None:
             return jsonify({"error": "Provide track key or lat/lon"}), 400
 
         weather = fetch_current_weather(lat, lon)
@@ -3837,12 +3839,14 @@ def api_meteo_historical():
         return jsonify({"error": "date parameter required (YYYY-MM-DD)"}), 400
 
     try:
-        from meteo_service import fetch_historical_weather, _TRACK_COORDS
+        from meteo_service import fetch_historical_weather, get_known_tracks
 
-        if track_key and track_key in _TRACK_COORDS:
-            coords = _TRACK_COORDS[track_key]
-            lat, lon = coords["lat"], coords["lon"]
-        elif lat is None or lon is None:
+        if track_key:
+            conn = get_db_connection()
+            tracks = {t["id"]: t for t in get_known_tracks(conn)}
+            if track_key in tracks:
+                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
+        if lat is None or lon is None:
             return jsonify({"error": "Provide track key or lat/lon"}), 400
 
         result = fetch_historical_weather(lat, lon, date_str)
@@ -3860,12 +3864,14 @@ def api_meteo_forecast():
     hours = request.args.get("hours", 12, type=int)
 
     try:
-        from meteo_service import get_weather_forecast, _TRACK_COORDS
+        from meteo_service import get_weather_forecast, get_known_tracks
 
-        if track_key and track_key in _TRACK_COORDS:
-            coords = _TRACK_COORDS[track_key]
-            lat, lon = coords["lat"], coords["lon"]
-        elif lat is None or lon is None:
+        if track_key:
+            conn = get_db_connection()
+            tracks = {t["id"]: t for t in get_known_tracks(conn)}
+            if track_key in tracks:
+                lat, lon = tracks[track_key]["lat"], tracks[track_key]["lon"]
+        if lat is None or lon is None:
             return jsonify({"error": "Provide track key or lat/lon"}), 400
 
         result = get_weather_forecast(lat, lon, hours)
@@ -3879,6 +3885,7 @@ def api_meteo_tracks():
     """Get list of known track locations for weather."""
     try:
         from meteo_service import get_known_tracks
-        return jsonify(get_known_tracks())
+        conn = get_db_connection()
+        return jsonify(get_known_tracks(conn))
     except ImportError:
         return jsonify({"error": "meteo_service module not available"}), 500

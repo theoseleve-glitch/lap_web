@@ -931,3 +931,85 @@ class TestTrackGeocoder:
         assert len(coords) == 2
         by_name = {c["track_name"]: c for c in coords}
         assert abs(by_name["Kartland Paris"]["latitude"] - 48.59) < 0.01
+
+
+class TestUnifiedTrackSource:
+    """Task 3: unified track source merging DB + predefined tracks."""
+
+    def test_get_all_track_locations_user_tracks(self, db):
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m, start_lat, start_lon) "
+            "VALUES ('trk1', 'My Kart Track', 800.0, 48.59, 2.57)"
+        )
+        db.commit()
+        from meteo_service import get_all_track_locations
+        result = get_all_track_locations(db)
+        user = result["user_tracks"]
+        assert len(user) == 1
+        assert user[0]["name"] == "My Kart Track"
+        assert abs(user[0]["lat"] - 48.59) < 0.01
+
+    def test_get_all_track_locations_predefined(self, db):
+        from track_geocoder import cache_geocode_result
+        cache_geocode_result(db, "Kartland Paris", "Moissy-Cramayel", "FR", 48.59, 2.57)
+        db.commit()
+        from meteo_service import get_all_track_locations
+        result = get_all_track_locations(db)
+        pred = result["predefined_tracks"]
+        assert len(pred) >= 1
+        names = [p["name"] for p in pred]
+        assert "Kartland Paris" in names
+
+    def test_get_all_track_locations_no_latlon_excluded(self, db):
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) "
+            "VALUES ('trk2', 'No GPS Track', 500.0)"
+        )
+        db.commit()
+        from meteo_service import get_all_track_locations
+        result = get_all_track_locations(db)
+        user_names = [t["name"] for t in result["user_tracks"]]
+        assert "No GPS Track" not in user_names
+
+    def test_get_known_tracks_backward_compat(self, db):
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m, start_lat, start_lon) "
+            "VALUES ('trk1', 'My Track', 800.0, 48.59, 2.57)"
+        )
+        db.commit()
+        from meteo_service import get_known_tracks
+        result = get_known_tracks(db)
+        assert isinstance(result, list)
+        assert len(result) >= 1
+        assert "name" in result[0]
+        assert "lat" in result[0]
+
+
+class TestHistoricalWeatherRouting:
+    """Task 4: smart date routing for historical weather."""
+
+    def test_route_recent_date_uses_forecast(self):
+        from meteo_service import _pick_historical_strategy
+        from datetime import date, timedelta
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        strategy = _pick_historical_strategy(yesterday)
+        assert strategy == "forecast_past_days"
+
+    def test_route_old_date_uses_archive(self):
+        from meteo_service import _pick_historical_strategy
+        strategy = _pick_historical_strategy("2024-06-15")
+        assert strategy == "archive"
+
+    def test_route_today_uses_forecast(self):
+        from meteo_service import _pick_historical_strategy
+        from datetime import date
+        today = date.today().isoformat()
+        strategy = _pick_historical_strategy(today)
+        assert strategy in ("forecast_past_days", "forecast_current")
+
+    def test_route_future_uses_forecast(self):
+        from meteo_service import _pick_historical_strategy
+        from datetime import date, timedelta
+        future = (date.today() + timedelta(days=3)).isoformat()
+        strategy = _pick_historical_strategy(future)
+        assert strategy == "forecast_current"

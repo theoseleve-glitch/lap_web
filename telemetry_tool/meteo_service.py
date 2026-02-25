@@ -33,33 +33,68 @@ logger = logging.getLogger(__name__)
 # Open-Meteo API base (free, no key)
 _OPEN_METEO_BASE = "https://api.open-meteo.com/v1"
 
-# ── Known track locations ────────────────────────────────────
-_TRACK_COORDS = {
-    "spa":           {"lat": 50.437, "lon": 5.971, "name": "Spa-Francorchamps"},
-    "monza":         {"lat": 45.621, "lon": 9.281, "name": "Monza"},
-    "silverstone":   {"lat": 52.073, "lon": -1.017, "name": "Silverstone"},
-    "nurburgring":   {"lat": 50.332, "lon": 6.942, "name": "Nurburgring"},
-    "zandvoort":     {"lat": 52.388, "lon": 4.541, "name": "Zandvoort"},
-    "barcelona":     {"lat": 41.570, "lon": 2.261, "name": "Circuit de Barcelona"},
-    "le_mans":       {"lat": 47.956, "lon": 0.207, "name": "Le Mans"},
-    "mugello":       {"lat": 43.998, "lon": 11.372, "name": "Mugello"},
-    "imola":         {"lat": 44.344, "lon": 11.714, "name": "Imola"},
-    "paul_ricard":   {"lat": 43.251, "lon": 5.791, "name": "Paul Ricard"},
-    "brands_hatch":  {"lat": 51.362, "lon": 0.263, "name": "Brands Hatch"},
-    "donington":     {"lat": 52.831, "lon": -1.375, "name": "Donington Park"},
-    "hockenheim":    {"lat": 49.328, "lon": 8.566, "name": "Hockenheimring"},
-    "portimao":      {"lat": 37.227, "lon": -8.627, "name": "Portimao"},
-    "hungaroring":   {"lat": 47.582, "lon": 19.249, "name": "Hungaroring"},
-    "red_bull_ring": {"lat": 47.220, "lon": 14.765, "name": "Red Bull Ring"},
-}
+# ── Unified track locations ──────────────────────────────────
 
 
-def get_known_tracks() -> list[dict[str, Any]]:
-    """Return list of known track locations for dropdown."""
-    return [
-        {"id": k, "name": v["name"], "lat": v["lat"], "lon": v["lon"]}
-        for k, v in sorted(_TRACK_COORDS.items(), key=lambda x: x[1]["name"])
+def get_all_track_locations(conn) -> dict[str, Any]:
+    """
+    Return unified track locations from user DB + predefined geocoded tracks.
+    Returns dict with keys 'user_tracks' and 'predefined_tracks'.
+    """
+    user_rows = conn.execute(
+        "SELECT track_id, track_name, start_lat, start_lon "
+        "FROM tracks "
+        "WHERE start_lat IS NOT NULL AND start_lon IS NOT NULL "
+        "ORDER BY track_name"
+    ).fetchall()
+    user_tracks = [
+        {
+            "id": f"db:{r['track_id']}",
+            "name": r["track_name"],
+            "lat": r["start_lat"],
+            "lon": r["start_lon"],
+            "source": "database",
+        }
+        for r in user_rows
     ]
+
+    pred_rows = conn.execute(
+        "SELECT track_name, latitude, longitude "
+        "FROM predefined_track_coords "
+        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL "
+        "ORDER BY track_name"
+    ).fetchall()
+    predefined_tracks = [
+        {
+            "id": f"csv:{r['track_name']}",
+            "name": r["track_name"],
+            "lat": r["latitude"],
+            "lon": r["longitude"],
+            "source": "predefined",
+        }
+        for r in pred_rows
+    ]
+
+    return {
+        "user_tracks": user_tracks,
+        "predefined_tracks": predefined_tracks,
+    }
+
+
+def get_known_tracks(conn=None) -> list[dict[str, Any]]:
+    """
+    Return flat list of all known track locations for dropdown.
+    Backward-compatible: if conn is None, returns empty list.
+    """
+    if conn is None:
+        return []
+    all_locs = get_all_track_locations(conn)
+    flat = []
+    for t in all_locs["user_tracks"]:
+        flat.append({"id": t["id"], "name": t["name"], "lat": t["lat"], "lon": t["lon"]})
+    for t in all_locs["predefined_tracks"]:
+        flat.append({"id": t["id"], "name": t["name"], "lat": t["lat"], "lon": t["lon"]})
+    return flat
 
 
 def fetch_current_weather(
@@ -118,23 +153,70 @@ def fetch_current_weather(
         }
 
 
-def fetch_historical_weather(
-    lat: float, lon: float, date_str: str,
+_FORECAST_PAST_DAYS_MAX = 92
+
+
+def _pick_historical_strategy(date_str: str) -> str:
+    """Decide which API to use for historical weather."""
+    from datetime import date as dt_date
+    target = dt_date.fromisoformat(date_str)
+    days_ago = (dt_date.today() - target).days
+    if days_ago <= 0:
+        return "forecast_current"
+    elif days_ago <= _FORECAST_PAST_DAYS_MAX:
+        return "forecast_past_days"
+    else:
+        return "archive"
+
+
+def _parse_hourly_response(
+    data: dict, date_str: str, source: str,
 ) -> dict[str, Any]:
     """
-    Fetch historical weather from Open-Meteo Archive API.
-
-    Parameters
-    ----------
-    lat, lon : float
-        Location coordinates.
-    date_str : str
-        Date in YYYY-MM-DD format.
-
-    Returns
-    -------
-    dict with hourly weather data for the date.
+    Parse hourly weather response data into a summary dict.
+    Filters hours to only those matching date_str.
     """
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+    n = len(times)
+
+    hours = []
+    for i in range(n):
+        t = times[i]
+        if not t.startswith(date_str):
+            continue
+        hours.append({
+            "time": t,
+            "air_temp_c": hourly.get("temperature_2m", [None] * n)[i],
+            "humidity_pct": hourly.get("relative_humidity_2m", [None] * n)[i],
+            "wind_speed_mps": hourly.get("wind_speed_10m", [None] * n)[i],
+            "rain_mm": hourly.get("rain", [0] * n)[i],
+            "cloud_cover_pct": hourly.get("cloud_cover", [None] * n)[i],
+            "weather_code": hourly.get("weather_code", [0] * n)[i],
+        })
+
+    # Daily summary
+    temps = [h["air_temp_c"] for h in hours if h["air_temp_c"] is not None]
+    humids = [h["humidity_pct"] for h in hours if h["humidity_pct"] is not None]
+    rains = [h["rain_mm"] for h in hours if h["rain_mm"] is not None]
+
+    return {
+        "date": date_str,
+        "hours": hours,
+        "summary": {
+            "temp_min_c": round(min(temps), 1) if temps else None,
+            "temp_max_c": round(max(temps), 1) if temps else None,
+            "temp_mean_c": round(sum(temps) / len(temps), 1) if temps else None,
+            "humidity_mean_pct": round(sum(humids) / len(humids), 1) if humids else None,
+            "total_rain_mm": round(sum(rains), 1) if rains else 0,
+            "had_rain": any(r > 0.1 for r in rains),
+        },
+        "source": source,
+    }
+
+
+def _fetch_via_archive(lat, lon, date_str):
+    """Fetch historical weather from Open-Meteo Archive API (for old dates)."""
     try:
         import urllib.request
         url = (
@@ -147,45 +229,82 @@ def fetch_historical_weather(
         )
         with urllib.request.urlopen(url, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-
-        hourly = data.get("hourly", {})
-        times = hourly.get("time", [])
-        n = len(times)
-
-        hours = []
-        for i in range(n):
-            hours.append({
-                "time": times[i],
-                "air_temp_c": hourly.get("temperature_2m", [None] * n)[i],
-                "humidity_pct": hourly.get("relative_humidity_2m", [None] * n)[i],
-                "wind_speed_mps": hourly.get("wind_speed_10m", [None] * n)[i],
-                "rain_mm": hourly.get("rain", [0] * n)[i],
-                "cloud_cover_pct": hourly.get("cloud_cover", [None] * n)[i],
-                "weather_code": hourly.get("weather_code", [0] * n)[i],
-            })
-
-        # Daily summary
-        temps = [h["air_temp_c"] for h in hours if h["air_temp_c"] is not None]
-        humids = [h["humidity_pct"] for h in hours if h["humidity_pct"] is not None]
-        rains = [h["rain_mm"] for h in hours if h["rain_mm"] is not None]
-
-        return {
-            "date": date_str,
-            "hours": hours,
-            "summary": {
-                "temp_min_c": round(min(temps), 1) if temps else None,
-                "temp_max_c": round(max(temps), 1) if temps else None,
-                "temp_mean_c": round(sum(temps) / len(temps), 1) if temps else None,
-                "humidity_mean_pct": round(sum(humids) / len(humids), 1) if humids else None,
-                "total_rain_mm": round(sum(rains), 1) if rains else 0,
-                "had_rain": any(r > 0.1 for r in rains),
-            },
-            "source": "open-meteo-archive",
-        }
-
+        return _parse_hourly_response(data, date_str, "open-meteo-archive")
     except Exception as e:
-        logger.warning("Failed to fetch historical weather: %s", e)
+        logger.warning("Failed to fetch archive weather: %s", e)
         return {"error": str(e), "source": "unavailable", "date": date_str}
+
+
+def _fetch_via_forecast_past_days(lat, lon, date_str):
+    """Fetch recent historical weather via Forecast API with past_days."""
+    from datetime import date as dt_date
+    target = dt_date.fromisoformat(date_str)
+    days_ago = (dt_date.today() - target).days
+    try:
+        import urllib.request
+        url = (
+            f"{_OPEN_METEO_BASE}/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            f"&past_days={days_ago}&forecast_days=0"
+            f"&hourly=temperature_2m,relative_humidity_2m,"
+            f"wind_speed_10m,rain,cloud_cover,weather_code"
+            f"&wind_speed_unit=ms&timezone=auto"
+        )
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        return _parse_hourly_response(data, date_str, "open-meteo-forecast-past")
+    except Exception as e:
+        logger.warning("Failed to fetch recent historical weather: %s", e)
+        return {"error": str(e), "source": "unavailable", "date": date_str}
+
+
+def _fetch_via_forecast_current(lat, lon, date_str):
+    """Fetch weather for today/future via Forecast API."""
+    try:
+        import urllib.request
+        url = (
+            f"{_OPEN_METEO_BASE}/forecast"
+            f"?latitude={lat}&longitude={lon}"
+            f"&forecast_days=2"
+            f"&hourly=temperature_2m,relative_humidity_2m,"
+            f"wind_speed_10m,rain,cloud_cover,weather_code"
+            f"&wind_speed_unit=ms&timezone=auto"
+        )
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+        return _parse_hourly_response(data, date_str, "open-meteo-forecast")
+    except Exception as e:
+        logger.warning("Failed to fetch forecast weather: %s", e)
+        return {"error": str(e), "source": "unavailable", "date": date_str}
+
+
+def fetch_historical_weather(
+    lat: float, lon: float, date_str: str,
+) -> dict[str, Any]:
+    """
+    Fetch historical weather with smart date routing.
+
+    Routes recent dates (<=92 days) through the Forecast API with past_days,
+    today/future through the Forecast API, and older dates through the Archive API.
+
+    Parameters
+    ----------
+    lat, lon : float
+        Location coordinates.
+    date_str : str
+        Date in YYYY-MM-DD format.
+
+    Returns
+    -------
+    dict with hourly weather data for the date.
+    """
+    strategy = _pick_historical_strategy(date_str)
+    if strategy == "forecast_current":
+        return _fetch_via_forecast_current(lat, lon, date_str)
+    elif strategy == "forecast_past_days":
+        return _fetch_via_forecast_past_days(lat, lon, date_str)
+    else:
+        return _fetch_via_archive(lat, lon, date_str)
 
 
 def get_weather_forecast(
@@ -473,12 +592,11 @@ def _run_tests() -> None:
 
     _test("weather_codes", t_codes)
 
-    # Test 6: Known tracks
+    # Test 6: Known tracks (backward compat — no conn returns empty list)
     def t_tracks():
         tracks = get_known_tracks()
-        assert len(tracks) >= 10
-        names = [t["name"] for t in tracks]
-        assert "Spa-Francorchamps" in names
+        assert isinstance(tracks, list)
+        assert len(tracks) == 0  # No DB connection → empty list
 
     _test("known_tracks", t_tracks)
 
