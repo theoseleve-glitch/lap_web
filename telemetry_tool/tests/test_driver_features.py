@@ -1013,3 +1013,112 @@ class TestHistoricalWeatherRouting:
         future = (date.today() + timedelta(days=3)).isoformat()
         strategy = _pick_historical_strategy(future)
         assert strategy == "forecast_current"
+
+
+class TestPaceEstimatorPhysics:
+    """Task 5: physics-based pace estimation (Tier 1)."""
+
+    def test_dry_conditions_no_delta(self):
+        from pace_estimator import estimate_physics_lap_time
+        weather = {"air_temp_c": 22.0, "rain_mm": 0, "humidity_pct": 50, "cloud_cover_pct": 20}
+        result = estimate_physics_lap_time(weather, dry_reference_s=50.0)
+        assert result["grip_factor"] == 1.0
+        assert abs(result["estimated_s"] - 50.0) < 0.01
+        assert abs(result["delta_s"]) < 0.01
+
+    def test_wet_conditions_slower(self):
+        from pace_estimator import estimate_physics_lap_time
+        weather = {"air_temp_c": 15.0, "rain_mm": 10.0, "humidity_pct": 90, "cloud_cover_pct": 100}
+        result = estimate_physics_lap_time(weather, dry_reference_s=50.0)
+        assert result["grip_factor"] < 1.0
+        assert result["estimated_s"] > 50.0
+        assert result["delta_s"] > 0
+        assert result["track_state"] == "wet"
+
+    def test_damp_conditions_between_dry_and_wet(self):
+        from pace_estimator import estimate_physics_lap_time
+        dry_ref = 50.0
+        weather_damp = {"air_temp_c": 18.0, "rain_mm": 2.0}
+        weather_wet = {"air_temp_c": 15.0, "rain_mm": 10.0}
+        result_damp = estimate_physics_lap_time(weather_damp, dry_reference_s=dry_ref)
+        result_wet = estimate_physics_lap_time(weather_wet, dry_reference_s=dry_ref)
+        assert dry_ref < result_damp["estimated_s"] < result_wet["estimated_s"]
+
+    def test_missing_reference_returns_error(self):
+        from pace_estimator import estimate_physics_lap_time
+        weather = {"air_temp_c": 22.0}
+        result = estimate_physics_lap_time(weather, dry_reference_s=None)
+        assert "error" in result
+
+
+class TestPaceEstimatorDataDriven:
+    """Task 6: data-driven pace estimation (Tier 2) + blending."""
+
+    def _seed_weather_sessions(self, db, n=8, track_id="trk1", driver_id=1):
+        db.execute(
+            "INSERT OR IGNORE INTO drivers (driver_id, driver_name) VALUES (?, ?)",
+            (driver_id, "TestDriver"),
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO tracks (track_id, track_name, lap_length_m, start_lat, start_lon) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (track_id, "Test Track", 800, 48.59, 2.57),
+        )
+        for i in range(n):
+            sid = f"ws{i}"
+            temp = 15.0 + i * 2.0
+            pace = 50.0 + i * 0.3
+            db.execute(
+                "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+                "session_type, session_date, best_lap_time_s) "
+                "VALUES (?, ?, ?, ?, 'practice', ?, ?)",
+                (sid, f"f{i}.csv", driver_id, track_id, f"2026-01-{i+1:02d}", pace),
+            )
+            db.execute(
+                "INSERT INTO session_weather (session_id, air_temp_c) VALUES (?, ?)",
+                (sid, temp),
+            )
+        db.commit()
+
+    def test_data_driven_returns_none_insufficient(self, db):
+        self._seed_weather_sessions(db, n=3)
+        from pace_estimator import estimate_data_driven_lap_time
+        result = estimate_data_driven_lap_time(db, "trk1", 1, {"air_temp_c": 20.0})
+        assert result is None
+
+    def test_data_driven_returns_estimate(self, db):
+        self._seed_weather_sessions(db, n=8)
+        from pace_estimator import estimate_data_driven_lap_time
+        result = estimate_data_driven_lap_time(db, "trk1", 1, {"air_temp_c": 20.0})
+        assert result is not None
+        assert "estimated_s" in result
+        assert result["tier"] == "data"
+
+    def test_blended_estimate_both_tiers(self, db):
+        self._seed_weather_sessions(db, n=8)
+        from pace_estimator import estimate_pace
+        weather = {"air_temp_c": 20.0, "rain_mm": 0, "humidity_pct": 50}
+        result = estimate_pace(db, "trk1", 1, weather)
+        assert "estimate" in result
+        est = result["estimate"]
+        assert est["tier"] in ("physics+data", "physics")
+        assert "expected_lap_time_s" in est
+        assert "components" in est
+
+    def test_blended_falls_back_to_physics_only(self, db):
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t2', 'T2', 800)"
+        )
+        db.execute(
+            "INSERT OR IGNORE INTO drivers (driver_id, driver_name) VALUES (99, 'NewDriver')"
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_type, session_date, best_lap_time_s) "
+            "VALUES ('dryref', 'f.csv', 99, 't2', 'practice', '2026-01-01', 50.0)"
+        )
+        db.commit()
+        from pace_estimator import estimate_pace
+        weather = {"air_temp_c": 22.0, "rain_mm": 0, "humidity_pct": 50}
+        result = estimate_pace(db, "t2", 99, weather)
+        assert result["estimate"]["tier"] == "physics"
