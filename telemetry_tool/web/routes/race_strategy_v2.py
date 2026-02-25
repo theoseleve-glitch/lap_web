@@ -250,11 +250,11 @@ def new_race():
         """INSERT INTO race_configs (
             race_name, track_name, team_name, race_duration_s,
             reference_weight_kg, desired_stints, fuel_autonomy_s,
-            min_pit_stop_s, pit_speed_kmh, pit_open_s, pit_close_s,
+            min_pit_stop_s, pit_speed_kmh, quick_pit_stop_s, pit_open_s, pit_close_s,
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
             request.form.get("race_name", "Untitled Race"),
             request.form.get("track_name") or None,
@@ -265,6 +265,7 @@ def new_race():
             _parse_duration(request.form.get("fuel_autonomy")) if request.form.get("fuel_autonomy") else None,
             _parse_int(request.form.get("min_pit_stop_s"), 60),
             _parse_float(request.form.get("pit_speed_kmh")),
+            _parse_int(request.form.get("quick_pit_stop_s")),
             _parse_duration(request.form.get("pit_open")) if request.form.get("pit_open") else None,
             _parse_duration(request.form.get("pit_close")) if request.form.get("pit_close") else None,
             _parse_float(request.form.get("empty_kart_kg")),
@@ -300,7 +301,7 @@ def update_race(race_id: int):
         """UPDATE race_configs SET
             race_name=?, track_name=?, team_name=?, race_duration_s=?,
             reference_weight_kg=?, desired_stints=?, fuel_autonomy_s=?,
-            min_pit_stop_s=?, pit_speed_kmh=?, pit_open_s=?, pit_close_s=?,
+            min_pit_stop_s=?, pit_speed_kmh=?, quick_pit_stop_s=?, pit_open_s=?, pit_close_s=?,
             empty_kart_kg=?, full_tank_kg=?, min_total_kart_kg=?,
             weigh_on_pit_exit=?, qualifying_duration_s=?, refuel_after_quali=?,
             mandatory_driver_change=?, refueling_allowed=?,
@@ -316,6 +317,7 @@ def update_race(race_id: int):
             _parse_duration(request.form.get("fuel_autonomy")) if request.form.get("fuel_autonomy") else None,
             _parse_int(request.form.get("min_pit_stop_s"), 60),
             _parse_float(request.form.get("pit_speed_kmh")),
+            _parse_int(request.form.get("quick_pit_stop_s")),
             _parse_duration(request.form.get("pit_open")) if request.form.get("pit_open") else None,
             _parse_duration(request.form.get("pit_close")) if request.form.get("pit_close") else None,
             _parse_float(request.form.get("empty_kart_kg")),
@@ -370,18 +372,19 @@ def duplicate(race_id: int):
         """INSERT INTO race_configs (
             race_name, track_name, team_name, race_duration_s,
             reference_weight_kg, desired_stints, fuel_autonomy_s,
-            min_pit_stop_s, pit_speed_kmh, pit_open_s, pit_close_s,
+            min_pit_stop_s, pit_speed_kmh, quick_pit_stop_s, pit_open_s, pit_close_s,
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
         (r["race_name"] + " (copy)", r["track_name"], r["team_name"],
          r["race_duration_s"], r["reference_weight_kg"], r["desired_stints"],
          r["fuel_autonomy_s"], r["min_pit_stop_s"], r["pit_speed_kmh"],
-         r["pit_open_s"], r["pit_close_s"], r["empty_kart_kg"],
-         r["full_tank_kg"], r["min_total_kart_kg"], r["weigh_on_pit_exit"],
-         r["qualifying_duration_s"], r["refuel_after_quali"],
-         r["mandatory_driver_change"], r["refueling_allowed"]),
+         r.get("quick_pit_stop_s"), r["pit_open_s"], r["pit_close_s"],
+         r["empty_kart_kg"], r["full_tank_kg"], r["min_total_kart_kg"],
+         r["weigh_on_pit_exit"], r["qualifying_duration_s"],
+         r["refuel_after_quali"], r["mandatory_driver_change"],
+         r["refueling_allowed"]),
     )
     new_id = cur.lastrowid
     # Copy drivers

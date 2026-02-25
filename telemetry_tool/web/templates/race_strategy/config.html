@@ -151,9 +151,14 @@
                        value="{{ race.min_pit_stop_s if race else 60 }}">
             </div>
             <div class="form-group">
-                <label for="pit_speed_kmh">Pit Speed (km/h)</label>
+                <label for="pit_speed_kmh">Pit Lane Speed Limit (km/h)</label>
                 <input type="number" step="0.1" id="pit_speed_kmh" name="pit_speed_kmh"
                        value="{{ race.pit_speed_kmh if race and race.pit_speed_kmh else '' }}" placeholder="30">
+            </div>
+            <div class="form-group">
+                <label for="quick_pit_stop_s">Quick Stop Duration (s)</label>
+                <input type="number" id="quick_pit_stop_s" name="quick_pit_stop_s" min="0"
+                       value="{{ race.quick_pit_stop_s if race and race.quick_pit_stop_s else '' }}" placeholder="30">
             </div>
         </div>
         <div class="form-row">
@@ -161,7 +166,7 @@
                 <label>
                     <input type="checkbox" name="mandatory_driver_change"
                            {{ 'checked' if not race or race.mandatory_driver_change }}>
-                    Mandatory driver change at pit
+                    Mandatory driver change at every stop
                 </label>
             </div>
             <div class="form-group">
