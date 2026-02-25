@@ -1243,12 +1243,22 @@
             var canvas = _makeCanvas(container);
             var _data = null;
 
-            _focusMsg(canvas, 'Loading brake scatter...');
-            var url = '/api/session/' + encodeURIComponent(sessionId) + '/brake-scatter';
+            _focusMsg(canvas, 'Loading brake precision...');
+            var url = '/api/session/' + encodeURIComponent(sessionId) + '/brake-precision';
             FetchHelper.fetch(url)
                 .then(function (data) {
-                    _data = data;
-                    _drawScatter(canvas, data, 'Brake Precision');
+                    // Flatten scatter map {corner_id: [{lap, brake_m}]} into {x, y}
+                    var xs = [], ys = [];
+                    if (data && data.scatter) {
+                        Object.keys(data.scatter).forEach(function (cid) {
+                            data.scatter[cid].forEach(function (pt) {
+                                xs.push(Number(cid));
+                                ys.push(pt.brake_m);
+                            });
+                        });
+                    }
+                    _data = { x: xs, y: ys };
+                    _drawScatter(canvas, _data, 'Brake Precision (corner vs brake point m)');
                 })
                 .catch(function () { _focusMsg(canvas, 'Failed to load brake data'); });
 
@@ -1274,12 +1284,21 @@
             var canvas = _makeCanvas(container);
             var _data = null;
 
-            _focusMsg(canvas, 'Loading stint data...');
-            var url = '/api/session/' + encodeURIComponent(sessionId) + '/stint-data';
+            _focusMsg(canvas, 'Loading stint analysis...');
+            var url = '/api/session/' + encodeURIComponent(sessionId) + '/stint-analysis';
             FetchHelper.fetch(url)
                 .then(function (data) {
-                    _data = data;
-                    _drawBarChart(canvas, data, 'Stint Analysis');
+                    // Transform stint_metrics into {labels, values} for bar chart
+                    var labels = [], values = [];
+                    var metrics = data && data.stint_metrics;
+                    if (Array.isArray(metrics)) {
+                        metrics.forEach(function (m) {
+                            labels.push('Stint ' + m.stint_number);
+                            values.push(m.mean_time_s);
+                        });
+                    }
+                    _data = { labels: labels, values: values };
+                    _drawBarChart(canvas, _data, 'Stint Analysis — Mean Lap Time (s)');
                 })
                 .catch(function () { _focusMsg(canvas, 'Failed to load stint data'); });
 
