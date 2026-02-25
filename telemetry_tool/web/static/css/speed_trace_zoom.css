@@ -115,8 +115,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
     border-bottom: 1px solid var(--border, #30363d);
     background: var(--bg-secondary, #161b22);
     flex-wrap: wrap;
@@ -125,7 +125,7 @@
 .speed-zoom-controls-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
     flex-wrap: wrap;
 }
 
@@ -151,7 +151,7 @@
 .speed-zoom-controls-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
 }
 
 /* Corner pills in zoom controls */
@@ -187,7 +187,7 @@
 /* Zoom canvas area */
 .speed-zoom-canvas-wrap {
     position: relative;
-    padding: 0 16px 0 16px;
+    padding: 0 var(--space-md) 0 var(--space-md);
 }
 
 #speed-zoom-canvas {
@@ -198,8 +198,8 @@
 .speed-zoom-legend {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 6px 12px;
+    gap: var(--space-md);
+    padding: var(--space-xs) var(--space-sm);
     font-size: 11px;
     color: var(--text-secondary, #8b949e);
     border-top: 1px solid var(--border, #30363d);

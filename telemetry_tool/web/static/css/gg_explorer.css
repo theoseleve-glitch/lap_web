@@ -13,8 +13,8 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding: 8px 12px;
+    gap: var(--space-sm);
+    padding: var(--space-xs) var(--space-sm);
     border-bottom: 1px solid var(--border, #30363d);
     background: var(--bg-secondary, #161b22);
     flex-wrap: wrap;
@@ -23,7 +23,7 @@
 .gg-explorer-controls-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-sm);
     flex-wrap: wrap;
 }
 
@@ -49,7 +49,7 @@
 .gg-explorer-controls-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-xs);
 }
 
 /* Mode pill group */
@@ -90,7 +90,7 @@
 /* Side-by-side canvas layout */
 .gg-explorer-body {
     display: flex;
-    min-height: 350px;
+    min-height: clamp(250px, 40vw, 450px);
 }
 
 .gg-explorer-gg-wrap {
@@ -120,8 +120,8 @@
 .gg-explorer-info {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 6px 12px;
+    gap: var(--space-md);
+    padding: var(--space-xs) var(--space-sm);
     font-size: 12px;
     color: var(--text-secondary, #8b949e);
     border-top: 1px solid var(--border, #30363d);
@@ -133,8 +133,8 @@
 .gg-explorer-legend {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 4px 12px;
+    gap: var(--space-md);
+    padding: var(--space-xs) var(--space-sm);
     font-size: 11px;
     color: var(--text-secondary, #8b949e);
 }
