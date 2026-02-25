@@ -68,6 +68,28 @@
     {% endif %}
 </div>
 
+{% if badges %}
+<section class="section">
+    <h2>Earned Badges</h2>
+    <div class="badges-grid">
+        {% for b in badges %}
+        <div class="badge-card">
+            <div class="badge-icon">
+                {% if b.badge_level == 'expert' or b.badge_level == 'professional' %}&#x1F947;
+                {% elif b.badge_level == 'advanced' %}&#x1F948;
+                {% elif b.badge_level == 'intermediate' %}&#x1F949;
+                {% else %}&#x1F3C5;{% endif %}
+            </div>
+            <div class="badge-info">
+                <span class="badge-name">{{ b.badge_name }}</span>
+                <span class="badge-level">{{ b.badge_level|capitalize if b.badge_level else '' }} &mdash; {{ b.earned_at[:10] if b.earned_at else '' }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
 {% if best_ever and best_ever.records_held %}
 <section class="section">
     <h2>Track Records Held</h2>

@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 18
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -529,8 +529,34 @@ CREATE TABLE IF NOT EXISTS development_plans (
     weeks_json TEXT NOT NULL,
     progress_json TEXT,
     status TEXT NOT NULL DEFAULT 'active',
+    completed_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+_PLAN_DRILL_SESSIONS_TABLE = """
+CREATE TABLE IF NOT EXISTS plan_drill_sessions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    plan_id     INTEGER NOT NULL REFERENCES development_plans(id),
+    week_index  INTEGER NOT NULL,
+    drill_index INTEGER NOT NULL,
+    session_id  TEXT NOT NULL REFERENCES sessions(session_id),
+    linked_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(plan_id, week_index, drill_index, session_id)
+);
+"""
+
+_DRIVER_BADGES_TABLE = """
+CREATE TABLE IF NOT EXISTS driver_badges (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    driver_id     INTEGER NOT NULL REFERENCES drivers(driver_id),
+    badge_type    TEXT NOT NULL,
+    badge_name    TEXT NOT NULL,
+    badge_level   TEXT,
+    metadata_json TEXT,
+    earned_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    plan_id       INTEGER REFERENCES development_plans(id)
 );
 """
 
@@ -557,10 +583,12 @@ CREATE TABLE IF NOT EXISTS export_templates (
 """
 
 PHASE_10_TABLES: list[tuple[str, str]] = [
-    ("session_annotations", _SESSION_ANNOTATIONS_TABLE),
-    ("development_plans",   _DEVELOPMENT_PLANS_TABLE),
-    ("custom_dashboards",   _CUSTOM_DASHBOARDS_TABLE),
-    ("export_templates",    _EXPORT_TEMPLATES_TABLE),
+    ("session_annotations",   _SESSION_ANNOTATIONS_TABLE),
+    ("development_plans",     _DEVELOPMENT_PLANS_TABLE),
+    ("plan_drill_sessions",   _PLAN_DRILL_SESSIONS_TABLE),
+    ("driver_badges",         _DRIVER_BADGES_TABLE),
+    ("custom_dashboards",     _CUSTOM_DASHBOARDS_TABLE),
+    ("export_templates",      _EXPORT_TEMPLATES_TABLE),
 ]
 
 # ------------------------------------------------------------------

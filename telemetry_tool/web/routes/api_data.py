@@ -266,6 +266,8 @@ def gg_data(session_id: str):
     """Return aggregated G-G scatter data from all laps with accel data."""
     import math
 
+    _G_VAL = 9.80665  # m/s² per G
+
     conn = get_db_connection()
     gps_lap_nums = get_gps_lap_numbers(conn, session_id)
 
@@ -274,14 +276,14 @@ def gg_data(session_id: str):
     per_lap = {}
 
     def _clean(arr):
-        """Replace NaN/Inf with None for safe JSON serialisation."""
+        """Replace NaN/Inf with None, convert m/s² → G for JSON output."""
         out = []
         for v in arr:
             if v is None:
                 out.append(None)
             else:
-                fv = float(v)
-                out.append(None if (math.isnan(fv) or math.isinf(fv)) else fv)
+                fv = float(v) / _G_VAL
+                out.append(None if (math.isnan(fv) or math.isinf(fv)) else round(fv, 4))
         return out
 
     for lap_num in gps_lap_nums:
@@ -3110,6 +3112,20 @@ def update_plan_progress_api(plan_id):
         )
         if not updated:
             return jsonify({"error": "Plan not found"}), 404
+        # Check if just completed — include badge info for celebration.
+        if updated.get("status") == "completed" and updated.get("completion_pct", 0) >= 100:
+            badge_row = conn.execute(
+                "SELECT metadata_json FROM driver_badges WHERE plan_id = ?", (plan_id,)
+            ).fetchone()
+            if badge_row:
+                import json as _json
+                updated["just_completed"] = True
+                updated["badge_meta"] = _json.loads(dict(badge_row)["metadata_json"])
+                updated["driver_id"] = updated.get("driver_id")
+            else:
+                updated["just_completed"] = False
+        else:
+            updated["just_completed"] = False
         return jsonify(updated)
     except (IndexError, KeyError) as e:
         return jsonify({"error": str(e)}), 400
@@ -3294,6 +3310,58 @@ def api_session_drill_suggestions(session_id: str):
         },
         "suggestions": suggestions,
     })
+
+
+# ------------------------------------------------------------------
+# Drill ↔ Session linking API (Task 5)
+# ------------------------------------------------------------------
+
+
+@bp.route("/dev-plans/plan/<int:plan_id>/link-session", methods=["POST"])
+def link_session_api(plan_id):
+    """Link an analyzed session to a specific drill."""
+    conn = get_db_connection()
+    data = request.get_json(force=True) or {}
+    week_index = data.get("week_index")
+    drill_index = data.get("drill_index")
+    session_id = data.get("session_id")
+    if week_index is None or drill_index is None or not session_id:
+        return jsonify({"error": "week_index, drill_index, and session_id required"}), 400
+    from development_plan import link_drill_session, get_plan
+    try:
+        result = link_drill_session(conn, plan_id, week_index, drill_index, session_id)
+        if not result:
+            return jsonify({"error": "Plan not found"}), 404
+        plan = get_plan(conn, plan_id)
+        result["completion_pct"] = plan["completion_pct"] if plan else 0
+        result["just_completed"] = plan.get("status") == "completed" if plan else False
+        return jsonify(result)
+    except IndexError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@bp.route("/dev-plans/plan/<int:plan_id>/unlink-session", methods=["DELETE"])
+def unlink_session_api(plan_id):
+    """Remove a session link from a drill."""
+    conn = get_db_connection()
+    data = request.get_json(force=True) or {}
+    week_index = data.get("week_index")
+    drill_index = data.get("drill_index")
+    session_id = data.get("session_id")
+    if week_index is None or drill_index is None or not session_id:
+        return jsonify({"error": "week_index, drill_index, and session_id required"}), 400
+    from development_plan import unlink_drill_session
+    unlink_drill_session(conn, plan_id, week_index, drill_index, session_id)
+    return jsonify({"success": True})
+
+
+@bp.route("/dev-plans/plan/<int:plan_id>/drill-sessions", methods=["GET"])
+def drill_sessions_api(plan_id):
+    """Return all linked sessions for a plan."""
+    conn = get_db_connection()
+    from development_plan import get_drill_sessions
+    sessions = get_drill_sessions(conn, plan_id)
+    return jsonify({"sessions": sessions})
 
 
 # ------------------------------------------------------------------

@@ -345,6 +345,19 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (17, "Phase 17 schema — driver contact fields, track condition reference lines"),
     )
 
+    # Phase 18 migration: completed_at on development_plans, coaching linking tables.
+    try:
+        cur.execute("ALTER TABLE development_plans ADD COLUMN completed_at TEXT;")
+        logger.debug("Added column development_plans.completed_at.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (18, "Phase 18 schema — coaching linking (plan_drill_sessions, driver_badges, completed_at)"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

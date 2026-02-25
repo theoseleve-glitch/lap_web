@@ -93,6 +93,13 @@ def driver_detail(driver_id: int):
     ).fetchall()
     sessions = [dict(r) for r in sessions]
 
+    # Earned badges.
+    badge_rows = conn.execute(
+        "SELECT * FROM driver_badges WHERE driver_id = :did ORDER BY earned_at DESC",
+        {"did": driver_id},
+    ).fetchall()
+    badges = [dict(r) for r in badge_rows]
+
     return render_template(
         "driver_profile.html",
         driver=driver,
@@ -102,6 +109,7 @@ def driver_detail(driver_id: int):
         style_history=style_history,
         sessions=sessions,
         best_ever=best_ever,
+        badges=badges,
     )
 
 

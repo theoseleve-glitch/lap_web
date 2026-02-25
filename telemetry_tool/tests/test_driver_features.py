@@ -498,3 +498,349 @@ class TestAutoTrackReference:
         assert result == "wet"
         track = db.execute("SELECT wet_ref_session_id FROM tracks WHERE track_id = 't1'").fetchone()
         assert track["wet_ref_session_id"] == "s1"
+
+
+class TestGGConversion:
+    """G-G scatter API must return values in G, not raw m/s squared."""
+
+    def test_gg_data_converts_to_g(self, db, tmp_path):
+        """Raw accel stored as m/s squared should be divided by 9.80665."""
+        import json
+        import math
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'GG Tester')")
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t1', 'Oval', 500)"
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, session_date) "
+            "VALUES ('s1', 'f.csv', 1, 't1', '2025-01-01')"
+        )
+        raw_lat = [9.80665, -9.80665, 0.0]
+        raw_long = [4.903325, -4.903325, 0.0]
+        db.execute(
+            "INSERT INTO gps_traces (session_id, lap_number, latitudes_json, longitudes_json, "
+            "distances_json, speeds_json, accel_lat_json, accel_long_json) "
+            "VALUES ('s1', 1, '[]', '[]', '[]', '[]', :lat, :lon)",
+            {"lat": json.dumps(raw_lat), "lon": json.dumps(raw_long)},
+        )
+        db.execute(
+            "INSERT INTO laps (session_id, lap_number, lap_time_s) VALUES ('s1', 1, 30.0)"
+        )
+        db.commit()
+
+        # Build a file-backed DB copy so the Flask app can use it.
+        db_path = tmp_path / "test_gg.db"
+        src_conn = db
+        dst_conn = sqlite3.connect(str(db_path))
+        src_conn.backup(dst_conn)
+        dst_conn.close()
+
+        from web.app import create_app
+        from web.config import Config
+
+        cfg = Config()
+        cfg.DB_PATH = db_path
+        cfg.DATA_RAW_DIR = tmp_path / "raw"
+        cfg.RESULTS_DIR = tmp_path / "results"
+        cfg.UPLOAD_DIR = tmp_path / "uploads"
+
+        app = create_app(cfg)
+        app.config["TESTING"] = True
+
+        with app.test_client() as client:
+            resp = client.get("/api/session/s1/gg_data")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert math.isclose(data["accel_lat"][0], 1.0, rel_tol=0.01)
+            assert math.isclose(data["accel_lat"][1], -1.0, rel_tol=0.01)
+            assert math.isclose(data["accel_long"][0], 0.5, rel_tol=0.01)
+
+
+class TestCoachingSchema:
+    """Tables for coaching linking exist after migration."""
+
+    def test_plan_drill_sessions_table_exists(self, db):
+        row = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='plan_drill_sessions'"
+        ).fetchone()
+        assert row is not None
+
+    def test_driver_badges_table_exists(self, db):
+        row = db.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='driver_badges'"
+        ).fetchone()
+        assert row is not None
+
+    def test_completed_at_column_exists(self, db):
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'D')")
+        db.execute(
+            "INSERT INTO development_plans (driver_id, plan_name, weeks_json) "
+            "VALUES (1, 'P', '[]')"
+        )
+        row = db.execute("SELECT completed_at FROM development_plans WHERE id = 1").fetchone()
+        assert row is not None
+
+
+class TestDrillSessionLinking:
+    """Link analyzed sessions to specific drills in a dev plan."""
+
+    def _seed_plan(self, db):
+        """Create a driver with a 1-week, 2-drill plan and 2 sessions."""
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Linker')")
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t1', 'Oval', 500)"
+        )
+        import json
+        weeks = [{"week": 1, "title": "Basics", "drills": [
+            {"name": "Drill A", "metric": "consistency_cv_pct", "target": "< 5"},
+            {"name": "Drill B"},
+        ]}]
+        progress = [[False, False]]
+        db.execute(
+            "INSERT INTO development_plans (id, driver_id, plan_name, weeks_json, progress_json) "
+            "VALUES (1, 1, 'Test Plan', :weeks, :progress)",
+            {"weeks": json.dumps(weeks), "progress": json.dumps(progress)},
+        )
+        for i, (sid, score) in enumerate([("s1", 75.0), ("s2", 82.0)]):
+            db.execute(
+                "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+                "session_date, n_laps, best_lap_time_s, total_score) "
+                "VALUES (:sid, 'f.csv', 1, 't1', '2025-01-0' || :d, :laps, 30.0, :score)",
+                {"sid": sid, "d": i + 1, "laps": 10 + i * 5, "score": score},
+            )
+        db.commit()
+
+    def test_link_session_creates_record(self, db):
+        self._seed_plan(db)
+        from development_plan import link_drill_session
+        result = link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        assert result is not None
+        assert result["session_id"] == "s1"
+
+    def test_link_auto_completes_drill(self, db):
+        self._seed_plan(db)
+        from development_plan import link_drill_session, get_plan
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        plan = get_plan(db, 1)
+        assert plan["progress"][0][0] is True
+
+    def test_unlink_session(self, db):
+        self._seed_plan(db)
+        from development_plan import link_drill_session, unlink_drill_session, get_drill_sessions
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        unlink_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        sessions = get_drill_sessions(db, plan_id=1)
+        assert len(sessions) == 0
+
+    def test_get_drill_sessions(self, db):
+        self._seed_plan(db)
+        from development_plan import link_drill_session, get_drill_sessions
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=1, session_id="s2")
+        sessions = get_drill_sessions(db, plan_id=1)
+        assert len(sessions) == 2
+
+    def test_duplicate_link_ignored(self, db):
+        self._seed_plan(db)
+        from development_plan import link_drill_session, get_drill_sessions
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        sessions = get_drill_sessions(db, plan_id=1)
+        assert len(sessions) == 1
+
+
+class TestPlanCompletion:
+    """Plan completion triggers badge creation and status update."""
+
+    def _seed_single_drill_plan(self, db):
+        """Create a driver with a 1-week, 1-drill plan."""
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Finisher')")
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t1', 'Oval', 500)"
+        )
+        import json
+        weeks = [{"week": 1, "title": "Fundamentals", "drills": [{"name": "Only Drill"}]}]
+        progress = [[False]]
+        db.execute(
+            "INSERT INTO development_plans (id, driver_id, plan_name, level, weeks_json, progress_json) "
+            "VALUES (1, 1, 'Quick Plan', 'beginner', :w, :p)",
+            {"w": json.dumps(weeks), "p": json.dumps(progress)},
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_date, n_laps, total_score) VALUES ('s1', 'f.csv', 1, 't1', '2025-01-01', 15, 80.0)"
+        )
+        db.commit()
+
+    def test_completion_sets_status(self, db):
+        self._seed_single_drill_plan(db)
+        from development_plan import link_drill_session, get_plan
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        plan = get_plan(db, 1)
+        assert plan["status"] == "completed"
+        assert plan["completed_at"] is not None
+
+    def test_completion_creates_badge(self, db):
+        self._seed_single_drill_plan(db)
+        from development_plan import link_drill_session
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        row = db.execute(
+            "SELECT * FROM driver_badges WHERE driver_id = 1 AND plan_id = 1"
+        ).fetchone()
+        assert row is not None
+        assert dict(row)["badge_type"] == "plan_completion"
+        assert dict(row)["badge_name"] == "Quick Plan"
+
+    def test_badge_metadata_has_stats(self, db):
+        self._seed_single_drill_plan(db)
+        import json
+        from development_plan import link_drill_session
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        row = db.execute("SELECT metadata_json FROM driver_badges WHERE plan_id = 1").fetchone()
+        meta = json.loads(dict(row)["metadata_json"])
+        assert meta["drills_completed"] == 1
+        assert meta["sessions_linked"] >= 1
+
+    def test_no_duplicate_badge(self, db):
+        self._seed_single_drill_plan(db)
+        from development_plan import link_drill_session, update_plan_progress
+        link_drill_session(db, plan_id=1, week_index=0, drill_index=0, session_id="s1")
+        # Uncomplete and re-complete.
+        update_plan_progress(db, 1, 0, 0, completed=False)
+        update_plan_progress(db, 1, 0, 0, completed=True)
+        count = db.execute("SELECT COUNT(*) FROM driver_badges WHERE plan_id = 1").fetchone()[0]
+        assert count == 1
+
+
+class TestDrillLinkingAPI:
+    """API endpoints for linking sessions to drills."""
+
+    def _seed(self, db):
+        import json
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'API Tester')")
+        db.execute("INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t1', 'T', 500)")
+        weeks = [{"week": 1, "title": "W1", "drills": [{"name": "D1"}, {"name": "D2"}]}]
+        progress = [[False, False]]
+        db.execute(
+            "INSERT INTO development_plans (id, driver_id, plan_name, weeks_json, progress_json) "
+            "VALUES (1, 1, 'P', :w, :p)",
+            {"w": json.dumps(weeks), "p": json.dumps(progress)},
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, session_date, n_laps) "
+            "VALUES ('s1', 'f.csv', 1, 't1', '2025-01-01', 10)"
+        )
+        db.commit()
+
+    def _make_app(self, db, tmp_path):
+        """Back up in-memory DB to file and create a Flask test app."""
+        db_path = tmp_path / "test_drill_api.db"
+        dst_conn = sqlite3.connect(str(db_path))
+        db.backup(dst_conn)
+        dst_conn.close()
+
+        from web.app import create_app
+        from web.config import Config
+
+        cfg = Config()
+        cfg.DB_PATH = db_path
+        cfg.DATA_RAW_DIR = tmp_path / "raw"
+        cfg.RESULTS_DIR = tmp_path / "results"
+        cfg.UPLOAD_DIR = tmp_path / "uploads"
+
+        app = create_app(cfg)
+        app.config["TESTING"] = True
+        return app
+
+    def test_link_session_api(self, db, tmp_path):
+        self._seed(db)
+        app = self._make_app(db, tmp_path)
+        with app.test_client() as client:
+            resp = client.post(
+                "/api/dev-plans/plan/1/link-session",
+                json={"week_index": 0, "drill_index": 0, "session_id": "s1"},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["session_id"] == "s1"
+            assert "completion_pct" in data
+
+    def test_unlink_session_api(self, db, tmp_path):
+        self._seed(db)
+        app = self._make_app(db, tmp_path)
+        with app.test_client() as client:
+            # Link first
+            client.post(
+                "/api/dev-plans/plan/1/link-session",
+                json={"week_index": 0, "drill_index": 0, "session_id": "s1"},
+            )
+            # Unlink
+            resp = client.delete(
+                "/api/dev-plans/plan/1/unlink-session",
+                json={"week_index": 0, "drill_index": 0, "session_id": "s1"},
+            )
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert data["success"] is True
+
+    def test_get_drill_sessions_api(self, db, tmp_path):
+        self._seed(db)
+        app = self._make_app(db, tmp_path)
+        with app.test_client() as client:
+            # Link a session first
+            client.post(
+                "/api/dev-plans/plan/1/link-session",
+                json={"week_index": 0, "drill_index": 0, "session_id": "s1"},
+            )
+            resp = client.get("/api/dev-plans/plan/1/drill-sessions")
+            assert resp.status_code == 200
+            data = resp.get_json()
+            assert len(data["sessions"]) == 1
+
+
+class TestDriverBadgesOnProfile:
+    """Driver profile page includes earned badges."""
+
+    def test_badges_passed_to_template(self, db, tmp_path):
+        import json
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Badge Boy')")
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES ('t1', 'Oval', 500)"
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_date, n_laps, best_lap_time_s) "
+            "VALUES ('s1', 'f.csv', 1, 't1', '2025-01-01', 10, 30.0)"
+        )
+        db.execute(
+            "INSERT INTO driver_badges (driver_id, badge_type, badge_name, badge_level, "
+            "metadata_json, plan_id) VALUES (1, 'plan_completion', 'Speed Plan', 'advanced', "
+            ":meta, 99)",
+            {"meta": json.dumps({"drills_completed": 6, "sessions_linked": 3})},
+        )
+        db.commit()
+
+        # Build a file-backed DB copy so the Flask app can use it.
+        db_path = tmp_path / "test_badges.db"
+        dst_conn = sqlite3.connect(str(db_path))
+        db.backup(dst_conn)
+        dst_conn.close()
+
+        from web.app import create_app
+        from web.config import Config
+
+        cfg = Config()
+        cfg.DB_PATH = db_path
+        cfg.DATA_RAW_DIR = tmp_path / "raw"
+        cfg.RESULTS_DIR = tmp_path / "results"
+        cfg.UPLOAD_DIR = tmp_path / "uploads"
+
+        app = create_app(cfg)
+        app.config["TESTING"] = True
+
+        with app.test_client() as client:
+            resp = client.get("/drivers/1")
+            assert resp.status_code == 200
+            assert b"Speed Plan" in resp.data

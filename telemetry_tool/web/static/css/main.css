@@ -9774,3 +9774,30 @@ input[type="date"].form-input-inline::-webkit-calendar-picker-indicator {
     .h2h-cell-b { justify-content: center; }
     .h2h-cell { padding: 0.5rem 1rem; }
 }
+
+/* Drill session linking */
+.drill-sessions { margin-top: 0.5rem; }
+.linked-session-card {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--card-bg, #1e1e2e); padding: 0.3rem 0.6rem;
+    border-radius: 6px; font-size: 0.8rem; margin: 0.2rem 0;
+}
+.linked-session-date { color: var(--text-muted, #888); }
+.linked-session-score { color: var(--accent, #f59e0b); font-weight: 600; }
+.drill-link-action {
+    display: flex; gap: 0.4rem; align-items: center; margin-top: 0.4rem;
+}
+.drill-session-select { max-width: 280px; font-size: 0.8rem; }
+
+/* Driver badges */
+.badges-grid {
+    display: flex; flex-wrap: wrap; gap: 0.75rem;
+}
+.badge-card {
+    display: flex; align-items: center; gap: 0.6rem;
+    background: var(--card-bg, #1e1e2e); padding: 0.6rem 1rem;
+    border-radius: 10px; border: 1px solid var(--border, #333);
+}
+.badge-icon { font-size: 1.8rem; }
+.badge-name { font-weight: 600; font-size: 0.95rem; }
+.badge-level { font-size: 0.75rem; color: var(--text-muted, #888); }

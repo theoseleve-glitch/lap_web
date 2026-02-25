@@ -2419,6 +2419,7 @@ def update_plan_progress(
     )
     conn.commit()
 
+    _check_plan_completion(conn, plan_id)
     return get_plan(conn, plan_id)
 
 
@@ -2444,6 +2445,131 @@ def get_plan_completion_pct(plan: dict[str, Any]) -> float:
                 completed += 1
 
     return round(100.0 * completed / total, 1) if total > 0 else 0.0
+
+
+def _check_plan_completion(conn: Any, plan_id: int) -> bool:
+    """If plan is 100% complete, set status='completed', create badge. Returns True if just completed."""
+    plan = get_plan(conn, plan_id)
+    if not plan or plan.get("completion_pct", 0) < 100:
+        return False
+    if plan.get("status") == "completed":
+        return False  # Already completed, no duplicate badge.
+
+    # Mark completed.
+    conn.execute(
+        "UPDATE development_plans SET status = 'completed', "
+        "completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?",
+        (plan_id,),
+    )
+
+    # Gather aggregate stats from linked sessions.
+    linked = get_drill_sessions(conn, plan_id)
+    session_ids = list({r["session_id"] for r in linked})
+    total_laps = sum(r.get("n_laps") or 0 for r in linked if r["session_id"] in session_ids)
+    scores = [r["total_score"] for r in linked if r.get("total_score") is not None]
+    improvement_pct = 0.0
+    if len(scores) >= 2:
+        first, last = scores[0], scores[-1]
+        if first > 0:
+            improvement_pct = round(100.0 * (last - first) / first, 1)
+
+    weeks = plan.get("weeks", [])
+    skills = [w.get("title", f"Week {i+1}") for i, w in enumerate(weeks)]
+
+    total_drills = sum(len(w.get("drills", [])) for w in weeks)
+
+    metadata = {
+        "total_laps": total_laps,
+        "drills_completed": total_drills,
+        "sessions_linked": len(session_ids),
+        "improvement_pct": improvement_pct,
+        "skills_learned": skills,
+    }
+
+    # Create badge (only if none exists for this plan).
+    existing = conn.execute(
+        "SELECT id FROM driver_badges WHERE plan_id = ?", (plan_id,)
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            "INSERT INTO driver_badges (driver_id, badge_type, badge_name, badge_level, "
+            "metadata_json, plan_id) VALUES (?, 'plan_completion', ?, ?, ?, ?)",
+            (plan["driver_id"], plan["plan_name"], plan.get("level", "intermediate"),
+             json.dumps(metadata), plan_id),
+        )
+
+    conn.commit()
+    return True
+
+
+def link_drill_session(
+    conn: Any,
+    plan_id: int,
+    week_index: int,
+    drill_index: int,
+    session_id: str,
+) -> Optional[dict[str, Any]]:
+    """Link an analyzed session to a specific drill, auto-completing it."""
+    plan = get_plan(conn, plan_id)
+    if not plan:
+        return None
+
+    # Bounds check.
+    if week_index < 0 or week_index >= len(plan.get("weeks", [])):
+        raise IndexError(f"Week index {week_index} out of range")
+    if drill_index < 0 or drill_index >= len(plan["weeks"][week_index].get("drills", [])):
+        raise IndexError(f"Drill index {drill_index} out of range")
+
+    # Insert (ignore duplicate).
+    conn.execute(
+        "INSERT OR IGNORE INTO plan_drill_sessions "
+        "(plan_id, week_index, drill_index, session_id) VALUES (?, ?, ?, ?)",
+        (plan_id, week_index, drill_index, session_id),
+    )
+
+    # Auto-complete the drill.
+    update_plan_progress(conn, plan_id, week_index, drill_index, completed=True)
+
+    # Return the linked record.
+    row = conn.execute(
+        "SELECT pds.*, s.session_date, s.best_lap_time_s, s.total_score, s.n_laps, "
+        "t.track_name FROM plan_drill_sessions pds "
+        "JOIN sessions s ON pds.session_id = s.session_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE pds.plan_id = ? AND pds.week_index = ? AND pds.drill_index = ? "
+        "AND pds.session_id = ?",
+        (plan_id, week_index, drill_index, session_id),
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def unlink_drill_session(
+    conn: Any,
+    plan_id: int,
+    week_index: int,
+    drill_index: int,
+    session_id: str,
+) -> None:
+    """Remove a session link from a drill."""
+    conn.execute(
+        "DELETE FROM plan_drill_sessions "
+        "WHERE plan_id = ? AND week_index = ? AND drill_index = ? AND session_id = ?",
+        (plan_id, week_index, drill_index, session_id),
+    )
+    conn.commit()
+
+
+def get_drill_sessions(conn: Any, plan_id: int) -> list[dict[str, Any]]:
+    """Get all linked sessions for a plan, with session summary data."""
+    rows = conn.execute(
+        "SELECT pds.*, s.session_date, s.best_lap_time_s, s.total_score, s.n_laps, "
+        "t.track_name FROM plan_drill_sessions pds "
+        "JOIN sessions s ON pds.session_id = s.session_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE pds.plan_id = ? ORDER BY pds.week_index, pds.drill_index, pds.linked_at",
+        (plan_id,),
+    ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Inline tests ────────────────────────────────────────────────

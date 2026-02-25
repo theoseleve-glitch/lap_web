@@ -168,6 +168,41 @@
             </div>
             {% endif %}
 
+            {# Linked sessions #}
+            {% set drill_key = "%d_%d"|format(week_idx, drill_idx) %}
+            <div class="drill-sessions" id="drill-sessions-{{ drill_key }}">
+                {% for link in drill_links if link.week_index == week_idx and link.drill_index == drill_idx %}
+                <div class="linked-session-card" data-session-id="{{ link.session_id }}">
+                    <span class="linked-session-date">{{ link.session_date }}</span>
+                    <span class="linked-session-track">{{ link.track_name or '—' }}</span>
+                    {% if link.best_lap_time_s %}
+                    <span class="linked-session-lap">{{ "%.3f"|format(link.best_lap_time_s) }}s</span>
+                    {% endif %}
+                    {% if link.total_score %}
+                    <span class="linked-session-score">{{ "%.0f"|format(link.total_score) }}pts</span>
+                    {% endif %}
+                    <button class="btn-sm btn-danger" title="Unlink"
+                            onclick="unlinkSession({{ plan.id }}, {{ week_idx }}, {{ drill_idx }}, '{{ link.session_id }}')">&#10005;</button>
+                </div>
+                {% endfor %}
+            </div>
+
+            {# Link session button #}
+            {% if driver_sessions %}
+            <div class="drill-link-action">
+                <select class="form-select-inline drill-session-select" id="link-select-{{ drill_key }}">
+                    <option value="">Link a session...</option>
+                    {% for s in driver_sessions %}
+                    <option value="{{ s.session_id }}">
+                        {{ s.session_date }} — {{ s.track_name or 'Unknown' }}
+                        {% if s.total_score %} ({{ "%.0f"|format(s.total_score) }}pts){% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+                <button class="btn-sm btn-primary" onclick="linkSession({{ plan.id }}, {{ week_idx }}, {{ drill_idx }})">Link</button>
+            </div>
+            {% endif %}
+
         </li>
         {% endfor %}
     </ol>
@@ -227,30 +262,153 @@ function toggleDrill(planId, weekIdx, drillIdx, completed) {
         }
         // Show completion celebration at 100%
         if (data.completion_pct >= 100) {
-            _showCompletionBadge();
+            _showCompletionCelebration(data);
         }
     })
     .catch(function(err) { console.warn('Toggle drill failed:', err); if (window.Toast) Toast.show('Failed to update drill', 'error'); });
 }
 
-function _showCompletionBadge() {
-    // Brief celebration overlay
+function _showCompletionCelebration(data) {
+    // Remove any existing celebration
     var existing = document.getElementById('completion-celebration');
     if (existing) existing.remove();
-    var overlay = document.createElement('div');
-    overlay.id = 'completion-celebration';
-    overlay.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
-        'background:rgba(0,0,0,0.85);color:#fff;padding:2rem 3rem;border-radius:16px;z-index:9999;' +
-        'text-align:center;font-size:1.2rem;animation:fadeInScale 0.5s ease;';
-    overlay.innerHTML = '<div style="font-size:3rem;margin-bottom:0.5rem;">&#127942;</div>' +
-        '<div style="font-weight:700;margin-bottom:0.3rem;">Plan Complete!</div>' +
-        '<div style="font-size:0.85rem;color:#aaa;">All drills finished. Great work!</div>';
-    document.body.appendChild(overlay);
-    setTimeout(function() {
-        overlay.style.transition = 'opacity 0.6s ease';
-        overlay.style.opacity = '0';
-        setTimeout(function() { overlay.remove(); }, 700);
-    }, 2500);
+
+    // ── Confetti canvas ──
+    var canvas = document.createElement('canvas');
+    canvas.id = 'confetti-canvas';
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:10000;pointer-events:none;';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    document.body.appendChild(canvas);
+    var ctx = canvas.getContext('2d');
+    var colors = ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
+    var particles = [];
+    for (var i = 0; i < 150; i++) {
+        particles.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height - canvas.height,
+            w: 4 + Math.random() * 6,
+            h: 6 + Math.random() * 8,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            vy: 1 + Math.random() * 3,
+            vx: (Math.random() - 0.5) * 2,
+            rot: Math.random() * Math.PI * 2,
+            rv: (Math.random() - 0.5) * 0.1,
+        });
+    }
+    var frame = 0;
+    function animateConfetti() {
+        frame++;
+        if (frame > 180) { canvas.remove(); return; }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        for (var j = 0; j < particles.length; j++) {
+            var p = particles[j];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.rot += p.rv;
+            ctx.save();
+            ctx.translate(p.x, p.y);
+            ctx.rotate(p.rot);
+            ctx.fillStyle = p.color;
+            ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+            ctx.restore();
+        }
+        requestAnimationFrame(animateConfetti);
+    }
+    requestAnimationFrame(animateConfetti);
+
+    // ── Modal overlay (safe DOM methods) ──
+    var backdrop = document.createElement('div');
+    backdrop.id = 'completion-celebration';
+    backdrop.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10001;display:flex;align-items:center;justify-content:center;';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#1a1f2e;color:#fff;padding:2rem 3rem;border-radius:16px;text-align:center;font-size:1.2rem;animation:fadeInScale 0.5s ease;max-width:400px;';
+
+    var trophy = document.createElement('div');
+    trophy.style.cssText = 'font-size:3.5rem;margin-bottom:0.5rem;';
+    trophy.textContent = '\uD83C\uDFC6';
+    modal.appendChild(trophy);
+
+    var heading = document.createElement('div');
+    heading.style.cssText = 'font-weight:700;font-size:1.4rem;margin-bottom:0.3rem;';
+    heading.textContent = 'Plan Complete!';
+    modal.appendChild(heading);
+
+    var subtitle = document.createElement('div');
+    subtitle.style.cssText = 'font-size:0.9rem;color:#aaa;margin-bottom:1rem;';
+    subtitle.textContent = "You've earned a completion badge!";
+    modal.appendChild(subtitle);
+
+    // Stats from badge_meta if available
+    if (data && data.badge_meta) {
+        var meta = data.badge_meta;
+        var statsDiv = document.createElement('div');
+        statsDiv.style.cssText = 'display:flex;gap:1rem;justify-content:center;flex-wrap:wrap;margin-bottom:1rem;';
+        var statItems = [];
+        if (meta.sessions_linked) statItems.push(['Sessions', meta.sessions_linked]);
+        if (meta.total_laps) statItems.push(['Laps', meta.total_laps]);
+        if (meta.drills_completed) statItems.push(['Drills', meta.drills_completed]);
+        if (meta.improvement_pct) statItems.push(['Improvement', meta.improvement_pct + '%']);
+        for (var s = 0; s < statItems.length; s++) {
+            var statEl = document.createElement('div');
+            statEl.style.cssText = 'text-align:center;';
+            var valEl = document.createElement('div');
+            valEl.style.cssText = 'font-size:1.3rem;font-weight:700;color:#f59e0b;';
+            valEl.textContent = statItems[s][1];
+            var lblEl = document.createElement('div');
+            lblEl.style.cssText = 'font-size:0.7rem;color:#888;';
+            lblEl.textContent = statItems[s][0];
+            statEl.appendChild(valEl);
+            statEl.appendChild(lblEl);
+            statsDiv.appendChild(statEl);
+        }
+        modal.appendChild(statsDiv);
+    }
+
+    // View Profile link button
+    if (data && data.driver_id) {
+        var profileLink = document.createElement('a');
+        profileLink.href = '/drivers/' + data.driver_id;
+        profileLink.textContent = 'View Profile';
+        profileLink.style.cssText = 'display:inline-block;padding:0.5rem 1.5rem;background:#3b82f6;color:#fff;border-radius:8px;text-decoration:none;font-size:0.9rem;margin-top:0.5rem;';
+        modal.appendChild(profileLink);
+    }
+
+    backdrop.appendChild(modal);
+    document.body.appendChild(backdrop);
+
+    // Click outside to dismiss
+    backdrop.addEventListener('click', function(e) {
+        if (e.target === backdrop) {
+            backdrop.remove();
+        }
+    });
+}
+
+function linkSession(planId, weekIdx, drillIdx) {
+    var sel = document.getElementById('link-select-' + weekIdx + '_' + drillIdx);
+    var sessionId = sel.value;
+    if (!sessionId) return;
+    FetchHelper.fetch('/api/dev-plans/plan/' + planId + '/link-session', {
+        method: 'POST',
+        body: JSON.stringify({week_index: weekIdx, drill_index: drillIdx, session_id: sessionId})
+    }).then(function(data) {
+        if (data.just_completed) {
+            _showCompletionCelebration(data);
+        } else {
+            location.reload();
+        }
+    });
+}
+
+function unlinkSession(planId, weekIdx, drillIdx, sessionId) {
+    FetchHelper.fetch('/api/dev-plans/plan/' + planId + '/unlink-session', {
+        method: 'DELETE',
+        body: JSON.stringify({week_index: weekIdx, drill_index: drillIdx, session_id: sessionId})
+    }).then(function() {
+        location.reload();
+    });
 }
 
 /* ── Delegated drill checkbox handler ── */
