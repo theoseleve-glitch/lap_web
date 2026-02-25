@@ -111,6 +111,23 @@
             </div>
         </div>
         <div class="form-row">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" class="editable-field" data-field="email"
+                       value="{{ profile.email or '' }}" placeholder="driver@example.com">
+            </div>
+            <div class="form-group">
+                <label>Phone</label>
+                <input type="tel" class="editable-field" data-field="phone"
+                       value="{{ profile.phone or '' }}" placeholder="+1 234 567 8900">
+            </div>
+            <div class="form-group">
+                <label>ID Code</label>
+                <input type="text" class="editable-field" data-field="id_code"
+                       value="{{ profile.id_code or '' }}" placeholder="License / team ID">
+            </div>
+        </div>
+        <div class="form-row">
             <div class="form-group" class="grid-col-full">
                 <label>Goals</label>
                 <textarea class="editable-field" data-field="goals" rows="2"

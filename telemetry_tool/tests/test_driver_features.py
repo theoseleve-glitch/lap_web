@@ -287,6 +287,123 @@ class TestHeadToHead:
         assert prog_row["winner"] == "a"  # Higher slope is better
 
 
+class TestSessionEditing:
+    def test_update_session_type(self, db):
+        from web.models import update_session_field, get_session_by_id
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date) VALUES ('s1', 'f.csv', 1, 'practice', '2026-01-01')"
+        )
+        db.commit()
+
+        update_session_field(db, "s1", "session_type", "race")
+        db.commit()
+
+        session = get_session_by_id(db, "s1")
+        assert session["session_type"] == "race"
+
+    def test_update_track_state(self, db):
+        from web.models import update_session_field, get_session_by_id
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date, track_state) "
+            "VALUES ('s1', 'f.csv', 1, 'practice', '2026-01-01', 'dry')"
+        )
+        db.commit()
+
+        update_session_field(db, "s1", "track_state", "wet")
+        db.commit()
+
+        session = get_session_by_id(db, "s1")
+        assert session["track_state"] == "wet"
+
+    def test_update_session_date(self, db):
+        from web.models import update_session_field, get_session_by_id
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date) VALUES ('s1', 'f.csv', 1, 'practice', '2026-01-01')"
+        )
+        db.commit()
+
+        update_session_field(db, "s1", "session_date", "2026-03-15")
+        db.commit()
+
+        session = get_session_by_id(db, "s1")
+        assert session["session_date"] == "2026-03-15"
+
+    def test_update_driver_id(self, db):
+        from web.models import update_session_field, get_session_by_id
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Old')")
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (2, 'New')")
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date) VALUES ('s1', 'f.csv', 1, 'practice', '2026-01-01')"
+        )
+        db.commit()
+
+        update_session_field(db, "s1", "driver_id", "2")
+        db.commit()
+
+        session = get_session_by_id(db, "s1")
+        assert session["driver_id"] == 2
+
+    def test_reject_disallowed_field(self, db):
+        from web.models import update_session_field
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'T')")
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date) VALUES ('s1', 'f.csv', 1, 'practice', '2026-01-01')"
+        )
+        db.commit()
+
+        with pytest.raises(ValueError, match="not editable"):
+            update_session_field(db, "s1", "total_score", "99")
+
+
+class TestDriverContactFields:
+    def test_contact_fields_saved(self, db):
+        from web.models import update_driver_profile_field, get_driver_profile, upsert_driver_profile
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        upsert_driver_profile(db, 1, {})
+        db.commit()
+
+        update_driver_profile_field(db, 1, "email", "test@example.com")
+        update_driver_profile_field(db, 1, "phone", "+1 234 567")
+        update_driver_profile_field(db, 1, "id_code", "DRV-001")
+        db.commit()
+
+        profile = get_driver_profile(db, 1)
+        assert profile["email"] == "test@example.com"
+        assert profile["phone"] == "+1 234 567"
+        assert profile["id_code"] == "DRV-001"
+
+    def test_contact_fields_in_upsert(self, db):
+        from web.models import upsert_driver_profile, get_driver_profile
+
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        db.commit()
+
+        upsert_driver_profile(db, 1, {
+            "email": "mgr@team.com",
+            "phone": "+33 6 12 34",
+            "id_code": "FR-1234",
+        })
+        db.commit()
+
+        profile = get_driver_profile(db, 1)
+        assert profile["email"] == "mgr@team.com"
+        assert profile["id_code"] == "FR-1234"
+
+
 class TestConsistencyRating:
     def test_consistency_stored_as_pct(self, db):
         """consistency_rating should be raw CV% (e.g. 2.5 meaning 2.5%)."""
@@ -301,3 +418,83 @@ class TestConsistencyRating:
         profile = get_driver_profile(db, 1)
         # Should be 2.5 (percent), not 0.025 (ratio).
         assert profile["consistency_rating"] == 2.5
+
+
+class TestAutoTrackReference:
+    def _seed_track_and_session(self, db, session_id="s1", track_state="dry"):
+        db.execute("INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')")
+        db.execute(
+            "INSERT INTO tracks (track_id, track_name, lap_length_m) "
+            "VALUES ('t1', 'TestTrack', 500)"
+        )
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_type, session_date, track_state) "
+            "VALUES (?, 'f.csv', 1, 't1', 'practice', '2026-01-01', ?)",
+            (session_id, track_state),
+        )
+        # Insert a reference line for this session.
+        db.execute(
+            "INSERT INTO reference_lines (session_id, latitudes_json, "
+            "longitudes_json, distances_json) VALUES (?, '[1]', '[2]', '[0]')",
+            (session_id,),
+        )
+        db.commit()
+
+    def test_dry_ref_auto_set(self, db):
+        from web.models import auto_set_track_reference
+
+        self._seed_track_and_session(db, "s1", "dry")
+        result = auto_set_track_reference(db, "s1")
+        db.commit()
+
+        assert result == "dry"
+        track = db.execute("SELECT dry_ref_session_id FROM tracks WHERE track_id = 't1'").fetchone()
+        assert track["dry_ref_session_id"] == "s1"
+
+    def test_wet_ref_auto_set(self, db):
+        from web.models import auto_set_track_reference
+
+        self._seed_track_and_session(db, "s1", "wet")
+        result = auto_set_track_reference(db, "s1")
+        db.commit()
+
+        assert result == "wet"
+        track = db.execute("SELECT wet_ref_session_id FROM tracks WHERE track_id = 't1'").fetchone()
+        assert track["wet_ref_session_id"] == "s1"
+
+    def test_no_overwrite_existing(self, db):
+        from web.models import auto_set_track_reference
+
+        self._seed_track_and_session(db, "s1", "dry")
+        auto_set_track_reference(db, "s1")
+        db.commit()
+
+        # Add second dry session.
+        db.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, "
+            "session_type, session_date, track_state) "
+            "VALUES ('s2', 'g.csv', 1, 't1', 'practice', '2026-01-02', 'dry')"
+        )
+        db.execute(
+            "INSERT INTO reference_lines (session_id, latitudes_json, "
+            "longitudes_json, distances_json) VALUES ('s2', '[3]', '[4]', '[0]')"
+        )
+        db.commit()
+
+        result = auto_set_track_reference(db, "s2")
+        assert result is None  # Should NOT overwrite
+
+        track = db.execute("SELECT dry_ref_session_id FROM tracks WHERE track_id = 't1'").fetchone()
+        assert track["dry_ref_session_id"] == "s1"  # Still the first session
+
+    def test_mixed_maps_to_wet(self, db):
+        from web.models import auto_set_track_reference
+
+        self._seed_track_and_session(db, "s1", "mixed")
+        result = auto_set_track_reference(db, "s1")
+        db.commit()
+
+        assert result == "wet"
+        track = db.execute("SELECT wet_ref_session_id FROM tracks WHERE track_id = 't1'").fetchone()
+        assert track["wet_ref_session_id"] == "s1"

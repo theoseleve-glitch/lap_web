@@ -45,6 +45,47 @@
     {% endif %}
 </div>
 
+<!-- Reference Lines -->
+{% if ref_info.dry or ref_info.wet %}
+<section class="section">
+    <h2>Reference Lines</h2>
+    <div class="meta-grid">
+        <div class="meta-item">
+            <span class="meta-label">Dry Reference</span>
+            <span class="meta-value">
+                {% if ref_info.dry %}
+                    <a href="{{ url_for('sessions.session_detail', session_id=ref_info.dry.session_id) }}">
+                        {{ ref_info.dry.session_date[:10] if ref_info.dry.session_date else '—' }}
+                        — {{ ref_info.dry.driver_name }}
+                    </a>
+                    {% if ref_info.dry.best_lap_time_s %}
+                        ({{ "%.3f"|format(ref_info.dry.best_lap_time_s) }}s)
+                    {% endif %}
+                {% else %}
+                    <span class="text-muted">Not set — analyze a dry session to auto-populate</span>
+                {% endif %}
+            </span>
+        </div>
+        <div class="meta-item">
+            <span class="meta-label">Wet Reference</span>
+            <span class="meta-value">
+                {% if ref_info.wet %}
+                    <a href="{{ url_for('sessions.session_detail', session_id=ref_info.wet.session_id) }}">
+                        {{ ref_info.wet.session_date[:10] if ref_info.wet.session_date else '—' }}
+                        — {{ ref_info.wet.driver_name }}
+                    </a>
+                    {% if ref_info.wet.best_lap_time_s %}
+                        ({{ "%.3f"|format(ref_info.wet.best_lap_time_s) }}s)
+                    {% endif %}
+                {% else %}
+                    <span class="text-muted">Not set — analyze a wet session to auto-populate</span>
+                {% endif %}
+            </span>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 <!-- Joker Lap Configuration -->
 <section class="section">
     <h2>Joker Lap Settings</h2>

@@ -9580,6 +9580,47 @@ tr[draggable="true"]:active {
     cursor: grabbing;
 }
 
+/* ── Inline metadata editors ────────────────────────────────── */
+.form-input-inline,
+.form-select-inline {
+    background: var(--bg-secondary, #161b22);
+    color: var(--text-primary, #e6edf3);
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm, 4px);
+    padding: 0.2rem 0.4rem;
+    font-size: inherit;
+    font-family: inherit;
+    line-height: 1.4;
+    transition: border-color 0.15s;
+    max-width: 100%;
+}
+.form-input-inline:hover,
+.form-select-inline:hover {
+    border-color: var(--border, #30363d);
+}
+.form-input-inline:focus,
+.form-select-inline:focus {
+    border-color: var(--accent, #ff6b35);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.15);
+}
+.form-select-inline {
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+    padding-right: 1.2rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.3rem center;
+}
+input[type="date"].form-input-inline {
+    width: 140px;
+}
+input[type="date"].form-input-inline::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
+    cursor: pointer;
+}
+
 /* ── Head-to-Head Comparison Scorecard ──────────────────────── */
 .h2h-header {
     display: grid;

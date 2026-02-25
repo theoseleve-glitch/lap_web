@@ -250,6 +250,26 @@ def get_session_by_id(
     return dict(row) if row else None
 
 
+def update_session_field(
+    conn: sqlite3.Connection,
+    session_id: str,
+    field_name: str,
+    value: Any,
+) -> None:
+    """Update a single editable field on a session."""
+    allowed = {
+        "session_date", "driver_id", "track_id",
+        "session_type", "track_state", "notes",
+    }
+    if field_name not in allowed:
+        raise ValueError(f"Field {field_name!r} not editable on sessions.")
+    # driver_id should be int; track_id stays as text.
+    if field_name == "driver_id" and value is not None:
+        value = int(value)
+    sql = f"UPDATE sessions SET {field_name} = :value WHERE session_id = :session_id"
+    conn.execute(sql, {"session_id": session_id, "value": value or None})
+
+
 def count_sessions(conn: sqlite3.Connection) -> int:
     row = conn.execute(Q.COUNT_SESSIONS).fetchone()
     return row[0] if row else 0
@@ -809,6 +829,9 @@ def upsert_driver_profile(
         "goals": profile_data.get("goals"),
         "preferred_tracks": profile_data.get("preferred_tracks"),
         "custom_notes": profile_data.get("custom_notes"),
+        "email": profile_data.get("email"),
+        "phone": profile_data.get("phone"),
+        "id_code": profile_data.get("id_code"),
         "pace_delta_mean_s": _safe_float(profile_data.get("pace_delta_mean_s")),
         "consistency_rating": _safe_float(profile_data.get("consistency_rating")),
         "aggression_index": _safe_float(profile_data.get("aggression_index")),
@@ -843,6 +866,7 @@ def update_driver_profile_field(
     allowed = {
         "weight_kg", "kart_class", "experience_level",
         "goals", "preferred_tracks", "custom_notes",
+        "email", "phone", "id_code",
     }
     if field_name not in allowed:
         raise ValueError(f"Field {field_name!r} not editable.")
@@ -1129,6 +1153,60 @@ def get_reference_line(
         "distances":  json.loads(row["distances_json"]),
         "speeds":     json.loads(row["speeds_json"]) if row["speeds_json"] else None,
     }
+
+
+def auto_set_track_reference(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> Optional[str]:
+    """Auto-assign this session as the track's dry/wet reference line.
+
+    Called after a reference line is successfully persisted. If the track
+    does not already have a reference for this session's condition
+    (dry or wet), adopt this session's reference line.
+
+    Returns the condition column set ('dry'/'wet') or None if no change.
+    """
+    row = conn.execute(
+        "SELECT s.track_id, s.track_state "
+        "FROM sessions s WHERE s.session_id = :sid",
+        {"sid": session_id},
+    ).fetchone()
+    if not row:
+        return None
+
+    track_id = row["track_id"]
+    track_state = (row["track_state"] or "dry").lower().strip()
+
+    if not track_id:
+        return None
+
+    # Map condition to column: 'dry' for dry/damp, 'wet' for wet/greasy/mixed
+    if track_state in ("wet", "greasy", "mixed"):
+        col = "wet_ref_session_id"
+        condition = "wet"
+    else:
+        col = "dry_ref_session_id"
+        condition = "dry"
+
+    # Check if the track already has a reference for this condition.
+    track = conn.execute(
+        f"SELECT {col} FROM tracks WHERE track_id = :tid",
+        {"tid": track_id},
+    ).fetchone()
+    if track is None:
+        return None
+
+    if track[col] is not None:
+        return None  # Already has a reference for this condition
+
+    # Set this session as the track's condition reference.
+    conn.execute(
+        f"UPDATE tracks SET {col} = :sid, updated_at = datetime('now') "
+        "WHERE track_id = :tid",
+        {"sid": session_id, "tid": track_id},
+    )
+    return condition
 
 
 # ------------------------------------------------------------------

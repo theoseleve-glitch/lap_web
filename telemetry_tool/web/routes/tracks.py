@@ -54,12 +54,29 @@ def track_detail(track_id: str):
     # Track sectors.
     sectors = get_track_sectors(conn, track_id)
 
+    # Condition reference line info.
+    ref_info = {}
+    for cond, col in [("dry", "dry_ref_session_id"), ("wet", "wet_ref_session_id")]:
+        ref_sid = track.get(col)
+        if ref_sid:
+            ref_sess = conn.execute(
+                "SELECT s.session_id, s.session_date, s.best_lap_time_s, "
+                "d.driver_name FROM sessions s "
+                "JOIN drivers d ON s.driver_id = d.driver_id "
+                "WHERE s.session_id = :sid",
+                {"sid": ref_sid},
+            ).fetchone()
+            ref_info[cond] = dict(ref_sess) if ref_sess else None
+        else:
+            ref_info[cond] = None
+
     return render_template(
         "track_detail.html",
         track=track,
         sessions=sessions,
         records=records,
         sectors=sectors,
+        ref_info=ref_info,
     )
 
 

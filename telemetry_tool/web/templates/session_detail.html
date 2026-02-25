@@ -25,34 +25,58 @@
     {% endif %}
 </div>
 
-<!-- Session metadata -->
-<div class="meta-grid">
+<!-- Session metadata (inline-editable) -->
+<div class="meta-grid" data-session-id="{{ session.session_id }}">
+    <div class="meta-item">
+        <span class="meta-label">Date</span>
+        <span class="meta-value">
+            <input type="date" class="session-editable form-input-inline" data-field="session_date"
+                   value="{{ session.session_date[:10] if session.session_date else '' }}">
+        </span>
+    </div>
     <div class="meta-item">
         <span class="meta-label">Driver</span>
-        <span class="meta-value">{{ session.driver_name or '—' }}</span>
+        <span class="meta-value">
+            <select class="session-editable form-select-inline" data-field="driver_id">
+                {% for d in all_drivers %}
+                <option value="{{ d.driver_id }}" {% if d.driver_id == session.driver_id %}selected{% endif %}>
+                    {{ d.driver_name }}
+                </option>
+                {% endfor %}
+            </select>
+        </span>
     </div>
     <div class="meta-item">
         <span class="meta-label">Track</span>
         <span class="meta-value">
-            {% if session.track_id %}
-                <a href="{{ url_for('tracks.track_detail', track_id=session.track_id) }}">
-                    {{ session.track_name or session.track_id }}
-                </a>
-            {% else %}
-                —
-            {% endif %}
+            <select class="session-editable form-select-inline" data-field="track_id">
+                <option value="">— None —</option>
+                {% for t in all_tracks %}
+                <option value="{{ t.track_id }}" {% if t.track_id == session.track_id %}selected{% endif %}>
+                    {{ t.track_name }}
+                </option>
+                {% endfor %}
+            </select>
         </span>
     </div>
     <div class="meta-item">
         <span class="meta-label">Type</span>
-        <span class="badge badge-{{ session.session_type or 'practice' }}">
-            {{ session.session_type or 'practice' }}
+        <span class="meta-value">
+            <select class="session-editable form-select-inline" data-field="session_type">
+                {% for st in ['practice', 'qualifying', 'race', 'test', 'endurance'] %}
+                <option value="{{ st }}" {% if session.session_type == st %}selected{% endif %}>{{ st }}</option>
+                {% endfor %}
+            </select>
         </span>
     </div>
     <div class="meta-item">
         <span class="meta-label">Condition</span>
-        <span class="badge badge-{{ session.track_state or 'dry' }}">
-            {{ session.track_state or 'dry' }}
+        <span class="meta-value">
+            <select class="session-editable form-select-inline" data-field="track_state">
+                {% for ts in ['dry', 'wet', 'damp', 'mixed', 'greasy'] %}
+                <option value="{{ ts }}" {% if session.track_state == ts %}selected{% endif %}>{{ ts }}</option>
+                {% endfor %}
+            </select>
         </span>
     </div>
     <div class="meta-item">
@@ -102,6 +126,7 @@
         </span>
     </div>
 </div>
+<div id="session-save-status" class="text-muted mt-xs mb-sm" role="status" aria-live="polite" aria-atomic="true" style="font-size:0.82rem;"></div>
 
 <!-- ═══════════════════════════════════════════════════
      TAB NAVIGATION
@@ -956,6 +981,7 @@
 <script src="{{ url_for('static', filename='js/throttle_heatmap.js') }}"></script>
 <script src="{{ url_for('static', filename='js/consistency_heatmap.js') }}"></script>
 {% endif %}
+<script src="{{ url_for('static', filename='js/session_editor.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stint_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/corner_mastery.js') }}"></script>
 <script src="{{ url_for('static', filename='js/fingerprint_chart.js') }}"></script>
@@ -982,6 +1008,11 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     var sid = window.TELEMETRY.sessionId;
+
+    // ── Inline session metadata editor ───────────────
+    if (window.SessionEditor) {
+        window.SessionEditor.init(sid);
+    }
 
     // ── Race-only sections guard ─────────────────────
     // Hide performance sections that only apply to race-type sessions

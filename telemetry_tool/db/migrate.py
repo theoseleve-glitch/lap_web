@@ -323,6 +323,28 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (16, "Phase 16 schema — predefined tracks/karts catalogs, karts table, track sectors"),
     )
 
+    # Phase 17 migration: add contact fields to driver_profiles (idempotent).
+    for col in ("email TEXT", "phone TEXT", "id_code TEXT"):
+        try:
+            cur.execute(f"ALTER TABLE driver_profiles ADD COLUMN {col};")
+            logger.debug("Added column driver_profiles.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    # Phase 17 migration: add condition-specific reference lines to tracks.
+    for col in ("dry_ref_session_id TEXT", "wet_ref_session_id TEXT"):
+        try:
+            cur.execute(f"ALTER TABLE tracks ADD COLUMN {col};")
+            logger.debug("Added column tracks.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (17, "Phase 17 schema — driver contact fields, track condition reference lines"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

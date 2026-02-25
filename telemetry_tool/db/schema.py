@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 16
+SCHEMA_VERSION = 17
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     has_joker              INTEGER NOT NULL DEFAULT 0,
     joker_distance_delta_m REAL,
     joker_time_delta_s     REAL,
+    dry_ref_session_id  TEXT REFERENCES sessions(session_id),
+    wet_ref_session_id  TEXT REFERENCES sessions(session_id),
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -220,6 +222,9 @@ CREATE TABLE IF NOT EXISTS driver_profiles (
     goals              TEXT,
     preferred_tracks   TEXT,
     custom_notes       TEXT,
+    email              TEXT,
+    phone              TEXT,
+    id_code            TEXT,
     pace_delta_mean_s  REAL,
     consistency_rating REAL,
     aggression_index   REAL,

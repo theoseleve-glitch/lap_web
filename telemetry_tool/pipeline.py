@@ -2236,6 +2236,15 @@ def run_full_analysis(
             try:
                 insert_reference_line(conn, session_id, summary)
                 logger.info("Persisted reference line for session %s.", session_id)
+                # Auto-set track condition reference if first for this condition.
+                try:
+                    from web.models import auto_set_track_reference
+                    _cond = auto_set_track_reference(conn, session_id)
+                    if _cond:
+                        logger.info("Set %s reference line for track from session %s.",
+                                    _cond, session_id)
+                except Exception as _ref_auto_err:
+                    logger.debug("Auto-set track reference skipped: %s", _ref_auto_err)
             except Exception as _ref_err:
                 logger.warning("Reference line persistence FAILED: %s", _ref_err,
                                exc_info=True)

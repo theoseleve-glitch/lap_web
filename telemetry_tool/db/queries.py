@@ -399,6 +399,7 @@ UPSERT_DRIVER_PROFILE = """
 INSERT INTO driver_profiles (
     driver_id, weight_kg, kart_class, experience_level,
     goals, preferred_tracks, custom_notes,
+    email, phone, id_code,
     pace_delta_mean_s, consistency_rating, aggression_index,
     smoothness_index, improvement_trend,
     total_sessions, total_laps,
@@ -407,6 +408,7 @@ INSERT INTO driver_profiles (
 ) VALUES (
     :driver_id, :weight_kg, :kart_class, :experience_level,
     :goals, :preferred_tracks, :custom_notes,
+    :email, :phone, :id_code,
     :pace_delta_mean_s, :consistency_rating, :aggression_index,
     :smoothness_index, :improvement_trend,
     :total_sessions, :total_laps,
@@ -420,6 +422,9 @@ ON CONFLICT(driver_id) DO UPDATE SET
     goals              = COALESCE(excluded.goals, driver_profiles.goals),
     preferred_tracks   = COALESCE(excluded.preferred_tracks, driver_profiles.preferred_tracks),
     custom_notes       = COALESCE(excluded.custom_notes, driver_profiles.custom_notes),
+    email              = COALESCE(excluded.email, driver_profiles.email),
+    phone              = COALESCE(excluded.phone, driver_profiles.phone),
+    id_code            = COALESCE(excluded.id_code, driver_profiles.id_code),
     pace_delta_mean_s  = excluded.pace_delta_mean_s,
     consistency_rating = excluded.consistency_rating,
     aggression_index   = excluded.aggression_index,
@@ -431,6 +436,11 @@ ON CONFLICT(driver_id) DO UPDATE SET
     best_ever_track_id = excluded.best_ever_track_id,
     wet_skill_proxy    = excluded.wet_skill_proxy,
     updated_at         = datetime('now');
+"""
+
+UPDATE_DRIVER_PROFILE_FIELDS = """
+UPDATE driver_profiles SET {field} = :value, updated_at = datetime('now')
+WHERE driver_id = :driver_id;
 """
 
 SELECT_DRIVER_PROFILE = """

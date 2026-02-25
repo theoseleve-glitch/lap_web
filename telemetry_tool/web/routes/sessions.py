@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, send_file, url_for
 
 from web.db import get_db_connection
 from web.models import (
@@ -20,6 +20,7 @@ from web.models import (
     get_gps_lap_numbers,
     get_theoretical_data,
     link_session_kart,
+    update_session_field,
 )
 
 bp = Blueprint("sessions", __name__, url_prefix="/sessions")
@@ -86,6 +87,14 @@ def session_detail(session_id: str):
         kart = get_kart_by_id(conn, session["kart_id"])
     karts = get_all_karts(conn)
 
+    # Drivers and tracks lists for inline editing.
+    drivers = conn.execute(
+        "SELECT driver_id, driver_name FROM drivers ORDER BY driver_name"
+    ).fetchall()
+    tracks = conn.execute(
+        "SELECT track_id, track_name FROM tracks ORDER BY track_name"
+    ).fetchall()
+
     return render_template(
         "session_detail.html",
         session=session,
@@ -99,6 +108,8 @@ def session_detail(session_id: str):
         total_session_time=total_session_time,
         kart=kart,
         karts=karts,
+        all_drivers=[dict(d) for d in drivers],
+        all_tracks=[dict(t) for t in tracks],
     )
 
 
@@ -138,6 +149,29 @@ def session_report(session_id: str):
         abort(403)
 
     return send_file(str(resolved), mimetype="text/html")
+
+
+@bp.route("/<session_id>/edit", methods=["POST"])
+def edit_session(session_id: str):
+    """Update editable session metadata fields (AJAX endpoint)."""
+    conn = get_db_connection()
+    session = get_session_by_id(conn, session_id)
+    if session is None:
+        return jsonify({"error": "session not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    field_name = data.get("field")
+    value = data.get("value")
+
+    if not field_name:
+        return jsonify({"error": "missing field"}), 400
+
+    try:
+        update_session_field(conn, session_id, field_name, value)
+        conn.commit()
+        return jsonify({"ok": True, "field": field_name, "value": value})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
 
 @bp.route("/<session_id>/kart", methods=["POST"])
