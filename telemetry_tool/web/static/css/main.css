@@ -390,6 +390,7 @@ a:hover {
     text-decoration: none;
     white-space: nowrap;
     letter-spacing: 0.01em;
+    min-height: var(--touch-min);
 }
 
 .btn-primary {
@@ -427,6 +428,56 @@ a:hover {
 .btn-lg {
     padding: 0.75rem 2rem;
     font-size: 1rem;
+}
+
+.btn-danger {
+    background: linear-gradient(135deg, var(--red) 0%, #b91c1c 100%);
+    color: #fff;
+    box-shadow: 0 2px 8px rgba(248, 113, 113, 0.25);
+}
+
+.btn-danger:hover {
+    box-shadow: 0 4px 16px rgba(248, 113, 113, 0.35);
+    transform: translateY(-1px);
+}
+
+.btn-sm {
+    padding: 0.3rem 0.65rem;
+    font-size: 0.78rem;
+    min-height: auto;
+}
+
+.btn:disabled,
+.btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.btn-loading {
+    position: relative;
+    color: transparent;
+    pointer-events: none;
+}
+
+.btn-loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    top: 50%;
+    left: 50%;
+    margin: -8px 0 0 -8px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+.btn-icon {
+    padding: 0.5rem;
+    aspect-ratio: 1;
+    justify-content: center;
 }
 
 /* ── Stats grid ───────────────────────────── */
