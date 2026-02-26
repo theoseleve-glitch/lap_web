@@ -7,6 +7,8 @@ import { SectorTabs } from '@/components/chrome/SectorTabs';
 import { TimecodeCounter } from '@/components/chrome/TimecodeCounter';
 import { LapWordmark } from '@/components/chrome/LapWordmark';
 import { IndexOverlay } from '@/components/chrome/IndexOverlay';
+import { CustomCursor } from '@/components/chrome/CustomCursor';
+import { PerformanceProvider } from '@/lib/performance-context';
 import { useActiveRoom } from '@/hooks/useActiveRoom';
 
 export function ChromeLayout({ children }: { children: ReactNode }) {
@@ -30,13 +32,16 @@ export function ChromeLayout({ children }: { children: ReactNode }) {
   const closeOverlay = useCallback(() => setOverlayOpen(false), []);
 
   return (
-    <GsapProvider>
-      <LapWordmark onIndexToggle={toggleOverlay} />
-      <TimecodeCounter />
-      <SectorTabs />
-      <DeltaStrip />
-      <IndexOverlay isOpen={overlayOpen} onClose={closeOverlay} fromSection={activeRoom} />
-      {children}
-    </GsapProvider>
+    <PerformanceProvider>
+      <GsapProvider>
+        <CustomCursor />
+        <LapWordmark onIndexToggle={toggleOverlay} />
+        <TimecodeCounter />
+        <SectorTabs />
+        <DeltaStrip />
+        <IndexOverlay isOpen={overlayOpen} onClose={closeOverlay} fromSection={activeRoom} />
+        {children}
+      </GsapProvider>
+    </PerformanceProvider>
   );
 }

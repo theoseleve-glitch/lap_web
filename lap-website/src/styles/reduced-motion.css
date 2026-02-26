@@ -18,3 +18,14 @@
      guidance that allows brief transitions for orientation. */
   transition-duration: 200ms !important;
 }
+
+/* Mobile: disable scroll pinning, simplify transitions */
+@media (max-width: 767px) {
+  .room {
+    min-height: auto !important;
+  }
+
+  [data-scroll-pin] {
+    position: relative !important;
+  }
+}
