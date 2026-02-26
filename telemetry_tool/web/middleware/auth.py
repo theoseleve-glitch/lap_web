@@ -57,15 +57,18 @@ def auth_middleware():
 
 
 def require_auth(f):
-    """Decorator: endpoint requires a valid JWT (``g.current_user_id`` set)."""
+    """Decorator: endpoint requires a valid JWT (g.current_user_id set)."""
     @wraps(f)
     def decorated(*args, **kwargs):
+        # Desktop mode — no auth enforced
+        if not current_app.config.get("AUTH_REQUIRED"):
+            if not hasattr(g, "current_user_id"):
+                g.current_user_id = None
+            return f(*args, **kwargs)
+
         if not hasattr(g, "current_user_id") or g.current_user_id is None:
-            return jsonify({
-                "ok": False,
-                "error": {"code": "UNAUTHORIZED", "message": "Authentication required"},
-                "meta": {},
-            }), 401
+            from web.api_utils import api_error, ErrorCode
+            return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=401)
         return f(*args, **kwargs)
     return decorated
 

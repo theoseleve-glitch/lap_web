@@ -77,12 +77,16 @@ class Config:
 
     def validate(self) -> None:
         """Raise if configuration is unsafe for production."""
-        if self.AUTH_REQUIRED and self.JWT_SECRET == "jwt-dev-secret-change-me":
-            raise ValueError(
-                "TELEMETRY_JWT_SECRET must be set to a strong secret "
-                "when AUTH_REQUIRED=1. Set the TELEMETRY_JWT_SECRET "
-                "environment variable."
-            )
+        if self.AUTH_REQUIRED:
+            if self.JWT_SECRET in ("jwt-dev-secret-change-me", "telemetry-jwt-dev-key-change-me"):
+                raise ValueError(
+                    "TELEMETRY_JWT_SECRET must be set to a strong secret "
+                    "when AUTH_REQUIRED=1"
+                )
+            if self.SECRET_KEY == "telemetry-local-dev-key":
+                raise ValueError(
+                    "TELEMETRY_SECRET_KEY must be changed for production"
+                )
 
     # Directories
     DATA_RAW_DIR: Path = BASE_DIR / "data" / "raw"
