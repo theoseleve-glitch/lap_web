@@ -3,6 +3,7 @@
 import { type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { QueryProvider } from '@/providers/query-provider';
 
 const navItems = [
   { href: '/app/dashboard', label: 'Dashboard', icon: '◉' },
@@ -60,11 +61,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-y-auto bg-asphalt">
-        <div className="max-w-7xl mx-auto px-6 py-6">
-          {children}
-        </div>
-      </main>
+      <QueryProvider>
+        <main className="flex-1 overflow-y-auto bg-asphalt">
+          <div className="max-w-7xl mx-auto px-6 py-6">
+            {children}
+          </div>
+        </main>
+      </QueryProvider>
     </div>
   );
 }
