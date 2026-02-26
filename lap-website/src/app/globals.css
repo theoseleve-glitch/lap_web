@@ -1,0 +1,73 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import '../styles/tokens.css';
+@import '../styles/textures.css';
+@import '../styles/reduced-motion.css';
+
+/* ── Font imports ── */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Inter:wght@400;500&family=Teko:wght@600;700&display=swap&subset=latin');
+
+/* ── Base reset ── */
+html {
+  scroll-behavior: auto; /* GSAP handles scrolling */
+  background: var(--asphalt);
+  color: var(--chalk);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--text-body);
+  line-height: 1.65;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Typography classes ── */
+.font-monument {
+  font-family: 'Teko', sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 0.85;
+}
+
+.font-telemetry {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: var(--text-telemetry);
+}
+
+.font-body {
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+  line-height: 1.65;
+}
+
+/* ── Layout utilities ── */
+.grid-lap {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-columns), 1fr);
+  gap: var(--grid-gutter);
+  padding-inline: var(--grid-margin);
+}
+
+/* ── Room container ── */
+.room {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/* ── Selection ── */
+::selection {
+  background: var(--accent);
+  color: var(--asphalt);
+}
