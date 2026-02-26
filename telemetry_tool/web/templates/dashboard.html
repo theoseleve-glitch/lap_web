@@ -166,10 +166,42 @@
     </div>
     {% endif %}
 </section>
+
+<!-- Quick charts -->
+<section class="section" aria-labelledby="heading-quick-charts">
+    <div class="section-header">
+        <h2 id="heading-quick-charts">Overview</h2>
+    </div>
+    <div class="chart-stack">
+        <div class="chart-frame" id="score-trend-frame">
+            <div class="chart-frame__header">
+                <span class="chart-frame__title">Score Trend</span>
+            </div>
+            <div class="chart-frame__body" data-empty-message="No score data yet">
+                <canvas id="score-trend-canvas"></canvas>
+            </div>
+        </div>
+        <div class="chart-frame" id="lap-times-frame">
+            <div class="chart-frame__header">
+                <span class="chart-frame__title">Best Lap Times</span>
+            </div>
+            <div class="chart-frame__body" data-empty-message="No lap time data yet">
+                <canvas id="lap-times-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+</section>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
+<script>
+    window.__dashboardData = {
+        scoreTrend: {{ score_trend_json | default('[]') | safe }},
+        lapTimes: {{ lap_times_json | default('[]') | safe }}
+    };
+</script>
+<script src="{{ url_for('static', filename='js/dashboard_charts.js') }}"></script>
 <script>
 (function () {
     document.querySelectorAll('.stat-value[data-target]').forEach(function(el) {
