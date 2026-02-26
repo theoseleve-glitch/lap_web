@@ -1906,3 +1906,33 @@ details[open].rs-form-section > summary::before {
     border-bottom: 1px solid var(--rs-card-border);
     font-size: 0.8rem;
 }
+
+/* ── ChartFrame inside live cards ──────────────── */
+
+.rs-live-card .chart-frame {
+    border: none;
+    background: transparent;
+    margin-top: 0.5rem;
+}
+
+.rs-live-card .chart-frame__header {
+    padding: 0;
+    border-bottom: none;
+}
+
+.rs-live-card .chart-frame__title {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.rs-live-card .chart-frame__body {
+    min-height: 40px;
+}
+
+@media (max-width: 600px) {
+    .rs-live-card .chart-frame {
+        margin: 0 -0.5rem;
+    }
+}

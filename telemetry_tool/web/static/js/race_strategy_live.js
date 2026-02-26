@@ -24,6 +24,14 @@
 
     var state = null;  // latest server state
 
+    // ── ChartFrame loading skeletons ─────────────
+    if (window.ChartFrame) {
+        var ff = document.getElementById('rs-forecast-frame');
+        if (ff) ChartFrame.setState(ff, 'loading');
+        var df = document.getElementById('rs-driver-bars-frame');
+        if (df) ChartFrame.setState(df, 'loading');
+    }
+
     // ── Helpers ──────────────────────────────────
 
     function fmtTime(s) {
@@ -1198,6 +1206,14 @@
                 updateNeutralizationUI();
                 updateIntelligence();
                 alertManager.check(state);
+
+                // Set chart frames to ready after data loads
+                if (window.ChartFrame) {
+                    var forecastFrame = document.getElementById('rs-forecast-frame');
+                    if (forecastFrame) ChartFrame.setState(forecastFrame, 'ready');
+                    var driverFrame = document.getElementById('rs-driver-bars-frame');
+                    if (driverFrame) ChartFrame.setState(driverFrame, 'ready');
+                }
             })
             .catch(function() {
                 setConnectionStatus(false);

@@ -165,7 +165,12 @@
     <!-- 4. Stint Order -->
     <div class="rs-live-card rs-full">
         <h3>Stint Order</h3>
-        <div id="rs-forecast-bar" class="rs-forecast-bar" style="display:none;"></div>
+        <div class="chart-frame" id="rs-forecast-frame">
+            <div class="chart-frame__header"><span class="chart-frame__title">Forecast</span></div>
+            <div class="chart-frame__body">
+                <div id="rs-forecast-bar" class="rs-forecast-bar" style="display:none;"></div>
+            </div>
+        </div>
         <div class="rs-stint-timeline" id="rs-stint-timeline"></div>
         <div class="rs-timeline-legend" id="rs-stint-legend"></div>
     </div>
@@ -209,7 +214,12 @@
                 <div style="font-weight:600;" id="rs-summary-health">ON PLAN</div>
             </div>
         </div>
-        <div class="rs-driver-bars" id="rs-driver-bars" style="margin-top:0.75rem;"></div>
+        <div class="chart-frame" id="rs-driver-bars-frame">
+            <div class="chart-frame__header"><span class="chart-frame__title">Driver Time</span></div>
+            <div class="chart-frame__body">
+                <div class="rs-driver-bars" id="rs-driver-bars" style="margin-top:0;"></div>
+            </div>
+        </div>
     </div>
 
     <!-- 8. Weather -->
