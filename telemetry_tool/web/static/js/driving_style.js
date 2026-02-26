@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var RATING_COLORS = {
@@ -145,7 +147,7 @@
         el.appendChild(frag);
 
         // Draw radar after DOM insertion
-        setTimeout(function () {
+        _lc.addTimer(function () {
             _drawRadar(data.radar_labels || [], data.radar_values || []);
         }, 30);
     }
@@ -268,7 +270,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("driving-style-container", function () {
@@ -279,5 +281,14 @@
         }
     });
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.DrivingStyle = { init: init };
+
+    window.ModuleManager.register('driving_style', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

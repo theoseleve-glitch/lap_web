@@ -7,6 +7,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     function esc(s) {
@@ -117,7 +119,7 @@
                 cb.type = 'checkbox';
                 cb.checked = true;
                 cb.dataset.sid = sid;
-                cb.addEventListener('change', function () {
+                _lc.addListener(cb, 'change', function () {
                     visibleTraces[this.dataset.sid] = this.checked;
                     draw();
                 });
@@ -282,7 +284,7 @@
         }
 
         // Hover handler
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             if (!data || !data.traces) return;
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -337,16 +339,16 @@
             draw();
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             hoverDist = -1;
             tooltip.style.display = 'none';
             draw();
         });
 
         var _csResizeTimer;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_csResizeTimer);
-            _csResizeTimer = setTimeout(resize, 150);
+            _csResizeTimer = _lc.addTimer(resize, 150);
         });
         fetchData();
     }
@@ -539,8 +541,17 @@
         }
     }
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.CrossSession = {
         initOverlay: initOverlay,
         initMetrics: initMetrics,
     };
+
+    window.ModuleManager.register('cross_session', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

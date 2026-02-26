@@ -6,6 +6,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var container;
@@ -29,7 +31,7 @@
         });
     }
 
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("corner-mastery-container", function () {
@@ -136,4 +138,14 @@
         html += '</div>';
         container.innerHTML = html;
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        container = null;
+    }
+
+    window.ModuleManager.register('corner_mastery', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

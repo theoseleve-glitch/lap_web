@@ -11,6 +11,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var COLORS = {
@@ -336,7 +338,7 @@
         renderCoaching(coachEl, result);
 
         // Resize support: listen on the canvas element (chart:resize doesn't bubble)
-        canvas.addEventListener("chart:resize", function () {
+        _lc.addListener(canvas, "chart:resize", function () {
             var rdpr = window.devicePixelRatio || 1;
             var rcw = canvas.parentElement.clientWidth || 560;
             var rch = canvas.clientHeight || 280;
@@ -444,7 +446,7 @@
 
             var btn = document.getElementById("sim-run-btn");
             if (btn) {
-                btn.addEventListener("click", function () {
+                _lc.addListener(btn, "click", function () {
                     runSimulation(sessionId);
                 });
             }
@@ -453,7 +455,7 @@
 
     /* ── Auto-init via lazyInit ──────────────── */
 
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("pace-simulator-container", function () {
@@ -464,5 +466,14 @@
         }
     });
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.PaceSimulator = { init: init };
+
+    window.ModuleManager.register('pace_simulator', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
