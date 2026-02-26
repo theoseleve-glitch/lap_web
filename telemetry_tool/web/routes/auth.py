@@ -1,19 +1,18 @@
 """Auth routes -- register, login, refresh, logout, me."""
 import logging
-import re
 
-from flask import Blueprint, request, jsonify, current_app, g
+from flask import Blueprint, request, current_app, g
+
+from web.api_utils import api_response, api_error, ErrorCode
+from web.rate_limit import rate_limit
+from web.validation import validate_body
+from web.schemas.auth import RegisterSchema, LoginSchema
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
-# Basic email format check — intentionally permissive (real validation
-# happens via verification email).
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-# Password length limits.  Max prevents Argon2 DoS via multi-MB strings.
-_PASSWORD_MIN = 8
+# Password max — Argon2 DoS prevention (still checked on non-schema routes).
 _PASSWORD_MAX = 1024
 
 
@@ -32,14 +31,9 @@ def _get_conn():
     return get_db_connection()
 
 
-def _json_response(data=None, error=None, status=200):
-    """Consistent response envelope."""
-    if error:
-        return jsonify({"ok": False, "error": error, "meta": {}}), status
-    return jsonify({"ok": True, "data": data, "meta": {}}), status
-
-
 @bp.route("/register", methods=["POST"])
+@rate_limit(tier="auth")
+@validate_body(RegisterSchema)
 def register():
     from auth.service import (
         register_user, create_access_token, create_refresh_token,
@@ -47,34 +41,14 @@ def register():
     )
     from datetime import datetime, timedelta, timezone
 
-    body = request.get_json(silent=True) or {}
-    email = (body.get("email") or "").strip().lower()
-    password = body.get("password") or ""
-    display_name = (body.get("display_name") or "").strip()
-
-    if not email or not _EMAIL_RE.match(email):
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Valid email address required"},
-            status=400,
-        )
-
-    if not password:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Password required"},
-            status=400,
-        )
-
-    if len(password) < _PASSWORD_MIN or len(password) > _PASSWORD_MAX:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR",
-                   "message": f"Password must be {_PASSWORD_MIN}-{_PASSWORD_MAX} characters"},
-            status=400,
-        )
+    body = g.body  # validated RegisterSchema
+    email = body.email
+    password = body.password
+    display_name = body.display_name
 
     conn = _get_conn()
     try:
         user = register_user(conn, email, password, display_name or email.split("@")[0])
-        # Issue tokens directly — avoids re-hashing the password via login_user().
         secret = current_app.config["JWT_SECRET"]
         access_token = create_access_token(user["id"], secret)
         refresh_token = create_refresh_token()
@@ -93,53 +67,38 @@ def register():
             "refresh_token": refresh_token,
             "user": user,
         }
-        return _json_response(data=result, status=201)
+        return api_response(result, status=201)
     except AuthError as e:
         status_code = 409 if e.code == "CONFLICT" else 400
-        return _json_response(error={"code": e.code, "message": str(e)}, status=status_code)
+        return api_error(ErrorCode.CONFLICT if e.code == "CONFLICT" else ErrorCode.VALIDATION_ERROR, str(e), status=status_code)
     except Exception:
         logger.exception("Registration failed unexpectedly")
-        return _json_response(
-            error={"code": "INTERNAL_ERROR", "message": "Registration failed"},
-            status=500,
-        )
+        return api_error(ErrorCode.INTERNAL_ERROR, "Registration failed", status=500)
 
 
 @bp.route("/login", methods=["POST"])
+@rate_limit(tier="auth")
+@validate_body(LoginSchema)
 def login():
     from auth.service import login_user, AuthError
 
-    body = request.get_json(silent=True) or {}
-    email = (body.get("email") or "").strip().lower()
-    password = body.get("password") or ""
-
-    if not email or not password:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Email and password required"},
-            status=400,
-        )
+    body = g.body  # validated LoginSchema
+    email = body.email.strip().lower()
+    password = body.password
 
     if len(password) > _PASSWORD_MAX:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Password too long"},
-            status=400,
-        )
+        return api_error(ErrorCode.VALIDATION_ERROR, "Password too long", status=400)
 
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
     try:
         result = login_user(conn, email, password, secret)
-        return _json_response(data=result)
+        return api_response(result)
     except AuthError as e:
-        return _json_response(
-            error={"code": e.code, "message": str(e)}, status=401,
-        )
+        return api_error(ErrorCode.INVALID_CREDENTIALS, str(e), status=401)
     except Exception:
         logger.exception("Login failed unexpectedly")
-        return _json_response(
-            error={"code": "INTERNAL_ERROR", "message": "Login failed"},
-            status=500,
-        )
+        return api_error(ErrorCode.INTERNAL_ERROR, "Login failed", status=500)
 
 
 @bp.route("/logout", methods=["POST"])
@@ -149,7 +108,7 @@ def logout():
     body = request.get_json(silent=True) or {}
     refresh_token = body.get("refresh_token")
     if not refresh_token:
-        return _json_response(data={"message": "Logged out"})
+        return api_response({"message": "Logged out"})
 
     conn = _get_conn()
     token_hash = hash_refresh_token(refresh_token)
@@ -158,7 +117,7 @@ def logout():
         {"token_hash": token_hash},
     )
     conn.commit()
-    return _json_response(data={"message": "Logged out"})
+    return api_response({"message": "Logged out"})
 
 
 @bp.route("/refresh", methods=["POST"])
@@ -178,9 +137,8 @@ def refresh():
     body = request.get_json(silent=True) or {}
     refresh_token = body.get("refresh_token", "").strip()
     if not refresh_token:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Refresh token required"},
-            status=400,
+        return api_error(
+            ErrorCode.VALIDATION_ERROR, "Refresh token required", status=400,
         )
 
     conn = _get_conn()
@@ -198,8 +156,8 @@ def refresh():
         row = cur.fetchone()
 
         if row is None:
-            return _json_response(
-                error={"code": "INVALID_TOKEN", "message": "Invalid or expired refresh token"},
+            return api_error(
+                ErrorCode.TOKEN_EXPIRED, "Invalid or expired refresh token",
                 status=401,
             )
 
@@ -234,16 +192,15 @@ def refresh():
         )
         user = cur.fetchone()
 
-        return _json_response(data={
+        return api_response({
             "access_token": new_access,
             "refresh_token": new_refresh,
             "user": dict(user) if user else {},
         })
     except Exception:
         logger.exception("Token refresh failed")
-        return _json_response(
-            error={"code": "INTERNAL_ERROR", "message": "Token refresh failed"},
-            status=500,
+        return api_error(
+            ErrorCode.INTERNAL_ERROR, "Token refresh failed", status=500,
         )
 
 
@@ -253,9 +210,8 @@ def oauth_redirect(provider):
     from auth.oauth import oauth as oauth_registry
     client = oauth_registry.create_client(provider)
     if client is None:
-        return _json_response(
-            error={"code": "NOT_FOUND", "message": "Unknown OAuth provider"},
-            status=404,
+        return api_error(
+            ErrorCode.NOT_FOUND, "Unknown OAuth provider", status=404,
         )
     redirect_uri = f"{current_app.config['OAUTH_REDIRECT_BASE']}/auth/oauth/{provider}/callback"
     return client.authorize_redirect(redirect_uri)
@@ -268,18 +224,16 @@ def oauth_callback(provider):
 
     client = oauth_registry.create_client(provider)
     if client is None:
-        return _json_response(
-            error={"code": "NOT_FOUND", "message": "Unknown OAuth provider"},
-            status=404,
+        return api_error(
+            ErrorCode.NOT_FOUND, "Unknown OAuth provider", status=404,
         )
 
     try:
         token = client.authorize_access_token()
     except Exception:
         logger.exception("OAuth token exchange failed for %s", provider)
-        return _json_response(
-            error={"code": "OAUTH_ERROR", "message": "OAuth authentication failed"},
-            status=400,
+        return api_error(
+            ErrorCode.VALIDATION_ERROR, "OAuth authentication failed", status=400,
         )
 
     if provider == "google":
@@ -297,9 +251,9 @@ def oauth_callback(provider):
         if not profile.get("email"):
             emails = client.get("user/emails").json()
             if not emails:
-                return _json_response(
-                    error={"code": "OAUTH_ERROR",
-                           "message": "No email address found on GitHub account"},
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    "No email address found on GitHub account",
                     status=400,
                 )
             primary = next((e for e in emails if e["primary"]), emails[0])
@@ -312,26 +266,24 @@ def oauth_callback(provider):
             email_verified = match.get("verified", False) if match else False
         profile["email_verified"] = email_verified
     else:
-        return _json_response(
-            error={"code": "NOT_FOUND", "message": "Unsupported OAuth provider"},
-            status=404,
+        return api_error(
+            ErrorCode.NOT_FOUND, "Unsupported OAuth provider", status=404,
         )
 
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
     try:
         result = get_or_create_oauth_user(conn, provider, profile, secret)
-        return _json_response(data=result)
+        return api_response(result)
     except Exception as e:
         from auth.service import AuthError
         if isinstance(e, AuthError):
-            return _json_response(
-                error={"code": e.code, "message": str(e)}, status=403,
+            return api_error(
+                ErrorCode.FORBIDDEN, str(e), status=403,
             )
         logger.exception("OAuth user creation failed for %s", provider)
-        return _json_response(
-            error={"code": "INTERNAL_ERROR", "message": "OAuth login failed"},
-            status=500,
+        return api_error(
+            ErrorCode.INTERNAL_ERROR, "OAuth login failed", status=500,
         )
 
 
@@ -341,8 +293,8 @@ def verify_email():
     body = request.get_json(silent=True) or {}
     token = (body.get("token") or "").strip()
     if not token:
-        return _json_response(
-            error={"code": "VALIDATION_ERROR", "message": "Token required"}, status=400,
+        return api_error(
+            ErrorCode.VALIDATION_ERROR, "Token required", status=400,
         )
 
     conn = _get_conn()
@@ -356,11 +308,10 @@ def verify_email():
     conn.commit()
 
     if row is None:
-        return _json_response(
-            error={"code": "INVALID_TOKEN", "message": "Invalid or expired token"},
-            status=400,
+        return api_error(
+            ErrorCode.TOKEN_EXPIRED, "Invalid or expired token", status=400,
         )
-    return _json_response(data={"message": "Email verified"})
+    return api_response({"message": "Email verified"})
 
 
 # ---------------------------------------------------------------------------
@@ -375,9 +326,8 @@ def me():
     """Return current user profile. Requires auth."""
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
-        return _json_response(
-            error={"code": "UNAUTHORIZED", "message": "Authentication required"},
-            status=401,
+        return api_error(
+            ErrorCode.FORBIDDEN, "Authentication required", status=401,
         )
 
     conn = _get_conn()
@@ -387,7 +337,7 @@ def me():
     )
     user = cur.fetchone()
     if user is None:
-        return _json_response(
-            error={"code": "NOT_FOUND", "message": "User not found"}, status=404,
+        return api_error(
+            ErrorCode.NOT_FOUND, "User not found", status=404,
         )
-    return _json_response(data=dict(user))
+    return api_response(dict(user))
