@@ -4012,12 +4012,12 @@ details > summary:hover {
 
 .toast-container {
     position: fixed;
-    bottom: 1.5rem;
-    right: 1.5rem;
-    z-index: var(--z-overlay);
+    bottom: var(--space-5);
+    right: var(--space-5);
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     pointer-events: none;
 }
 
@@ -4031,7 +4031,7 @@ details > summary:hover {
     display: flex;
     align-items: flex-start;
     gap: 0.6rem;
-    animation: toastSlideIn 0.3s ease;
+    animation: toastSlideIn var(--duration-normal) var(--ease-out);
     max-width: 380px;
     min-width: 260px;
     pointer-events: auto;
@@ -4114,7 +4114,7 @@ details > summary:hover {
 
 /* Toast exit animation */
 .toast.toast-exit {
-    animation: toastSlideOut 0.3s ease forwards;
+    animation: toastSlideOut var(--duration-normal) var(--ease-out) forwards;
 }
 
 @keyframes toastSlideIn {
@@ -4125,6 +4125,15 @@ details > summary:hover {
 @keyframes toastSlideOut {
     from { transform: translateX(0); opacity: 1; }
     to { transform: translateX(100%); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .toast {
+        animation-duration: 0.01ms;
+    }
+    .toast.toast-exit {
+        animation-duration: 0.01ms;
+    }
 }
 
 /* ── Mobile responsive nav ─────────────── */
@@ -9017,7 +9026,7 @@ tr.row-selected {
     z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: var(--space-2);
     pointer-events: none;
 }
 
@@ -9031,7 +9040,7 @@ tr.row-selected {
     color: var(--text-primary);
     font-size: 0.85rem;
     max-width: 360px;
-    animation: toast-slide-in 0.3s ease both;
+    animation: toast-slide-in var(--duration-normal) var(--ease-out) both;
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -9062,7 +9071,7 @@ tr.row-selected {
 }
 
 .toast.toast-exit {
-    animation: toast-slide-out 0.3s ease both;
+    animation: toast-slide-out var(--duration-normal) var(--ease-out) both;
 }
 
 @keyframes toast-slide-out {
