@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var ZONE_COLORS = {
@@ -110,7 +112,7 @@
 
         el.innerHTML = html;
 
-        setTimeout(function () { _drawChart(data); }, 30);
+        _lc.addTimer(function () { _drawChart(data); }, 30);
     }
 
     function _drawChart(data) {
@@ -251,7 +253,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("lap-progress-container", function () {
@@ -263,4 +265,13 @@
     });
 
     window.LapProgress = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('lap_progress', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

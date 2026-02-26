@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var COLORS = {
@@ -359,7 +361,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function() {
+    _lc.addListener(document, "DOMContentLoaded", function() {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("pace-predictor-container", function () {
@@ -374,10 +376,10 @@
     var _lastCanvasId = null, _lastData = null;
 
     // Responsive resize support
-    document.addEventListener("DOMContentLoaded", function() {
+    _lc.addListener(document, "DOMContentLoaded", function() {
         var ppCanvas = document.getElementById('pace-predictor-chart');
         if (ppCanvas) {
-            ppCanvas.addEventListener('chart:resize', function() {
+            _lc.addListener(ppCanvas, 'chart:resize', function() {
                 if (_lastData && _lastCanvasId) {
                     var c = document.getElementById(_lastCanvasId);
                     if (!c) return;
@@ -396,4 +398,15 @@
     });
 
     window.PacePredictor = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+        _lastCanvasId = null;
+        _lastData = null;
+    }
+
+    window.ModuleManager.register('pace_predictor', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
