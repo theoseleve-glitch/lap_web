@@ -270,3 +270,14 @@ class TestPaginationParams:
         """Limit above 100 is rejected."""
         resp = client.get("/paginated?limit=101")
         assert resp.status_code == 422
+
+    def test_sort_rejects_sql_injection(self, client):
+        """Sort field rejects values that aren't simple identifiers."""
+        resp = client.get("/paginated?sort=name;DROP TABLE users")
+        assert resp.status_code == 422
+
+    def test_sort_accepts_valid_identifier(self, client):
+        """Sort field accepts valid column names like 'created_at'."""
+        resp = client.get("/paginated?sort=created_at")
+        assert resp.status_code == 200
+        assert resp.get_json()["data"]["sort"] == "created_at"

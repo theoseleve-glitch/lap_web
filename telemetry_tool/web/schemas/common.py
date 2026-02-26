@@ -1,9 +1,10 @@
 """Common Pydantic schemas shared across API endpoints."""
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PaginationParams(BaseModel):
@@ -22,3 +23,11 @@ class PaginationParams(BaseModel):
     cursor: str | None = None
     sort: str | None = None
     order: Literal["asc", "desc"] = "desc"
+
+    @field_validator("sort")
+    @classmethod
+    def sort_must_be_identifier(cls, v: str | None) -> str | None:
+        """Reject sort values that aren't simple column identifiers."""
+        if v is not None and not re.fullmatch(r"[a-z_][a-z0-9_.]*", v):
+            raise ValueError("sort must be a simple field name")
+        return v

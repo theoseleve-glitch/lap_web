@@ -196,8 +196,5 @@ class TestErrorCodes:
 
     def test_error_code_count(self):
         """Exactly 16 error code constants are defined."""
-        codes = [
-            attr for attr in dir(ErrorCode)
-            if not attr.startswith("_") and attr.isupper()
-        ]
-        assert len(codes) == 16
+        codes = {attr for attr in vars(ErrorCode) if not attr.startswith("_")}
+        assert codes == set(self.ALL_CODES)
