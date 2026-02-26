@@ -10,6 +10,9 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+    var MAX_CACHE_ENTRIES = 20;
+
     var C = window.Theme ? window.Theme.colors : {};
 
     // Distinct colours for up to 20 laps.
@@ -45,17 +48,17 @@
 
         // Wire up checkbox events.
         checkboxes.forEach(function (cb) {
-            cb.addEventListener('change', onCheckboxChange);
+            _lc.addListener(cb, 'change', onCheckboxChange);
         });
 
         // Select-all / clear-all buttons.
         var selAll = document.getElementById('overlay-select-all');
         var clrAll = document.getElementById('overlay-clear-all');
-        if (selAll) selAll.addEventListener('click', function () {
+        if (selAll) _lc.addListener(selAll, 'click', function () {
             checkboxes.forEach(function (cb) { cb.checked = true; });
             onCheckboxChange();
         });
-        if (clrAll) clrAll.addEventListener('click', function () {
+        if (clrAll) _lc.addListener(clrAll, 'click', function () {
             checkboxes.forEach(function (cb) { cb.checked = false; });
             onCheckboxChange();
         });
@@ -78,7 +81,7 @@
         onCheckboxChange();
 
         // Hover tooltip.
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             if (!chartBounds || selectedLaps.length === 0) return;
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -149,7 +152,7 @@
             _showOverlayTooltip(mx, my, lines.join('<br>'));
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             _hideOverlayTooltip();
             draw();  // Redraw without crosshair
         });
@@ -222,6 +225,10 @@
             var url = '/api/session/' + encodeURIComponent(T.sessionId) + '/gps/' + lapNum;
             return FetchHelper.fetch(url).then(function (data) {
                 lapDataCache[lapNum] = data;
+                var cacheKeys = Object.keys(lapDataCache);
+                if (cacheKeys.length > MAX_CACHE_ENTRIES) {
+                    delete lapDataCache[cacheKeys[0]];
+                }
             }).catch(function (err) { console.warn('Lap overlay data load failed:', err); });
         });
 
@@ -394,6 +401,10 @@
                     .then(function (data) {
                         if (data && data.distances) {
                             deltaCache[deltaKey] = data;
+                            var deltaCacheKeys = Object.keys(deltaCache);
+                            if (deltaCacheKeys.length > MAX_CACHE_ENTRIES) {
+                                delete deltaCache[deltaCacheKeys[0]];
+                            }
                             _pendingDelta = null;
                             draw();
                         }
@@ -522,5 +533,19 @@
             ctx.fillText('Lap ' + lapA + ' ' + sign + finalDelta.toFixed(3) + 's', pad.left + pW, yDelta(finalDelta) - 4);
         }
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        lapDataCache = {};
+        deltaCache = {};
+        selectedLaps = [];
+        chartBounds = null;
+        if (canvas) { canvas.width = 0; canvas.height = 0; }
+    }
+
+    window.ModuleManager.register('lap_overlay', {
+        init: function () { /* auto-inits on DOMContentLoaded */ },
+        destroy: destroy
+    });
 
 })();
