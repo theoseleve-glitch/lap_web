@@ -433,8 +433,8 @@ a:hover {
 
 .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(clamp(120px, 15vw, 180px), 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(clamp(100px, 14vw, 180px), 1fr));
+    gap: var(--space-3);
     margin-bottom: 2rem;
 }
 
@@ -472,7 +472,7 @@ a:hover {
 /* Hover: lift + glow */
 .kpi-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(240, 112, 48, 0.2);
+    border-color: var(--accent-dim);
     box-shadow: var(--shadow), var(--shadow-glow);
 }
 
@@ -482,7 +482,7 @@ a:hover {
 
 /* Accent variant */
 .kpi-card--accent {
-    border-color: rgba(240, 112, 48, 0.25);
+    border-color: var(--accent-dim);
     background: linear-gradient(135deg, var(--accent-dim) 0%, var(--glass-bg) 100%);
 }
 
@@ -557,7 +557,7 @@ a:hover {
 
 .stat-card:hover {
     transform: translateY(-2px);
-    border-color: rgba(240, 112, 48, 0.2);
+    border-color: var(--accent-dim);
     box-shadow: var(--shadow), var(--shadow-glow);
 }
 
@@ -566,7 +566,7 @@ a:hover {
 }
 
 .stat-card.accent {
-    border-color: rgba(240, 112, 48, 0.25);
+    border-color: var(--accent-dim);
     background: linear-gradient(135deg, var(--accent-dim) 0%, var(--glass-bg) 100%);
 }
 
@@ -1982,7 +1982,8 @@ textarea.form-input {
 /* Steps guide within empty state */
 .empty-steps {
     display: flex;
-    gap: 1.5rem;
+    flex-wrap: wrap;
+    gap: var(--space-4);
     margin: 2rem auto 0;
     max-width: 720px;
     text-align: left;
@@ -1990,14 +1991,14 @@ textarea.form-input {
 
 .empty-step {
     flex: 1;
-    background: rgba(14, 17, 24, 0.65);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     padding: 1.2rem;
     position: relative;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-sm);
 }
 
 .empty-step-num {
@@ -2086,22 +2087,22 @@ textarea.form-input {
 .feature-hints {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(clamp(160px, 22vw, 240px), 1fr));
-    gap: 1rem;
-    margin-top: 1.5rem;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
 }
 
 .feature-hint {
-    background: rgba(14, 17, 24, 0.65);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     padding: 1.15rem;
     text-align: left;
-    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    transition: all var(--duration-slow) cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
     position: relative;
     overflow: hidden;
-    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    box-shadow: var(--shadow-sm);
 }
 
 .feature-hint::before {
@@ -2111,15 +2112,15 @@ textarea.form-input {
     left: 0;
     right: 0;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
     pointer-events: none;
 }
 
 .feature-hint:hover {
-    border-color: rgba(240, 112, 48, 0.25);
-    background: rgba(240, 112, 48, 0.04);
+    border-color: var(--accent-dim);
+    background: var(--accent-dim);
     transform: translateY(-2px);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18), 0 0 30px rgba(240, 112, 48, 0.04);
+    box-shadow: var(--shadow), var(--shadow-glow);
 }
 
 .feature-hint-icon {
@@ -4930,6 +4931,19 @@ details > summary:hover {
     }
 }
 
+/* ── Small phones (< 480px) — compact KPI cards ── */
+@media (max-width: 479px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .kpi-card, .stat-card {
+        padding: var(--space-2) var(--space-2);
+    }
+    .kpi-card__value, .stat-value {
+        font-size: var(--font-size-md);
+    }
+}
+
 /* ── Extra small (phones < 400px) ─────── */
 @media (max-width: 400px) {
     .stats-grid {
@@ -5192,12 +5206,12 @@ input[type="range"]:focus-visible::-webkit-slider-thumb {
 
 .stat-card {
     transform: translateY(0);
-    transition: all 0.2s ease;
+    transition: all var(--duration-normal) ease;
 }
 
 .stat-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow);
 }
 
 /* ── Clickable row glow ──────────────── */
