@@ -17,6 +17,10 @@ const navItems = [
   { href: '/app/analytics', label: 'Analytics', icon: '◆' },
   { href: '/app/karts', label: 'Karts', icon: '⊞' },
   { href: '/app/weekends', label: 'Weekends', icon: '▣' },
+  { href: '/app/annotations', label: 'Annotations', icon: '✎' },
+  { href: '/app/dev-plans', label: 'Dev Plans', icon: '☰' },
+  { href: '/app/exports', label: 'Exports', icon: '↓' },
+  { href: '/app/data-health', label: 'Data Health', icon: '♡' },
 ];
 
 export default function AppLayout({ children }: { children: ReactNode }) {
