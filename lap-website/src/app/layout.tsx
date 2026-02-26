@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
+import { ChromeLayout } from '@/components/chrome/ChromeLayout';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -20,7 +21,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="relative bg-asphalt text-chalk texture-grain">
-        {children}
+        <ChromeLayout>
+          {children}
+        </ChromeLayout>
       </body>
     </html>
   );
