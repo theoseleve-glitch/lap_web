@@ -7,6 +7,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var _saveTimer = null;
@@ -34,8 +36,8 @@
 
         if (!field || !_sessionId) return;
 
-        if (_saveTimer) clearTimeout(_saveTimer);
-        _saveTimer = setTimeout(function () {
+        if (_saveTimer) _lc.clearTimer(_saveTimer);
+        _saveTimer = _lc.addTimer(function () {
             if (_saving) return;
             _saving = true;
             if (statusEl) statusEl.textContent = 'Saving...';
@@ -50,7 +52,7 @@
                     if (statusEl) {
                         statusEl.textContent = 'Saved';
                         statusEl.style.color = C.green || '#3fb950';
-                        setTimeout(function () {
+                        _lc.addTimer(function () {
                             statusEl.textContent = '';
                             statusEl.style.color = '';
                         }, 2000);
@@ -73,4 +75,13 @@
     }
 
     window.SessionEditor = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('session_editor', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

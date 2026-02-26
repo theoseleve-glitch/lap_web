@@ -326,3 +326,8 @@ function rsTogglePitType(raceId, stintOrder, btn) {
         console.error('set-pit-type fetch failed:', err);
     });
 }
+
+window.ModuleManager.register('race_strategy', {
+    init: function () {},
+    destroy: function () {}
+});

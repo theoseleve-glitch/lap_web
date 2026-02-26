@@ -12,9 +12,11 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
-    document.addEventListener('DOMContentLoaded', function () {
+    _lc.addListener(document, 'DOMContentLoaded', function () {
         var container = document.getElementById('gg-container');
         if (!container) return;
 
@@ -55,7 +57,7 @@
         }
 
         // Tab switching fires window resize — use it to draw when tab becomes visible
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             if (_ggData && !_ggDrawn) _tryDraw();
         });
 
@@ -346,7 +348,7 @@
         };
 
         // ── Zoom (mouse wheel) ────────────────────────
-        canvas.addEventListener('wheel', function (e) {
+        _lc.addListener(canvas, 'wheel', function (e) {
             e.preventDefault();
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -370,7 +372,7 @@
         }, { passive: false });
 
         // ── Pan (drag) ───────────────────────────────
-        canvas.addEventListener('mousedown', function (e) {
+        _lc.addListener(canvas, 'mousedown', function (e) {
             isDragging = true;
             dragStartX = e.clientX;
             dragStartY = e.clientY;
@@ -379,7 +381,7 @@
             canvas.style.cursor = 'grabbing';
         });
 
-        window.addEventListener('mousemove', function (e) {
+        _lc.addListener(window, 'mousemove', function (e) {
             if (!isDragging) return;
             var axisMax = getAxisMax();
             var dx = e.clientX - dragStartX;
@@ -389,7 +391,7 @@
             render();
         });
 
-        window.addEventListener('mouseup', function () {
+        _lc.addListener(window, 'mouseup', function () {
             if (isDragging) {
                 isDragging = false;
                 canvas.style.cursor = 'crosshair';
@@ -397,7 +399,7 @@
         });
 
         // ── Double-click to reset ────────────────────
-        canvas.addEventListener('dblclick', function () {
+        _lc.addListener(canvas, 'dblclick', function () {
             zoomLevel = 1.0;
             panX = 0;
             panY = 0;
@@ -409,7 +411,7 @@
         // ── Keyboard zoom/pan ────────────────────────
         canvas.setAttribute('tabindex', '0');
         canvas.style.outline = 'none'; // Prevent focus outline on canvas
-        canvas.addEventListener('keydown', function (e) {
+        _lc.addListener(canvas, 'keydown', function (e) {
             var axisMax = getAxisMax();
             var panStep = axisMax * 0.15; // Pan by 15% of visible range
             var handled = true;
@@ -464,7 +466,7 @@
             'border:1px solid ' + (C.border || '#30363d') + ';z-index:10;white-space:nowrap;';
         canvas.parentElement.appendChild(ggTooltip);
 
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             if (isDragging) {
                 ggTooltip.style.display = 'none';
                 return;
@@ -506,15 +508,15 @@
             }
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             ggTooltip.style.display = 'none';
         });
 
         // Resize handler.
         var _ggResizeTimer;
-        window.addEventListener('resize', function () {
-            clearTimeout(_ggResizeTimer);
-            _ggResizeTimer = setTimeout(function () {
+        _lc.addListener(window, 'resize', function () {
+            if (_ggResizeTimer) _lc.clearTimer(_ggResizeTimer);
+            _ggResizeTimer = _lc.addTimer(function () {
                 canvas.style.width = '';
                 w = canvas.clientWidth || canvas.parentElement.clientWidth || 700;
                 canvas.width = w * dpr;
@@ -527,6 +529,10 @@
                 render();
             }, 150);
         });
+    }
+
+    function destroy() {
+        _lc.destroyAll();
     }
 
     function densityColor(t) {
@@ -545,4 +551,8 @@
         return 'rgb(' + r + ',' + g + ',' + b + ')';
     }
 
+    window.ModuleManager.register('gg_diagram', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var TIER_COLORS = {
@@ -153,16 +155,6 @@
             frag.appendChild(grid);
         }
 
-        // ── Category radar canvas ───────────────────────────
-        var radarSection = _el("div", "badges-radar-section");
-        radarSection.appendChild(_text("div", "badges-radar-label", "Category Performance"));
-        var canvas = document.createElement("canvas");
-        canvas.id = "badge-category-canvas";
-        canvas.className = "badges-radar-canvas";
-        canvas.setAttribute("aria-label", "Badge category performance radar chart");
-        radarSection.appendChild(canvas);
-        frag.appendChild(radarSection);
-
         // ── Coaching insight ────────────────────────────────
         if (data.coaching) {
             var coach = _el("div", "badges-coaching");
@@ -175,11 +167,7 @@
         el.appendChild(frag);
 
         setTimeout(function () {
-            _drawCategoryRadar(data);
-            // Register for resize observer
-            if (window.TelemetryResize) {
-                TelemetryResize.observe(radarSection);
-            }
+            // Category radar removed — only badges grid and coaching shown
         }, 30);
     }
 
@@ -292,7 +280,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("session-badges-container", function () {
@@ -304,4 +292,13 @@
     });
 
     window.SessionBadges = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('session_badges', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

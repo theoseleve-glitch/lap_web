@@ -3,6 +3,9 @@
  */
 (function() {
     'use strict';
+
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
     window.RivalChart = { draw: draw };
 
@@ -67,4 +70,13 @@
             ctx.fillText(label, padL + barW + 8, y + barH / 2 + 4);
         });
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('rival_chart', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
