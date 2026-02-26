@@ -110,3 +110,36 @@ class TestSetWorkspaceContext:
         conn.execute.assert_called_once()
         sql_arg = str(conn.execute.call_args)
         assert "app.current_workspace_id" in sql_arg
+
+
+class TestRegisterUserCreatesWorkspace:
+    """Verify register_user auto-creates a personal workspace."""
+
+    def test_register_user_calls_create_personal_workspace(self):
+        from unittest.mock import patch
+        from auth.service import register_user
+
+        conn = MagicMock()
+        # register_user does: INSERT INTO users ... RETURNING id, email, ...
+        # That is a single execute call before commit.
+        insert_cur = MagicMock()
+        insert_cur.fetchone.return_value = {
+            "id": 42, "email": "new@example.com",
+            "display_name": "New User", "created_at": "2026-01-01",
+        }
+        conn.execute.return_value = insert_cur
+
+        # We need the workspace_id insert to also succeed
+        ws_calls = []
+
+        def capture_ws_call(conn_arg, **kwargs):
+            ws_calls.append(kwargs)
+            return 10
+
+        with patch("auth.workspace.create_personal_workspace", side_effect=capture_ws_call):
+            user = register_user(conn, "new@example.com", "password123", "New User")
+
+        assert user["id"] == 42
+        assert len(ws_calls) == 1
+        assert ws_calls[0]["user_id"] == 42
+        assert ws_calls[0]["display_name"] == "New User's Workspace"

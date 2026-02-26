@@ -41,10 +41,26 @@ def upgrade() -> None:
     result = conn.execute(sa.text("SELECT id FROM users ORDER BY id LIMIT 1"))
     first_user = result.scalar()
 
-    conn.execute(sa.text(
-        "INSERT INTO workspaces (type, owner_user_id, display_name) "
-        "VALUES ('personal', :uid, 'Default Workspace')"
-    ), {"uid": first_user})
+    if first_user is None:
+        # Fresh database with no users — create a system workspace.
+        # Temporarily drop the CHECK constraint so we can insert with
+        # NULL owner (no users exist yet).  Re-add it afterwards.
+        conn.execute(sa.text(
+            "ALTER TABLE workspaces DROP CONSTRAINT IF EXISTS ck_workspace_has_owner"
+        ))
+        conn.execute(sa.text(
+            "INSERT INTO workspaces (type, display_name) "
+            "VALUES ('personal', 'Default Workspace')"
+        ))
+        conn.execute(sa.text(
+            "ALTER TABLE workspaces ADD CONSTRAINT ck_workspace_has_owner "
+            "CHECK (owner_user_id IS NOT NULL OR owner_team_id IS NOT NULL) NOT VALID"
+        ))
+    else:
+        conn.execute(sa.text(
+            "INSERT INTO workspaces (type, owner_user_id, display_name) "
+            "VALUES ('personal', :uid, 'Default Workspace')"
+        ), {"uid": first_user})
 
     result = conn.execute(sa.text(
         "SELECT id FROM workspaces WHERE display_name = 'Default Workspace' "
