@@ -240,20 +240,12 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(versioning_bp)
             logger.debug("Registered Celery pipeline blueprints (jobs, batch, versioning)")
 
-            # Phase 4 v1 endpoint blueprints (placeholder — modules created in later tasks)
-            try:
-                from .routes.api_v1_data import bp as api_v1_data_bp
-                app.register_blueprint(api_v1_data_bp)
-                logger.debug("Registered api_v1_data blueprint")
-            except ImportError:
-                logger.debug("api_v1_data module not yet available — skipping")
-
-            try:
-                from .routes.api_v1_account import bp as api_v1_account_bp
-                app.register_blueprint(api_v1_account_bp)
-                logger.debug("Registered api_v1_account blueprint")
-            except ImportError:
-                logger.debug("api_v1_account module not yet available — skipping")
+            # Phase 4 v1 endpoint blueprints
+            from .routes.api_v1_data import bp as api_v1_data_bp
+            from .routes.api_v1_account import bp as api_v1_account_bp
+            app.register_blueprint(api_v1_data_bp)
+            app.register_blueprint(api_v1_account_bp)
+            logger.debug("Registered Phase 4 v1 blueprints (api_v1_data, api_v1_account)")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
