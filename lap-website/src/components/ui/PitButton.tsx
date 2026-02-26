@@ -19,13 +19,14 @@ export function PitButton({
 }: PitButtonProps) {
   const baseClass = `
     inline-flex items-center justify-center
-    px-8 py-4
+    min-h-[48px] px-8 py-3.5
     border-2 border-pit-orange
     bg-pit-orange text-asphalt
-    font-telemetry text-[11px] tracking-[0.12em] uppercase font-bold
+    font-telemetry text-[12px] tracking-[0.12em] uppercase font-bold
+    shadow-[0_0_24px_rgba(255,106,0,0.22),inset_0_0_0_1px_rgba(11,12,15,0.4)]
     transition-all duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)]
-    hover:brightness-110 hover:shadow-[0_0_24px_rgba(255,106,0,0.4)]
-    active:scale-[0.97]
+    hover:brightness-110 hover:shadow-[0_0_36px_rgba(255,106,0,0.5),inset_0_0_0_1px_rgba(11,12,15,0.5)]
+    active:scale-[0.98]
     focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2
     ${className}
   `.trim();

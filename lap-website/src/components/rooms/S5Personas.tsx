@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { personaPages } from '@/data/personas';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 export function S5Personas() {
   return (
@@ -16,10 +17,11 @@ export function S5Personas() {
             <br />
             LANDING PAGES
           </h2>
-          <p className="text-steel max-w-2xl mt-4">
-            Dedicated pages now exist for drivers, circuits, teams, and endurance programs with
-            tailored messaging and conversion paths.
-          </p>
+          <ReversibleCard
+            title="Persona-Specific Journeys"
+            description="Drivers, circuits, teams, and endurance programs each get dedicated messaging, proof, and conversion paths aligned to their buying intent."
+            className="max-w-2xl mt-4"
+          />
         </div>
 
         <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-4">

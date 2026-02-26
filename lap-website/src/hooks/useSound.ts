@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from 'react';
 
 export function useSound() {
-  const [enabled, setEnabled] = useState(false);
+  const [enabled, setEnabled] = useState(true);
   const howlsRef = useRef<Record<string, { play: () => void }>>({});
 
   const toggle = useCallback(() => setEnabled((p) => !p), []);

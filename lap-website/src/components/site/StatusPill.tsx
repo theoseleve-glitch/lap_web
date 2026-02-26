@@ -11,9 +11,9 @@ const labelMap: Record<CapabilityStatus, string> = {
 };
 
 const classMap: Record<CapabilityStatus, string> = {
-  available_now: 'border-acid-green text-acid-green',
-  enterprise_on_request: 'border-marshal-yellow text-marshal-yellow',
-  roadmap: 'border-pit-orange text-pit-orange',
+  available_now: 'border-acid-green bg-acid-green/15 text-acid-green',
+  enterprise_on_request: 'border-marshal-yellow bg-marshal-yellow/18 text-marshal-yellow',
+  roadmap: 'border-pit-orange bg-pit-orange/18 text-pit-orange',
 };
 
 export function StatusPill({ status }: StatusPillProps) {

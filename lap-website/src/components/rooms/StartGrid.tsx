@@ -13,6 +13,7 @@ export function StartGrid() {
   const [flashing, setFlashing] = useState(false);
   const [heroVariant, setHeroVariant] = useState<'control' | 'performance_focus'>('control');
   const holdStartRef = useRef(0);
+  const scrollIntentRef = useRef(0);
   const { reducedMotion } = useReducedMotion();
   useEffect(() => {
     const variant = getVariantForKey('hero', 'control');
@@ -24,6 +25,8 @@ export function StartGrid() {
       : startGrid.monument;
 
   const handleComplete = useCallback(async () => {
+    if (launched) return;
+
     // Track hold duration
     if (holdStartRef.current > 0) {
       trackStartGridHold(Date.now() - holdStartRef.current);
@@ -45,7 +48,22 @@ export function StartGrid() {
       duration: 0.9,
       ease: 'power3.out',
     });
-  }, []);
+  }, [launched]);
+
+  useEffect(() => {
+    if (launched) return;
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY <= 0) return;
+      scrollIntentRef.current += event.deltaY;
+      if (scrollIntentRef.current >= 220) {
+        void handleComplete();
+      }
+    };
+
+    window.addEventListener('wheel', handleWheel, { passive: true });
+    return () => window.removeEventListener('wheel', handleWheel);
+  }, [handleComplete, launched]);
 
   return (
     <section
@@ -73,7 +91,7 @@ export function StartGrid() {
                 reducedMotion={reducedMotion}
               />
               <p className="font-telemetry text-steel">
-                {startGrid.instruction}
+                {startGrid.instruction} {/* OR SCROLL TO LAUNCH */}
               </p>
             </>
           )}

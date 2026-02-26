@@ -116,9 +116,15 @@ export function PitStop() {
           {addonsOpen && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
               {addons.map((addon) => (
-                <div key={addon.name} className="flex justify-between py-2 px-4 bg-concrete">
-                  <span className="font-body text-sm text-chalk">{addon.name}</span>
-                  <span className="font-telemetry text-[var(--accent)]">{addon.price}</span>
+                <div key={addon.name} className="flex items-center justify-between gap-3 py-2 px-4 bg-concrete">
+                  <div>
+                    <span className="font-body text-sm text-chalk">{addon.name}</span>
+                    {addon.note && <p className="text-xs text-steel mt-1">{addon.note}</p>}
+                  </div>
+                  <div className="text-right">
+                    <span className="font-telemetry text-[var(--accent)] block">{addon.price}</span>
+                    <StatusPill status={addon.status} />
+                  </div>
                 </div>
               ))}
             </div>
@@ -128,10 +134,10 @@ export function PitStop() {
         {/* CTAs */}
         <div className="col-span-full flex flex-col md:flex-row items-center justify-center gap-4 mb-12">
           <PitButton
-            href="/demo"
+            href={audience === 'b2c' ? '/register?source=free-report' : '/demo?audience=b2b'}
             onClick={() => trackCtaClick('try_demo', 'pit-stop', audience)}
           >
-            TRY DEMO
+            {audience === 'b2c' ? 'START FREE REPORT' : 'BOOK B2B DEMO'}
           </PitButton>
           <StampButton
             href="/contact"

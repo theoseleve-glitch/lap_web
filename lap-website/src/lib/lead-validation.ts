@@ -32,6 +32,8 @@ export function validateLeadPayload(raw: unknown): ValidationResult {
   const input = raw as Record<string, unknown>;
   const fieldErrors: Record<string, string> = {};
   const type = validateRequiredString(input.type, 'type', fieldErrors) as LeadType;
+  const website = optionalString(input.website);
+  const startedAtRaw = input.startedAt;
 
   const name = validateRequiredString(input.name, 'name', fieldErrors);
   const email = validateRequiredString(input.email, 'email', fieldErrors).toLowerCase();
@@ -54,6 +56,17 @@ export function validateLeadPayload(raw: unknown): ValidationResult {
 
   if ((type === 'demo' || type === 'book') && !optionalString(input.company)) {
     fieldErrors.company = 'Company is required for demo bookings';
+  }
+
+  if (website) {
+    fieldErrors.form = 'Spam signal detected';
+  }
+
+  if (typeof startedAtRaw === 'number') {
+    const elapsed = Date.now() - startedAtRaw;
+    if (elapsed < 1500) {
+      fieldErrors.form = 'Please take a moment before submitting.';
+    }
   }
 
   if (Object.keys(fieldErrors).length > 0) {

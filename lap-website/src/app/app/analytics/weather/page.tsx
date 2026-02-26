@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel } from '@/components/app';
@@ -27,7 +27,7 @@ export default function WeatherAnalysisPage() {
     queryFn: () => api.get<WeatherResponse>('/analytics/weather'),
   });
 
-  const points = data?.points ?? [];
+  const points = useMemo(() => data?.points ?? [], [data]);
 
   /* ---------- temperature vs lap time scatter ---------- */
   const drawTempChart = useCallback(

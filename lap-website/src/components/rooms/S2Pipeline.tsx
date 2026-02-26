@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PipelineBlocks } from '@/components/mechanisms/PipelineBlocks';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { s2Pipeline } from '@/data/copy';
 import { trackS2PipelineComplete } from '@/lib/analytics';
 
@@ -59,9 +60,11 @@ export function S2Pipeline() {
           </div>
 
           <div className="col-span-full text-center">
-            <p className="font-body text-steel max-w-xl mx-auto leading-relaxed">
-              {s2Pipeline.body}
-            </p>
+            <ReversibleCard
+              title="Fast Pipeline Outcome"
+              description={s2Pipeline.body}
+              className="max-w-xl mx-auto"
+            />
           </div>
         </div>
       </div>

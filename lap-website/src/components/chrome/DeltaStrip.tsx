@@ -12,9 +12,9 @@ export function DeltaStrip() {
     <div
       className="fixed bottom-0 left-0 right-0 transition-all duration-[420ms]"
       style={{
-        height: active ? '32px' : '4px',
+        height: active ? '48px' : '10px',
         zIndex: 'var(--z-delta)' as unknown as number,
-        background: colors.concrete,
+        background: active ? colors.concrete : colors.steel,
       }}
     >
       {active && (
@@ -30,7 +30,7 @@ export function DeltaStrip() {
             }}
           />
           <span className="relative font-telemetry text-[11px] tracking-[0.12em]" aria-live="polite">
-            {totalDelta >= 0 ? '+' : ''}{totalDelta.toFixed(2)}s
+            LIVE DELTA {totalDelta >= 0 ? '+' : ''}{totalDelta.toFixed(2)}s
           </span>
         </div>
       )}

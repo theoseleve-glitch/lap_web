@@ -103,6 +103,10 @@ export const trackFormSubmitSuccess = async (formType: string, sourcePath: strin
 };
 export const trackFormSubmitError = (formType: string, sourcePath: string, reason: string) =>
   track('lead_submit_error', { form_type: formType, source_path: sourcePath, reason });
+export const trackFormFieldBlur = (formType: string, fieldName: string) =>
+  track('lead_field_blur', { form_type: formType, field_name: fieldName });
+export const trackFormSubmitTiming = (formType: string, durationMs: number) =>
+  track('lead_submit_timing', { form_type: formType, duration_ms: durationMs });
 
 // Navigation
 export const trackIndexOverlayOpen = (fromSection: string) =>

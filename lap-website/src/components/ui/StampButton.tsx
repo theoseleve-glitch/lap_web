@@ -19,13 +19,14 @@ export function StampButton({
 }: StampButtonProps) {
   const baseClass = `
     inline-flex items-center justify-center
-    px-6 py-3
+    min-h-[48px] px-8 py-3.5
     border-2 border-chalk
     bg-transparent text-chalk
-    font-telemetry text-[11px] tracking-[0.12em] uppercase
+    font-telemetry text-[12px] tracking-[0.12em] uppercase
+    shadow-[inset_0_0_0_1px_rgba(243,240,232,0.18)]
     transition-all duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)]
-    hover:bg-chalk hover:text-asphalt
-    active:scale-[0.97]
+    hover:bg-chalk hover:text-asphalt hover:shadow-[0_0_28px_rgba(243,240,232,0.24)]
+    active:scale-[0.98]
     focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2
     ${className}
   `.trim();

@@ -1,4 +1,4 @@
-// All room copy — no hardcoded strings in components
+// Central copy used across immersive home rooms.
 
 export const startGrid = {
   monument: ['EVERY LAP', 'HAS A SECRET'],
@@ -7,51 +7,51 @@ export const startGrid = {
 
 export const s1Pain = {
   monument: ["YOU'RE LOSING TIME", "IN PLACES YOU CAN'T SEE"],
-  body: 'Every corner has an optimal line. The difference between your line and that line is measurable, repeatable, fixable.',
+  body: 'LAP pinpoints exactly where you lose speed, then turns each corner into one clear next action for your next session.',
   tooltips: {
-    entry: 'BRAKE POINT // EARLIER = SLOWER ENTRY, TIGHTER RADIUS',
-    apex: 'APEX // GEOMETRIC vs LATE — AFFECTS EXIT SPEED',
-    exit: 'THROTTLE APPLICATION // EARLIER = MORE TIME GAINED',
+    entry: 'BRAKE POINT // Adjust this first for cleaner rotation',
+    apex: 'APEX // Better apex means faster exit every lap',
+    exit: 'THROTTLE // Earlier confidence = immediate lap-time gain',
   },
   stamp: { label: 'DATA SOURCE', detail: 'GPS + IMU @ 25Hz' },
 } as const;
 
 export const s1Deep = {
   monument: 'DATA HAS A SHAPE',
-  body: 'Speed. Brake. Steering. Three traces tell the whole story. LAP reads them, maps them to your track, and finds where time hides.',
+  body: 'Three traces show the full story: where you are stable, where you overwork the kart, and where easy time is available.',
   tooltips: {
-    speed: 'SPEED // 87.4 KM/H — EXIT VELOCITY, CORNER 4',
-    brake: 'BRAKE // 0.94G — PEAK DECELERATION',
-    steering: 'STEERING // 12.4° — LOCK ANGLE AT APEX',
+    speed: 'SPEED // Exit velocity opportunity',
+    brake: 'BRAKE // Peak deceleration and release timing',
+    steering: 'STEERING // Lock angle at apex and unwind phase',
   },
 } as const;
 
 export const s2Pipeline = {
-  monument: 'INGEST → CLEAN → MAP → ANALYZE → REPORT',
-  body: 'From raw CSV to scored report in under 60 seconds. 14 pipeline stages. Every step validated. No black boxes.',
+  monument: 'INGEST -> CLEAN -> MAP -> ANALYZE -> REPORT',
+  body: 'Upload session data and get an actionable scorecard in under a minute, with a workflow your coaches and drivers can trust.',
 } as const;
 
 export const s2Proof = {
   monument: 'SCRUTINEERING',
-  subhead: 'THREE PROOFS THAT THE NUMBERS ARE REAL',
+  subhead: 'THREE PROOFS YOUR SCORE REFLECTS REAL PROGRESS',
   plates: [
     {
-      title: 'REPEATABILITY',
-      front: 'Upload the same session twice. Get the same score twice. Every time.',
-      reveal: 'Scoring uses deterministic physics models. No ML randomness in the core pipeline. SHA-256 checksum verifies identical input. Reproducible to ±0.001s on lap times.',
-      stamp: { label: 'VERIFIED', detail: 'DETERMINISTIC PIPELINE' },
+      title: 'REPEATABLE',
+      front: 'Run the same session twice and you get the same result.',
+      reveal: 'The scoring pipeline is deterministic and checksum-verified, so identical input produces identical output.',
+      stamp: { label: 'VERIFIED', detail: 'CONSISTENT OUTPUT' },
     },
     {
-      title: 'REFERENCE ACCURACY',
-      front: 'Corner-by-corner analysis validated against professional data engineering methodology.',
-      reveal: 'Theoretical lap computed from friction model + optimal racing line geometry. Reference speeds derived from GPS + IMU sensor fusion at 25Hz. Not arbitrary — physics-based.',
-      stamp: { label: 'VALIDATED', detail: 'PHYSICS-BASED MODEL' },
+      title: 'REALISTIC',
+      front: 'Reference pace is physics-based, not arbitrary.',
+      reveal: 'Corner expectations are derived from vehicle behavior and track geometry, so coaching stays grounded in race reality.',
+      stamp: { label: 'VALIDATED', detail: 'PHYSICS MODEL' },
     },
     {
-      title: 'CONDITION SENSITIVITY',
-      front: 'Wet track? New tires? Different kart? The scoring adapts. Your progress is real.',
-      reveal: 'Phase-aware scoring detects grip evolution. Wet/dry thresholds adjust expectations. Kart-specific profiles normalize comparisons. Detrending only applied when it helps — never hurts.',
-      stamp: { label: 'CALIBRATED', detail: 'CONDITION-AWARE' },
+      title: 'CONTEXT-AWARE',
+      front: 'Grip, weather, and setup changes are recognized.',
+      reveal: 'Condition-aware adjustments keep progress tracking fair from session to session and weekend to weekend.',
+      stamp: { label: 'CALIBRATED', detail: 'SESSION CONTEXT' },
     },
   ],
 } as const;
@@ -59,20 +59,20 @@ export const s2Proof = {
 export const s3Product = {
   monument: 'FIND TIME.',
   b2c: {
-    subhead: 'FOR KART, CAR & SIM DRIVERS',
+    subhead: 'FOR KART, CAR, AND SIM DRIVERS',
     tiles: [
-      { label: 'YOUR SCORE: 86/A', detail: '4-pillar breakdown visible' },
-      { label: 'CORNER 7: BRAKE 0.4s LATE', detail: 'Specific, actionable coaching' },
-      { label: 'NEXT SESSION: 3 DRILLS', detail: 'Development plan generated' },
+      { label: 'YOUR SCORE: CLEAR', detail: 'Understand pace, consistency, execution, and confidence at a glance' },
+      { label: 'KEY CORNER: TARGETED', detail: 'Fix the exact corner phase costing your lap time' },
+      { label: 'NEXT SESSION: READY', detail: 'Leave with drills you can apply immediately on track' },
     ],
   },
   b2b: {
-    subhead: 'FOR CIRCUITS, SCHOOLS & ORGANIZERS',
+    subhead: 'FOR CIRCUITS, SCHOOLS, AND OPERATORS',
     placards: [
-      { title: 'BRANDED REPORTS', body: 'Your logo. Your colors. Every driver gets a professional debrief after every session.' },
-      { title: 'DRIVER RETENTION', body: 'Drivers who see progress come back. Average +40% return rate with data programs.' },
-      { title: 'TIMING INTEGRATION', body: 'Connects to your existing timing system. No new hardware. No driver friction.' },
-      { title: 'TURNKEY SETUP', body: 'We configure everything. You run events. Pilot program available.' },
+      { title: 'BETTER DRIVER OUTCOMES', body: 'Drivers get clearer feedback and come back faster with confidence.' },
+      { title: 'HIGHER RETENTION', body: 'Data-backed progress keeps customers engaged and returning.' },
+      { title: 'OPERATOR READY', body: 'Fit into existing timing workflows without adding friction.' },
+      { title: 'FASTER ONBOARDING', body: 'Launch pilots quickly with guided setup and clear rollout milestones.' },
     ],
     cta: 'REQUEST PILOT EVENT',
   },
@@ -92,30 +92,30 @@ export const pitStop = {
   trustStrip: [
     'GDPR READY',
     '256-BIT ENCRYPTED',
-    '99.9% UPTIME',
-    'MADE IN FRANCE',
+    '99.9% UPTIME TARGET',
+    'MOTORSPORT-FOCUSED',
   ],
 } as const;
 
 export const garage = {
   monument: 'GARAGE',
-  subhead: 'TECHNICAL DOCUMENTATION // FOR SKEPTICS',
+  subhead: 'TECHNICAL NOTES // FOR OPERATORS AND ANALYSTS',
   panels: [
     {
       title: 'STACK',
-      content: 'Python 3.x // Flask // pandas // scikit-learn\nPostgreSQL // Redis // Celery\n14-stage pipeline // Physics-based models\nPyInstaller desktop builds',
+      content: 'Next.js + telemetry backend services\nValidated processing pipeline\nDeterministic report generation\nOperational APIs for billing and lead flows',
     },
     {
       title: 'DATA SOURCES',
-      content: 'RaceChrono Pro (CSV export)\nRaceBox (via RaceChrono format)\nGPS + IMU @ 10-25Hz\nStreaming ingest for files up to 12GB\nAdaptive chunking — <1GB peak memory',
+      content: 'RaceChrono-compatible session ingest\nGPS + IMU data streams\nLarge-file support with chunked processing\nStable memory usage for long sessions',
     },
     {
       title: 'METHODOLOGY',
-      content: 'Scoring: Pace + Consistency + Execution + Robustness\nCorner analysis: brake point, apex speed, exit drive\nReference lap: friction model + optimal geometry\nDetrending: condition-aware, only applied when beneficial\nConfidence weighting: data quality affects score range',
+      content: 'Scoring: pace + consistency + execution + robustness\nCorner analysis: entry, apex, exit phases\nReference lap: physics + geometry model\nConfidence weighting by signal quality',
     },
     {
       title: 'PRIVACY & COMPLIANCE',
-      content: 'GDPR-ready: data stored in EU\nEncryption: AES-256 at rest, TLS in transit\nRetention: you choose — 30 days to forever\nDeletion: full account + data wipe on request\nAudit trail: every pipeline run logged\nData ownership: 100% yours. Export anytime. No lock-in.',
+      content: 'EU-ready residency controls\nEncryption at rest and in transit\nRetention windows per workspace\nFull deletion/export support\nAudit logs for workflow traceability',
     },
   ],
 } as const;
@@ -124,6 +124,6 @@ export const podium = {
   monument: ['READY TO RUN', 'A CLEAN LAP?'],
   ctaPrimary: 'TRY DEMO',
   ctaSecondary: 'TALK',
-  subtext: 'FREE STARTER PLAN // NO CARD REQUIRED // 60 SECONDS TO FIRST SCORE',
-  restart: '← RESTART LAP',
+  subtext: 'START FREE // NO CARD REQUIRED // FIRST OUTCOME IN MINUTES',
+  restart: '<- RESTART LAP',
 } as const;

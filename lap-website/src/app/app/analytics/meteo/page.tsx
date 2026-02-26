@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel } from '@/components/app';
@@ -124,7 +124,7 @@ export default function MeteoCorrelationPage() {
     queryFn: () => api.get<MeteoResponse>('/analytics/meteo'),
   });
 
-  const points = data?.points ?? [];
+  const points = useMemo(() => data?.points ?? [], [data]);
 
   const drawTemp = useCallback(
     (ctx: CanvasRenderingContext2D, w: number, h: number) =>

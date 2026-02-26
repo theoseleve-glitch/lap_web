@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { workflowModules } from '@/data/workflow-modules';
 import { StatusPill } from '@/components/site/StatusPill';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 export function S4WorkflowCoverage() {
   return (
@@ -17,10 +18,11 @@ export function S4WorkflowCoverage() {
             <br />
             COVERAGE
           </h2>
-          <p className="text-steel max-w-2xl mt-4">
-            Product workflow modules are now explicitly mapped to availability status so claims are
-            tied to implemented capabilities.
-          </p>
+          <ReversibleCard
+            title="Workflow Clarity"
+            description="Every module is mapped to live capability status, so buyers know exactly what is ready now, enterprise-only, or still roadmap."
+            className="max-w-2xl mt-4"
+          />
         </div>
 
         <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-4">

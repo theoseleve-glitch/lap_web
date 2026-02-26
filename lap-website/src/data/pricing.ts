@@ -74,8 +74,8 @@ export const b2cPlans: Plan[] = [
 export const b2bPlans: Plan[] = [
   {
     name: 'TRACK ESSENTIAL',
-    priceMonthly: 'Custom',
-    priceAnnual: 'EUR 1,490 / yr',
+    priceMonthly: 'Contact Sales',
+    priceAnnual: 'Contact Sales',
     features: {
       Drivers: 'Up to 50 / event',
       Reports: 'Standard',
@@ -83,16 +83,16 @@ export const b2bPlans: Plan[] = [
       Support: 'Email',
       Setup: 'Self-serve docs',
     },
-    cta: 'Get Started',
-    ctaHref: '/book?plan=TRACK%20ESSENTIAL',
+    cta: 'Contact Sales',
+    ctaHref: '/contact?plan=TRACK%20ESSENTIAL',
     personaLabel: 'Built for circuits',
     personaHref: '/circuits',
     availability: 'available_now',
   },
   {
     name: 'CIRCUIT PRO',
-    priceMonthly: 'Custom',
-    priceAnnual: 'EUR 2,990 / yr',
+    priceMonthly: 'Contact Sales',
+    priceAnnual: 'Contact Sales',
     features: {
       Drivers: 'Up to 200 / event',
       Reports: 'Branded',
@@ -100,7 +100,7 @@ export const b2bPlans: Plan[] = [
       Support: 'Priority',
       Setup: 'Guided onboarding',
     },
-    cta: 'Book Demo',
+    cta: 'Contact Sales',
     ctaHref: '/demo?plan=CIRCUIT%20PRO',
     personaLabel: 'Built for circuits and operators',
     personaHref: '/circuits',
@@ -109,8 +109,8 @@ export const b2bPlans: Plan[] = [
   },
   {
     name: 'CIRCUIT ENTERPRISE',
-    priceMonthly: 'Custom',
-    priceAnnual: 'Custom',
+    priceMonthly: 'Contact Sales',
+    priceAnnual: 'Contact Sales',
     features: {
       Drivers: 'Unlimited',
       Reports: 'White-label',

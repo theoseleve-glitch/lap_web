@@ -1,4 +1,5 @@
 import { PageShell } from '@/components/site/PageShell';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 export default function PrivacyPage() {
   return (
@@ -6,20 +7,21 @@ export default function PrivacyPage() {
       eyebrow="Legal"
       title="Privacy Policy"
       description="Summary privacy terms for telemetry data processing, retention, and user rights."
+      tone="document"
     >
-      <section className="space-y-4 text-sm text-steel">
-        <p>
-          We process telemetry and account information for product operation, support, and security
-          monitoring. Processing is limited to contractual and legitimate-interest purposes.
-        </p>
-        <p>
-          Data subjects can request export, correction, or deletion through account settings or the
-          contact form. Deletion requests are logged and processed within defined retention windows.
-        </p>
-        <p>
-          We use service providers for hosting, observability, and billing. Each provider is bound
-          by data processing obligations and access controls.
-        </p>
+      <section className="grid gap-4">
+        <ReversibleCard
+          title="What We Process"
+          description="Telemetry and account data are used to deliver analysis, support your account, and protect platform security."
+        />
+        <ReversibleCard
+          title="Your Rights"
+          description="You can request export, correction, or deletion of your data. Requests are processed with auditable workflows."
+        />
+        <ReversibleCard
+          title="Service Providers"
+          description="Hosting, observability, and billing vendors operate under processing obligations and access controls."
+        />
       </section>
     </PageShell>
   );

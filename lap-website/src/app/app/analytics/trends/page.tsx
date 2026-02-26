@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel } from '@/components/app';
@@ -46,7 +46,7 @@ export default function TrendsPage() {
     queryFn: () => api.get<TrendsResponse>(`/analytics/trends?from=${from}&to=${to}`),
   });
 
-  const points = data?.points ?? [];
+  const points = useMemo(() => data?.points ?? [], [data]);
 
   /* ---------- score progression ---------- */
   const drawScoreChart = useCallback(

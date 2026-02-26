@@ -3,6 +3,30 @@ import { PageShell } from '@/components/site/PageShell';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
 import { claimsByStatus, getClaimsForSurface } from '@/data/claim-registry';
 import { StructuredData } from '@/components/site/StructuredData';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
+
+const featuredViews = [
+  {
+    title: 'Race Strategy Dashboard',
+    description: 'Live operational board for stint calls, pace deltas, and pit-window decisions.',
+    image: '/images/screenshots/dashboard-hero.png',
+  },
+  {
+    title: 'Key Corner Replay',
+    description: 'Replay entry, apex, and exit traces to spot where the lap was won or lost.',
+    image: '/images/screenshots/corner-replay.png',
+  },
+  {
+    title: 'Track Map + Trace Context',
+    description: 'See speed traces on the track map so coaching points are instantly understandable.',
+    image: '/images/screenshots/lap-table.png',
+  },
+  {
+    title: 'Full-Screen Analysis Mode',
+    description: 'Review speed traces, G-G model context, and map overlays in one immersive view.',
+    image: '/images/screenshots/score-overview.png',
+  },
+];
 
 export default function ProductPage() {
   const productClaims = getClaimsForSurface('product');
@@ -20,12 +44,24 @@ export default function ProductPage() {
       />
       <PageShell
         eyebrow="Product Workflow Coverage"
-        title="From Upload to Strategy: End-to-End Workflow Modules"
-        description="This page documents implemented workflow modules and clearly marks enterprise and roadmap capabilities."
+        title="From Upload to Strategy: Fast, Clear Performance Decisions"
+        description="Move from raw telemetry to clear next actions with workflows built for drivers, coaches, and operators."
       >
         <section className="mb-10">
           <WorkflowCoverage />
         </section>
+
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-4">Flagship Analysis Views</h2>
+        <div className="grid md:grid-cols-2 gap-4">
+          {featuredViews.map((view) => (
+            <article key={view.title} className="border border-steel/20 bg-concrete/30 p-4">
+              <img src={view.image} alt={view.title} className="w-full h-52 object-cover mb-3 border border-steel/20" />
+              <ReversibleCard title={view.title} description={view.description} />
+            </article>
+          ))}
+        </div>
+      </section>
 
       <section className="mb-10">
         <h2 className="font-monument text-[var(--text-h2)] mb-4">Claim Registry Mapping</h2>

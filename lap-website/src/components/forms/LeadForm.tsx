@@ -1,15 +1,19 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { LeadType } from '@/lib/lead-types';
+import { b2bPlans, b2cPlans } from '@/data/pricing';
+import { personaPages } from '@/data/personas';
 import {
   getAttributionFromCookie,
   getSessionIdFromCookie,
+  trackFormFieldBlur,
   trackFormSubmitError,
   trackFormSubmitStart,
   trackFormSubmitSuccess,
+  trackFormSubmitTiming,
 } from '@/lib/analytics';
 import { PitButton } from '@/components/ui/PitButton';
 
@@ -29,6 +33,7 @@ interface FormState {
   persona: string;
   seats: string;
   preferredDate: string;
+  website: string;
 }
 
 function requiredFieldsFor(type: LeadType): Array<keyof FormState> {
@@ -53,12 +58,18 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
     persona: params.get('persona') ?? '',
     seats: '',
     preferredDate: '',
+    website: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const startedAtRef = useRef(Date.now());
 
   const requiredFields = useMemo(() => requiredFieldsFor(type), [type]);
+  const planOptions = useMemo(() => {
+    const list = [...b2cPlans, ...b2bPlans];
+    return list.map((plan) => ({ label: plan.name, value: plan.name }));
+  }, []);
 
   const showCompany = type === 'demo' || type === 'book' || type === 'contact';
   const showMessage = type === 'contact' || type === 'waitlist';
@@ -97,6 +108,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
         body: JSON.stringify({
           type,
           ...form,
+          startedAt: startedAtRef.current,
           sourcePath,
           utm: getAttributionFromCookie(),
           sessionId: getSessionIdFromCookie(),
@@ -115,6 +127,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
         return;
       }
 
+      trackFormSubmitTiming(type, Date.now() - startedAtRef.current);
       await trackFormSubmitSuccess(type, sourcePath);
       router.push(`/thank-you/${type}`);
     } catch (error) {
@@ -136,6 +149,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           id={`${type}-name`}
           value={form.name}
           onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
+          onBlur={() => trackFormFieldBlur(type, 'name')}
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
         />
         {fieldErrors.name && <p className="text-safety-red text-xs mt-1">{fieldErrors.name}</p>}
@@ -150,6 +164,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           type="email"
           value={form.email}
           onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
+          onBlur={() => trackFormFieldBlur(type, 'email')}
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
         />
         {fieldErrors.email && <p className="text-safety-red text-xs mt-1">{fieldErrors.email}</p>}
@@ -164,6 +179,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
             id={`${type}-company`}
             value={form.company}
             onChange={(event) => setForm((prev) => ({ ...prev, company: event.target.value }))}
+            onBlur={() => trackFormFieldBlur(type, 'company')}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
           />
           {fieldErrors.company && (
@@ -180,6 +196,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           id={`${type}-phone`}
           value={form.phone}
           onChange={(event) => setForm((prev) => ({ ...prev, phone: event.target.value }))}
+          onBlur={() => trackFormFieldBlur(type, 'phone')}
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
         />
       </div>
@@ -189,12 +206,20 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-plan`}>
             Interested plan
           </label>
-          <input
+          <select
             id={`${type}-plan`}
             value={form.plan}
             onChange={(event) => setForm((prev) => ({ ...prev, plan: event.target.value }))}
+            onBlur={() => trackFormFieldBlur(type, 'plan')}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
-          />
+          >
+            <option value="">Select a plan</option>
+            {planOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
       )}
 
@@ -207,6 +232,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
             id={`${type}-seats`}
             value={form.seats}
             onChange={(event) => setForm((prev) => ({ ...prev, seats: event.target.value }))}
+            onBlur={() => trackFormFieldBlur(type, 'seats')}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
           />
         </div>
@@ -216,12 +242,20 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
         <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-persona`}>
           Persona (optional)
         </label>
-        <input
+        <select
           id={`${type}-persona`}
           value={form.persona}
           onChange={(event) => setForm((prev) => ({ ...prev, persona: event.target.value }))}
+          onBlur={() => trackFormFieldBlur(type, 'persona')}
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
-        />
+        >
+          <option value="">Select a persona</option>
+          {personaPages.map((persona) => (
+            <option key={persona.slug} value={persona.slug}>
+              {persona.title}
+            </option>
+          ))}
+        </select>
       </div>
 
       {showPreferredDate && (
@@ -236,6 +270,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
             onChange={(event) =>
               setForm((prev) => ({ ...prev, preferredDate: event.target.value }))
             }
+            onBlur={() => trackFormFieldBlur(type, 'preferredDate')}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
           />
           {fieldErrors.preferredDate && (
@@ -253,6 +288,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
             id={`${type}-message`}
             value={form.message}
             onChange={(event) => setForm((prev) => ({ ...prev, message: event.target.value }))}
+            onBlur={() => trackFormFieldBlur(type, 'message')}
             rows={5}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
           />
@@ -267,6 +303,16 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           {submitError}
         </div>
       )}
+
+      <input
+        aria-hidden="true"
+        tabIndex={-1}
+        autoComplete="off"
+        type="text"
+        value={form.website}
+        onChange={(event) => setForm((prev) => ({ ...prev, website: event.target.value }))}
+        className="hidden"
+      />
 
       <PitButton type="submit" className="w-full sm:w-auto">
         {isSubmitting ? 'Submitting...' : submitLabel}

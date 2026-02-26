@@ -1,5 +1,6 @@
 import { PageShell } from '@/components/site/PageShell';
 import { StatusPill } from '@/components/site/StatusPill';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 export default function SecurityPage() {
   return (
@@ -7,36 +8,25 @@ export default function SecurityPage() {
       eyebrow="Security and Compliance"
       title="Security, Residency, Retention, and Incident Response"
       description="Detailed trust posture for encryption, data controls, and operational process."
+      tone="document"
     >
       <section className="grid md:grid-cols-2 gap-4 mb-8">
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Encryption</h2>
-          <p className="text-sm text-steel">
-            Data is encrypted in transit with TLS and encrypted at rest through managed storage
-            controls. Access is role-scoped and audited.
-          </p>
-        </article>
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Residency</h2>
-          <p className="text-sm text-steel">
-            EU-first data residency is available. Regional routing options are handled on request
-            for enterprise contracts.
-          </p>
-        </article>
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Retention Controls</h2>
-          <p className="text-sm text-steel">
-            Retention windows can be configured by workspace. Deletion requests are tracked with
-            irreversible processing logs.
-          </p>
-        </article>
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Incident Process</h2>
-          <p className="text-sm text-steel">
-            Incidents are triaged by severity, assigned an incident commander, and followed by
-            postmortem documentation and customer communication.
-          </p>
-        </article>
+        <ReversibleCard
+          title="Encryption"
+          description="Traffic is protected in transit and data is protected at rest, with role-scoped access and auditability."
+        />
+        <ReversibleCard
+          title="Residency"
+          description="EU-first data residency is available by default, with regional routing options for enterprise needs."
+        />
+        <ReversibleCard
+          title="Retention Controls"
+          description="Workspace-level retention windows support deletion, compliance workflows, and lifecycle governance."
+        />
+        <ReversibleCard
+          title="Incident Process"
+          description="Incidents are triaged by severity with accountable ownership, communication updates, and postmortems."
+        />
       </section>
 
       <section className="border border-steel/20 p-4 mb-8">

@@ -39,11 +39,13 @@ export function TimecodeCounter() {
 
   return (
     <div
-      className="fixed top-4 right-4 font-telemetry text-[11px] tracking-[0.12em] text-steel text-right"
+      className="fixed top-[72px] right-4 md:right-6 font-telemetry text-[13px] md:text-[14px] tracking-[0.12em] text-steel text-right"
       style={{ zIndex: 'var(--z-timecode)' as unknown as number }}
     >
-      <div><AnimatedDigits text={timecode} /></div>
-      <div><AnimatedDigits text={distance} /></div>
+      <div className="bg-concrete/70 border border-steel/30 px-3 py-1.5">
+        <div><AnimatedDigits text={timecode} /></div>
+        <div className="text-chalk"><AnimatedDigits text={distance} /></div>
+      </div>
     </div>
   );
 }

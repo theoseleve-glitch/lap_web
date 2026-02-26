@@ -27,6 +27,17 @@ const sectionDescriptions: Record<string, string> = {
   POD: 'FINAL ACTION',
 };
 
+const sectionVisuals: Record<string, { image: string; icon: string }> = {
+  S1: { image: '/images/screenshots/corner-replay.png', icon: 'A' },
+  S2: { image: '/images/screenshots/lap-table.png', icon: 'B' },
+  S3: { image: '/images/screenshots/dashboard-hero.png', icon: 'C' },
+  S4: { image: '/images/screenshots/score-overview.png', icon: 'D' },
+  S5: { image: '/images/screenshots/driving-style-radar.png', icon: 'E' },
+  PIT: { image: '/images/screenshots/grade-badge.png', icon: 'P' },
+  GAR: { image: '/images/screenshots/lap-table.png', icon: 'G' },
+  POD: { image: '/images/screenshots/dashboard-hero.png', icon: 'F' },
+};
+
 export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlayProps) {
   const overlayRef = useRef<HTMLDivElement>(null);
   const { reducedMotion, toggle: toggleMotion } = useReducedMotion();
@@ -95,17 +106,27 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
       </button>
 
       {/* Navigation grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8 px-8 max-w-4xl w-full">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8 px-8 max-w-5xl w-full">
         {sectorTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => navigate(tab.id)}
-            className="text-left p-6 bg-concrete/50 hover:bg-concrete transition-colors duration-[420ms] group"
+            className="text-left p-4 bg-concrete/50 hover:bg-concrete transition-colors duration-[420ms] group border border-steel/20"
           >
-            <span className="font-monument text-[clamp(36px,4vw,56px)] block mb-2 group-hover:text-acid-green transition-colors duration-[420ms]">
+            <span className="relative block mb-3">
+              <img
+                src={sectionVisuals[tab.label]?.image}
+                alt={`${tab.label} preview`}
+                className="h-24 w-full object-cover opacity-75 group-hover:opacity-100 transition-opacity duration-[420ms]"
+              />
+              <span className="absolute top-2 left-2 font-telemetry text-[10px] bg-asphalt/80 px-2 py-1 border border-steel/30 text-chalk">
+                {sectionVisuals[tab.label]?.icon ?? tab.label}
+              </span>
+            </span>
+            <span className="font-monument text-[clamp(30px,3.2vw,48px)] block mb-1 group-hover:text-acid-green transition-colors duration-[420ms]">
               {tab.label}
             </span>
-            <span className="font-telemetry text-[11px] tracking-[0.12em] text-steel uppercase">
+            <span className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase">
               {sectionDescriptions[tab.label] ?? ''}
             </span>
           </button>

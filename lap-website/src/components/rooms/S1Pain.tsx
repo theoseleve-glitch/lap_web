@@ -5,6 +5,7 @@ import { MonumentText } from '@/components/ui/MonumentText';
 import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { CornerDrag } from '@/components/mechanisms/CornerDrag';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { s1Pain } from '@/data/copy';
 import { colors } from '@/lib/tokens';
 import { trackS1CornerInteract } from '@/lib/analytics';
@@ -34,9 +35,11 @@ export function S1Pain() {
             {s1Pain.monument[0]}<br />{s1Pain.monument[1]}
           </MonumentText>
 
-          <p className="font-body text-steel max-w-lg leading-relaxed">
-            {s1Pain.body}
-          </p>
+          <ReversibleCard
+            title="Where Time Is Lost"
+            description={s1Pain.body}
+            className="max-w-lg"
+          />
 
           <div className="flex flex-wrap gap-4 mt-2">
             <Tooltip content={s1Pain.tooltips.entry}>

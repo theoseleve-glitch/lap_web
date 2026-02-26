@@ -29,11 +29,16 @@ export function PricingTable({
             ${i > 0 ? 'md:border-l-0' : ''}
           `}
         >
+          {plan.highlighted && (
+            <p className="inline-flex mb-3 border border-pit-orange bg-pit-orange/18 px-2 py-1 font-telemetry text-[10px] tracking-[0.12em] uppercase text-pit-orange">
+              Most Popular
+            </p>
+          )}
           <div className="flex items-start justify-between gap-2 mb-2">
             <h3 className="font-monument text-[var(--text-h3)]">{plan.name}</h3>
             <StatusPill status={plan.availability} />
           </div>
-          <p className="font-monument text-[var(--text-h2)] text-chalk mb-4">
+          <p className="font-monument text-[clamp(34px,4vw,52px)] text-chalk mb-4 leading-[0.95]">
             {billingPeriod === 'monthly' ? plan.priceMonthly : plan.priceAnnual}
           </p>
 
@@ -41,7 +46,7 @@ export function PricingTable({
             {Object.entries(plan.features).map(([key, val], j) => (
               <div
                 key={key}
-                className={`flex justify-between py-2 px-2 font-body text-sm ${
+                className={`flex justify-between py-2 px-2 font-body text-base ${
                   j % 2 === 0 ? 'bg-asphalt/40' : ''
                 }`}
               >

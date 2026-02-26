@@ -6,9 +6,9 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Base reset ── */
+/* Base reset */
 html {
-  scroll-behavior: auto; /* GSAP handles scrolling */
+  scroll-behavior: auto;
   background: var(--asphalt);
   color: var(--chalk);
 }
@@ -16,13 +16,13 @@ html {
 body {
   font-family: 'Inter', sans-serif;
   font-size: var(--text-body);
-  line-height: 1.65;
+  line-height: 1.72;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* ── Typography classes ── */
+/* Typography classes */
 .font-monument {
   font-family: 'Teko', sans-serif;
   font-weight: 700;
@@ -42,10 +42,10 @@ body {
 .font-body {
   font-family: 'Inter', sans-serif;
   font-weight: 400;
-  line-height: 1.65;
+  line-height: 1.72;
 }
 
-/* ── Layout utilities ── */
+/* Layout utilities */
 .grid-lap {
   display: grid;
   grid-template-columns: repeat(var(--grid-columns), 1fr);
@@ -53,7 +53,7 @@ body {
   padding-inline: var(--grid-margin);
 }
 
-/* ── Room container ── */
+/* Room container */
 .room {
   position: relative;
   min-height: 100vh;
@@ -63,19 +63,16 @@ body {
   overflow: hidden;
 }
 
-/* ── Selection ── */
 ::selection {
   background: var(--accent);
   color: var(--asphalt);
 }
 
-/* ── Focus indicators ── */
 :focus-visible {
   outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* Hide focus ring for mouse users */
 :focus:not(:focus-visible) {
   outline: none;
 }

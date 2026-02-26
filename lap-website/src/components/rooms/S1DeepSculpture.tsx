@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TelemetryTraces } from '@/components/mechanisms/TelemetryTraces';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { s1Deep } from '@/data/copy';
 import { colors } from '@/lib/tokens';
 import { useGpuCapability } from '@/hooks/useGpuCapability';
@@ -48,9 +49,11 @@ export function S1DeepSculpture() {
         </div>
 
         <div className="col-span-full">
-          <p className="font-body text-steel max-w-2xl mx-auto text-center leading-relaxed mb-6">
-            {s1Deep.body}
-          </p>
+          <ReversibleCard
+            title="Telemetry Made Actionable"
+            description={s1Deep.body}
+            className="max-w-2xl mx-auto mb-6"
+          />
 
           {/* Trace legend with tooltips */}
           <div className="flex flex-wrap justify-center gap-6">

@@ -1,4 +1,5 @@
 import { PageShell } from '@/components/site/PageShell';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 export default function DpaPage() {
   return (
@@ -6,20 +7,21 @@ export default function DpaPage() {
       eyebrow="Legal"
       title="Data Processing Addendum"
       description="Data processing terms, subprocessors, and transfer controls."
+      tone="document"
     >
-      <section className="space-y-4 text-sm text-steel">
-        <p>
-          The DPA defines controller-processor obligations, data subject rights workflows, and
-          security controls aligned with regional privacy regulations.
-        </p>
-        <p>
-          Subprocessor usage is documented and reviewed. International transfers use applicable
-          contractual safeguards where required.
-        </p>
-        <p>
-          Customers can request a signed DPA through the contact route, including enterprise
-          addenda for security questionnaires.
-        </p>
+      <section className="grid gap-4">
+        <ReversibleCard
+          title="Controller and Processor Roles"
+          description="The DPA defines responsibilities, lawful processing boundaries, and operational safeguards."
+        />
+        <ReversibleCard
+          title="Subprocessors and Transfers"
+          description="Subprocessor usage is documented and transfer safeguards are applied when cross-border processing is required."
+        />
+        <ReversibleCard
+          title="Signed Agreements"
+          description="Signed DPA packages, including enterprise addenda, are available through the contact route."
+        />
       </section>
     </PageShell>
   );
