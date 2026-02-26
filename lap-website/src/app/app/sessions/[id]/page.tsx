@@ -4,7 +4,25 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable } from '@/components/app';
+import {
+  SpeedTrace,
+  GGDiagram,
+  TrackMap,
+  DrivingStyle,
+  LapProgress,
+  SectorChart,
+  LapDistribution,
+  LapOverlay,
+  Fingerprint,
+  ConsistencyHeatmap,
+  BrakeScatter,
+  CornerMastery,
+  EnergyBalance,
+  FatigueChart,
+  SpeedProfile,
+  ThrottleHeatmap,
+} from '@/components/app/charts';
 
 interface SessionDetail {
   id: string;
@@ -29,7 +47,7 @@ interface LapRow {
 }
 
 function formatTime(s: number | null): string {
-  if (s == null) return '—';
+  if (s == null) return '--';
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
@@ -88,7 +106,7 @@ export default function SessionDetailPage() {
       className: 'font-telemetry',
       render: (row: LapRow) => (
         <span>
-          {row.speed_avg != null ? `${row.speed_avg.toFixed(1)} km/h` : '—'}
+          {row.speed_avg != null ? `${row.speed_avg.toFixed(1)} km/h` : '--'}
         </span>
       ),
     },
@@ -98,7 +116,7 @@ export default function SessionDetailPage() {
       className: 'font-telemetry',
       render: (row: LapRow) => (
         <span className={row.valid ? 'text-acid-green' : 'text-safety-red'}>
-          {row.valid ? '✓' : '✗'}
+          {row.valid ? 'Y' : 'N'}
         </span>
       ),
     },
@@ -108,7 +126,7 @@ export default function SessionDetailPage() {
     <div>
       <PageHeader
         title={session.track_name}
-        subtitle={`${session.driver_name} · ${session.date} · ${session.laps} laps`}
+        subtitle={`${session.driver_name} -- ${session.date} -- ${session.laps} laps`}
       />
 
       {/* Primary score cards */}
@@ -117,29 +135,29 @@ export default function SessionDetailPage() {
         <StatCard label="Total Laps" value={session.laps} />
         <StatCard
           label="Score"
-          value={session.score?.toFixed(1) ?? '—'}
+          value={session.score?.toFixed(1) ?? '--'}
           unit="/100"
           trend={session.score != null && session.score >= 75 ? 'up' : 'neutral'}
         />
-        <StatCard label="Grade" value={session.grade ?? '—'} />
+        <StatCard label="Grade" value={session.grade ?? '--'} />
       </div>
 
       {/* Score breakdown */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Pace" value={session.pace_score?.toFixed(1) ?? '—'} unit="/25" />
+        <StatCard label="Pace" value={session.pace_score?.toFixed(1) ?? '--'} unit="/25" />
         <StatCard
           label="Consistency"
-          value={session.consistency_score?.toFixed(1) ?? '—'}
+          value={session.consistency_score?.toFixed(1) ?? '--'}
           unit="/25"
         />
         <StatCard
           label="Execution"
-          value={session.execution_score?.toFixed(1) ?? '—'}
+          value={session.execution_score?.toFixed(1) ?? '--'}
           unit="/25"
         />
         <StatCard
           label="Robustness"
-          value={session.robustness_score?.toFixed(1) ?? '—'}
+          value={session.robustness_score?.toFixed(1) ?? '--'}
           unit="/25"
         />
       </div>
@@ -165,53 +183,35 @@ export default function SessionDetailPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {activeTab === 'Overview' && (
             <>
-              <ChartPanel title="Speed Trace" subtitle="Speed over distance">
-                <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                  Chart renders in Phase 4
-                </div>
-              </ChartPanel>
-              <ChartPanel title="GG Diagram" subtitle="Lateral vs longitudinal G">
-                <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                  Chart renders in Phase 4
-                </div>
-              </ChartPanel>
+              <SpeedTrace sessionId={id} />
+              <GGDiagram sessionId={id} />
+              <TrackMap sessionId={id} />
+              <DrivingStyle sessionId={id} />
             </>
           )}
           {activeTab === 'Pace' && (
             <>
-              <ChartPanel title="Lap Times" subtitle="Lap-by-lap progression">
-                <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                  Chart renders in Phase 4
-                </div>
-              </ChartPanel>
-              <ChartPanel title="Sector Times" subtitle="Per-sector breakdown">
-                <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                  Chart renders in Phase 4
-                </div>
-              </ChartPanel>
+              <LapProgress sessionId={id} />
+              <SectorChart sessionId={id} />
+              <LapDistribution sessionId={id} />
+              <LapOverlay sessionId={id} />
             </>
           )}
           {activeTab === 'Style' && (
-            <ChartPanel
-              title="Driving Style"
-              subtitle="Smoothness vs aggression"
-              className="md:col-span-2"
-            >
-              <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                Chart renders in Phase 4
-              </div>
-            </ChartPanel>
+            <>
+              <Fingerprint sessionId={id} />
+              <ConsistencyHeatmap sessionId={id} />
+              <BrakeScatter sessionId={id} />
+              <CornerMastery sessionId={id} />
+            </>
           )}
           {activeTab === 'Physics' && (
-            <ChartPanel
-              title="Energy Balance"
-              subtitle="Kinetic energy management"
-              className="md:col-span-2"
-            >
-              <div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">
-                Chart renders in Phase 4
-              </div>
-            </ChartPanel>
+            <>
+              <EnergyBalance sessionId={id} />
+              <FatigueChart sessionId={id} />
+              <SpeedProfile sessionId={id} />
+              <ThrottleHeatmap sessionId={id} />
+            </>
           )}
         </div>
       </div>
