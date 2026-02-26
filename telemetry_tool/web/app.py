@@ -82,6 +82,7 @@ def _resolve_web_dir() -> Path:
 def create_app(config: Config | None = None) -> Flask:
     """Create and configure the Flask application."""
     cfg = config or Config()
+    cfg.validate()
 
     web_dir = _resolve_web_dir()
     logger.info("Web assets directory: %s", web_dir)
@@ -106,7 +107,8 @@ def create_app(config: Config | None = None) -> Flask:
         TEMPLATES_AUTO_RELOAD=True,
         # PostgreSQL / auth settings (used by routes and middleware).
         USE_PG=cfg.USE_PG,
-        PG_URL=cfg.PG_URL,
+        # Note: PG_URL deliberately NOT in app.config (credential exposure).
+        # db_pg.py reads it directly from the TELEMETRY_PG_URL env var.
         AUTH_REQUIRED=cfg.AUTH_REQUIRED,
         JWT_SECRET=cfg.JWT_SECRET,
         JWT_ALGORITHM=cfg.JWT_ALGORITHM,
@@ -183,6 +185,18 @@ def create_app(config: Config | None = None) -> Flask:
             logger.debug("Registered blueprint: %s", label)
         except Exception as exc:
             logger.error("Failed to register blueprint %s (%s): %s", label, mod_name, exc)
+
+    # Auth blueprints (only when PostgreSQL is enabled)
+    if cfg.USE_PG:
+        try:
+            from .routes.auth import bp as auth_bp, api_v1_bp
+            from .middleware.auth import auth_middleware
+            app.register_blueprint(auth_bp)
+            app.register_blueprint(api_v1_bp)
+            app.before_request(auth_middleware)
+            logger.debug("Registered auth blueprints and middleware")
+        except Exception as exc:
+            logger.error("Failed to register auth blueprints: %s", exc)
 
     # ── i18n: load translations on each request ──
     @app.before_request

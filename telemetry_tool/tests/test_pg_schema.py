@@ -150,6 +150,9 @@ EXPECTED_TABLES = [
     "race_neutralizations",
     "race_rivals",
     "race_rival_events",
+    # Phase 18 (auth)
+    "users",
+    "refresh_tokens",
 ]
 
 
