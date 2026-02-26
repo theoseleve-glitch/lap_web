@@ -1744,31 +1744,58 @@ details[open].rs-form-section > summary::before {
     padding: 0.4rem 0.75rem;
     border-radius: 6px;
     font-size: 0.8rem;
-    animation: rs-toast-slide 0.3s ease-out;
-    cursor: pointer;
+    animation: rs-toast-slide 0.3s ease-out, rs-toast-glow 1.5s ease-out;
+    cursor: default;
 }
 
 .rs-alert-toast.rs-alert-high {
     background: rgba(248, 81, 73, 0.15);
     border: 1px solid rgba(248, 81, 73, 0.3);
-    color: var(--red, #f85149);
+    border-left: 3px solid var(--red);
+    color: var(--red);
 }
 
 .rs-alert-toast.rs-alert-medium {
     background: rgba(210, 169, 34, 0.15);
     border: 1px solid rgba(210, 169, 34, 0.3);
-    color: var(--yellow, #d29922);
+    border-left: 3px solid var(--yellow);
+    color: var(--yellow);
 }
 
 .rs-alert-toast.rs-alert-low {
     background: rgba(126, 231, 135, 0.15);
     border: 1px solid rgba(126, 231, 135, 0.3);
-    color: var(--green, #7ee787);
+    border-left: 3px solid var(--green);
+    color: var(--green);
+}
+
+/* Dismiss button */
+.rs-toast-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    line-height: 1;
+}
+
+.rs-toast-dismiss:hover {
+    opacity: 1;
 }
 
 @keyframes rs-toast-slide {
     from { transform: translateY(-8px); opacity: 0; }
     to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes rs-toast-glow {
+    0% { box-shadow: 0 0 12px rgba(255, 255, 255, 0.15); }
+    100% { box-shadow: none; }
 }
 
 /* ── Notification Bell ──────────────────────── */

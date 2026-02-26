@@ -763,10 +763,11 @@
             text.textContent = message;
             toast.appendChild(text);
 
-            var dismiss = document.createElement('span');
+            var dismiss = document.createElement('button');
+            dismiss.type = 'button';
+            dismiss.className = 'rs-toast-dismiss';
             dismiss.textContent = '\u00D7';
-            dismiss.style.cssText = 'margin-left:auto;cursor:pointer;font-weight:700;';
-            dismiss.addEventListener('click', function() { toast.remove(); });
+            dismiss.addEventListener('click', function(e) { e.stopPropagation(); toast.remove(); });
             toast.appendChild(dismiss);
 
             strip.insertBefore(toast, strip.firstChild);
