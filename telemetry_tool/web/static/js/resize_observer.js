@@ -58,4 +58,6 @@
     } else {
         init();
     }
+
+    window.ModuleManager.register('resize_observer', { init: function(){}, destroy: function(){} });
 })();

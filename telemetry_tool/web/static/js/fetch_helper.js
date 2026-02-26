@@ -209,4 +209,6 @@
         fetch: fetchWithTimeout,
         lazyInit: lazyInit,
     };
+
+    window.ModuleManager.register('fetch_helper', { init: function(){}, destroy: function(){} });
 })();

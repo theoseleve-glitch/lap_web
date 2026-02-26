@@ -3,6 +3,9 @@
  */
 (function() {
     'use strict';
+
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
     window.WeatherChart = { draw: draw };
 
@@ -81,4 +84,13 @@
             ctx.fillText(yMax.toFixed(1) + 's', padL - 4, yOff + padT + 10);
         });
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('weather_chart', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

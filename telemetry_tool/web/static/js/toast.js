@@ -176,4 +176,6 @@
             }
         },
     };
+
+    window.ModuleManager.register('toast', { init: function(){}, destroy: function(){} });
 })();
