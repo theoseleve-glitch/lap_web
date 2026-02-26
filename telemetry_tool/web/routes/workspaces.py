@@ -1,6 +1,6 @@
 """Workspace management API routes."""
 import logging
-from flask import Blueprint, request, g
+from flask import Blueprint, g
 from auth.rbac import require_role
 
 from web.api_utils import api_response, api_error, ErrorCode

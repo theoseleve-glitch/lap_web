@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, g, request
+from flask import Blueprint, g
 from sqlalchemy import text
 
 from web.api_utils import api_response, api_error, ErrorCode
