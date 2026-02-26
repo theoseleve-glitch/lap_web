@@ -145,18 +145,18 @@ class TestJsonFormatter:
 class TestSetupLogging:
     def test_attaches_filter(self, app):
         setup_logging(app)
-        root = logging.getLogger()
-        filter_types = [type(f).__name__ for f in root.filters]
+        # Filter is attached to app logger (not root) to avoid test pollution
+        filter_types = [type(f).__name__ for f in app.logger.filters]
         assert "RequestIdFilter" in filter_types
 
     def test_json_format_when_env_set(self, app, monkeypatch):
         monkeypatch.setenv("TELEMETRY_LOG_FORMAT", "json")
         setup_logging(app)
-        root = logging.getLogger()
-        # At least one handler should use JsonFormatter
+        # Check the web namespace logger (used by routes/middleware)
+        web_logger = logging.getLogger("web")
         formatter_types = [
             type(h.formatter).__name__
-            for h in root.handlers
+            for h in web_logger.handlers
             if h.formatter is not None
         ]
         assert "JsonFormatter" in formatter_types

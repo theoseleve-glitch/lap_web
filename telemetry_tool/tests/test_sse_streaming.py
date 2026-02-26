@@ -100,7 +100,9 @@ class TestListJobs:
         resp = client.get("/api/v1/jobs")
 
         assert resp.status_code == 200
-        data = resp.get_json()
+        body = resp.get_json()
+        assert body["ok"] is True
+        data = body["data"]
         assert "jobs" in data
         assert len(data["jobs"]) == 2
         mock_list.assert_called_once_with(mock_conn, 1, limit=50)
@@ -124,7 +126,9 @@ class TestGetJobStatus:
         resp = client.get("/api/v1/jobs/job-1/status")
 
         assert resp.status_code == 200
-        data = resp.get_json()
+        body = resp.get_json()
+        assert body["ok"] is True
+        data = body["data"]
         assert data["job_id"] == "job-1"
         assert data["status"] == "running"
         mock_get.assert_called_once_with(mock_conn, "job-1", 1)
@@ -161,8 +165,9 @@ class TestCancelJob:
         resp = client.post("/api/v1/jobs/job-1/cancel")
 
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["cancelled"] is True
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["cancelled"] is True
         mock_cancel.assert_called_once_with(mock_conn, "job-1", 1)
 
     @patch("web.routes.jobs.get_pg_connection")
@@ -213,8 +218,9 @@ class TestResumeJob:
         )
 
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["resumed"] is True
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["resumed"] is True
 
         # Verify joker decision stored in context
         mock_ctx.set_joker_decision.assert_called_once_with("accept")

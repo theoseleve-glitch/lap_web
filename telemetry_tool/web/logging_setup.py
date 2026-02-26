@@ -89,34 +89,37 @@ class JsonFormatter(logging.Formatter):
 # ---------------------------------------------------------------------------
 
 def setup_logging(app: Flask) -> None:
-    """Configure the root logger with request-ID enrichment.
+    """Configure the app logger with request-ID enrichment.
 
     When the ``TELEMETRY_LOG_FORMAT`` environment variable is set to
-    ``"json"``, all handlers on the root logger use :class:`JsonFormatter`.
+    ``"json"``, all handlers use :class:`JsonFormatter`.
     Otherwise the default human-readable format is used with the
     request-scoped fields appended.
 
-    The :class:`RequestIdFilter` is always attached to the root logger
-    so that any handler — including third-party — sees the extra fields.
+    The :class:`RequestIdFilter` is attached to the **app logger**
+    (not root) to avoid polluting other loggers in test suites.
     """
-    root = logging.getLogger()
+    logger = app.logger
 
     # Always attach the enrichment filter
     request_filter = RequestIdFilter()
-    root.addFilter(request_filter)
+    logger.addFilter(request_filter)
+
+    # Also attach to the web.* namespace so route/middleware loggers get it
+    web_logger = logging.getLogger("web")
+    web_logger.addFilter(request_filter)
 
     log_format = os.environ.get("TELEMETRY_LOG_FORMAT", "").lower()
 
     if log_format == "json":
         json_formatter = JsonFormatter()
-        # Apply to existing handlers
-        for handler in root.handlers:
-            handler.setFormatter(json_formatter)
-        # If no handlers exist yet, add a StreamHandler
-        if not root.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(json_formatter)
-            root.addHandler(handler)
+        for target in (logger, web_logger):
+            for handler in target.handlers:
+                handler.setFormatter(json_formatter)
+            if not target.handlers:
+                handler = logging.StreamHandler()
+                handler.setFormatter(json_formatter)
+                target.addHandler(handler)
     else:
         # Human-readable format with request context
         human_format = (
@@ -124,10 +127,11 @@ def setup_logging(app: Flask) -> None:
             "[%(request_id)s] %(name)s: %(message)s"
         )
         formatter = logging.Formatter(human_format)
-        if root.handlers:
-            for handler in root.handlers:
+        for target in (logger, web_logger):
+            if target.handlers:
+                for handler in target.handlers:
+                    handler.setFormatter(formatter)
+            else:
+                handler = logging.StreamHandler()
                 handler.setFormatter(formatter)
-        else:
-            handler = logging.StreamHandler()
-            handler.setFormatter(formatter)
-            root.addHandler(handler)
+                target.addHandler(handler)
