@@ -30,12 +30,16 @@ function normalizeRoute(route) {
   return cleaned || '/';
 }
 
+function stripRouteGroups(route) {
+  return route.replace(/\/\([^/]+\)/g, '');
+}
+
 function collectRoutes() {
   const pages = walk(appDir, (filePath) => filePath.endsWith('page.tsx'));
   return pages.map((pagePath) => {
     const relative = path.relative(appDir, pagePath).replace(/\\/g, '/');
     const withoutPage = relative.replace(/\/page\.tsx$/, '').replace(/^page\.tsx$/, '');
-    const route = `/${withoutPage}`;
+    const route = stripRouteGroups(`/${withoutPage}`);
     return normalizeRoute(route);
   });
 }
