@@ -102,7 +102,7 @@
     <details class="danger-zone">
         <summary class="btn btn-ghost btn-sm text-red">Delete Kart</summary>
         <form method="POST" action="{{ url_for('karts.remove_kart', kart_id=kart.kart_id) }}"
-              class="inline-form" style="margin-top:0.5rem;"
+              class="inline-form mt-sm"
               data-confirm="Delete kart '{{ kart.kart_name }}'? Sessions will be unlinked but not deleted.">
             <p class="text-muted text-sm">
                 Sessions will be unlinked but not deleted.
