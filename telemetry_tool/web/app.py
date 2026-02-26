@@ -209,6 +209,11 @@ def create_app(config: Config | None = None) -> Flask:
             from .middleware.tenant import tenant_middleware
             app.before_request(tenant_middleware)
             logger.debug("Registered tenant middleware")
+            from .routes.workspaces import bp as workspaces_bp
+            from .routes.teams import bp as teams_bp
+            app.register_blueprint(workspaces_bp)
+            app.register_blueprint(teams_bp)
+            logger.debug("Registered workspace and team blueprints")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
