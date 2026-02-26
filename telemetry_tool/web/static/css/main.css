@@ -5366,17 +5366,19 @@ details > summary:hover {
     outline-offset: 2px;
 }
 
-.btn:focus-visible {
+.btn:focus-visible,
+.card--interactive:focus-visible,
+.chart-frame:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
-    box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 4px var(--accent-dim);
 }
 
 .form-input:focus-visible,
 .form-select:focus-visible {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .nav-dropdown-item:focus-visible {
@@ -5413,7 +5415,7 @@ details > summary:hover {
 .file-row:focus-visible {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.3);
+    box-shadow: 0 0 0 2px var(--accent-dim);
 }
 
 /* Link focus inside cards */
@@ -5426,7 +5428,7 @@ a:focus-visible {
 /* Analytics tool cards focus */
 .analytics-tool-link:focus-visible .analytics-tool-card {
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 .analytics-tool-link:focus-visible {
@@ -5436,7 +5438,7 @@ a:focus-visible {
 /* Compare column focus (for keyboard navigation) */
 .compare-column:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
     border-color: var(--accent);
 }
 
@@ -5454,27 +5456,27 @@ a:focus-visible {
 /* Insight box focus */
 .insight-box:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 /* Stat card focus */
 .stat-card:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
     border-color: var(--accent);
 }
 
 /* Template card focus (dev plan) */
 .template-card:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
     border-color: var(--accent);
 }
 
 /* Annotation card focus */
 .annotation-card:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 /* Wizard step button focus */
@@ -5500,14 +5502,14 @@ a:focus-visible {
 textarea:focus-visible {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 /* Select (non-form-select) focus */
 select:focus-visible {
     outline: none;
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-dim);
 }
 
 /* Range slider focus */
@@ -5516,7 +5518,7 @@ input[type="range"]:focus-visible {
 }
 
 input[type="range"]:focus-visible::-webkit-slider-thumb {
-    box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.3);
+    box-shadow: 0 0 0 4px var(--accent-dim);
 }
 
 /* ── Button press effect ─────────────── */
