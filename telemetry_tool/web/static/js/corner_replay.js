@@ -10,6 +10,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var _sessionId = null;
     var _initialized = false;
 
@@ -28,15 +30,18 @@
         lapTimes: {},
         bestLapNum: null,
         allLaps: [],          // sorted lap numbers
+        hasPedalData: false,  // true only when CSV had real brake/throttle
+        hasSteeringData: false,
     };
 
     var _rafId = null;
     var _lastFrameTime = 0;
 
-    // Corner window padding in index points (approx 50m before/after brake point)
-    var CORNER_WINDOW_PAD = 80;
+    // Corner window padding in index points (approx 80m before/after key corner)
+    var CORNER_WINDOW_PAD = 120;
 
-    window.CornerReplay = { init: init };
+    window.CornerReplay = { init: init, destroy: destroy };
+    window.ModuleManager.register('corner_replay', { init: function() {}, destroy: destroy });
 
     function init(sessionId) {
         if (_initialized) return;
@@ -99,10 +104,25 @@
                 }
 
                 _state.traces = data.traces;
-                _state.cornerPositions = data.corner_positions || [];
                 _state.cornerMetrics = data.corner_metrics || {};
                 _state.lapTimes = data.lap_times || {};
                 _state.bestLapNum = data.best_lap_number;
+                _state.hasPedalData = !!data.has_pedal_data;
+                _state.hasSteeringData = !!data.has_steering_data;
+
+                // Calibrate brake/throttle bars to session peaks
+                var peakBrake = 0, peakThrottle = 0;
+                Object.keys(data.traces).forEach(function (ln) {
+                    var pts = data.traces[ln];
+                    for (var i = 0; i < pts.length; i++) {
+                        var al = pts[i].accel_long || 0;
+                        if (-al > peakBrake) peakBrake = -al;
+                        if (al > peakThrottle) peakThrottle = al;
+                    }
+                });
+                if (peakBrake > 0 || peakThrottle > 0) {
+                    CornerReplayCockpit.setSessionPeaks(peakBrake, peakThrottle);
+                }
 
                 // Build sorted lap list
                 _state.allLaps = Object.keys(data.traces).map(Number).sort(function (a, b) {
@@ -115,13 +135,6 @@
                 Object.keys(_state.traces).forEach(function (ln) {
                     CornerReplayMap.setTrace(parseInt(ln, 10), _state.traces[ln]);
                 });
-                CornerReplayMap.setCorners(_state.cornerPositions);
-
-                // No corners? Hide
-                if (_state.cornerPositions.length === 0) {
-                    _hideSection();
-                    return;
-                }
 
                 // Set defaults — ensure lapA is a lap that actually has trace data
                 var bestInTraces = _state.traces[String(_state.bestLapNum)]
@@ -132,20 +145,8 @@
                     : _state.allLaps[0];
                 _state.top3Laps = _state.allLaps.slice(0, 3);
 
-                // Merge corner labels from key corners if available
-                _mergeCornerLabels();
-
-                // Setup controls
-                CornerReplayControls.setCorners(_state.cornerPositions);
-                CornerReplayControls.setLaps(
-                    _state.allLaps, _state.lapTimes, _state.lapA
-                );
-
-                // Select first corner
-                _selectCornerByIndex(0);
-
-                // Initial render
-                _renderFrame();
+                // Use ONLY user-defined key corners (not auto-detected)
+                _loadKeyCorners(data.corner_positions || []);
             })
             .catch(function (err) {
                 _hideSection();
@@ -153,9 +154,9 @@
 
         // Resize handler
         var _resizeTimer;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_resizeTimer);
-            _resizeTimer = setTimeout(function () {
+            _resizeTimer = _lc.addTimer(function () {
                 if (_initialized) _renderFrame();
             }, 150);
         });
@@ -221,8 +222,8 @@
     }
 
     function _animate() {
-        _rafId = requestAnimationFrame(function (now) {
-            if (!_state.playing) return;
+        _rafId = _lc.addRaf(function (now) {
+            if (!_state.playing) { _rafId = null; return; }
 
             var dt = (now - _lastFrameTime) / 1000; // seconds
             _lastFrameTime = now;
@@ -274,14 +275,14 @@
         CornerReplayControls.setPlaying(false);
         CornerReplayControls.setProgress(0);
 
-        // Compute corner window from brake point distance
-        var bpDist = corner.brake_point_m;
+        // Compute corner window from distance along track
+        var bpDist = corner.brake_point_m || corner.dist_m || 0;
         var trace = _state.traces[String(_state.lapA)] ||
             _state.traces[Object.keys(_state.traces)[0]];
         if (!trace || !trace.distances) return;
 
         var dists = trace.distances;
-        // Find index closest to brake_point_m
+        // Find index closest to the corner's distance
         var centerIdx = _bisect(dists, bpDist);
 
         var startIdx = Math.max(0, centerIdx - CORNER_WINDOW_PAD);
@@ -393,6 +394,7 @@
             cornerName: cornerLabel,
             lapLabel: 'Lap ' + lapA,
             refSpeed: _getRefSpeed(bestLap, cw, p),
+            showPedals: _state.hasPedalData,
         });
     }
 
@@ -412,9 +414,11 @@
 
         CornerReplayCockpit.renderCompact('cr-cockpit-a', dataA, {
             lapLabel: 'Lap ' + lapA,
+            showPedals: _state.hasPedalData,
         });
         CornerReplayCockpit.renderCompact('cr-cockpit-b', dataB, {
             lapLabel: 'Lap ' + lapB,
+            showPedals: _state.hasPedalData,
         });
 
         // Update split labels
@@ -507,28 +511,83 @@
         return 'Corner ' + cornerId;
     }
 
-    function _mergeCornerLabels() {
-        // Try to fetch key corner labels from track
+    /**
+     * Load user-defined key corners from the track DB.
+     * Falls back to auto-detected corners only if no key corners are defined.
+     * @param {Array} autoCorners - auto-detected corner_positions from API
+     */
+    function _loadKeyCorners(autoCorners) {
         var T = window.TELEMETRY || {};
-        if (!T.trackId) return;
+        if (!T.trackId) {
+            // No track — fall back to auto-detected
+            _applyCorners(autoCorners);
+            return;
+        }
 
         FetchHelper.fetch('/api/track/' + encodeURIComponent(T.trackId) + '/key-corners')
-            .then(function (data) {
-                if (!Array.isArray(data)) return;
-                var labelMap = {};
-                data.forEach(function (k) {
-                    if (k.label) labelMap[k.corner_id] = k.label;
-                });
-                _state.cornerPositions.forEach(function (c) {
-                    if (labelMap[c.corner_id]) c.label = labelMap[c.corner_id];
-                });
-                // Refresh corner pills with labels
-                CornerReplayControls.setCorners(_state.cornerPositions);
-                // Re-select current corner
-                var idx = CornerReplayControls.getActiveCornerIdx();
-                _selectCornerByIndex(idx);
+            .then(function (keyCorners) {
+                if (Array.isArray(keyCorners) && keyCorners.length > 0) {
+                    // Convert key corner format to corner_positions format
+                    var positions = keyCorners.map(function (kc) {
+                        return {
+                            corner_id: kc.corner_id,
+                            label: kc.label || ('P' + kc.corner_id),
+                            lat: kc.lat,
+                            lon: kc.lon,
+                            brake_point_m: kc.dist_m || 0,
+                            dist_m: kc.dist_m || 0,
+                        };
+                    });
+                    _applyCorners(positions);
+                } else {
+                    // No user-defined corners — show prompt
+                    _showNoCorners();
+                }
             })
-            .catch(function () { /* labels are optional */ });
+            .catch(function () {
+                // API error — show prompt
+                _showNoCorners();
+            });
+    }
+
+    /**
+     * Apply corner positions and finish bootstrap.
+     */
+    function _applyCorners(positions) {
+        _state.cornerPositions = positions;
+        CornerReplayMap.setCorners(positions);
+
+        if (positions.length === 0) {
+            _showNoCorners();
+            return;
+        }
+
+        CornerReplayControls.setCorners(positions);
+        CornerReplayControls.setLaps(
+            _state.allLaps, _state.lapTimes, _state.lapA
+        );
+
+        _selectCornerByIndex(0);
+        _renderFrame();
+    }
+
+    /**
+     * Show a message when no user-defined corners exist.
+     */
+    function _showNoCorners() {
+        var pills = document.getElementById('cr-corner-pills');
+        if (pills) {
+            while (pills.firstChild) pills.removeChild(pills.firstChild);
+            var msg = document.createElement('span');
+            msg.className = 'text-muted text-sm';
+            msg.style.padding = '4px 8px';
+            msg.textContent = 'Define key corners in the section below to enable replay';
+            pills.appendChild(msg);
+        }
+        // Still show laps even without corners
+        CornerReplayControls.setLaps(
+            _state.allLaps, _state.lapTimes, _state.lapA
+        );
     }
 
     function _updateTop3Legend() {
@@ -575,6 +634,15 @@
     function _hideSection() {
         var root = document.getElementById('corner-replay-root');
         if (root) root.classList.add('cr-hidden');
+    }
+
+    function destroy() {
+        _state.playing = false;
+        _initialized = false;
+        _lc.destroyAll();
+        _state.traces = {};
+        _state.cornerMetrics = {};
+        _state.lapTimes = {};
     }
 
     // ── Auto-init on DOMContentLoaded ─────────────────
