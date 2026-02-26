@@ -20,6 +20,14 @@ function parseAttribution(request: NextRequest): Record<string, string> {
 }
 
 export function middleware(request: NextRequest) {
+  // Protect /app/* routes — redirect to login if no access token
+  if (request.nextUrl.pathname.startsWith('/app')) {
+    const token = request.cookies.get('access_token');
+    if (!token?.value) {
+      return NextResponse.redirect(new URL('/login', request.url));
+    }
+  }
+
   const response = NextResponse.next();
 
   if (!request.cookies.get('lap_session_id')?.value) {
