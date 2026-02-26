@@ -38,22 +38,22 @@
 <!-- Driver Progress Tracking -->
 <section class="section" id="progress-section" style="display:none;">
     <h2>Driver Progress</h2>
-    <div id="progress-stats" style="display:flex;flex-wrap:wrap;gap:0.6rem;margin-bottom:1rem;"></div>
-    <div style="margin-bottom:1rem;">
-        <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Best Lap Time Trend</div>
+    <div id="progress-stats" class="flex flex-wrap gap-sm mb-md"></div>
+    <div class="mb-md">
+        <div class="text-xs text-secondary mb-xs" style="text-transform:uppercase;">Best Lap Time Trend</div>
         <canvas id="progress-canvas" aria-label="Best lap time trend chart"></canvas>
     </div>
-    <div style="margin-bottom:1rem;">
-        <div style="font-size:0.75rem;color:var(--text-secondary);text-transform:uppercase;margin-bottom:0.3rem;">Score Trend</div>
+    <div class="mb-md">
+        <div class="text-xs text-secondary mb-xs" style="text-transform:uppercase;">Score Trend</div>
         <canvas id="score-canvas" aria-label="Score trend chart"></canvas>
     </div>
-    <div id="progress-sessions" style="margin-bottom:1rem;"></div>
+    <div id="progress-sessions" class="mb-md"></div>
 </section>
 
 <!-- Session Drill Suggestions -->
 <section class="section" id="drill-section" style="display:none;">
     <h2>Suggested Drills <span id="drill-count" class="count-badge hidden">0</span></h2>
-    <p style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.8rem;">Based on your most recent session analysis</p>
+    <p class="text-sm text-secondary mb-sm">Based on your most recent session analysis</p>
     <div id="drill-suggestions"></div>
 </section>
 

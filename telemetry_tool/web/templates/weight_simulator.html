@@ -21,7 +21,7 @@
             <select id="ws-driver" class="form-control" style="max-width:300px;">
                 <option value="">— Manual entry —</option>
             </select>
-            <span class="form-hint" id="ws-driver-hint" style="font-size:0.75rem;color:var(--text-secondary);"></span>
+            <span class="form-hint text-xs text-secondary" id="ws-driver-hint"></span>
         </div>
 
         <div class="form-group">
@@ -43,22 +43,22 @@
             </select>
         </div>
 
-        <h3 style="margin-top:1.5rem;">Weight Change</h3>
+        <h3 class="mt-lg">Weight Change</h3>
         <div class="form-group">
             <label for="ws-delta">Weight Delta (kg) — positive = heavier, negative = lighter</label>
             <input type="range" id="ws-delta" min="-30" max="30" value="5" step="0.5"
                    style="width:100%;" oninput="document.getElementById('ws-delta-val').textContent = this.value + ' kg'">
-            <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--text-secondary);">
+            <div class="flex justify-between text-sm text-secondary">
                 <span>-30 kg</span>
-                <strong id="ws-delta-val" style="color:var(--accent);">5 kg</strong>
+                <strong id="ws-delta-val" class="text-accent">5 kg</strong>
                 <span>+30 kg</span>
             </div>
         </div>
 
-        <button id="ws-simulate-btn" class="btn btn-primary" style="width:100%;margin-top:1rem;">Simulate Weight Change</button>
+        <button id="ws-simulate-btn" class="btn btn-primary w-full mt-md">Simulate Weight Change</button>
 
-        <h3 style="margin-top:2rem;">Multi-Scenario Comparison</h3>
-        <button id="ws-scenarios-btn" class="btn btn-secondary" style="width:100%;">Compare -10, -5, 0, +5, +10 kg</button>
+        <h3 class="mt-xl">Multi-Scenario Comparison</h3>
+        <button id="ws-scenarios-btn" class="btn btn-secondary w-full">Compare -10, -5, 0, +5, +10 kg</button>
     </section>
 
     <!-- Results Panel -->

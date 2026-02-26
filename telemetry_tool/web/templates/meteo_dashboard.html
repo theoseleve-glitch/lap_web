@@ -18,7 +18,7 @@
             <option value="">-- Select a track --</option>
         </select>
     </div>
-    <div style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center;">
+    <div class="flex flex-wrap items-center gap-sm">
         <button id="meteo-current-btn" class="btn btn-primary" disabled>Get Current Weather</button>
         <button id="meteo-forecast-btn" class="btn btn-secondary" disabled>12h Forecast</button>
         <label class="toggle-label" style="display:inline-flex;align-items:center;gap:0.4rem;margin-left:0.5rem;font-size:0.85rem;cursor:pointer;">
@@ -31,7 +31,7 @@
             <option value="300" selected>5 min</option>
             <option value="600">10 min</option>
         </select>
-        <span id="meteo-countdown" style="font-size:0.8rem;color:var(--text-secondary);min-width:100px;display:none;"></span>
+        <span id="meteo-countdown" class="text-sm text-secondary" style="min-width:100px;display:none;"></span>
     </div>
 </section>
 
@@ -59,8 +59,8 @@
 <!-- Lap Time Impact Panel -->
 <section class="section" id="meteo-pace-section" style="display:none;">
     <h2>Lap Time Impact</h2>
-    <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;margin-bottom:1rem;">
-        <div class="form-group" style="margin-bottom:0;">
+    <div class="flex flex-wrap items-end gap-sm mb-md">
+        <div class="form-group mb-0">
             <label for="meteo-driver">Driver</label>
             <select id="meteo-driver" class="form-control" style="max-width:250px;">
                 <option value="">-- Select driver --</option>
@@ -77,8 +77,8 @@
 <!-- Historical Weather -->
 <section class="section">
     <h2>Historical Weather</h2>
-    <div style="display:flex;gap:0.5rem;align-items:flex-end;flex-wrap:wrap;">
-        <div class="form-group" style="margin-bottom:0;">
+    <div class="flex flex-wrap items-end gap-sm">
+        <div class="form-group mb-0">
             <label for="meteo-hist-date">Date</label>
             <input type="date" id="meteo-hist-date" class="form-control" style="max-width:200px;">
         </div>
