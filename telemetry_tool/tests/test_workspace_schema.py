@@ -1,4 +1,4 @@
-"""Tests for workspace/tenancy schema migrations (004-007)."""
+"""Tests for workspace/tenancy schema migrations (004-008)."""
 import importlib.util
 import sys
 from pathlib import Path
@@ -84,3 +84,18 @@ class TestMigration007:
         m005 = _load_migration("005_add_workspace_id.py")
         m007 = _load_migration("007_enable_rls.py")
         assert m007.TENANT_TABLES == m005.TENANT_TABLES
+
+
+class TestMigration008:
+    def test_migration_008_exists(self):
+        assert (_VERSIONS / "008_workspace_unique_constraints.py").exists()
+
+    def test_revision_chain(self):
+        mod = _load_migration("008_workspace_unique_constraints.py")
+        assert mod.revision == "008"
+        assert mod.down_revision == "007"
+
+    def test_has_upgrade_downgrade(self):
+        mod = _load_migration("008_workspace_unique_constraints.py")
+        assert callable(getattr(mod, "upgrade", None))
+        assert callable(getattr(mod, "downgrade", None))
