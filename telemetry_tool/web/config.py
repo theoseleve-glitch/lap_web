@@ -48,6 +48,15 @@ class Config:
         "postgresql://telemetry:telemetry@localhost:5432/telemetry",
     )
 
+    # Redis (Celery broker + result backend + pipeline context)
+    REDIS_URL: str = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+
+    # Celery
+    CELERY_BROKER_URL: str = os.environ.get(
+        "CELERY_BROKER_URL", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+    CELERY_RESULT_BACKEND: str = os.environ.get(
+        "CELERY_RESULT_BACKEND", os.environ.get("REDIS_URL", "redis://localhost:6379/0"))
+
     # Authentication
     AUTH_REQUIRED: bool = os.environ.get("AUTH_REQUIRED", "0") == "1"
     JWT_SECRET: str = os.environ.get(
