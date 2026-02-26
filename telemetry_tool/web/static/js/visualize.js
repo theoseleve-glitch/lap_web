@@ -1125,8 +1125,8 @@
                 if (!d || !d.accel_lat || !d.accel_long) return;
                 for (var i = 0; i < d.accel_lat.length; i++) {
                     if (d.accel_lat[i] === null || d.accel_long[i] === null) continue;
-                    var px = p.cx + (d.accel_lat[i] / 9.81) * p.scale;
-                    var py = p.cy - (d.accel_long[i] / 9.81) * p.scale;
+                    var px = p.cx + (d.accel_lat[i]) * p.scale;
+                    var py = p.cy - (d.accel_long[i]) * p.scale;
                     var dx = px - mx, dy = py - my;
                     var dd = dx * dx + dy * dy;
                     if (dd < bestD2) { bestD2 = dd; bestLap = lapNum; bestIdx = i; }
@@ -1156,8 +1156,8 @@
                 if (!d || !d.accel_lat || !d.accel_long || !d.distances) { idx++; return; }
                 var ci = closestDistIdx(d.distances, distM);
                 if (ci < 0 || d.accel_lat[ci] === null || d.accel_long[ci] === null) { idx++; return; }
-                var px = p.cx + (d.accel_lat[ci] / 9.81) * p.scale;
-                var py = p.cy - (d.accel_long[ci] / 9.81) * p.scale;
+                var px = p.cx + (d.accel_lat[ci]) * p.scale;
+                var py = p.cy - (d.accel_long[ci]) * p.scale;
                 var col = lapColor(idx);
                 // Crosshair lines through point
                 ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
@@ -1182,8 +1182,8 @@
                 ctx.lineWidth = 2;
                 ctx.stroke();
                 // G-value label
-                var gLat = (d.accel_lat[ci] / 9.81).toFixed(2);
-                var gLong = (d.accel_long[ci] / 9.81).toFixed(2);
+                var gLat = (d.accel_lat[ci]).toFixed(2);
+                var gLong = (d.accel_long[ci]).toFixed(2);
                 var lblX = px + 10;
                 var lblY = py - 22;
                 if (lblX + 85 > p.w) lblX = px - 95;

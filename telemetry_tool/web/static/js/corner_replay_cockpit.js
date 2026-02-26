@@ -4,9 +4,9 @@
  * Renders: speedometer arc gauge, vertical brake/throttle bars,
  * mini G-force ball, and corner info overlay.
  *
- * Brake/throttle derived from accel_long:
- *   brake   = clamp(-accel_long / 12, 0, 1)
- *   throttle = clamp(accel_long / 8, 0, 1)
+ * Brake/throttle derived from accel_long (values in G):
+ *   brake   = clamp(-accel_long / peakBrake, 0, 1)
+ *   throttle = clamp(accel_long / peakThrottle, 0, 1)
  *
  * Public API:
  *   window.CornerReplayCockpit.init(canvasId)
@@ -23,8 +23,8 @@
         textSecondary: '#aaa', textMuted: '#777', accent: '#f97316',
     };
 
-    var MAX_BRAKE_G = 12.0;    // m/s^2 default for full brake bar
-    var MAX_THROTTLE_G = 8.0;  // m/s^2 default for full throttle bar
+    var MAX_BRAKE_G = 1.2;     // G default for full brake bar (values stored in G)
+    var MAX_THROTTLE_G = 0.8;  // G default for full throttle bar (values stored in G)
     var MAX_SPEED_KPH = 120;   // speedometer max for karts
 
     // Session-peak calibration: set by setSessionPeaks() so bars hit 100%
@@ -328,10 +328,9 @@
         ctx.lineWidth = 0.5;
         ctx.stroke();
 
-        // G-ball position
-        // accel_lat is in m/s2, convert to G and normalize
-        var gLat = (accelLat || 0) / 9.81;   // convert to G
-        var gLong = (accelLong || 0) / 9.81;
+        // G-ball position (values already in G from DB)
+        var gLat = accelLat || 0;
+        var gLong = accelLong || 0;
 
         var dotX = cx + (gLat / maxG) * r * 0.85;
         var dotY = cy - (gLong / maxG) * r * 0.85;  // negative because Y is inverted

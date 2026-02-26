@@ -49,6 +49,7 @@
 /* ── Smooth scroll ──────────────────────── */
 html {
     scroll-behavior: smooth;
+    color-scheme: dark;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1912,6 +1913,13 @@ a:hover {
     background-repeat: no-repeat;
     background-position: right 0.75rem center;
     padding-right: 2rem;
+}
+
+/* Select option items — force dark background so text is readable on Windows */
+select option,
+.form-select option {
+    background: #1c2128;
+    color: #e6edf3;
 }
 
 /* Textarea specific */
@@ -8424,6 +8432,16 @@ input[type="number"]:focus::-webkit-outer-spin-button {
     text-align: right;
     font-variant-numeric: tabular-nums;
     font-family: var(--font-mono);
+}
+
+/* Ensure numeric headers also right-align (overrides .data-table th text-align:left) */
+.data-table th.col-numeric {
+    text-align: right;
+}
+
+/* Match th padding with compact td padding so columns align */
+.data-table.compact th {
+    padding: 0.55rem 0.75rem;
 }
 
 /* ══════════════════════════════════════════

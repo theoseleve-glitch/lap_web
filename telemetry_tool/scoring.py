@@ -1521,35 +1521,42 @@ def score_session_phase_aware(
 
                     if "consistency" in result.get("sub_scores", {}):
                         old_cons = result["sub_scores"]["consistency"]["score"]
-                        result["sub_scores"]["consistency"]["score"] = _adj_cons_score
-                        pct = _adj_cons_score / MAX_CONSISTENCY * 100.0 if MAX_CONSISTENCY > 0 else 0
-                        result["sub_scores"]["consistency"]["pct"] = round(pct, 2)
-                        result["sub_scores"]["consistency"]["detail"] = _adj_cons_detail
-                        result["sub_scores"]["consistency"]["detail"]["detrended"] = True
-                        result["sub_scores"]["consistency"]["detail"]["raw_cv_pct"] = detrend_result["raw_cv_pct"]
-                        result["sub_scores"]["consistency"]["detail"]["adjusted_cv_pct"] = adj_cv
+                        # Only apply detrended score if it actually helps the driver
+                        if _adj_cons_score <= old_cons:
+                            logger.info(
+                                "Detrended consistency %.2f <= raw %.2f; keeping raw score",
+                                _adj_cons_score, old_cons,
+                            )
+                        else:
+                            result["sub_scores"]["consistency"]["score"] = _adj_cons_score
+                            pct = _adj_cons_score / MAX_CONSISTENCY * 100.0 if MAX_CONSISTENCY > 0 else 0
+                            result["sub_scores"]["consistency"]["pct"] = round(pct, 2)
+                            result["sub_scores"]["consistency"]["detail"] = _adj_cons_detail
+                            result["sub_scores"]["consistency"]["detail"]["detrended"] = True
+                            result["sub_scores"]["consistency"]["detail"]["raw_cv_pct"] = detrend_result["raw_cv_pct"]
+                            result["sub_scores"]["consistency"]["detail"]["adjusted_cv_pct"] = adj_cv
 
-                        # Recompute total score
+                            # Recompute total score
 
-                        new_total = sum(
-                            result["sub_scores"][cat]["score"]
-                            for cat in ("pace", "consistency", "execution", "robustness")
-                            if cat in result["sub_scores"]
-                        )
-                        new_total = _apply_confidence(
-                            new_total, result.get("data_confidence", 1.0),
-                        )
-                        if math.isnan(new_total):
-                            new_total = result["total_score"]
-                        result["total_score"] = round(min(100.0, max(0.0, new_total)), 4)
-                        result["grade"] = _assign_grade(result["total_score"])
+                            new_total = sum(
+                                result["sub_scores"][cat]["score"]
+                                for cat in ("pace", "consistency", "execution", "robustness")
+                                if cat in result["sub_scores"]
+                            )
+                            new_total = _apply_confidence(
+                                new_total, result.get("data_confidence", 1.0),
+                            )
+                            if math.isnan(new_total):
+                                new_total = result["total_score"]
+                            result["total_score"] = round(min(100.0, max(0.0, new_total)), 4)
+                            result["grade"] = _assign_grade(result["total_score"])
 
-                        logger.info(
-                            "Detrended consistency: raw_cv=%.2f%% adj_cv=%.2f%% "
-                            "cons_score %.2f -> %.2f",
-                            detrend_result["raw_cv_pct"], adj_cv,
-                            old_cons, _adj_cons_score,
-                        )
+                            logger.info(
+                                "Detrended consistency: raw_cv=%.2f%% adj_cv=%.2f%% "
+                                "cons_score %.2f -> %.2f",
+                                detrend_result["raw_cv_pct"], adj_cv,
+                                old_cons, _adj_cons_score,
+                            )
         except ImportError:
             logger.debug("features module unavailable for detrended consistency")
         except Exception as _dt_err:

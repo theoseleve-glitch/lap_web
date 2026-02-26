@@ -27,6 +27,17 @@
     var _corners = [];     // [ { corner_id, lat, lon, brake_point_m } ]
     var _fullProjection = null;  // projection for full track
 
+    // User zoom/pan state
+    var _zoom = 1.0;       // 1.0 = default corner-focused view
+    var _panX = 0;         // pixel offset
+    var _panY = 0;
+    var _dragging = false;
+    var _dragStartX = 0;
+    var _dragStartY = 0;
+    var _dragPanStartX = 0;
+    var _dragPanStartY = 0;
+    var _eventsAttached = false;
+
     var DOT_COLORS = {
         white: '#ffffff',
         green: '#3fb950',
@@ -51,6 +62,68 @@
         _canvas = document.getElementById(canvasId);
         if (!_canvas) return;
         _ctx = _canvas.getContext('2d');
+        _attachZoomPan();
+    }
+
+    function _attachZoomPan() {
+        if (_eventsAttached || !_canvas) return;
+        _eventsAttached = true;
+
+        // Mouse wheel zoom
+        _lc.addListener(_canvas, 'wheel', function (e) {
+            e.preventDefault();
+            var rect = _canvas.getBoundingClientRect();
+            var mx = e.clientX - rect.left;
+            var my = e.clientY - rect.top;
+
+            var oldZoom = _zoom;
+            var factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            _zoom = Math.max(0.3, Math.min(10, _zoom * factor));
+
+            // Zoom toward mouse cursor
+            var ratio = _zoom / oldZoom;
+            _panX = mx - ratio * (mx - _panX);
+            _panY = my - ratio * (my - _panY);
+
+            _triggerRedraw();
+        }, { passive: false });
+
+        // Drag to pan
+        _lc.addListener(_canvas, 'mousedown', function (e) {
+            if (e.button !== 0) return;
+            _dragging = true;
+            _dragStartX = e.clientX;
+            _dragStartY = e.clientY;
+            _dragPanStartX = _panX;
+            _dragPanStartY = _panY;
+            _canvas.style.cursor = 'grabbing';
+        });
+
+        _lc.addListener(window, 'mousemove', function (e) {
+            if (!_dragging) return;
+            _panX = _dragPanStartX + (e.clientX - _dragStartX);
+            _panY = _dragPanStartY + (e.clientY - _dragStartY);
+            _triggerRedraw();
+        });
+
+        _lc.addListener(window, 'mouseup', function () {
+            if (_dragging) {
+                _dragging = false;
+                if (_canvas) _canvas.style.cursor = '';
+            }
+        });
+
+        // Double-click to reset zoom
+        _lc.addListener(_canvas, 'dblclick', function () {
+            _zoom = 1.0;
+            _panX = 0;
+            _panY = 0;
+            _triggerRedraw();
+        });
+    }
+
+    function _triggerRedraw() {
+        if (_canvas && _canvas.__redraw) _canvas.__redraw();
     }
 
     function setTrace(lapNum, traceData) {
@@ -60,6 +133,10 @@
 
     function setCorners(cornerPositions) {
         _corners = cornerPositions || [];
+        // Reset zoom/pan when corners change
+        _zoom = 1.0;
+        _panX = 0;
+        _panY = 0;
     }
 
     // ── Render modes ──────────────────────────────────
@@ -182,6 +259,7 @@
     /**
      * Build a projection focused on a corner window region.
      * Shows the entire track faintly but zooms into the corner area.
+     * Applies user zoom/pan on top.
      */
     function _cornerProjection(dims, cornerWindow, primaryLap) {
         var trace = _traces[String(primaryLap)];
@@ -189,7 +267,6 @@
 
         var lats = trace.latitudes;
         var lons = trace.longitudes;
-        var dists = trace.distances;
 
         // Find corner region GPS bounds (with padding)
         var startIdx = cornerWindow.startIdx;
@@ -229,18 +306,26 @@
 
         var scaleX = plotW / Math.max(rangeX, 1);
         var scaleY = plotH / Math.max(rangeY, 1);
-        var scale = Math.min(scaleX, scaleY) * 0.90;
+        var baseScale = Math.min(scaleX, scaleY) * 0.90;
 
-        var offsetX = pad + (plotW - rangeX * scale) / 2;
-        var offsetY = pad + (plotH - rangeY * scale) / 2;
+        // Apply user zoom
+        var scale = baseScale * _zoom;
+
+        // Base center point (before pan)
+        var baseCX = pad + plotW / 2;
+        var baseCY = pad + plotH / 2;
+
+        // Center of geo region in meters
+        var geoCX = rangeX / 2;
+        var geoCY = rangeY / 2;
 
         return {
             toPixel: function (lat, lon) {
                 var mx = (lon - lonMin) * mPerDegLon;
                 var my = (lat - latMin) * mPerDegLat;
                 return {
-                    x: offsetX + mx * scale,
-                    y: offsetY + rangeY * scale - my * scale,
+                    x: baseCX + (mx - geoCX) * scale + _panX,
+                    y: baseCY + (geoCY - my) * scale + _panY,
                 };
             },
             latMin: latMin, latMax: latMax,
@@ -418,6 +503,11 @@
         _traces = {};
         _corners = [];
         _fullProjection = null;
+        _zoom = 1.0;
+        _panX = 0;
+        _panY = 0;
+        _eventsAttached = false;
+        _dragging = false;
     }
 
     window.ModuleManager.register('corner_replay_map', {

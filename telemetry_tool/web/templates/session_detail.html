@@ -133,7 +133,7 @@
 <div class="session-tabs" id="session-tabs" role="tablist" aria-label="Session detail tabs">
     <button type="button" class="session-tab active" data-tab="overview" role="tab" aria-selected="true" aria-controls="tab-overview" id="tab-btn-overview">Overview</button>
     <button type="button" class="session-tab" data-tab="corners" role="tab" aria-selected="false" aria-controls="tab-corners" id="tab-btn-corners">Corners & Coaching</button>
-    <button type="button" class="session-tab" data-tab="performance" role="tab" aria-selected="false" aria-controls="tab-performance" id="tab-btn-performance">Performance</button>
+    <button type="button" class="session-tab" data-tab="performance" role="tab" aria-selected="false" aria-controls="tab-performance" id="tab-btn-performance">Timeline</button>
     <button type="button" class="session-tab" data-tab="analytics" role="tab" aria-selected="false" aria-controls="tab-analytics" id="tab-btn-analytics">Analytics</button>
     <button type="button" class="session-tab" data-tab="data" role="tab" aria-selected="false" aria-controls="tab-data" id="tab-btn-data">Lap Data</button>
     <button type="button" class="focus-tab-btn" id="focus-tab-btn" title="Focus Mode (F)">&#x229E;</button>
@@ -428,68 +428,11 @@
      ═══════════════════════════════════════════════════ -->
 <div class="tab-panel" id="tab-performance" role="tabpanel" aria-labelledby="tab-btn-performance">
 
-<!-- Stint Analysis (race/sprint/endurance only) -->
-<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
-    <h2>Stint Analysis <span class="tip tip-bottom tip-wrap" data-tip="Breaks your session into stints based on pace drops. Shows pace fade %, tyre cliff detection, and per-stint coaching.">(i)</span> <button class="focus-expand-btn" data-tool="stint-analysis" title="Focus Mode">&#x26F6;</button></h2>
-    <div id="stint-analysis-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading stint data...</span></div>
-    </div>
-    <div class="chart-frame chart-container relative min-h-200" role="img" aria-label="Stint pace analysis chart">
-        <canvas id="stint-pace-chart" aria-label="Stint pace chart"></canvas>
-    </div>
-</section>
-
-<!-- Race Pace Simulator (non-race only) -->
-<section class="section" data-non-race-only="true">
-    <h2>Race Pace Simulator <span class="tip tip-bottom tip-wrap" data-tip="Simulate race outcomes using your session data. Define race parameters and driver factors, then click Simulate.">(i)</span></h2>
-    <div id="pace-simulator-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading simulator...</span></div>
-    </div>
-</section>
-
-<!-- Optimal Pit Window (race types only) -->
-<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
-    <h2>Optimal Pit Window <span class="tip tip-bottom tip-wrap" data-tip="Calculates the best lap range to pit based on stint degradation and pit loss time.">(i)</span></h2>
-    <div id="pit-window-container">
-        <div class="flex-wrap-start">
-            <canvas id="pit-window-chart" class="chart-canvas" aria-label="Optimal pit window chart"></canvas>
-            <div id="pit-window-stats" class="chart-sidebar">
-                <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading pit window analysis...</span></div>
-            </div>
-        </div>
-        <div id="pit-window-coaching" class="coaching-below"></div>
-    </div>
-</section>
-
-<!-- Tyre Performance (race types only) -->
-<section class="section stint-race-only" data-race-types="race,sprint,endurance,sprint_race,feature_race,endurance_race,endurance_stint,heat,final">
-    <h2>Tyre Performance <span class="tip tip-bottom tip-wrap" data-tip="Compares grip and pace across stint phases (early/mid/late) to reveal tyre compound behaviour.">(i)</span></h2>
-    <div id="tyre-analysis-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading tyre analysis...</span></div>
-    </div>
-</section>
-
-<!-- Driver Workload -->
-<section class="section">
-    <h2>Driver Workload <span class="tip tip-bottom tip-wrap" data-tip="Estimates physical and cognitive load per lap. Flags fatigue onset when complexity increases without pace improvement.">(i)</span></h2>
-    <div id="workload-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading workload data...</span></div>
-    </div>
-</section>
-
 <!-- Session Timeline -->
 <section class="section">
     <h2>Session Timeline <span class="tip tip-bottom tip-wrap" data-tip="Chronological view of key events — pace changes, incidents, pit stops — across the full session.">(i)</span></h2>
     <div id="session-timeline-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading timeline...</span></div>
-    </div>
-</section>
-
-<!-- Tire Degradation Analysis -->
-<section class="section" data-endurance-only="true">
-    <h2>Tire Degradation Analysis <span class="tip tip-bottom tip-wrap" data-tip="Analyses lap time trends to detect degradation rate, tyre cliff, and optimal stint length. Only available for 6h+ endurance sessions.">(i)</span></h2>
-    <div id="tire-deg-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing tire degradation...</span></div>
     </div>
 </section>
 
@@ -958,16 +901,11 @@
 <script src="{{ url_for('static', filename='js/consistency_heatmap.js') }}"></script>
 {% endif %}
 <script src="{{ url_for('static', filename='js/session_editor.js') }}"></script>
-<script src="{{ url_for('static', filename='js/stint_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/corner_mastery.js') }}"></script>
 
-<script src="{{ url_for('static', filename='js/pit_window_chart.js') }}"></script>
-<script src="{{ url_for('static', filename='js/pace_simulator.js') }}"></script>
 <script src="{{ url_for('static', filename='js/session_timeline.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sector_chart.js') }}"></script>
-<script src="{{ url_for('static', filename='js/tyre_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/summary_report.js') }}"></script>
-<script src="{{ url_for('static', filename='js/workload_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/session_badges.js') }}"></script>
 <script src="{{ url_for('static', filename='js/driving_style.js') }}"></script>
 <script src="{{ url_for('static', filename='js/lap_progress.js') }}"></script>
@@ -1017,52 +955,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     })();
 
-    // ── Race-only sections guard ─────────────────────
-    // Hide performance sections that only apply to race-type sessions
-    (function() {
-        var sessionType = {{ (session.session_type or 'practice')|tojson }};
-        var raceOnlySections = document.querySelectorAll('.stint-race-only');
-        raceOnlySections.forEach(function(sec) {
-            var allowedTypes = (sec.getAttribute('data-race-types') || '').split(',');
-            if (allowedTypes.indexOf(sessionType) === -1) {
-                sec.style.display = 'none';
-            }
-        });
-    })();
-
-    // ── Endurance 6h+ sections guard ─────────────────
-    // Hide sections that only apply to 6h+ endurance sessions
-    (function() {
-        var sessionType = {{ (session.session_type or 'practice')|tojson }};
-        var totalTime = {{ total_session_time|tojson }};
-        var ENDURANCE_TYPES = ['endurance', 'endurance_race', 'endurance_stint'];
-        var MIN_DURATION_S = 21600; // 6 hours
-
-        var enduranceSections = document.querySelectorAll('[data-endurance-only]');
-        enduranceSections.forEach(function(sec) {
-            var isEndurance = ENDURANCE_TYPES.indexOf(sessionType) !== -1;
-            var isLongEnough = totalTime >= MIN_DURATION_S;
-            if (!isEndurance || !isLongEnough) {
-                sec.style.display = 'none';
-            }
-        });
-    })();
-
-    // ── Non-race sections guard ──────────────────
-    // Hide sections that only apply to non-race sessions (e.g., simulator)
-    (function() {
-        var sessionType = {{ (session.session_type or 'practice')|tojson }};
-        var RACE_TYPES = ['race', 'sprint', 'endurance', 'sprint_race',
-                          'feature_race', 'endurance_race', 'endurance_stint',
-                          'heat', 'final'];
-
-        var nonRaceSections = document.querySelectorAll('[data-non-race-only]');
-        nonRaceSections.forEach(function(sec) {
-            if (RACE_TYPES.indexOf(sessionType) !== -1) {
-                sec.style.display = 'none';
-            }
-        });
-    })();
 
     // ── Responsive chart resize ──────────────────────
     // Debounced resize handler to redraw canvas charts when window resizes
@@ -1122,109 +1014,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 drillEl.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load drill suggestions.</div></div>';
             });
     })();
-
-    // ── Tire Degradation Analysis ──
-    (function() {
-        var el = document.getElementById('tire-deg-container');
-        if (!el) return;
-        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/tire-degradation')
-            .then(function(data) {
-                if (data.error) { el.innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>'; return; }
-                var html = '';
-                // Overall stats
-                var o = data.overall || {};
-                html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">';
-                html += _fitCard('Stints', (data.stints || []).length, 'var(--text-primary)');
-                html += _fitCard('Avg Deg', o.avg_degradation_rate ? o.avg_degradation_rate.toFixed(3) + ' s/lap' : '—', '#ff6384');
-                html += _fitCard('Opt Length', o.optimal_stint_length ? o.optimal_stint_length + ' laps' : '—', '#36a2eb');
-                html += _fitCard('Tire Life', o.tire_life && o.tire_life.estimated_laps_remaining ? o.tire_life.estimated_laps_remaining + ' laps' : '—', '#4caf50');
-                html += '</div>';
-                // Stints table
-                if (data.stints && data.stints.length > 0) {
-                    html += '<div style="max-height:200px;overflow-y:auto;"><table class="data-table compact striped"><thead><tr>';
-                    html += '<th>Stint</th><th>Laps</th><th>Avg Pace</th><th>Deg Rate</th><th>Cliff</th></tr></thead><tbody>';
-                    data.stints.forEach(function(st, i) {
-                        html += '<tr><td>' + (i + 1) + '</td>';
-                        html += '<td>' + (st.lap_start || '?') + '-' + (st.lap_end || '?') + ' (' + (st.n_laps || 0) + ')</td>';
-                        html += '<td>' + (st.avg_pace_s ? st.avg_pace_s.toFixed(3) + 's' : '—') + '</td>';
-                        html += '<td style="color:' + (st.degradation_rate_s_per_lap > 0.05 ? '#e74c3c' : st.degradation_rate_s_per_lap > 0.02 ? '#ff9800' : '#4caf50') + ';">';
-                        html += (st.degradation_rate_s_per_lap != null ? st.degradation_rate_s_per_lap.toFixed(3) + ' s/lap' : '—') + '</td>';
-                        html += '<td>' + (st.cliff_detected ? '<span style="color:#e74c3c;">Lap ' + st.cliff_lap + '</span>' : '<span style="color:#4caf50;">No</span>') + '</td></tr>';
-                    });
-                    html += '</tbody></table></div>';
-                }
-                // Coaching
-                if (data.coaching && data.coaching.length > 0) {
-                    html += '<div style="margin-top:0.6rem;">';
-                    data.coaching.forEach(function(tip) {
-                        html += '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:0.2rem;">• ' + esc(tip) + '</div>';
-                    });
-                    html += '</div>';
-                }
-                el.innerHTML = html;
-            })
-            .catch(function() { el.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load tire degradation data.</div></div>'; });
-    })();
-
-    // ── Driver Fitness & Endurance ──
-    (function() {
-        var el = document.getElementById('fitness-container');
-        if (!el) return;
-        FetchHelper.fetch('/api/session/' + encodeURIComponent(sid) + '/fitness')
-            .then(function(data) {
-                if (data.error) { el.innerHTML = '<div class="no-data"><div class="no-data-text">' + esc(data.error) + '</div></div>'; return; }
-                var html = '';
-                // Overall score
-                var fs = data.overall_fitness_score;
-                var fsCol = fs >= 80 ? '#4caf50' : fs >= 60 ? '#ff9800' : '#e74c3c';
-                html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.8rem;">';
-                html += _fitCard('Fitness', isFinite(fs) ? fs.toFixed(0) + '/100' : '—', fsCol);
-                // Sub-scores
-                var end = data.endurance || {};
-                var conc = data.concentration || {};
-                var react = data.reaction || {};
-                html += _fitCard('Endurance', isFinite(end.endurance_score) ? end.endurance_score.toFixed(0) : '—', '#36a2eb');
-                html += _fitCard('Concentration', isFinite(conc.concentration_score) ? conc.concentration_score.toFixed(0) : '—', '#9966ff');
-                html += _fitCard('Reaction', isFinite(react.reaction_score) ? react.reaction_score.toFixed(0) : '—', '#ff6384');
-                html += '</div>';
-                // Endurance details
-                if (end.pace_fade_pct !== undefined) {
-                    html += '<div style="font-size:0.8rem;margin-bottom:0.4rem;">';
-                    var fadeCol = Math.abs(end.pace_fade_pct) < 1 ? '#4caf50' : Math.abs(end.pace_fade_pct) < 3 ? '#ff9800' : '#e74c3c';
-                    html += 'Pace fade: <span style="color:' + fadeCol + ';font-weight:600;">' + end.pace_fade_pct.toFixed(2) + '%</span>';
-                    if (end.fatigue_onset_lap) html += ' | Fatigue onset: <span style="font-weight:600;">Lap ' + end.fatigue_onset_lap + '</span>';
-                    if (conc.drop_laps && conc.drop_laps.length > 0) html += ' | Concentration drops: <span style="font-weight:600;">' + conc.drop_laps.length + '</span>';
-                    if (react.avg_recovery_laps !== undefined && isFinite(react.avg_recovery_laps)) html += ' | Avg recovery: <span style="font-weight:600;">' + react.avg_recovery_laps.toFixed(1) + ' laps</span>';
-                    html += '</div>';
-                }
-                // Quarter breakdown
-                if (end.quarters && end.quarters.length > 0) {
-                    html += '<div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.4rem;">';
-                    end.quarters.forEach(function(q, i) {
-                        var qCol = q.cv_pct < 1.5 ? '#4caf50' : q.cv_pct < 3 ? '#ff9800' : '#e74c3c';
-                        html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:0.2rem 0.5rem;text-align:center;min-width:70px;">';
-                        html += '<div style="font-size:0.6rem;color:var(--text-secondary);">Q' + (i + 1) + '</div>';
-                        html += '<div style="font-size:0.8rem;font-weight:600;">' + (q.mean_pace_s || q.mean_pace || 0).toFixed(3) + 's</div>';
-                        html += '<div style="font-size:0.6rem;color:' + qCol + ';">CV ' + q.cv_pct.toFixed(1) + '%</div>';
-                        html += '</div>';
-                    });
-                    html += '</div>';
-                }
-                // Coaching
-                if (data.coaching) {
-                    html += '<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:0.3rem;">' + esc(data.coaching) + '</div>';
-                }
-                el.innerHTML = html;
-            })
-            .catch(function() { el.innerHTML = '<div class="no-data"><div class="no-data-text">Could not load fitness data.</div></div>'; });
-    })();
-
-    // ── Helper for fitness/degradation stat cards ──
-    function _fitCard(label, value, color) {
-        return '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.3rem 0.6rem;text-align:center;min-width:85px;">' +
-            '<div style="font-size:0.6rem;color:var(--text-secondary);text-transform:uppercase;">' + esc(label) + '</div>' +
-            '<div style="font-size:0.9rem;font-weight:700;color:' + color + ';">' + esc(String(value)) + '</div></div>';
-    }
 
     {% if gps_laps %}
     if (window.TrackMap) {
@@ -1331,7 +1120,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 var best = Math.min.apply(null, validTimes);
                 var variance = validTimes.reduce(function(a,b){return a + (b-mean)*(b-mean);}, 0) / (n - 1);
                 var stdDev = Math.sqrt(variance);
-                var consistency = Math.max(0, 100 * (1 - stdDev / mean));
+                var consistency = 100 * best / mean;
 
                 var sorted = validTimes.slice().sort(function(a,b){return a-b;});
                 var top25n = Math.max(1, Math.ceil(n * 0.25));
