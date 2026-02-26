@@ -4,7 +4,7 @@
     position: relative;
     border: 1px solid var(--border);
     border-radius: 8px;
-    background: var(--bg-card);
+    background: var(--bg-secondary);
     overflow: hidden;
 }
 
@@ -40,7 +40,7 @@
     padding: 2px 6px;
     font-size: 12px;
     min-width: 80px;
-    background: var(--bg-card);
+    background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border);
     border-radius: 4px;

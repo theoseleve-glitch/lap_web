@@ -34,7 +34,7 @@
         html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
         (data.zone_summary || []).forEach(function (z) {
             var col = ZONE_COLORS[z.zone_type] || (C.textSecondary || "#888");
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.5rem 0.8rem;' +
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.5rem 0.8rem;' +
                 'border-top:3px solid ' + col + ';min-width:120px;flex:1;max-width:180px;">';
             html += '<div style="font-size:0.8rem;font-weight:700;color:' + col + ';text-transform:capitalize;">' +
                 z.zone_type + '</div>';

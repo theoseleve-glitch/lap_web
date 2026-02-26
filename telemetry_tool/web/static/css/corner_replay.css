@@ -142,7 +142,7 @@
 .cr-map-panel {
     position: relative;
     border-right: 1px solid var(--border);
-    background: var(--bg-card);
+    background: var(--bg-secondary);
     aspect-ratio: 16 / 9;
     max-height: 45vh;
     overflow: hidden;
@@ -161,7 +161,7 @@
 /* ── Cockpit panel ─────────────────────────────────────────── */
 .cr-cockpit-panel {
     position: relative;
-    background: var(--bg-card);
+    background: var(--bg-secondary);
     aspect-ratio: 16 / 9;
     max-height: 45vh;
     overflow: hidden;

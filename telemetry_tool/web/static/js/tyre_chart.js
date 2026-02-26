@@ -34,7 +34,7 @@
         html += '<div style="display:flex;flex-wrap:wrap;gap:1rem;margin-bottom:1rem;">';
         profiles.forEach(function (sp, idx) {
             var color = STINT_COLORS[idx % STINT_COLORS.length];
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.8rem 1rem;' +
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.8rem 1rem;' +
                 'border-top:3px solid ' + color + ';min-width:180px;flex:1;">';
             html += '<div style="font-size:1rem;font-weight:700;color:' + color + ';">' +
                 esc(sp.compound_label) + '</div>';

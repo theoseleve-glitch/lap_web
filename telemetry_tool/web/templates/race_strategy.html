@@ -205,7 +205,7 @@
             html += '<div style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:1rem;">';
             data.available_compounds.forEach(function(c) {
                 var col = COMPOUND_COLORS[c.id] || "#888";
-                html += '<div style="background:var(--card-bg);border-radius:6px;padding:0.3rem 0.6rem;' +
+                html += '<div style="background:var(--bg-secondary);border-radius:6px;padding:0.3rem 0.6rem;' +
                     'border-left:4px solid ' + col + ';font-size:0.8rem;">';
                 html += '<strong style="color:' + col + ';">' + esc(c.label) + '</strong>';
                 html += ' &middot; Cliff: L' + c.cliff_lap;

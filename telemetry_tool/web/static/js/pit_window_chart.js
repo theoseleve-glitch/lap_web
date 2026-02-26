@@ -199,7 +199,7 @@
         var html = "";
 
         // Degradation model card
-        html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.8rem;">';
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.8rem;">';
         html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Degradation Model</div>';
         html += '<div style="font-size:1.1rem;font-weight:600;color:var(--text-primary);margin-top:0.2rem;">';
         html += model.model_type === "flat" ? "Flat (no deg)" :
@@ -217,7 +217,7 @@
         if (best) {
             var stratColor = best.n_stops === 0 ? COLORS.good :
                              best.n_stops === 1 ? COLORS.accent : COLORS.warn;
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.8rem;border-left:3px solid ' + stratColor + ';">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.7rem 1rem;margin-bottom:0.8rem;border-left:3px solid ' + stratColor + ';">';
             html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Best Strategy</div>';
             html += '<div style="font-size:1.3rem;font-weight:700;color:' + stratColor + ';margin-top:0.2rem;">';
             html += best.n_stops + '-STOP</div>';

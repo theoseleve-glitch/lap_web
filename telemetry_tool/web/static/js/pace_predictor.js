@@ -230,7 +230,7 @@
 
         // Predicted finish
         if (pp.predicted_total_s > 0) {
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
             html += '<div style="font-size:0.7rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Predicted Race Time</div>';
             html += '<div style="font-size:1.2rem;font-weight:700;color:var(--text-primary);">' +
                     _fmtRaceTime(pp.predicted_total_s) + '</div>';
@@ -244,7 +244,7 @@
         // Pace percentile
         if (field > 0) {
             var pctColor = pct >= 75 ? COLORS.good : pct >= 40 ? COLORS.warn : COLORS.poor;
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
             html += '<div style="font-size:0.7rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Historical Ranking</div>';
             html += '<div style="display:flex;align-items:baseline;gap:0.5rem;">';
             html += '<span style="font-size:1.2rem;font-weight:700;color:' + pctColor + ';">' +
@@ -266,7 +266,7 @@
 
     function _card(title, value, subtitle, color) {
         color = color || COLORS.accent;
-        var html = '<div style="background:var(--card-bg);border-radius:8px;padding:0.5rem 0.8rem;flex:1;text-align:center;">';
+        var html = '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.5rem 0.8rem;flex:1;text-align:center;">';
         html += '<div style="font-size:0.65rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">' + title + '</div>';
         html += '<div style="font-size:1.1rem;font-weight:700;color:' + color + ';">' + value + '</div>';
         if (subtitle) {

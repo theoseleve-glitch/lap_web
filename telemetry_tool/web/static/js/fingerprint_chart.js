@@ -145,14 +145,14 @@
 
         // Overall + Balance header
         html += '<div style="display:flex;gap:1rem;margin-bottom:1rem;">';
-        html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;flex:1;text-align:center;">';
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;flex:1;text-align:center;">';
         html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Overall</div>';
         html += '<div style="font-size:1.5rem;font-weight:700;color:' + gradeColor(overall) + ';">' +
                 overall.toFixed(1) + '</div>';
         html += '<div style="font-size:0.85rem;color:' + gradeColor(overall) + ';font-weight:600;">' +
                 gradeLetter(overall) + '</div>';
         html += '</div>';
-        html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;flex:1;text-align:center;">';
+        html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;flex:1;text-align:center;">';
         html += '<div style="font-size:0.75rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Balance</div>';
         html += '<div style="font-size:1.5rem;font-weight:700;color:' + gradeColor(balance) + ';">' +
                 balance.toFixed(1) + '</div>';

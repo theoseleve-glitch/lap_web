@@ -22,7 +22,7 @@
         poor:   C.red || "#e74c3c",
         text:   "#ccc",
         muted:  C.textSecondary || "#888",
-        bg:     "var(--card-bg)",
+        bg:     "var(--bg-secondary)",
     };
 
     function cellColor(val, best, worst) {

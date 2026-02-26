@@ -181,7 +181,7 @@
     }
 
     function _card(label, value, color) {
-        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.3rem 0.6rem;' +
+        return '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.3rem 0.6rem;' +
             'text-align:center;min-width:80px;">' +
             '<div style="font-size:0.6rem;color:var(--text-secondary);text-transform:uppercase;">' + label + '</div>' +
             '<div style="font-size:0.85rem;font-weight:700;color:' + color + ';">' + value + '</div>' +

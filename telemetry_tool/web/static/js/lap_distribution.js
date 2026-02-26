@@ -25,7 +25,7 @@
         whisker:  C.textSecondary || "#aaa",
         text:     "#ccc",
         muted:    C.textSecondary || "#888",
-        bg:       "var(--card-bg)",
+        bg:       "var(--bg-secondary)",
     };
 
     var SHAPE_LABELS = {
@@ -304,7 +304,7 @@
     }
 
     function _card(label, value, color) {
-        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.3rem 0.6rem;' +
+        return '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.3rem 0.6rem;' +
             'text-align:center;min-width:70px;">' +
             '<div style="font-size:0.6rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">' + label + '</div>' +
             '<div style="font-size:0.9rem;font-weight:700;color:' + color + ';">' + value + '</div>' +

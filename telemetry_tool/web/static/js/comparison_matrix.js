@@ -49,7 +49,7 @@
         sessions.forEach(function (s) {
             var isFocus = (s.session_id === focusId);
             var border = isFocus ? "2px solid var(--blue)" : "1px solid rgba(255,255,255,0.08)";
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 0.8rem;' +
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 0.8rem;' +
                 'border:' + border + ';min-width:150px;flex:1;max-width:220px;">';
             html += '<div style="font-size:0.85rem;font-weight:700;color:' +
                 (isFocus ? 'var(--blue)' : 'var(--text-secondary)') + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +

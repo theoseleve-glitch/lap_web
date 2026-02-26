@@ -114,7 +114,7 @@
     }
 
     function _summaryCard(label, value, color) {
-        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.4rem 0.8rem;' +
+        return '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.4rem 0.8rem;' +
             'text-align:center;min-width:80px;">' +
             '<div style="font-size:0.65rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">' + label + '</div>' +
             '<div style="font-size:1rem;font-weight:700;color:' + color + ';">' + value + '</div>' +

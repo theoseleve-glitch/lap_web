@@ -44,7 +44,7 @@
 
     function _card(title, value, subtitle, color) {
         color = color || COLORS.accent;
-        var html = '<div style="background:var(--card-bg);border-radius:8px;padding:0.5rem 0.8rem;flex:1;text-align:center;">';
+        var html = '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.5rem 0.8rem;flex:1;text-align:center;">';
         html += '<div style="font-size:0.65rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">' + title + '</div>';
         html += '<div style="font-size:1.1rem;font-weight:700;color:' + color + ';">' + value + '</div>';
         if (subtitle) {
@@ -253,7 +253,7 @@
 
         // Predicted race time
         if (result.total_race_time_s > 0) {
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
             html += '<div style="font-size:0.7rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Predicted Race Time</div>';
             html += '<div style="font-size:1.2rem;font-weight:700;color:var(--text-primary);">' +
                     esc(_fmtRaceTime(result.total_race_time_s)) + '</div>';
@@ -264,7 +264,7 @@
         var tireLoss = result.tire_impact_s || 0;
         var fatigueLoss = result.fatigue_impact_s || 0;
         if (tireLoss > 0 || fatigueLoss > 0) {
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
             html += '<div style="font-size:0.7rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Time Lost</div>';
             if (tireLoss > 0) {
                 html += '<div style="font-size:0.85rem;color:var(--text-primary);margin-top:0.2rem;">Tyre Deg: +' + esc(tireLoss.toFixed(1)) + 's</div>';
@@ -278,7 +278,7 @@
         // Pit stops list
         var pitLaps = result.pit_stop_laps || [];
         if (pitLaps.length > 0) {
-            html += '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
+            html += '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;margin-bottom:0.8rem;">';
             html += '<div style="font-size:0.7rem;color:' + (C.textSecondary || "#aaa") + ';text-transform:uppercase;">Pit Stops</div>';
             for (var pi = 0; pi < pitLaps.length; pi++) {
                 html += '<div style="font-size:0.85rem;color:' + COLORS.pit + ';margin-top:0.15rem;">Lap ' + esc(String(pitLaps[pi])) + '</div>';

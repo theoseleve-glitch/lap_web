@@ -84,7 +84,7 @@
     "use strict";
 
     function _card(label, value, color) {
-        return '<div style="background:var(--card-bg);border-radius:8px;padding:0.6rem 1rem;' +
+        return '<div style="background:var(--bg-secondary);border-radius:8px;padding:0.6rem 1rem;' +
             'border-top:3px solid ' + (color || 'var(--accent)') + ';min-width:100px;flex:1;max-width:160px;">' +
             '<div style="font-size:0.7rem;color:var(--text-secondary);text-transform:uppercase;">' + esc(label) + '</div>' +
             '<div style="font-size:1.1rem;font-weight:700;color:' + (color || 'var(--text-primary)') + ';">' + esc(String(value)) + '</div></div>';

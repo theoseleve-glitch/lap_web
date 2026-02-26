@@ -95,7 +95,7 @@ window.setLang = function(lang) {
         colors.bgPrimary    = cssVar('--bg-primary',    colors.bgPrimary);
         colors.bgSecondary  = cssVar('--bg-secondary',  colors.bgSecondary);
         colors.bgTertiary   = cssVar('--bg-tertiary',   colors.bgTertiary);
-        colors.bgCard       = cssVar('--bg-card',       colors.bgCard);
+        colors.bgCard       = cssVar('--bg-secondary',   colors.bgCard);
         colors.bgHover      = cssVar('--bg-hover',      colors.bgHover);
 
         colors.textPrimary   = cssVar('--text-primary',   colors.textPrimary);
@@ -106,14 +106,14 @@ window.setLang = function(lang) {
         colors.accentDim = cssVar('--accent-dim', colors.accentDim);
 
         colors.green    = cssVar('--green',   colors.green);
-        colors.greenDim = cssVar('--green-dim', colors.greenDim);
+        colors.greenDim = cssVar('--success-dim', colors.greenDim);
         colors.yellow   = cssVar('--yellow',  colors.yellow);
         colors.red      = cssVar('--red',     colors.red);
         colors.blue     = cssVar('--blue',    colors.blue);
         colors.purple   = cssVar('--purple',  colors.purple);
 
         colors.border      = cssVar('--border',       colors.border);
-        colors.borderLight = cssVar('--border-light',  colors.borderLight);
+        colors.borderLight = cssVar('--border-subtle',  colors.borderLight);
     }
 
     /* Hydrate immediately (CSS should be loaded before JS) */
