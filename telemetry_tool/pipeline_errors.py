@@ -47,17 +47,26 @@ class InteractionRequired(PipelineError):
 # Builtin exception types that indicate transient (retryable) failures.
 _TRANSIENT_BUILTINS = (ConnectionError, TimeoutError)
 
+# Class names that indicate transient failures (for libraries like redis
+# whose ConnectionError does NOT inherit from Python's builtin ConnectionError).
+_TRANSIENT_NAMES = {"ConnectionError", "TimeoutError", "RedisError"}
+
 
 def classify_error(exc: BaseException) -> str:
     """Classify an exception into an error class string.
 
     Returns:
         - exc.error_class for PipelineError subclasses
-        - "transient" for ConnectionError, TimeoutError, and their subclasses
+        - "transient" for ConnectionError, TimeoutError, their subclasses,
+          and redis-specific exceptions (RedisError, redis.ConnectionError)
         - "fatal" for everything else
     """
     if isinstance(exc, PipelineError):
         return exc.error_class
     if isinstance(exc, _TRANSIENT_BUILTINS):
         return "transient"
+    # Check class name hierarchy for libraries with non-standard inheritance
+    for cls in type(exc).__mro__:
+        if cls.__name__ in _TRANSIENT_NAMES:
+            return "transient"
     return "fatal"

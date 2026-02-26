@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: telemetry
+      POSTGRES_DB: telemetry
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemetry"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  celery-pipeline:
+    build: .
+    command: celery -A telemetry_tool.celery_app worker -Q pipeline --concurrency=2 -l info
+    environment:
+      USE_PG: "1"
+      TELEMETRY_PG_URL: postgresql://telemetry:telemetry@postgres:5432/telemetry
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-default:
+    build: .
+    command: celery -A telemetry_tool.celery_app worker -Q default --concurrency=4 -l info
+    environment:
+      USE_PG: "1"
+      TELEMETRY_PG_URL: postgresql://telemetry:telemetry@postgres:5432/telemetry
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pg_data:

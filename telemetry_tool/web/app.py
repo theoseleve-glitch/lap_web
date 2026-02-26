@@ -214,6 +214,19 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(workspaces_bp)
             app.register_blueprint(teams_bp)
             logger.debug("Registered workspace and team blueprints")
+            # Initialize Celery with Flask app context
+            from celery_app import make_celery
+            celery_inst = make_celery(app)
+            app.extensions["celery"] = celery_inst
+            logger.debug("Initialized Celery with Flask app context")
+            # Register Celery pipeline blueprints
+            from .routes.jobs import bp as jobs_bp
+            from .routes.batch import bp as batch_bp
+            from .routes.versioning import bp as versioning_bp
+            app.register_blueprint(jobs_bp)
+            app.register_blueprint(batch_bp)
+            app.register_blueprint(versioning_bp)
+            logger.debug("Registered Celery pipeline blueprints (jobs, batch, versioning)")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
