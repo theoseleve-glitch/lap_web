@@ -389,7 +389,7 @@
 <!-- Brake Precision (hidden if no data) -->
 <section class="section" id="brake-section" style="display:none;">
     <h2>Brake Precision</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Brake point scatter chart">
         <canvas id="brake-scatter-chart" aria-label="Brake precision scatter plot"></canvas>
     </div>
 </section>
@@ -397,7 +397,7 @@
 <!-- Throttle Onset Map (hidden if no data) -->
 <section class="section" id="throttle-section" style="display:none;">
     <h2>Throttle Onset Map</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Throttle application heatmap">
         <canvas id="throttle-heatmap-chart" aria-label="Throttle onset heatmap"></canvas>
     </div>
 </section>
@@ -405,7 +405,7 @@
 <!-- Consistency Heatmap (hidden if no data) -->
 <section class="section" id="consistency-section" style="display:none;">
     <h2>Consistency Heatmap</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Lap consistency heatmap">
         <canvas id="consistency-heatmap-chart" aria-label="Lap consistency heatmap"></canvas>
     </div>
 </section>
@@ -434,7 +434,7 @@
     <div id="stint-analysis-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading stint data...</span></div>
     </div>
-    <div class="chart-frame chart-container relative min-h-200">
+    <div class="chart-frame chart-container relative min-h-200" role="img" aria-label="Stint pace analysis chart">
         <canvas id="stint-pace-chart" aria-label="Stint pace chart"></canvas>
     </div>
 </section>
@@ -517,7 +517,7 @@
             <label><input type="checkbox" id="toggle-all-laps" checked> All Laps</label>
         </span>
     </div>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Track map with telemetry overlay">
         <canvas id="track-map-canvas" aria-label="Track map with GPS overlay"></canvas>
     </div>
 
@@ -587,7 +587,7 @@
         <button type="button" id="overlay-select-all" class="btn btn-xs ml-sm">All</button>
         <button type="button" id="overlay-clear-all" class="btn btn-xs">None</button>
     </div>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Speed trace overlay comparison">
         <canvas id="speed-overlay-chart" aria-label="Lap speed overlay comparison"></canvas>
         <div id="overlay-legend" class="overlay-legend-box"></div>
     </div>
@@ -629,7 +629,7 @@
 {% if gps_laps %}
 <section class="section">
     <h2>Cross-Session Speed Overlay</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Cross-session comparison overlay">
         <canvas id="cross-session-overlay-chart" aria-label="Cross-session speed overlay"></canvas>
     </div>
 </section>
@@ -742,7 +742,7 @@
 <!-- Lap Times Chart -->
 <section class="section">
     <h2>Lap Times</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Lap times progression chart">
         <canvas id="lap-times-chart" aria-label="Lap times bar chart"></canvas>
         <div id="lap-time-tooltip" class="lap-time-tooltip"></div>
     </div>

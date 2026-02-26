@@ -173,7 +173,7 @@
 
     <div class="style-section">
         <!-- Radar chart -->
-        <div class="chart-frame chart-container relative">
+        <div class="chart-frame chart-container relative" role="img" aria-label="Driving style radar chart">
             <canvas id="style-radar" aria-label="Driving style radar chart"></canvas>
         </div>
 
@@ -208,10 +208,10 @@
 {% if progression %}
 <section class="section">
     <h2>Progression Over Time</h2>
-    <div class="chart-frame chart-container relative">
+    <div class="chart-frame chart-container relative" role="img" aria-label="Driver progression chart">
         <canvas id="progression-chart" aria-label="Lap time progression chart"></canvas>
     </div>
-    <div class="chart-frame chart-container relative mt-md">
+    <div class="chart-frame chart-container relative mt-md" role="img" aria-label="Score progression over time">
         <canvas id="score-progression-chart" aria-label="Score progression chart"></canvas>
     </div>
 </section>
