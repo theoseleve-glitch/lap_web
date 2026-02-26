@@ -36,6 +36,11 @@
     color: var(--text-primary);
     line-height: 1;
     flex-shrink: 0;
+    min-height: var(--touch-min);
+    min-width: var(--touch-min);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 /* Language picker in nav */
@@ -48,6 +53,7 @@
     cursor: pointer;
     color: var(--text-primary);
     flex-shrink: 0;
+    min-height: var(--touch-min);
 }
 
 /* ── Z-INDEX SCALE ──────────────────────────
@@ -444,7 +450,7 @@ a:hover {
 .btn-sm {
     padding: 0.3rem 0.65rem;
     font-size: 0.78rem;
-    min-height: auto;
+    min-height: 36px;
 }
 
 .btn:disabled,

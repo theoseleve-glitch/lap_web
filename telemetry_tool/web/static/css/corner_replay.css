@@ -65,8 +65,9 @@
 
 .cr-corner-pill {
     flex-shrink: 0;
-    padding: 4px 12px;
+    padding: 6px 12px;
     font-size: 0.72rem;
+    min-height: 32px;
     font-weight: 600;
     border-radius: 20px;
     border: 1px solid var(--border);
@@ -90,8 +91,8 @@
 
 .cr-corner-nav-btn {
     flex-shrink: 0;
-    width: 26px;
-    height: 26px;
+    width: 36px;
+    height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -287,8 +288,8 @@
 }
 
 .cr-play-btn {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -374,8 +375,9 @@
 
 /* ── Lap selector dropdowns ────────────────────────────────── */
 .cr-lap-select {
-    padding: 4px 8px;
+    padding: 6px 8px;
     font-size: 0.72rem;
+    min-height: 36px;
     border: 1px solid var(--border);
     border-radius: 4px;
     background: var(--bg-primary);
