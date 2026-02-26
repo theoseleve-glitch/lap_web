@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colors, timing, easing, rooms, sectorTabs } from '@/lib/tokens';
+import { colors, timing, easing, rooms, sectorTabs, roomAccents } from '@/lib/tokens';
 
 describe('Token system', () => {
   it('exports all base colors', () => {
@@ -24,7 +24,7 @@ describe('Token system', () => {
 
   it('exports GSAP easing strings', () => {
     expect(easing.inertia).toBe('power3.out');
-    expect(easing.overshoot).toContain('back.out');
+    expect(easing.overshoot).toBe('back.out(1.7)');
   });
 
   it('defines 9 rooms', () => {
@@ -37,5 +37,16 @@ describe('Token system', () => {
     expect(sectorTabs).toHaveLength(6);
     expect(sectorTabs[0].label).toBe('S1');
     expect(sectorTabs[5].label).toBe('POD');
+  });
+
+  it('every sectorTab ID exists in rooms', () => {
+    const roomIds = new Set(rooms.map(r => r.id));
+    sectorTabs.forEach(tab => expect(roomIds.has(tab.id)).toBe(true));
+  });
+
+  it('every room has an accent entry', () => {
+    rooms.forEach(r => {
+      expect(roomAccents[r.id]).toBeDefined();
+    });
   });
 });

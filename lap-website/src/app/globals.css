@@ -1,13 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 @import '../styles/tokens.css';
 @import '../styles/textures.css';
 @import '../styles/reduced-motion.css';
 
-/* ── Font imports ── */
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400&family=Inter:wght@400;500&family=Teko:wght@600;700&display=swap&subset=latin');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* ── Base reset ── */
 html {

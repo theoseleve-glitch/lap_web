@@ -2,6 +2,9 @@
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    /* Transitions kept at 200ms (not killed) to preserve spatial context
+       for state changes like focus/hover. This follows OS-level accessibility
+       guidance that allows brief transitions for orientation. */
     transition-duration: 200ms !important;
   }
 }
@@ -10,5 +13,8 @@
 .reduce-motion *, .reduce-motion *::before, .reduce-motion *::after {
   animation-duration: 0.01ms !important;
   animation-iteration-count: 1 !important;
+  /* Transitions kept at 200ms (not killed) to preserve spatial context
+     for state changes like focus/hover. This follows OS-level accessibility
+     guidance that allows brief transitions for orientation. */
   transition-duration: 200ms !important;
 }

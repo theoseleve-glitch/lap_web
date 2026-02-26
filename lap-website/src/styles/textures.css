@@ -1,4 +1,5 @@
 /* ── Concrete grain overlay ── */
+.texture-grain { position: relative; }
 .texture-grain::after {
   content: '';
   position: absolute;
@@ -11,6 +12,7 @@
 }
 
 /* ── Dither overlay for panels ── */
+.texture-dither { position: relative; }
 .texture-dither::after {
   content: '';
   position: absolute;
@@ -23,6 +25,7 @@
 }
 
 /* ── Scan lines for photography ── */
+.texture-scanlines { position: relative; }
 .texture-scanlines::after {
   content: '';
   position: absolute;
