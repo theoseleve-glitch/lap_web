@@ -1,22 +1,27 @@
+'use client';
+
+import { StartGrid } from '@/components/rooms/StartGrid';
+import { S1Pain } from '@/components/rooms/S1Pain';
+import { S1DeepSculpture } from '@/components/rooms/S1DeepSculpture';
+import { S2Pipeline } from '@/components/rooms/S2Pipeline';
+import { S2Proof } from '@/components/rooms/S2Proof';
+import { S3Product } from '@/components/rooms/S3Product';
+import { PitStop } from '@/components/rooms/PitStop';
+import { Garage } from '@/components/rooms/Garage';
+import { Podium } from '@/components/rooms/Podium';
+
 export default function Home() {
   return (
     <main>
-      {/* Rooms will be added in Tasks 5-12 */}
-      <section
-        id="start-grid"
-        data-accent="none"
-        className="room"
-        aria-label="Start Grid"
-      >
-        <div className="grid-lap">
-          <h1
-            className="font-monument col-span-full"
-            style={{ fontSize: 'var(--text-monument-xl)' }}
-          >
-            EVERY LAP<br />HAS A SECRET
-          </h1>
-        </div>
-      </section>
+      <StartGrid />
+      <S1Pain />
+      <S1DeepSculpture />
+      <S2Pipeline />
+      <S2Proof />
+      <S3Product />
+      <PitStop />
+      <Garage />
+      <Podium />
     </main>
   );
 }
