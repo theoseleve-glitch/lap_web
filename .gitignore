@@ -52,3 +52,7 @@ docs/web-app-audit.pdf
 .env
 .env.local
 telemetry_tool/test_output.txt
+
+# Next.js
+lap-website/.next/
+lap-website/node_modules/

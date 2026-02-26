@@ -9,7 +9,7 @@ describe('Pricing data', () => {
     expect(b2cPlans).toHaveLength(3);
     expect(b2cPlans[0].name).toBe('STARTER');
     expect(b2cPlans[1].highlighted).toBe(true);
-    expect(b2cPlans[0].ctaHref).toBe('/book?plan=STARTER');
+    expect(b2cPlans[0].ctaHref).toBe('/register?source=starter');
   });
 
   it('has 3 B2B plans', () => {

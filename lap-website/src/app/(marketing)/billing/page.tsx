@@ -1,3 +1,4 @@
+import { Suspense } from 'react';
 import { BillingLifecyclePanel } from '@/components/site/BillingLifecyclePanel';
 import { PageShell } from '@/components/site/PageShell';
 
@@ -9,7 +10,9 @@ export default function BillingPage() {
       description="This page executes checkout initiation, billing portal access, and plan-switch workflows through API endpoints."
     >
       <section className="mb-8">
-        <BillingLifecyclePanel />
+        <Suspense fallback={<p className="text-steel text-sm">Loading billing workflows...</p>}>
+          <BillingLifecyclePanel />
+        </Suspense>
       </section>
 
       <section className="grid md:grid-cols-2 gap-4">
