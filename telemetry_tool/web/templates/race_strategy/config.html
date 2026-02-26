@@ -24,7 +24,7 @@
     <section class="section rs-form-section">
         <h2>Race Details</h2>
         <div class="form-row">
-            <div class="form-group" style="flex:2">
+            <div class="form-group flex-2">
                 <label for="race_name">Race Name *</label>
                 <input type="text" id="race_name" name="race_name" required
                        value="{{ race.race_name if race else '' }}" placeholder="e.g. 3h Endurance Angerville">
@@ -74,7 +74,7 @@
                     <button type="button" class="btn btn-danger-text rs-remove-driver" title="Remove">&times;</button>
                 </div>
                 <div class="form-row">
-                    <div class="form-group" style="flex:2">
+                    <div class="form-group flex-2">
                         <label>Name *</label>
                         <input type="text" name="driver_name_{{ loop.index0 }}" required value="{{ d.driver_name }}"
                                list="known-drivers-list" placeholder="Driver name">
@@ -144,7 +144,7 @@
             {% endfor %}
         </datalist>
 
-        <button type="button" id="rs-add-driver" class="btn btn-ghost" style="margin-top:0.5rem;">+ Add Driver</button>
+        <button type="button" id="rs-add-driver" class="btn btn-ghost mt-sm">+ Add Driver</button>
     </section>
 
     <!-- ── Pit Strategy ────────────────────────── -->
@@ -188,7 +188,7 @@
     <!-- ── Pit Windows ────────────────────────── -->
     <section class="section rs-form-section">
         <h2>Pit Windows</h2>
-        <p style="font-size:0.85rem;color:var(--text-secondary);">
+        <p class="text-sm text-secondary">
             Define time ranges for pit lane, refueling, and mandatory technical stops.
         </p>
         <div id="rs-windows-list">
@@ -226,7 +226,7 @@
             </div>
             {% endfor %}
         </div>
-        <button type="button" id="rs-add-window" class="btn btn-ghost" style="margin-top:0.5rem;">+ Add Window</button>
+        <button type="button" id="rs-add-window" class="btn btn-ghost mt-sm">+ Add Window</button>
     </section>
 
     <!-- ── Fuel & Weight ───────────────────────── -->
@@ -273,8 +273,8 @@
 
     <!-- ── Qualifying (optional) ───────────────── -->
     <details class="section rs-form-section">
-        <summary><h2 style="display:inline;">Qualifying (Optional)</h2></summary>
-        <div class="form-row" style="margin-top:0.75rem;">
+        <summary><h2 class="inline">Qualifying (Optional)</h2></summary>
+        <div class="form-row mt-md">
             <div class="form-group">
                 <label for="qualifying_duration">Qualifying Duration (MM:SS)</label>
                 <input type="text" id="qualifying_duration" name="qualifying_duration"

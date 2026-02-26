@@ -107,12 +107,12 @@
     {% endif %}
     {% if race.status in ('draft', 'ready') %}
     <a href="{{ url_for('race_strategy_v2.edit_race', race_id=race.race_id) }}" class="btn btn-ghost">Edit Config</a>
-    <form method="POST" action="{{ url_for('race_strategy_v2.optimize', race_id=race.race_id) }}" style="display:inline;">
+    <form method="POST" action="{{ url_for('race_strategy_v2.optimize', race_id=race.race_id) }}" class="inline">
         <button type="submit" class="btn btn-primary">Optimize Stints</button>
     </form>
     {% endif %}
     {% if race.status == 'ready' %}
-    <form method="POST" action="{{ url_for('race_strategy_v2.go_live', race_id=race.race_id) }}" style="display:inline;"
+    <form method="POST" action="{{ url_for('race_strategy_v2.go_live', race_id=race.race_id) }}" class="inline"
           onsubmit="return confirm('Start the race? This will begin the live timer.');">
         <button type="submit" class="btn btn-primary" style="background:var(--green);color:#000;">Go Live</button>
     </form>
@@ -128,12 +128,12 @@
 <!-- Import Stint Plan -->
 {% if race.status in ('draft', 'ready') %}
 <div class="rs-import-plan">
-    <form method="POST" action="{{ url_for('race_strategy_v2.import_plan', race_id=race.race_id) }}" enctype="multipart/form-data" style="display:inline-flex; align-items:center; gap:0.5rem;">
+    <form method="POST" action="{{ url_for('race_strategy_v2.import_plan', race_id=race.race_id) }}" enctype="multipart/form-data" class="inline-flex items-center gap-sm">
         <label class="btn btn-ghost" style="cursor:pointer; margin:0;">
             Choose File
             <input type="file" name="file" accept=".json" style="display:none;" onchange="this.closest('form').querySelector('.rs-import-filename').textContent = this.files[0]?.name || 'No file chosen';">
         </label>
-        <span class="rs-import-filename" style="font-size:0.82rem; color:var(--text-secondary);">No file chosen</span>
+        <span class="rs-import-filename text-sm text-secondary">No file chosen</span>
         <button type="submit" class="btn btn-ghost">Import Stint Plan</button>
     </form>
 </div>
@@ -145,8 +145,8 @@
 {% for p in pit_stops %}{% if p.refueled %}{% set ns.refuel_count = ns.refuel_count + 1 %}{% endif %}{% endfor %}
 <section class="section" id="rs-stint-plan">
     <h2>Stint Plan
-        <span style="font-size:0.75rem; font-weight:500; text-transform:none; letter-spacing:0; color:var(--text-secondary); margin-left:0.75rem;">
-            Refuels: <strong style="color:var(--text-primary);">{{ ns.refuel_count }}</strong> / {{ pit_stops|length }} stops
+        <span class="text-xs font-medium text-secondary" style="text-transform:none; letter-spacing:0; margin-left:0.75rem;">
+            Refuels: <strong class="text-primary">{{ ns.refuel_count }}</strong> / {{ pit_stops|length }} stops
         </span>
     </h2>
 
@@ -217,13 +217,13 @@
                 {% set pit_idx = loop.index0 %}
                 {% set p = pit_stops[pit_idx] if pit_idx < pit_stops|length else none %}
                 <tr class="rs-pit-row" data-after-stint="{{ s.stint_order }}">
-                    <td colspan="2" style="text-align:center;">
-                        <span style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em;">Pit Stop {{ loop.index }}</span>
+                    <td colspan="2" class="text-center">
+                        <span class="text-xs text-muted" style="text-transform:uppercase; letter-spacing:0.04em;">Pit Stop {{ loop.index }}</span>
                     </td>
                     <td>{% if p and p.planned_at_s %}{{ '%d:%02d:%02d' | format(p.planned_at_s // 3600, (p.planned_at_s % 3600) // 60, p.planned_at_s % 60) }}{% else %}--{% endif %}</td>
                     <td>--</td>
                     <td>{% if p %}{{ p.duration_s }}s{% else %}--{% endif %}</td>
-                    <td colspan="2" style="text-align:center;">
+                    <td colspan="2" class="text-center">
                         {% if p %}
                         <button type="button"
                                 class="rs-fuel-toggle {{ 'rs-fuel-on' if p.refueled else 'rs-fuel-off' }}"

@@ -13,9 +13,9 @@
         <h1>Race Strategy</h1>
         <p>Plan and manage endurance races with stint optimization, live timing, and driver management.</p>
     </div>
-    <div style="display:flex;gap:0.5rem;align-items:center;">
+    <div class="flex items-center gap-sm">
         <form method="POST" action="{{ url_for('race_strategy_v2.import_race') }}" enctype="multipart/form-data"
-              style="display:flex;gap:0.5rem;align-items:center;">
+              class="flex items-center gap-sm">
             <input type="file" name="file" accept=".json" required style="max-width:200px;">
             <button type="submit" class="btn btn-ghost">Import</button>
         </form>
@@ -68,11 +68,11 @@
                     <td>{{ r.created_at[:10] if r.created_at else '—' }}</td>
                     <td>
                         <form method="POST" action="{{ url_for('race_strategy_v2.duplicate', race_id=r.race_id) }}"
-                              style="display:inline;" onsubmit="event.stopPropagation();">
+                              class="inline" onsubmit="event.stopPropagation();">
                             <button type="submit" class="btn btn-ghost" title="Duplicate">&#x2398;</button>
                         </form>
                         <form method="POST" action="{{ url_for('race_strategy_v2.delete', race_id=r.race_id) }}"
-                              style="display:inline;" onsubmit="event.stopPropagation(); return confirm('Delete this race?');">
+                              class="inline" onsubmit="event.stopPropagation(); return confirm('Delete this race?');">
                             <button type="submit" class="btn btn-danger-text" title="Delete">&times;</button>
                         </form>
                     </td>

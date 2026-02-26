@@ -149,7 +149,7 @@
                     <td>{{ '%d:%02d' | format(actual // 60, actual % 60) }}</td>
                     <td>
                         {% if delta is not none %}
-                        <span style="color:{{ 'var(--red, #f85149)' if delta > 30 else 'var(--green)' if delta < -30 else 'inherit' }}">
+                        <span style="color:{{ 'var(--red)' if delta > 30 else 'var(--green)' if delta < -30 else 'inherit' }}">
                             {{ '+' if delta >= 0 else '' }}{{ delta }}s
                         </span>
                         {% else %}—{% endif %}
@@ -200,7 +200,7 @@
 <div class="rs-detail-actions">
     <a href="{{ url_for('race_strategy_v2.export', race_id=race.race_id) }}" class="btn btn-ghost">Export JSON</a>
     <a href="{{ url_for('race_strategy_v2.detail', race_id=race.race_id) }}" class="btn btn-ghost">View Config</a>
-    <form method="POST" action="{{ url_for('race_strategy_v2.duplicate', race_id=race.race_id) }}" style="display:inline;">
+    <form method="POST" action="{{ url_for('race_strategy_v2.duplicate', race_id=race.race_id) }}" class="inline">
         <button type="submit" class="btn btn-primary">Duplicate Race</button>
     </form>
 </div>
