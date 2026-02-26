@@ -29,7 +29,7 @@ export function DeltaStrip() {
               opacity: 0.6,
             }}
           />
-          <span className="relative font-telemetry text-[11px] tracking-[0.12em]">
+          <span className="relative font-telemetry text-[11px] tracking-[0.12em]" aria-live="polite">
             {totalDelta >= 0 ? '+' : ''}{totalDelta.toFixed(2)}s
           </span>
         </div>
