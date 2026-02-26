@@ -438,93 +438,154 @@ a:hover {
     margin-bottom: 2rem;
 }
 
-.stat-card {
-    background: rgba(14, 17, 24, 0.65);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+/* ── KPI Cards — Mission Control ──────────── */
+
+.kpi-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border);
     border-radius: var(--radius-lg);
-    padding: 1.25rem;
+    padding: var(--space-4) var(--space-3);
     text-align: center;
     position: relative;
     overflow: hidden;
-    transition: border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-                box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03);
-    animation: cardAppear 0.5s cubic-bezier(0.4, 0, 0.2, 1) both;
+    transition: border-color var(--duration-normal) var(--ease-out),
+                transform var(--duration-normal) var(--ease-out),
+                box-shadow var(--duration-normal) var(--ease-out);
+    box-shadow: var(--shadow-sm);
+}
+
+/* Instrument glow line at top */
+.kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.5;
+    transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+/* Hover: lift + glow */
+.kpi-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(240, 112, 48, 0.2);
+    box-shadow: var(--shadow), var(--shadow-glow);
+}
+
+.kpi-card:hover::before {
+    opacity: 1;
+}
+
+/* Accent variant */
+.kpi-card--accent {
+    border-color: rgba(240, 112, 48, 0.25);
+    background: linear-gradient(135deg, var(--accent-dim) 0%, var(--glass-bg) 100%);
+}
+
+/* ── KPI Value ── */
+.kpi-card__value {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
+}
+
+/* ── KPI Label ── */
+.kpi-card__label {
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: var(--space-1);
+}
+
+/* ── Delta indicator ── */
+.kpi-card__delta {
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
+    font-family: var(--font-mono);
+    margin-top: var(--space-1);
+}
+
+.kpi-card__delta--up {
+    color: var(--success);
+}
+
+.kpi-card__delta--down {
+    color: var(--danger);
+}
+
+.kpi-card__delta--neutral {
+    color: var(--text-muted);
+}
+
+/* Legacy aliases (existing templates use .stat-card) */
+.stat-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-4) var(--space-3);
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+    transition: border-color var(--duration-normal) var(--ease-out),
+                transform var(--duration-normal) var(--ease-out),
+                box-shadow var(--duration-normal) var(--ease-out);
+    box-shadow: var(--shadow-sm);
 }
 
 .stat-card::before {
     content: '';
     position: absolute;
     top: 0;
-    left: 0;
-    right: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
-    pointer-events: none;
-}
-
-.stat-card::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 20%;
-    right: 20%;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(240, 112, 48, 0.15), transparent);
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.stat-card:hover::after {
-    opacity: 1;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: 0.5;
+    transition: opacity var(--duration-normal) var(--ease-out);
 }
 
 .stat-card:hover {
-    border-color: rgba(240, 112, 48, 0.2);
     transform: translateY(-2px);
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.2), 0 0 40px rgba(240, 112, 48, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    border-color: rgba(240, 112, 48, 0.2);
+    box-shadow: var(--shadow), var(--shadow-glow);
 }
 
-.stat-card:nth-child(1) { animation-delay: 0.05s; }
-.stat-card:nth-child(2) { animation-delay: 0.08s; }
-.stat-card:nth-child(3) { animation-delay: 0.11s; }
-.stat-card:nth-child(4) { animation-delay: 0.14s; }
-.stat-card:nth-child(5) { animation-delay: 0.17s; }
-.stat-card:nth-child(6) { animation-delay: 0.2s; }
+.stat-card:hover::before {
+    opacity: 1;
+}
 
 .stat-card.accent {
-    border-color: rgba(240, 112, 48, 0.3);
-    background: linear-gradient(135deg, rgba(240, 112, 48, 0.08) 0%, rgba(14, 17, 24, 0.65) 100%);
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), 0 0 30px rgba(240, 112, 48, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    border-color: rgba(240, 112, 48, 0.25);
+    background: linear-gradient(135deg, var(--accent-dim) 0%, var(--glass-bg) 100%);
 }
 
 .stat-value {
-    font-size: clamp(1.4rem, 1rem + 2vw, 2.5rem);
-    font-weight: 700;
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
     font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
-    line-height: 1.2;
-    background: linear-gradient(135deg, var(--text-primary) 0%, var(--text-secondary) 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    line-height: var(--line-height-tight);
+    color: var(--text-primary);
 }
 
 .stat-label {
     color: var(--text-secondary);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--font-size-xs);
+    font-weight: var(--font-weight-semibold);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    margin-top: 0.3rem;
-}
-
-@keyframes cardAppear {
-    from { opacity: 0; transform: translateY(12px); }
-    to   { opacity: 1; transform: translateY(0); }
+    margin-top: var(--space-1);
 }
 
 /* ── Sections ─────────────────────────────── */

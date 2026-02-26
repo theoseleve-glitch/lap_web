@@ -67,32 +67,32 @@
 </div>
 
 <!-- Stats cards -->
-<div class="stats-grid">
+<div class="stats-grid stagger-in">
     <div class="stat-card elevation-1 card-interactive tip" data-tip="Total analyzed sessions in database">
-        <div class="stat-value">{{ stats.total_sessions or 0 }}</div>
+        <div class="stat-value" data-target="{{ stats.total_sessions or 0 }}">0</div>
         <div class="stat-label">Sessions</div>
     </div>
     <div class="stat-card elevation-1 card-interactive tip" data-tip="Unique drivers tracked">
-        <div class="stat-value">{{ stats.total_drivers or 0 }}</div>
+        <div class="stat-value" data-target="{{ stats.total_drivers or 0 }}">0</div>
         <div class="stat-label">Drivers</div>
     </div>
     <div class="stat-card elevation-1 card-interactive tip" data-tip="Distinct tracks driven on">
-        <div class="stat-value">{{ stats.total_tracks or 0 }}</div>
+        <div class="stat-value" data-target="{{ stats.total_tracks or 0 }}">0</div>
         <div class="stat-label">Tracks</div>
     </div>
     <div class="stat-card elevation-1 card-interactive tip" data-tip="Total laps across all sessions">
-        <div class="stat-value">{{ stats.total_laps or 0 }}</div>
+        <div class="stat-value" data-target="{{ stats.total_laps or 0 }}">0</div>
         <div class="stat-label">Total Laps</div>
     </div>
     {% if stats.best_score %}
     <div class="stat-card accent elevation-2 card-interactive tip" data-tip="Highest overall score (0-100)">
-        <div class="stat-value">{{ "%.1f"|format(stats.best_score) }}</div>
+        <div class="stat-value" data-target="{{ stats.best_score }}" data-decimals="1">0</div>
         <div class="stat-label">Best Score</div>
     </div>
     {% endif %}
     {% if stats.avg_score %}
     <div class="stat-card elevation-1 card-interactive tip" data-tip="Average score across all sessions">
-        <div class="stat-value">{{ "%.1f"|format(stats.avg_score) }}</div>
+        <div class="stat-value" data-target="{{ stats.avg_score }}" data-decimals="1">0</div>
         <div class="stat-label">Avg Score</div>
     </div>
     {% endif %}
@@ -167,4 +167,20 @@
     {% endif %}
 </section>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+    document.querySelectorAll('.stat-value[data-target]').forEach(function(el) {
+        var target = parseFloat(el.dataset.target);
+        var decimals = parseInt(el.dataset.decimals || '0', 10);
+        if (!isNaN(target) && target > 0) {
+            window.Motion.tickUp(el, target, 600, decimals);
+        } else {
+            el.textContent = decimals > 0 ? target.toFixed(decimals) : (target || '0');
+        }
+    });
+})();
+</script>
 {% endblock %}
