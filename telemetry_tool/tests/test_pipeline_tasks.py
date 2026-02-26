@@ -306,15 +306,17 @@ class TestPipelineAnalyze:
 class TestPipelineFinalize:
     """pipeline_finalize task: stages 9-15, cleanup, release lock."""
 
+    @patch("tasks.pipeline_tasks._increment_batch_counter")
     @patch("tasks.pipeline_tasks.check_worker_memory", return_value=False)
     @patch("tasks.pipeline_tasks._update_job_progress")
     @patch("tasks.pipeline_tasks.release_workspace_lock")
+    @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=True)
     @patch("tasks.pipeline_tasks._run_finalize_stages")
     @patch("tasks.pipeline_tasks._get_redis")
     @patch("tasks.pipeline_tasks.PipelineContext")
     def test_returns_job_id_and_cleans_up(
-        self, MockCtx, mock_redis, mock_stages, mock_release,
-        mock_progress, mock_memory
+        self, MockCtx, mock_redis, mock_stages, mock_lock, mock_release,
+        mock_progress, mock_memory, mock_batch_counter
     ):
         from tasks.pipeline_tasks import pipeline_finalize
 
@@ -326,6 +328,7 @@ class TestPipelineFinalize:
         result = pipeline_finalize("job-1")
 
         assert result == "job-1"
+        mock_lock.assert_called_once_with(mock_redis_client, "ws-1", "job-1")
         mock_stages.assert_called_once_with(ctx)
         ctx.cleanup.assert_called_once()
         mock_release.assert_called_once_with(mock_redis_client, "ws-1", "job-1")
@@ -334,6 +337,8 @@ class TestPipelineFinalize:
             c.kwargs.get("status") == "completed"
             for c in mock_progress.call_args_list
         )
+        # Should increment batch completed counter
+        mock_batch_counter.assert_called_once_with("job-1", "completed_sessions")
 
     @patch("tasks.pipeline_tasks.check_worker_memory", return_value=False)
     @patch("tasks.pipeline_tasks._update_job_progress")
@@ -354,15 +359,17 @@ class TestPipelineFinalize:
         MockCtx.load.assert_not_called()
         mock_stages.assert_not_called()
 
+    @patch("tasks.pipeline_tasks._increment_batch_counter")
     @patch("tasks.pipeline_tasks.check_worker_memory", return_value=True)
     @patch("tasks.pipeline_tasks._update_job_progress")
     @patch("tasks.pipeline_tasks.release_workspace_lock")
+    @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=True)
     @patch("tasks.pipeline_tasks._run_finalize_stages")
     @patch("tasks.pipeline_tasks._get_redis")
     @patch("tasks.pipeline_tasks.PipelineContext")
     def test_checks_worker_memory(
-        self, MockCtx, mock_redis, mock_stages, mock_release,
-        mock_progress, mock_memory
+        self, MockCtx, mock_redis, mock_stages, mock_lock, mock_release,
+        mock_progress, mock_memory, mock_batch_counter
     ):
         from tasks.pipeline_tasks import pipeline_finalize
 
@@ -374,17 +381,19 @@ class TestPipelineFinalize:
         # Should still return job_id; memory check is advisory
         result = pipeline_finalize("job-1")
         assert result == "job-1"
-        mock_memory.assert_called_once()
+        mock_memory.assert_called_once_with(exit_on_exceed=False)
 
+    @patch("tasks.pipeline_tasks._increment_batch_counter")
     @patch("tasks.pipeline_tasks.check_worker_memory", return_value=False)
     @patch("tasks.pipeline_tasks._update_job_progress")
     @patch("tasks.pipeline_tasks.release_workspace_lock")
+    @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=True)
     @patch("tasks.pipeline_tasks._run_finalize_stages")
     @patch("tasks.pipeline_tasks._get_redis")
     @patch("tasks.pipeline_tasks.PipelineContext")
     def test_marks_failed_on_fatal_error(
-        self, MockCtx, mock_redis, mock_stages, mock_release,
-        mock_progress, mock_memory
+        self, MockCtx, mock_redis, mock_stages, mock_lock, mock_release,
+        mock_progress, mock_memory, mock_batch_counter
     ):
         from tasks.pipeline_tasks import pipeline_finalize
         from pipeline_errors import FatalError
@@ -403,6 +412,31 @@ class TestPipelineFinalize:
             for c in mock_progress.call_args_list
         )
         mock_release.assert_called_once_with(mock_redis_client, "ws-1", "job-1")
+        # Should increment batch failed counter
+        mock_batch_counter.assert_called_once_with("job-1", "failed_sessions")
+
+    @patch("tasks.pipeline_tasks._increment_batch_counter")
+    @patch("tasks.pipeline_tasks.check_worker_memory", return_value=False)
+    @patch("tasks.pipeline_tasks._update_job_progress")
+    @patch("tasks.pipeline_tasks.release_workspace_lock")
+    @patch("tasks.pipeline_tasks.acquire_workspace_lock", return_value=False)
+    @patch("tasks.pipeline_tasks._run_finalize_stages")
+    @patch("tasks.pipeline_tasks._get_redis")
+    @patch("tasks.pipeline_tasks.PipelineContext")
+    def test_raises_transient_on_lock_failure_resume_path(
+        self, MockCtx, mock_redis, mock_stages, mock_lock, mock_release,
+        mock_progress, mock_memory, mock_batch_counter
+    ):
+        """Finalize raises TransientError if workspace lock re-acquisition fails."""
+        from tasks.pipeline_tasks import pipeline_finalize
+        from pipeline_errors import TransientError
+
+        mock_redis.return_value = MagicMock()
+        ctx = _make_mock_ctx()
+        MockCtx.load.return_value = ctx
+
+        with pytest.raises(TransientError):
+            pipeline_finalize("job-1")
 
 
 # ---------------------------------------------------------------------------

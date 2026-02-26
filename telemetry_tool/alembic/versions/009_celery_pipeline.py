@@ -41,6 +41,7 @@ def upgrade() -> None:
         sa.Column("processing_version", sa.Integer, server_default="1"),
         sa.Column("created_at", sa.DateTime, server_default=sa.func.now()),
         sa.Column("completed_at", sa.DateTime),
+        sa.Column("updated_at", sa.DateTime, server_default=sa.func.now()),
     )
     op.create_index("idx_batch_jobs_workspace", "batch_jobs", ["workspace_id"])
     op.create_index("idx_batch_jobs_status", "batch_jobs", ["status"])

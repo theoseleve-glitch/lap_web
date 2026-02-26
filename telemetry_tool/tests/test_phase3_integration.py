@@ -13,6 +13,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 class TestPipelineChainFlow:
     """Verify chain orchestration: ingest -> analyze -> finalize."""
 
+    @patch("tasks.pipeline_tasks._increment_batch_counter")
     @patch("tasks.pipeline_tasks._get_pg_connection")
     @patch("tasks.pipeline_tasks._get_redis")
     @patch("tasks.pipeline_tasks.PipelineContext")
@@ -25,7 +26,7 @@ class TestPipelineChainFlow:
     def test_full_chain_happy_path(
         self, mock_mem, mock_release, mock_lock,
         mock_finalize, mock_analyze, mock_ingest,
-        MockCtx, mock_redis, mock_pg,
+        MockCtx, mock_redis, mock_pg, mock_batch_counter,
     ):
         from tasks.pipeline_tasks import (
             pipeline_ingest, pipeline_analyze, pipeline_finalize,
@@ -57,6 +58,8 @@ class TestPipelineChainFlow:
 
         ctx.cleanup.assert_called_once()
         mock_release.assert_called()
+        # acquire_workspace_lock called once by ingest + once by finalize
+        assert mock_lock.call_count == 2
 
 
 class TestJobRegistryIntegration:
@@ -111,17 +114,21 @@ class TestConcurrencyIntegration:
         r.set.side_effect = lambda k, v, **kw: (
             store.__setitem__(k, v) or True if k not in store else False
         )
-        r.get.side_effect = lambda k: store.get(k)
-        r.delete.side_effect = lambda k: store.pop(k, None)
+        # Simulate atomic Lua compare-and-delete via eval mock
+        def _eval_lua(script, numkeys, key, value):  # noqa: S307
+            if store.get(key) == value:
+                store.pop(key, None)
+                return 1
+            return 0
+        r.eval = MagicMock(side_effect=_eval_lua)  # noqa: S307
 
         # Acquire
         assert acquire_workspace_lock(r, workspace_id=1, job_id="j1") is True
         # Second acquire fails
         assert acquire_workspace_lock(r, workspace_id=1, job_id="j2") is False
-        # Release by owner
+        # Release by owner (atomic via Lua)
         release_workspace_lock(r, workspace_id=1, job_id="j1")
         # Now acquire succeeds
-        store.clear()  # Simulate Redis key deletion
         assert acquire_workspace_lock(r, workspace_id=1, job_id="j3") is True
 
 

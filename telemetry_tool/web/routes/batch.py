@@ -29,6 +29,14 @@ def get_pg_connection():
     return _get_pg()
 
 
+def _get_redis():
+    """Create a Redis client from the app config."""
+    import redis
+    from web.config import Config
+
+    return redis.Redis.from_url(Config.REDIS_URL)
+
+
 def _dispatch_batch_task(batch_job_id: int, workspace_id: int):
     """Dispatch the dispatch_batch Celery task (deferred import for testability)."""
     from tasks.batch_tasks import dispatch_batch
@@ -86,11 +94,22 @@ def batch_reanalyze():
     """Create a batch reprocessing job.
 
     Inserts a ``batch_jobs`` row and dispatches the ``dispatch_batch``
-    Celery task.
+    Celery task. Returns 429 if the pipeline queue is full.
 
     Returns:
         202 with ``{"batch_job_id": N}``
+        429 if queue is full.
     """
+    # Gate: check pipeline queue depth before accepting new work
+    try:
+        from tasks.concurrency import check_queue_depth, QueueFullError
+        redis_client = _get_redis()
+        check_queue_depth(redis_client)
+    except QueueFullError as exc:
+        return jsonify({"error": str(exc)}), 429
+    except Exception:
+        logger.warning("Queue depth check failed, proceeding anyway", exc_info=True)
+
     conn = get_pg_connection()
 
     # Insert batch_jobs row

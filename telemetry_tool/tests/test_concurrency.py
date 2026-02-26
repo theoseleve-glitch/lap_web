@@ -90,26 +90,37 @@ class TestAcquireWorkspaceLock:
 
 
 class TestReleaseWorkspaceLock:
-    """Verify owner-checked lock release."""
+    """Verify atomic owner-checked lock release via Redis Lua script."""
 
-    def test_release_deletes_if_owner_matches(self):
-        redis = _make_mock_redis()
-        acquire_workspace_lock(redis, workspace_id=5, job_id="job-abc")
-        release_workspace_lock(redis, workspace_id=5, job_id="job-abc")
-        redis.delete.assert_called_with("pipeline:lock:5")
+    def test_release_calls_redis_eval_with_lua_script(self):
+        """release uses redis server-side Lua for atomicity."""
+        r = _make_mock_redis()
+        # redis.eval sends Lua to the Redis server (NOT Python eval)
+        r.eval = MagicMock(return_value=1)  # noqa: S307
+        acquire_workspace_lock(r, workspace_id=5, job_id="job-abc")
+        release_workspace_lock(r, workspace_id=5, job_id="job-abc")
+        r.eval.assert_called_once()  # noqa: S307
+        call_args = r.eval.call_args  # noqa: S307
+        # Args: lua_script, 1, key, job_id
+        assert call_args[0][1] == 1  # numkeys
+        assert call_args[0][2] == "pipeline:lock:5"  # key
+        assert call_args[0][3] == "job-abc"  # value to compare
 
-    def test_release_skips_if_different_owner(self):
-        redis = _make_mock_redis()
-        acquire_workspace_lock(redis, workspace_id=5, job_id="job-abc")
-        release_workspace_lock(redis, workspace_id=5, job_id="job-OTHER")
-        # delete should NOT have been called (the lock belongs to job-abc)
-        redis.delete.assert_not_called()
+    def test_release_passes_correct_job_id(self):
+        """Different job_id is passed to the Lua script for comparison."""
+        r = _make_mock_redis()
+        r.eval = MagicMock(return_value=0)  # noqa: S307
+        acquire_workspace_lock(r, workspace_id=5, job_id="job-abc")
+        release_workspace_lock(r, workspace_id=5, job_id="job-OTHER")
+        call_args = r.eval.call_args  # noqa: S307
+        assert call_args[0][3] == "job-OTHER"
 
     def test_release_noop_if_no_lock(self):
-        redis = _make_mock_redis()
-        # No lock set — should not raise
-        release_workspace_lock(redis, workspace_id=99, job_id="job-xyz")
-        redis.delete.assert_not_called()
+        """Release on non-existent lock still calls server-side Lua (handles nil)."""
+        r = _make_mock_redis()
+        r.eval = MagicMock(return_value=0)  # noqa: S307
+        release_workspace_lock(r, workspace_id=99, job_id="job-xyz")
+        r.eval.assert_called_once()  # noqa: S307
 
 
 # ---------------------------------------------------------------------------
@@ -165,15 +176,15 @@ class TestCheckWorkerMemory:
         mock_proc = MagicMock()
         mock_proc.memory_info.return_value.rss = 500 * 1024 * 1024
         mock_psutil.Process.return_value = mock_proc
-        assert check_worker_memory() is False
+        assert check_worker_memory(exit_on_exceed=False) is False
 
     @patch("tasks.concurrency.psutil")
     def test_returns_true_above_threshold(self, mock_psutil):
-        # 2000 MB RSS — above 1500 MB default
+        # 2000 MB RSS — above 1500 MB default (exit disabled for test)
         mock_proc = MagicMock()
         mock_proc.memory_info.return_value.rss = 2000 * 1024 * 1024
         mock_psutil.Process.return_value = mock_proc
-        assert check_worker_memory() is True
+        assert check_worker_memory(exit_on_exceed=False) is True
 
     @patch("tasks.concurrency.psutil")
     def test_custom_threshold(self, mock_psutil):
@@ -181,7 +192,7 @@ class TestCheckWorkerMemory:
         mock_proc = MagicMock()
         mock_proc.memory_info.return_value.rss = 800 * 1024 * 1024
         mock_psutil.Process.return_value = mock_proc
-        assert check_worker_memory(max_rss_mb=700) is True
+        assert check_worker_memory(max_rss_mb=700, exit_on_exceed=False) is True
 
     @patch("tasks.concurrency.psutil")
     def test_exactly_at_threshold(self, mock_psutil):
@@ -189,4 +200,14 @@ class TestCheckWorkerMemory:
         mock_proc = MagicMock()
         mock_proc.memory_info.return_value.rss = 1500 * 1024 * 1024
         mock_psutil.Process.return_value = mock_proc
-        assert check_worker_memory(max_rss_mb=1500) is False
+        assert check_worker_memory(max_rss_mb=1500, exit_on_exceed=False) is False
+
+    @patch("tasks.concurrency.sys")
+    @patch("tasks.concurrency.psutil")
+    def test_exits_when_exceeded_and_exit_enabled(self, mock_psutil, mock_sys):
+        """Default behavior: sys.exit(0) when memory exceeds threshold."""
+        mock_proc = MagicMock()
+        mock_proc.memory_info.return_value.rss = 2000 * 1024 * 1024
+        mock_psutil.Process.return_value = mock_proc
+        check_worker_memory()
+        mock_sys.exit.assert_called_once_with(0)

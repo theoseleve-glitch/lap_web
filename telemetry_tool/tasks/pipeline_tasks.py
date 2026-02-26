@@ -65,9 +65,15 @@ def _update_job_progress(
     error_message: Optional[str] = None,
     error_class: Optional[str] = None,
     pause_reason: Optional[str] = None,
+    conn=None,
 ) -> None:
-    """Write pipeline progress to the PG ``ingestion_jobs`` table."""
-    conn = _get_pg_connection()
+    """Write pipeline progress to the PG ``ingestion_jobs`` table.
+
+    Accepts an optional ``conn`` to reuse an existing PG connection
+    instead of opening a new one per call.
+    """
+    if conn is None:
+        conn = _get_pg_connection()
     conn.execute(
         text(
             "UPDATE ingestion_jobs SET "
@@ -93,6 +99,40 @@ def _update_job_progress(
         },
     )
     conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Batch counter helpers
+# ---------------------------------------------------------------------------
+
+
+def _increment_batch_counter(job_id: str, column: str, conn=None) -> None:
+    """Increment batch_jobs.completed_sessions or failed_sessions for this job.
+
+    Only acts if the job belongs to a batch (has batch_job_id).
+    """
+    if conn is None:
+        conn = _get_pg_connection()
+    try:
+        row = conn.execute(
+            text("SELECT batch_job_id FROM ingestion_jobs WHERE job_id = :jid"),
+            {"jid": job_id},
+        ).fetchone()
+        if row is None:
+            return
+        batch_id = row[0] if not isinstance(row, dict) else row.get("batch_job_id")
+        if batch_id is None:
+            return
+        conn.execute(
+            text(
+                f"UPDATE batch_jobs SET {column} = {column} + 1, "  # noqa: S608
+                "updated_at = now() WHERE id = :bid"
+            ),
+            {"bid": batch_id},
+        )
+        conn.commit()
+    except Exception:
+        logger.warning("Failed to increment batch %s for job %s", column, job_id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +306,9 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
 
     Marks job as "completed", updates ``sessions.processing_version``,
     calls ``ctx.cleanup()``, releases workspace lock, and checks worker memory.
+
+    On the resume path (after joker pause), re-acquires the workspace lock
+    in case it expired during the pause window.
     """
     if job_id is None:
         return None
@@ -275,6 +318,11 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
 
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
+
+    # Re-acquire workspace lock on resume path (lock may have expired
+    # during joker pause which can exceed the 30-minute TTL).
+    if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
+        raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job (resume path)")
 
     _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=15)
 
@@ -304,9 +352,13 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
         ctx.cleanup()
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
 
-        # Advisory memory check
-        if check_worker_memory():
+        # Advisory memory check (exit_on_exceed=False: don't kill worker mid-task,
+        # the memory guard in the worker's post-task hook handles that).
+        if check_worker_memory(exit_on_exceed=False):
             logger.warning("Worker memory exceeds threshold after job %s", job_id)
+
+        # Increment batch completed counter if part of a batch
+        _increment_batch_counter(job_id, "completed_sessions")
 
         return job_id
     except FatalError as exc:
@@ -315,6 +367,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
         )
+        _increment_batch_counter(job_id, "failed_sessions")
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
     except Exception as exc:
@@ -324,6 +377,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
         )
+        _increment_batch_counter(job_id, "failed_sessions")
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
             raise TransientError(str(exc)) from exc
