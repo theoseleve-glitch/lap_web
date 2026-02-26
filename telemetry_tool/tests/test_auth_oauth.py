@@ -166,14 +166,21 @@ class TestMiddlewareAllowlist:
 
     def test_oauth_paths_allowed(self):
         """The auth middleware should skip /auth/oauth/* paths."""
-        from web.middleware.auth import auth_middleware
+        from web.middleware.auth import auth_middleware, _OAUTH_PATH_RE
 
-        # The middleware reads request.path from Flask's request proxy.
-        # We just verify the source code contains the correct allowlist.
+        # Verify the regex matches expected OAuth paths
+        assert _OAUTH_PATH_RE.match("/auth/oauth/google")
+        assert _OAUTH_PATH_RE.match("/auth/oauth/github")
+        assert _OAUTH_PATH_RE.match("/auth/oauth/google/callback")
+        assert _OAUTH_PATH_RE.match("/auth/oauth/github/callback")
+        # Should NOT match arbitrary sub-paths
+        assert not _OAUTH_PATH_RE.match("/auth/oauth/admin/settings")
+        assert not _OAUTH_PATH_RE.match("/auth/oauth/")
+
+        # Also verify verify-email is in the source allowlist
         import inspect
         source = inspect.getsource(auth_middleware)
         assert "/auth/verify-email" in source
-        assert "/auth/oauth/" in source
 
     def test_verify_email_in_public_paths(self):
         """verify-email should be in the explicit allowlist set."""
@@ -251,6 +258,7 @@ class TestGetOrCreateOAuthUser:
             "id": "oauth-123",
             "email": "test@example.com",
             "name": "Test User",
+            "email_verified": True,
         }
 
         result = get_or_create_oauth_user(conn, "google", profile, "test-secret")
@@ -295,11 +303,46 @@ class TestGetOrCreateOAuthUser:
             "id": "oauth-456",
             "email": "existing@example.com",
             "name": "Existing",
+            "email_verified": True,
         }
 
         result = get_or_create_oauth_user(conn, "github", profile, "test-secret")
 
         assert result["user"]["id"] == 99
+
+    def test_rejects_unverified_email_linking(self):
+        """When OAuth email is unverified, refuse to link to existing account."""
+        from auth.oauth import get_or_create_oauth_user
+        from auth.service import AuthError
+
+        conn = self._make_mock_conn()
+        call_count = [0]
+
+        def execute_side_effect(sql, params=None):
+            cur = MagicMock()
+            call_count[0] += 1
+            idx = call_count[0]
+
+            if idx == 1:  # oauth_connections lookup
+                cur.fetchone.return_value = None
+            elif idx == 2:  # users email lookup -> found!
+                cur.fetchone.return_value = {"id": 99}
+            return cur
+
+        conn.execute.side_effect = execute_side_effect
+
+        profile = {
+            "id": "oauth-attacker",
+            "email": "victim@example.com",
+            "name": "Attacker",
+            "email_verified": False,
+        }
+
+        with pytest.raises(AuthError) as exc_info:
+            get_or_create_oauth_user(conn, "github", profile, "test-secret")
+
+        assert exc_info.value.code == "OAUTH_EMAIL_UNVERIFIED"
+        conn.rollback.assert_called()
 
     def test_returns_existing_oauth_user(self):
         """When OAuth connection already exists, returns the linked user."""
@@ -331,6 +374,7 @@ class TestGetOrCreateOAuthUser:
             "id": "oauth-789",
             "email": "returning@example.com",
             "name": "Returning",
+            "email_verified": True,
         }
 
         result = get_or_create_oauth_user(conn, "google", profile, "test-secret")
@@ -378,3 +422,43 @@ class TestMigrationFile:
         spec.loader.exec_module(mod)
         assert callable(getattr(mod, "upgrade", None))
         assert callable(getattr(mod, "downgrade", None))
+
+
+# ---------------------------------------------------------------------------
+# Refresh endpoint tests (no PG required — verifies route logic exists)
+# ---------------------------------------------------------------------------
+
+class TestRefreshEndpoint:
+    """Verify the /auth/refresh route exists and validates input."""
+
+    def test_refresh_route_exists(self):
+        """The auth blueprint should have a /refresh route handler."""
+        from web.routes.auth import refresh
+        assert callable(refresh)
+
+    def test_refresh_in_middleware_allowlist(self):
+        """The /auth/refresh path should be in the public allowlist."""
+        from web.middleware.auth import auth_middleware
+        import inspect
+        source = inspect.getsource(auth_middleware)
+        assert "/auth/refresh" in source
+
+
+# ---------------------------------------------------------------------------
+# _get_conn guard test (no PG required)
+# ---------------------------------------------------------------------------
+
+class TestGetConnGuard:
+    """Verify _get_conn raises when USE_PG is not enabled."""
+
+    def test_get_conn_rejects_without_pg(self):
+        """_get_conn should raise RuntimeError when USE_PG is False."""
+        from web.routes.auth import _get_conn
+        from flask import Flask
+
+        app = Flask(__name__)
+        app.config["USE_PG"] = False
+
+        with app.app_context():
+            with pytest.raises(RuntimeError, match="USE_PG"):
+                _get_conn()

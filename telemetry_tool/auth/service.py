@@ -11,6 +11,11 @@ from argon2.exceptions import VerifyMismatchError
 
 _ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1)
 
+# Pre-computed dummy hash used to prevent timing-based user enumeration.
+# When a user is not found (or has no password), we still run the hasher
+# so that the response time is indistinguishable from a real verify.
+_DUMMY_HASH = _ph.hash("dummy-password-for-timing-equalization")
+
 
 class AuthError(Exception):
     """Authentication/authorization error with user-safe message."""
@@ -125,7 +130,14 @@ def login_user(
     )
     user = cur.fetchone()
 
-    if user is None or not verify_password(password, user["password_hash"]):
+    # Constant-time check: always run the hasher to prevent timing-based
+    # user enumeration.  Also guards against NULL password_hash (OAuth-only
+    # accounts where password_hash column is intentionally nullable).
+    if user is None:
+        verify_password(password, _DUMMY_HASH)
+        raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
+
+    if not user["password_hash"] or not verify_password(password, user["password_hash"]):
         raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
 
     # Issue tokens

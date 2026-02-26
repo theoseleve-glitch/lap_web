@@ -99,7 +99,7 @@ def test_insert_or_ignore():
 # ------------------------------------------------------------------
 
 def test_insert_or_replace():
-    """INSERT OR REPLACE -> INSERT INTO ... ON CONFLICT DO UPDATE SET ..."""
+    """INSERT OR REPLACE strips OR REPLACE, warns (requires manual conversion)."""
     sql = (
         "INSERT OR REPLACE INTO laps "
         "(session_id, lap_number, lap_time_s) "
@@ -108,11 +108,8 @@ def test_insert_or_replace():
     result = translate_params(sql)
     assert "INSERT INTO" in result
     assert "OR REPLACE" not in result
-    assert "ON CONFLICT DO UPDATE SET" in result
-    # Each column should appear in the SET clause
-    assert "session_id = EXCLUDED.session_id" in result
-    assert "lap_number = EXCLUDED.lap_number" in result
-    assert "lap_time_s = EXCLUDED.lap_time_s" in result
+    # No ON CONFLICT generated — requires manual conversion with conflict target
+    assert "ON CONFLICT" not in result
 
 
 # ------------------------------------------------------------------
@@ -202,7 +199,7 @@ def test_real_query_from_codebase():
     )
     result = translate_params(sql)
     assert "OR REPLACE" not in result
-    assert "ON CONFLICT DO UPDATE SET" in result
+    # Params still translated even though ON CONFLICT not auto-generated
     assert "%(session_id)s" in result
     assert "%(csv_filename)s" in result
     assert "%(driver_id)s" in result

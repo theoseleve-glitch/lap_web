@@ -4,6 +4,11 @@ PostgreSQL connection management for the Flask app.
 Mirrors the SQLite ``db.py`` interface but uses a ``psycopg2``
 ThreadedConnectionPool and Alembic for migrations.
 
+The ``PgConnectionWrapper`` bridges the API gap between sqlite3.Connection
+and psycopg2 — it provides ``.execute()`` / ``.executemany()`` directly
+on the connection object, and translates SQLite-flavoured SQL via
+``sql_compat.translate_params()`` automatically.
+
 Enabled when the ``USE_PG`` environment variable is set to ``"1"``.
 """
 
@@ -11,10 +16,20 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
+from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Ensure the project root is importable so we can reach db.sql_compat
+# ---------------------------------------------------------------------------
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 
 # ---------------------------------------------------------------------------
 # Module-level pool (lazy-initialised on first call)
@@ -53,9 +68,71 @@ def _ensure_pool():
         )
 
 
+# ---------------------------------------------------------------------------
+# Connection wrapper — makes psycopg2 behave like sqlite3.Connection
+# ---------------------------------------------------------------------------
+
+class PgConnectionWrapper:
+    """Thin wrapper around a psycopg2 connection.
+
+    Provides ``.execute()`` and ``.executemany()`` directly on the
+    connection object (matching the sqlite3.Connection API) and
+    transparently translates SQLite-flavoured SQL to PostgreSQL via
+    ``sql_compat.translate_params()``.
+
+    All other attribute access is forwarded to the underlying psycopg2
+    connection so that ``conn.commit()``, ``conn.rollback()``,
+    ``conn.cursor()``, etc. work as expected.
+    """
+
+    def __init__(self, raw_conn):
+        self._conn = raw_conn
+
+    # -- sqlite3-compatible execute API -----------------------------------
+
+    def execute(self, sql: str, params=None):
+        """Execute SQL and return the cursor (sqlite3.Connection-compatible).
+
+        The SQL is translated from SQLite to PostgreSQL dialect before
+        execution (named params, positional params, INSERT OR IGNORE, etc.).
+        """
+        from db.sql_compat import translate_params
+
+        translated = translate_params(sql)
+        cur = self._conn.cursor()
+        if params is not None:
+            cur.execute(translated, params)
+        else:
+            cur.execute(translated)
+        return cur
+
+    def executemany(self, sql: str, seq_of_params):
+        """Execute SQL with multiple param sets (sqlite3-compatible)."""
+        from db.sql_compat import translate_params
+
+        translated = translate_params(sql)
+        cur = self._conn.cursor()
+        cur.executemany(translated, seq_of_params)
+        return cur
+
+    # -- Forward everything else to the underlying connection -------------
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    # Expose the raw connection for code that explicitly needs it
+    @property
+    def raw_connection(self):
+        return self._conn
+
+
 def get_pg_connection():
     """
-    Return a PostgreSQL connection with ``RealDictCursor``.
+    Return a wrapped PostgreSQL connection with ``RealDictCursor``.
+
+    The returned ``PgConnectionWrapper`` provides ``.execute()`` directly
+    on the connection (matching the sqlite3 API) and translates SQLite
+    SQL dialect automatically.
 
     Inside a Flask request the connection is cached on ``flask.g``
     (identical pattern to ``db.py``).  Outside Flask it is returned
@@ -73,7 +150,7 @@ def get_pg_connection():
         if "pg_conn" not in g:
             conn = _pool.getconn()
             conn.cursor_factory = psycopg2.extras.RealDictCursor
-            g.pg_conn = conn
+            g.pg_conn = PgConnectionWrapper(conn)
         return g.pg_conn
     except (ImportError, RuntimeError):
         pass
@@ -81,17 +158,25 @@ def get_pg_connection():
     # Standalone mode -- caller must return the connection.
     conn = _pool.getconn()
     conn.cursor_factory = psycopg2.extras.RealDictCursor
+    return PgConnectionWrapper(conn)
+
+
+def _unwrap(conn):
+    """Extract the raw psycopg2 connection from a PgConnectionWrapper."""
+    if isinstance(conn, PgConnectionWrapper):
+        return conn._conn
     return conn
 
 
 def return_pg_connection(conn) -> None:
     """Return a standalone connection to the pool (for non-Flask usage)."""
     if _pool is not None and conn is not None:
+        raw = _unwrap(conn)
         try:
-            conn.rollback()
+            raw.rollback()
         except Exception:
             pass
-        _pool.putconn(conn)
+        _pool.putconn(raw)
 
 
 def close_pg(exc: Optional[BaseException] = None) -> None:
@@ -105,17 +190,19 @@ def close_pg(exc: Optional[BaseException] = None) -> None:
 
         conn = g.pop("pg_conn", None)
         if conn is not None:
+            raw = _unwrap(conn)
             if exc is not None:
                 try:
-                    conn.rollback()
+                    raw.rollback()
                 except Exception:
                     pass
             else:
                 try:
-                    conn.commit()
+                    raw.commit()
                 except Exception:
-                    conn.rollback()
-            _pool.putconn(conn)
+                    raw.rollback()
+            if _pool is not None:
+                _pool.putconn(raw)
     except (ImportError, RuntimeError):
         pass
 

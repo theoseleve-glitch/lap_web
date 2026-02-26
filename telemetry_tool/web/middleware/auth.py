@@ -1,7 +1,11 @@
 """JWT auth middleware -- extracts user from Bearer token."""
+import re
 from functools import wraps
 
 from flask import request, g, current_app, jsonify
+
+# Matches /auth/oauth/<provider> and /auth/oauth/<provider>/callback only
+_OAUTH_PATH_RE = re.compile(r"^/auth/oauth/[a-z]+(/callback)?$")
 
 
 def auth_middleware():
@@ -20,7 +24,7 @@ def auth_middleware():
         "/auth/register", "/auth/login", "/auth/logout",
         "/auth/refresh", "/auth/verify-email",
     }
-    if request.path in _AUTH_PUBLIC_PATHS or request.path.startswith("/auth/oauth/"):
+    if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path):
         return
 
     # Skip for static assets

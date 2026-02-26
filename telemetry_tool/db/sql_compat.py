@@ -95,30 +95,30 @@ def _translate_insert_or_replace(sql: str) -> str:
     ``INSERT INTO tbl (a, b) VALUES (:a, :b)
       ON CONFLICT DO UPDATE SET a = EXCLUDED.a, b = EXCLUDED.b``
 
-    This is a *basic* translation that generates an unqualified
-    ``ON CONFLICT DO UPDATE`` (no conflict target).  Callers with
-    explicit ``ON CONFLICT(col)`` clauses should not use ``INSERT OR REPLACE``.
+    PostgreSQL requires a conflict target for DO UPDATE, which cannot be
+    reliably inferred from the SQL alone.  This function logs a warning
+    and passes the query through unchanged — INSERT OR REPLACE queries
+    must be manually converted to ON CONFLICT(col) DO UPDATE syntax.
     """
     m = _INSERT_OR_REPLACE_RE.search(sql)
     if not m:
         return sql
 
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.warning(
+        "INSERT OR REPLACE requires manual conversion to "
+        "ON CONFLICT(col) DO UPDATE for PostgreSQL: %s",
+        sql[:120],
+    )
+
+    # Remove the OR REPLACE but do NOT add ON CONFLICT — caller must fix.
     table = m.group(1)
     cols_raw = m.group(2)
     vals_raw = m.group(3)
-
-    # Parse column names (strip whitespace).
     cols = [c.strip() for c in cols_raw.split(",")]
-
-    # Build the ON CONFLICT ... DO UPDATE SET clause.
-    set_parts = ", ".join(f"{c} = EXCLUDED.{c}" for c in cols)
-
-    # Reconstruct.
     col_list = ", ".join(cols)
-    result = (
-        f"INSERT INTO {table} ({col_list}) VALUES ({vals_raw})\n"
-        f"ON CONFLICT DO UPDATE SET {set_parts}"
-    )
+    result = f"INSERT INTO {table} ({col_list}) VALUES ({vals_raw})"
 
     # Preserve trailing semicolon.
     tail = sql[m.end():].strip()

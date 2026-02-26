@@ -211,8 +211,8 @@ def _convert_value(
         if isinstance(value, str):
             # Validate it is actually JSON; if not, pass as NULL.
             try:
-                json.loads(value)
-                return Json(json.loads(value))
+                parsed = json.loads(value)
+                return Json(parsed)
             except (json.JSONDecodeError, TypeError):
                 return None
         # Already a Python object (unlikely from SQLite, but defensive).
@@ -230,6 +230,40 @@ def _build_upsert_sql(table_name: str, columns: list[str]) -> str:
         f"VALUES ({placeholders}) "
         f"ON CONFLICT DO NOTHING"
     )
+
+
+def _reset_sequences(pg_conn) -> None:
+    """Reset all auto-increment sequences to MAX(pk) + 1.
+
+    After migrating rows with explicit integer PKs, PostgreSQL sequences
+    still point at their initial value.  Without this step the next
+    INSERT without an explicit ID would collide with migrated data.
+    """
+    cur = pg_conn.cursor()
+    cur.execute(
+        "SELECT c.relname AS table_name, "
+        "       a.attname AS column_name, "
+        "       pg_get_serial_sequence(c.relname::text, a.attname) AS seq_name "
+        "FROM pg_class c "
+        "JOIN pg_attribute a ON a.attrelid = c.oid "
+        "JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum "
+        "WHERE c.relkind = 'r' "
+        "  AND pg_get_serial_sequence(c.relname::text, a.attname) IS NOT NULL "
+        "  AND c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = 'public')"
+    )
+    sequences = cur.fetchall()
+
+    for table_name, column_name, seq_name in sequences:
+        cur.execute(
+            f'SELECT setval(%s, COALESCE((SELECT MAX("{column_name}") '
+            f'FROM "{table_name}"), 0) + 1, false)',
+            (seq_name,),
+        )
+        logger.debug("Reset sequence %s for %s.%s", seq_name, table_name, column_name)
+
+    pg_conn.commit()
+    cur.close()
+    logger.info("Reset %d auto-increment sequences", len(sequences))
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +289,9 @@ def migrate(
 
     Returns
     -------
-    dict mapping table_name -> number of rows inserted (not counting skipped
-    ON CONFLICT rows).
+    dict mapping table_name -> number of rows attempted for insertion.
+    Rows skipped by ON CONFLICT DO NOTHING are still counted (use
+    PostgreSQL row counts to determine actual inserts).
     """
     import psycopg2
     import psycopg2.extras
@@ -324,9 +359,13 @@ def migrate(
                 psycopg2.extras.execute_batch(pg_cur, insert_sql, converted_batch)
                 inserted += len(converted_batch)
 
+            pg_cur.close()
             pg_conn.commit()
             result[table_name] = inserted
-            logger.info("Table %s: %d rows migrated", table_name, inserted)
+            logger.info("Table %s: %d rows attempted", table_name, inserted)
+
+        # Reset auto-increment sequences so new inserts don't collide.
+        _reset_sequences(pg_conn)
 
     except Exception:
         pg_conn.rollback()

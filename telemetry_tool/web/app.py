@@ -201,11 +201,11 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(api_v1_bp)
             app.before_request(auth_middleware)
             logger.debug("Registered auth blueprints and middleware")
-            # Initialize OAuth if any providers are configured
-            if cfg.GOOGLE_CLIENT_ID or cfg.GITHUB_CLIENT_ID:
-                from auth.oauth import init_oauth
-                init_oauth(app)
-                logger.debug("Initialized OAuth providers")
+            # Always initialize OAuth (binds to app); providers registered conditionally
+            from auth.oauth import init_oauth
+            init_oauth(app)
+            logger.debug("Initialized OAuth (providers: google=%s, github=%s)",
+                         bool(cfg.GOOGLE_CLIENT_ID), bool(cfg.GITHUB_CLIENT_ID))
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
