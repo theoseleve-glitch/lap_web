@@ -18,8 +18,9 @@ def upgrade() -> None:
         ["workspace_id", "driver_name"],
     )
 
-    # tracks: unique track_id (fingerprint) per workspace
-    op.drop_constraint("tracks_track_id_key", "tracks", type_="unique")
+    # tracks: add compound unique index for workspace-scoped track fingerprint
+    # Note: track_id is the PRIMARY KEY, so we don't drop it — just add
+    # a compound constraint alongside it for workspace-scoped uniqueness.
     op.create_unique_constraint(
         "uq_tracks_workspace_fingerprint", "tracks",
         ["workspace_id", "track_id"],
@@ -28,7 +29,7 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_constraint("uq_tracks_workspace_fingerprint", "tracks", type_="unique")
-    op.create_unique_constraint("tracks_track_id_key", "tracks", ["track_id"])
+    # No need to restore tracks_track_id_key — it was never dropped (PK stays)
 
     op.drop_constraint("uq_drivers_workspace_name", "drivers", type_="unique")
     op.create_unique_constraint("drivers_driver_name_key", "drivers", ["driver_name"])

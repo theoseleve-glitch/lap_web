@@ -31,13 +31,20 @@ def list_workspaces():
         return _json_response(error={"code": "UNAUTHORIZED", "message": "Auth required"}, status=401)
 
     conn = _get_conn()
-    workspaces = get_user_workspaces(conn, user_id)
-    return _json_response(data={"workspaces": workspaces})
+    try:
+        workspaces = get_user_workspaces(conn, user_id)
+        return _json_response(data={"workspaces": workspaces})
+    except Exception:
+        logger.exception("Failed to list workspaces")
+        return _json_response(error={"code": "INTERNAL_ERROR", "message": "Failed to list workspaces"}, status=500)
 
 
 @bp.route("/current", methods=["GET"])
 def current_workspace():
     """Return the current workspace context."""
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return _json_response(error={"code": "UNAUTHORIZED", "message": "Auth required"}, status=401)
     ws_id = getattr(g, "workspace_id", None)
     ws_role = getattr(g, "workspace_role", None)
     return _json_response(data={
