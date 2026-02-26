@@ -206,6 +206,9 @@ def create_app(config: Config | None = None) -> Flask:
             init_oauth(app)
             logger.debug("Initialized OAuth (providers: google=%s, github=%s)",
                          bool(cfg.GOOGLE_CLIENT_ID), bool(cfg.GITHUB_CLIENT_ID))
+            from .middleware.tenant import tenant_middleware
+            app.before_request(tenant_middleware)
+            logger.debug("Registered tenant middleware")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
