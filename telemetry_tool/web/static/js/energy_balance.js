@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var COLORS = {
@@ -58,7 +60,7 @@
 
         el.innerHTML = html;
 
-        setTimeout(function () {
+        _lc.addTimer(function () {
             _drawEnergyBars(data);
         }, 30);
     }
@@ -198,7 +200,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("energy-balance-container", function () {
@@ -210,4 +212,13 @@
     });
 
     window.EnergyBalance = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('energy_balance', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

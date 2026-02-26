@@ -8,6 +8,8 @@
 (function() {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     // Polyfill for CanvasRenderingContext2D.roundRect (older browsers)
@@ -259,4 +261,13 @@
         ctx.fillText(Math.round(capLoss / 2).toString(), legX + legW / 2, legY + 18);
         ctx.fillText(Math.round(capLoss).toString() + '+', legX + legW, legY + 18);
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('consistency_heatmap', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

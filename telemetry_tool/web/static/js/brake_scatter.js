@@ -8,6 +8,8 @@
 (function() {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     window.BrakeScatter = { init: init };
@@ -199,4 +201,13 @@
             ctx.fillText('(' + c.n_samples + ' laps)', scoreX, y + 2);
         });
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('brake_scatter', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
