@@ -114,6 +114,17 @@
     cursor: default;
 }
 
+.cr-corner-pills-row {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+}
+
+.cr-speed-group {
+    display: flex;
+    gap: 3px;
+}
+
 /* ── Main viewport grid ────────────────────────────────────── */
 .cr-viewport {
     position: relative;

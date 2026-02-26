@@ -6038,6 +6038,12 @@ textarea.editable-field {
 .justify-end     { justify-content: flex-end !important; }
 .justify-between { justify-content: space-between !important; }
 
+.flex-center-gap {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
 /* ── Text utilities ───────────────────── */
 
 .text-xs   { font-size: 0.72rem !important; }

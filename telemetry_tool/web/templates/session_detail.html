@@ -1,6 +1,8 @@
 {% extends "base.html" %}
 
-{% block title %}{{ session.csv_filename or session.session_id[:16] }} — Telemetry{% endblock %}
+{% set _fname = (session.csv_filename or session.session_id[:16]).replace('\\', '/').split('/')[-1] %}
+{% set _stem  = _fname.rsplit('.', 1)[0] if '.' in _fname else _fname %}
+{% block title %}{{ _stem }} — Telemetry{% endblock %}
 
 {% block head_extra %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/corner_replay.css') }}">
@@ -13,7 +15,7 @@
     <div>
         <nav aria-label="Breadcrumb"><a href="{{ url_for('sessions.session_list') }}" class="breadcrumb">&larr; Sessions</a></nav>
         <h1>
-            {{ session.csv_filename or session.session_id[:16] }}
+            {{ _stem }}
             {% if session.grade %}
                 <span class="grade grade-{{ session.grade[0] }}">{{ session.grade }}</span>
             {% endif %}
@@ -48,15 +50,16 @@
     </div>
     <div class="meta-item">
         <span class="meta-label">Track</span>
-        <span class="meta-value">
-            <select class="session-editable form-select-inline" data-field="track_id">
+        <span class="meta-value flex-center-gap">
+            <select class="session-editable form-select-inline" data-field="track_id" id="track-select">
                 <option value="">— None —</option>
                 {% for t in all_tracks %}
                 <option value="{{ t.track_id }}" {% if t.track_id == session.track_id %}selected{% endif %}>
-                    {{ t.track_name }}
+                    {{ t.track_name }}{% if 'nknown' in t.track_name and t.start_lat %} ({{ "%.2f"|format(t.start_lat) }}, {{ "%.2f"|format(t.start_lon) }} · {{ "%.0f"|format(t.lap_length_m or 0) }}m){% endif %}
                 </option>
                 {% endfor %}
             </select>
+            <button type="button" class="btn-icon btn-sm" id="track-rename-btn" title="Rename this track">&#x270E;</button>
         </span>
     </div>
     <div class="meta-item">
@@ -110,23 +113,19 @@
     <div class="meta-item">
         <span class="meta-label">Kart</span>
         <span class="meta-value">
-            {% if kart %}
-                <a href="{{ url_for('karts.kart_detail', kart_id=kart.kart_id) }}">{{ kart.kart_name }}</a>
-            {% else %}
-                <form method="POST" action="{{ url_for('sessions.set_session_kart', session_id=session.session_id) }}"
-                      class="inline-form" style="display:inline;">
-                    <select name="kart_id" class="form-select form-select-sm" onchange="this.form.submit()" style="width:auto;display:inline-block;">
-                        <option value="">— None —</option>
-                        {% for k in karts %}
-                        <option value="{{ k.kart_id }}">{{ k.kart_name }}</option>
-                        {% endfor %}
-                    </select>
-                </form>
-            {% endif %}
+            <form method="POST" action="{{ url_for('sessions.set_session_kart', session_id=session.session_id) }}"
+                  class="inline-form">
+                <select name="kart_id" class="form-select form-select-sm" onchange="this.form.submit()">
+                    <option value="">— None —</option>
+                    {% for k in karts %}
+                    <option value="{{ k.kart_id }}" {% if kart and k.kart_id == kart.kart_id %}selected{% endif %}>{{ k.kart_name }}</option>
+                    {% endfor %}
+                </select>
+            </form>
         </span>
     </div>
 </div>
-<div id="session-save-status" class="text-muted mt-xs mb-sm" role="status" aria-live="polite" aria-atomic="true" style="font-size:0.82rem;"></div>
+<div id="session-save-status" class="text-muted mt-xs mb-sm" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <!-- ═══════════════════════════════════════════════════
      TAB NAVIGATION
@@ -233,17 +232,6 @@
     </div>
 </section>
 
-<!-- Performance Fingerprint -->
-<section class="section">
-    <h2>Performance Fingerprint <span class="tip tip-right tip-wrap" data-tip="Radar signature of your driving across key performance dimensions. Compare across sessions to track evolution.">&#9432;</span> <button class="focus-expand-btn" data-tool="fingerprint" title="Focus Mode">&#x26F6;</button></h2>
-    <p class="section-hint">Unique radar signature of your driving across multiple dimensions. Compare across sessions to track evolution.</p>
-    <div id="fingerprint-container" class="flex-wrap-start">
-        <canvas id="fingerprint-radar" class="chart-canvas" aria-label="Performance fingerprint radar chart"></canvas>
-        <div id="fingerprint-stats" class="chart-sidebar">
-            <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading fingerprint...</span></div>
-        </div>
-    </div>
-</section>
 
 </div><!-- end tab-overview -->
 
@@ -268,7 +256,7 @@
         <!-- Corner pills -->
         <div class="cr-corner-bar" id="cr-corner-bar">
             <button class="cr-corner-nav-btn" id="cr-prev-corner" title="Previous corner">&lsaquo;</button>
-            <div id="cr-corner-pills" style="display:flex;gap:4px;overflow-x:auto;"></div>
+            <div id="cr-corner-pills" class="cr-corner-pills-row"></div>
             <button class="cr-corner-nav-btn" id="cr-next-corner" title="Next corner">&rsaquo;</button>
         </div>
 
@@ -291,6 +279,8 @@
                         <span class="cr-split-label cr-split-label-a" id="cr-split-label-a">Lap A</span>
                         <canvas class="cr-cockpit-canvas" id="cr-cockpit-a"></canvas>
                     </div>
+                    <!-- Time delta — centered between the two cockpit halves -->
+                    <div class="cr-delta-badge" id="cr-delta-badge"></div>
                     <div class="cr-split-cockpit-half">
                         <span class="cr-split-label cr-split-label-b" id="cr-split-label-b">Lap B</span>
                         <canvas class="cr-cockpit-canvas" id="cr-cockpit-b"></canvas>
@@ -298,9 +288,6 @@
                 </div>
             </div>
         </div>
-
-        <!-- Time delta (split mode) -->
-        <div class="cr-delta-badge" id="cr-delta-badge"></div>
 
         <!-- Top 3 legend (top3 mode) -->
         <div class="cr-top3-legend" id="cr-top3-legend" style="display:none;"></div>
@@ -314,7 +301,7 @@
                     <div class="cr-scrubber-thumb" id="cr-scrubber-thumb" style="left:0"></div>
                 </div>
             </div>
-            <div style="display:flex;gap:3px;">
+            <div class="cr-speed-group">
                 <button class="cr-speed-btn" data-cr-speed="0.25">0.25x</button>
                 <button class="cr-speed-btn" data-cr-speed="0.5">0.5x</button>
                 <button class="cr-speed-btn active" data-cr-speed="1">1x</button>
@@ -375,18 +362,7 @@
 </section>
 {% endif %}
 
-<!-- Track Layout — Corner Overview Map -->
-{% if gps_laps %}
-<section class="section">
-    <h2>Track Layout</h2>
-    <p class="text-secondary text-sm" style="margin-bottom: 0.5rem;">
-        Corner markers are color-coded by time loss (green = minimal, red = high).
-    </p>
-    <div class="chart-container relative">
-        <canvas id="corner-map-view-canvas" aria-label="Track layout with corner markers"></canvas>
-    </div>
-</section>
-{% endif %}
+<!-- Track Layout — Corner Overview Map (suppressed — available in Focus Mode) -->
 
 <!-- Corner Coaching -->
 {% if gps_laps %}
@@ -401,7 +377,7 @@
 {% if session.track_id %}
 <section class="section" id="key-corners-section">
     <h2>Key Corners <span class="text-muted text-sm">(focus areas)</span></h2>
-    <p class="text-secondary text-sm" style="margin-bottom:0.75rem;">
+    <p class="text-secondary text-sm mb-sm">
         Mark the corners you want to focus on for improvement. These will be highlighted in coaching reports.
     </p>
     <div id="key-corners-picker">
@@ -413,7 +389,7 @@
 <!-- Brake Precision (hidden if no data) -->
 <section class="section" id="brake-section" style="display:none;">
     <h2>Brake Precision</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="brake-scatter-chart" aria-label="Brake precision scatter plot"></canvas>
     </div>
 </section>
@@ -421,7 +397,7 @@
 <!-- Throttle Onset Map (hidden if no data) -->
 <section class="section" id="throttle-section" style="display:none;">
     <h2>Throttle Onset Map</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="throttle-heatmap-chart" aria-label="Throttle onset heatmap"></canvas>
     </div>
 </section>
@@ -429,7 +405,7 @@
 <!-- Consistency Heatmap (hidden if no data) -->
 <section class="section" id="consistency-section" style="display:none;">
     <h2>Consistency Heatmap</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="consistency-heatmap-chart" aria-label="Lap consistency heatmap"></canvas>
     </div>
 </section>
@@ -443,48 +419,7 @@
     </div>
 </section>
 
-<!-- G-G Explorer -->
-{% if gps_laps %}
-<section class="section">
-    <h2>G-G Explorer <button class="focus-expand-btn" data-tool="gg-diagram" title="Focus Mode">&#x26F6;</button></h2>
-    <div id="gg-explorer" class="gg-explorer">
-        <div class="gg-explorer-controls">
-            <div class="gg-explorer-controls-left">
-                <div class="gg-mode-group" id="gg-mode-group">
-                    <button class="gg-mode-btn active" data-mode="all">All</button>
-                    <button class="gg-mode-btn" data-mode="single">Single</button>
-                    <button class="gg-mode-btn" data-mode="compare">Compare</button>
-                </div>
-                <label id="gg-primary-label" style="display:none">
-                    Lap <select id="gg-primary-select" class="form-select-sm"></select>
-                </label>
-                <label id="gg-compare-label" style="display:none">
-                    vs <select id="gg-compare-select" class="form-select-sm"></select>
-                </label>
-            </div>
-            <div class="gg-explorer-controls-right">
-                <span id="gg-stats" class="text-muted text-xs"></span>
-            </div>
-        </div>
-        <div class="gg-explorer-body">
-            <div class="gg-explorer-gg-wrap">
-                <canvas id="gg-explorer-canvas"></canvas>
-                <div class="gg-explorer-tooltip"></div>
-            </div>
-            <div class="gg-explorer-map-wrap">
-                <canvas id="gg-explorer-minimap"></canvas>
-            </div>
-        </div>
-        <div class="gg-explorer-info" id="gg-info-bar">
-            <span class="text-muted text-xs">Click a point to see its track position</span>
-        </div>
-        <div id="gg-loading" class="no-data p-lg" style="position:absolute;inset:0;z-index:5;background:var(--bg-card, #1a1f2e)">
-            <div class="spinner-inline spinner-accent"></div>
-            <div class="text-secondary text-sm">Loading acceleration data...</div>
-        </div>
-    </div>
-</section>
-{% endif %}
+<!-- G-G Explorer (suppressed from Corners tab — available in Focus Mode + Analytics tab) -->
 
 </div><!-- end tab-corners -->
 
@@ -499,7 +434,7 @@
     <div id="stint-analysis-container">
         <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading stint data...</span></div>
     </div>
-    <div class="chart-container relative min-h-200">
+    <div class="chart-frame chart-container relative min-h-200">
         <canvas id="stint-pace-chart" aria-label="Stint pace chart"></canvas>
     </div>
 </section>
@@ -582,7 +517,7 @@
             <label><input type="checkbox" id="toggle-all-laps" checked> All Laps</label>
         </span>
     </div>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="track-map-canvas" aria-label="Track map with GPS overlay"></canvas>
     </div>
 
@@ -625,13 +560,7 @@
 </section>
 {% endif %}
 
-<!-- Track Speed Profile -->
-<section class="section">
-    <h2>Track Speed Profile <button class="focus-expand-btn" data-tool="speed-trace" title="Focus Mode">&#x26F6;</button></h2>
-    <div id="speed-profile-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading speed profile...</span></div>
-    </div>
-</section>
+<!-- Track Speed Profile — removed per user request -->
 
 <!-- Sector Performance -->
 <section class="section">
@@ -658,7 +587,7 @@
         <button type="button" id="overlay-select-all" class="btn btn-xs ml-sm">All</button>
         <button type="button" id="overlay-clear-all" class="btn btn-xs">None</button>
     </div>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="speed-overlay-chart" aria-label="Lap speed overlay comparison"></canvas>
         <div id="overlay-legend" class="overlay-legend-box"></div>
     </div>
@@ -700,19 +629,55 @@
 {% if gps_laps %}
 <section class="section">
     <h2>Cross-Session Speed Overlay</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="cross-session-overlay-chart" aria-label="Cross-session speed overlay"></canvas>
     </div>
 </section>
 {% endif %}
 
-<!-- Driver Fitness & Endurance -->
+<!-- Driver Fitness & Endurance — removed per user request -->
+
+<!-- G-G Explorer (interactive acceleration diagram) -->
+{% if gps_laps %}
 <section class="section">
-    <h2>Driver Fitness & Endurance <button class="focus-expand-btn" data-tool="driver-workload" title="Focus Mode">&#x26F6;</button></h2>
-    <div id="fitness-container">
-        <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Analyzing fitness metrics...</span></div>
+    <h2>G-G Explorer <button class="focus-expand-btn" data-tool="gg-diagram" title="Focus Mode">&#x26F6;</button></h2>
+    <div class="gg-explorer" id="gg-explorer">
+        <div class="gg-explorer-controls">
+            <div class="gg-explorer-controls-left">
+                <div class="gg-mode-group" id="gg-mode-group">
+                    <button class="gg-mode-btn active" data-mode="all">All</button>
+                    <button class="gg-mode-btn" data-mode="single">Single</button>
+                    <button class="gg-mode-btn" data-mode="compare">Compare</button>
+                </div>
+                <label id="gg-primary-label" style="display:none;">Lap:
+                    <select id="gg-primary-select" class="form-select-sm"></select>
+                </label>
+                <label id="gg-compare-label" style="display:none;">vs:
+                    <select id="gg-compare-select" class="form-select-sm"></select>
+                </label>
+            </div>
+            <div class="gg-explorer-controls-right">
+                <span id="gg-stats" class="text-muted text-xs"></span>
+            </div>
+        </div>
+        <div class="gg-explorer-body">
+            <div class="gg-explorer-gg-wrap">
+                <canvas id="gg-explorer-canvas"></canvas>
+                <div class="gg-explorer-tooltip"></div>
+            </div>
+            <div class="gg-explorer-map-wrap">
+                <canvas id="gg-explorer-minimap"></canvas>
+            </div>
+        </div>
+        <div class="gg-explorer-info" id="gg-info-bar">
+            <span class="text-muted text-xs">Switch to Single or Compare mode to click points</span>
+        </div>
+        <div id="gg-loading">
+            <div class="no-data"><div class="spinner-inline spinner-accent"></div><span class="text-secondary text-sm">Loading G-G data...</span></div>
+        </div>
     </div>
 </section>
+{% endif %}
 
 <!-- Development Drill Suggestions -->
 <section class="section">
@@ -777,7 +742,7 @@
 <!-- Lap Times Chart -->
 <section class="section">
     <h2>Lap Times</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="lap-times-chart" aria-label="Lap times bar chart"></canvas>
         <div id="lap-time-tooltip" class="lap-time-tooltip"></div>
     </div>
@@ -981,7 +946,7 @@
 <script>
     (function () {
         var T = window.TELEMETRY;
-        if (T && T.sessionId) {
+        if (T && T.sessionId && document.getElementById('gg-explorer')) {
             window.GGExplorer.init('gg-explorer', T.sessionId);
         }
     })();
@@ -995,7 +960,7 @@
 <script src="{{ url_for('static', filename='js/session_editor.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stint_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/corner_mastery.js') }}"></script>
-<script src="{{ url_for('static', filename='js/fingerprint_chart.js') }}"></script>
+
 <script src="{{ url_for('static', filename='js/pit_window_chart.js') }}"></script>
 <script src="{{ url_for('static', filename='js/pace_simulator.js') }}"></script>
 <script src="{{ url_for('static', filename='js/session_timeline.js') }}"></script>
@@ -1027,6 +992,30 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.SessionEditor) {
         window.SessionEditor.init(sid);
     }
+
+    // ── Track rename button ───────────────────────
+    (function() {
+        var renameBtn = document.getElementById('track-rename-btn');
+        var trackSelect = document.getElementById('track-select');
+        if (!renameBtn || !trackSelect) return;
+        renameBtn.addEventListener('click', function() {
+            var trackId = trackSelect.value;
+            if (!trackId) return;
+            var currentName = trackSelect.options[trackSelect.selectedIndex].text.trim();
+            var newName = prompt('Rename track:', currentName);
+            if (!newName || newName.trim() === '' || newName.trim() === currentName) return;
+            FetchHelper.fetch('/sessions/track/' + encodeURIComponent(trackId) + '/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newName.trim() }),
+            }).then(function() {
+                trackSelect.options[trackSelect.selectedIndex].text = newName.trim();
+                if (window.Toast) Toast.success('Track renamed to "' + newName.trim() + '"');
+            }).catch(function() {
+                if (window.Toast) Toast.error('Rename failed');
+            });
+        });
+    })();
 
     // ── Race-only sections guard ─────────────────────
     // Hide performance sections that only apply to race-type sessions
