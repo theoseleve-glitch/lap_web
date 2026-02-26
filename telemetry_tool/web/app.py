@@ -134,6 +134,11 @@ def create_app(config: Config | None = None) -> Flask:
     except ImportError:
         logger.debug("Phase 4 API modules not yet available — skipping init_request_id / setup_logging")
 
+    # CORS — allow Next.js frontend origin
+    from flask_cors import CORS
+    origins = [o.strip() for o in cfg.CORS_ALLOWED_ORIGINS.split(",")]
+    CORS(app, origins=origins, supports_credentials=True)
+
     # Ensure directories exist.
     for d in (cfg.DATA_RAW_DIR, cfg.RESULTS_DIR, cfg.UPLOAD_DIR):
         d.mkdir(parents=True, exist_ok=True)
@@ -172,6 +177,7 @@ def create_app(config: Config | None = None) -> Flask:
     # Register blueprints — import each safely so one failure doesn't
     # prevent the rest from loading.
     _blueprint_imports = [
+        ('.routes.health',             'bp', 'health_bp'),
         ('.routes.dashboard',          'bp', 'dashboard_bp'),
         ('.routes.sessions',           'bp', 'sessions_bp'),
         ('.routes.tracks',             'bp', 'tracks_bp'),

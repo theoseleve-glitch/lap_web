@@ -109,3 +109,8 @@ class Config:
 
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = os.environ.get("RATE_LIMIT_ENABLED", "1") == "1"
+
+    # CORS
+    CORS_ALLOWED_ORIGINS: str = os.environ.get(
+        "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
+    )
