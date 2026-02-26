@@ -51,3 +51,4 @@ docs/web-app-audit.pdf
 # Environment
 .env
 .env.local
+telemetry_tool/test_output.txt
