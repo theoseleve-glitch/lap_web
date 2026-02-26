@@ -1,0 +1,131 @@
+"""API response envelope helpers and request-ID middleware.
+
+Every /api/v1/ endpoint uses these helpers to produce a uniform JSON
+envelope.  ``init_request_id`` installs a ``before_request`` hook that
+generates a UUID4 request ID accessible via ``flask.g.request_id``.
+
+Usage::
+
+    from web.api_utils import api_response, api_error, ErrorCode, init_request_id
+
+    # In app factory
+    init_request_id(app)
+
+    # In route handlers
+    return api_response({"session": row}, status=200)
+    return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+"""
+from __future__ import annotations
+
+from typing import Any
+from uuid import uuid4
+
+from flask import Flask, g, jsonify
+
+
+# ---------------------------------------------------------------------------
+# Error codes — stable string constants used across the API surface
+# ---------------------------------------------------------------------------
+
+class ErrorCode:
+    """Stable string constants for API error codes.
+
+    These are intentionally plain class attributes (not an Enum) so they
+    serialise to JSON without ceremony and can be used directly as dict
+    values.
+    """
+
+    INVALID_CREDENTIALS = "INVALID_CREDENTIALS"
+    TOKEN_EXPIRED = "TOKEN_EXPIRED"
+    FORBIDDEN = "FORBIDDEN"
+    INSUFFICIENT_ROLE = "INSUFFICIENT_ROLE"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    NOT_FOUND = "NOT_FOUND"
+    CONFLICT = "CONFLICT"
+    QUOTA_EXCEEDED = "QUOTA_EXCEEDED"
+    RATE_LIMITED = "RATE_LIMITED"
+    ANALYSIS_FAILED = "ANALYSIS_FAILED"
+    FILE_TOO_LARGE = "FILE_TOO_LARGE"
+    UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
+    IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
+    SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
+    NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+
+
+# ---------------------------------------------------------------------------
+# Envelope builders
+# ---------------------------------------------------------------------------
+
+def _build_meta(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build the ``meta`` section, always including ``request_id``."""
+    meta: dict[str, Any] = {
+        "request_id": getattr(g, "request_id", None),
+    }
+    if extra:
+        meta.update(extra)
+    return meta
+
+
+def api_response(
+    data: Any = None,
+    status: int = 200,
+    meta: dict[str, Any] | None = None,
+) -> tuple:
+    """Return a success envelope.
+
+    Returns a ``(Response, status)`` tuple suitable for Flask route returns.
+
+    Example response body::
+
+        {"ok": true, "data": {...}, "meta": {"request_id": "..."}}
+    """
+    body = {
+        "ok": True,
+        "data": data,
+        "meta": _build_meta(meta),
+    }
+    return jsonify(body), status
+
+
+def api_error(
+    code: str,
+    message: str,
+    details: list[dict[str, Any]] | None = None,
+    status: int = 400,
+) -> tuple:
+    """Return an error envelope.
+
+    Example response body::
+
+        {"ok": false, "error": {"code": "...", "message": "...", "details": [...]},
+         "meta": {"request_id": "..."}}
+    """
+    error_section: dict[str, Any] = {
+        "code": code,
+        "message": message,
+    }
+    if details is not None:
+        error_section["details"] = details
+    body = {
+        "ok": False,
+        "error": error_section,
+        "meta": _build_meta(),
+    }
+    return jsonify(body), status
+
+
+# ---------------------------------------------------------------------------
+# Request ID middleware
+# ---------------------------------------------------------------------------
+
+def init_request_id(app: Flask) -> None:
+    """Register a ``before_request`` hook that assigns ``g.request_id``.
+
+    The ID is a 32-character hex UUID4 string (no dashes) and is included
+    in every response envelope via :func:`_build_meta`.
+    """
+
+    @app.before_request
+    def _set_request_id() -> None:
+        g.request_id = uuid4().hex
