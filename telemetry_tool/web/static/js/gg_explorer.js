@@ -11,6 +11,9 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+    var MAX_LAP_CACHE = 20;
+
     var C = window.Theme ? window.Theme.colors : {};
     window.GGExplorer = { init: init };
 
@@ -81,15 +84,12 @@
             _fetchData();
         }
         if (panel) {
-            panel.addEventListener('tab:activate', function () {
+            _lc.addListener(panel, 'tab:activate', function () {
                 requestAnimationFrame(_load);
             });
         }
-        /* Try immediately and also on resize (covers late tab-switch) */
+        /* Try immediately (covers late tab-switch) */
         _load();
-        window.addEventListener('resize', function () {
-            if (!_loaded) _load();
-        });
     }
 
     /* ── data fetch ────────────────────────────── */
@@ -110,7 +110,13 @@
         if (bestLap) {
             var gpsUrl = '/api/session/' + encodeURIComponent(_sid) + '/gps/' + bestLap;
             promises.push(FetchHelper.fetch(gpsUrl).then(function (d) {
-                if (d) _state.lapDataCache[bestLap] = d;
+                if (d) {
+                    _state.lapDataCache[bestLap] = d;
+                    var _cKeys = Object.keys(_state.lapDataCache);
+                    if (_cKeys.length > MAX_LAP_CACHE) {
+                        delete _state.lapDataCache[_cKeys[0]];
+                    }
+                }
             }).catch(function () {}));
         }
 
@@ -649,7 +655,7 @@
         if (!_modeGroup) return;
         var btns = _modeGroup.querySelectorAll('.gg-mode-btn');
         for (var i = 0; i < btns.length; i++) {
-            btns[i].addEventListener('click', function () {
+            _lc.addListener(btns[i], 'click', function () {
                 var mode = this.getAttribute('data-mode');
                 if (mode === _state.mode) return;
                 /* Update active button */
@@ -672,14 +678,14 @@
     /* ── dropdowns ─────────────────────────────── */
     function _setupDropdowns() {
         if (_primarySelect) {
-            _primarySelect.addEventListener('change', function () {
+            _lc.addListener(_primarySelect, 'change', function () {
                 _state.primaryLap = parseInt(this.value, 10);
                 _state.selectedIdx = null;
                 _ensureLapData(_state.primaryLap, function () { _drawAll(); });
             });
         }
         if (_compareSelect) {
-            _compareSelect.addEventListener('change', function () {
+            _lc.addListener(_compareSelect, 'change', function () {
                 _state.compareLap = parseInt(this.value, 10);
                 _drawAll();
             });
@@ -724,7 +730,13 @@
         if (_state.lapDataCache[lapNum]) { cb(); return; }
         var url = '/api/session/' + encodeURIComponent(_sid) + '/gps/' + lapNum;
         FetchHelper.fetch(url).then(function (data) {
-            if (data) _state.lapDataCache[lapNum] = data;
+            if (data) {
+                _state.lapDataCache[lapNum] = data;
+                var _cKeys = Object.keys(_state.lapDataCache);
+                if (_cKeys.length > MAX_LAP_CACHE) {
+                    delete _state.lapDataCache[_cKeys[0]];
+                }
+            }
             cb();
         }).catch(function () { cb(); });
     }
@@ -842,7 +854,7 @@
         _ggCanvas.style.outline = 'none';
 
         /* Wheel zoom */
-        _ggCanvas.addEventListener('wheel', function (e) {
+        _lc.addListener(_ggCanvas, 'wheel', function (e) {
             e.preventDefault();
             var rect = _ggCanvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -859,7 +871,7 @@
         }, { passive: false });
 
         /* Drag (pan) + click (select) */
-        _ggCanvas.addEventListener('mousedown', function (e) {
+        _lc.addListener(_ggCanvas, 'mousedown', function (e) {
             _isDragging = true;
             _dragMoved = false;
             _dragStartX = e.clientX;
@@ -869,7 +881,7 @@
             _ggCanvas.style.cursor = 'grabbing';
         });
 
-        window.addEventListener('mousemove', function (e) {
+        _lc.addListener(window, 'mousemove', function (e) {
             if (!_isDragging) return;
             var dx = e.clientX - _dragStartX;
             var dy = e.clientY - _dragStartY;
@@ -880,7 +892,7 @@
             _drawGG();
         });
 
-        window.addEventListener('mouseup', function (e) {
+        _lc.addListener(window, 'mouseup', function (e) {
             if (!_isDragging) return;
             _isDragging = false;
             _ggCanvas.style.cursor = 'crosshair';
@@ -888,7 +900,7 @@
         });
 
         /* Double-click reset */
-        _ggCanvas.addEventListener('dblclick', function () {
+        _lc.addListener(_ggCanvas, 'dblclick', function () {
             _state.zoomLevel = 1.0;
             _state.panX = 0;
             _state.panY = 0;
@@ -896,7 +908,7 @@
         });
 
         /* Hover tooltip */
-        _ggCanvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(_ggCanvas, 'mousemove', function (e) {
             if (_isDragging) { _hideTooltip(); return; }
             var rect = _ggCanvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -940,10 +952,10 @@
             }
         });
 
-        _ggCanvas.addEventListener('mouseleave', function () { _hideTooltip(); });
+        _lc.addListener(_ggCanvas, 'mouseleave', function () { _hideTooltip(); });
 
         /* Keyboard */
-        _ggCanvas.addEventListener('keydown', function (e) {
+        _lc.addListener(_ggCanvas, 'keydown', function (e) {
             var axisMax = _getAxisMax();
             var panStep = axisMax * 0.15;
             var handled = true;
@@ -968,9 +980,9 @@
 
         /* Resize */
         var _resizeTimer;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_resizeTimer);
-            _resizeTimer = setTimeout(function () {
+            _resizeTimer = _lc.addTimer(function () {
                 if (!_state.allGGData) return;
                 _sizeCanvases();
                 _drawAll();
@@ -1043,5 +1055,20 @@
         _updateDropdownVisibility();
         _updateInfoBar(null);
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        _state.lapDataCache = {};
+        _state.allGGData = null;
+        _state.perLap = null;
+        _state.selectedIdx = null;
+        if (_ggCanvas) { _ggCanvas.width = 0; _ggCanvas.height = 0; }
+        if (_mapCanvas) { _mapCanvas.width = 0; _mapCanvas.height = 0; }
+    }
+
+    window.ModuleManager.register('gg_explorer', {
+        init: function () { /* auto-inits via tab:activate */ },
+        destroy: destroy
+    });
 
 })();
