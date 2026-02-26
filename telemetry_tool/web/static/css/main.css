@@ -1162,6 +1162,83 @@ a:hover {
 .grade-D { background: rgba(248, 113, 113, 0.1); color: var(--red); border: 1px solid rgba(248, 113, 113, 0.2); }
 .grade-F { background: rgba(255, 107, 107, 0.1); color: #ff6b6b; border: 1px solid rgba(255, 107, 107, 0.2); }
 
+/* ── Card component ─────────────────────────── */
+
+.card {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-5);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+    pointer-events: none;
+}
+
+.card--glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+
+.card--elevated {
+    box-shadow: var(--shadow-md);
+    border-color: var(--border);
+}
+
+.card--interactive {
+    cursor: pointer;
+    transition: border-color var(--duration-normal) var(--ease-out),
+                box-shadow var(--duration-normal) var(--ease-out),
+                transform var(--duration-normal) var(--ease-out);
+}
+
+.card--interactive:hover {
+    border-color: rgba(240, 112, 48, 0.2);
+    box-shadow: var(--shadow-lg), 0 0 40px rgba(240, 112, 48, 0.04);
+    transform: translateY(-2px);
+}
+
+.card__header {
+    padding-bottom: var(--space-3);
+    margin-bottom: var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.card__title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0;
+}
+
+.card__body {
+    /* content container — no special styling needed */
+}
+
+.card__footer {
+    padding-top: var(--space-3);
+    margin-top: var(--space-3);
+    border-top: 1px solid var(--border-subtle);
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
 /* ── Meta grid (session detail) ───────────── */
 
 .meta-grid {
