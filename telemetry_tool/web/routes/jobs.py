@@ -11,10 +11,15 @@ import logging
 import time
 from typing import Generator
 
-from flask import Blueprint, Response, g, jsonify, request
+from flask import Blueprint, Response, g, request
 from sqlalchemy import text
 
 from tasks.job_registry import cancel_job, get_job, list_jobs
+
+from web.api_utils import api_response, api_error, ErrorCode
+from web.rate_limit import rate_limit
+from web.validation import validate_body, validate_params
+from web.schemas.jobs import JobListParams, ResumeJobSchema
 
 logger = logging.getLogger(__name__)
 
@@ -74,22 +79,24 @@ def _dispatch_finalize(job_id: str):
 
 
 @bp.route("", methods=["GET"])
+@rate_limit(tier="read")
+@validate_params(JobListParams)
 def list_recent_jobs():
     """List recent jobs for the current workspace.
 
-    Query params:
-        limit (int): Max jobs to return (default 50).
+    Query params validated via JobListParams schema.
 
     Returns:
         200 with ``{"jobs": [...]}``
     """
-    limit = request.args.get("limit", 50, type=int)
+    limit = g.params.limit
     conn = get_pg_connection()
     jobs = list_jobs(conn, g.workspace_id, limit=limit)
-    return jsonify({"jobs": jobs}), 200
+    return api_response({"jobs": jobs})
 
 
 @bp.route("/<job_id>/status", methods=["GET"])
+@rate_limit(tier="read")
 def job_status(job_id: str):
     """Get current status of a specific job.
 
@@ -99,11 +106,12 @@ def job_status(job_id: str):
     conn = get_pg_connection()
     job = get_job(conn, job_id, g.workspace_id)
     if job is None:
-        return jsonify({"error": "Job not found"}), 404
-    return jsonify(job), 200
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+    return api_response(job)
 
 
 @bp.route("/<job_id>/cancel", methods=["POST"])
+@rate_limit(tier="write")
 def cancel(job_id: str):
     """Cancel a running or pending job.
 
@@ -113,15 +121,17 @@ def cancel(job_id: str):
     conn = get_pg_connection()
     result = cancel_job(conn, job_id, g.workspace_id)
     if not result:
-        return jsonify({"error": "Job not found or already terminal"}), 404
-    return jsonify({"cancelled": True}), 200
+        return api_error(ErrorCode.NOT_FOUND, "Job not found or already terminal", status=404)
+    return api_response({"cancelled": True})
 
 
 @bp.route("/<job_id>/resume", methods=["POST"])
+@rate_limit(tier="write")
+@validate_body(ResumeJobSchema)
 def resume(job_id: str):
     """Resume a paused job with a joker decision.
 
-    Expects JSON body: ``{"joker_decision": "accept"|"reject"}``
+    Expects validated JSON body via ResumeJobSchema: ``{"joker_decision": "accept"|"reject"}``
 
     Returns:
         200 with ``{"resumed": true}`` if successful.
@@ -132,14 +142,17 @@ def resume(job_id: str):
     job = get_job(conn, job_id, g.workspace_id)
 
     if job is None:
-        return jsonify({"error": "Job not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
 
     if job.get("status") != "paused":
-        return jsonify({"error": "Job is not paused", "status": job.get("status")}), 409
+        return api_error(
+            ErrorCode.CONFLICT,
+            f"Job is not paused (current status: {job.get('status')})",
+            status=409,
+        )
 
-    # Read joker decision from request body
-    body = request.get_json(silent=True) or {}
-    joker_decision = body.get("joker_decision", "")
+    # Read joker decision from validated body
+    joker_decision = g.body.joker_decision
 
     # Store joker decision in PipelineContext via Redis
     redis_client = _get_redis()
@@ -161,7 +174,7 @@ def resume(job_id: str):
     # Dispatch pipeline_finalize task
     _dispatch_finalize(job_id)
 
-    return jsonify({"resumed": True}), 200
+    return api_response({"resumed": True})
 
 
 @bp.route("/<job_id>/stream", methods=["GET"])

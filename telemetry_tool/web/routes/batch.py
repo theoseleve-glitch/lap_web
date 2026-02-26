@@ -9,8 +9,14 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, g, request
 from sqlalchemy import text
+
+from web.api_utils import api_response, api_error, ErrorCode
+from web.rate_limit import rate_limit
+from web.validation import validate_body
+from web.idempotency import idempotent
+from web.schemas.batch import BatchReanalyzeSchema
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +96,9 @@ def _revoke_batch_tasks(batch_id: int, workspace_id: int):
 
 
 @bp.route("/batch-reanalyze", methods=["POST"])
+@rate_limit(tier="analyze")
+@idempotent
+@validate_body(BatchReanalyzeSchema)
 def batch_reanalyze():
     """Create a batch reprocessing job.
 
@@ -106,7 +115,7 @@ def batch_reanalyze():
         redis_client = _get_redis()
         check_queue_depth(redis_client)
     except QueueFullError as exc:
-        return jsonify({"error": str(exc)}), 429
+        return api_error(ErrorCode.RATE_LIMITED, str(exc), status=429)
     except Exception:
         logger.warning("Queue depth check failed, proceeding anyway", exc_info=True)
 
@@ -127,10 +136,11 @@ def batch_reanalyze():
     # Dispatch Celery task
     _dispatch_batch_task(batch_id, g.workspace_id)
 
-    return jsonify({"batch_job_id": batch_id}), 202
+    return api_response({"batch_job_id": batch_id}, status=202)
 
 
 @bp.route("/batch-jobs", methods=["GET"])
+@rate_limit(tier="read")
 def list_batch_jobs():
     """List batch jobs for the current workspace.
 
@@ -149,10 +159,11 @@ def list_batch_jobs():
     )
     rows = cursor.fetchall()
     batches = [dict(r) if not isinstance(r, dict) else r for r in rows]
-    return jsonify({"batches": batches}), 200
+    return api_response({"batches": batches})
 
 
 @bp.route("/batch-jobs/<int:batch_id>/cancel", methods=["POST"])
+@rate_limit(tier="write")
 def cancel_batch(batch_id: int):
     """Cancel a batch job and revoke its pending tasks.
 
@@ -173,7 +184,7 @@ def cancel_batch(batch_id: int):
     batch = cursor.fetchone()
 
     if batch is None:
-        return jsonify({"error": "Batch job not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "Batch job not found", status=404)
 
     # Revoke pending Celery tasks
     _revoke_batch_tasks(batch_id, g.workspace_id)
@@ -188,4 +199,4 @@ def cancel_batch(batch_id: int):
     )
     conn.commit()
 
-    return jsonify({"cancelled": True}), 200
+    return api_response({"cancelled": True})

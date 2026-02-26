@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, g
 from sqlalchemy import text
 
 from pipeline_version import PIPELINE_VERSION
+
+from web.api_utils import api_response
+from web.rate_limit import rate_limit
+from web.validation import validate_params
+from web.schemas.common import PaginationParams
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,8 @@ def get_pg_connection():
 
 
 @bp.route("/sessions/stale", methods=["GET"])
+@rate_limit(tier="read")
+@validate_params(PaginationParams)
 def stale_sessions():
     """List sessions with a processing_version older than the current pipeline.
 
@@ -55,18 +62,19 @@ def stale_sessions():
     rows = cursor.fetchall()
     stale = [dict(r) if not isinstance(r, dict) else r for r in rows]
 
-    return jsonify({
+    return api_response({
         "current_version": PIPELINE_VERSION,
         "stale_sessions": stale,
         "count": len(stale),
-    }), 200
+    })
 
 
 @bp.route("/pipeline/version", methods=["GET"])
+@rate_limit(tier="read")
 def pipeline_version():
     """Return the current pipeline processing version.
 
     Returns:
         200 with ``{"pipeline_version": N}``
     """
-    return jsonify({"pipeline_version": PIPELINE_VERSION}), 200
+    return api_response({"pipeline_version": PIPELINE_VERSION})
