@@ -814,13 +814,13 @@ a:hover {
 
 .table-wrap {
     overflow-x: auto;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
-    background: rgba(14, 17, 24, 0.65);
+    background: var(--glass-bg);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     position: relative;
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    box-shadow: var(--shadow-sm);
 }
 
 /* Scroll shadow indicators for horizontal scroll */
@@ -843,7 +843,7 @@ a:hover {
 }
 
 .data-table th {
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--bg-tertiary);
     color: var(--text-secondary);
     font-weight: 600;
     font-size: 0.75rem;
@@ -1013,6 +1013,29 @@ a:hover {
 
 .data-table .row-highlight {
     background: rgba(255, 107, 53, 0.04);
+}
+
+/* Table skeleton loading */
+.data-table--skeleton {
+    pointer-events: none;
+}
+
+.data-table--skeleton td {
+    color: transparent;
+    position: relative;
+}
+
+.data-table--skeleton td::after {
+    content: '';
+    position: absolute;
+    top: 25%;
+    left: 0.5rem;
+    right: 0.5rem;
+    height: 50%;
+    border-radius: var(--radius-sm);
+    background: linear-gradient(90deg, var(--bg-tertiary) 25%, var(--bg-hover) 50%, var(--bg-tertiary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
 }
 
 /* Numeric helper: monospace + tabular */
