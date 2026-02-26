@@ -164,7 +164,7 @@
     font-size: 12px;
     pointer-events: none;
     border: 1px solid var(--border);
-    z-index: 10;
+    z-index: var(--z-elevated);
     white-space: nowrap;
     line-height: 1.5;
 }

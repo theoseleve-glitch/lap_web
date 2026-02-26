@@ -94,7 +94,7 @@ html {
     top: -100%;
     left: 50%;
     transform: translateX(-50%);
-    z-index: 10000;
+    z-index: var(--z-skip);
     background: var(--accent);
     color: #fff;
     padding: 0.75rem 1.5rem;
@@ -164,7 +164,7 @@ a:hover {
     height: 56px;
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--z-sticky);
 }
 
 .nav-brand {
@@ -239,7 +239,7 @@ a:hover {
     border-radius: var(--radius);
     padding: 0.25rem;
     box-shadow: var(--shadow-lg);
-    z-index: 200;
+    z-index: var(--z-dropdown);
 }
 .nav-overflow-menu.open {
     display: block;
@@ -1433,7 +1433,7 @@ a:hover {
     padding: 0.55rem 0.85rem;
     font-size: 0.78rem;
     pointer-events: none;
-    z-index: 10;
+    z-index: var(--z-elevated);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
@@ -2586,7 +2586,7 @@ textarea.form-input {
     border-radius: var(--radius-sm);
     max-height: 280px;
     overflow-y: auto;
-    z-index: 100;
+    z-index: var(--z-sticky);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
 }
 
@@ -2839,7 +2839,7 @@ details > summary:hover {
     white-space: nowrap;
     opacity: 0;
     transition: opacity 0.1s;
-    z-index: 10;
+    z-index: var(--z-elevated);
 }
 
 .chart-tooltip.visible {
@@ -3029,7 +3029,7 @@ details > summary:hover {
 
 .ctx-menu {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-overlay);
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
@@ -3382,7 +3382,7 @@ details > summary:hover {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm, 6px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-    z-index: 200;
+    z-index: var(--z-dropdown);
     margin-top: 4px;
 }
 
@@ -3543,7 +3543,7 @@ details > summary:hover {
     padding: 0.5rem;
     flex-direction: column;
     gap: 4px;
-    z-index: 101;
+    z-index: var(--z-sticky);
 }
 
 .nav-hamburger span {
@@ -3583,7 +3583,7 @@ details > summary:hover {
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
-    z-index: 200;
+    z-index: var(--z-dropdown);
     padding: 6px 0;
     opacity: 0;
     visibility: hidden;
@@ -3747,7 +3747,7 @@ details > summary:hover {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: var(--z-overlay);
     gap: 1.5rem;
     backdrop-filter: blur(4px);
 }
@@ -3792,7 +3792,7 @@ details > summary:hover {
     position: fixed;
     bottom: 1.5rem;
     right: 1.5rem;
-    z-index: 1001;
+    z-index: var(--z-overlay);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -3924,7 +3924,7 @@ details > summary:hover {
         padding: 1rem;
         gap: 0.25rem;
         overflow-y: auto;
-        z-index: 99;
+        z-index: var(--z-sticky);
         border-top: 1px solid var(--border);
     }
 
@@ -3993,7 +3993,7 @@ details > summary:hover {
     opacity: 0;
     transform: translateY(10px);
     transition: all 0.2s ease;
-    z-index: 50;
+    z-index: var(--z-elevated);
     pointer-events: none;
 }
 
@@ -5284,7 +5284,7 @@ h1:hover .count-badge {
 .table-wrap-sticky .data-table thead th {
     position: sticky;
     top: 0;
-    z-index: 5;
+    z-index: var(--z-elevated);
     background: var(--bg-secondary);
     box-shadow: 0 1px 0 var(--border);
 }
@@ -6591,7 +6591,7 @@ textarea.editable-field {
 .tip::after {
     content: attr(data-tip);
     position: absolute;
-    z-index: 1000;
+    z-index: var(--z-overlay);
     bottom: calc(100% + 8px);
     left: 50%;
     transform: translateX(-50%) translateY(4px);
@@ -6616,7 +6616,7 @@ textarea.editable-field {
 .tip::before {
     content: '';
     position: absolute;
-    z-index: 1001;
+    z-index: var(--z-overlay);
     bottom: calc(100% + 3px);
     left: 50%;
     transform: translateX(-50%);
@@ -7825,7 +7825,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
     border-radius: 6px;
     font-size: 0.867rem;
     pointer-events: none;
-    z-index: 10;
+    z-index: var(--z-elevated);
     white-space: nowrap;
 }
 
@@ -8779,7 +8779,7 @@ tr.row-selected {
     position: fixed;
     top: 4.5rem;
     right: 1rem;
-    z-index: 9999;
+    z-index: var(--z-toast);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

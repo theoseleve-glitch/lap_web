@@ -188,7 +188,7 @@
     letter-spacing: 0.06em;
     padding: 2px 8px;
     border-radius: 4px;
-    z-index: 2;
+    z-index: var(--z-elevated);
     pointer-events: none;
 }
 
@@ -212,7 +212,7 @@
     letter-spacing: -0.02em;
     padding: 4px 28px;
     border-radius: 8px;
-    z-index: 4;
+    z-index: var(--z-elevated);
     pointer-events: none;
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
     margin: -6px 0;
@@ -333,7 +333,7 @@
     border-radius: 50%;
     transform: translate(-50%, -50%);
     cursor: grab;
-    z-index: 1;
+    z-index: var(--z-base);
 }
 
 .cr-scrubber-thumb:active {
@@ -416,7 +416,7 @@
     font-size: 0.72rem;
     color: var(--text-secondary);
     pointer-events: none;
-    z-index: 2;
+    z-index: var(--z-elevated);
 }
 
 .cr-corner-info-name {
