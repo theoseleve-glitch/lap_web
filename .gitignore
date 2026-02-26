@@ -38,3 +38,16 @@ _test_output.txt
 _launch_app.py
 _runtime_hook_console.py
 _run_tests_and_app.py
+
+# Generated / temporary
+*.png
+.flask_log
+.flask_pid
+.playwright-mcp/
+prompt.txt
+docs/web-app-audit.html
+docs/web-app-audit.pdf
+
+# Environment
+.env
+.env.local
