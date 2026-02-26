@@ -11,6 +11,7 @@
  */
 (function () {
     'use strict';
+    var _lc = window.LifecycleHelpers.create();
 
     var C = window.Theme ? window.Theme.colors : {};
 
@@ -287,7 +288,7 @@
 
     // ── Chart hover → map sync ──────────────────────
     function setupSpeedChartEvents() {
-        speedCanvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(speedCanvas, 'mousemove', function (e) {
             if (!chartBounds || !chartData) return;
 
             var rect = speedCanvas.getBoundingClientRect();
@@ -313,7 +314,7 @@
             }
         });
 
-        speedCanvas.addEventListener('mouseleave', function () {
+        _lc.addListener(speedCanvas, 'mouseleave', function () {
             hideCrosshair();
             hideTooltip();
         });
@@ -346,8 +347,8 @@
             }
         }
 
-        speedCanvas.addEventListener('touchstart', handleSpeedChartTouch, { passive: true });
-        speedCanvas.addEventListener('touchmove', handleSpeedChartTouch, { passive: true });
+        _lc.addListener(speedCanvas, 'touchstart', handleSpeedChartTouch, { passive: true });
+        _lc.addListener(speedCanvas, 'touchmove', handleSpeedChartTouch, { passive: true });
     }
 
     // ── Crosshair (from map hover) ──────────────────
@@ -593,7 +594,7 @@
         // Hover event for lap time tooltip
         if (!lapCanvas._hoverBound) {
             lapCanvas._hoverBound = true;
-            lapCanvas.addEventListener('mousemove', function(e) {
+            _lc.addListener(lapCanvas, 'mousemove', function(e) {
                 var tipEl = document.getElementById('lap-time-tooltip');
                 if (!tipEl || !lapCanvas._barData) return;
                 var rect = lapCanvas.getBoundingClientRect();
@@ -622,7 +623,7 @@
                     tipEl.style.display = 'none';
                 }
             });
-            lapCanvas.addEventListener('mouseleave', function() {
+            _lc.addListener(lapCanvas, 'mouseleave', function() {
                 var tipEl = document.getElementById('lap-time-tooltip');
                 if (tipEl) tipEl.style.display = 'none';
             });
@@ -667,5 +668,26 @@
         }
         return ticks;
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        chartData = null;
+        chartBounds = null;
+        theoreticalData = null;
+        _lastLaps = null;
+        if (speedCanvas) {
+            speedCanvas.width = 0;
+            speedCanvas.height = 0;
+        }
+        if (lapCanvas) {
+            lapCanvas.width = 0;
+            lapCanvas.height = 0;
+        }
+    }
+
+    window.ModuleManager.register('chart_sync', {
+        init: function () { /* auto-inits on DOMContentLoaded */ },
+        destroy: destroy
+    });
 
 })();
