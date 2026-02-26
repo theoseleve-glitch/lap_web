@@ -15,6 +15,7 @@
  */
 (function () {
     'use strict';
+    var _lc = window.LifecycleHelpers.create();
 
     // -----------------------------------------------------------------
     // Smart defaults — which tools appear together
@@ -27,14 +28,14 @@
         'lap-overlay':      ['lap-overlay', 'speed-trace', 'lap-distribution'],
         'lap-distribution': ['lap-distribution', 'lap-progress', 'lap-overlay'],
         'stint-analysis':   ['stint-analysis', 'driver-workload', 'lap-progress'],
-        'fingerprint':      ['fingerprint', 'badges']
+        'badges':           ['badges', 'lap-distribution']
     };
 
     var TAB_DEFAULTS = {
         'analytics':   ['track-map', 'speed-trace', 'gg-diagram', 'lap-distribution'],
         'corners':     ['track-map', 'gg-diagram'],
         'performance': ['stint-analysis', 'driver-workload', 'lap-progress', 'session-timeline'],
-        'overview':    ['fingerprint', 'badges']
+        'overview':    ['badges', 'lap-distribution']
     };
 
     // -----------------------------------------------------------------
@@ -47,6 +48,8 @@
     var _splitPane = null;  // current SplitPane instance
     var _overlay = null;    // the .focus-overlay element
     var _dock = null;       // the .focus-dock element
+    var _panelsArea = null; // wrapper for corner nav + panels
+    var _cornerNav = null;  // the .focus-corner-nav element
     var _panels = null;     // the .focus-panels element
     var _isOpen = false;
     var _currentTab = null;
@@ -104,11 +107,21 @@
         _dock = document.createElement('div');
         _dock.className = 'focus-dock';
 
+        _panelsArea = document.createElement('div');
+        _panelsArea.className = 'focus-panels-area';
+
+        _cornerNav = document.createElement('div');
+        _cornerNav.className = 'focus-corner-nav';
+        _cornerNav.style.display = 'none';
+
         _panels = document.createElement('div');
         _panels.className = 'focus-panels';
 
+        _panelsArea.appendChild(_cornerNav);
+        _panelsArea.appendChild(_panels);
+
         _overlay.appendChild(_dock);
-        _overlay.appendChild(_panels);
+        _overlay.appendChild(_panelsArea);
         document.body.appendChild(_overlay);
     }
 
@@ -151,7 +164,7 @@
             }
 
             // Click handler (closure to capture id and isAvailable)
-            btn.addEventListener('click', (function (toolId, avail) {
+            _lc.addListener(btn, 'click', (function (toolId, avail) {
                 return function () {
                     if (!avail) return;
                     _toggleTool(toolId);
@@ -175,7 +188,7 @@
         resetLabel.className = 'focus-dock-label';
         resetLabel.textContent = 'Reset layout';
         resetBtn.appendChild(resetLabel);
-        resetBtn.addEventListener('click', function () {
+        _lc.addListener(resetBtn, 'click', function () {
             if (_splitPane) {
                 _splitPane.resetLayout();
             }
@@ -191,7 +204,7 @@
         closeLabel.className = 'focus-dock-label';
         closeLabel.textContent = 'Close';
         closeBtn.appendChild(closeLabel);
-        closeBtn.addEventListener('click', function () {
+        _lc.addListener(closeBtn, 'click', function () {
             close();
         });
         _dock.appendChild(closeBtn);
@@ -350,13 +363,81 @@
         // 5. Build dock sidebar
         _buildDock();
 
-        // 6. Render panels
+        // 6. Load corner time-loss nav bar
+        _loadCornerNav();
+
+        // 7. Render panels
         _renderPanels();
 
-        // 7. Show overlay
+        // 8. Show overlay
         _overlay.classList.add('active');
         document.body.style.overflow = 'hidden';
         _isOpen = true;
+    }
+
+    // -----------------------------------------------------------------
+    // Corner time-loss nav bar (top bar in focus mode)
+    // -----------------------------------------------------------------
+
+    var _cornerNavLoaded = false;
+
+    function _loadCornerNav() {
+        if (_cornerNavLoaded || !_cornerNav) return;
+        _cornerNavLoaded = true;
+
+        var sessionId = _getSessionId();
+        if (!sessionId) return;
+
+        var url = '/api/session/' + encodeURIComponent(sessionId) + '/corner-metrics/summary';
+        if (typeof FetchHelper !== 'undefined') {
+            FetchHelper.fetch(url).then(_renderCornerNav).catch(function () {});
+        } else {
+            fetch(url).then(function (r) { return r.json(); }).then(_renderCornerNav).catch(function () {});
+        }
+    }
+
+    function _renderCornerNav(data) {
+        if (!data || !data.corners || data.corners.length === 0) return;
+        _clearChildren(_cornerNav);
+        _cornerNav.style.display = '';
+
+        data.corners.forEach(function (c) {
+            var chip = document.createElement('button');
+            chip.className = 'focus-corner-chip';
+            chip.setAttribute('type', 'button');
+            chip.setAttribute('data-corner-id', c.corner_id);
+
+            var name = document.createElement('span');
+            name.className = 'focus-corner-chip-name';
+            name.textContent = c.label || ('C' + c.corner_id);
+            chip.appendChild(name);
+
+            var delta = document.createElement('span');
+            var timeLoss = c.avg_time_loss_ms || 0;
+            var timeLossS = timeLoss / 1000;
+            if (timeLossS > 0.01) {
+                delta.className = 'focus-corner-chip-delta loss';
+                delta.textContent = '+' + timeLossS.toFixed(2) + 's';
+            } else if (timeLossS < -0.01) {
+                delta.className = 'focus-corner-chip-delta gain';
+                delta.textContent = timeLossS.toFixed(2) + 's';
+            } else {
+                delta.className = 'focus-corner-chip-delta neutral';
+                delta.textContent = '0.00s';
+            }
+            chip.appendChild(delta);
+
+            _lc.addListener(chip, 'click', function () {
+                // Toggle active state visually
+                var wasActive = chip.classList.contains('active');
+                _cornerNav.querySelectorAll('.focus-corner-chip').forEach(function (el) {
+                    el.classList.remove('active');
+                });
+                if (!wasActive) chip.classList.add('active');
+            });
+
+            _cornerNav.appendChild(chip);
+        });
     }
 
     // -----------------------------------------------------------------
@@ -414,7 +495,7 @@
     // Keyboard shortcuts
     // -----------------------------------------------------------------
 
-    document.addEventListener('keydown', function (e) {
+    _lc.addListener(document, 'keydown', function (e) {
         var tag = e.target.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         if (e.target.isContentEditable) return;
@@ -478,7 +559,7 @@
     // Window resize — redraw rendered tools
     // -----------------------------------------------------------------
 
-    window.addEventListener('resize', function () {
+    _lc.addListener(window, 'resize', function () {
         if (_isOpen) {
             Object.keys(_rendered).forEach(function (id) {
                 if (_rendered[id] && typeof _rendered[id].redraw === 'function') {
@@ -498,5 +579,19 @@
         close: close,
         toggle: toggle
     };
+
+    function destroy() {
+        if (_isOpen) close();
+        _lc.destroyAll();
+        if (_splitPane && typeof _splitPane.destroy === 'function') {
+            _splitPane.destroy();
+        }
+        _splitPane = null;
+    }
+
+    window.ModuleManager.register('focus_mode', {
+        init: function () { /* available globally, no init needed */ },
+        destroy: destroy
+    });
 
 })();
