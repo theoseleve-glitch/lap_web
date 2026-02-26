@@ -14,6 +14,7 @@
  */
 (function () {
     'use strict';
+    var _lc = window.LifecycleHelpers.create();
 
     var C = window.Theme ? window.Theme.colors : {};
 
@@ -80,7 +81,7 @@
         // Lap selector.
         var sel = document.getElementById('lap-select');
         if (sel) {
-            sel.addEventListener('change', function () {
+            _lc.addListener(sel, 'change', function () {
                 loadLap(parseInt(sel.value, 10));
             });
         }
@@ -88,7 +89,7 @@
         // Reference line toggle.
         var refToggle = document.getElementById('toggle-reference-line');
         if (refToggle) {
-            refToggle.addEventListener('change', function () {
+            _lc.addListener(refToggle, 'change', function () {
                 if (refToggle.checked) {
                     loadReferenceLine();
                 } else {
@@ -100,7 +101,7 @@
         // Best lap overlay toggle.
         var bestToggle = document.getElementById('toggle-best-lap');
         if (bestToggle) {
-            bestToggle.addEventListener('change', function () {
+            _lc.addListener(bestToggle, 'change', function () {
                 if (bestToggle.checked) {
                     loadBestLapOverlay();
                 } else {
@@ -112,7 +113,7 @@
         // All laps overlay toggle.
         var allLapsToggle = document.getElementById('toggle-all-laps');
         if (allLapsToggle) {
-            allLapsToggle.addEventListener('change', function () {
+            _lc.addListener(allLapsToggle, 'change', function () {
                 if (allLapsToggle.checked) {
                     loadAllLapsOverlay();
                 } else {
@@ -522,5 +523,25 @@
         }
         return bestIdx;
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        if (map) {
+            map.remove();
+            map = null;
+        }
+        traceLayer = null;
+        marker = null;
+        referenceLayer = null;
+        bestLapLayer = null;
+        cornerMarkersLayer = null;
+        allLapsLayer = null;
+        currentData = null;
+    }
+
+    window.ModuleManager.register('gps_trace', {
+        init: function () { /* auto-inits on DOMContentLoaded */ },
+        destroy: destroy
+    });
 
 })();
