@@ -88,10 +88,10 @@ export function Podium() {
             ) : (
               <>
                 <PitButton
-                  href="/demo"
-                  onClick={() => trackCtaClick('try_demo', 'podium', 'b2c')}
+                  href="/register?source=podium-free-report"
+                  onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
                 >
-                  {podium.ctaPrimary}
+                  START FREE REPORT
                 </PitButton>
                 <StampButton
                   href="/contact"

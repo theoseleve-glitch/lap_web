@@ -1,20 +1,50 @@
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
+import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
-export default function StatusPage() {
+interface LiveStatus {
+  indicator: 'none' | 'minor' | 'major' | 'critical';
+  description: string;
+  source: string;
+  updatedAt: string;
+}
+
+async function getLiveStatus(): Promise<LiveStatus> {
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  try {
+    const response = await fetch(`${baseUrl}/api/status`, {
+      cache: 'no-store',
+    });
+    if (!response.ok) throw new Error('Failed to load status');
+    return (await response.json()) as LiveStatus;
+  } catch {
+    return {
+      indicator: 'none',
+      description: 'Operational',
+      source: 'fallback',
+      updatedAt: new Date().toISOString(),
+    };
+  }
+}
+
+export default async function StatusPage() {
+  const liveStatus = await getLiveStatus();
+
   return (
     <PageShell
       eyebrow="Operations"
       title="Status and SLA Definitions"
       description="Operational status source, uptime expectations, and support SLA definitions."
+      tone="document"
     >
       <section className="grid md:grid-cols-2 gap-4 mb-8">
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Status Source</h2>
-          <p className="text-sm text-steel">
-            Public incident updates and maintenance windows are published on the dedicated status
-            source.
+        <article className="border border-steel/20 p-4 bg-concrete/30">
+          <h2 className="font-monument text-[var(--text-h3)] mb-2">Live Platform Status</h2>
+          <p className="text-sm text-steel mb-2">
+            Indicator: <span className="text-chalk uppercase">{liveStatus.indicator}</span>
           </p>
+          <p className="text-sm text-steel mb-2">{liveStatus.description}</p>
+          <p className="text-xs text-steel">Last update: {new Date(liveStatus.updatedAt).toLocaleString()}</p>
           <Link
             href="https://status.lap.racing"
             className="inline-block mt-3 text-sm border border-steel/30 px-3 py-1 hover:border-chalk"
@@ -22,14 +52,10 @@ export default function StatusPage() {
             status.lap.racing
           </Link>
         </article>
-        <article className="border border-steel/20 p-4">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Uptime Targets</h2>
-          <ul className="space-y-2 text-sm text-steel">
-            <li>Core platform target: 99.9% monthly availability.</li>
-            <li>Maintenance windows are announced in advance.</li>
-            <li>Incident updates include impact scope and ETA.</li>
-          </ul>
-        </article>
+        <ReversibleCard
+          title="Uptime Targets"
+          description="Core target: 99.9% monthly availability. Maintenance windows are announced in advance with impact scope and ETA updates."
+        />
       </section>
 
       <section className="border border-steel/20 p-4 mb-8">

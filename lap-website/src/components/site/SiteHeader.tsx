@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
+import { LocaleSwitcher } from '@/components/site/LocaleSwitcher';
 
 interface SiteHeaderProps {
   showIndexToggle?: boolean;
@@ -12,6 +14,22 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeaderProps) {
   const pathname = usePathname();
+  const [persona, setPersona] = useState('drivers');
+
+  useEffect(() => {
+    const cookie = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('lap_persona='));
+    if (!cookie) return;
+    const value = cookie.split('=').slice(1).join('=');
+    if (value) setPersona(value);
+  }, []);
+
+  const personaCta =
+    persona === 'circuits' || persona === 'teams' || persona === 'endurance'
+      ? { label: 'Book B2B Demo', href: '/demo?audience=b2b' }
+      : { label: 'Start Free Report', href: '/register?source=header-demo' };
 
   return (
     <header className="sticky top-0 z-50 border-b border-steel/20 bg-asphalt/95 backdrop-blur">
@@ -51,12 +69,20 @@ export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeade
                     ? 'border-pit-orange text-chalk'
                     : 'border-steel/30 text-steel hover:text-chalk hover:border-steel'
                 }`}
-                onClick={() => trackNavRouteClick(link.href, 'header')}
-              >
-                {link.label}
-              </Link>
-            );
-          })}
+              onClick={() => trackNavRouteClick(link.href, 'header')}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
+          <Link
+            href={personaCta.href}
+            className="px-3 py-1 border border-pit-orange text-xs font-telemetry tracking-[0.12em] uppercase text-chalk hover:bg-pit-orange hover:text-asphalt transition-colors duration-[420ms]"
+            onClick={() => trackNavRouteClick(personaCta.href, 'header_persona_cta')}
+          >
+            {personaCta.label}
+          </Link>
+          <LocaleSwitcher />
         </nav>
       </div>
     </header>

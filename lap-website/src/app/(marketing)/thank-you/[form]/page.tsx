@@ -11,16 +11,15 @@ const FORM_LABELS: Record<string, string> = {
 };
 
 export default function ThankYouPage({ params }: { params: { form: string } }) {
-  const label = FORM_LABELS[params.form];
-  if (!label) {
+  if (!FORM_LABELS[params.form]) {
     notFound();
   }
 
   return (
     <PageShell
       eyebrow="Thank You"
-      title={`${label} Request Received`}
-      description="Your submission has been recorded, conversion tracking has been fired, and the team has been notified."
+      title="Request Received"
+      description="Your submission has been recorded and our team has been notified."
     >
       <ThankYouTracker formType={params.form} />
       <section className="border border-steel/20 bg-concrete/30 p-6">

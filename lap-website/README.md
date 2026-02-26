@@ -30,6 +30,14 @@ Next.js marketing and conversion site for LAP telemetry analysis.
 - `BILLING_PORTAL_WEBHOOK_URL` (optional)
 - `BILLING_SWITCH_WEBHOOK_URL` (optional)
 - `BILLING_WEBHOOK_BEARER` (optional)
+- `LEAD_ALERT_WEBHOOK_URL` (optional, for delivery failure alerts)
+- `STRIPE_SECRET_KEY` (optional, enables direct Stripe checkout/portal/switch)
+- `STRIPE_PRICE_PERFORMANCE_MONTHLY` (optional)
+- `STRIPE_PRICE_PERFORMANCE_ANNUAL` (optional)
+- `STRIPE_PRICE_PRO_RACER_MONTHLY` (optional)
+- `STRIPE_PRICE_PRO_RACER_ANNUAL` (optional)
+- `BILLING_ALLOW_GUEST` (optional, defaults to auth-required for portal/switch)
+- `NEXT_PUBLIC_SITE_URL` (optional, used for live status fetch in SSR)
 
 If endpoints are not configured, API routes return fallback responses so local development still works.
 

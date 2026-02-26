@@ -1,11 +1,21 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-const ATTRIBUTION_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'gclid', 'fbclid'];
-const EXPERIMENTS: Record<string, string[]> = {
-  lap_exp_hero: ['control', 'performance_focus'],
-  lap_exp_pricing: ['standard_table', 'comparison_first'],
-  lap_exp_cta: ['demo_first', 'book_first'],
+const ATTRIBUTION_KEYS = [
+  'utm_source',
+  'utm_medium',
+  'utm_campaign',
+  'utm_term',
+  'utm_content',
+  'gclid',
+  'fbclid',
+];
+
+const PERSONA_PATHS: Record<string, string> = {
+  '/drivers': 'drivers',
+  '/circuits': 'circuits',
+  '/teams': 'teams',
+  '/endurance': 'endurance',
 };
 
 function parseAttribution(request: NextRequest): Record<string, string> {
@@ -19,15 +29,45 @@ function parseAttribution(request: NextRequest): Record<string, string> {
   return result;
 }
 
-export function middleware(request: NextRequest) {
-  // Protect /app/* routes — redirect to login if no access token
-  if (request.nextUrl.pathname.startsWith('/app')) {
-    const token = request.cookies.get('access_token');
-    if (!token?.value) {
-      return NextResponse.redirect(new URL('/login', request.url));
+function detectPersona(request: NextRequest): string {
+  const explicitPersona = request.nextUrl.searchParams.get('persona');
+  if (explicitPersona) return explicitPersona;
+
+  const pathname = request.nextUrl.pathname;
+  for (const [path, persona] of Object.entries(PERSONA_PATHS)) {
+    if (pathname.startsWith(path)) {
+      return persona;
     }
   }
 
+  return request.cookies.get('lap_persona')?.value ?? 'drivers';
+}
+
+function chooseVariant(cookieName: string, persona: string, attribution: Record<string, string>): string {
+  const source = (attribution.utm_source ?? '').toLowerCase();
+  const isPaid = !!attribution.gclid || !!attribution.fbclid || source.includes('ads') || source.includes('google');
+
+  if (cookieName === 'lap_exp_hero') {
+    if (persona !== 'drivers' || isPaid) return 'performance_focus';
+    return 'control';
+  }
+
+  if (cookieName === 'lap_exp_pricing') {
+    if (persona === 'circuits' || persona === 'teams' || persona === 'endurance') {
+      return 'comparison_first';
+    }
+    return 'standard_table';
+  }
+
+  if (cookieName === 'lap_exp_cta') {
+    if (persona !== 'drivers' || isPaid) return 'book_first';
+    return 'demo_first';
+  }
+
+  return 'control';
+}
+
+export function middleware(request: NextRequest) {
   const response = NextResponse.next();
 
   if (!request.cookies.get('lap_session_id')?.value) {
@@ -40,8 +80,40 @@ export function middleware(request: NextRequest) {
     });
   }
 
+  if (!request.cookies.get('lap_locale')?.value) {
+    response.cookies.set('lap_locale', request.nextUrl.searchParams.get('lang') || 'en', {
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 180,
+    });
+  }
+
+  if (!request.cookies.get('lap_currency')?.value) {
+    response.cookies.set('lap_currency', request.nextUrl.searchParams.get('currency') || 'eur', {
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 180,
+    });
+  }
+
+  const persona = detectPersona(request);
+  response.cookies.set('lap_persona', persona, {
+    httpOnly: false,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    path: '/',
+    maxAge: 60 * 60 * 24 * 90,
+  });
+
+  const consent = request.cookies.get('lap_cookie_consent')?.value;
+  const consentGranted = consent === 'granted';
   const attribution = parseAttribution(request);
-  if (Object.keys(attribution).length > 0) {
+
+  if (consentGranted && Object.keys(attribution).length > 0) {
     response.cookies.set('lap_attribution', JSON.stringify(attribution), {
       httpOnly: false,
       sameSite: 'lax',
@@ -51,16 +123,19 @@ export function middleware(request: NextRequest) {
     });
   }
 
-  for (const [cookieName, options] of Object.entries(EXPERIMENTS)) {
-    if (!request.cookies.get(cookieName)?.value) {
-      const value = options[Math.floor(Math.random() * options.length)];
-      response.cookies.set(cookieName, value, {
-        httpOnly: false,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 30,
-      });
+  if (consentGranted) {
+    const experimentCookies = ['lap_exp_hero', 'lap_exp_pricing', 'lap_exp_cta'];
+    for (const cookieName of experimentCookies) {
+      if (!request.cookies.get(cookieName)?.value) {
+        const value = chooseVariant(cookieName, persona, attribution);
+        response.cookies.set(cookieName, value, {
+          httpOnly: false,
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          path: '/',
+          maxAge: 60 * 60 * 24 * 30,
+        });
+      }
     }
   }
 

@@ -1,39 +1,84 @@
+'use client';
+
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
-
-const articles = [
-  {
-    slug: 'telemetry-corner-analysis',
-    title: 'Telemetry Corner Analysis for Kart Drivers',
-    intent: 'corner telemetry analysis karting',
-  },
-  {
-    slug: 'session-vs-session-comparison',
-    title: 'How Session-vs-Session Comparison Improves Race Pace',
-    intent: 'session vs session motorsport analytics',
-  },
-  {
-    slug: 'race-strategy-dashboard',
-    title: 'Building a Race Strategy Dashboard for Endurance Teams',
-    intent: 'race strategy dashboard endurance',
-  },
-];
+import { insightEntries, insightTags } from '@/data/insights-cms';
 
 export default function InsightsPage() {
+  const [query, setQuery] = useState('');
+  const [activeTag, setActiveTag] = useState('all');
+
+  const filtered = useMemo(() => {
+    return insightEntries.filter((entry) => {
+      const matchesTag = activeTag === 'all' || entry.tags.includes(activeTag);
+      const q = query.trim().toLowerCase();
+      const matchesQuery =
+        q.length === 0 ||
+        entry.title.toLowerCase().includes(q) ||
+        entry.intent.toLowerCase().includes(q) ||
+        entry.summary.toLowerCase().includes(q);
+      return matchesTag && matchesQuery;
+    });
+  }, [activeTag, query]);
+
   return (
     <PageShell
-      eyebrow="SEO Content"
-      title="Feature Intent Content"
-      description="Long-tail content hubs aligned to telemetry analysis search intent."
+      eyebrow="Insights CMS"
+      title="Tagged Insight Library"
+      description="CMS-ready insight entries with searchable intent tags and internal product mapping."
     >
+      <section className="mb-6 grid md:grid-cols-[2fr_3fr] gap-3">
+        <input
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search intent, title, or summary"
+          className="bg-concrete border border-steel/30 px-3 py-2 text-sm"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            className={`px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase ${
+              activeTag === 'all' ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
+            }`}
+            onClick={() => setActiveTag('all')}
+          >
+            All
+          </button>
+          {insightTags.map((tag) => (
+            <button
+              key={tag}
+              className={`px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase ${
+                activeTag === tag ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
+              }`}
+              onClick={() => setActiveTag(tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section className="space-y-4">
-        {articles.map((article) => (
+        {filtered.map((article) => (
           <article key={article.slug} className="border border-steel/20 p-4 bg-concrete/30">
             <h2 className="font-monument text-[var(--text-h3)] mb-2">{article.title}</h2>
-            <p className="text-steel text-sm mb-3">Keyword intent: {article.intent}</p>
-            <Link href={`/product#${article.slug}`} className="text-sm border border-steel/30 px-3 py-1">
-              Explore Related Product Module
-            </Link>
+            <p className="text-steel text-sm mb-2">Keyword intent: {article.intent}</p>
+            <p className="text-steel text-sm mb-3">{article.summary}</p>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {article.tags.map((tag) => (
+                <span key={tag} className="text-[10px] font-telemetry border border-steel/30 px-2 py-1 uppercase text-steel">
+                  {tag}
+                </span>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href={`/insights/${article.slug}`} className="text-sm border border-steel/30 px-3 py-1">
+                Open Insight
+              </Link>
+              <Link href={article.relatedHref} className="text-sm border border-steel/30 px-3 py-1">
+                Explore Related Product Module
+              </Link>
+            </div>
           </article>
         ))}
       </section>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { Plan } from '@/data/pricing';
 import { PitButton } from './PitButton';
 import { StampButton } from './StampButton';
@@ -12,12 +13,38 @@ interface PricingTableProps {
   className?: string;
 }
 
+function convertPriceLabel(label: string, currency: 'eur' | 'usd'): string {
+  if (currency === 'eur') return label;
+  if (!label.toUpperCase().includes('EUR')) return label;
+
+  return label.replace(/EUR\s*([\d,.]+)/gi, (_, amount) => {
+    const normalized = Number(amount.replace(/,/g, ''));
+    if (!Number.isFinite(normalized)) return `USD ${amount}`;
+    const converted = normalized * 1.08;
+    return `USD ${converted.toFixed(converted >= 100 ? 0 : 2)}`;
+  });
+}
+
 export function PricingTable({
   plans,
   billingPeriod,
   onCtaClick,
   className = '',
 }: PricingTableProps) {
+  const [currency, setCurrency] = useState<'eur' | 'usd'>('eur');
+
+  useEffect(() => {
+    const cookie = document.cookie
+      .split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('lap_currency='));
+    if (!cookie) return;
+    const value = cookie.split('=').slice(1).join('=');
+    if (value === 'usd' || value === 'eur') {
+      setCurrency(value);
+    }
+  }, []);
+
   return (
     <div className={`grid grid-cols-1 md:grid-cols-3 gap-0 ${className}`}>
       {plans.map((plan, i) => (
@@ -39,7 +66,10 @@ export function PricingTable({
             <StatusPill status={plan.availability} />
           </div>
           <p className="font-monument text-[clamp(34px,4vw,52px)] text-chalk mb-4 leading-[0.95]">
-            {billingPeriod === 'monthly' ? plan.priceMonthly : plan.priceAnnual}
+            {convertPriceLabel(
+              billingPeriod === 'monthly' ? plan.priceMonthly : plan.priceAnnual,
+              currency,
+            )}
           </p>
 
           <div className="space-y-2 mb-6">
