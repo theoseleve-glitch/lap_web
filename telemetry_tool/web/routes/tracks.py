@@ -286,13 +286,7 @@ def delete_track(track_id: str):
     if track is None:
         abort(404)
 
-    # Type-to-confirm: user must type the track name.
-    confirm_name = request.form.get("confirm_name", "").strip()
     track_name = track.get("track_name") or track["track_id"]
-    if confirm_name != track_name:
-        flash("Track name does not match. Deletion cancelled.", "error")
-        return redirect(url_for("tracks.track_detail", track_id=track_id))
-
     counts = delete_track_cascade(conn, track_id)
     conn.commit()
 

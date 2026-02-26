@@ -66,7 +66,7 @@ def upgrade() -> None:
         sa.Column("start_lon", sa.Float),
         sa.Column("sample_count", sa.Integer),
         sa.Column("lap_count", sa.Integer),
-        sa.Column("has_joker", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("has_joker", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("joker_distance_delta_m", sa.Float),
         sa.Column("joker_time_delta_s", sa.Float),
         sa.Column("dry_ref_session_id", sa.Text),
@@ -92,13 +92,14 @@ def upgrade() -> None:
         sa.Column(
             "driver_id",
             sa.Integer,
-            sa.ForeignKey("drivers.driver_id", ondelete="SET NULL"),
-            nullable=True,
+            sa.ForeignKey("drivers.driver_id", ondelete="RESTRICT"),
+            nullable=False,
         ),
         sa.Column(
             "track_id",
             sa.Text,
-            sa.ForeignKey("tracks.track_id", ondelete="SET NULL"),
+            sa.ForeignKey("tracks.track_id", ondelete="RESTRICT"),
+            nullable=False,
         ),
         sa.Column(
             "session_type", sa.Text, nullable=False, server_default="practice"
@@ -157,11 +158,11 @@ def upgrade() -> None:
         sa.Column("braking_max_mps2", sa.Float),
         sa.Column("accel_max_mps2", sa.Float),
         sa.Column("line_length_m", sa.Float),
-        sa.Column("is_valid", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("is_best", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("is_valid", sa.Boolean, nullable=False, server_default=sa.text("true")),
+        sa.Column("is_best", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("phase_id", sa.Integer),
         sa.Column("invalid_reason", sa.Text),
-        sa.Column("is_joker", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("is_joker", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.UniqueConstraint("session_id", "lap_number", name="uq_laps_session_lap"),
     )
 
@@ -833,7 +834,7 @@ def upgrade() -> None:
         sa.Column("driver_id", sa.Integer),
         sa.Column("dashboard_name", sa.Text, nullable=False),
         sa.Column("layout_json", JSONB, nullable=False),
-        sa.Column("is_default", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("is_default", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -929,6 +930,8 @@ def upgrade() -> None:
         ),
         sa.Column("completed_at", sa.DateTime(timezone=True)),
         sa.Column("elapsed_s", sa.Float),
+        sa.Column("peak_rss_mb", sa.Float),
+        sa.Column("throughput_mb_s", sa.Float),
     )
 
     # ==================================================================
@@ -947,9 +950,9 @@ def upgrade() -> None:
         sa.Column("layout_name", sa.Text),
         sa.Column("layout_length_m", sa.Float),
         sa.Column("direction", sa.Text),
-        sa.Column("rental_available", sa.Integer, server_default="0"),
-        sa.Column("owner_available", sa.Integer, server_default="0"),
-        sa.Column("outdoor", sa.Integer, server_default="1"),
+        sa.Column("rental_available", sa.Boolean, server_default=sa.text("false")),
+        sa.Column("owner_available", sa.Boolean, server_default=sa.text("false")),
+        sa.Column("outdoor", sa.Boolean, server_default=sa.text("true")),
         sa.Column("data_quality", sa.Text),
         sa.Column("source_url", sa.Text),
     )
@@ -1065,20 +1068,20 @@ def upgrade() -> None:
         sa.Column("full_tank_kg", sa.Float),
         sa.Column("min_total_kart_kg", sa.Float),
         sa.Column(
-            "weigh_on_pit_exit", sa.Integer, nullable=False, server_default="0"
+            "weigh_on_pit_exit", sa.Boolean, nullable=False, server_default=sa.text("false")
         ),
         sa.Column("qualifying_duration_s", sa.Integer),
         sa.Column(
-            "refuel_after_quali", sa.Integer, nullable=False, server_default="0"
+            "refuel_after_quali", sa.Boolean, nullable=False, server_default=sa.text("false")
         ),
         sa.Column(
             "mandatory_driver_change",
-            sa.Integer,
+            sa.Boolean,
             nullable=False,
-            server_default="1",
+            server_default=sa.text("true"),
         ),
         sa.Column(
-            "refueling_allowed", sa.Integer, nullable=False, server_default="1"
+            "refueling_allowed", sa.Boolean, nullable=False, server_default=sa.text("true")
         ),
         sa.Column("quick_pit_stop_s", sa.Integer),
         sa.Column("race_start_ts", sa.Text),
@@ -1167,10 +1170,10 @@ def upgrade() -> None:
         sa.Column("planned_at_s", sa.Integer),
         sa.Column("actual_at_s", sa.Integer),
         sa.Column("duration_s", sa.Integer),
-        sa.Column("driver_change", sa.Integer, nullable=False, server_default="1"),
-        sa.Column("refueled", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("driver_change", sa.Boolean, nullable=False, server_default=sa.text("true")),
+        sa.Column("refueled", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("fuel_added_kg", sa.Float),
-        sa.Column("ballast_changed", sa.Integer, nullable=False, server_default="0"),
+        sa.Column("ballast_changed", sa.Boolean, nullable=False, server_default=sa.text("false")),
         sa.Column("notes", sa.Text),
         sa.Column("pit_type", sa.Text, nullable=False, server_default="full"),
     )
@@ -1188,9 +1191,9 @@ def upgrade() -> None:
         sa.Column("label", sa.Text),
         sa.Column("start_s", sa.Integer, nullable=False),
         sa.Column("end_s", sa.Integer, nullable=False),
-        sa.Column("refuel_allowed", sa.Integer, nullable=False, server_default="1"),
+        sa.Column("refuel_allowed", sa.Boolean, nullable=False, server_default=sa.text("true")),
         sa.Column(
-            "driver_change_allowed", sa.Integer, nullable=False, server_default="1"
+            "driver_change_allowed", sa.Boolean, nullable=False, server_default=sa.text("true")
         ),
         sa.Column("window_order", sa.Integer, nullable=False, server_default="1"),
     )

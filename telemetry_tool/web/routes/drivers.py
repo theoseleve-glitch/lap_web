@@ -181,13 +181,7 @@ def delete_driver(driver_id: int):
         abort(404)
     driver = dict(row)
 
-    # Type-to-confirm: user must type the driver name.
-    confirm_name = request.form.get("confirm_name", "").strip()
     driver_name = driver["driver_name"]
-    if confirm_name != driver_name:
-        flash("Driver name does not match. Deletion cancelled.", "error")
-        return redirect(url_for("drivers.driver_detail", driver_id=driver_id))
-
     counts = delete_driver_cascade(conn, driver_id)
     conn.commit()
 
