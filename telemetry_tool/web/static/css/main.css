@@ -2053,12 +2053,12 @@ textarea.form-input {
 
 .empty-state {
     text-align: center;
-    padding: 3rem 1.5rem;
+    padding: var(--space-6) var(--space-4);
     color: var(--text-secondary);
 }
 
 .empty-state p {
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-3);
     font-size: 1rem;
 }
 
@@ -2066,17 +2066,17 @@ textarea.form-input {
 
 .empty-hero {
     text-align: center;
-    padding: 3rem 2rem;
+    padding: var(--space-6) var(--space-5);
     max-width: 640px;
     margin: 0 auto;
-    background: linear-gradient(180deg, rgba(14, 17, 24, 0.65) 0%, rgba(240, 112, 48, 0.04) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: linear-gradient(180deg, var(--glass-bg) 0%, var(--accent-dim) 100%);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     position: relative;
     overflow: hidden;
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-sm), inset 0 1px 0 var(--glass-border);
 }
 
 .empty-hero::before {
@@ -2094,7 +2094,7 @@ textarea.form-input {
 .empty-hero-icon {
     font-size: 3.5rem;
     line-height: 1;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-3);
     opacity: 0.7;
     filter: grayscale(30%);
 }
@@ -2103,31 +2103,31 @@ textarea.form-input {
     font-size: 1.35rem;
     font-weight: 700;
     color: var(--text-primary);
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
 }
 
 .empty-hero-desc {
     font-size: 0.95rem;
     color: var(--text-secondary);
     line-height: 1.6;
-    margin-bottom: 1.5rem;
+    margin-bottom: var(--space-4);
 }
 
 .empty-hero .btn {
-    margin: 0.3rem;
+    margin: var(--space-1);
 }
 
 .empty-hero .btn:first-of-type {
-    margin-top: 0.5rem;
+    margin-top: var(--space-2);
 }
 
 .empty-hero-compact {
-    padding: 1.5rem 1rem;
+    padding: var(--space-4) var(--space-3);
 }
 
 .empty-hero-compact .empty-hero-icon {
     font-size: 2.5rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
 }
 
 .empty-hero-compact .empty-hero-title {
@@ -2136,7 +2136,48 @@ textarea.form-input {
 
 .empty-hero-compact .empty-hero-desc {
     font-size: 0.88rem;
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-3);
+}
+
+/* ── Error state ──────────────────────────── */
+
+.error-state {
+    text-align: center;
+    padding: var(--space-6) var(--space-5);
+    max-width: 480px;
+    margin: 0 auto;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-lg);
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-sm);
+}
+
+.error-state-icon {
+    font-size: 2.5rem;
+    line-height: 1;
+    margin-bottom: var(--space-3);
+    color: var(--red);
+    opacity: 0.8;
+}
+
+.error-state-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: var(--space-2);
+}
+
+.error-state-message {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-bottom: var(--space-4);
+}
+
+.error-state .btn {
+    margin-top: var(--space-2);
 }
 
 /* Steps guide within empty state */
@@ -4256,7 +4297,7 @@ details > summary:hover {
 
 .skeleton-text {
     height: 1rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
 }
 
 .skeleton-text.skeleton-sm {
@@ -4280,21 +4321,21 @@ details > summary:hover {
 .skeleton-stats {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(clamp(120px, 15vw, 180px), 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
 }
 
 .skeleton-stat {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 1rem;
+    padding: var(--space-3);
 }
 
 .skeleton-stat-label {
     height: 0.7rem;
     width: 60%;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-2);
 }
 
 .skeleton-stat-value {
@@ -4305,8 +4346,8 @@ details > summary:hover {
 /* Skeleton table rows */
 .skeleton-table-row {
     display: flex;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--border-light);
 }
 
@@ -4327,7 +4368,7 @@ details > summary:hover {
 .skeleton-chart {
     aspect-ratio: 2 / 1;
     border-radius: var(--radius);
-    margin-bottom: 1rem;
+    margin-bottom: var(--space-3);
 }
 
 /* Skeleton circle (avatar, badge) */
@@ -8326,7 +8367,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
    ══════════════════════════════════════════ */
 
 .empty-hero {
-    transition: background 0.2s ease;
+    transition: background var(--duration-normal) var(--ease-out);
 }
 
 .empty-hero:hover {
@@ -8340,7 +8381,7 @@ input[type="number"]:focus::-webkit-outer-spin-button {
 }
 
 .empty-hero-icon {
-    animation: empty-pulse 3s ease-in-out infinite;
+    animation: empty-pulse 3s var(--ease-out) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {
