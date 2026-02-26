@@ -697,8 +697,8 @@ details[open].rs-form-section > summary::before {
 }
 
 .rs-timer-progress {
-    height: 4px;
-    border-radius: 2px;
+    height: 6px;
+    border-radius: 3px;
     background: var(--rs-inner-bg);
     margin-top: 0.85rem;
     overflow: hidden;
@@ -706,9 +706,28 @@ details[open].rs-form-section > summary::before {
 
 .rs-timer-progress-bar {
     height: 100%;
-    border-radius: 2px;
+    border-radius: 3px;
     transition: width 1s linear, background-color 0.5s;
     box-shadow: 0 0 8px currentColor;
+}
+
+/* Connection status dot */
+.rs-connection-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    vertical-align: middle;
+    margin-left: 6px;
+    box-shadow: 0 0 6px var(--green);
+    animation: rs-led-pulse 1.5s ease-in-out infinite;
+}
+
+.rs-connection-dot.disconnected {
+    background: var(--red);
+    box-shadow: 0 0 6px var(--red);
+    animation: none;
 }
 
 /* ── 2. Fuel & Ballast ────────────────────────── */

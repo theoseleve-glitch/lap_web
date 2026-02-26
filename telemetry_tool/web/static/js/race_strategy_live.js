@@ -99,6 +99,20 @@
             else               bar.style.background = 'var(--green)';
         }
 
+        var display = document.getElementById('rs-timer-elapsed');
+        if (display) {
+            if (pct > 90) {
+                display.style.color = 'var(--red)';
+                display.style.textShadow = '0 0 30px rgba(248, 113, 113, 0.3), 0 0 60px rgba(248, 113, 113, 0.1)';
+            } else if (pct > 75) {
+                display.style.color = 'var(--yellow)';
+                display.style.textShadow = '0 0 30px rgba(251, 191, 36, 0.3), 0 0 60px rgba(251, 191, 36, 0.1)';
+            } else {
+                display.style.color = 'var(--green)';
+                display.style.textShadow = '0 0 30px rgba(52, 211, 153, 0.3), 0 0 60px rgba(52, 211, 153, 0.1)';
+            }
+        }
+
         if (state && state.stints) {
             var completed = state.stints.filter(function(s) { return s.status === 'completed'; }).length;
             var active = state.stints.filter(function(s) { return s.status === 'active'; }).length;
@@ -1150,10 +1164,21 @@
 
     // ── Polling ──────────────────────────────────
 
+    function setConnectionStatus(connected) {
+        var dot = document.getElementById('rs-connection-dot');
+        if (!dot) return;
+        if (connected) {
+            dot.classList.remove('disconnected');
+        } else {
+            dot.classList.add('disconnected');
+        }
+    }
+
     function fetchState() {
         fetch('/race-strategy/' + RACE_ID + '/api/state')
             .then(function(r) { return r.json(); })
             .then(function(data) {
+                setConnectionStatus(true);
                 if (data.error) return;
                 state = data;
                 updateTimeline();
@@ -1163,7 +1188,9 @@
                 updateIntelligence();
                 alertManager.check(state);
             })
-            .catch(function() {});
+            .catch(function() {
+                setConnectionStatus(false);
+            });
     }
 
     // ── Actions ──────────────────────────────────
