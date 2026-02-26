@@ -20,15 +20,19 @@ class TestTenantMiddleware:
         app.config["AUTH_REQUIRED"] = True
         app.config["USE_PG"] = True
 
+        mock_conn = MagicMock()
         with app.test_request_context(
             "/api/v1/sessions",
             headers={"X-Workspace-Id": "42"},
         ):
             g.current_user_id = 1
             with patch("web.middleware.tenant._verify_workspace_access", return_value=True), \
-                 patch("web.middleware.tenant._set_rls_context") as mock_rls:
+                 patch("web.middleware.tenant._set_rls_context") as mock_rls, \
+                 patch("web.middleware.tenant._resolve_workspace_role", return_value="admin"), \
+                 patch("web.db_pg.get_pg_connection", return_value=mock_conn):
                 tenant_middleware()
                 assert g.workspace_id == 42
+                assert g.workspace_role == "admin"
                 mock_rls.assert_called_once_with(42)
 
     def test_falls_back_to_default_workspace(self):
@@ -45,6 +49,7 @@ class TestTenantMiddleware:
             g.current_user_id = 1
             with patch("web.middleware.tenant.get_default_workspace_id", return_value=99), \
                  patch("web.middleware.tenant._set_rls_context") as mock_rls, \
+                 patch("web.middleware.tenant._resolve_workspace_role", return_value="member"), \
                  patch("web.db_pg.get_pg_connection", return_value=mock_conn):
                 tenant_middleware()
                 assert g.workspace_id == 99
@@ -165,3 +170,44 @@ class TestTenantMiddleware:
             result = tenant_middleware()
             assert result is None
             assert not hasattr(g, "workspace_id")
+
+
+class TestWorkspaceRoleResolution:
+    def test_personal_workspace_owner_gets_owner_role(self):
+        """Owner of personal workspace gets 'owner' role."""
+        from web.middleware.tenant import _resolve_workspace_role
+        from flask import Flask, g
+
+        app = Flask(__name__)
+        with app.test_request_context():
+            conn = MagicMock()
+            # Workspace owned by user
+            cur = MagicMock()
+            cur.fetchone.return_value = {"type": "personal", "owner_user_id": 1, "owner_team_id": None}
+            conn.execute.return_value = cur
+
+            role = _resolve_workspace_role(conn, user_id=1, workspace_id=10)
+            assert role == "owner"
+
+    def test_team_member_gets_team_role(self):
+        """Team member gets their role from team_members."""
+        from web.middleware.tenant import _resolve_workspace_role
+        from flask import Flask, g
+
+        app = Flask(__name__)
+        with app.test_request_context():
+            conn = MagicMock()
+            call_count = [0]
+
+            def execute_side(sql, params=None):
+                cur = MagicMock()
+                call_count[0] += 1
+                if call_count[0] == 1:  # workspace lookup
+                    cur.fetchone.return_value = {"type": "team", "owner_user_id": None, "owner_team_id": 5}
+                elif call_count[0] == 2:  # team_members role
+                    cur.fetchone.return_value = {"role": "admin"}
+                return cur
+
+            conn.execute.side_effect = execute_side
+            role = _resolve_workspace_role(conn, user_id=10, workspace_id=20)
+            assert role == "admin"

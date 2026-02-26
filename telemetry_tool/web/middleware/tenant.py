@@ -21,6 +21,7 @@ def tenant_middleware():
     # Legacy mode: use system default workspace
     if not current_app.config.get("AUTH_REQUIRED"):
         g.workspace_id = current_app.config.get("DEFAULT_WORKSPACE_ID", 1)
+        g.workspace_role = "owner"
         _set_rls_context(g.workspace_id)
         return
 
@@ -67,6 +68,11 @@ def tenant_middleware():
 
     _set_rls_context(g.workspace_id)
 
+    # Resolve workspace role
+    from web.db_pg import get_pg_connection
+    conn = get_pg_connection()
+    g.workspace_role = _resolve_workspace_role(conn, user_id, g.workspace_id)
+
 
 def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:
     """Check if user has access to the given workspace."""
@@ -88,3 +94,29 @@ def _set_rls_context(workspace_id: int) -> None:
     from auth.workspace import set_workspace_context
     conn = get_pg_connection()
     set_workspace_context(conn, workspace_id)
+
+
+def _resolve_workspace_role(conn, user_id: int, workspace_id: int) -> str | None:
+    """Determine the user's role in a workspace.
+
+    Personal workspace owner -> 'owner'.
+    Team workspace -> look up role in team_members.
+    """
+    cur = conn.execute(
+        "SELECT type, owner_user_id, owner_team_id FROM workspaces WHERE id = %(ws)s",
+        {"ws": workspace_id},
+    )
+    ws = cur.fetchone()
+    if ws is None:
+        return None
+
+    if ws["type"] == "personal":
+        return "owner" if ws["owner_user_id"] == user_id else None
+
+    # Team workspace — look up team membership
+    cur = conn.execute(
+        "SELECT role FROM team_members WHERE team_id = %(tid)s AND user_id = %(uid)s",
+        {"tid": ws["owner_team_id"], "uid": user_id},
+    )
+    row = cur.fetchone()
+    return row["role"] if row else None
