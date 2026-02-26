@@ -35,11 +35,27 @@ class Config:
         "TELEMETRY_SECRET_KEY", "telemetry-local-dev-key"
     )
 
-    # Database
+    # Database — SQLite (legacy / single-user)
     BASE_DIR: Path = _resolve_base_dir()
     DB_PATH: Path = Path(
         os.environ.get("TELEMETRY_DB_PATH", str(BASE_DIR / "telemetry.db"))
     )
+
+    # Database — PostgreSQL (SaaS / multi-user)
+    USE_PG: bool = os.environ.get("USE_PG", "0") == "1"
+    PG_URL: str = os.environ.get(
+        "TELEMETRY_PG_URL",
+        "postgresql://telemetry:telemetry@localhost:5432/telemetry",
+    )
+
+    # Authentication
+    AUTH_REQUIRED: bool = os.environ.get("AUTH_REQUIRED", "0") == "1"
+    JWT_SECRET: str = os.environ.get(
+        "TELEMETRY_JWT_SECRET", "jwt-dev-secret-change-me"
+    )
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_EXPIRY_MINUTES: int = 15
+    JWT_REFRESH_EXPIRY_DAYS: int = 30
 
     # Directories
     DATA_RAW_DIR: Path = BASE_DIR / "data" / "raw"

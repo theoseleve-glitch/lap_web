@@ -103,24 +103,51 @@ def create_app(config: Config | None = None) -> Flask:
         UPLOAD_DIR=str(cfg.UPLOAD_DIR),
         MAX_CONTENT_LENGTH=cfg.MAX_CONTENT_LENGTH,
         SESSIONS_PER_PAGE=cfg.SESSIONS_PER_PAGE,
+        TEMPLATES_AUTO_RELOAD=True,
+        # PostgreSQL / auth settings (used by routes and middleware).
+        USE_PG=cfg.USE_PG,
+        PG_URL=cfg.PG_URL,
+        AUTH_REQUIRED=cfg.AUTH_REQUIRED,
+        JWT_SECRET=cfg.JWT_SECRET,
+        JWT_ALGORITHM=cfg.JWT_ALGORITHM,
+        JWT_ACCESS_EXPIRY_MINUTES=cfg.JWT_ACCESS_EXPIRY_MINUTES,
+        JWT_REFRESH_EXPIRY_DAYS=cfg.JWT_REFRESH_EXPIRY_DAYS,
     )
 
     # Ensure directories exist.
     for d in (cfg.DATA_RAW_DIR, cfg.RESULTS_DIR, cfg.UPLOAD_DIR):
         d.mkdir(parents=True, exist_ok=True)
 
-    # Database setup.
-    from .db import close_db, init_db, set_default_db_path
-    set_default_db_path(cfg.DB_PATH)
-    app.teardown_appcontext(close_db)
+    # Database setup — route to PostgreSQL or SQLite based on config.
+    if cfg.USE_PG:
+        from .db_pg import close_pg, init_pg
+        app.teardown_appcontext(close_pg)
 
-    with app.app_context():
-        init_db(cfg.DB_PATH)
-        # Sync tracks from file-based tracks.json into SQLite.
-        from .db import get_db_connection
-        from .models import sync_tracks_from_json
-        conn = get_db_connection()
-        sync_tracks_from_json(conn)
+        with app.app_context():
+            init_pg()
+            from .db_pg import get_pg_connection
+            from .models import merge_duplicate_tracks, sync_tracks_from_json
+            conn = get_pg_connection()
+            sync_tracks_from_json(conn)
+            merged = merge_duplicate_tracks(conn)
+            if merged > 0:
+                conn.commit()
+                logger.info("Merged %d duplicate Unknown Track entries.", merged)
+    else:
+        from .db import close_db, init_db, set_default_db_path
+        set_default_db_path(cfg.DB_PATH)
+        app.teardown_appcontext(close_db)
+
+        with app.app_context():
+            init_db(cfg.DB_PATH)
+            from .db import get_db_connection
+            from .models import merge_duplicate_tracks, sync_tracks_from_json
+            conn = get_db_connection()
+            sync_tracks_from_json(conn)
+            merged = merge_duplicate_tracks(conn)
+            if merged > 0:
+                conn.commit()
+                logger.info("Merged %d duplicate Unknown Track entries.", merged)
 
     # Register blueprints — import each safely so one failure doesn't
     # prevent the rest from loading.
