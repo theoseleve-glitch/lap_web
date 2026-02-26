@@ -36,6 +36,8 @@
     var V = window.VIZ_DATA;
     if (!V || !V.sessionId) return;
 
+    var _lc = window.LifecycleHelpers.create();
+
     var selectedLaps = new Set();           // set of lap numbers currently checked
     var gpsCache = {};                      // { lapNum: { latitudes, longitudes, distances, speeds, accel_lat, accel_long } }
     var deltaCache = {};                    // { "lapA-lapB": { distances, time_delta } }
@@ -115,7 +117,7 @@
 
         // Responsive resize — redraw canvas charts when window resizes
         var _vizResizeTimer = null;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_vizResizeTimer);
             _vizResizeTimer = setTimeout(function () {
                 VizSpeed.draw();
@@ -431,27 +433,27 @@
             ctx = canvas.getContext('2d');
             canvas.__redraw = function() { draw(); };
 
-            canvas.addEventListener('mousemove', function (e) {
+            _lc.addListener(canvas, 'mousemove', function (e) {
                 var rect = canvas.getBoundingClientRect();
                 var x = e.clientX - rect.left;
                 var dpr = window.devicePixelRatio || 1;
                 x /= 1; // Already in CSS pixels
                 handleHover(x);
             });
-            canvas.addEventListener('mouseleave', function () {
+            _lc.addListener(canvas, 'mouseleave', function () {
                 broadcastHover(null, 'speed');
                 if (_chartImage && ctx) ctx.putImageData(_chartImage, 0, 0);
             });
 
             // Touch support for mobile — reuse the same hover logic as mousemove
-            canvas.addEventListener('touchstart', function (e) {
+            _lc.addListener(canvas, 'touchstart', function (e) {
                 if (e.touches.length === 1) {
                     var rect = canvas.getBoundingClientRect();
                     var x = e.touches[0].clientX - rect.left;
                     handleHover(x);
                 }
             }, { passive: true });
-            canvas.addEventListener('touchmove', function (e) {
+            _lc.addListener(canvas, 'touchmove', function (e) {
                 if (e.touches.length === 1) {
                     var rect = canvas.getBoundingClientRect();
                     var x = e.touches[0].clientX - rect.left;
@@ -870,7 +872,7 @@
             ctx = canvas.getContext('2d');
             canvas.__redraw = function() { draw(); };
             canvas.style.cursor = 'crosshair';
-            canvas.addEventListener('mousemove', function (e) {
+            _lc.addListener(canvas, 'mousemove', function (e) {
                 if (_ggDragging) {
                     // Pan while dragging
                     if (!_plotP) return;
@@ -885,11 +887,11 @@
                 var rect = canvas.getBoundingClientRect();
                 _handleHover(e.clientX - rect.left, e.clientY - rect.top);
             });
-            canvas.addEventListener('mouseleave', function () {
+            _lc.addListener(canvas, 'mouseleave', function () {
                 broadcastHover(null, 'gg');
                 if (_chartImage && ctx) ctx.putImageData(_chartImage, 0, 0);
             });
-            canvas.addEventListener('mousedown', function (e) {
+            _lc.addListener(canvas, 'mousedown', function (e) {
                 _ggDragging = true;
                 _ggDragStartX = e.clientX;
                 _ggDragStartY = e.clientY;
@@ -897,33 +899,33 @@
                 _ggDragStartPanY = _ggPanY;
                 canvas.style.cursor = 'grabbing';
             });
-            window.addEventListener('mouseup', function () {
+            _lc.addListener(window, 'mouseup', function () {
                 if (_ggDragging) {
                     _ggDragging = false;
                     if (canvas) canvas.style.cursor = 'crosshair';
                 }
             });
             // Zoom via scroll wheel
-            canvas.addEventListener('wheel', function (e) {
+            _lc.addListener(canvas, 'wheel', function (e) {
                 e.preventDefault();
                 var delta = e.deltaY > 0 ? 0.85 : 1.18;
                 _ggZoom = Math.max(0.5, Math.min(8, _ggZoom * delta));
                 draw();
             }, { passive: false });
             // Double-click to reset
-            canvas.addEventListener('dblclick', function () {
+            _lc.addListener(canvas, 'dblclick', function () {
                 _ggZoom = 1.0;
                 _ggPanX = 0;
                 _ggPanY = 0;
                 draw();
             });
-            canvas.addEventListener('touchstart', function (e) {
+            _lc.addListener(canvas, 'touchstart', function (e) {
                 if (e.touches.length === 1) {
                     var rect = canvas.getBoundingClientRect();
                     _handleHover(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
                 }
             }, { passive: true });
-            canvas.addEventListener('touchmove', function (e) {
+            _lc.addListener(canvas, 'touchmove', function (e) {
                 if (e.touches.length === 1) {
                     var rect = canvas.getBoundingClientRect();
                     _handleHover(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top);
@@ -969,10 +971,10 @@
                 return;
             }
 
-            // Convert to G (divide by 9.81)
+            // Data is already in G from RaceChrono pipeline
             var maxG = 0;
-            allLat.forEach(function (v) { var g = Math.abs(v / 9.81); if (g > maxG) maxG = g; });
-            allLong.forEach(function (v) { var g = Math.abs(v / 9.81); if (g > maxG) maxG = g; });
+            allLat.forEach(function (v) { var g = Math.abs(v); if (g > maxG) maxG = g; });
+            allLong.forEach(function (v) { var g = Math.abs(v); if (g > maxG) maxG = g; });
             maxG = Math.max(maxG * 1.1, 0.5);
 
             var padGG = { top: 30, right: 40, bottom: 35, left: 50 };
@@ -1068,8 +1070,8 @@
                 ctx.globalAlpha = pointAlpha;
                 for (var i = 0; i < ld.lat.length; i++) {
                     if (ld.lat[i] === null || ld.long[i] === null) continue;
-                    var gx = ld.lat[i] / 9.81;
-                    var gy = ld.long[i] / 9.81;
+                    var gx = ld.lat[i];
+                    var gy = ld.long[i];
                     ctx.beginPath();
                     ctx.arc(originX + gx * scale, originY - gy * scale, pointRadius, 0, Math.PI * 2);
                     ctx.fill();
@@ -1221,17 +1223,17 @@
             var btnNone = document.getElementById('viz-select-none');
             var btnBest = document.getElementById('viz-select-best');
 
-            if (btnAll) btnAll.addEventListener('click', function () {
+            if (btnAll) _lc.addListener(btnAll, 'click', function () {
                 V.gpsLaps.forEach(function (ln) { selectedLaps.add(ln); });
                 syncCheckboxes();
                 onSelectionChanged();
             });
-            if (btnNone) btnNone.addEventListener('click', function () {
+            if (btnNone) _lc.addListener(btnNone, 'click', function () {
                 selectedLaps.clear();
                 syncCheckboxes();
                 onSelectionChanged();
             });
-            if (btnBest) btnBest.addEventListener('click', function () {
+            if (btnBest) _lc.addListener(btnBest, 'click', function () {
                 selectedLaps.clear();
                 if (V.bestLap) selectedLaps.add(V.bestLap);
                 syncCheckboxes();
@@ -1260,7 +1262,7 @@
                 cb.type = 'checkbox';
                 cb.dataset.lap = lapNum;
                 cb.checked = selectedLaps.has(lapNum);
-                cb.addEventListener('change', function () {
+                _lc.addListener(cb, 'change', function () {
                     if (cb.checked) selectedLaps.add(lapNum);
                     else selectedLaps.delete(lapNum);
                     onSelectionChanged();
@@ -1379,4 +1381,13 @@
         };
     })();
 
+    function destroy() {
+        _lc.destroyAll();
+        selectedLaps.clear();
+    }
+
+    window.ModuleManager.register('visualize', {
+        init: function () { /* auto-inits */ },
+        destroy: destroy
+    });
 })();
