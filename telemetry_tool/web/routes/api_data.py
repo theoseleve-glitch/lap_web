@@ -288,8 +288,6 @@ def gg_data(session_id: str):
     """Return aggregated G-G scatter data from all laps with accel data."""
     import math
 
-    _G_VAL = 9.80665  # m/s² per G
-
     conn = get_db_connection()
     gps_lap_nums = get_gps_lap_numbers(conn, session_id)
 
@@ -298,13 +296,13 @@ def gg_data(session_id: str):
     per_lap = {}
 
     def _clean(arr):
-        """Replace NaN/Inf with None, convert m/s² → G for JSON output."""
+        """Replace NaN/Inf with None; values are already in G from RaceChrono."""
         out = []
         for v in arr:
             if v is None:
                 out.append(None)
             else:
-                fv = float(v) / _G_VAL
+                fv = float(v)
                 out.append(None if (math.isnan(fv) or math.isinf(fv)) else round(fv, 4))
         return out
 
@@ -1189,12 +1187,24 @@ def api_corner_replay_data(session_id: str):
                 "lon": lons[idx],
             })
 
+    # Check if real brake/throttle/steering data exists in traces
+    # (gps_traces only stores accel_lat/accel_long — no pedal sensor data)
+    has_pedal = False
+    has_steering = False
+    for t in traces.values():
+        if t.get("brake") and any(v for v in t["brake"] if v):
+            has_pedal = True
+        if t.get("steering") and any(v for v in t["steering"] if v):
+            has_steering = True
+
     return jsonify({
         "traces": traces,
         "corner_metrics": corner_metrics,
         "corner_positions": corner_positions,
         "best_lap_number": best_lap_num,
         "lap_times": lap_times,
+        "has_pedal_data": has_pedal,
+        "has_steering_data": has_steering,
     })
 
 
@@ -1263,7 +1273,7 @@ def _normalize_driver_name(name: str) -> str:
 @bp.route("/predefined-karts")
 def api_predefined_karts():
     """Return predefined kart list, grouped by segment."""
-    csv_path = Path(current_app.root_path).parent / "predefined_kart_list.csv"
+    csv_path = Path(current_app.root_path).parent.parent / "predefined_kart_list.csv"
     if not csv_path.exists():
         return jsonify({"segments": {}, "karts": []})
     try:
@@ -1300,7 +1310,7 @@ def api_predefined_karts():
 @bp.route("/predefined-tracks")
 def api_predefined_tracks():
     """Return predefined track list, grouped by country."""
-    csv_path = Path(current_app.root_path).parent / "predefined_track_list.csv"
+    csv_path = Path(current_app.root_path).parent.parent / "predefined_track_list.csv"
     if not csv_path.exists():
         return jsonify({"countries": {}, "tracks": []})
     try:
@@ -2217,15 +2227,7 @@ _STYLE_FEATURES = [
          "good": "Steady stint pace \u2014 good endurance management",
          "elite": "Excellent endurance \u2014 virtually no pace drop across the stint",
      }),
-    ("smoothness_composite", "Smoothness",
-     "Overall smoothness of steering, braking, and throttle transitions combined",
-     False, {
-         "low": "Focus on smoother inputs \u2014 avoid jerky steering and abrupt pedal changes",
-         "below_avg": "Work on blending inputs \u2014 smooth transitions between brake and throttle",
-         "average": "Reasonable smoothness \u2014 refine transitions in high-speed corners",
-         "good": "Smooth driver \u2014 your inputs are well-blended and progressive",
-         "elite": "Exceptionally smooth \u2014 silky input transitions across all controls",
-     }),
+    # Smoothness suppressed from display — computation kept for internal use
 ]
 
 

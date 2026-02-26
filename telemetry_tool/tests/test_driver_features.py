@@ -501,10 +501,10 @@ class TestAutoTrackReference:
 
 
 class TestGGConversion:
-    """G-G scatter API must return values in G, not raw m/s squared."""
+    """G-G scatter API returns acceleration values as stored (already in G from RaceChrono)."""
 
-    def test_gg_data_converts_to_g(self, db, tmp_path):
-        """Raw accel stored as m/s squared should be divided by 9.80665."""
+    def test_gg_data_passthrough(self, db, tmp_path):
+        """Accel values stored in G from RaceChrono should be returned as-is."""
         import json
         import math
 
@@ -516,8 +516,9 @@ class TestGGConversion:
             "INSERT INTO sessions (session_id, csv_filename, driver_id, track_id, session_date) "
             "VALUES ('s1', 'f.csv', 1, 't1', '2025-01-01')"
         )
-        raw_lat = [9.80665, -9.80665, 0.0]
-        raw_long = [4.903325, -4.903325, 0.0]
+        # RaceChrono "(G) *calc" headers produce values already in G
+        raw_lat = [1.0, -1.0, 0.0]
+        raw_long = [0.5, -0.5, 0.0]
         db.execute(
             "INSERT INTO gps_traces (session_id, lap_number, latitudes_json, longitudes_json, "
             "distances_json, speeds_json, accel_lat_json, accel_long_json) "
@@ -552,6 +553,7 @@ class TestGGConversion:
             resp = client.get("/api/session/s1/gg_data")
             assert resp.status_code == 200
             data = resp.get_json()
+            # Values should pass through without conversion
             assert math.isclose(data["accel_lat"][0], 1.0, rel_tol=0.01)
             assert math.isclose(data["accel_lat"][1], -1.0, rel_tol=0.01)
             assert math.isclose(data["accel_long"][0], 0.5, rel_tol=0.01)

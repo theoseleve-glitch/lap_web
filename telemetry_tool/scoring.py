@@ -138,8 +138,8 @@ WET_CONSISTENCY_BTM_ZERO_S:  Final[float] = 6.00
 
 # Sub-weight split within consistency category
 
-CONSISTENCY_W_CV:  Final[float] = 0.60   # 60 % of MAX_CONSISTENCY from CV
-CONSISTENCY_W_BTM: Final[float] = 0.40   # 40 % from best-to-median gap
+CONSISTENCY_W_CV:  Final[float] = 0.75   # 75 % of MAX_CONSISTENCY from CV (std dev)
+CONSISTENCY_W_BTM: Final[float] = 0.25   # 25 % from best-to-median gap
 
 # =============================================================================
 
@@ -534,9 +534,12 @@ def _score_consistency(
     is_wet: bool = False,
     within_phase_cv: "float | None" = None,
     session_type: str = "practice",
+    lap_times: "list[float] | None" = None,
+    grip_progressing: bool = False,
 ) -> tuple[float, dict[str, Any]]:
     """
-    Score consistency from CV% and best-to-median gap.
+    Score consistency from CV% and best-to-median gap (or worst residual
+    against regression line when grip is progressing).
 
     Required metric keys (from *m*)
     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -544,9 +547,16 @@ def _score_consistency(
     ``best_to_median_s``  — gap between fastest and median lap [s]
     ``n_laps``            — number of valid laps
 
-    Parameters -- is_wet:
+    Parameters
+    ----------
+    is_wet : bool
         When True, wider thresholds are used (wet sessions have naturally
         higher variability).
+    lap_times : list[float] | None
+        Ordered lap times for regression-based scoring.
+    grip_progressing : bool
+        When True and lap_times is available, replaces best-to-median with
+        worst residual deviation against the regression line.
     """
     n_laps = int(_get(m, "n_laps", 0))
     if n_laps < 2:
@@ -557,11 +567,33 @@ def _score_consistency(
     btm_s  = _get(m, "best_to_median_s")
 
     # If within-phase CV is provided (evolving session), prefer it over
-
     # the whole-session CV which is inflated by track evolution
-
     if within_phase_cv is not None and not math.isnan(within_phase_cv):
         cv_pct = within_phase_cv
+
+    # --- Grip progression: replace best-to-median with worst residual ---
+    _used_regression = False
+    if grip_progressing and lap_times and len(lap_times) >= 3:
+        import numpy as _np
+        x = _np.arange(len(lap_times), dtype=float)
+        y = _np.array(lap_times, dtype=float)
+        # Fit linear regression
+        x_mean, y_mean = x.mean(), y.mean()
+        denom = float(((x - x_mean) ** 2).sum())
+        if denom > 1e-12:
+            slope = float(((x - x_mean) * (y - y_mean)).sum() / denom)
+            intercept = y_mean - slope * x_mean
+            predicted = slope * x + intercept
+            residuals = y - predicted
+            # Worst positive residual = lap most above regression line
+            worst_residual = float(_np.max(_np.abs(residuals)))
+            btm_s = worst_residual
+            _used_regression = True
+            logger.debug(
+                "Grip progression: using worst residual %.3fs vs regression "
+                "(slope=%.4f s/lap) instead of best-to-median",
+                worst_residual, slope,
+            )
 
     # Select thresholds: session-type-specific > wet > defaults
     _stype = _normalize_session_type(session_type)
@@ -607,13 +639,18 @@ def _score_consistency(
         cv_ratio, btm_ratio, composite, score,
     )
 
-    return score, {
+    detail: dict[str, Any] = {
         "cv_pct":              round(cv_pct,  4) if not math.isnan(cv_pct) else None,
         "best_to_median_s":    round(btm_s,   3) if not math.isnan(btm_s)  else None,
         "cv_ratio":            round(cv_ratio,  4),
         "btm_ratio":           round(btm_ratio, 4),
         "is_wet":              is_wet,
     }
+    if _used_regression:
+        detail["used_regression"] = True
+        detail["worst_residual_s"] = round(btm_s, 3)
+
+    return score, detail
 
 
 def _score_execution(
@@ -1469,12 +1506,17 @@ def score_session_phase_aware(
 
                 if math.isfinite(adj_cv):
                     # Recompute consistency sub-score with adjusted CV
-
+                    _grip_improving = (
+                        track_evolution is not None
+                        and track_evolution.get("grip_trend") == "improving"
+                    )
                     _adj_cons_score, _adj_cons_detail = _score_consistency(
                         metrics_dict, theoretical_metrics,
                         is_wet=_is_wet,
                         within_phase_cv=adj_cv,
                         session_type=session_type,
+                        lap_times=_lap_times,
+                        grip_progressing=_grip_improving,
                     )
 
                     if "consistency" in result.get("sub_scores", {}):
