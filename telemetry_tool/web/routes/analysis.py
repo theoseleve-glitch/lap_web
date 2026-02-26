@@ -203,9 +203,12 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                             pass
                         if _track_entry is None:
                             _tm = summary.get("track_match")
+                            # Prefer user-provided track name over auto-detected
+                            _user_tn = meta.get("track_name")
+                            _auto_tn = (_tm or {}).get("track_name", _tid)
                             _track_entry = {
                                 "track_id": _tid,
-                                "track_name": (_tm or {}).get("track_name", _tid),
+                                "track_name": _user_tn or _auto_tn,
                                 "fingerprint": {
                                     "lap_length_m": (_tm or {}).get("lap_length_m", 0.0),
                                     "bbox": {},
@@ -215,6 +218,9 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                                     "lap_count": None,
                                 },
                             }
+                        elif meta.get("track_name"):
+                            # User provided name overrides detected name
+                            _track_entry["track_name"] = meta["track_name"]
                         upsert_track(conn, _track_entry)
 
                     db_session_id = upsert_session(conn, summary, driver_id)
@@ -681,9 +687,11 @@ def analyze_run():
                 pass
             if _track_entry is None:
                 _tm = summary.get("track_match")
+                _user_tn = meta.get("track_name")
+                _auto_tn = (_tm or {}).get("track_name", _tid)
                 _track_entry = {
                     "track_id": _tid,
-                    "track_name": (_tm or {}).get("track_name", _tid),
+                    "track_name": _user_tn or _auto_tn,
                     "fingerprint": {
                         "lap_length_m": (_tm or {}).get("lap_length_m", 0.0),
                         "bbox": {},
@@ -691,6 +699,8 @@ def analyze_run():
                         "sample_count": None, "lap_count": None,
                     },
                 }
+            elif meta.get("track_name"):
+                _track_entry["track_name"] = meta["track_name"]
             upsert_track(conn, _track_entry)
         session_id = upsert_session(conn, summary, driver_id)
         insert_laps(conn, session_id, summary)

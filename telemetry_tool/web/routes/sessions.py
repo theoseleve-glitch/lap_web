@@ -20,6 +20,8 @@ from web.models import (
     get_gps_lap_numbers,
     get_theoretical_data,
     link_session_kart,
+    merge_duplicate_tracks,
+    rename_track,
     update_session_field,
 )
 
@@ -92,7 +94,8 @@ def session_detail(session_id: str):
         "SELECT driver_id, driver_name FROM drivers ORDER BY driver_name"
     ).fetchall()
     tracks = conn.execute(
-        "SELECT track_id, track_name FROM tracks ORDER BY track_name"
+        "SELECT track_id, track_name, start_lat, start_lon, lap_length_m FROM tracks "
+        "WHERE track_id != 'unknown_track' ORDER BY track_name"
     ).fetchall()
 
     return render_template(
@@ -189,3 +192,25 @@ def set_session_kart(session_id: str):
     conn.commit()
     flash("Kart updated." if kart_id else "Kart unlinked.", "success")
     return redirect(url_for("sessions.session_detail", session_id=session_id))
+
+
+@bp.route("/track/<track_id>/rename", methods=["POST"])
+def rename_track_route(track_id: str):
+    """Rename a track (AJAX endpoint)."""
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    new_name = data.get("name", "").strip()
+    if not new_name:
+        return jsonify({"error": "name is required"}), 400
+    rename_track(conn, track_id, new_name)
+    conn.commit()
+    return jsonify({"ok": True, "track_id": track_id, "name": new_name})
+
+
+@bp.route("/tracks/merge-duplicates", methods=["POST"])
+def merge_duplicates_route():
+    """Merge duplicate Unknown Track entries (AJAX endpoint)."""
+    conn = get_db_connection()
+    merged = merge_duplicate_tracks(conn)
+    conn.commit()
+    return jsonify({"ok": True, "merged": merged})

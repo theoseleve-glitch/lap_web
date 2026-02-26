@@ -90,7 +90,12 @@ INSERT INTO tracks (
     :has_joker, :joker_distance_delta_m, :joker_time_delta_s
 )
 ON CONFLICT(track_id) DO UPDATE SET
-    track_name   = excluded.track_name,
+    track_name   = CASE
+                     WHEN tracks.track_name LIKE '%nknown%'
+                       OR tracks.track_name = tracks.track_id
+                     THEN excluded.track_name
+                     ELSE tracks.track_name
+                   END,
     lap_length_m = excluded.lap_length_m,
     updated_at   = datetime('now');
 """

@@ -98,6 +98,131 @@ def get_all_tracks(conn: sqlite3.Connection) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def rename_track(conn: sqlite3.Connection, track_id: str, new_name: str) -> None:
+    """Rename a track in the tracks table and persist to tracks.json."""
+    clean_name = new_name.strip()
+    conn.execute(
+        "UPDATE tracks SET track_name = :name, updated_at = datetime('now') "
+        "WHERE track_id = :tid",
+        {"name": clean_name, "tid": track_id},
+    )
+    # Persist to tracks.json so the rename survives server restarts.
+    _update_tracks_json(track_id, clean_name)
+
+
+def _update_tracks_json(track_id: str, new_name: str) -> None:
+    """Update the track name in the file-based tracks.json."""
+    try:
+        from track_detection import load_track_database, save_track_database
+        db = load_track_database()
+        for entry in db:
+            if entry.get("track_id") == track_id:
+                entry["track_name"] = new_name
+                break
+        save_track_database(db)
+    except Exception as exc:
+        logger.warning("Could not update tracks.json for %s: %s", track_id, exc)
+
+
+def merge_duplicate_tracks(conn: sqlite3.Connection) -> int:
+    """
+    Merge duplicate 'Unknown Track' entries that share overlapping GPS.
+
+    Groups Unknown Tracks by bbox overlap (centroid within 500m).
+    For each group, keeps the first entry and reassigns all sessions
+    from duplicate entries to the kept entry, then deletes duplicates.
+
+    Returns the number of tracks merged away.
+    """
+    import math
+
+    unknowns = conn.execute(
+        "SELECT track_id, track_name, start_lat, start_lon, "
+        "       bbox_lat_min, bbox_lat_max, bbox_lon_min, bbox_lon_max, "
+        "       lap_length_m "
+        "FROM tracks WHERE track_name LIKE '%nknown%' OR track_name LIKE '%unknown%' "
+        "ORDER BY created_at"
+    ).fetchall()
+    unknowns = [dict(r) for r in unknowns]
+
+    if len(unknowns) < 2:
+        return 0
+
+    def _haversine(lat1, lon1, lat2, lon2):
+        if any(v is None for v in (lat1, lon1, lat2, lon2)):
+            return float("inf")
+        R = 6371000.0
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.sin(dlon / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+    def _centroid(t):
+        """Get centroid from start coords, or fallback to bbox center."""
+        lat = t.get("start_lat")
+        lon = t.get("start_lon")
+        if lat is not None and lon is not None:
+            return lat, lon
+        # Fallback to bbox centroid
+        lat_min = t.get("bbox_lat_min")
+        lat_max = t.get("bbox_lat_max")
+        lon_min = t.get("bbox_lon_min")
+        lon_max = t.get("bbox_lon_max")
+        if all(v is not None for v in (lat_min, lat_max, lon_min, lon_max)):
+            return (lat_min + lat_max) / 2, (lon_min + lon_max) / 2
+        return None, None
+
+    # Group by proximity (centroid within 500m) or all-null coords
+    groups: list[list[dict]] = []
+    assigned = set()
+    null_group: list[dict] = []  # tracks with no GPS at all
+    for i, t in enumerate(unknowns):
+        if i in assigned:
+            continue
+        lat, lon = _centroid(t)
+        if lat is None:
+            null_group.append(t)
+            assigned.add(i)
+            continue
+        group = [t]
+        assigned.add(i)
+        for j, other in enumerate(unknowns):
+            if j in assigned:
+                continue
+            olat, olon = _centroid(other)
+            if olat is None:
+                continue
+            dist = _haversine(lat, lon, olat, olon)
+            if dist < 500:
+                group.append(other)
+                assigned.add(j)
+        if len(group) > 1:
+            groups.append(group)
+    # Group all no-GPS unknowns together
+    if len(null_group) > 1:
+        groups.append(null_group)
+
+    merged = 0
+    for group in groups:
+        keep = group[0]
+        for dup in group[1:]:
+            # Reassign sessions from dup -> keep
+            conn.execute(
+                "UPDATE sessions SET track_id = :keep WHERE track_id = :dup",
+                {"keep": keep["track_id"], "dup": dup["track_id"]},
+            )
+            # Delete the duplicate track entry
+            conn.execute(
+                "DELETE FROM tracks WHERE track_id = :tid",
+                {"tid": dup["track_id"]},
+            )
+            merged += 1
+
+    return merged
+
+
 def get_track_by_id(conn: sqlite3.Connection, track_id: str) -> Optional[dict]:
     row = conn.execute(
         Q.SELECT_TRACK_BY_ID, {"track_id": track_id}

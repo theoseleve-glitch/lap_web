@@ -23,9 +23,9 @@ Pipeline
 
 Matching rules
 ~~~~~~~~~~~~~~
-- Lap length within +/-``lap_length_tolerance`` (default 3 %).
+- Lap length within +/-``lap_length_tolerance`` (default 6 %).
 - Bounding-box IoU (Intersection-over-Union) >= ``min_bbox_iou``
-  (default 0.70) -- ensures boxes overlap substantially, not just partly.
+  (default 0.50) -- ensures boxes overlap, relaxed for GPS drift on kart tracks.
 - Both conditions must hold; the closest match by lap-length ratio is
   selected when multiple candidates pass.
 
@@ -77,8 +77,8 @@ _COL_TIME: Final[str] = "Time (s)"
 # -- -
 
 
-_DEFAULT_LAP_TOL:  Final[float] = 0.03   # +/-3 % lap-length tolerance
-_DEFAULT_MIN_IOU:  Final[float] = 0.70   # minimum bounding-box IoU to match
+_DEFAULT_LAP_TOL:  Final[float] = 0.06   # +/-6 % lap-length tolerance (relaxed for GPS drift on short tracks)
+_DEFAULT_MIN_IOU:  Final[float] = 0.50   # minimum bounding-box IoU to match (relaxed for GPS variance)
 _DB_FILENAME:      Final[str]   = "tracks.json"
 
 
