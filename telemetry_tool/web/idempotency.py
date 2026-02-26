@@ -81,10 +81,18 @@ def idempotent(fn):
         cache_key = f"idempotency:{workspace_id}:{idemp_key}"
         lock_key = f"idempotency:lock:{workspace_id}:{idemp_key}"
 
-        r = get_redis()
+        try:
+            r = get_redis()
+        except Exception:
+            logger.warning("Redis unavailable for idempotency — passing through")
+            return fn(*args, **kwargs)
 
         # --- 1. Check for cached response ---
-        cached = r.get(cache_key)
+        try:
+            cached = r.get(cache_key)
+        except Exception:
+            logger.warning("Redis read failed for idempotency — passing through")
+            return fn(*args, **kwargs)
         if cached is not None:
             try:
                 payload = json.loads(cached)
@@ -95,7 +103,12 @@ def idempotent(fn):
                 logger.warning("Corrupt idempotency cache for %s", cache_key)
 
         # --- 2. Acquire processing lock ---
-        lock_acquired = r.set(lock_key, "1", nx=True, ex=_LOCK_TTL)
+        try:
+            lock_acquired = r.set(lock_key, "1", nx=True, ex=_LOCK_TTL)
+        except Exception:
+            logger.warning("Redis lock failed for idempotency — passing through")
+            return fn(*args, **kwargs)
+
         if not lock_acquired:
             from web.api_utils import ErrorCode, api_error
             return api_error(
@@ -126,13 +139,19 @@ def idempotent(fn):
 
             # --- 4. Cache if not 5xx ---
             if actual_status < 500:
-                cache_payload = json.dumps({"status": actual_status, "body": body})
-                r.set(cache_key, cache_payload, ex=_RESPONSE_TTL)
+                try:
+                    cache_payload = json.dumps({"status": actual_status, "body": body})
+                    r.set(cache_key, cache_payload, ex=_RESPONSE_TTL)
+                except Exception:
+                    logger.warning("Redis cache write failed for idempotency key %s", idemp_key)
 
             return result
 
         finally:
             # --- 5. Always release lock ---
-            r.delete(lock_key)
+            try:
+                r.delete(lock_key)
+            except Exception:
+                logger.warning("Redis lock release failed for idempotency key %s", idemp_key)
 
     return wrapper

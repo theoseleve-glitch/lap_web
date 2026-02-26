@@ -41,16 +41,6 @@ except ImportError:
         return fn
 
 
-# ---- Validation import (graceful fallback) ----
-try:
-    from web.validation import validate_body
-except ImportError:
-    def validate_body(schema):
-        def decorator(fn):
-            return fn
-        return decorator
-
-
 # ---- PG connection ----
 def get_pg_connection():
     """Get PostgreSQL connection. Tests patch this."""
@@ -99,7 +89,7 @@ def create_export():
     conn.commit()
 
     # Dispatch Celery task
-    if export_user_data is not None:
+    if export_user_data is not None and hasattr(export_user_data, "delay"):
         export_user_data.delay(user_id=user_id, export_id=str(export_id))
 
     return api_response({"export_id": str(export_id)}, status=202)
@@ -121,6 +111,9 @@ def export_status(export_id: str):
     from sqlalchemy import text
 
     user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
     conn = get_pg_connection()
 
     row = conn.execute(
@@ -153,6 +146,9 @@ def export_download(export_id: str):
     from sqlalchemy import text
 
     user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
     conn = get_pg_connection()
 
     row = conn.execute(
@@ -199,6 +195,9 @@ def delete_account():
     from sqlalchemy import text
 
     user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
     conn = get_pg_connection()
 
     user = conn.execute(
@@ -249,6 +248,9 @@ def cancel_deletion():
     from sqlalchemy import text
 
     user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
     conn = get_pg_connection()
 
     user = conn.execute(
@@ -293,6 +295,9 @@ def update_profile():
     from sqlalchemy import text
 
     user_id = getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
     conn = get_pg_connection()
 
     body = request.get_json(silent=True) or {}

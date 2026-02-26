@@ -365,6 +365,10 @@ def _purge_deleted_accounts_impl() -> dict[str, int]:
 
         except Exception as exc:
             logger.error("Failed to purge user_id=%s: %s", uid, exc)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             continue
 
     logger.info("Account purge complete: %d accounts purged", purged)

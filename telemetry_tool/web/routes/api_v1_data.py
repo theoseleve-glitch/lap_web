@@ -518,8 +518,8 @@ def v1_track_geometry(track_id: str):
     """
     conn = get_db_connection()
     row = conn.execute(
-        "SELECT track_name, reference_line FROM tracks WHERE track_id = ?",
-        (track_id,),
+        "SELECT track_name, reference_line FROM tracks WHERE track_id = :track_id",
+        {"track_id": track_id},
     ).fetchone()
     if not row or not row["reference_line"]:
         return api_error(ErrorCode.NOT_FOUND, "No geometry available", status=404)
