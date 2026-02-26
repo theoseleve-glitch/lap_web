@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var ZONE_COLORS = {
@@ -66,7 +68,7 @@
 
         el.innerHTML = html;
 
-        setTimeout(function () {
+        _lc.addTimer(function () {
             _drawSpeedChart(data);
             _drawTimeLoss(data);
 
@@ -258,7 +260,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("speed-profile-container", function () {
@@ -270,4 +272,13 @@
     });
 
     window.SpeedProfile = { init: init };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('speed_profile', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

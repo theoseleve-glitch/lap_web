@@ -8,6 +8,8 @@
 (function() {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     window.ThrottleHeatmap = { init: init };
@@ -144,4 +146,13 @@
             ctx.fillText('C' + pc.corner_id + ': ' + sc.toFixed(0) + '%', x, y + 12);
         });
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('throttle_heatmap', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
