@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/utilities.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/charts.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/focus_mode.css') }}">
 
     <!-- Theme detection (loaded early to prevent flash of wrong theme) -->
@@ -208,6 +209,12 @@
 
     <!-- Module manager (central lifecycle coordinator for UI modules) -->
     <script src="{{ url_for('static', filename='js/module_manager.js') }}"></script>
+
+    <!-- ChartFrame component (wrap canvases, state management, drawer) -->
+    <script src="{{ url_for('static', filename='js/chart_frame.js') }}"></script>
+
+    <!-- Micro-motion utilities (tick-up, stagger-in, progressive line draw) -->
+    <script src="{{ url_for('static', filename='js/motion.js') }}"></script>
 
     <!-- Fetch helper (loading / error / retry) -->
     <script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>

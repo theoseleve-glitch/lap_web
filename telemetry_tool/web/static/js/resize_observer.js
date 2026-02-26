@@ -36,7 +36,7 @@
     });
 
     function init() {
-        var containers = document.querySelectorAll('.chart-container');
+        var containers = document.querySelectorAll('.chart-container, .chart-frame');
         for (var i = 0; i < containers.length; i++) {
             ro.observe(containers[i]);
         }
