@@ -142,6 +142,13 @@
                 Coaching
             </a>
 
+            <!-- Overflow "More" dropdown — populated by priority-nav JS -->
+            <div class="nav-overflow-wrap" id="nav-overflow-wrap">
+                <button type="button" class="nav-overflow-trigger" id="nav-overflow-trigger"
+                        aria-haspopup="true" aria-expanded="false">More &#x25BE;</button>
+                <div class="nav-overflow-menu" id="nav-overflow-menu" role="menu"></div>
+            </div>
+
             {% if supported_languages is defined and supported_languages|length > 1 %}
             <select id="lang-picker" class="nav-lang-picker" onchange="setLang(this.value)" title="Language">
                 {% for l in supported_languages %}
@@ -149,9 +156,7 @@
                 {% endfor %}
             </select>
             {% endif %}
-            <button type="button" id="theme-toggle" class="nav-theme-toggle"
-                    onclick="toggleTheme()" title="Toggle light/dark theme"
-                    aria-label="Toggle theme">&#x263E;</button>
+            <!-- Theme toggle suppressed — dark theme only -->
 
             <a href="/analyze/" title="Upload and analyze a new session"
                class="nav-cta {% if request.endpoint and request.endpoint.startswith('analysis.') %}active{% endif %}"
@@ -194,6 +199,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
             integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
             crossorigin=""></script>
+
+    <!-- Lifecycle helpers (tracked listeners/timers/rAF for cleanup) -->
+    <script src="{{ url_for('static', filename='js/lifecycle_helpers.js') }}"></script>
+
+    <!-- Module manager (central lifecycle coordinator for UI modules) -->
+    <script src="{{ url_for('static', filename='js/module_manager.js') }}"></script>
 
     <!-- Fetch helper (loading / error / retry) -->
     <script src="{{ url_for('static', filename='js/fetch_helper.js') }}"></script>
@@ -601,6 +612,117 @@
                 if (err) err.remove();
             }
         });
+    })();
+
+    // ── Priority nav — progressive overflow collapse ──
+    (function() {
+        var navLinks = document.getElementById('nav-links');
+        var overflowWrap = document.getElementById('nav-overflow-wrap');
+        var overflowMenu = document.getElementById('nav-overflow-menu');
+        var overflowTrigger = document.getElementById('nav-overflow-trigger');
+        if (!navLinks || !overflowWrap || !overflowMenu) return;
+
+        // Collapsible items: all direct children except the overflow itself,
+        // lang picker, theme toggle, and the CTA button (always visible).
+        var _allItems = [];
+        var _alwaysVisible = ['nav-overflow-wrap', 'lang-picker', 'theme-toggle'];
+
+        Array.prototype.forEach.call(navLinks.children, function(child) {
+            if (_alwaysVisible.indexOf(child.id) >= 0) return;
+            if (child.classList.contains('nav-cta')) return;
+            if (child.classList.contains('nav-overflow-wrap')) return;
+            if (child.tagName === 'SELECT' && child.id === 'lang-picker') return;
+            if (child.id === 'theme-toggle') return;
+            _allItems.push(child);
+        });
+
+        // Priority: last items collapse first (rightmost = lowest priority)
+        // Reverse so we hide from the end
+        var _priorityOrder = _allItems.slice().reverse();
+
+        function _update() {
+            if (window.innerWidth <= 768) {
+                // Mobile — hamburger handles it; show everything, hide overflow menu
+                _allItems.forEach(function(el) { el.classList.remove('nav-overflow-hidden'); });
+                overflowWrap.classList.remove('nav-overflow-visible');
+                overflowMenu.classList.remove('open');
+                return;
+            }
+
+            // Reset: show all items, use overflow:hidden for measurement
+            navLinks.style.overflow = 'hidden';
+            _allItems.forEach(function(el) { el.classList.remove('nav-overflow-hidden'); });
+            overflowWrap.classList.remove('nav-overflow-visible');
+
+            // Check if nav overflows — hide items one-by-one from the right
+            var hiddenItems = [];
+            for (var i = 0; i < _priorityOrder.length; i++) {
+                if (navLinks.scrollWidth <= navLinks.clientWidth + 1) break;
+                _priorityOrder[i].classList.add('nav-overflow-hidden');
+                hiddenItems.push(_priorityOrder[i]);
+            }
+
+            // After measurement, switch to visible so dropdown menus aren't clipped
+            navLinks.style.overflow = 'visible';
+
+            // Populate overflow menu
+            if (hiddenItems.length > 0) {
+                overflowWrap.classList.add('nav-overflow-visible');
+                // Build menu from hidden items (reversed back to original order)
+                while (overflowMenu.firstChild) overflowMenu.removeChild(overflowMenu.firstChild);
+                hiddenItems.reverse().forEach(function(item) {
+                    var clone;
+                    // For dropdown wraps, just add the trigger text as a link
+                    var trigger = item.querySelector('.nav-dropdown-trigger');
+                    if (trigger) {
+                        // Copy the submenu items directly
+                        var subItems = item.querySelectorAll('.nav-dropdown-item');
+                        if (subItems.length > 0) {
+                            var groupLabel = document.createElement('div');
+                            groupLabel.style.cssText = 'padding:0.35rem 0.75rem;font-size:0.7rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);';
+                            groupLabel.textContent = (trigger.textContent || '').replace(/[▾▿]/g, '').trim();
+                            overflowMenu.appendChild(groupLabel);
+                            subItems.forEach(function(si) {
+                                clone = si.cloneNode(true);
+                                clone.className = '';
+                                clone.style.cssText = 'display:block;padding:0.4rem 0.75rem;color:var(--text-secondary);font-size:0.85rem;border-radius:var(--radius-sm);white-space:nowrap;';
+                                overflowMenu.appendChild(clone);
+                            });
+                        } else {
+                            // Dropdown with no static sub-items (e.g. Visualize search)
+                            // — link to a sensible fallback page
+                            clone = document.createElement('a');
+                            var label = (trigger.textContent || '').replace(/[▾▿]/g, '').trim();
+                            clone.href = label === 'Visualize' ? '/sessions/' : (trigger.href || '#');
+                            clone.textContent = label;
+                            clone.setAttribute('role', 'menuitem');
+                            overflowMenu.appendChild(clone);
+                        }
+                    } else if (item.tagName === 'A') {
+                        clone = document.createElement('a');
+                        clone.href = item.href;
+                        clone.textContent = item.textContent.trim();
+                        clone.setAttribute('role', 'menuitem');
+                        overflowMenu.appendChild(clone);
+                    }
+                });
+            }
+        }
+
+        // Toggle overflow menu
+        overflowTrigger.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var isOpen = overflowMenu.classList.toggle('open');
+            overflowTrigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        });
+        document.addEventListener('click', function() {
+            overflowMenu.classList.remove('open');
+            overflowTrigger.setAttribute('aria-expanded', 'false');
+        });
+
+        // Run on load and resize
+        _update();
+        window.addEventListener('resize', _update);
     })();
     </script>
 
