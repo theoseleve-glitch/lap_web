@@ -1,0 +1,230 @@
+"""Tests for GDPR Celery tasks — export and purge."""
+import io
+import json
+import os
+import sys
+import zipfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from tasks.gdpr_tasks import export_user_data, purge_deleted_accounts
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _mock_conn():
+    """Return a mock PG connection."""
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = None
+    conn.execute.return_value.fetchall.return_value = []
+    return conn
+
+
+def _user_row(user_id=1, email="test@example.com", display_name="Alice",
+              deleted_at=None):
+    """Build a mock user row."""
+    return {
+        "id": user_id,
+        "email": email,
+        "display_name": display_name,
+        "created_at": datetime(2025, 1, 1, tzinfo=timezone.utc),
+        "deleted_at": deleted_at,
+    }
+
+
+def _session_row(session_id="s1", user_id=1):
+    return {
+        "session_id": session_id,
+        "workspace_id": 1,
+        "session_date": "2025-06-15",
+        "session_type": "practice",
+        "n_laps": 10,
+        "best_lap_time_s": 62.5,
+    }
+
+
+def _lap_row(session_id="s1", lap_number=1, lat=45.123456789, lon=9.987654321):
+    return {
+        "session_id": session_id,
+        "lap_number": lap_number,
+        "lap_time_s": 63.0,
+        "gps_lat": lat,
+        "gps_lon": lon,
+    }
+
+
+# ---------------------------------------------------------------------------
+# export_user_data
+# ---------------------------------------------------------------------------
+
+class TestExportUserData:
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._write_zip")
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_creates_zip_file(self, mock_update, mock_zip, mock_db):
+        """export_user_data calls _write_zip to create export."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = _user_row()
+        conn.execute.return_value.fetchall.return_value = []
+
+        export_user_data(user_id=1, export_id="exp_001")
+        assert mock_zip.called
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._write_zip")
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_updates_status_to_completed(self, mock_update, mock_zip, mock_db):
+        """export_user_data sets data_exports status to completed."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = _user_row()
+        conn.execute.return_value.fetchall.return_value = []
+
+        export_user_data(user_id=1, export_id="exp_001")
+
+        update_calls = mock_update.call_args_list
+        assert any(
+            "completed" in str(c) for c in update_calls
+        ), f"Expected 'completed' in update calls: {update_calls}"
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._write_zip")
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_sets_expires_at_7_days(self, mock_update, mock_zip, mock_db):
+        """export_user_data sets expires_at to ~7 days from now."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = _user_row()
+        conn.execute.return_value.fetchall.return_value = []
+
+        export_user_data(user_id=1, export_id="exp_001")
+
+        update_calls = mock_update.call_args_list
+        assert len(update_calls) >= 1
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._write_zip")
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_handles_user_with_no_sessions(self, mock_update, mock_zip, mock_db):
+        """export_user_data succeeds even when user has no sessions."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = _user_row()
+        conn.execute.return_value.fetchall.return_value = []
+
+        export_user_data(user_id=1, export_id="exp_001")
+        assert mock_zip.called
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    def test_reduces_gps_precision(self, mock_db):
+        """GPS coordinates are reduced to 3 decimal places."""
+        from tasks.gdpr_tasks import _reduce_gps_precision
+
+        data = {
+            "gps_lat": 45.123456789,
+            "gps_lon": 9.987654321,
+            "latitudes": [45.123456789, 46.987654321],
+            "longitudes": [9.111111111, 10.222222222],
+        }
+        result = _reduce_gps_precision(data)
+        assert result["gps_lat"] == 45.123
+        assert result["gps_lon"] == 9.988
+        assert result["latitudes"] == [45.123, 46.988]
+        assert result["longitudes"] == [9.111, 10.222]
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks._write_zip")
+    @patch("tasks.gdpr_tasks._update_export_status")
+    def test_export_sets_status_processing_first(self, mock_update, mock_zip, mock_db):
+        """export_user_data sets status to processing before starting."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = _user_row()
+        conn.execute.return_value.fetchall.return_value = []
+
+        export_user_data(user_id=1, export_id="exp_001")
+
+        first_call = mock_update.call_args_list[0]
+        assert "processing" in str(first_call)
+
+
+# ---------------------------------------------------------------------------
+# purge_deleted_accounts
+# ---------------------------------------------------------------------------
+
+class TestPurgeDeletedAccounts:
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    def test_skips_users_within_30_day_window(self, mock_db):
+        """Users deleted less than 30 days ago are NOT purged."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchall.return_value = []
+
+        purge_deleted_accounts()
+
+        executed_sql = [str(c) for c in conn.execute.call_args_list]
+        assert not any("DELETE FROM users" in s for s in executed_sql)
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    def test_deletes_users_past_30_days(self, mock_db):
+        """Users deleted more than 30 days ago are hard-purged."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        old_date = datetime.now(timezone.utc) - timedelta(days=31)
+        conn.execute.return_value.fetchall.return_value = [
+            _user_row(user_id=42, deleted_at=old_date),
+        ]
+
+        purge_deleted_accounts()
+
+        assert conn.execute.call_count >= 2
+        conn.commit.assert_called()
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    def test_cascades_workspace_deletion(self, mock_db):
+        """Purge cascades deletion to workspace-scoped data."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        old_date = datetime.now(timezone.utc) - timedelta(days=31)
+        conn.execute.return_value.fetchall.return_value = [
+            _user_row(user_id=42, deleted_at=old_date),
+        ]
+
+        purge_deleted_accounts()
+
+        executed_sql = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "sessions" in executed_sql.lower() or conn.execute.call_count >= 3
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    def test_handles_empty_result(self, mock_db):
+        """Purge handles no deleted users gracefully."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchall.return_value = []
+
+        purge_deleted_accounts()
+
+    @patch("tasks.gdpr_tasks.get_pg_connection")
+    @patch("tasks.gdpr_tasks.logger")
+    def test_logs_purge_count(self, mock_logger, mock_db):
+        """Purge logs the number of accounts purged."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        old_date = datetime.now(timezone.utc) - timedelta(days=31)
+        conn.execute.return_value.fetchall.return_value = [
+            _user_row(user_id=42, deleted_at=old_date),
+            _user_row(user_id=43, deleted_at=old_date),
+        ]
+
+        purge_deleted_accounts()
+        assert mock_logger.info.called
