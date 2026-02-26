@@ -399,8 +399,14 @@
 
             cells.forEach(function(text, idx) {
                 var td = document.createElement('td');
-                // Fuel column (index 6): add refuel indicator
-                if (idx === 6 && s.refueled != null) {
+                if (idx === 1) {
+                    // Driver name with color swatch
+                    var swatch = document.createElement('span');
+                    swatch.className = 'rs-driver-swatch';
+                    swatch.style.background = driverColor(s.driver_id, false);
+                    td.appendChild(swatch);
+                    td.appendChild(document.createTextNode(text));
+                } else if (idx === 6 && s.refueled != null) {
                     td.textContent = text;
                     var icon = document.createElement('span');
                     icon.className = 'rs-stint-fuel-icon ' + (s.refueled ? 'rs-refueled' : 'rs-no-refuel');
@@ -409,6 +415,10 @@
                     td.appendChild(icon);
                 } else {
                     td.textContent = text;
+                }
+                // Delta column color coding
+                if (idx === 4 && delta !== null) {
+                    td.classList.add(delta > 0 ? 'rs-delta-positive' : delta < 0 ? 'rs-delta-negative' : '');
                 }
                 tr.appendChild(td);
             });

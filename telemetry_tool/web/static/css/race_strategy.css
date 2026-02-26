@@ -981,10 +981,26 @@ details[open].rs-form-section > summary::before {
     font-size: 0.82rem;
 }
 
+/* Driver color swatch in stint log */
+.rs-driver-swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 6px;
+    vertical-align: middle;
+    flex-shrink: 0;
+}
+
+/* Enhanced active row */
 .rs-stint-log tr.rs-active-row {
-    background: rgba(96, 165, 250, 0.06);
+    background: rgba(96, 165, 250, 0.08);
     box-shadow: inset 3px 0 0 var(--blue);
 }
+
+/* Delta coloring */
+.rs-delta-positive { color: var(--red); }
+.rs-delta-negative { color: var(--green); }
 
 .rs-stint-log tr.rs-completed-row {
     opacity: 0.45;
