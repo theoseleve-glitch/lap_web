@@ -42,14 +42,20 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
-def get_db_connection(db_path: Optional[Path] = None) -> sqlite3.Connection:
+def get_db_connection(db_path: Optional[Path] = None):
     """
-    Return a new SQLite connection.
+    Return a database connection.
 
-    When called inside a Flask request, uses ``flask.g`` for caching.
-    When called outside Flask (e.g. from the pipeline), opens a fresh
-    connection to *db_path* or the module-level default.
+    When ``USE_PG=1`` is set in the environment, delegates to the
+    PostgreSQL pool (``db_pg.get_pg_connection``).  Otherwise returns
+    a SQLite connection, using ``flask.g`` for caching inside Flask
+    and a fresh connection outside it.
     """
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        from web.db_pg import get_pg_connection
+        return get_pg_connection()
+
     # Try Flask context first.
     try:
         from flask import g, current_app
