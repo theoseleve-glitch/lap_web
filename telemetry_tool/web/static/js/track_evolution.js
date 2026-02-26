@@ -7,6 +7,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     function esc(s) {
@@ -244,7 +246,7 @@
         }
 
         // Hover
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             if (!data || !data.sessions || data.sessions.length === 0) return;
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -295,14 +297,14 @@
             }
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             hoverIdx = -1;
             tooltip.style.display = 'none';
             draw();
         });
 
         // Click navigates to session
-        canvas.addEventListener('click', function (e) {
+        _lc.addListener(canvas, 'click', function (e) {
             if (hoverIdx >= 0 && data && data.sessions[hoverIdx]) {
                 window.location = '/sessions/' + data.sessions[hoverIdx].session_id;
             }
@@ -310,12 +312,21 @@
         canvas.style.cursor = 'pointer';
 
         var _evolResizeTimer;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_evolResizeTimer);
-            _evolResizeTimer = setTimeout(resize, 150);
+            _evolResizeTimer = _lc.addTimer(resize, 150);
         });
         fetchData();
     }
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.TrackEvolution = { init: init };
+
+    window.ModuleManager.register('track_evolution', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

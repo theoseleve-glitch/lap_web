@@ -3,6 +3,9 @@
  */
 (function() {
     'use strict';
+
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
     window.TrendChart = { draw: draw };
 
@@ -105,4 +108,13 @@
             }
         });
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('trend_chart', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

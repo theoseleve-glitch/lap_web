@@ -8,6 +8,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var COLORS = {
@@ -156,9 +158,9 @@
         canvas.__redraw = function() { resize(); };
 
         var _progResizeTimer;
-        window.addEventListener('resize', function () {
+        _lc.addListener(window, 'resize', function () {
             clearTimeout(_progResizeTimer);
-            _progResizeTimer = setTimeout(resize, 150);
+            _progResizeTimer = _lc.addTimer(resize, 150);
         });
         resize();
     }
@@ -308,8 +310,17 @@
         fetchData();
     }
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.Progression = {
         init: init,
         drawRadar: drawRadar,
     };
+
+    window.ModuleManager.register('progression', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

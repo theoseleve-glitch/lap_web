@@ -10,6 +10,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var SEVERITY_COLORS = {
@@ -131,7 +133,7 @@
     }
 
     // Auto-init
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("session-timeline-container", function () {
@@ -142,5 +144,14 @@
         }
     });
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
     window.SessionTimeline = { init: init };
+
+    window.ModuleManager.register('session_timeline', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
