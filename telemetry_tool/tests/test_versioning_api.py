@@ -72,7 +72,8 @@ class TestStaleSessions:
         resp = client.get("/api/v1/sessions/stale")
 
         assert resp.status_code == 200
-        data = resp.get_json()
+        body = resp.get_json()
+        data = body["data"]
         assert data["current_version"] == PIPELINE_VERSION
         assert data["count"] == 2
         assert len(data["stale_sessions"]) == 2
@@ -92,7 +93,8 @@ class TestStaleSessions:
         resp = client.get("/api/v1/sessions/stale")
 
         assert resp.status_code == 200
-        data = resp.get_json()
+        body = resp.get_json()
+        data = body["data"]
         assert data["current_version"] == PIPELINE_VERSION
         assert data["count"] == 0
         assert data["stale_sessions"] == []
@@ -112,5 +114,5 @@ class TestPipelineVersion:
         resp = client.get("/api/v1/pipeline/version")
 
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["pipeline_version"] == PIPELINE_VERSION
+        body = resp.get_json()
+        assert body["data"]["pipeline_version"] == PIPELINE_VERSION

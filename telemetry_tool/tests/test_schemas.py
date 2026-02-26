@@ -127,7 +127,7 @@ class TestSessionListParams:
 class TestJobListParams:
     def test_defaults(self):
         s = JobListParams()
-        assert s.limit == 25
+        assert s.limit == 50
         assert s.status is None
 
 

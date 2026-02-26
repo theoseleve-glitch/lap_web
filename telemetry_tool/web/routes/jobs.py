@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Generator
 
-from flask import Blueprint, Response, g, request
+from flask import Blueprint, Response, g
 from sqlalchemy import text
 
 from tasks.job_registry import cancel_job, get_job, list_jobs

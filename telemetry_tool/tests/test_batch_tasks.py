@@ -197,12 +197,12 @@ class TestBatchReanalyzeEndpoint:
         insert_cursor.fetchone.return_value = {"id": 42}
         mock_conn.execute.return_value = insert_cursor
 
-        resp = batch_client.post("/api/v1/batch-reanalyze")
+        resp = batch_client.post("/api/v1/batch-reanalyze", json={})
 
         assert resp.status_code == 202
-        data = resp.get_json()
-        assert "batch_job_id" in data
-        assert data["batch_job_id"] == 42
+        body = resp.get_json()
+        assert "batch_job_id" in body["data"]
+        assert body["data"]["batch_job_id"] == 42
         mock_dispatch.assert_called_once()
 
 
@@ -224,9 +224,9 @@ class TestListBatchJobs:
         resp = batch_client.get("/api/v1/batch-jobs")
 
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert "batches" in data
-        assert len(data["batches"]) == 2
+        body = resp.get_json()
+        assert "batches" in body["data"]
+        assert len(body["data"]["batches"]) == 2
 
 
 class TestCancelBatchJob:
@@ -254,8 +254,8 @@ class TestCancelBatchJob:
         resp = batch_client.post("/api/v1/batch-jobs/1/cancel")
 
         assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["cancelled"] is True
+        body = resp.get_json()
+        assert body["data"]["cancelled"] is True
         mock_revoke.assert_called_once()
 
     @patch("web.routes.batch.get_pg_connection")

@@ -1,6 +1,6 @@
 """Team management API routes."""
 import logging
-from flask import Blueprint, request, g
+from flask import Blueprint, g
 from auth.rbac import require_role
 from auth.service import AuthError
 

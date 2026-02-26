@@ -17,4 +17,5 @@ class ResumeJobSchema(BaseModel):
 class JobListParams(PaginationParams):
     """Query parameters for GET /api/v1/jobs."""
 
+    limit: int = Field(default=50, ge=1, le=100)
     status: str | None = None
