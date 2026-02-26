@@ -1,0 +1,283 @@
+/* ─────────────────────────────────────────────
+   Charts — ChartFrame component, card stack, drawer
+   ───────────────────────────────────────────── */
+
+/* ── ChartFrame container ── */
+.chart-frame {
+    container-type: inline-size;
+    container-name: chart;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-secondary);
+    overflow: hidden;
+    position: relative;
+}
+
+/* ── Header bar ── */
+.chart-frame__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border-subtle);
+    min-height: 36px;
+}
+
+.chart-frame__title {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.chart-frame__actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.chart-frame__action {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color var(--duration-fast) var(--ease-out),
+                background var(--duration-fast) var(--ease-out);
+}
+
+.chart-frame__action:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+}
+
+/* ── Canvas area ── */
+.chart-frame__body {
+    flex: 1;
+    position: relative;
+    min-height: 200px;
+}
+
+.chart-frame__body canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+/* ── States ── */
+
+/* Loading: shimmer skeleton */
+.chart-frame--loading .chart-frame__body::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg,
+        var(--bg-secondary) 0%,
+        var(--bg-hover) 40%,
+        var(--bg-secondary) 80%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s var(--ease-linear) infinite;
+    z-index: var(--z-base);
+}
+
+/* Empty: centered message */
+.chart-frame--empty .chart-frame__body::after {
+    content: attr(data-empty-message);
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+
+/* Error: red tint + retry */
+.chart-frame--error {
+    border-color: var(--danger-dim);
+}
+
+.chart-frame--error .chart-frame__body::after {
+    content: attr(data-error-message);
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--danger);
+    font-size: var(--font-size-sm);
+    background: var(--danger-dim);
+}
+
+/* ── Legend (inside chart) ── */
+.chart-frame .chart-legend {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border-subtle);
+    flex-wrap: wrap;
+}
+
+.chart-legend__item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.chart-legend__swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* ── Container queries: auto-hide at small sizes ── */
+@container chart (max-width: 400px) {
+    .chart-frame .chart-legend {
+        display: none;
+    }
+    .chart-frame__header {
+        padding: var(--space-1) var(--space-2);
+    }
+}
+
+@container chart (max-width: 300px) {
+    .chart-frame .chart-axis-y {
+        display: none;
+    }
+}
+
+/* ── Mobile card stack ── */
+@media (max-width: 767px) {
+    .chart-stack {
+        display: flex;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+        gap: 0;
+        scroll-padding: 0;
+    }
+
+    .chart-stack > .chart-frame {
+        flex: 0 0 100%;
+        scroll-snap-align: start;
+        border-radius: 0;
+        border-left: none;
+        border-right: none;
+    }
+
+    .chart-stack > .chart-frame + .chart-frame {
+        border-top: none;
+    }
+}
+
+/* Desktop grid */
+@media (min-width: 768px) {
+    .chart-stack {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: var(--space-3);
+    }
+}
+
+/* ── Dot navigation (mobile card position indicator) ── */
+.chart-dot-nav {
+    display: none;
+    justify-content: center;
+    gap: 6px;
+    padding: var(--space-2) 0;
+}
+
+@media (max-width: 767px) {
+    .chart-dot-nav {
+        display: flex;
+    }
+}
+
+.chart-dot-nav__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--border);
+    transition: background var(--duration-fast) var(--ease-out),
+                transform var(--duration-fast) var(--ease-out);
+}
+
+.chart-dot-nav__dot.active {
+    background: var(--accent);
+    transform: scale(1.3);
+}
+
+/* ── Bottom drawer (mobile tooltip) ── */
+.chart-drawer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+    max-height: 40vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform var(--duration-slow) var(--ease-out);
+    z-index: var(--z-overlay);
+    padding: var(--space-3) var(--space-4);
+}
+
+.chart-drawer.open {
+    transform: translateY(0);
+}
+
+.chart-drawer__handle {
+    width: 32px;
+    height: 4px;
+    background: var(--border);
+    border-radius: var(--radius-pill);
+    margin: 0 auto var(--space-2);
+}
+
+.chart-drawer__backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: calc(var(--z-overlay) - 1);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--duration-slow) var(--ease-out);
+}
+
+.chart-drawer__backdrop.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ── ChartFrame sizes ── */
+.chart-frame--compact .chart-frame__body {
+    min-height: 150px;
+}
+
+.chart-frame--tall .chart-frame__body {
+    min-height: 350px;
+}
+
+/* ── Fullscreen mode ── */
+.chart-frame--fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: var(--z-modal);
+    border-radius: 0;
+    border: none;
+}
