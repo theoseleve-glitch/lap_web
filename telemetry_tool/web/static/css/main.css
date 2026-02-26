@@ -1809,8 +1809,8 @@ a:hover {
 }
 
 .form-section {
-    background: rgba(14, 17, 24, 0.65);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-lg);
     padding: 1.5rem 1.75rem;
     margin-bottom: 1.5rem;
@@ -1818,7 +1818,7 @@ a:hover {
     -webkit-backdrop-filter: blur(16px);
     position: relative;
     overflow: hidden;
-    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.03);
     transition: border-color 0.35s cubic-bezier(0.4, 0, 0.2, 1),
                 box-shadow 0.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -1870,14 +1870,15 @@ a:hover {
 .form-input,
 .form-select {
     width: 100%;
-    background: rgba(0, 0, 0, 0.25);
+    min-height: var(--touch-min);
+    background: var(--bg-tertiary);
     color: var(--text-primary);
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--glass-border);
     border-radius: var(--radius-sm);
     padding: 0.55rem 0.75rem;
     font-size: 0.9rem;
     font-family: var(--font-sans);
-    transition: border-color 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+    transition: border-color var(--duration-normal) var(--ease-out), box-shadow var(--duration-normal) var(--ease-out), background var(--duration-normal) var(--ease-out);
 }
 
 .form-input:hover:not(:focus):not(:disabled),
