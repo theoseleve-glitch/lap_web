@@ -140,6 +140,8 @@ body {
     display: flex;
     flex-direction: column;
     letter-spacing: -0.005em;
+    transition: background-color var(--duration-slow) var(--ease-in-out),
+                color var(--duration-slow) var(--ease-in-out);
 }
 
 h1, .h1 { font-size: clamp(1.25rem, 1rem + 1.5vw, 2rem); }
@@ -171,6 +173,8 @@ a:hover {
     position: sticky;
     top: 0;
     z-index: var(--z-sticky);
+    transition: background-color var(--duration-slow) var(--ease-in-out),
+                border-color var(--duration-slow) var(--ease-in-out);
 }
 
 .nav-brand {
@@ -507,7 +511,8 @@ a:hover {
     text-align: center;
     position: relative;
     overflow: hidden;
-    transition: border-color var(--duration-normal) var(--ease-out),
+    transition: background-color var(--duration-slow) var(--ease-in-out),
+                border-color var(--duration-normal) var(--ease-out),
                 transform var(--duration-normal) var(--ease-out),
                 box-shadow var(--duration-normal) var(--ease-out);
     box-shadow: var(--shadow-sm);
@@ -846,6 +851,7 @@ a:hover {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
+    transition: background-color var(--duration-slow) var(--ease-in-out);
 }
 
 .data-table th {
@@ -1203,6 +1209,9 @@ a:hover {
     position: relative;
     overflow: hidden;
     box-shadow: var(--shadow-sm);
+    transition: background-color var(--duration-slow) var(--ease-in-out),
+                border-color var(--duration-slow) var(--ease-in-out),
+                box-shadow var(--duration-slow) var(--ease-in-out);
 }
 
 .card::before {

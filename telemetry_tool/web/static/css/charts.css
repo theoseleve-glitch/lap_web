@@ -13,6 +13,8 @@
     background: var(--bg-secondary);
     overflow: hidden;
     position: relative;
+    transition: background-color var(--duration-slow) var(--ease-in-out),
+                border-color var(--duration-slow) var(--ease-in-out);
 }
 
 /* ── Header bar ── */
