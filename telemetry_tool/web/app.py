@@ -120,7 +120,19 @@ def create_app(config: Config | None = None) -> Flask:
         GITHUB_CLIENT_ID=cfg.GITHUB_CLIENT_ID,
         GITHUB_CLIENT_SECRET=cfg.GITHUB_CLIENT_SECRET,
         OAUTH_REDIRECT_BASE=cfg.OAUTH_REDIRECT_BASE,
+        RATE_LIMIT_ENABLED=cfg.RATE_LIMIT_ENABLED,
     )
+
+    # Phase 4 API infrastructure — request ID and structured logging.
+    try:
+        from .api_utils import init_request_id
+        from .logging_setup import setup_logging
+
+        init_request_id(app)
+        setup_logging(app)
+        logger.debug("Initialized Phase 4 API infrastructure (request_id + logging)")
+    except ImportError:
+        logger.debug("Phase 4 API modules not yet available — skipping init_request_id / setup_logging")
 
     # Ensure directories exist.
     for d in (cfg.DATA_RAW_DIR, cfg.RESULTS_DIR, cfg.UPLOAD_DIR):
@@ -227,6 +239,21 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(batch_bp)
             app.register_blueprint(versioning_bp)
             logger.debug("Registered Celery pipeline blueprints (jobs, batch, versioning)")
+
+            # Phase 4 v1 endpoint blueprints (placeholder — modules created in later tasks)
+            try:
+                from .routes.api_v1_data import bp as api_v1_data_bp
+                app.register_blueprint(api_v1_data_bp)
+                logger.debug("Registered api_v1_data blueprint")
+            except ImportError:
+                logger.debug("api_v1_data module not yet available — skipping")
+
+            try:
+                from .routes.api_v1_account import bp as api_v1_account_bp
+                app.register_blueprint(api_v1_account_bp)
+                logger.debug("Registered api_v1_account blueprint")
+            except ImportError:
+                logger.debug("api_v1_account module not yet available — skipping")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

@@ -99,3 +99,9 @@ class Config:
 
     # Upload — must accommodate large telemetry CSVs (endurance sessions).
     MAX_CONTENT_LENGTH: int = 12 * 1024 * 1024 * 1024  # 12 GB max upload
+
+    # Logging
+    LOG_FORMAT: str = os.environ.get("TELEMETRY_LOG_FORMAT", "text")
+
+    # Rate limiting
+    RATE_LIMIT_ENABLED: bool = os.environ.get("RATE_LIMIT_ENABLED", "1") == "1"
