@@ -13,6 +13,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     // ── State ────────────────────────────────────────
@@ -96,16 +98,16 @@
 
         // Resize handler
         var _resizeTimer = null;
-        window.addEventListener('resize', function () {
-            clearTimeout(_resizeTimer);
-            _resizeTimer = setTimeout(function () {
+        _lc.addListener(window, 'resize', function () {
+            if (_resizeTimer) _lc.clearTimer(_resizeTimer);
+            _resizeTimer = _lc.addTimer(function () {
                 if (_state.selection) _drawZoomedChart();
                 onOverviewRedrawn();
             }, 200);
         });
 
         // Keyboard
-        document.addEventListener('keydown', function (e) {
+        _lc.addListener(document, 'keydown', function (e) {
             if (e.key === 'Escape' && _state.selection) {
                 resetZoom();
             }
@@ -310,7 +312,7 @@
         var startX = 0;
         var MIN_DRAG_PX = 10;
 
-        wrapper.addEventListener('mousedown', function (e) {
+        _lc.addListener(wrapper, 'mousedown', function (e) {
             if (e.button !== 0) return; // left-click only
             var bounds = window.ChartSync && window.ChartSync.getChartBounds
                 ? window.ChartSync.getChartBounds() : null;
@@ -331,7 +333,7 @@
             e.preventDefault();
         });
 
-        document.addEventListener('mousemove', function (e) {
+        _lc.addListener(document, 'mousemove', function (e) {
             if (!isDown) return;
 
             var rect = _overviewCanvas.getBoundingClientRect();
@@ -348,7 +350,7 @@
             }
         });
 
-        document.addEventListener('mouseup', function (e) {
+        _lc.addListener(document, 'mouseup', function (e) {
             if (!isDown) return;
             isDown = false;
 
@@ -441,7 +443,7 @@
     function _setupZoomHoverEvents() {
         if (!_zoomCanvas) return;
 
-        _zoomCanvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(_zoomCanvas, 'mousemove', function (e) {
             if (!_state.selection) return;
             var rect = _zoomCanvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
@@ -449,7 +451,7 @@
             _showZoomTooltip(mx, my);
         });
 
-        _zoomCanvas.addEventListener('mouseleave', function () {
+        _lc.addListener(_zoomCanvas, 'mouseleave', function () {
             _hideZoomTooltip();
         });
     }
@@ -913,13 +915,21 @@
     }
 
     // ── DOMContentLoaded auto-init ───────────────────
-    document.addEventListener('DOMContentLoaded', function () {
+    _lc.addListener(document, 'DOMContentLoaded', function () {
         // Delay init to ensure ChartSync has loaded
-        setTimeout(function () {
+        _lc.addTimer(function () {
             if (document.getElementById('speed-chart')) {
                 init();
             }
         }, 100);
     });
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('speed_trace_zoom', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

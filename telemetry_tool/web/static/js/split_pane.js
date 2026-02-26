@@ -28,6 +28,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var MIN_PANEL_PX = 150;
     var HANDLE_SIZE = 4; // px
 
@@ -382,4 +384,13 @@
     window.SplitPane = {
         create: create
     };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('split_pane', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

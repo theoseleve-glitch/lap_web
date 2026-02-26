@@ -9,6 +9,8 @@
 (function () {
     "use strict";
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var container, canvas;
@@ -30,7 +32,7 @@
         });
     }
 
-    document.addEventListener("DOMContentLoaded", function () {
+    _lc.addListener(document, "DOMContentLoaded", function () {
         var sid = window.TELEMETRY && window.TELEMETRY.sessionId;
         if (sid && window.FetchHelper && FetchHelper.lazyInit) {
             FetchHelper.lazyInit("stint-analysis-container", function () {
@@ -273,4 +275,13 @@
         ctx.textAlign = "left";
         ctx.fillText("Stint Pace Timeline", ml, mt - 15);
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('stint_chart', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

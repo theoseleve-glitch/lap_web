@@ -14,6 +14,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     // -----------------------------------------------------------------
     // Theme colors (fallback if Theme not loaded yet)
     // -----------------------------------------------------------------
@@ -447,7 +449,10 @@
     // -----------------------------------------------------------------
 
     function _drawGG(canvas, data) {
-        if (!data || !data.lat_g || !data.lon_g || data.lat_g.length < 2) {
+        // Accept both field name conventions (API: accel_lat/accel_long, older: lat_g/lon_g)
+        var srcLat = data && (data.accel_lat || data.lat_g);
+        var srcLon = data && (data.accel_long || data.lon_g);
+        if (!srcLat || !srcLon || srcLat.length < 2) {
             _focusMsg(canvas, 'No acceleration data');
             return;
         }
@@ -455,12 +460,12 @@
         var latG = [];
         var lonG = [];
         var maxG = 0;
-        for (var i = 0; i < data.lat_g.length; i++) {
-            if (data.lat_g[i] === null || data.lon_g[i] === null) continue;
-            if (!isFinite(data.lat_g[i]) || !isFinite(data.lon_g[i])) continue;
-            latG.push(data.lat_g[i]);
-            lonG.push(data.lon_g[i]);
-            var mag = Math.sqrt(data.lat_g[i] * data.lat_g[i] + data.lon_g[i] * data.lon_g[i]);
+        for (var i = 0; i < srcLat.length; i++) {
+            if (srcLat[i] === null || srcLon[i] === null) continue;
+            if (!isFinite(srcLat[i]) || !isFinite(srcLon[i])) continue;
+            latG.push(srcLat[i]);
+            lonG.push(srcLon[i]);
+            var mag = Math.sqrt(srcLat[i] * srcLat[i] + srcLon[i] * srcLon[i]);
             if (mag > maxG) maxG = mag;
         }
         if (latG.length < 2) { _focusMsg(canvas, 'Insufficient G data'); return; }
@@ -1019,7 +1024,7 @@
         icon: '\uD83D\uDDFA',
         label: 'Track Map',
         tabs: ['analytics', 'corners'],
-        available: hasGps() || !!(T().trackId),
+        available: function () { return hasGps() || !!(T().trackId); },
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
             var _lastData = null;
@@ -1079,7 +1084,7 @@
         icon: '\uD83D\uDCC8',
         label: 'Speed Trace',
         tabs: ['analytics'],
-        available: hasGps(),
+        available: hasGps,
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
             var _data = null;
@@ -1112,7 +1117,7 @@
         icon: '\u26A1',
         label: 'G-G Diagram',
         tabs: ['analytics', 'corners'],
-        available: hasGps(),
+        available: hasGps,
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
             var _data = null;
@@ -1143,7 +1148,7 @@
         icon: '\uD83D\uDCCA',
         label: 'Lap Overlay',
         tabs: ['analytics'],
-        available: hasMultiLap(),
+        available: hasMultiLap,
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
             var _data = null;
@@ -1238,7 +1243,7 @@
         icon: '\uD83D\uDED1',
         label: 'Brake Precision',
         tabs: ['corners'],
-        available: hasGps(),
+        available: hasGps,
         render: function (container, sessionId) {
             var canvas = _makeCanvas(container);
             var _data = null;
@@ -1383,4 +1388,12 @@
         }
     });
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('focus_tools', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

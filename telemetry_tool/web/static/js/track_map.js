@@ -10,6 +10,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     window.TrackMap = { init: init };
@@ -391,7 +393,7 @@
 
     // ── Hover interaction ──
     function _setupEvents() {
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
             var my = e.clientY - rect.top;
@@ -442,7 +444,7 @@
             }
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             if (marker) {
                 marker = null;
                 _draw();
@@ -505,4 +507,12 @@
         _draw();
     };
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('track_map', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
