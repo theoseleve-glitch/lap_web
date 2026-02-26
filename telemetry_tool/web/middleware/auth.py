@@ -14,8 +14,13 @@ def auth_middleware():
     if not current_app.config.get("AUTH_REQUIRED"):
         return  # Legacy mode -- no auth required
 
-    # Skip auth for auth routes themselves
-    if request.path.startswith("/auth/"):
+    # Skip auth for public auth endpoints (explicit allowlist, not prefix,
+    # so future /auth/admin/* routes are still protected).
+    _AUTH_PUBLIC_PATHS = {
+        "/auth/register", "/auth/login", "/auth/logout",
+        "/auth/refresh", "/auth/verify-email",
+    }
+    if request.path in _AUTH_PUBLIC_PATHS or request.path.startswith("/auth/oauth/"):
         return
 
     # Skip for static assets
@@ -35,7 +40,7 @@ def auth_middleware():
         }), 401
 
     from auth.service import decode_access_token, AuthError
-    secret = current_app.config.get("JWT_SECRET", "jwt-dev-secret")
+    secret = current_app.config["JWT_SECRET"]
     try:
         payload = decode_access_token(token, secret)
         g.current_user_id = payload["user_id"]

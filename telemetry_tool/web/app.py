@@ -114,6 +114,12 @@ def create_app(config: Config | None = None) -> Flask:
         JWT_ALGORITHM=cfg.JWT_ALGORITHM,
         JWT_ACCESS_EXPIRY_MINUTES=cfg.JWT_ACCESS_EXPIRY_MINUTES,
         JWT_REFRESH_EXPIRY_DAYS=cfg.JWT_REFRESH_EXPIRY_DAYS,
+        # OAuth provider credentials
+        GOOGLE_CLIENT_ID=cfg.GOOGLE_CLIENT_ID,
+        GOOGLE_CLIENT_SECRET=cfg.GOOGLE_CLIENT_SECRET,
+        GITHUB_CLIENT_ID=cfg.GITHUB_CLIENT_ID,
+        GITHUB_CLIENT_SECRET=cfg.GITHUB_CLIENT_SECRET,
+        OAUTH_REDIRECT_BASE=cfg.OAUTH_REDIRECT_BASE,
     )
 
     # Ensure directories exist.
@@ -195,6 +201,11 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(api_v1_bp)
             app.before_request(auth_middleware)
             logger.debug("Registered auth blueprints and middleware")
+            # Initialize OAuth if any providers are configured
+            if cfg.GOOGLE_CLIENT_ID or cfg.GITHUB_CLIENT_ID:
+                from auth.oauth import init_oauth
+                init_oauth(app)
+                logger.debug("Initialized OAuth providers")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

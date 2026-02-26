@@ -57,6 +57,24 @@ class Config:
     JWT_ACCESS_EXPIRY_MINUTES: int = 15
     JWT_REFRESH_EXPIRY_DAYS: int = 30
 
+    # OAuth
+    GOOGLE_CLIENT_ID: str = os.environ.get("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    GITHUB_CLIENT_ID: str = os.environ.get("GITHUB_CLIENT_ID", "")
+    GITHUB_CLIENT_SECRET: str = os.environ.get("GITHUB_CLIENT_SECRET", "")
+    OAUTH_REDIRECT_BASE: str = os.environ.get(
+        "OAUTH_REDIRECT_BASE", "http://localhost:5000"
+    )
+
+    def validate(self) -> None:
+        """Raise if configuration is unsafe for production."""
+        if self.AUTH_REQUIRED and self.JWT_SECRET == "jwt-dev-secret-change-me":
+            raise ValueError(
+                "TELEMETRY_JWT_SECRET must be set to a strong secret "
+                "when AUTH_REQUIRED=1. Set the TELEMETRY_JWT_SECRET "
+                "environment variable."
+            )
+
     # Directories
     DATA_RAW_DIR: Path = BASE_DIR / "data" / "raw"
     RESULTS_DIR: Path = BASE_DIR / "results"

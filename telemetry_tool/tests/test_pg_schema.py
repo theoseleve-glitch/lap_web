@@ -153,6 +153,8 @@ EXPECTED_TABLES = [
     # Phase 18 (auth)
     "users",
     "refresh_tokens",
+    # Phase 19 (OAuth)
+    "oauth_connections",
 ]
 
 
