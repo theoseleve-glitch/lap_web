@@ -1148,7 +1148,7 @@ details[open].rs-form-section > summary::before {
 }
 
 .rs-forecast-hour:hover {
-    opacity: 0.8 !important;
+    opacity: 0.8;
 }
 
 /* Radar */
@@ -1408,18 +1408,18 @@ details[open].rs-form-section > summary::before {
 
 /* ── Stint Plan Detail — Fuel Toggles & Ballast ── */
 
-.rs-stint-row-violation {
-    background: rgba(248, 113, 113, 0.08) !important;
+.rs-stint-log tr.rs-stint-row-violation {
+    background: rgba(248, 113, 113, 0.08);
     box-shadow: inset 3px 0 0 var(--red);
 }
 
-.rs-stint-row-warning {
-    background: rgba(251, 191, 36, 0.06) !important;
+.rs-stint-log tr.rs-stint-row-warning {
+    background: rgba(251, 191, 36, 0.06);
     box-shadow: inset 3px 0 0 var(--yellow);
 }
 
-.rs-fuel-negative {
-    color: var(--red) !important;
+.rs-stint-log td.rs-fuel-negative {
+    color: var(--red);
     font-weight: 700;
 }
 
@@ -1437,15 +1437,15 @@ details[open].rs-form-section > summary::before {
     white-space: nowrap;
 }
 
-.rs-pit-row {
-    background: var(--rs-inner-bg) !important;
+.rs-stint-log tr.rs-pit-row {
+    background: var(--rs-inner-bg);
     border-top: 1px dashed rgba(255, 255, 255, 0.06);
     border-bottom: 1px dashed rgba(255, 255, 255, 0.06);
 }
 
-.rs-pit-row td {
-    padding-top: 0.35rem !important;
-    padding-bottom: 0.35rem !important;
+.rs-stint-log .rs-pit-row td {
+    padding-top: 0.35rem;
+    padding-bottom: 0.35rem;
 }
 
 .rs-fuel-toggle,
@@ -1650,8 +1650,8 @@ details[open].rs-form-section > summary::before {
 
 .rs-btn-sc:hover { background: rgba(255, 200, 50, 0.1); }
 
-.rs-btn-sc-active {
-    background: rgba(255, 200, 50, 0.2) !important;
+.rs-btn-sc.rs-btn-sc-active {
+    background: rgba(255, 200, 50, 0.2);
     border-color: #ffc832;
     color: #ffc832;
     animation: rs-sc-pulse 1.5s ease-in-out infinite;
@@ -1690,11 +1690,11 @@ details[open].rs-form-section > summary::before {
 
 /* ── Intelligence Row ───────────────────────── */
 
-.rs-intel-row {
-    display: grid !important;
+.rs-live-card.rs-intel-row {
+    display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 1rem;
-    padding: 1rem !important;
+    padding: 1rem;
 }
 
 .rs-intel-card {
@@ -1723,11 +1723,11 @@ details[open].rs-form-section > summary::before {
     color: var(--text-secondary);
 }
 
-.rs-ahead { color: var(--green, #7ee787) !important; }
-.rs-behind { color: var(--red, #f85149) !important; }
-.rs-on-plan { color: var(--text-secondary) !important; }
-.rs-fuel-critical { color: var(--red, #f85149) !important; font-weight: 700; }
-.rs-fuel-warning { color: var(--yellow, #d29922) !important; }
+.rs-page .rs-ahead { color: var(--green); }
+.rs-page .rs-behind { color: var(--red); }
+.rs-page .rs-on-plan { color: var(--text-secondary); }
+.rs-page .rs-fuel-critical { color: var(--red); font-weight: 700; }
+.rs-page .rs-fuel-warning { color: var(--yellow); }
 
 /* ── Alert Toast Strip ──────────────────────── */
 
@@ -1848,8 +1848,8 @@ details[open].rs-form-section > summary::before {
     flex-wrap: wrap;
 }
 
-.rs-rival-del {
-    color: var(--red, #f85149) !important;
+.rs-page .rs-rival-del {
+    color: var(--red);
     margin-left: auto;
 }
 
@@ -1868,18 +1868,18 @@ details[open].rs-form-section > summary::before {
 
 /* ── Compact Mode Overrides ─────────────────── */
 
-.rs-compact .rs-rivals-panel,
-.rs-compact .rs-intel-row,
-.rs-compact .rs-alert-strip,
-.rs-compact #rs-alert-history-panel {
-    display: none !important;
+.rs-live-grid.rs-compact .rs-rivals-panel,
+.rs-live-grid.rs-compact .rs-live-card.rs-intel-row,
+.rs-live-grid.rs-compact .rs-alert-strip,
+.rs-live-grid.rs-compact #rs-alert-history-panel {
+    display: none;
 }
 
 /* ── Intelligence Row Responsive ────────────── */
 
 @media (max-width: 768px) {
-    .rs-intel-row {
-        grid-template-columns: 1fr !important;
+    .rs-live-card.rs-intel-row {
+        grid-template-columns: 1fr;
     }
 }
 
