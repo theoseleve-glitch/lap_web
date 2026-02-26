@@ -70,7 +70,10 @@ export function S3Product() {
           </div>
 
           <div className="text-center">
-            <StampButton onClick={() => trackCtaClick('request_pilot', 's3', 'b2b')}>
+            <StampButton
+              href="/book?persona=circuits"
+              onClick={() => trackCtaClick('request_pilot', 's3', 'b2b')}
+            >
               {s3Product.b2b.cta}
             </StampButton>
           </div>

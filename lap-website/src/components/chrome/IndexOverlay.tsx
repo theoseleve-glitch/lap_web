@@ -4,7 +4,11 @@ import { useEffect, useRef, useCallback } from 'react';
 import { sectorTabs } from '@/lib/tokens';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { useSound } from '@/hooks/useSound';
-import { trackIndexOverlayOpen, trackIndexOverlayNav } from '@/lib/analytics';
+import {
+  trackIndexOverlayOpen,
+  trackIndexOverlayNav,
+  trackNavRouteClick,
+} from '@/lib/analytics';
 
 interface IndexOverlayProps {
   isOpen: boolean;
@@ -16,6 +20,8 @@ const sectionDescriptions: Record<string, string> = {
   S1: 'WHY TIME IS LOST',
   S2: 'HOW IT WORKS',
   S3: 'THE PRODUCT',
+  S4: 'WORKFLOW COVERAGE',
+  S5: 'PERSONA PAGES',
   PIT: 'PRICING & DEMO',
   GAR: 'TECH & COMPLIANCE',
   POD: 'FINAL ACTION',
@@ -103,6 +109,25 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
               {sectionDescriptions[tab.label] ?? ''}
             </span>
           </button>
+        ))}
+      </div>
+
+      <div className="mt-8 flex flex-wrap items-center justify-center gap-3 px-8">
+        {[
+          { label: 'Pricing', href: '/pricing' },
+          { label: 'Drivers', href: '/drivers' },
+          { label: 'Circuits', href: '/circuits' },
+          { label: 'Teams', href: '/teams' },
+          { label: 'Endurance', href: '/endurance' },
+        ].map((link) => (
+          <a
+            key={link.href}
+            href={link.href}
+            className="font-telemetry text-[11px] tracking-[0.12em] uppercase border border-steel/30 px-3 py-2 text-steel hover:text-chalk hover:border-steel"
+            onClick={() => trackNavRouteClick(link.href, 'index_overlay')}
+          >
+            {link.label}
+          </a>
         ))}
       </div>
 

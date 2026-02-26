@@ -3,6 +3,7 @@
 import type { Plan } from '@/data/pricing';
 import { PitButton } from './PitButton';
 import { StampButton } from './StampButton';
+import { StatusPill } from '@/components/site/StatusPill';
 
 interface PricingTableProps {
   plans: Plan[];
@@ -28,7 +29,10 @@ export function PricingTable({
             ${i > 0 ? 'md:border-l-0' : ''}
           `}
         >
-          <h3 className="font-monument text-[var(--text-h3)] mb-2">{plan.name}</h3>
+          <div className="flex items-start justify-between gap-2 mb-2">
+            <h3 className="font-monument text-[var(--text-h3)]">{plan.name}</h3>
+            <StatusPill status={plan.availability} />
+          </div>
           <p className="font-monument text-[var(--text-h2)] text-chalk mb-4">
             {billingPeriod === 'monthly' ? plan.priceMonthly : plan.priceAnnual}
           </p>
@@ -48,14 +52,29 @@ export function PricingTable({
           </div>
 
           {plan.highlighted ? (
-            <PitButton onClick={() => onCtaClick?.(plan.name)} className="w-full">
+            <PitButton
+              href={plan.ctaHref}
+              onClick={() => onCtaClick?.(plan.name)}
+              className="w-full"
+            >
               {plan.cta}
             </PitButton>
           ) : (
-            <StampButton onClick={() => onCtaClick?.(plan.name)} className="w-full">
+            <StampButton
+              href={plan.ctaHref}
+              onClick={() => onCtaClick?.(plan.name)}
+              className="w-full"
+            >
               {plan.cta}
             </StampButton>
           )}
+
+          <a
+            href={plan.personaHref}
+            className="mt-3 inline-block font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel hover:text-chalk"
+          >
+            {plan.personaLabel}
+          </a>
         </div>
       ))}
     </div>

@@ -27,16 +27,16 @@ describe('Token system', () => {
     expect(easing.overshoot).toBe('back.out(1.7)');
   });
 
-  it('defines 9 rooms', () => {
-    expect(rooms).toHaveLength(9);
+  it('defines 11 rooms', () => {
+    expect(rooms).toHaveLength(11);
     expect(rooms[0].id).toBe('start-grid');
-    expect(rooms[8].id).toBe('podium');
+    expect(rooms[10].id).toBe('podium');
   });
 
-  it('defines 6 sector tabs', () => {
-    expect(sectorTabs).toHaveLength(6);
+  it('defines 8 sector tabs', () => {
+    expect(sectorTabs).toHaveLength(8);
     expect(sectorTabs[0].label).toBe('S1');
-    expect(sectorTabs[5].label).toBe('POD');
+    expect(sectorTabs[7].label).toBe('POD');
   });
 
   it('every sectorTab ID exists in rooms', () => {

@@ -9,11 +9,13 @@ describe('Pricing data', () => {
     expect(b2cPlans).toHaveLength(3);
     expect(b2cPlans[0].name).toBe('STARTER');
     expect(b2cPlans[1].highlighted).toBe(true);
+    expect(b2cPlans[0].ctaHref).toBe('/book?plan=STARTER');
   });
 
   it('has 3 B2B plans', () => {
     expect(b2bPlans).toHaveLength(3);
     expect(b2bPlans[1].highlighted).toBe(true);
+    expect(b2bPlans[0].name).toBe('TRACK ESSENTIAL');
   });
 
   it('has 5 add-ons', () => {
@@ -24,6 +26,7 @@ describe('Pricing data', () => {
 describe('FAQ data', () => {
   it('has 6 items', () => {
     expect(faqItems).toHaveLength(6);
+    expect(faqItems[5].answer.toLowerCase()).toContain('roadmap');
   });
 });
 

@@ -10,17 +10,20 @@ import { StampButton } from '@/components/ui/StampButton';
 import { b2cPlans, b2bPlans, addons } from '@/data/pricing';
 import { faqItems } from '@/data/faq';
 import { pitStop } from '@/data/copy';
+import { getClaimsForSurface } from '@/data/claim-registry';
 import {
   trackPricingToggle,
   trackAddonExpand,
   trackFaqExpand,
   trackCtaClick,
 } from '@/lib/analytics';
+import { StatusPill } from '@/components/site/StatusPill';
 
 export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
   const [audience, setAudience] = useState<'b2c' | 'b2b'>('b2c');
   const [addonsOpen, setAddonsOpen] = useState(false);
+  const homeClaims = getClaimsForSurface('home');
 
   const toggleBilling = useCallback(() => {
     const next = billingPeriod === 'monthly' ? 'annual' : 'monthly';
@@ -124,11 +127,23 @@ export function PitStop() {
 
         {/* CTAs */}
         <div className="col-span-full flex flex-col md:flex-row items-center justify-center gap-4 mb-12">
-          <PitButton onClick={() => trackCtaClick('try_demo', 'pit-stop', audience)}>
+          <PitButton
+            href="/demo"
+            onClick={() => trackCtaClick('try_demo', 'pit-stop', audience)}
+          >
             TRY DEMO
           </PitButton>
-          <StampButton onClick={() => trackCtaClick('talk_sales', 'pit-stop', audience)}>
+          <StampButton
+            href="/contact"
+            onClick={() => trackCtaClick('talk_sales', 'pit-stop', audience)}
+          >
             TALK TO SALES
+          </StampButton>
+          <StampButton
+            href="/waitlist?feature=sim-telemetry"
+            onClick={() => trackCtaClick('sim_waitlist', 'pit-stop', audience)}
+          >
+            JOIN SIM WAITLIST
           </StampButton>
         </div>
 
@@ -150,6 +165,21 @@ export function PitStop() {
           {pitStop.trustStrip.map((item) => (
             <ScrutineeringStamp key={item} label={item} />
           ))}
+        </div>
+
+        <div className="col-span-full mt-8">
+          <h3 className="font-monument text-[var(--text-h3)] mb-4">Claim Registry (Mapped)</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {homeClaims.map((claim) => (
+              <article key={claim.id} className="bg-concrete/40 border border-steel/20 p-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <p className="text-sm text-chalk">{claim.claim}</p>
+                  <StatusPill status={claim.status} />
+                </div>
+                <p className="text-xs text-steel">{claim.capability}</p>
+              </article>
+            ))}
+          </div>
         </div>
       </div>
     </section>

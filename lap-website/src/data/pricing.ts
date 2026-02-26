@@ -1,10 +1,16 @@
+import type { CapabilityStatus } from '@/data/claim-registry';
+
 export interface Plan {
   name: string;
   priceMonthly: string;
   priceAnnual: string;
   features: Record<string, string>;
   cta: string;
+  ctaHref: string;
+  personaLabel: string;
+  personaHref: string;
   highlighted?: boolean;
+  availability: CapabilityStatus;
 }
 
 export const b2cPlans: Plan[] = [
@@ -13,98 +19,197 @@ export const b2cPlans: Plan[] = [
     priceMonthly: 'Free',
     priceAnnual: 'Free',
     features: {
-      Sessions: '3/month',
+      Sessions: '3 / month',
       Scoring: 'Preview',
-      Coaching: '—',
+      Coaching: 'Not included',
       History: '30 days',
-      Reports: '—',
-      Team: '—',
+      Reports: 'Not included',
+      Team: 'Single user',
     },
-    cta: 'START FREE',
+    cta: 'Start Free',
+    ctaHref: '/book?plan=STARTER',
+    personaLabel: 'Built for drivers',
+    personaHref: '/drivers',
+    availability: 'available_now',
   },
   {
     name: 'PERFORMANCE',
-    priceMonthly: '€8.99/mo',
-    priceAnnual: '€69/yr',
+    priceMonthly: 'EUR 8.99 / mo',
+    priceAnnual: 'EUR 69 / yr',
     features: {
       Sessions: 'Unlimited',
       Scoring: 'Full 4-pillar',
       Coaching: 'Corner-by-corner',
       History: '1 year',
       Reports: 'PDF export',
-      Team: '—',
+      Team: 'Single user',
     },
-    cta: 'UPGRADE',
+    cta: 'Upgrade',
+    ctaHref: '/book?plan=PERFORMANCE',
+    personaLabel: 'Built for drivers',
+    personaHref: '/drivers',
     highlighted: true,
+    availability: 'available_now',
   },
   {
     name: 'PRO RACER',
-    priceMonthly: '€13.99/mo',
-    priceAnnual: '€109/yr',
+    priceMonthly: 'EUR 13.99 / mo',
+    priceAnnual: 'EUR 109 / yr',
     features: {
       Sessions: 'Unlimited',
       Scoring: 'Full 4-pillar',
-      Coaching: 'Corner + dev plans',
+      Coaching: 'Corner + development plans',
       History: 'Unlimited',
-      Reports: 'PDF + API/webhooks',
+      Reports: 'PDF + API',
       Team: 'Up to 5 seats',
     },
-    cta: 'GO PRO',
+    cta: 'Go Pro',
+    ctaHref: '/book?plan=PRO%20RACER',
+    personaLabel: 'Built for drivers and coaches',
+    personaHref: '/teams',
+    availability: 'available_now',
   },
 ];
 
 export const b2bPlans: Plan[] = [
   {
-    name: 'TRACK ESSENTIEL',
-    priceMonthly: '—',
-    priceAnnual: '€1,490/yr',
+    name: 'TRACK ESSENTIAL',
+    priceMonthly: 'Custom',
+    priceAnnual: 'EUR 1,490 / yr',
     features: {
-      Drivers: 'Up to 50/event',
+      Drivers: 'Up to 50 / event',
       Reports: 'Standard',
       Timing: 'Manual CSV',
       Support: 'Email',
       Setup: 'Self-serve docs',
     },
-    cta: 'GET STARTED',
+    cta: 'Get Started',
+    ctaHref: '/book?plan=TRACK%20ESSENTIAL',
+    personaLabel: 'Built for circuits',
+    personaHref: '/circuits',
+    availability: 'available_now',
   },
   {
     name: 'CIRCUIT PRO',
-    priceMonthly: '—',
-    priceAnnual: '€2,990/yr',
+    priceMonthly: 'Custom',
+    priceAnnual: 'EUR 2,990 / yr',
     features: {
-      Drivers: 'Up to 200/event',
+      Drivers: 'Up to 200 / event',
       Reports: 'Branded',
       Timing: 'API integration',
       Support: 'Priority',
-      Setup: 'Guided setup',
+      Setup: 'Guided onboarding',
     },
-    cta: 'BOOK DEMO',
+    cta: 'Book Demo',
+    ctaHref: '/demo?plan=CIRCUIT%20PRO',
+    personaLabel: 'Built for circuits and operators',
+    personaHref: '/circuits',
     highlighted: true,
+    availability: 'available_now',
   },
   {
-    name: 'CIRCUIT PREMIUM',
-    priceMonthly: '—',
-    priceAnnual: '€4,990/yr',
+    name: 'CIRCUIT ENTERPRISE',
+    priceMonthly: 'Custom',
+    priceAnnual: 'Custom',
     features: {
       Drivers: 'Unlimited',
       Reports: 'White-label',
-      Timing: 'Full + live',
+      Timing: 'Live + API',
       Support: 'Dedicated + SLA',
-      Setup: 'Full onboarding',
+      Setup: 'Operator onboarding',
     },
-    cta: 'CONTACT SALES',
+    cta: 'Contact Sales',
+    ctaHref: '/contact?plan=CIRCUIT%20ENTERPRISE',
+    personaLabel: 'Built for enterprise teams',
+    personaHref: '/teams',
+    availability: 'enterprise_on_request',
   },
 ];
 
 export interface Addon {
   name: string;
   price: string;
+  status: CapabilityStatus;
+  note?: string;
 }
 
 export const addons: Addon[] = [
-  { name: 'Advanced timing integration', price: '+€490/yr' },
-  { name: 'Endurance module (6h+ events)', price: '+€390/yr' },
-  { name: 'White-label upgrade', price: '+€990/yr' },
-  { name: 'Premium SLA (4h response)', price: '+€690/yr' },
-  { name: 'Extended API + webhooks', price: '+€290/yr' },
+  {
+    name: 'Advanced timing integration',
+    price: '+EUR 490 / yr',
+    status: 'available_now',
+  },
+  {
+    name: 'Endurance module (6h+ events)',
+    price: '+EUR 390 / yr',
+    status: 'enterprise_on_request',
+  },
+  {
+    name: 'White-label reporting',
+    price: '+EUR 990 / yr',
+    status: 'enterprise_on_request',
+  },
+  {
+    name: 'Premium SLA (4h response)',
+    price: '+EUR 690 / yr',
+    status: 'enterprise_on_request',
+  },
+  {
+    name: 'Webhook tiering',
+    price: 'Roadmap',
+    status: 'roadmap',
+    note: 'Coming soon',
+  },
+];
+
+export interface EligibilityRow {
+  feature: string;
+  starter: string;
+  performance: string;
+  proRacer: string;
+  circuitPro: string;
+  enterprise: string;
+}
+
+export const featureEligibilityMatrix: EligibilityRow[] = [
+  {
+    feature: 'Upload and analyze wizard',
+    starter: 'Yes',
+    performance: 'Yes',
+    proRacer: 'Yes',
+    circuitPro: 'Yes',
+    enterprise: 'Yes',
+  },
+  {
+    feature: 'Session intelligence tabs',
+    starter: 'Preview',
+    performance: 'Yes',
+    proRacer: 'Yes',
+    circuitPro: 'Yes',
+    enterprise: 'Yes',
+  },
+  {
+    feature: 'Driver-vs-driver comparison',
+    starter: 'No',
+    performance: 'No',
+    proRacer: 'Yes',
+    circuitPro: 'Yes',
+    enterprise: 'Yes',
+  },
+  {
+    feature: 'Control room dashboards',
+    starter: 'No',
+    performance: 'No',
+    proRacer: 'No',
+    circuitPro: 'On request',
+    enterprise: 'Yes',
+  },
+  {
+    feature: 'Sim telemetry ingestion',
+    starter: 'Roadmap',
+    performance: 'Roadmap',
+    proRacer: 'Roadmap',
+    circuitPro: 'Roadmap',
+    enterprise: 'Roadmap',
+  },
 ];

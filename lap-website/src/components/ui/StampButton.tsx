@@ -1,5 +1,7 @@
 'use client';
 
+import Link from 'next/link';
+
 interface StampButtonProps {
   children: React.ReactNode;
   onClick?: () => void;
@@ -29,6 +31,13 @@ export function StampButton({
   `.trim();
 
   if (href) {
+    if (href.startsWith('/')) {
+      return (
+        <Link href={href} className={baseClass} onClick={onClick}>
+          {children}
+        </Link>
+      );
+    }
     return (
       <a href={href} className={baseClass} onClick={onClick}>
         {children}

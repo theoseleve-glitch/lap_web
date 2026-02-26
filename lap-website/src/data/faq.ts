@@ -14,7 +14,8 @@ export const faqItems: FaqItem[] = [
   },
   {
     question: 'What data formats are supported?',
-    answer: 'RaceChrono CSV and RaceBox export. More formats coming soon.',
+    answer:
+      'Available now: RaceChrono CSV and RaceBox exports. Roadmap: additional sim telemetry connectors through waitlist.',
   },
   {
     question: 'Is my data private?',
@@ -26,6 +27,6 @@ export const faqItems: FaqItem[] = [
   },
   {
     question: 'Do you support sim racing?',
-    answer: 'Coming soon. Join the waitlist for early access.',
+    answer: 'Roadmap only at this time. Join the waitlist for early access.',
   },
 ];
