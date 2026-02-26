@@ -1,8 +1,68 @@
+'use client';
+
+import { useState } from 'react';
+import Link from 'next/link';
+import { FormField } from '@/components/app/FormField';
+import { useAuth } from '@/hooks/useAuth';
+
 export default function LoginPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const { login, loading, error } = useAuth();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await login(email, password);
+  };
+
   return (
     <div>
       <h1 className="font-monument text-2xl text-chalk mb-6 text-center">Sign In</h1>
-      <p className="text-steel font-body text-center">Authentication coming soon.</p>
+
+      {error && (
+        <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 rounded">
+          <p className="text-safety-red font-telemetry text-sm">{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit}>
+        <FormField
+          label="Email"
+          type="email"
+          placeholder="driver@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          autoComplete="email"
+        />
+        <FormField
+          label="Password"
+          type="password"
+          placeholder="••••••••"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          autoComplete="current-password"
+        />
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
+            rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? 'Signing in...' : 'Sign In'}
+        </button>
+      </form>
+
+      <div className="mt-6 text-center">
+        <p className="text-steel font-body text-sm">
+          Don&apos;t have an account?{' '}
+          <Link href="/register" className="text-pit-orange hover:underline">
+            Create one
+          </Link>
+        </p>
+      </div>
     </div>
   );
 }
