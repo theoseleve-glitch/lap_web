@@ -33,6 +33,42 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("api", __name__, url_prefix="/api")
 
 
+# ---------------------------------------------------------------------------
+# Deprecation header helper — signals clients to migrate to /api/v1/
+# ---------------------------------------------------------------------------
+
+def _deprecation_headers(v1_path: str) -> dict[str, str]:
+    """Build standard deprecation headers pointing to the v1 successor.
+
+    Returns a dict with three headers:
+    - ``Deprecation: true``
+    - ``Sunset: 2026-09-01``
+    - ``Link: <v1_path>; rel="successor-version"``
+    """
+    return {
+        "Deprecation": "true",
+        "Sunset": "2026-09-01",
+        "Link": f'<{v1_path}>; rel="successor-version"',
+    }
+
+
+def _with_deprecation(response, v1_path: str):
+    """Attach deprecation headers to a Flask response and return it.
+
+    Works with both ``Response`` objects and ``(response, status)`` tuples
+    returned by ``jsonify(...), status``.
+    """
+    headers = _deprecation_headers(v1_path)
+    if isinstance(response, tuple):
+        resp_obj = response[0]
+        status = response[1] if len(response) > 1 else 200
+        resp_obj.headers.update(headers)
+        return resp_obj, status
+    else:
+        response.headers.update(headers)
+        return response
+
+
 @bp.route("/session/<session_id>/gps/<int:lap_number>")
 def gps_data(session_id: str, lap_number: int):
     """Return GPS trace for a single lap as JSON."""
@@ -48,7 +84,10 @@ def gps_laps(session_id: str):
     """Return list of lap numbers that have GPS data."""
     conn = get_db_connection()
     laps = get_gps_lap_numbers(conn, session_id)
-    return jsonify({"laps": laps})
+    return _with_deprecation(
+        jsonify({"laps": laps}),
+        f"/api/v1/sessions/{session_id}/laps/gps",
+    )
 
 
 @bp.route("/session/<session_id>/speed_trace")
@@ -62,7 +101,10 @@ def speed_trace(session_id: str):
     conn = get_db_connection()
     session = get_session_by_id(conn, session_id)
     if session is None:
-        return jsonify({"error": "Session not found"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "Session not found"}), 404),
+            f"/api/v1/sessions/{session_id}/speed-trace",
+        )
 
     laps = get_laps_for_session(conn, session_id)
     gps_lap_nums = get_gps_lap_numbers(conn, session_id)
@@ -83,11 +125,14 @@ def speed_trace(session_id: str):
                 "speeds": gps["speeds"],
             }
 
-    return jsonify({
-        "laps": traces,
-        "best_lap_number": best_lap,
-        "session_id": session_id,
-    })
+    return _with_deprecation(
+        jsonify({
+            "laps": traces,
+            "best_lap_number": best_lap,
+            "session_id": session_id,
+        }),
+        f"/api/v1/sessions/{session_id}/speed-trace",
+    )
 
 
 @bp.route("/session/<session_id>/lap_times")
@@ -95,20 +140,23 @@ def lap_times(session_id: str):
     """Return lap times as JSON for charting."""
     conn = get_db_connection()
     laps = get_laps_for_session(conn, session_id)
-    return jsonify({
-        "laps": [
-            {
-                "lap_number": l["lap_number"],
-                "lap_time_s": l["lap_time_s"],
-                "is_best": bool(l.get("is_best")),
-                "is_valid": bool(l.get("is_valid", True)),
-                "invalid_reason": l.get("invalid_reason"),
-                "phase_id": l.get("phase_id"),
-            }
-            for l in laps
-            if l.get("lap_time_s") is not None
-        ],
-    })
+    return _with_deprecation(
+        jsonify({
+            "laps": [
+                {
+                    "lap_number": l["lap_number"],
+                    "lap_time_s": l["lap_time_s"],
+                    "is_best": bool(l.get("is_best")),
+                    "is_valid": bool(l.get("is_valid", True)),
+                    "invalid_reason": l.get("invalid_reason"),
+                    "phase_id": l.get("phase_id"),
+                }
+                for l in laps
+                if l.get("lap_time_s") is not None
+            ],
+        }),
+        f"/api/v1/sessions/{session_id}/lap-times",
+    )
 
 
 @bp.route("/session/<session_id>/cross_session")
@@ -144,7 +192,10 @@ def track_records_api(track_id: str):
     """Return track records as JSON."""
     conn = get_db_connection()
     records = get_track_records(conn, track_id)
-    return jsonify({"records": records})
+    return _with_deprecation(
+        jsonify({"records": records}),
+        f"/api/v1/tracks/{track_id}/records",
+    )
 
 
 @bp.route("/track/<track_id>/evolution")
@@ -179,7 +230,10 @@ def track_evolution(track_id: str):
             "driver": r["driver_name"],
         })
 
-    return jsonify({"track_id": track_id, "sessions": sessions})
+    return _with_deprecation(
+        jsonify({"track_id": track_id, "sessions": sessions}),
+        f"/api/v1/tracks/{track_id}/evolution",
+    )
 
 
 @bp.route("/track/<track_id>/geometry")
@@ -191,16 +245,25 @@ def track_geometry(track_id: str):
         (track_id,),
     ).fetchone()
     if not row or not row["reference_line"]:
-        return jsonify({"error": "No geometry available"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "No geometry available"}), 404),
+            f"/api/v1/tracks/{track_id}/geometry",
+        )
     try:
         geo = json.loads(row["reference_line"])
     except (json.JSONDecodeError, TypeError):
-        return jsonify({"error": "Invalid geometry data"}), 500
-    return jsonify({
-        "track_name": row["track_name"],
-        "latitudes": geo.get("latitudes", []),
-        "longitudes": geo.get("longitudes", []),
-    })
+        return _with_deprecation(
+            (jsonify({"error": "Invalid geometry data"}), 500),
+            f"/api/v1/tracks/{track_id}/geometry",
+        )
+    return _with_deprecation(
+        jsonify({
+            "track_name": row["track_name"],
+            "latitudes": geo.get("latitudes", []),
+            "longitudes": geo.get("longitudes", []),
+        }),
+        f"/api/v1/tracks/{track_id}/geometry",
+    )
 
 
 @bp.route("/session/<session_id>/speed_overlay")
@@ -271,16 +334,22 @@ def theoretical_data(session_id: str):
     conn = get_db_connection()
     data = get_theoretical_data(conn, session_id)
     if data is None:
-        return jsonify({"error": "no theoretical data"}), 404
-    return jsonify({
-        "theoretical_time_s": data.get("theoretical_time_s"),
-        "actual_best_time_s": data.get("actual_best_time_s"),
-        "gap_pct":            data.get("gap_pct"),
-        "simulation_method":  data.get("simulation_method"),
-        "speeds":             data.get("speeds"),
-        "distances":          data.get("distances"),
-        "metrics":            data.get("metrics"),
-    })
+        return _with_deprecation(
+            (jsonify({"error": "no theoretical data"}), 404),
+            f"/api/v1/sessions/{session_id}/theoretical",
+        )
+    return _with_deprecation(
+        jsonify({
+            "theoretical_time_s": data.get("theoretical_time_s"),
+            "actual_best_time_s": data.get("actual_best_time_s"),
+            "gap_pct":            data.get("gap_pct"),
+            "simulation_method":  data.get("simulation_method"),
+            "speeds":             data.get("speeds"),
+            "distances":          data.get("distances"),
+            "metrics":            data.get("metrics"),
+        }),
+        f"/api/v1/sessions/{session_id}/theoretical",
+    )
 
 
 @bp.route("/session/<session_id>/gg_data")
@@ -319,14 +388,20 @@ def gg_data(session_id: str):
             }
 
     if not accel_lat_all:
-        return jsonify({"accel_lat": [], "accel_long": [], "per_lap": {}, "n_points": 0})
+        return _with_deprecation(
+            jsonify({"accel_lat": [], "accel_long": [], "per_lap": {}, "n_points": 0}),
+            f"/api/v1/sessions/{session_id}/gg-data",
+        )
 
-    return jsonify({
-        "accel_lat":  accel_lat_all,
-        "accel_long": accel_long_all,
-        "per_lap":    per_lap,
-        "n_points":   len(accel_lat_all),
-    })
+    return _with_deprecation(
+        jsonify({
+            "accel_lat":  accel_lat_all,
+            "accel_long": accel_long_all,
+            "per_lap":    per_lap,
+            "n_points":   len(accel_lat_all),
+        }),
+        f"/api/v1/sessions/{session_id}/gg-data",
+    )
 
 
 @bp.route("/session/<session_id>/reference_line")
@@ -335,8 +410,14 @@ def reference_line_data(session_id: str):
     conn = get_db_connection()
     data = get_reference_line(conn, session_id)
     if data is None:
-        return jsonify({"error": "no reference line"}), 404
-    return jsonify(data)
+        return _with_deprecation(
+            (jsonify({"error": "no reference line"}), 404),
+            f"/api/v1/sessions/{session_id}/reference-line",
+        )
+    return _with_deprecation(
+        jsonify(data),
+        f"/api/v1/sessions/{session_id}/reference-line",
+    )
 
 
 @bp.route("/session/<session_id>/best_lap_gps")
@@ -351,14 +432,23 @@ def best_lap_gps(session_id: str):
             break
 
     if best_lap is None:
-        return jsonify({"error": "no best lap"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "no best lap"}), 404),
+            f"/api/v1/sessions/{session_id}/best-lap-gps",
+        )
 
     gps = get_gps_trace(conn, session_id, best_lap)
     if gps is None:
-        return jsonify({"error": "no GPS data for best lap"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "no GPS data for best lap"}), 404),
+            f"/api/v1/sessions/{session_id}/best-lap-gps",
+        )
 
     gps["lap_number"] = best_lap
-    return jsonify(gps)
+    return _with_deprecation(
+        jsonify(gps),
+        f"/api/v1/sessions/{session_id}/best-lap-gps",
+    )
 
 
 @bp.route("/session/<session_id>", methods=["DELETE"])
@@ -371,7 +461,10 @@ def delete_session(session_id: str):
         {"sid": session_id},
     ).fetchone()
     if row is None:
-        return jsonify({"error": "Session not found"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "Session not found"}), 404),
+            f"/api/v1/sessions/{session_id}",
+        )
 
     try:
         # Delete from all related tables in order (child → parent)
@@ -403,10 +496,16 @@ def delete_session(session_id: str):
         conn.commit()
 
         logger.info("Deleted session: %s", session_id)
-        return jsonify({"ok": True, "session_id": session_id})
+        return _with_deprecation(
+            jsonify({"ok": True, "session_id": session_id}),
+            f"/api/v1/sessions/{session_id}",
+        )
     except Exception as exc:
         logger.error("Failed to delete session %s: %s", session_id, exc)
-        return jsonify({"error": str(exc)}), 500
+        return _with_deprecation(
+            (jsonify({"error": str(exc)}), 500),
+            f"/api/v1/sessions/{session_id}",
+        )
 
 
 @bp.route("/sessions/search")
@@ -771,7 +870,10 @@ def files_list():
                     "%Y-%m-%d %H:%M"
                 ),
             })
-    return jsonify({"files": files})
+    return _with_deprecation(
+        jsonify({"files": files}),
+        "/api/v1/files",
+    )
 
 
 @bp.route("/files/upload", methods=["POST"])
@@ -1581,7 +1683,10 @@ def api_fatigue_analysis(session_id: str):
     conn = get_db_connection()
     session = get_session_by_id(conn, session_id)
     if session is None:
-        return jsonify({"error": "Session not found"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "Session not found"}), 404),
+            f"/api/v1/sessions/{session_id}/fatigue",
+        )
 
     laps = conn.execute(
         """SELECT lap_number, lap_time_s, speed_mean_mps, braking_max_mps2,
@@ -1592,7 +1697,10 @@ def api_fatigue_analysis(session_id: str):
     ).fetchall()
 
     if not laps:
-        return jsonify({"error": "No lap data"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "No lap data"}), 404),
+            f"/api/v1/sessions/{session_id}/fatigue",
+        )
 
     lap_metrics = []
     lap_times = []
@@ -1610,9 +1718,15 @@ def api_fatigue_analysis(session_id: str):
     try:
         from fatigue_detection import analyze_fatigue
         result = analyze_fatigue(lap_metrics, lap_times, lap_numbers)
-        return jsonify(result.to_dict())
+        return _with_deprecation(
+            jsonify(result.to_dict()),
+            f"/api/v1/sessions/{session_id}/fatigue",
+        )
     except ImportError:
-        return jsonify({"error": "fatigue_detection module not available"}), 500
+        return _with_deprecation(
+            (jsonify({"error": "fatigue_detection module not available"}), 500),
+            f"/api/v1/sessions/{session_id}/fatigue",
+        )
 
 
 @bp.route("/session/<session_id>/corner-mastery")
@@ -1673,7 +1787,10 @@ def api_fingerprint(session_id: str):
         {"sid": session_id},
     ).fetchone()
     if not row:
-        return jsonify({"error": "Session not found"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "Session not found"}), 404),
+            f"/api/v1/sessions/{session_id}/fingerprint",
+        )
     sess = dict(row)
 
     # Build input data from scoring sub-scores and analysis results
@@ -1762,9 +1879,15 @@ def api_fingerprint(session_id: str):
     try:
         from performance_fingerprint import compute_fingerprint
         fp = compute_fingerprint(session_data)
-        return jsonify(fp.to_dict())
+        return _with_deprecation(
+            jsonify(fp.to_dict()),
+            f"/api/v1/sessions/{session_id}/fingerprint",
+        )
     except ImportError:
-        return jsonify({"error": "performance_fingerprint module not available"}), 500
+        return _with_deprecation(
+            (jsonify({"error": "performance_fingerprint module not available"}), 500),
+            f"/api/v1/sessions/{session_id}/fingerprint",
+        )
 
 
 # ------------------------------------------------------------------
@@ -2512,7 +2635,10 @@ def api_speed_profile(session_id: str):
         {"sid": session_id},
     ).fetchone()
     if not row:
-        return jsonify({"error": "Session not found"}), 404
+        return _with_deprecation(
+            (jsonify({"error": "Session not found"}), 404),
+            f"/api/v1/sessions/{session_id}/speed-profile",
+        )
 
     lap_rows = conn.execute(
         """SELECT lap_number, lap_time_s
@@ -2530,9 +2656,15 @@ def api_speed_profile(session_id: str):
         result = analyze_speed_profile(lap_times, lap_numbers)
         d = result.to_dict()
         d["session_id"] = session_id
-        return jsonify(d)
+        return _with_deprecation(
+            jsonify(d),
+            f"/api/v1/sessions/{session_id}/speed-profile",
+        )
     except ImportError:
-        return jsonify({"error": "speed_profile module not available"}), 500
+        return _with_deprecation(
+            (jsonify({"error": "speed_profile module not available"}), 500),
+            f"/api/v1/sessions/{session_id}/speed-profile",
+        )
 
 
 # ------------------------------------------------------------------
