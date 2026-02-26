@@ -8,6 +8,8 @@
     var root = document.getElementById('rs-live-root');
     if (!root) return;
 
+    var _lc = window.LifecycleHelpers.create();
+
     var RACE_ID       = root.getAttribute('data-race-id');
     var RACE_DURATION = parseInt(root.getAttribute('data-race-duration'), 10) || 0;
     var RACE_START    = root.getAttribute('data-race-start');
@@ -656,7 +658,7 @@
     // Fetch weather on load and every 5 minutes
     if (TRACK_NAME) {
         fetchWeather();
-        setInterval(fetchWeather, 300000);
+        _lc.addInterval(fetchWeather, 300000);
     }
 
     // ── Alert Manager ────────────────────────────
@@ -1361,10 +1363,10 @@
 
     // Fetch rivals on load and every 10s
     fetchRivals();
-    setInterval(fetchRivals, 10000);
+    _lc.addInterval(fetchRivals, 10000);
 
     // Client-side timer tick (1s)
-    setInterval(function() {
+    _lc.addInterval(function() {
         updateTimer();
         updateFuel();
         updateDrivers();
@@ -1376,6 +1378,18 @@
     }, 1000);
 
     // Server poll (2s)
-    setInterval(fetchState, POLL_INTERVAL);
+    _lc.addInterval(fetchState, POLL_INTERVAL);
+
+    // Pause polling when tab is hidden to save CPU + server load
+    _lc.addListener(document, 'visibilitychange', function () {
+        if (document.hidden) {
+            _lc.destroyAll();
+        }
+    });
+
+    window.ModuleManager.register('race_strategy_live', {
+        init: function () { /* already auto-inits on load */ },
+        destroy: function () { _lc.destroyAll(); }
+    });
 
 })();
