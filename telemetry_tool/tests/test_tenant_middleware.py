@@ -26,9 +26,10 @@ class TestTenantMiddleware:
         ):
             g.current_user_id = 1
             with patch("web.middleware.tenant._verify_workspace_access", return_value=True), \
-                 patch("web.middleware.tenant._set_rls_context"):
+                 patch("web.middleware.tenant._set_rls_context") as mock_rls:
                 tenant_middleware()
                 assert g.workspace_id == 42
+                mock_rls.assert_called_once_with(42)
 
     def test_falls_back_to_default_workspace(self):
         """Without header, uses user's default workspace."""
@@ -43,10 +44,11 @@ class TestTenantMiddleware:
         with app.test_request_context("/api/v1/sessions"):
             g.current_user_id = 1
             with patch("web.middleware.tenant.get_default_workspace_id", return_value=99), \
-                 patch("web.middleware.tenant._set_rls_context"), \
+                 patch("web.middleware.tenant._set_rls_context") as mock_rls, \
                  patch("web.db_pg.get_pg_connection", return_value=mock_conn):
                 tenant_middleware()
                 assert g.workspace_id == 99
+                mock_rls.assert_called_once_with(99)
 
     def test_skips_non_api_routes(self):
         """Non-/api/v1/ routes don't need workspace resolution."""
@@ -73,9 +75,10 @@ class TestTenantMiddleware:
         app.config["DEFAULT_WORKSPACE_ID"] = 1
 
         with app.test_request_context("/api/v1/sessions"):
-            with patch("web.middleware.tenant._set_rls_context"):
+            with patch("web.middleware.tenant._set_rls_context") as mock_rls:
                 tenant_middleware()
                 assert g.workspace_id == 1
+                mock_rls.assert_called_once_with(1)
 
     def test_returns_403_when_no_workspace_access(self):
         """Returns 403 if user doesn't have access to requested workspace."""
@@ -93,7 +96,9 @@ class TestTenantMiddleware:
             g.current_user_id = 1
             with patch("web.middleware.tenant._verify_workspace_access", return_value=False):
                 result = tenant_middleware()
-                assert result is not None  # Returns error response
+                assert result is not None
+                response, status_code = result
+                assert status_code == 403
 
     def test_skips_when_sqlite_mode(self):
         """When USE_PG is False, middleware is a no-op."""
