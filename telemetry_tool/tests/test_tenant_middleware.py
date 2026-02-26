@@ -53,6 +53,7 @@ class TestTenantMiddleware:
                  patch("web.db_pg.get_pg_connection", return_value=mock_conn):
                 tenant_middleware()
                 assert g.workspace_id == 99
+                assert g.workspace_role == "member"
                 mock_rls.assert_called_once_with(99)
 
     def test_skips_non_api_routes(self):
@@ -211,3 +212,17 @@ class TestWorkspaceRoleResolution:
             conn.execute.side_effect = execute_side
             role = _resolve_workspace_role(conn, user_id=10, workspace_id=20)
             assert role == "admin"
+
+    def test_personal_workspace_non_owner_gets_none(self):
+        """Non-owner of personal workspace gets None role."""
+        from web.middleware.tenant import _resolve_workspace_role
+        from flask import Flask
+
+        app = Flask(__name__)
+        with app.test_request_context():
+            conn = MagicMock()
+            cur = MagicMock()
+            cur.fetchone.return_value = {"type": "personal", "owner_user_id": 99, "owner_team_id": None}
+            conn.execute.return_value = cur
+            role = _resolve_workspace_role(conn, user_id=1, workspace_id=10)
+            assert role is None

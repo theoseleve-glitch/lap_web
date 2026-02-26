@@ -72,6 +72,12 @@ def tenant_middleware():
     from web.db_pg import get_pg_connection
     conn = get_pg_connection()
     g.workspace_role = _resolve_workspace_role(conn, user_id, g.workspace_id)
+    if g.workspace_role is None:
+        return jsonify({
+            "ok": False,
+            "error": {"code": "FORBIDDEN", "message": "No role in this workspace"},
+            "meta": {},
+        }), 403
 
 
 def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:

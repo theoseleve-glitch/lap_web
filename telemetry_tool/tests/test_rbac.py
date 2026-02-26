@@ -38,6 +38,26 @@ class TestRoleHierarchy:
         assert not has_permission("viewer", "delete_sessions")
 
 
+class TestEdgeCases:
+    def test_unknown_role_denied(self):
+        from auth.rbac import has_permission
+        assert not has_permission("superadmin", "view_sessions")
+        assert not has_permission("", "view_sessions")
+
+    def test_unknown_action_denied(self):
+        from auth.rbac import has_permission
+        assert not has_permission("owner", "nonexistent_action")
+
+    def test_none_role_denied(self):
+        from auth.rbac import has_permission
+        assert not has_permission(None, "view_sessions")
+
+    def test_case_sensitivity(self):
+        from auth.rbac import has_permission
+        assert not has_permission("Owner", "view_sessions")
+        assert not has_permission("ADMIN", "manage_members")
+
+
 class TestRequireRoleDecorator:
     def test_allows_sufficient_role(self):
         from auth.rbac import require_role
@@ -71,4 +91,34 @@ class TestRequireRoleDecorator:
             g.workspace_id = 10
             g.workspace_role = "viewer"
             result, status = test_view()
+            assert status == 403
+
+
+class TestRequirePermissionDecorator:
+    def test_allows_member_to_upload(self):
+        from auth.rbac import require_permission
+
+        app = Flask(__name__)
+
+        @require_permission("upload_csv")
+        def upload_view():
+            return "ok"
+
+        with app.test_request_context("/api/v1/upload"):
+            g.workspace_role = "member"
+            result = upload_view()
+            assert result == "ok"
+
+    def test_unknown_action_requires_owner(self):
+        from auth.rbac import require_permission
+
+        app = Flask(__name__)
+
+        @require_permission("nonexistent_action")
+        def secret_view():
+            return "ok"
+
+        with app.test_request_context("/api/v1/secret"):
+            g.workspace_role = "admin"
+            result, status = secret_view()
             assert status == 403
