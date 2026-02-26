@@ -8,6 +8,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {};
 
     var COLORS = {
@@ -587,4 +589,13 @@
         initLapTimeChart: initLapTimeChart,
         initProgressionOverlay: initProgressionOverlay,
     };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('comparison', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

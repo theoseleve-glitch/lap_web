@@ -15,6 +15,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {
         bgCard: '#1e1e2e', border: '#333', textPrimary: '#e0e0e0',
         textSecondary: '#aaa', textMuted: '#777', accent: '#f97316',
@@ -83,7 +85,7 @@
 
         _computeProjection();
         _cacheTrackPixels();
-        _cacheAutoCorners();
+        // Auto-detected corners no longer shown — user-defined only
         _draw();
         _setupEvents();
     }
@@ -340,9 +342,6 @@
             }
         }
 
-        // Auto-detected corner reference markers (small, non-interactive)
-        _drawAutoCornerGuides();
-
         // Custom area-of-interest markers (user-placed)
         _drawCustomPoints();
 
@@ -362,7 +361,7 @@
         ctx.fillStyle = C.textMuted;
         ctx.font = '11px system-ui, sans-serif';
         ctx.textAlign = 'left';
-        ctx.fillText('Click on the track to place areas of interest', 12, h - 10);
+        ctx.fillText('Click on the track to define key corners for replay', 12, h - 10);
     }
 
     function _drawTrackOutline() {
@@ -515,7 +514,7 @@
     // ── Interaction ──
 
     function _setupEvents() {
-        canvas.addEventListener('click', function (e) {
+        _lc.addListener(canvas, 'click', function (e) {
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
             var my = e.clientY - rect.top;
@@ -544,17 +543,7 @@
             if (_isTooCloseToExisting(nearest.lat, nearest.lon)) return;
 
             // 4. Place new custom point
-            var label = 'P' + nextPointId;
-
-            // Check if this is near an auto-detected corner and use its label
-            for (var i = 0; i < autoCorners.length; i++) {
-                var ac = autoCorners[i];
-                var dx = ac._px - nearest.x, dy = ac._py - nearest.y;
-                if (dx * dx + dy * dy < (REF_RADIUS + POINT_RADIUS) * (REF_RADIUS + POINT_RADIUS)) {
-                    label = 'C' + ac.corner_id + (ac.direction || '');
-                    break;
-                }
-            }
+            var label = 'P' + (customPoints.length + 1);
 
             customPoints.push({
                 id: nextPointId,
@@ -572,7 +561,7 @@
             if (changeCb) changeCb(getSelected());
         });
 
-        canvas.addEventListener('mousemove', function (e) {
+        _lc.addListener(canvas, 'mousemove', function (e) {
             var rect = canvas.getBoundingClientRect();
             var mx = e.clientX - rect.left;
             var my = e.clientY - rect.top;
@@ -619,7 +608,7 @@
             if (needRedraw) _draw();
         });
 
-        canvas.addEventListener('mouseleave', function () {
+        _lc.addListener(canvas, 'mouseleave', function () {
             var needRedraw = hoverTrackPt !== null || hoveredPointId !== null;
             hoverTrackPt = null;
             hoveredPointId = null;
@@ -629,16 +618,19 @@
     }
 
     function _relabelPoints() {
-        // Sort by distance and relabel P1, P2, ... (keep corner labels)
+        // Sort by distance and relabel P1, P2, ...
         customPoints.sort(function (a, b) { return a.dist_m - b.dist_m; });
-        var pNum = 1;
         for (var i = 0; i < customPoints.length; i++) {
-            var p = customPoints[i];
-            // Keep labels that start with C (detected corner labels)
-            if (p.label && p.label.charAt(0) === 'C') continue;
-            p.label = 'P' + pNum;
-            pNum++;
+            customPoints[i].label = 'P' + (i + 1);
         }
     }
 
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('corner_picker_map', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

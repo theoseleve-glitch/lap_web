@@ -17,6 +17,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     // ── Session type report descriptions ──
     var SESSION_TYPE_HINTS = {
         practice:   'Consistency analysis, lap-to-lap progression, driving style breakdown',
@@ -28,7 +30,7 @@
         test:       'Data validation, sensor calibration, baseline measurements',
     };
 
-    document.addEventListener('DOMContentLoaded', function () {
+    _lc.addListener(document, 'DOMContentLoaded', function () {
         var form = document.getElementById('analyze-form');
         var submitBtn = document.getElementById('submit-btn');
 
@@ -781,7 +783,7 @@
                 }, 600);
             }
 
-            var elapsedInterval = setInterval(function () {
+            var elapsedInterval = _lc.addInterval(function () {
                 var elapsed = Math.round((Date.now() - startTime) / 1000);
                 if (elapsedEl) elapsedEl.textContent = 'Elapsed: ' + elapsed + 's';
             }, 1000);
@@ -791,7 +793,7 @@
                     .then(function (resp) { return resp.json(); })
                     .then(function (data) {
                         if (data.error && data.status === 'error') {
-                            clearInterval(elapsedInterval);
+                            _lc.clearInterval(elapsedInterval);
                             showAnalysisError(data.error);
                             return;
                         }
@@ -814,7 +816,7 @@
                         }
 
                         if (data.status === 'done') {
-                            clearInterval(elapsedInterval);
+                            _lc.clearInterval(elapsedInterval);
                             if (overallFill) overallFill.style.width = '100%';
                             if (stageText) stageText.textContent = 'Analysis complete!';
 
@@ -1493,5 +1495,14 @@
         function escapeAttr(s) {
             return s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
+    });
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('analyze_form', {
+        init: function () {},
+        destroy: destroy
     });
 })();

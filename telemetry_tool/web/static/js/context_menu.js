@@ -13,6 +13,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var menuEl = null;
     var _triggerEl = null;
 
@@ -25,10 +27,10 @@
         document.body.appendChild(menuEl);
 
         // Close on click-away, Escape, scroll.
-        document.addEventListener('click', function (e) {
+        _lc.addListener(document, 'click', function (e) {
             if (!menuEl.contains(e.target)) hide();
         });
-        document.addEventListener('keydown', function (e) {
+        _lc.addListener(document, 'keydown', function (e) {
             if (e.key === 'Escape') hide();
             if (menuEl.style.display === 'none') return;
             // Arrow key navigation within open menu
@@ -43,7 +45,7 @@
                 items[next].focus();
             }
         });
-        window.addEventListener('scroll', hide, { capture: true, passive: true });
+        _lc.addListener(window, 'scroll', hide, { capture: true, passive: true });
     }
 
     function show(x, y, items, targetEl) {
@@ -140,4 +142,13 @@
         show: show,
         hide: hide,
     };
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('context_menu', {
+        init: function () {},
+        destroy: destroy
+    });
 })();
