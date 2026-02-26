@@ -104,6 +104,12 @@ def register_user(conn, email: str, password: str, display_name: str) -> dict:
         )
         row = cur.fetchone()
         conn.commit()
+
+        # Auto-create personal workspace for the new user.
+        from auth.workspace import create_personal_workspace
+        create_personal_workspace(conn, user_id=row["id"],
+                                  display_name=f"{display_name}'s Workspace")
+
         return dict(row)
     except Exception as e:
         conn.rollback()
