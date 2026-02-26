@@ -93,7 +93,7 @@
           class="inline-form">
         <div class="form-row items-center">
             <div class="form-group">
-                <label class="toggle-label" style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;">
+                <label class="toggle-label flex-center-gap">
                     <input type="checkbox" name="has_joker" value="1"
                            {% if track.has_joker %}checked{% endif %}
                            id="joker-toggle">
@@ -138,7 +138,7 @@
     <!-- Save bar for dragged S/F marker -->
     <form id="sf-save-bar" method="post"
           action="{{ url_for('tracks.update_start_finish', track_id=track.track_id) }}"
-          style="display:none; margin-top:0.5rem;" class="form-row items-center">
+          style="display:none;" class="form-row items-center mt-sm">
         <input type="hidden" name="action" value="update">
         <input type="hidden" name="lat" id="sf-lat">
         <input type="hidden" name="lon" id="sf-lon">
@@ -150,14 +150,14 @@
     </form>
 
     <!-- Sectors -->
-    <div style="margin-top:1rem;">
+    <div class="mt-md">
         <h3>Sectors <span class="count-badge">{{ sectors|length }}</span></h3>
         {% if sectors %}
-        <div class="tag-group" style="margin-bottom:0.5rem;">
+        <div class="tag-group mb-sm">
             {% for s in sectors %}
             <span class="tag">
                 {{ s.label }} ({{ "%.5f"|format(s.latitude) }}, {{ "%.5f"|format(s.longitude) }})
-                <form method="POST" style="display:inline;"
+                <form method="POST"
                       action="{{ url_for('tracks.remove_sector', track_id=track.track_id, sector_id=s.id) }}"
                       class="inline-delete-form" data-confirm="Delete sector {{ s.label }}?">
                     <button type="submit" class="btn-icon" aria-label="Delete {{ s.label }}" title="Delete">&times;</button>
@@ -211,7 +211,7 @@
     </div>
 
     {% if records|length > 3 %}
-    <div class="table-wrap table-scroll-wrapper" style="margin-top:1.5rem;">
+    <div class="table-wrap table-scroll-wrapper mt-md">
         <table class="data-table compact striped">
             <caption class="sr-only">All track records</caption>
             <thead>
@@ -247,10 +247,10 @@
     </div>
     {% else %}
     <!-- Small delete links for the podium records when 3 or fewer -->
-    <div style="text-align:center; margin-top: 0.5rem;">
+    <div class="text-center mt-sm">
         {% for r in records %}
         <form method="POST" action="{{ url_for('tracks.remove_record', track_id=track.track_id, record_id=r.id) }}"
-              class="inline-delete-form" style="display:inline;" data-confirm="Delete record for {{ r.record_holder or 'this entry' }}?">
+              class="inline-delete-form" data-confirm="Delete record for {{ r.record_holder or 'this entry' }}?">
             <button type="submit" class="btn btn-ghost btn-sm" aria-label="Delete record {{ loop.index }}" title="Delete {{ r.record_holder or 'record' }}">&times; {{ r.record_holder or '#' ~ loop.index }}</button>
         </form>
         {% endfor %}
@@ -302,7 +302,7 @@
 {% if sessions|length > 1 %}
 <section class="section">
     <h2>Lap Time Evolution</h2>
-    <div class="chart-container relative">
+    <div class="chart-frame chart-container relative">
         <canvas id="evolution-chart" aria-label="Lap time evolution chart"></canvas>
     </div>
 </section>
@@ -365,16 +365,12 @@
     <details class="danger-zone">
         <summary class="btn btn-ghost btn-sm text-red">Delete Track</summary>
         <form method="POST" action="{{ url_for('tracks.delete_track', track_id=track.track_id) }}"
-              class="inline-form" style="margin-top:0.5rem;">
+              class="inline-form mt-sm"
+              onsubmit="return confirm('Permanently delete {{ track.track_name or track.track_id }} and all {{ sessions|length }} session(s)?')">
             <p class="text-muted text-sm">
                 This will permanently delete this track and all {{ sessions|length }} session(s), laps, scores, and related data.
-                Type <strong>{{ track.track_name or track.track_id }}</strong> to confirm.
             </p>
-            <div class="form-row items-center">
-                <input type="text" name="confirm_name" class="form-input"
-                       placeholder="Type track name to confirm" autocomplete="off" required>
-                <button type="submit" class="btn btn-danger btn-sm">Delete Permanently</button>
-            </div>
+            <button type="submit" class="btn btn-danger btn-sm">Delete Permanently</button>
         </form>
     </details>
 </section>
