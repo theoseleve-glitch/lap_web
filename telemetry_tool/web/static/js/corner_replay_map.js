@@ -15,6 +15,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {
         bgCard: '#1e1e2e', border: '#333', textPrimary: '#e0e0e0',
         textSecondary: '#aaa', textMuted: '#777', accent: '#f97316',
@@ -115,12 +117,12 @@
         // Corner markers
         _drawCornerMarkers(proj, dims);
 
-        // Delta text overlay
+        // Delta text overlay on map (smaller version — main delta is the CSS badge)
         if (deltaText) {
-            _ctx.font = 'bold 13px system-ui, sans-serif';
+            _ctx.font = 'bold 15px system-ui, sans-serif';
             _ctx.textAlign = 'right';
             _ctx.fillStyle = deltaText.charAt(0) === '-' ? DOT_COLORS.green : DOT_COLORS.red;
-            _ctx.fillText(deltaText, dims.w - 10, 22);
+            _ctx.fillText(deltaText, dims.w - 10, 24);
         }
     }
 
@@ -206,9 +208,9 @@
         var lonMin = Math.min.apply(null, regionLons);
         var lonMax = Math.max.apply(null, regionLons);
 
-        // Add 30% padding around corner region
-        var latPad = (latMax - latMin) * 0.30 || 0.0003;
-        var lonPad = (lonMax - lonMin) * 0.30 || 0.0003;
+        // Add 15% padding around corner region (tighter zoom on corner)
+        var latPad = (latMax - latMin) * 0.15 || 0.0002;
+        var lonPad = (lonMax - lonMin) * 0.15 || 0.0002;
         latMin -= latPad;
         latMax += latPad;
         lonMin -= lonPad;
@@ -408,5 +410,19 @@
         };
     }
     window.CornerReplayMap.getDataAtProgress = getDataAtProgress;
+
+    function destroy() {
+        _lc.destroyAll();
+        _canvas = null;
+        _ctx = null;
+        _traces = {};
+        _corners = [];
+        _fullProjection = null;
+    }
+
+    window.ModuleManager.register('corner_replay_map', {
+        init: function () {},
+        destroy: destroy
+    });
 
 })();

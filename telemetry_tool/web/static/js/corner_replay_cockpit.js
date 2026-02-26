@@ -16,14 +16,20 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {
         bgCard: '#1e1e2e', border: '#333', textPrimary: '#e0e0e0',
         textSecondary: '#aaa', textMuted: '#777', accent: '#f97316',
     };
 
-    var MAX_BRAKE_G = 12.0;    // m/s^2 for full brake bar
-    var MAX_THROTTLE_G = 8.0;  // m/s^2 for full throttle bar
+    var MAX_BRAKE_G = 12.0;    // m/s^2 default for full brake bar
+    var MAX_THROTTLE_G = 8.0;  // m/s^2 default for full throttle bar
     var MAX_SPEED_KPH = 120;   // speedometer max for karts
+
+    // Session-peak calibration: set by setSessionPeaks() so bars hit 100%
+    var _peakBrakeG = 0;
+    var _peakThrottleG = 0;
 
     var _canvas, _ctx;
 
@@ -31,6 +37,11 @@
         init: init,
         render: render,
         renderCompact: renderCompact,
+        /** Call once after loading replay data to calibrate bars to session peaks. */
+        setSessionPeaks: function(peakBrake, peakThrottle) {
+            _peakBrakeG = peakBrake > 0 ? peakBrake : MAX_BRAKE_G;
+            _peakThrottleG = peakThrottle > 0 ? peakThrottle : MAX_THROTTLE_G;
+        },
     };
 
     function init(canvasId) {
@@ -42,7 +53,7 @@
     /**
      * Render full cockpit on the main canvas.
      * data: { speed, accel_lat, accel_long, brake, throttle }
-     * opts: { cornerName, refSpeed, lapLabel }
+     * opts: { cornerName, refSpeed, lapLabel, showPedals }
      */
     function render(data, opts) {
         if (!_canvas || !_canvas.parentElement) return;
@@ -60,24 +71,31 @@
         ctx.fillStyle = C.bgCard || '#1a1f2e';
         ctx.fillRect(0, 0, dims.w, dims.h);
 
-        // Layout: speedometer top-center, bars left, G-ball right-bottom
-        var centerX = dims.w / 2;
-        var speedoR = Math.min(dims.w * 0.28, dims.h * 0.35);
-        var speedoCY = speedoR + 30;
+        var showPedals = !!opts.showPedals;
+        var leftOffset = 0;
+
+        if (showPedals) {
+            // Brake/throttle bars on the left (only when real data exists)
+            var barW = 22;
+            var barH = dims.h * 0.52;
+            var barY = 30;
+            _drawPedalBar(ctx, 25, barY, barW, barH, data.brake, '#f85149', 'BRK');
+            _drawPedalBar(ctx, 25 + barW + 10, barY, barW, barH, data.throttle, '#3fb950', 'THR');
+            leftOffset = 80;
+        }
+
+        // Layout: speedometer left of center, G-ball right of center (bigger)
+        var usableW = dims.w - leftOffset;
+        var centerX = leftOffset + usableW * 0.38;
+        var speedoR = Math.min(usableW * 0.18, dims.h * 0.28);
+        var speedoCY = speedoR + 24;
 
         _drawSpeedometer(ctx, centerX, speedoCY, speedoR, data.speed, opts.refSpeed);
 
-        // Brake bar (left side)
-        var barW = 22;
-        var barH = dims.h * 0.52;
-        var barY = 30;
-        _drawPedalBar(ctx, 25, barY, barW, barH, data.brake, '#f85149', 'BRK');
-        _drawPedalBar(ctx, 25 + barW + 10, barY, barW, barH, data.throttle, '#3fb950', 'THR');
-
-        // G-force ball (bottom right)
-        var gBallR = Math.min(dims.w * 0.15, 55);
-        var gBallX = dims.w - gBallR - 20;
-        var gBallY = dims.h - gBallR - 20;
+        // G-force ball — bigger, positioned right of speedometer
+        var gBallR = Math.min(usableW * 0.22, dims.h * 0.30, 80);
+        var gBallX = leftOffset + usableW * 0.72;
+        var gBallY = dims.h * 0.45;
         _drawGBall(ctx, gBallX, gBallY, gBallR, data.accel_lat, data.accel_long);
 
         // Corner info
@@ -85,7 +103,7 @@
             ctx.fillStyle = C.textPrimary || '#e0e0e0';
             ctx.font = 'bold 13px system-ui, sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText(opts.cornerName, centerX, dims.h - 12);
+            ctx.fillText(opts.cornerName, leftOffset + usableW / 2, dims.h - 12);
         }
 
         // Lap label
@@ -99,6 +117,7 @@
 
     /**
      * Render compact cockpit on a specific canvas (for split mode).
+     * opts: { lapLabel, refSpeed, showPedals }
      */
     function renderCompact(canvasId, data, opts) {
         var canvas = document.getElementById(canvasId);
@@ -117,32 +136,44 @@
         ctx.fillStyle = C.bgCard || '#1a1f2e';
         ctx.fillRect(0, 0, dims.w, dims.h);
 
-        // Compact layout: speedometer left-center, bars right, G-ball far right
-        var speedoR = Math.min(dims.w * 0.2, dims.h * 0.35);
-        var speedoCX = speedoR + 15;
+        var showPedals = !!opts.showPedals;
+
+        // Compact layout: speedometer left, G-ball right (bigger, adjacent)
+        var speedoR = Math.min(dims.w * 0.18, dims.h * 0.34);
+        var speedoCX = speedoR + 18;
         var speedoCY = dims.h / 2;
 
         _drawSpeedometer(ctx, speedoCX, speedoCY, speedoR, data.speed, opts.refSpeed);
 
-        // Brake/throttle bars (center)
-        var barW = 16;
-        var barH = dims.h * 0.6;
-        var barX = speedoCX + speedoR + 20;
-        var barY = (dims.h - barH) / 2;
-        _drawPedalBar(ctx, barX, barY, barW, barH, data.brake, '#f85149', 'B');
-        _drawPedalBar(ctx, barX + barW + 6, barY, barW, barH, data.throttle, '#3fb950', 'T');
+        var nextX = speedoCX + speedoR + 15;
 
-        // G-ball (right side)
-        var gBallR = Math.min(dims.w * 0.12, 35);
-        var gBallX = dims.w - gBallR - 12;
+        if (showPedals) {
+            // Brake/throttle bars (only when real data exists)
+            var barW = 14;
+            var barH = dims.h * 0.55;
+            var barY = (dims.h - barH) / 2;
+            _drawPedalBar(ctx, nextX, barY, barW, barH, data.brake, '#f85149', 'B');
+            _drawPedalBar(ctx, nextX + barW + 5, barY, barW, barH, data.throttle, '#3fb950', 'T');
+            nextX += barW * 2 + 20;
+        }
+
+        // G-ball — bigger and closer to speedometer
+        var gBallR = Math.min(dims.w * 0.20, dims.h * 0.32, 60);
+        var gBallX = nextX + gBallR + 8;
+        // If G-ball would overflow right edge, center it in remaining space
+        if (gBallX + gBallR + 8 > dims.w) {
+            gBallX = (nextX + dims.w) / 2;
+        }
         var gBallY = dims.h / 2;
         _drawGBall(ctx, gBallX, gBallY, gBallR, data.accel_lat, data.accel_long);
 
-        // Speed text overlay (large, top-center)
-        ctx.fillStyle = C.textPrimary || '#e0e0e0';
-        ctx.font = 'bold 11px system-ui, sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(Math.round(data.speed) + ' kph', speedoCX + speedoR + 20, 18);
+        // Lap label (top-right corner)
+        if (opts.lapLabel) {
+            ctx.fillStyle = C.textSecondary || '#aaa';
+            ctx.font = 'bold 11px system-ui, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(opts.lapLabel, dims.w - 8, 16);
+        }
     }
 
     // ── Drawing helpers ───────────────────────────────
@@ -360,12 +391,15 @@
         var aLong = data.accel_long || 0;
         // Speed comes from trace in m/s — convert to km/h for display
         var speedKph = (data.speed || 0) * 3.6;
+        // Use session peaks if calibrated, else fall back to defaults
+        var brakeMax = _peakBrakeG > 0 ? _peakBrakeG : MAX_BRAKE_G;
+        var thrMax = _peakThrottleG > 0 ? _peakThrottleG : MAX_THROTTLE_G;
         return {
             speed: speedKph,
             accel_lat: data.accel_lat || 0,
             accel_long: aLong,
-            brake: Math.max(0, Math.min(1, -aLong / MAX_BRAKE_G)),
-            throttle: Math.max(0, Math.min(1, aLong / MAX_THROTTLE_G)),
+            brake: Math.max(0, Math.min(1, -aLong / brakeMax)),
+            throttle: Math.max(0, Math.min(1, aLong / thrMax)),
         };
     }
 
@@ -402,5 +436,16 @@
         ctx.quadraticCurveTo(x, y, x + r, y);
         ctx.closePath();
     }
+
+    function destroy() {
+        _lc.destroyAll();
+        _canvas = null;
+        _ctx = null;
+    }
+
+    window.ModuleManager.register('corner_replay_cockpit', {
+        init: function () {},
+        destroy: destroy
+    });
 
 })();

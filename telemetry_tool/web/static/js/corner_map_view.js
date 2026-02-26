@@ -10,6 +10,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var C = window.Theme ? window.Theme.colors : {
         bgCard: '#1e1e2e', border: '#333', textPrimary: '#e0e0e0',
         textSecondary: '#aaa', textMuted: '#777', accent: '#f97316',
@@ -331,4 +333,13 @@
         ctx.textAlign = 'center';
         ctx.fillText(text, w / 2, 80);
     }
+
+    function destroy() {
+        _lc.destroyAll();
+    }
+
+    window.ModuleManager.register('corner_map_view', {
+        init: function () {},
+        destroy: destroy
+    });
 })();

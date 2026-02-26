@@ -14,6 +14,8 @@
 (function () {
     'use strict';
 
+    var _lc = window.LifecycleHelpers.create();
+
     var _opts = {};
     var _corners = [];
     var _activeCornerIdx = 0;
@@ -33,7 +35,7 @@
         // Mode tabs
         var tabs = document.querySelectorAll('.cr-mode-tab');
         tabs.forEach(function (tab) {
-            tab.addEventListener('click', function () {
+            _lc.addListener(tab, 'click', function () {
                 tabs.forEach(function (t) { t.classList.remove('active'); });
                 tab.classList.add('active');
                 if (_opts.onModeChange) _opts.onModeChange(tab.dataset.crMode);
@@ -43,7 +45,7 @@
         // Play/pause
         var playBtn = document.getElementById('cr-play-btn');
         if (playBtn) {
-            playBtn.addEventListener('click', function () {
+            _lc.addListener(playBtn, 'click', function () {
                 if (_opts.onTogglePlay) _opts.onTogglePlay();
             });
         }
@@ -51,7 +53,7 @@
         // Speed buttons
         var speedBtns = document.querySelectorAll('.cr-speed-btn');
         speedBtns.forEach(function (btn) {
-            btn.addEventListener('click', function () {
+            _lc.addListener(btn, 'click', function () {
                 speedBtns.forEach(function (b) { b.classList.remove('active'); });
                 btn.classList.add('active');
                 if (_opts.onSpeedChange) _opts.onSpeedChange(parseFloat(btn.dataset.crSpeed));
@@ -61,8 +63,8 @@
         // Corner nav buttons
         var prevBtn = document.getElementById('cr-prev-corner');
         var nextBtn = document.getElementById('cr-next-corner');
-        if (prevBtn) prevBtn.addEventListener('click', function () { _navCorner(-1); });
-        if (nextBtn) nextBtn.addEventListener('click', function () { _navCorner(1); });
+        if (prevBtn) _lc.addListener(prevBtn, 'click', function () { _navCorner(-1); });
+        if (nextBtn) _lc.addListener(nextBtn, 'click', function () { _navCorner(1); });
 
         // Scrubber interactions
         _initScrubber();
@@ -70,15 +72,15 @@
         // Lap A/B selects
         var lapASelect = document.getElementById('cr-lap-a-select');
         var lapBSelect = document.getElementById('cr-lap-b-select');
-        if (lapASelect) lapASelect.addEventListener('change', function () {
+        if (lapASelect) _lc.addListener(lapASelect, 'change', function () {
             if (_opts.onLapAChange) _opts.onLapAChange(parseInt(lapASelect.value, 10));
         });
-        if (lapBSelect) lapBSelect.addEventListener('change', function () {
+        if (lapBSelect) _lc.addListener(lapBSelect, 'change', function () {
             if (_opts.onLapBChange) _opts.onLapBChange(parseInt(lapBSelect.value, 10));
         });
 
         // Keyboard shortcuts
-        document.addEventListener('keydown', _onKeyDown);
+        _lc.addListener(document, 'keydown', _onKeyDown);
     }
 
     function setProgress(p) {
@@ -102,10 +104,10 @@
         _corners.forEach(function (c, i) {
             var pill = document.createElement('button');
             pill.className = 'cr-corner-pill' + (i === 0 ? ' active' : '');
-            pill.textContent = 'C' + c.corner_id;
+            pill.textContent = c.label || ('P' + c.corner_id);
             pill.title = c.label || ('Corner ' + c.corner_id);
             pill.dataset.idx = i;
-            pill.addEventListener('click', function () {
+            _lc.addListener(pill, 'click', function () {
                 _selectCorner(i);
             });
             pillsEl.appendChild(pill);
@@ -189,7 +191,7 @@
     window.CornerReplayControls.getLapB = getLapB;
 
     function destroy() {
-        document.removeEventListener('keydown', _onKeyDown);
+        _lc.destroyAll();
     }
 
     // ── Internal ──────────────────────────────────────
@@ -230,32 +232,32 @@
             if (_opts.onScrub) _opts.onScrub(p);
         }
 
-        track.addEventListener('mousedown', function (e) {
+        _lc.addListener(track, 'mousedown', function (e) {
             _draggingScrubber = true;
             _scrubTo(e);
         });
 
-        document.addEventListener('mousemove', function (e) {
+        _lc.addListener(document, 'mousemove', function (e) {
             if (!_draggingScrubber) return;
             _scrubTo(e);
         });
 
-        document.addEventListener('mouseup', function () {
+        _lc.addListener(document, 'mouseup', function () {
             _draggingScrubber = false;
         });
 
         // Touch support
-        track.addEventListener('touchstart', function (e) {
+        _lc.addListener(track, 'touchstart', function (e) {
             _draggingScrubber = true;
             _scrubTo(e.touches[0]);
         }, { passive: true });
 
-        document.addEventListener('touchmove', function (e) {
+        _lc.addListener(document, 'touchmove', function (e) {
             if (!_draggingScrubber) return;
             _scrubTo(e.touches[0]);
         }, { passive: true });
 
-        document.addEventListener('touchend', function () {
+        _lc.addListener(document, 'touchend', function () {
             _draggingScrubber = false;
         });
     }
@@ -276,5 +278,10 @@
             _navCorner(1);
         }
     }
+
+    window.ModuleManager.register('corner_replay_controls', {
+        init: function () {},
+        destroy: destroy
+    });
 
 })();
