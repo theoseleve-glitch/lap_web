@@ -7,10 +7,28 @@ import { useRouter } from 'next/navigation';
 import { FormField } from '@/components/app';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n';
+import { getAccessToken } from '@/lib/auth-store';
 
 type Step = 1 | 2 | 3;
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+async function authenticatedFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+
+  if (typeof window !== 'undefined') {
+    const token = getAccessToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+
+  return fetch(`${BACKEND_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+}
 
 interface AnalysisJob {
   job_id: string;
@@ -69,7 +87,7 @@ export default function FreeReportAnalyzePage() {
   useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/analyze/api/status/${jobId}`);
+      const res = await authenticatedFetch(`/analyze/api/status/${jobId}`);
       return res.json() as Promise<AnalysisJob>;
     },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
@@ -92,7 +110,7 @@ export default function FreeReportAnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
+      const result = await authenticatedFetch('/api/files/upload', {
         method: 'POST',
         body: formData,
       });
@@ -129,7 +147,7 @@ export default function FreeReportAnalyzePage() {
       if (driverName) form.append('driver_name', driverName);
       if (trackName) form.append('track_name', trackName);
       form.append('session_type', sessionType);
-      const res = await fetch(`${BACKEND_URL}/analyze/api/start`, { method: 'POST', body: form });
+      const res = await authenticatedFetch('/analyze/api/start', { method: 'POST', body: form });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);

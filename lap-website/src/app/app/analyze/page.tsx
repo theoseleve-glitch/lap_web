@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { getAccessToken } from '@/lib/auth-store';
 import { PageHeader } from '@/components/app';
 
 type Step = 1 | 2 | 3;
@@ -39,6 +40,23 @@ interface AnalysisJob {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const SESSION_TYPES = ['Practice', 'Qualifying', 'Race', 'Test'] as const;
+
+async function authenticatedFetch(path: string, init?: RequestInit): Promise<Response> {
+  const headers = new Headers(init?.headers);
+
+  if (typeof window !== 'undefined') {
+    const token = getAccessToken();
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  }
+
+  return fetch(`${BACKEND_URL}${path}`, {
+    ...init,
+    headers,
+    credentials: 'include',
+  });
+}
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -97,7 +115,7 @@ export default function AnalyzePage() {
   useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/analyze/api/status/${jobId}`);
+      const res = await authenticatedFetch(`/analyze/api/status/${jobId}`);
       return res.json() as Promise<AnalysisJob>;
     },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
@@ -114,7 +132,7 @@ export default function AnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
+      const result = await authenticatedFetch('/api/files/upload', {
         method: 'POST',
         body: formData,
       });
@@ -153,7 +171,7 @@ export default function AnalyzePage() {
       if (trackId) form.append('track_id', trackId);
       if (kartId) form.append('kart_id', kartId);
       form.append('session_type', sessionType);
-      const res = await fetch(`${BACKEND_URL}/analyze/api/start`, { method: 'POST', body: form });
+      const res = await authenticatedFetch('/analyze/api/start', { method: 'POST', body: form });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);
