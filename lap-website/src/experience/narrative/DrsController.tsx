@@ -7,7 +7,7 @@ const DRS_DURATION = 2000;
 const DRS_DECAY_WINDOW = 500;
 const DRS_MAX_MULTIPLIER = 1.4;
 
-/** Pure tick function — exported for testing */
+/** Store-coupled tick function — exported for testing */
 export function tickDrs(dtMs: number) {
   const { drs } = useKernelStore.getState();
   if (!drs.active) return;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useKernelStore } from '@/experience/state/store';
 
 const MAX_JITTER = 8;
@@ -22,23 +22,11 @@ export function DeltaTickController() {
   const settled = useKernelStore((s) => s.hudDelta.settled);
   const setDeltaJitter = useKernelStore((s) => s.setDeltaJitter);
   const setDeltaValue = useKernelStore((s) => s.setDeltaValue);
-  const rafRef = useRef<number>(0);
 
   useEffect(() => {
     if (settled) return;
-
-    function tick() {
-      const jitter = computeDeltaJitter(maskCoverage);
-      setDeltaJitter(jitter);
-
-      const value = computeDeltaValue(BASE_DELTA, globalProgress);
-      setDeltaValue(value);
-
-      rafRef.current = requestAnimationFrame(tick);
-    }
-
-    rafRef.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(rafRef.current);
+    setDeltaJitter(computeDeltaJitter(maskCoverage));
+    setDeltaValue(computeDeltaValue(BASE_DELTA, globalProgress));
   }, [maskCoverage, globalProgress, settled, setDeltaJitter, setDeltaValue]);
 
   return null;
