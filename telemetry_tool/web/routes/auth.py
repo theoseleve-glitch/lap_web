@@ -4,6 +4,7 @@ import logging
 from flask import Blueprint, make_response, request, current_app, g
 
 from web.api_utils import api_response, api_error, ErrorCode
+from web.middleware.csrf import generate_csrf_token, set_csrf_cookie
 from web.rate_limit import rate_limit
 from web.validation import validate_body
 from web.schemas.auth import RegisterSchema, LoginSchema
@@ -62,6 +63,74 @@ def _get_conn():
     return get_db_connection()
 
 
+def _check_suspension(conn, user_id: int) -> str | None:
+    """Return suspension reason if user is suspended, else None."""
+    try:
+        row = conn.execute(
+            "SELECT suspension_reason FROM users "
+            "WHERE id = %(uid)s AND suspended_at IS NOT NULL",
+            {"uid": user_id},
+        ).fetchone()
+        if row:
+            data = dict(row) if not isinstance(row, dict) else row
+            return data.get("suspension_reason") or "Account suspended"
+        return None
+    except Exception:
+        logger.exception("Suspension check failed")
+        return None
+
+
+def _check_login_anomaly(conn, user_id: int, ip: str, user_agent: str) -> None:
+    """Detect login from a new country and send notification email.
+
+    Uses a simple IP-based approach: checks if this IP has been seen before
+    for this user in the audit_log. If not, sends a notification.
+    """
+    try:
+        # Check if this IP has been used before by this user
+        row = conn.execute(
+            "SELECT 1 FROM audit_log "
+            "WHERE user_id = %(uid)s AND ip_address = %(ip)s "
+            "AND action IN ('login_password', 'login_oauth', 'login_2fa') "
+            "LIMIT 1",
+            {"uid": user_id, "ip": ip},
+        ).fetchone()
+
+        if row is not None:
+            return  # Known IP — no anomaly
+
+        # New IP detected — check if user has any previous logins at all
+        prev = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM audit_log "
+            "WHERE user_id = %(uid)s "
+            "AND action IN ('login_password', 'login_oauth', 'login_2fa')",
+            {"uid": user_id},
+        ).fetchone()
+        prev_data = dict(prev) if prev and not isinstance(prev, dict) else (prev or {})
+
+        if prev_data.get("cnt", 0) <= 1:
+            return  # First or second login — don't alert on initial logins
+
+        # Get user email for notification
+        user_row = conn.execute(
+            "SELECT email FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+        if not user_row:
+            return
+        user_data = dict(user_row) if not isinstance(user_row, dict) else user_row
+
+        from auth.email import send_new_login_email
+        send_new_login_email(
+            user_data["email"],
+            device_info=user_agent[:200] if user_agent else "Unknown",
+            ip_address=ip or "Unknown",
+        )
+        logger.info("Login anomaly: new IP %s for user %s", ip, user_id)
+    except Exception:
+        logger.exception("Login anomaly check failed (non-fatal)")
+
+
 @bp.route("/register", methods=["POST"])
 @rate_limit(tier="auth")
 @validate_body(RegisterSchema)
@@ -118,6 +187,7 @@ def register():
         }
         resp = make_response(api_response(result, status=201))
         _set_refresh_cookie(resp, refresh_token)
+        set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except AuthError as e:
         status_code = 409 if e.code == "CONFLICT" else 400
@@ -132,6 +202,7 @@ def register():
 @validate_body(LoginSchema)
 def login():
     from auth.service import login_user, AuthError
+    from auth.lockout import check_lockout, record_failed_attempt, clear_attempts
 
     body = g.body  # validated LoginSchema
     email = body.email.strip().lower()
@@ -140,15 +211,57 @@ def login():
     if len(password) > _PASSWORD_MAX:
         return api_error(ErrorCode.VALIDATION_ERROR, "Password too long", status=400)
 
+    # Check account lockout before attempting auth
+    retry_after = check_lockout(email)
+    if retry_after is not None:
+        resp = make_response(api_error(
+            ErrorCode.RATE_LIMITED, "Too many failed attempts. Try again later.",
+            status=429,
+        ))
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
+
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
+    ua = request.headers.get("User-Agent", "")
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
     try:
-        result = login_user(conn, email, password, secret)
+        result = login_user(
+            conn, email, password, secret,
+            user_agent=ua, ip_address=ip,
+        )
+
+        # Check suspension
+        user_id = result.get("user", {}).get("id") if not result.get("requires_2fa") else None
+        if user_id:
+            suspended = _check_suspension(conn, user_id)
+            if suspended:
+                return api_error(
+                    ErrorCode.FORBIDDEN,
+                    f"Account suspended: {suspended}",
+                    status=403,
+                )
+
+        # Clear lockout on successful login
+        clear_attempts(email)
+
+        # If 2FA is required, return the temp token (no cookies set yet)
+        if result.get("requires_2fa"):
+            return api_response(result)
+
+        # Log successful login + anomaly detection
+        from auth.service import _log_audit
+        _log_audit(conn, result["user"]["id"], "login_password",
+                   {"ip": ip}, ip_address=ip, user_agent=ua)
+        _check_login_anomaly(conn, result["user"]["id"], ip, ua)
+
         resp = make_response(api_response(result))
         if result.get("refresh_token"):
             _set_refresh_cookie(resp, result["refresh_token"])
+        set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except AuthError as e:
+        record_failed_attempt(email)
         return api_error(ErrorCode.INVALID_CREDENTIALS, str(e), status=401)
     except Exception:
         logger.exception("Login failed unexpectedly")
@@ -228,6 +341,9 @@ def refresh():
         user_id = row["user_id"]
         old_token_id = row["id"]
 
+        ua = request.headers.get("User-Agent", "")
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+
         # Revoke the old refresh token (single-use rotation)
         conn.execute(
             "UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = %(id)s",
@@ -242,10 +358,10 @@ def refresh():
             days=current_app.config.get("JWT_REFRESH_EXPIRY_DAYS", 30)
         )
         conn.execute(
-            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at) "
-            "VALUES (%(user_id)s, %(token_hash)s, %(expires_at)s)",
+            "INSERT INTO refresh_tokens (user_id, token_hash, expires_at, user_agent, ip_address) "
+            "VALUES (%(user_id)s, %(token_hash)s, %(expires_at)s, %(ua)s, %(ip)s)",
             {"user_id": user_id, "token_hash": hash_refresh_token(new_refresh),
-             "expires_at": expires_at},
+             "expires_at": expires_at, "ua": ua[:500], "ip": ip[:45]},
         )
         conn.commit()
 
@@ -263,6 +379,7 @@ def refresh():
         }
         resp = make_response(api_response(result))
         _set_refresh_cookie(resp, new_refresh)
+        set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except Exception:
         logger.exception("Token refresh failed")
@@ -339,12 +456,24 @@ def oauth_callback(provider):
     secret = current_app.config["JWT_SECRET"]
     try:
         result = get_or_create_oauth_user(conn, provider, profile, secret)
+
+        # Log OAuth login in audit
+        ua = request.headers.get("User-Agent", "")
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        from auth.service import _log_audit
+        _log_audit(
+            conn, result["user"]["id"], f"login_oauth_{provider}",
+            {"ip": ip, "provider": provider},
+            ip_address=ip, user_agent=ua,
+        )
+
         # Redirect to frontend OAuth callback with access token in hash fragment.
         # Hash fragments never leave the browser (not in server logs or referrer).
         redirect_url = f"{frontend_url}/oauth-callback#access_token={result['access_token']}"
         resp = make_response(flask_redirect(redirect_url))
         if result.get("refresh_token"):
             _set_refresh_cookie(resp, result["refresh_token"])
+        set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except Exception as e:
         from auth.service import AuthError
@@ -352,6 +481,142 @@ def oauth_callback(provider):
             return flask_redirect(f"{frontend_url}/login?error=oauth_denied")
         logger.exception("OAuth user creation failed for %s", provider)
         return flask_redirect(f"{frontend_url}/login?error=oauth_failed")
+
+
+@bp.route("/forgot-password", methods=["POST"])
+@rate_limit(tier="auth")
+def forgot_password():
+    """Send a password-reset link if the email exists.
+
+    Always returns 200 to prevent email enumeration (timing-safe).
+    """
+    from auth.service import create_password_reset_token
+
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    if not email:
+        # Still return 200 for timing safety
+        return api_response({"message": "If an account exists, a reset link has been sent"})
+
+    conn = _get_conn()
+    token = create_password_reset_token(conn, email)
+
+    if token:
+        try:
+            from auth.email import send_password_reset_email
+            send_password_reset_email(email, token)
+        except Exception:
+            logger.warning("Password reset email failed for %s", email, exc_info=True)
+
+    return api_response({"message": "If an account exists, a reset link has been sent"})
+
+
+@bp.route("/reset-password", methods=["POST"])
+@rate_limit(tier="auth")
+def reset_password_route():
+    """Reset password using a valid reset token."""
+    from auth.service import reset_password
+
+    body = request.get_json(silent=True) or {}
+    token = (body.get("token") or "").strip()
+    new_password = body.get("new_password") or ""
+
+    if not token or not new_password:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR, "Token and new_password required", status=400,
+        )
+
+    if len(new_password) > _PASSWORD_MAX:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Password too long", status=400)
+
+    if len(new_password) < 8:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Password must be at least 8 characters", status=400)
+
+    conn = _get_conn()
+    success = reset_password(conn, token, new_password)
+
+    if not success:
+        return api_error(
+            ErrorCode.TOKEN_EXPIRED, "Invalid or expired reset token", status=400,
+        )
+    return api_response({"message": "Password has been reset"})
+
+
+@bp.route("/2fa/verify", methods=["POST"])
+@rate_limit(tier="auth")
+def verify_2fa():
+    """Complete login by verifying TOTP code after password auth.
+
+    Accepts temp_token (from login) + totp_code or backup_code.
+    """
+    from auth.service import (
+        verify_2fa_temp_token, complete_2fa_login, AuthError, _log_audit,
+    )
+
+    body = request.get_json(silent=True) or {}
+    temp_token = (body.get("temp_token") or "").strip()
+    totp_code = (body.get("totp_code") or "").strip()
+    backup_code = (body.get("backup_code") or "").strip()
+
+    if not temp_token:
+        return api_error(ErrorCode.VALIDATION_ERROR, "temp_token required", status=400)
+    if not totp_code and not backup_code:
+        return api_error(ErrorCode.VALIDATION_ERROR, "totp_code or backup_code required", status=400)
+
+    conn = _get_conn()
+    secret = current_app.config["JWT_SECRET"]
+
+    try:
+        user_id = verify_2fa_temp_token(temp_token, secret)
+    except AuthError as e:
+        return api_error(ErrorCode.TOKEN_EXPIRED, str(e), status=401)
+
+    # Fetch user TOTP secret
+    cur = conn.execute(
+        "SELECT totp_secret, totp_backup_codes FROM users WHERE id = %(uid)s",
+        {"uid": user_id},
+    )
+    user = cur.fetchone()
+    if user is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    verified = False
+
+    if totp_code:
+        from auth.totp import verify_totp
+        verified = verify_totp(user["totp_secret"], totp_code)
+    elif backup_code:
+        import json
+        from auth.totp import verify_backup_code
+        hashed_codes = json.loads(user["totp_backup_codes"] or "[]")
+        idx = verify_backup_code(backup_code, hashed_codes)
+        if idx is not None:
+            verified = True
+            # Consume the backup code (single-use)
+            hashed_codes.pop(idx)
+            conn.execute(
+                "UPDATE users SET totp_backup_codes = %(codes)s WHERE id = %(uid)s",
+                {"codes": json.dumps(hashed_codes), "uid": user_id},
+            )
+
+    if not verified:
+        return api_error(ErrorCode.INVALID_CREDENTIALS, "Invalid 2FA code", status=401)
+
+    # Log successful 2FA
+    ua = request.headers.get("User-Agent", "")
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    _log_audit(conn, user_id, "login_2fa", {"ip": ip}, ip_address=ip, user_agent=ua)
+
+    result = complete_2fa_login(
+        conn, user_id, secret,
+        user_agent=ua,
+        ip_address=ip,
+    )
+    resp = make_response(api_response(result))
+    if result.get("refresh_token"):
+        _set_refresh_cookie(resp, result["refresh_token"])
+    set_csrf_cookie(resp, generate_csrf_token())
+    return resp
 
 
 @bp.route("/verify-email", methods=["POST"])
@@ -381,6 +646,49 @@ def verify_email():
     return api_response({"message": "Email verified"})
 
 
+@bp.route("/resend-verification", methods=["POST"])
+@rate_limit(tier="auth")
+def resend_verification():
+    """Resend email verification link. Requires auth, rate-limited to 3/hour."""
+    user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=401)
+
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT email, email_verified FROM users WHERE id = %(uid)s",
+        {"uid": user_id},
+    ).fetchone()
+
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    user = dict(row) if not isinstance(row, dict) else row
+    if user.get("email_verified"):
+        return api_response({"message": "Email is already verified"})
+
+    # Generate new verification token
+    import secrets
+    token = secrets.token_urlsafe(32)
+    from datetime import datetime, timedelta, timezone
+    expires = datetime.now(timezone.utc) + timedelta(hours=24)
+
+    conn.execute(
+        "UPDATE users SET email_verify_token = %(token)s, "
+        "email_verify_expires = %(exp)s WHERE id = %(uid)s",
+        {"token": token, "exp": expires, "uid": user_id},
+    )
+    conn.commit()
+
+    try:
+        from auth.email import send_verification_email
+        send_verification_email(user["email"], token)
+    except Exception:
+        logger.exception("Failed to resend verification email to %s", user["email"])
+
+    return api_response({"message": "Verification email sent"})
+
+
 # ---------------------------------------------------------------------------
 # /api/v1/me — separate blueprint for authenticated API routes
 # ---------------------------------------------------------------------------
@@ -390,7 +698,7 @@ api_v1_bp = Blueprint("api_v1_auth", __name__, url_prefix="/api/v1")
 
 @api_v1_bp.route("/me", methods=["GET"])
 def me():
-    """Return current user profile. Requires auth."""
+    """Return current user profile with resolved entitlements. Requires auth."""
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(
@@ -399,7 +707,8 @@ def me():
 
     conn = _get_conn()
     cur = conn.execute(
-        "SELECT id, email, display_name, created_at FROM users WHERE id = %(user_id)s",
+        "SELECT id, email, display_name, created_at, plan_tier, subscription_status "
+        "FROM users WHERE id = %(user_id)s",
         {"user_id": user_id},
     )
     user = cur.fetchone()
@@ -407,4 +716,16 @@ def me():
         return api_error(
             ErrorCode.NOT_FOUND, "User not found", status=404,
         )
-    return api_response(dict(user))
+
+    result = dict(user)
+
+    # Resolve entitlements if PG is available (entitlements tables exist)
+    try:
+        from auth.entitlements import get_user_entitlements
+        workspace_id = getattr(g, "workspace_id", None)
+        result["entitlements"] = get_user_entitlements(conn, user_id, workspace_id)
+    except Exception:
+        # Graceful fallback — entitlements tables may not exist yet
+        pass
+
+    return api_response(result)

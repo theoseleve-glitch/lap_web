@@ -253,6 +253,10 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(api_v1_bp)
             app.before_request(auth_middleware)
             logger.debug("Registered auth blueprints and middleware")
+            # CSRF double-submit cookie validation (after auth, before tenant)
+            from .middleware.csrf import csrf_middleware
+            app.before_request(csrf_middleware)
+            logger.debug("Registered CSRF middleware")
             # Always initialize OAuth (binds to app); providers registered conditionally
             from auth.oauth import init_oauth
             init_oauth(app)
@@ -271,9 +275,10 @@ def create_app(config: Config | None = None) -> Flask:
             app.after_request(record_successful_usage)
             logger.debug("Registered entitlement middleware")
             from .routes.workspaces import bp as workspaces_bp
-            from .routes.teams import bp as teams_bp
+            from .routes.teams import bp as teams_bp, invitations_bp
             app.register_blueprint(workspaces_bp)
             app.register_blueprint(teams_bp)
+            app.register_blueprint(invitations_bp)
             logger.debug("Registered workspace and team blueprints")
             # Initialize Celery with Flask app context
             from celery_app import make_celery
@@ -310,6 +315,11 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.api_v1_billing import bp as api_v1_billing_bp
             app.register_blueprint(api_v1_billing_bp)
             logger.debug("Registered api_v1_billing blueprint")
+
+            # Support API (authenticated — ticket creation/listing)
+            from .routes.api_v1_support import bp as api_v1_support_bp
+            app.register_blueprint(api_v1_support_bp)
+            logger.debug("Registered api_v1_support blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

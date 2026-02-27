@@ -1,0 +1,62 @@
+"""CSRF protection via double-submit cookie pattern.
+
+On login/refresh, the auth routes set a ``csrf_token`` cookie (readable by JS).
+This middleware validates that the ``X-CSRF-Token`` header matches the cookie
+value on every state-changing request to ``/api/v1/*``.
+"""
+import logging
+import secrets
+
+from flask import request, current_app
+
+logger = logging.getLogger(__name__)
+
+_CSRF_COOKIE = "csrf_token"
+_CSRF_HEADER = "X-CSRF-Token"
+_EXEMPT_PATHS = {"/api/v1/billing/webhook"}
+_MUTATING_METHODS = {"POST", "PUT", "DELETE", "PATCH"}
+
+
+def csrf_middleware():
+    """Before-request: validate CSRF token on state-changing requests."""
+    if not current_app.config.get("AUTH_REQUIRED"):
+        return
+
+    if request.method not in _MUTATING_METHODS:
+        return
+
+    if not request.path.startswith("/api/v1/"):
+        return
+
+    if request.path in _EXEMPT_PATHS:
+        return
+
+    cookie_token = request.cookies.get(_CSRF_COOKIE)
+    header_token = request.headers.get(_CSRF_HEADER)
+
+    if not cookie_token or not header_token:
+        from web.api_utils import api_error, ErrorCode
+        return api_error(ErrorCode.FORBIDDEN, "CSRF token missing", status=403)
+
+    if not secrets.compare_digest(cookie_token, header_token):
+        from web.api_utils import api_error, ErrorCode
+        return api_error(ErrorCode.FORBIDDEN, "CSRF token mismatch", status=403)
+
+
+def generate_csrf_token() -> str:
+    """Generate a new CSRF token (64 URL-safe bytes)."""
+    return secrets.token_urlsafe(48)
+
+
+def set_csrf_cookie(response, token: str):
+    """Set the CSRF cookie on a response object."""
+    response.set_cookie(
+        _CSRF_COOKIE,
+        value=token,
+        httponly=False,  # JS must read this to set header
+        secure=True,
+        samesite="Lax",
+        max_age=30 * 24 * 3600,  # 30 days
+        path="/",
+    )
+    return response
