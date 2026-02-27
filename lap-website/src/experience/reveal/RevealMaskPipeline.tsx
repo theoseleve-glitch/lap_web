@@ -182,15 +182,15 @@ export function RevealMaskPipeline() {
     gl.setRenderTarget(maskFboA);
     gl.render(quadScene, quadCamera);
 
-    // 2. DECAY PASS: decay persistence
+    // 2. DECAY PASS: decay persistence (or instant clear for reduced motion)
     decayMat.uniforms.tMask.value = maskFboA.texture;
-    decayMat.uniforms.uDecay.value = getDecayFactor();
+    decayMat.uniforms.uDecay.value = reducedMotion ? 0.0 : getDecayFactor();
 
     quadMesh.material = decayMat;
     gl.setRenderTarget(maskFboB);
     gl.render(quadScene, quadCamera);
 
-    // 3. BLUR PASS (high tier only): separable Gaussian
+    // 3. BLUR PASS (high tier only, skip for reduced motion): separable Gaussian
     if (qualityTier === 'high' && !reducedMotion) {
       // Horizontal
       blurMatH.uniforms.tMask.value = maskFboB.texture;
