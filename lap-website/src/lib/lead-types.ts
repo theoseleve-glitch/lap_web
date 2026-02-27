@@ -14,6 +14,7 @@ export interface LeadPayload {
   sourcePath?: string;
   utm?: Record<string, string>;
   sessionId?: string;
+  challengeToken?: string;
 }
 
 export interface LeadApiSuccess {
