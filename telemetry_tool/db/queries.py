@@ -526,11 +526,13 @@ INSERT_THEORETICAL_DATA = """
 INSERT OR REPLACE INTO theoretical_data (
     session_id, theoretical_time_s, actual_best_time_s,
     gap_pct, simulation_method, speed_profile_json,
-    distance_json, metrics_json
+    distance_json, metrics_json,
+    corner_coaching_json, delta_map_json, session_scalars_json
 ) VALUES (
     :session_id, :theoretical_time_s, :actual_best_time_s,
     :gap_pct, :simulation_method, :speed_profile_json,
-    :distance_json, :metrics_json
+    :distance_json, :metrics_json,
+    :corner_coaching_json, :delta_map_json, :session_scalars_json
 );
 """
 
