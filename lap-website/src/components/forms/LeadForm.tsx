@@ -5,7 +5,6 @@ import type { FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { LeadType } from '@/lib/lead-types';
 import { b2cPlans, b2bCard } from '@/data/pricing';
-import { personaPages } from '@/data/personas';
 import {
   getAttributionFromCookie,
   getSessionIdFromCookie,
@@ -251,11 +250,10 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
         >
           <option value="">Select a persona</option>
-          {personaPages.map((persona) => (
-            <option key={persona.slug} value={persona.slug}>
-              {persona.title}
-            </option>
-          ))}
+          <option value="drivers">For Drivers</option>
+          <option value="circuits">For Circuits</option>
+          <option value="teams">For Teams</option>
+          <option value="endurance">For Endurance Programs</option>
         </select>
       </div>
 

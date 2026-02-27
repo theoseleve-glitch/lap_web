@@ -7,7 +7,6 @@ import { S2Pipeline } from '@/components/rooms/S2Pipeline';
 import { S2Proof } from '@/components/rooms/S2Proof';
 import { S3Product } from '@/components/rooms/S3Product';
 import { S4WorkflowCoverage } from '@/components/rooms/S4WorkflowCoverage';
-import { S5Personas } from '@/components/rooms/S5Personas';
 import { PitStop } from '@/components/rooms/PitStop';
 import { Garage } from '@/components/rooms/Garage';
 import { Podium } from '@/components/rooms/Podium';
@@ -22,7 +21,6 @@ export default function Home() {
       <S2Proof />
       <S3Product />
       <S4WorkflowCoverage />
-      <S5Personas />
       <PitStop />
       <Garage />
       <Podium />

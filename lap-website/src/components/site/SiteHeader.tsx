@@ -7,12 +7,7 @@ import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
 import { LocaleSwitcher } from '@/components/site/LocaleSwitcher';
 
-interface SiteHeaderProps {
-  showIndexToggle?: boolean;
-  onIndexToggle?: () => void;
-}
-
-export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeaderProps) {
+export function SiteHeader() {
   const pathname = usePathname();
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
@@ -53,16 +48,6 @@ export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeade
         </Link>
 
         <nav aria-label="Primary" className="flex flex-wrap items-center gap-2">
-          {showIndexToggle && onIndexToggle && (
-            <button
-              type="button"
-              className="px-3 py-1 border border-steel/40 text-xs font-telemetry tracking-[0.12em] uppercase text-steel hover:text-chalk hover:border-pit-orange transition-colors duration-[420ms]"
-              onClick={onIndexToggle}
-              aria-label="Open section index"
-            >
-              Index
-            </button>
-          )}
           {topNavLinks.map((link) => {
             const active = pathname === link.href;
             return (

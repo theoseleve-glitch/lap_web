@@ -11,13 +11,6 @@ const ATTRIBUTION_KEYS = [
   'fbclid',
 ];
 
-const PERSONA_PATHS: Record<string, string> = {
-  '/drivers': 'drivers',
-  '/circuits': 'circuits',
-  '/teams': 'teams',
-  '/endurance': 'endurance',
-};
-
 function parseAttribution(request: NextRequest): Record<string, string> {
   const result: Record<string, string> = {};
   for (const key of ATTRIBUTION_KEYS) {
@@ -32,14 +25,6 @@ function parseAttribution(request: NextRequest): Record<string, string> {
 function detectPersona(request: NextRequest): string {
   const explicitPersona = request.nextUrl.searchParams.get('persona');
   if (explicitPersona) return explicitPersona;
-
-  const pathname = request.nextUrl.pathname;
-  for (const [path, persona] of Object.entries(PERSONA_PATHS)) {
-    if (pathname.startsWith(path)) {
-      return persona;
-    }
-  }
-
   return request.cookies.get('lap_persona')?.value ?? 'drivers';
 }
 
