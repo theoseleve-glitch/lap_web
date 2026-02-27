@@ -48,7 +48,7 @@ export const capabilityClaims: CapabilityClaim[] = [
     id: 'race_strategy',
     claim: 'Race Strategy Control Room dashboards are available for enterprise operators.',
     capability: 'Live race strategy dashboards',
-    status: 'enterprise_on_request',
+    status: 'available_now',
     surfaces: ['product', 'circuits', 'endurance'],
   },
   {
@@ -64,13 +64,6 @@ export const capabilityClaims: CapabilityClaim[] = [
     capability: 'Sim telemetry ingestion',
     status: 'roadmap',
     surfaces: ['waitlist', 'pricing', 'drivers'],
-  },
-  {
-    id: 'webhooks_tiering',
-    claim: 'Advanced webhook tiering is a roadmap item and not yet generally available.',
-    capability: 'Tiered webhook delivery',
-    status: 'roadmap',
-    surfaces: ['pricing', 'teams'],
   },
   {
     id: 'audit_traceability',

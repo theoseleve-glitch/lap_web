@@ -5,7 +5,6 @@ export interface NavLink {
 
 export const topNavLinks: NavLink[] = [
   { label: 'Product', href: '/product' },
-  { label: 'Features', href: '/drivers' },
   { label: 'Pricing', href: '/pricing' },
   { label: 'Demo', href: '/demo' },
   { label: 'Contact', href: '/contact' },

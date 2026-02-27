@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import type { LeadType } from '@/lib/lead-types';
-import { b2bPlans, b2cPlans } from '@/data/pricing';
+import { b2cPlans, b2bCard } from '@/data/pricing';
 import { personaPages } from '@/data/personas';
 import {
   getAttributionFromCookie,
@@ -67,8 +67,9 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
 
   const requiredFields = useMemo(() => requiredFieldsFor(type), [type]);
   const planOptions = useMemo(() => {
-    const list = [...b2cPlans, ...b2bPlans];
-    return list.map((plan) => ({ label: plan.name, value: plan.name }));
+    const options = b2cPlans.map((plan) => ({ label: plan.name, value: plan.name }));
+    options.push({ label: b2bCard.name, value: b2bCard.name });
+    return options;
   }, []);
 
   const showCompany = type === 'demo' || type === 'book' || type === 'contact';

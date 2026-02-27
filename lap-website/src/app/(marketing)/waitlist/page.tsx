@@ -8,7 +8,7 @@ export default function WaitlistPage() {
     <PageShell
       eyebrow="Roadmap Waitlist"
       title="Join the Coming-Soon Waitlist"
-      description="Roadmap-only modules, including sim telemetry ingestion and webhook tiering, are captured through this waitlist flow."
+      description="Upcoming capabilities — sim telemetry ingestion and multisource import — are captured through this waitlist."
     >
       <section className="grid lg:grid-cols-[2fr_1fr] gap-6">
         <article className="border border-steel/20 bg-concrete/40 p-5">
@@ -21,7 +21,7 @@ export default function WaitlistPage() {
             <h2 className="font-monument text-[var(--text-h3)] mb-2">Roadmap Items</h2>
             <ul className="space-y-2 text-sm text-steel">
               <li>Sim telemetry ingestion</li>
-              <li>Webhook tiering by plan</li>
+              <li>Multisource import</li>
             </ul>
           </article>
           <article className="border border-steel/20 p-4">

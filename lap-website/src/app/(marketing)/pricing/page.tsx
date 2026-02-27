@@ -1,169 +1,188 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useCallback } from 'react';
 import { PageShell } from '@/components/site/PageShell';
 import { PricingTable } from '@/components/ui/PricingTable';
-import { StatusPill } from '@/components/site/StatusPill';
+import { StampButton } from '@/components/ui/StampButton';
 import {
-  addons,
-  b2bPlans,
   b2cPlans,
+  b2bCard,
   featureEligibilityMatrix,
+  dataLifecycle,
 } from '@/data/pricing';
-import { claimsByStatus } from '@/data/claim-registry';
+import type { EligibilityRow } from '@/data/pricing';
 import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
-import { getVariantForKey } from '@/lib/experiments';
+
+const GROUP_LABELS: Record<EligibilityRow['group'], string> = {
+  engineer: 'ENGINEER',
+  strategist: 'STRATEGIST',
+  data: 'DATA & OPS',
+};
+
+const GROUP_ORDER: EligibilityRow['group'][] = ['engineer', 'strategist', 'data'];
 
 export default function PricingPage() {
-  const [audience, setAudience] = useState<'b2c' | 'b2b'>('b2c');
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual');
-  const [pricingVariant, setPricingVariant] = useState<'standard_table' | 'comparison_first'>(
-    'standard_table',
-  );
 
-  useEffect(() => {
-    const variant = getVariantForKey('pricing', 'standard_table');
-    setPricingVariant(variant === 'comparison_first' ? 'comparison_first' : 'standard_table');
-  }, []);
+  const toggleBilling = useCallback(() => {
+    const next = billing === 'monthly' ? 'annual' : 'monthly';
+    setBilling(next);
+    trackPricingToggle(next);
+  }, [billing]);
+
+  /* Group rows by their group field, preserving order */
+  const groupedRows = GROUP_ORDER.map((group) => ({
+    group,
+    label: GROUP_LABELS[group],
+    rows: featureEligibilityMatrix.filter((r) => r.group === group),
+  }));
+
+  /* JSON-LD structured data for SEO — hardcoded, no user input */
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'WebPage',
+    name: 'LAP Pricing',
+    url: 'https://www.lap-coach.racing/pricing',
+  };
 
   return (
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify({
-            '@context': 'https://schema.org',
-            '@type': 'WebPage',
-            name: 'LAP Pricing',
-            url: 'https://www.lap-coach.racing/pricing',
-          }),
-        }}
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <PageShell
         eyebrow="Pricing"
-        title="Plans for Drivers, Coaches, and Circuits"
-        description="Self-serve plans for individual drivers. Contact us for team, circuit, and enterprise setups."
+        title="Choose Your Depth"
+        description="Three tiers for individual drivers. Custom pricing for teams and circuits."
       >
-      <section className="mb-8 flex flex-wrap items-center gap-3">
-        <button
-          className={`px-4 py-2 border font-telemetry text-[11px] tracking-[0.12em] uppercase ${
-            audience === 'b2c' ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
-          }`}
-          onClick={() => setAudience('b2c')}
-        >
-          Drivers
-        </button>
-        <button
-          className={`px-4 py-2 border font-telemetry text-[11px] tracking-[0.12em] uppercase ${
-            audience === 'b2b' ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
-          }`}
-          onClick={() => setAudience('b2b')}
-        >
-          Circuits / Teams
-        </button>
-        {audience === 'b2c' && (
-          <button
-            className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-[11px] tracking-[0.12em] uppercase"
-            onClick={() => {
-              const next = billing === 'monthly' ? 'annual' : 'monthly';
-              setBilling(next);
-              trackPricingToggle(next);
-            }}
+        {/* Billing toggle */}
+        <div className="flex items-center justify-center gap-3 mb-8">
+          <span
+            className={`font-telemetry text-[11px] ${
+              billing === 'monthly' ? 'text-chalk' : 'text-steel'
+            }`}
           >
-            Billing: {billing}
+            MONTHLY
+          </span>
+          <button
+            className="relative w-12 h-6 bg-concrete border border-steel/30"
+            onClick={toggleBilling}
+            aria-label={`Switch to ${billing === 'monthly' ? 'annual' : 'monthly'} billing`}
+          >
+            <span
+              className="absolute top-1 w-4 h-4 bg-pit-orange transition-all duration-300"
+              style={{ left: billing === 'annual' ? 'calc(100% - 20px)' : '4px' }}
+            />
           </button>
-        )}
-      </section>
-
-      {pricingVariant === 'standard_table' && (
-        <section className="mb-10">
-          <PricingTable
-            plans={audience === 'b2c' ? b2cPlans : b2bPlans}
-            billingPeriod={billing}
-            onCtaClick={(planName) => trackCtaClick(planName, 'pricing', audience)}
-          />
-        </section>
-      )}
-
-      <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-4">Add-ons and Availability</h2>
-        <div className="grid md:grid-cols-2 gap-3">
-          {addons.map((addon) => (
-            <article key={addon.name} className="border border-steel/20 bg-concrete/40 p-4">
-              <div className="flex items-start justify-between gap-2 mb-2">
-                <h3 className="font-body text-chalk">{addon.name}</h3>
-                <StatusPill status={addon.status} />
-              </div>
-              <p className="text-steel text-sm">{addon.price}</p>
-              {addon.note && <p className="text-pit-orange text-xs mt-2">{addon.note}</p>}
-            </article>
-          ))}
+          <span
+            className={`font-telemetry text-[11px] ${
+              billing === 'annual' ? 'text-chalk' : 'text-steel'
+            }`}
+          >
+            ANNUAL
+          </span>
         </div>
-      </section>
 
-      <section className="mb-10 overflow-x-auto">
-        <h2 className="font-monument text-[var(--text-h2)] mb-4">Feature Eligibility Matrix</h2>
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="bg-concrete">
-              <th className="border border-steel/20 p-2 text-left">Feature</th>
-              <th className="border border-steel/20 p-2 text-left">Starter</th>
-              <th className="border border-steel/20 p-2 text-left">Performance</th>
-              <th className="border border-steel/20 p-2 text-left">Pro Racer</th>
-              <th className="border border-steel/20 p-2 text-left">Circuit Pro</th>
-              <th className="border border-steel/20 p-2 text-left">Enterprise</th>
-            </tr>
-          </thead>
-          <tbody>
-            {featureEligibilityMatrix.map((row) => (
-              <tr key={row.feature}>
-                <td className="border border-steel/20 p-2">{row.feature}</td>
-                <td className="border border-steel/20 p-2">{row.starter}</td>
-                <td className="border border-steel/20 p-2">{row.performance}</td>
-                <td className="border border-steel/20 p-2">{row.proRacer}</td>
-                <td className="border border-steel/20 p-2">{row.circuitPro}</td>
-                <td className="border border-steel/20 p-2">{row.enterprise}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      {pricingVariant === 'comparison_first' && (
-        <section className="mb-10">
+        {/* Pricing Table + B2B card */}
+        <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
           <PricingTable
-            plans={audience === 'b2c' ? b2cPlans : b2bPlans}
+            plans={b2cPlans}
             billingPeriod={billing}
-            onCtaClick={(planName) => trackCtaClick(planName, 'pricing', audience)}
+            onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
           />
-        </section>
-      )}
 
-        <section className="grid md:grid-cols-3 gap-4">
-          <article className="border border-steel/20 p-4">
-            <h2 className="font-monument text-[var(--text-h3)] mb-3">Available Now</h2>
-            <ul className="space-y-2 text-sm text-steel">
-              {claimsByStatus.available_now.map((claim) => (
-                <li key={claim.id}>{claim.claim}</li>
+          {/* B2B card */}
+          <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
+            <p className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase mb-2">
+              B2B
+            </p>
+            <h3 className="font-monument text-[var(--text-h3)] mb-4">{b2bCard.name}</h3>
+            <ul className="space-y-2 mb-6">
+              {b2bCard.features.map((feature) => (
+                <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
+                  <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
+                  {feature}
+                </li>
               ))}
             </ul>
-          </article>
-          <article className="border border-steel/20 p-4">
-            <h2 className="font-monument text-[var(--text-h3)] mb-3">Enterprise / On Request</h2>
-            <ul className="space-y-2 text-sm text-steel">
-              {claimsByStatus.enterprise_on_request.map((claim) => (
-                <li key={claim.id}>{claim.claim}</li>
+            <StampButton
+              href={b2bCard.ctaHref}
+              onClick={() => trackCtaClick('contact_sales', 'pricing', 'b2b')}
+              className="w-full"
+            >
+              {b2bCard.cta}
+            </StampButton>
+          </div>
+        </section>
+
+        {/* Feature Eligibility Matrix */}
+        <section className="mb-10 overflow-x-auto">
+          <h2 className="font-monument text-[var(--text-h2)] mb-4">Feature Eligibility Matrix</h2>
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-concrete">
+                <th className="border border-steel/20 p-2 text-left text-steel">Feature</th>
+                <th className="border border-steel/20 p-2 text-left text-steel">Demo</th>
+                <th className="border border-steel/20 p-2 text-left text-steel">Racer</th>
+                <th className="border border-steel/20 p-2 text-left text-steel">World-Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedRows.map(({ group, label, rows }) => (
+                <>
+                  <tr key={`group-${group}`}>
+                    <td
+                      colSpan={4}
+                      className="bg-asphalt/60 font-monument text-xs tracking-[0.12em] uppercase p-2 text-chalk border border-steel/20"
+                    >
+                      {label}
+                    </td>
+                  </tr>
+                  {rows.map((row) => (
+                    <tr key={row.feature}>
+                      <td className="border border-steel/20 p-2 text-steel">{row.feature}</td>
+                      <td className="border border-steel/20 p-2 text-chalk">{row.demo}</td>
+                      <td className="border border-steel/20 p-2 text-chalk">{row.racer}</td>
+                      <td className="border border-steel/20 p-2 text-chalk">{row.worldClass}</td>
+                    </tr>
+                  ))}
+                </>
               ))}
-            </ul>
-          </article>
-          <article className="border border-steel/20 p-4">
-            <h2 className="font-monument text-[var(--text-h3)] mb-3">Roadmap / Coming Soon</h2>
-            <ul className="space-y-2 text-sm text-steel">
-              {claimsByStatus.roadmap.map((claim) => (
-                <li key={claim.id}>{claim.claim}</li>
-              ))}
-            </ul>
-          </article>
+            </tbody>
+          </table>
+        </section>
+
+        {/* Data Lifecycle Transparency */}
+        <section className="mb-10">
+          <h2 className="font-monument text-[var(--text-h2)] mb-4">
+            Data Lifecycle Transparency
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {dataLifecycle.map((item) => (
+              <article
+                key={item.category}
+                className="border border-steel/20 bg-concrete/40 p-5"
+              >
+                <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+                  {item.category}
+                </h3>
+                <p className="text-steel text-sm mb-4">{item.description}</p>
+                <div className="space-y-2 mb-4">
+                  {item.tiers.map((tier) => (
+                    <div
+                      key={tier.label}
+                      className="flex justify-between text-sm font-body"
+                    >
+                      <span className="text-steel">{tier.label}</span>
+                      <span className="text-chalk">{tier.value}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-steel/60 text-xs italic">{item.note}</p>
+              </article>
+            ))}
+          </div>
         </section>
       </PageShell>
     </>

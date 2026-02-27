@@ -1,215 +1,198 @@
 import type { CapabilityStatus } from '@/data/claim-registry';
 
+export type BillingCycle = 'monthly' | 'annual';
+
 export interface Plan {
   name: string;
+  slug: string;
   priceMonthly: string;
   priceAnnual: string;
+  priceAnnualPerMonth: string;
+  annualTotal: string;
+  savingsPercent: string;
   features: Record<string, string>;
   cta: string;
   ctaHref: string;
-  personaLabel: string;
-  personaHref: string;
   highlighted?: boolean;
   availability: CapabilityStatus;
 }
 
 export const b2cPlans: Plan[] = [
   {
-    name: 'STARTER',
+    name: 'DEMO',
+    slug: 'demo',
     priceMonthly: 'Free',
     priceAnnual: 'Free',
+    priceAnnualPerMonth: 'Free',
+    annualTotal: '',
+    savingsPercent: '',
     features: {
-      Sessions: '3 / month',
-      Scoring: 'Preview',
-      Coaching: 'Not included',
-      History: '30 days',
-      Reports: 'Not included',
-      Team: 'Single user',
+      'Analysis Reports': '1 full report',
+      '4-Pillar Scoring': 'Full',
+      'Corner Coaching': 'Full',
+      'Session Intelligence': 'Full',
+      'Comparison & Progress': '—',
+      'Coaching Plans': '—',
+      'Visualization': '—',
+      'Race Strategy Dashboard': 'Limited (3h races)',
+      'Live Monitoring': '—',
+      'Pit Stop Planning': '—',
+      'Incident Queue': '—',
+      'Raw Telemetry Retention': '1 month',
+      'Report Retention': 'Indefinite',
+      'Exports': 'CSV',
+      'Seats': '1',
     },
     cta: 'Start Free',
-    ctaHref: '/register?source=starter',
-    personaLabel: 'Built for drivers',
-    personaHref: '/drivers',
+    ctaHref: '/register?source=demo',
     availability: 'available_now',
   },
   {
-    name: 'PERFORMANCE',
-    priceMonthly: 'EUR 8.99 / mo',
-    priceAnnual: 'EUR 69 / yr',
+    name: 'RACER',
+    slug: 'racer',
+    priceMonthly: '€8.99 / mo',
+    priceAnnual: '€69 / yr',
+    priceAnnualPerMonth: '€5.75 / mo',
+    annualTotal: '€69/yr',
+    savingsPercent: '36',
     features: {
-      Sessions: 'Unlimited',
-      Scoring: 'Full 4-pillar',
-      Coaching: 'Corner-by-corner',
-      History: '1 year',
-      Reports: 'PDF export',
-      Team: 'Single user',
+      'Analysis Reports': '10 / month',
+      '4-Pillar Scoring': 'Full',
+      'Corner Coaching': 'Full',
+      'Session Intelligence': 'Full',
+      'Comparison & Progress': '—',
+      'Coaching Plans': 'Full',
+      'Visualization': 'Full',
+      'Race Strategy Dashboard': 'Full',
+      'Live Monitoring': 'Full',
+      'Pit Stop Planning': 'Full',
+      'Incident Queue': 'Full',
+      'Raw Telemetry Retention': '3 months',
+      'Report Retention': 'Indefinite',
+      'Exports': 'PDF + CSV',
+      'Seats': '1',
     },
     cta: 'Upgrade',
-    ctaHref: '/billing?plan=PERFORMANCE&billing=annual',
-    personaLabel: 'Built for drivers',
-    personaHref: '/drivers',
+    ctaHref: '/billing?plan=RACER&billing=annual',
     highlighted: true,
     availability: 'available_now',
   },
   {
-    name: 'PRO RACER',
-    priceMonthly: 'EUR 13.99 / mo',
-    priceAnnual: 'EUR 109 / yr',
+    name: 'WORLD-CLASS',
+    slug: 'world-class',
+    priceMonthly: '€13.99 / mo',
+    priceAnnual: '€109 / yr',
+    priceAnnualPerMonth: '€9.08 / mo',
+    annualTotal: '€109/yr',
+    savingsPercent: '35',
     features: {
-      Sessions: 'Unlimited',
-      Scoring: 'Full 4-pillar',
-      Coaching: 'Corner + development plans',
-      History: 'Unlimited',
-      Reports: 'PDF + API',
-      Team: 'Up to 5 seats',
+      'Analysis Reports': 'Unlimited',
+      '4-Pillar Scoring': 'Full',
+      'Corner Coaching': 'Full',
+      'Session Intelligence': 'Full',
+      'Comparison & Progress': 'Full',
+      'Coaching Plans': 'Full',
+      'Visualization': 'Full',
+      'Race Strategy Dashboard': 'Full',
+      'Live Monitoring': 'Full',
+      'Pit Stop Planning': 'Full',
+      'Incident Queue': 'Full',
+      'Raw Telemetry Retention': '12 months',
+      'Report Retention': 'Indefinite',
+      'Exports': 'PDF + CSV + API',
+      'Seats': 'Up to 5',
     },
-    cta: 'Go Pro',
-    ctaHref: '/billing?plan=PRO%20RACER&billing=annual',
-    personaLabel: 'Built for drivers and coaches',
-    personaHref: '/teams',
+    cta: 'Go World-Class',
+    ctaHref: '/billing?plan=WORLD-CLASS&billing=annual',
     availability: 'available_now',
   },
 ];
 
-export const b2bPlans: Plan[] = [
-  {
-    name: 'TRACK ESSENTIAL',
-    priceMonthly: 'Contact Sales',
-    priceAnnual: 'Contact Sales',
-    features: {
-      Drivers: 'Up to 50 / event',
-      Reports: 'Standard',
-      Timing: 'Manual CSV',
-      Support: 'Email',
-      Setup: 'Self-serve docs',
-    },
-    cta: 'Contact Sales',
-    ctaHref: '/contact?plan=TRACK%20ESSENTIAL',
-    personaLabel: 'Built for circuits',
-    personaHref: '/circuits',
-    availability: 'available_now',
-  },
-  {
-    name: 'CIRCUIT PRO',
-    priceMonthly: 'Contact Sales',
-    priceAnnual: 'Contact Sales',
-    features: {
-      Drivers: 'Up to 200 / event',
-      Reports: 'Branded',
-      Timing: 'API integration',
-      Support: 'Priority',
-      Setup: 'Guided onboarding',
-    },
-    cta: 'Contact Sales',
-    ctaHref: '/demo?plan=CIRCUIT%20PRO',
-    personaLabel: 'Built for circuits and operators',
-    personaHref: '/circuits',
-    highlighted: true,
-    availability: 'available_now',
-  },
-  {
-    name: 'CIRCUIT ENTERPRISE',
-    priceMonthly: 'Contact Sales',
-    priceAnnual: 'Contact Sales',
-    features: {
-      Drivers: 'Unlimited',
-      Reports: 'White-label',
-      Timing: 'Live + API',
-      Support: 'Dedicated + SLA',
-      Setup: 'Operator onboarding',
-    },
-    cta: 'Contact Sales',
-    ctaHref: '/contact?plan=CIRCUIT%20ENTERPRISE',
-    personaLabel: 'Built for enterprise teams',
-    personaHref: '/teams',
-    availability: 'enterprise_on_request',
-  },
-];
-
-export interface Addon {
+export interface B2BCard {
   name: string;
-  price: string;
-  status: CapabilityStatus;
-  note?: string;
+  features: string[];
+  cta: string;
+  ctaHref: string;
 }
 
-export const addons: Addon[] = [
-  {
-    name: 'Advanced timing integration',
-    price: '+EUR 490 / yr',
-    status: 'available_now',
-  },
-  {
-    name: 'Endurance module (6h+ events)',
-    price: '+EUR 390 / yr',
-    status: 'enterprise_on_request',
-  },
-  {
-    name: 'White-label reporting',
-    price: '+EUR 990 / yr',
-    status: 'enterprise_on_request',
-  },
-  {
-    name: 'Premium SLA (4h response)',
-    price: '+EUR 690 / yr',
-    status: 'enterprise_on_request',
-  },
-  {
-    name: 'Webhook tiering',
-    price: 'Roadmap',
-    status: 'roadmap',
-    note: 'Coming soon',
-  },
-];
+export const b2bCard: B2BCard = {
+  name: 'FOR TEAMS & CIRCUITS',
+  features: [
+    'Hardware for data logging',
+    'Live telemetry software',
+    'Branded driver reports',
+    'Custom retention & compliance',
+    'Dedicated onboarding',
+  ],
+  cta: 'Contact Sales',
+  ctaHref: '/contact?plan=b2b',
+};
 
 export interface EligibilityRow {
   feature: string;
-  starter: string;
-  performance: string;
-  proRacer: string;
-  circuitPro: string;
-  enterprise: string;
+  group: 'engineer' | 'strategist' | 'data';
+  demo: string;
+  racer: string;
+  worldClass: string;
 }
 
 export const featureEligibilityMatrix: EligibilityRow[] = [
+  // ENGINEER
+  { feature: 'Upload & Analyze', group: 'engineer', demo: '1 report', racer: '10/mo', worldClass: 'Unlimited' },
+  { feature: '4-Pillar Scoring', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Corner-by-Corner Coaching', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Session Intelligence Tabs', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Comparison & Progress', group: 'engineer', demo: '—', racer: '—', worldClass: 'Full' },
+  { feature: 'Coaching Plans & Drills', group: 'engineer', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Visualization Workspace', group: 'engineer', demo: '—', racer: 'Full', worldClass: 'Full' },
+  // STRATEGIST
+  { feature: 'Race Strategy Dashboard', group: 'strategist', demo: '3h limit', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Live Pace & Stint Monitoring', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Pit Stop Planning', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Incident & Alert Queue', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
+  // DATA & OPS
+  { feature: 'Track/Driver/Kart Management', group: 'data', demo: 'Basic', racer: 'Full', worldClass: 'Full' },
+  { feature: 'PDF Reports', group: 'data', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'API Access', group: 'data', demo: '—', racer: '—', worldClass: 'Full' },
+  { feature: 'Team Seats', group: 'data', demo: '1', racer: '1', worldClass: 'Up to 5' },
+  { feature: 'Raw Telemetry Retention', group: 'data', demo: '1 month', racer: '3 months', worldClass: '12 months' },
+  { feature: 'Report Retention', group: 'data', demo: 'Indefinite', racer: 'Indefinite', worldClass: 'Indefinite' },
+];
+
+export interface DataLifecycleItem {
+  category: string;
+  description: string;
+  tiers: { label: string; value: string }[];
+  note: string;
+}
+
+export const dataLifecycle: DataLifecycleItem[] = [
   {
-    feature: 'Upload and analyze wizard',
-    starter: 'Yes',
-    performance: 'Yes',
-    proRacer: 'Yes',
-    circuitPro: 'Yes',
-    enterprise: 'Yes',
+    category: 'RAW TELEMETRY',
+    description: '100MB–8GB per session',
+    tiers: [
+      { label: 'Demo', value: '1 month → auto-deleted' },
+      { label: 'Racer', value: '3 months → auto-deleted' },
+      { label: 'World-Class', value: '12 months → auto-deleted' },
+    ],
+    note: 'Raw files are large. After expiry, they\'re automatically deleted. Export before expiry — it\'s always yours.',
   },
   {
-    feature: 'Session intelligence tabs',
-    starter: 'Preview',
-    performance: 'Yes',
-    proRacer: 'Yes',
-    circuitPro: 'Yes',
-    enterprise: 'Yes',
+    category: 'PROCESSED REPORTS',
+    description: '1–5MB',
+    tiers: [
+      { label: 'All B2C tiers', value: 'Stored indefinitely' },
+      { label: 'B2B', value: '2 years' },
+    ],
+    note: 'Reports are your permanent record. Lightweight. No extra cost.',
   },
   {
-    feature: 'Driver-vs-driver comparison',
-    starter: 'No',
-    performance: 'No',
-    proRacer: 'Yes',
-    circuitPro: 'Yes',
-    enterprise: 'Yes',
-  },
-  {
-    feature: 'Control room dashboards',
-    starter: 'No',
-    performance: 'No',
-    proRacer: 'No',
-    circuitPro: 'On request',
-    enterprise: 'Yes',
-  },
-  {
-    feature: 'Sim telemetry ingestion',
-    starter: 'Roadmap',
-    performance: 'Roadmap',
-    proRacer: 'Roadmap',
-    circuitPro: 'Roadmap',
-    enterprise: 'Roadmap',
+    category: 'LIVE EVENT DATA',
+    description: 'High-frequency telemetry',
+    tiers: [
+      { label: 'Raw stream', value: 'Temporary (flushed after event)' },
+      { label: 'Summaries + leaderboard', value: 'Persist' },
+    ],
+    note: 'Real-time data serves the moment. Summaries last.',
   },
 ];

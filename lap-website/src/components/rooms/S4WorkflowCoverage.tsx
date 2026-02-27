@@ -1,7 +1,23 @@
 import Link from 'next/link';
 import { workflowModules } from '@/data/workflow-modules';
+import type { WorkflowModule } from '@/data/workflow-modules';
 import { StatusPill } from '@/components/site/StatusPill';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
+
+const GROUP_LABELS: Record<
+  WorkflowModule['group'],
+  { label: string; color: string }
+> = {
+  engineer: { label: 'ENGINEER', color: 'text-acid-green' },
+  strategist: { label: 'STRATEGIST', color: 'text-pit-orange' },
+  operations: { label: 'OPERATIONS', color: 'text-steel' },
+};
+
+const GROUP_ORDER: WorkflowModule['group'][] = [
+  'engineer',
+  'strategist',
+  'operations',
+];
 
 export function S4WorkflowCoverage() {
   return (
@@ -25,22 +41,42 @@ export function S4WorkflowCoverage() {
           />
         </div>
 
-        <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-4">
-          {workflowModules.map((module) => (
-            <article key={module.id} className="border border-steel/20 bg-concrete/40 p-4">
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <h3 className="font-monument text-[var(--text-h3)]">{module.title}</h3>
-                <StatusPill status={module.status} />
-              </div>
-              <p className="text-sm text-steel mb-3">{module.summary}</p>
-              <ul className="space-y-1 text-xs text-chalk">
-                {module.steps.slice(0, 3).map((step) => (
-                  <li key={step}>- {step}</li>
+        {GROUP_ORDER.map((group) => {
+          const modules = workflowModules.filter((m) => m.group === group);
+          if (modules.length === 0) return null;
+          const { label, color } = GROUP_LABELS[group];
+
+          return (
+            <div key={group} className="col-span-full mb-8">
+              <h3
+                className={`font-monument text-[var(--text-h3)] ${color} mb-4`}
+              >
+                {label}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {modules.map((module) => (
+                  <article
+                    key={module.id}
+                    className="border border-steel/20 bg-concrete/40 p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-2">
+                      <h3 className="font-monument text-[var(--text-h3)]">
+                        {module.title}
+                      </h3>
+                      <StatusPill status={module.status} />
+                    </div>
+                    <p className="text-sm text-steel mb-3">{module.summary}</p>
+                    <ul className="space-y-1 text-xs text-chalk">
+                      {module.steps.slice(0, 3).map((step) => (
+                        <li key={step}>- {step}</li>
+                      ))}
+                    </ul>
+                  </article>
                 ))}
-              </ul>
-            </article>
-          ))}
-        </div>
+              </div>
+            </div>
+          );
+        })}
 
         <div className="col-span-full mt-6">
           <Link

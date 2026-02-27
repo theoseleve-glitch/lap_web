@@ -22,19 +22,19 @@ async function postJson<T>(url: string, body: Record<string, string>): Promise<T
 
 export function BillingLifecyclePanel() {
   const params = useSearchParams();
-  const [plan, setPlan] = useState((params.get('plan') ?? 'PERFORMANCE').toUpperCase());
+  const [plan, setPlan] = useState((params.get('plan') ?? 'RACER').toUpperCase());
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>(
     params.get('billing') === 'monthly' ? 'monthly' : 'annual',
   );
   const [email, setEmail] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [subscriptionId, setSubscriptionId] = useState('');
-  const [nextPlan, setNextPlan] = useState('PRO RACER');
+  const [nextPlan, setNextPlan] = useState('WORLD-CLASS');
   const [status, setStatus] = useState('');
   const [loadingAction, setLoadingAction] = useState<'checkout' | 'portal' | 'switch' | null>(null);
 
   const b2cPlanNames = useMemo(
-    () => b2cPlans.filter((item) => item.name !== 'STARTER').map((item) => item.name),
+    () => b2cPlans.filter((item) => item.name !== 'DEMO').map((item) => item.name),
     [],
   );
 

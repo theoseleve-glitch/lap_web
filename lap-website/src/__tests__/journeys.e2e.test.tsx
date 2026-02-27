@@ -99,6 +99,6 @@ describe('Key conversion journeys', () => {
   it('pricing CTA points to a real booking route', () => {
     render(<PricingTable plans={b2cPlans} billingPeriod="annual" />);
     const cta = screen.getByRole('link', { name: 'Upgrade' });
-    expect(cta).toHaveAttribute('href', '/billing?plan=PERFORMANCE&billing=annual');
+    expect(cta).toHaveAttribute('href', '/billing?plan=RACER&billing=annual');
   });
 });

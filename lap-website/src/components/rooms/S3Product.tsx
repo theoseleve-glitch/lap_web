@@ -1,22 +1,10 @@
 'use client';
 
-import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { ModeSelector } from '@/components/ui/ModeSelector';
-import { Placard } from '@/components/ui/Placard';
-import { StampButton } from '@/components/ui/StampButton';
 import { ReportScrubber } from '@/components/mechanisms/ReportScrubber';
 import { s3Product } from '@/data/copy';
-import { trackS3ModeSelect, trackCtaClick } from '@/lib/analytics';
 
 export function S3Product() {
-  const [mode, setMode] = useState<'b2c' | 'b2b'>('b2c');
-
-  const handleModeChange = useCallback((newMode: 'b2c' | 'b2b') => {
-    setMode(newMode);
-    trackS3ModeSelect(newMode);
-  }, []);
-
   return (
     <section
       id="s3-product"
@@ -25,57 +13,59 @@ export function S3Product() {
       aria-label="Sector 3 — The product"
     >
       <div className="grid-lap">
-        <div className="col-span-full text-center mb-8">
+        {/* Monument header */}
+        <div className="col-span-full text-center mb-12">
           <MonumentText size="xl" as="h2" reveal>
             {s3Product.monument}
           </MonumentText>
         </div>
 
-        <div className="col-span-full flex justify-center mb-12">
-          <ModeSelector value={mode} onChange={handleModeChange} />
-        </div>
+        {/* Engineer / Strategist dual columns */}
+        <div className="col-span-full grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto">
+          {/* Engineer Mode — left */}
+          <div className="border border-steel/20 p-6">
+            <h3 className="font-monument text-xs text-acid-green tracking-widest mb-1">
+              {s3Product.engineer.subhead}
+            </h3>
+            <p className="font-body text-steel text-sm mb-6">
+              {s3Product.engineer.tagline}
+            </p>
 
-        {/* B2C Content */}
-        <div
-          className="col-span-full transition-opacity duration-[420ms]"
-          style={{ display: mode === 'b2c' ? 'block' : 'none' }}
-        >
-          <p className="font-telemetry text-steel text-center mb-8">{s3Product.b2c.subhead}</p>
+            <ReportScrubber className="mb-6" />
 
-          <ReportScrubber className="max-w-3xl mx-auto mb-8" />
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-3xl mx-auto">
-            {s3Product.b2c.tiles.map((tile) => (
-              <div key={tile.label} className="bg-concrete p-6 border border-steel/20">
-                <h4 className="font-monument text-[var(--text-h3)] mb-2">{tile.label}</h4>
-                <p className="font-body text-steel text-sm">{tile.detail}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* B2B Content */}
-        <div
-          className="col-span-full transition-opacity duration-[420ms]"
-          style={{ display: mode === 'b2b' ? 'block' : 'none' }}
-        >
-          <p className="font-telemetry text-steel text-center mb-8">{s3Product.b2b.subhead}</p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl mx-auto mb-8">
-            {s3Product.b2b.placards.map((placard) => (
-              <Placard key={placard.title} title={placard.title}>
-                <p>{placard.body}</p>
-              </Placard>
-            ))}
+            <div className="space-y-3">
+              {s3Product.engineer.tiles.map((tile) => (
+                <div
+                  key={tile.label}
+                  className="bg-asphalt/40 p-4 border border-steel/10"
+                >
+                  <h4 className="font-monument text-xs mb-1">{tile.label}</h4>
+                  <p className="font-body text-steel text-sm">{tile.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
 
-          <div className="text-center">
-            <StampButton
-              href="/demo?audience=b2b&persona=circuits"
-              onClick={() => trackCtaClick('request_pilot', 's3', 'b2b')}
-            >
-              {s3Product.b2b.cta}
-            </StampButton>
+          {/* Strategist Mode — right */}
+          <div className="border border-steel/20 p-6">
+            <h3 className="font-monument text-xs text-pit-orange tracking-widest mb-1">
+              {s3Product.strategist.subhead}
+            </h3>
+            <p className="font-body text-steel text-sm mb-6">
+              {s3Product.strategist.tagline}
+            </p>
+
+            <div className="space-y-3">
+              {s3Product.strategist.tiles.map((tile) => (
+                <div
+                  key={tile.label}
+                  className="bg-asphalt/40 p-4 border border-steel/10"
+                >
+                  <h4 className="font-monument text-xs mb-1">{tile.label}</h4>
+                  <p className="font-body text-steel text-sm">{tile.detail}</p>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

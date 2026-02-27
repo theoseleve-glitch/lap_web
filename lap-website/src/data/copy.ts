@@ -58,23 +58,23 @@ export const s2Proof = {
 
 export const s3Product = {
   monument: 'FIND TIME.',
-  b2c: {
-    subhead: 'FOR KART, CAR, AND SIM DRIVERS',
+  engineer: {
+    subhead: 'ENGINEER MODE',
+    tagline: 'Post-session. Find where you lost time.',
     tiles: [
       { label: 'YOUR SCORE: CLEAR', detail: 'Understand pace, consistency, execution, and confidence at a glance' },
       { label: 'KEY CORNER: TARGETED', detail: 'Fix the exact corner phase costing your lap time' },
       { label: 'NEXT SESSION: READY', detail: 'Leave with drills you can apply immediately on track' },
     ],
   },
-  b2b: {
-    subhead: 'FOR CIRCUITS, SCHOOLS, AND OPERATORS',
-    placards: [
-      { title: 'BETTER DRIVER OUTCOMES', body: 'Drivers get clearer feedback and come back faster with confidence.' },
-      { title: 'HIGHER RETENTION', body: 'Data-backed progress keeps customers engaged and returning.' },
-      { title: 'OPERATOR READY', body: 'Fit into existing timing workflows without adding friction.' },
-      { title: 'FASTER ONBOARDING', body: 'Launch pilots quickly with guided setup and clear rollout milestones.' },
+  strategist: {
+    subhead: 'STRATEGIST MODE',
+    tagline: 'Pre-event. Plan how you\'ll gain it back.',
+    tiles: [
+      { label: 'RACE PLAN: SET', detail: 'Build stint plans, pit windows, and fuel strategies before the green flag' },
+      { label: 'LIVE PACE: MONITORED', detail: 'Track every driver\'s pace delta and stint health in real time' },
+      { label: 'PIT CALLS: CONFIDENT', detail: 'Data-backed pit decisions with projected outcomes' },
     ],
-    cta: 'REQUEST PILOT EVENT',
   },
 } as const;
 

@@ -27,11 +27,11 @@ export async function POST(request: Request) {
     });
   }
 
-  if (body.plan.toUpperCase() === 'STARTER') {
+  if (body.plan.toUpperCase() === 'DEMO') {
     return NextResponse.json({
       ok: true,
-      checkoutUrl: '/register?source=starter',
-      mode: 'starter_redirect',
+      checkoutUrl: '/register?source=demo',
+      mode: 'demo_redirect',
     });
   }
 

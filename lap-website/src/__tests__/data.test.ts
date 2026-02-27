@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { b2cPlans, b2bPlans, addons } from '@/data/pricing';
+import { b2cPlans, b2bCard, featureEligibilityMatrix, dataLifecycle } from '@/data/pricing';
 import { faqItems } from '@/data/faq';
 import { pipelineStages } from '@/data/pipeline-stages';
 import * as copy from '@/data/copy';
@@ -7,19 +7,27 @@ import * as copy from '@/data/copy';
 describe('Pricing data', () => {
   it('has 3 B2C plans', () => {
     expect(b2cPlans).toHaveLength(3);
-    expect(b2cPlans[0].name).toBe('STARTER');
+    expect(b2cPlans[0].name).toBe('DEMO');
     expect(b2cPlans[1].highlighted).toBe(true);
-    expect(b2cPlans[0].ctaHref).toBe('/register?source=starter');
+    expect(b2cPlans[0].ctaHref).toBe('/register?source=demo');
   });
 
-  it('has 3 B2B plans', () => {
-    expect(b2bPlans).toHaveLength(3);
-    expect(b2bPlans[1].highlighted).toBe(true);
-    expect(b2bPlans[0].name).toBe('TRACK ESSENTIAL');
+  it('has a B2B card', () => {
+    expect(b2bCard.name).toBe('FOR TEAMS & CIRCUITS');
+    expect(b2bCard.features.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('has 5 add-ons', () => {
-    expect(addons).toHaveLength(5);
+  it('has a feature eligibility matrix', () => {
+    expect(featureEligibilityMatrix.length).toBeGreaterThanOrEqual(15);
+    const groups = [...new Set(featureEligibilityMatrix.map((r) => r.group))];
+    expect(groups).toContain('engineer');
+    expect(groups).toContain('strategist');
+    expect(groups).toContain('data');
+  });
+
+  it('has data lifecycle items', () => {
+    expect(dataLifecycle).toHaveLength(3);
+    expect(dataLifecycle[0].category).toBe('RAW TELEMETRY');
   });
 });
 
@@ -43,7 +51,8 @@ describe('Copy', () => {
     expect(copy.startGrid.monument).toHaveLength(2);
     expect(copy.s1Pain.monument).toHaveLength(2);
     expect(copy.s2Proof.plates).toHaveLength(3);
-    expect(copy.s3Product.b2b.placards).toHaveLength(4);
+    expect(copy.s3Product.engineer.tiles).toHaveLength(3);
+    expect(copy.s3Product.strategist.tiles).toHaveLength(3);
     expect(copy.pitStop.riskReversal).toHaveLength(6);
     expect(copy.garage.panels).toHaveLength(4);
     expect(copy.podium.monument).toHaveLength(2);

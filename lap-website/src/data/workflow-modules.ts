@@ -6,6 +6,7 @@ export interface WorkflowModule {
   summary: string;
   steps: string[];
   status: CapabilityStatus;
+  group: 'engineer' | 'strategist' | 'operations';
 }
 
 export const workflowModules: WorkflowModule[] = [
@@ -20,6 +21,7 @@ export const workflowModules: WorkflowModule[] = [
       'Joker confirmation before final scoring',
     ],
     status: 'available_now',
+    group: 'engineer',
   },
   {
     id: 'session-intelligence',
@@ -27,6 +29,7 @@ export const workflowModules: WorkflowModule[] = [
     summary: 'Review each session through dedicated intelligence tabs.',
     steps: ['Overview', 'Corners', 'Timeline', 'Analytics', 'Lap Data'],
     status: 'available_now',
+    group: 'engineer',
   },
   {
     id: 'comparison-progress',
@@ -38,18 +41,19 @@ export const workflowModules: WorkflowModule[] = [
       'Leaderboard and progression history',
     ],
     status: 'available_now',
+    group: 'engineer',
   },
   {
-    id: 'data-management',
-    title: 'Data Management',
-    summary: 'Maintain clean entities for tracks, karts, drivers, and weekends.',
+    id: 'coaching-plans',
+    title: 'Coaching Plans',
+    summary: 'Link drills to observed issues and monitor completion.',
     steps: [
-      'Track library and layout management',
-      'Kart profiles and setup records',
-      'Driver roster and availability',
-      'Weekend event grouping',
+      'Drill recommendations by corner',
+      'Assigned practice plans',
+      'Progress scoring and notes',
     ],
     status: 'available_now',
+    group: 'engineer',
   },
   {
     id: 'visualization-workspace',
@@ -62,6 +66,7 @@ export const workflowModules: WorkflowModule[] = [
       'Multi-session comparison mode',
     ],
     status: 'available_now',
+    group: 'engineer',
   },
   {
     id: 'strategy-control-room',
@@ -74,17 +79,20 @@ export const workflowModules: WorkflowModule[] = [
       'Session feed health diagnostics',
     ],
     status: 'available_now',
+    group: 'strategist',
   },
   {
-    id: 'coaching-plans',
-    title: 'Coaching Plans',
-    summary: 'Link drills to observed issues and monitor completion.',
+    id: 'data-management',
+    title: 'Data Management',
+    summary: 'Maintain clean entities for tracks, karts, drivers, and weekends.',
     steps: [
-      'Drill recommendations by corner',
-      'Assigned practice plans',
-      'Progress scoring and notes',
+      'Track library and layout management',
+      'Kart profiles and setup records',
+      'Driver roster and availability',
+      'Weekend event grouping',
     ],
     status: 'available_now',
+    group: 'operations',
   },
   {
     id: 'account-team',
@@ -96,6 +104,7 @@ export const workflowModules: WorkflowModule[] = [
       'Role and permission controls',
     ],
     status: 'enterprise_on_request',
+    group: 'operations',
   },
   {
     id: 'data-rights',
@@ -107,5 +116,6 @@ export const workflowModules: WorkflowModule[] = [
       'Retention policy controls',
     ],
     status: 'available_now',
+    group: 'operations',
   },
 ];
