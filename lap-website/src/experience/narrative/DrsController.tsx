@@ -3,7 +3,6 @@
 import { useEffect, useRef } from 'react';
 import { useKernelStore } from '@/experience/state/store';
 
-const DRS_DURATION = 2000;
 const DRS_DECAY_WINDOW = 500;
 const DRS_MAX_MULTIPLIER = 1.4;
 

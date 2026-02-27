@@ -59,7 +59,8 @@ export function FinishLine() {
 
   // Cleanup GSAP tweens on unmount
   useEffect(() => {
-    return () => { tweensRef.current.forEach((t) => t.kill()); };
+    const tweens = tweensRef.current;
+    return () => { tweens.forEach((t) => t.kill()); };
   }, []);
 
   if (!visible && !crossed) return null;

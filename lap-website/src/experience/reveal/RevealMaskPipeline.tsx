@@ -168,7 +168,7 @@ export function RevealMaskPipeline() {
   const frameCountRef = useRef(0);
 
   useFrame(() => {
-    const { pointerX, pointerY, reveal, drs } = useKernelStore.getState();
+    const { pointerX, pointerY, reveal } = useKernelStore.getState();
     if (!reveal.active || resolution === 0) return;
 
     // 1. STAMP PASS: stamp brush at smoothed pointer

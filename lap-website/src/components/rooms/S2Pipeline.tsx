@@ -39,7 +39,7 @@ export function S2Pipeline() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [activateDrs]);
 
   return (
     <section

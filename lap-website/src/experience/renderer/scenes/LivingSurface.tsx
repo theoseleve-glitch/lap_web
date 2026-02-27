@@ -58,9 +58,6 @@ export function LivingSurface({
   color = '#0B0C0F',
   fogDensity = 0.03,
   progress,
-  scrollVelocity: _scrollVelocityProp,
-  pointerX: _pointerXProp,
-  pointerY: _pointerYProp,
   qualityTier,
   active,
 }: LivingSurfaceProps) {
