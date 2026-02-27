@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useFBO } from '@react-three/drei';
 import * as THREE from 'three';
@@ -29,6 +29,45 @@ export function RevealMaskPipeline() {
   const reducedMotion = useKernelStore((s) => s.reducedMotion);
   const setMaskCoverage = useKernelStore((s) => s.setMaskCoverage);
   const { getSmoothedPointer, getDecayFactor, getBrushRadius } = useRevealState();
+
+  // Mobile touch burst refs
+  const isTouchRef = useRef(false);
+  const burstRef = useRef(false);
+
+  // Detect touch device on first touchstart
+  useEffect(() => {
+    const onTouchStart = () => {
+      isTouchRef.current = true;
+    };
+    window.addEventListener('touchstart', onTouchStart, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('touchstart', onTouchStart);
+    };
+  }, []);
+
+  // Trigger burst mode on touch pointer down/up
+  useEffect(() => {
+    let burstTimeout: ReturnType<typeof setTimeout>;
+
+    const onPointerDown = () => {
+      if (!isTouchRef.current) return;
+      burstRef.current = true;
+    };
+    const onPointerUp = () => {
+      if (!isTouchRef.current) return;
+      burstTimeout = setTimeout(() => {
+        burstRef.current = false;
+      }, 100);
+    };
+
+    window.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointerup', onPointerUp);
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointerup', onPointerUp);
+      clearTimeout(burstTimeout);
+    };
+  }, []);
 
   const resolution = computeMaskResolution(qualityTier);
 
@@ -129,7 +168,10 @@ export function RevealMaskPipeline() {
     // 1. STAMP PASS: stamp brush at smoothed pointer
     const smoothed = getSmoothedPointer(pointerX, pointerY);
     const brushRadiusPx = getBrushRadius();
-    const brushRadiusUV = brushRadiusPx / Math.max(size.width, size.height);
+    const radiusPx = burstRef.current
+      ? revealPhysics.mobileBurstRadius
+      : brushRadiusPx;
+    const brushRadiusUV = radiusPx / Math.max(size.width, size.height);
 
     stampMat.uniforms.tPrevMask.value = maskFboB.texture;
     stampMat.uniforms.uPointer.value.set(smoothed.x, 1.0 - smoothed.y); // flip Y for UV
