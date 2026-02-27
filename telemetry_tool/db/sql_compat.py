@@ -64,9 +64,22 @@ _INSERT_OR_REPLACE_RE = re.compile(
 )
 
 
+_LITERAL_PERCENT_RE = re.compile(
+    r"%(?!\([a-zA-Z_]\w*\)s)"  # % NOT followed by (name)s
+    r"(?!%)"                    # NOT already doubled %%
+    r"(?!s(?![a-zA-Z_]))"      # NOT %s positional param
+)
+
+
 def _translate_named_params(sql: str) -> str:
-    """Convert ``:name`` to ``%(name)s``, skipping ``::`` casts."""
-    return _NAMED_PARAM_RE.sub(r"%(\1)s", sql)
+    """Convert ``:name`` to ``%(name)s``, skipping ``::`` casts.
+
+    Also escapes literal ``%`` characters (e.g. in LIKE patterns) to ``%%``
+    so psycopg2 doesn't treat them as format specifiers.
+    """
+    sql = _NAMED_PARAM_RE.sub(r"%(\1)s", sql)
+    sql = _LITERAL_PERCENT_RE.sub("%%", sql)
+    return sql
 
 
 def _translate_positional_params(sql: str) -> str:
@@ -137,6 +150,19 @@ def _translate_insert_or_replace(sql: str) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+_SQLITE_DATETIME_NOW_RE = re.compile(
+    r"\bdatetime\(\s*'now'\s*\)", re.IGNORECASE
+)
+
+
+def _translate_sqlite_functions(sql: str) -> str:
+    """Convert SQLite functions to PostgreSQL equivalents.
+
+    ``datetime('now')`` -> ``NOW()``
+    """
+    return _SQLITE_DATETIME_NOW_RE.sub("NOW()", sql)
+
+
 def translate_params(sql: str) -> str:
     """
     Translate a SQLite-flavoured SQL string for PostgreSQL.
@@ -151,6 +177,7 @@ def translate_params(sql: str) -> str:
 
     sql = _translate_insert_or_ignore(sql)
     sql = _translate_insert_or_replace(sql)
+    sql = _translate_sqlite_functions(sql)
     sql = _translate_named_params(sql)
     sql = _translate_positional_params(sql)
     return sql

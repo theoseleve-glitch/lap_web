@@ -87,7 +87,7 @@ def upsert_track(conn: sqlite3.Connection, track: dict) -> None:
         "start_lon":    fp.get("start_lon"),
         "sample_count": fp.get("sample_count"),
         "lap_count":    fp.get("lap_count"),
-        "has_joker":    track.get("has_joker", 0),
+        "has_joker":    bool(track.get("has_joker", False)),
         "joker_distance_delta_m": track.get("joker_distance_delta_m"),
         "joker_time_delta_s":     track.get("joker_time_delta_s"),
     })

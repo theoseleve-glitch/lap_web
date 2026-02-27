@@ -11,9 +11,20 @@ down_revision = "009"
 
 
 def upgrade() -> None:
-    # 1. Add soft-delete column to users table
-    op.add_column("users", sa.Column("deleted_at", sa.DateTime, nullable=True))
-    op.create_index("idx_users_deleted_at", "users", ["deleted_at"])
+    # 1. Add soft-delete column to users table (may already exist from 002)
+    conn = op.get_bind()
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'users' AND column_name = 'deleted_at'"
+    ))
+    if result.fetchone() is None:
+        op.add_column("users", sa.Column("deleted_at", sa.DateTime, nullable=True))
+    # Index may also already exist
+    result2 = conn.execute(sa.text(
+        "SELECT 1 FROM pg_indexes WHERE indexname = 'idx_users_deleted_at'"
+    ))
+    if result2.fetchone() is None:
+        op.create_index("idx_users_deleted_at", "users", ["deleted_at"])
 
     # 2. Create data_exports table for GDPR data portability requests
     op.create_table(

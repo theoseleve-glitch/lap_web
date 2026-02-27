@@ -145,19 +145,33 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Database setup — route to PostgreSQL or SQLite based on config.
     if cfg.USE_PG:
-        from .db_pg import close_pg, init_pg
+        from .db_pg import close_pg, init_pg, _get_pg_url
         app.teardown_appcontext(close_pg)
 
         with app.app_context():
             init_pg()
-            from .db_pg import get_pg_connection
-            from .models import merge_duplicate_tracks, sync_tracks_from_json
-            conn = get_pg_connection()
-            sync_tracks_from_json(conn)
-            merged = merge_duplicate_tracks(conn)
-            if merged > 0:
-                conn.commit()
-                logger.info("Merged %d duplicate Unknown Track entries.", merged)
+            # Sync tracks using a standalone connection (not the pool) to avoid
+            # Gunicorn pre-fork pool corruption — workers inherit master's pool
+            # with stale thread IDs, causing "unkeyed connection" errors.
+            import psycopg2, psycopg2.extras
+            try:
+                raw = psycopg2.connect(_get_pg_url())
+                raw.cursor_factory = psycopg2.extras.RealDictCursor
+                from .db_pg import PgConnectionWrapper
+                from .models import merge_duplicate_tracks, sync_tracks_from_json
+                conn = PgConnectionWrapper(raw)
+                try:
+                    conn.execute("SET app.current_workspace_id = '1'")
+                except Exception:
+                    pass
+                sync_tracks_from_json(conn)
+                merged = merge_duplicate_tracks(conn)
+                if merged > 0:
+                    raw.commit()
+                    logger.info("Merged %d duplicate Unknown Track entries.", merged)
+                raw.close()
+            except Exception as exc:
+                logger.warning("Track sync skipped on startup: %s", exc)
     else:
         from .db import close_db, init_db, set_default_db_path
         set_default_db_path(cfg.DB_PATH)
