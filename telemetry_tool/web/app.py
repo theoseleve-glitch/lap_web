@@ -283,6 +283,11 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(api_v1_account_bp)
             logger.debug("Registered Phase 4 v1 blueprints (api_v1_data, api_v1_account)")
 
+            # Race strategy v1 API
+            from .routes.api_v1_race_strategy import bp as api_v1_race_strategy_bp
+            app.register_blueprint(api_v1_race_strategy_bp)
+            logger.debug("Registered api_v1_race_strategy blueprint")
+
             # Stripe billing webhook (no auth required — uses Stripe signature)
             from .routes.billing import bp as billing_bp
             app.register_blueprint(billing_bp)
