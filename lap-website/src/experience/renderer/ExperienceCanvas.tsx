@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { useKernelStore } from '@/experience/state/store';
-import { SceneManager } from './SceneManager';
+import { PersistentScene } from './PersistentScene';
 import { PostStack } from './PostStack';
 import { RevealMaskPipeline } from '@/experience/reveal/RevealMaskPipeline';
 
@@ -11,8 +11,9 @@ export function ExperienceCanvas() {
   const webglAvailable = useKernelStore((s) => s.webglAvailable);
   const reducedMotion = useKernelStore((s) => s.reducedMotion);
   const qualityTier = useKernelStore((s) => s.qualityTier);
+  const safetyCarActive = useKernelStore((s) => s.safetyCar.active);
 
-  if (!webglAvailable) return null;
+  if (!webglAvailable || safetyCarActive) return null;
 
   const dpr = qualityTier === 'high' ? [1, 2] : qualityTier === 'balanced' ? [0.75, 1.5] : [0.5, 1];
 
@@ -32,7 +33,7 @@ export function ExperienceCanvas() {
         style={{ background: 'transparent' }}
       >
         <Suspense fallback={null}>
-          <SceneManager />
+          <PersistentScene />
           <RevealMaskPipeline />
           {!reducedMotion && qualityTier !== 'low' && <PostStack />}
         </Suspense>
