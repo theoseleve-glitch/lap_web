@@ -95,6 +95,7 @@ def init_db(db_path: Optional[Path] = None) -> None:
     conn = get_db_connection(db_path)
     try:
         ensure_schema(conn)
+        validate_karts_schema(conn)
     finally:
         # Only close if we opened it ourselves (not in Flask context).
         try:
@@ -102,3 +103,28 @@ def init_db(db_path: Optional[Path] = None) -> None:
             _ = g  # noqa: F841  — just test if we're in Flask context
         except (ImportError, RuntimeError):
             conn.close()
+
+
+def validate_karts_schema(conn: sqlite3.Connection) -> bool:
+    """Return True when required karts tables are present, else log warning.
+
+    This is a lightweight startup/readiness check to make schema drift visible
+    in logs before user traffic hits kart endpoints.
+    """
+    required_tables = ("karts", "predefined_karts")
+    present_rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ).fetchall()
+    present = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[0]
+        for row in present_rows
+    }
+    missing = sorted(set(required_tables) - present)
+    if missing:
+        logger.warning(
+            "Startup health check: missing karts schema tables: %s. "
+            "Run DB migrations to restore kart endpoints.",
+            ", ".join(missing),
+        )
+        return False
+    return True
