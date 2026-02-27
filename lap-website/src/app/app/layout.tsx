@@ -76,12 +76,25 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
+        <div className="border-t border-steel/10 py-2">
+          <Link
+            href="/app/account"
+            className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+              pathname.startsWith('/app/account')
+                ? 'text-acid-green bg-asphalt/50 border-r-2 border-acid-green'
+                : 'text-steel hover:text-chalk hover:bg-asphalt/30'
+            }`}
+          >
+            <span className="w-5 text-center font-telemetry">{'\u25C9'}</span>
+            <span className="font-body">Account</span>
+          </Link>
+        </div>
         <div className="p-4 border-t border-steel/20">
           <Link
             href="/"
             className="text-xs text-steel hover:text-chalk transition-colors font-telemetry"
           >
-            ← Back to lap-coach.racing
+            &larr; Back to lap-coach.racing
           </Link>
         </div>
       </aside>
