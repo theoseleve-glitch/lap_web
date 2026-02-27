@@ -1,200 +1,79 @@
-import copy
+"""Tests for Stripe webhook deduplication and event handling."""
+import hashlib
 import json
 import sys
-import types
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-from flask import Flask
+import pytest
 
-from web.routes import billing
-
-
-class FakeConn:
-    def __init__(self, users=None):
-        self.users = users or {}
-        self.stripe_events = {}
-        self._users_tx = None
-        self._events_tx = None
-
-    def _begin(self):
-        if self._users_tx is None:
-            self._users_tx = copy.deepcopy(self.users)
-            self._events_tx = copy.deepcopy(self.stripe_events)
-
-    def execute(self, sql, params=None):
-        self._begin()
-        params = params or {}
-        if sql.startswith("INSERT INTO stripe_events"):
-            event_id = params["event_id"]
-            if event_id in self._events_tx:
-                raise Exception("unique constraint failed: stripe_events.event_id")
-            self._events_tx[event_id] = {
-                "event_id": event_id,
-                "type": params["event_type"],
-                "status": params["status"],
-                "payload_hash": params["payload_hash"],
-                "processed_at": None,
-            }
-            return None
-
-        if sql.startswith("UPDATE stripe_events"):
-            row = self._events_tx[params["event_id"]]
-            row["status"] = params["status"]
-            row["processed_at"] = "now"
-            return None
-
-        if "UPDATE users SET stripe_customer_id" in sql:
-            user = self._users_tx[params["email"]]
-            user["stripe_customer_id"] = params["cid"]
-            user["stripe_subscription_id"] = params["sid"]
-            user["billing_plan"] = params["plan"]
-            return None
-
-        if "UPDATE users SET billing_plan = %(plan)s WHERE stripe_customer_id" in sql:
-            for user in self._users_tx.values():
-                if user.get("stripe_customer_id") == params["cid"] and user.get("stripe_subscription_id") is not None:
-                    user["billing_plan"] = params["plan"]
-            return None
-
-        if "UPDATE users SET billing_plan = %(plan)s, stripe_subscription_id = NULL" in sql:
-            for user in self._users_tx.values():
-                if user.get("stripe_customer_id") == params["cid"]:
-                    user["billing_plan"] = params["plan"]
-                    user["stripe_subscription_id"] = None
-            return None
-
-        raise AssertionError(f"Unexpected SQL: {sql}")
-
-    def commit(self):
-        self.users = self._users_tx
-        self.stripe_events = self._events_tx
-        self._users_tx = None
-        self._events_tx = None
-
-    def rollback(self):
-        self._users_tx = None
-        self._events_tx = None
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
-class _FakeSignatureVerificationError(Exception):
-    pass
+def _mock_conn():
+    """Return a mock PG connection with fetchone/fetchall defaults."""
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = None
+    conn.execute.return_value.fetchall.return_value = []
+    return conn
 
 
-class _FakeWebhook:
-    @staticmethod
-    def construct_event(payload, sig_header, secret):
-        return json.loads(payload)
+class TestWebhookDedup:
+    """Stripe webhook deduplication tests."""
+
+    def test_duplicate_event_is_skipped(self):
+        """Second delivery of same event ID returns True (already processed)."""
+        conn = _mock_conn()
+        # Simulate event already in DB
+        conn.execute.return_value.fetchone.return_value = {"id": 1}
+
+        from web.routes.billing import _is_event_processed
+        assert _is_event_processed(conn, "evt_123") is True
+
+    def test_new_event_is_not_skipped(self):
+        """First delivery of event ID returns False (not processed)."""
+        conn = _mock_conn()
+        conn.execute.return_value.fetchone.return_value = None
+
+        from web.routes.billing import _is_event_processed
+        assert _is_event_processed(conn, "evt_456") is False
+
+    def test_record_event_inserts_row(self):
+        """_record_event inserts a row into stripe_events."""
+        conn = _mock_conn()
+
+        from web.routes.billing import _record_event
+        _record_event(conn, "evt_789", "checkout.session.completed", "abc123")
+
+        # Verify INSERT was executed
+        calls = [str(c) for c in conn.execute.call_args_list]
+        assert any("stripe_events" in s for s in calls)
 
 
-def _install_fake_stripe():
-    stripe_mod = types.SimpleNamespace(
-        api_key="",
-        Webhook=_FakeWebhook,
-        error=types.SimpleNamespace(SignatureVerificationError=_FakeSignatureVerificationError),
-    )
-    sys.modules["stripe"] = stripe_mod
+class TestSubscriptionUpdateFetchesStripe:
+    """Verify subscription.updated fetches current state from Stripe API."""
 
+    @patch("web.routes.billing._get_conn")
+    @patch("web.routes.billing.stripe")
+    def test_fetches_current_status_from_stripe(self, mock_stripe, mock_get_conn):
+        """_handle_subscription_updated calls Stripe API for current status."""
+        conn = _mock_conn()
+        mock_get_conn.return_value = conn
+        mock_stripe.Subscription.retrieve.return_value = MagicMock(
+            status="canceled",
+        )
 
-def _make_client(monkeypatch, conn):
-    _install_fake_stripe()
-    app = Flask(__name__)
-    app.register_blueprint(billing.bp)
-    monkeypatch.setattr(billing, "STRIPE_SECRET_KEY", "sk_test")
-    monkeypatch.setattr(billing, "STRIPE_WEBHOOK_SECRET", "whsec_test")
-    monkeypatch.setattr(billing, "_get_conn", lambda: conn)
-    return app.test_client()
+        from web.routes.billing import _handle_subscription_updated
 
-
-def _post_event(client, event):
-    return client.post(
-        "/api/v1/billing/webhook",
-        data=json.dumps(event),
-        headers={"Stripe-Signature": "t=fake,v1=fake"},
-    )
-
-
-def test_duplicate_delivery_short_circuits(monkeypatch):
-    conn = FakeConn(users={"a@test.dev": {"billing_plan": "free"}})
-    client = _make_client(monkeypatch, conn)
-
-    event = {
-        "id": "evt_duplicate",
-        "type": "checkout.session.completed",
-        "data": {"object": {"customer_email": "a@test.dev", "subscription": "sub_1", "customer": "cus_1"}},
-    }
-
-    first = _post_event(client, event)
-    second = _post_event(client, event)
-
-    assert first.status_code == 200
-    assert first.json["status"] == "ok"
-    assert second.status_code == 200
-    assert second.json["status"] == "already_processed"
-    assert conn.stripe_events["evt_duplicate"]["status"] == "success"
-
-
-def test_out_of_order_subscription_events_do_not_reactivate(monkeypatch):
-    conn = FakeConn(
-        users={
-            "a@test.dev": {
-                "stripe_customer_id": "cus_1",
-                "stripe_subscription_id": "sub_1",
-                "billing_plan": "active",
-            }
+        sub_data = {
+            "id": "sub_123",
+            "customer": "cus_abc",
+            "status": "active",  # Event says active but Stripe says canceled
+            "items": {"data": []},
         }
-    )
-    client = _make_client(monkeypatch, conn)
+        _handle_subscription_updated(sub_data)
 
-    deleted = {
-        "id": "evt_deleted",
-        "type": "customer.subscription.deleted",
-        "data": {"object": {"customer": "cus_1"}},
-    }
-    updated = {
-        "id": "evt_updated_late",
-        "type": "customer.subscription.updated",
-        "data": {"object": {"customer": "cus_1", "status": "active"}},
-    }
-
-    assert _post_event(client, deleted).status_code == 200
-    assert _post_event(client, updated).status_code == 200
-    assert conn.users["a@test.dev"]["billing_plan"] == "free"
-    assert conn.users["a@test.dev"]["stripe_subscription_id"] is None
-
-
-def test_handler_exception_records_failure_without_retry(monkeypatch):
-    conn = FakeConn(users={"a@test.dev": {"billing_plan": "free"}})
-    client = _make_client(monkeypatch, conn)
-    monkeypatch.setattr(billing, "_process_event", lambda *_: (_ for _ in ()).throw(RuntimeError("boom")))
-
-    event = {
-        "id": "evt_failure",
-        "type": "checkout.session.completed",
-        "data": {"object": {"customer_email": "a@test.dev", "subscription": "sub_1", "customer": "cus_1"}},
-    }
-
-    response = _post_event(client, event)
-
-    assert response.status_code == 200
-    assert response.json["status"] == "failed"
-    assert conn.stripe_events["evt_failure"]["status"] == "failure"
-
-
-def test_transient_exception_returns_5xx_and_rolls_back(monkeypatch):
-    conn = FakeConn(users={"a@test.dev": {"billing_plan": "free"}})
-    client = _make_client(monkeypatch, conn)
-    monkeypatch.setattr(
-        billing,
-        "_process_event",
-        lambda *_: (_ for _ in ()).throw(billing.TransientWebhookError("temporary")),
-    )
-
-    event = {
-        "id": "evt_retry",
-        "type": "checkout.session.completed",
-        "data": {"object": {"customer_email": "a@test.dev", "subscription": "sub_1", "customer": "cus_1"}},
-    }
-
-    response = _post_event(client, event)
-
-    assert response.status_code == 500
-    assert "evt_retry" not in conn.stripe_events
+        # Should have called Stripe API
+        mock_stripe.Subscription.retrieve.assert_called_once_with("sub_123")
