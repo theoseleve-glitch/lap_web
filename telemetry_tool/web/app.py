@@ -252,6 +252,11 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(api_v1_data_bp)
             app.register_blueprint(api_v1_account_bp)
             logger.debug("Registered Phase 4 v1 blueprints (api_v1_data, api_v1_account)")
+
+            # Stripe billing webhook (no auth required — uses Stripe signature)
+            from .routes.billing import bp as billing_bp
+            app.register_blueprint(billing_bp)
+            logger.debug("Registered billing webhook blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

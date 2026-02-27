@@ -1,0 +1,18 @@
+api.lap-coach.racing {
+	reverse_proxy api:5000
+
+	encode gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	# Allow large file uploads (telemetry CSVs can be 10+ GB)
+	request_body {
+		max_size 12GB
+	}
+}

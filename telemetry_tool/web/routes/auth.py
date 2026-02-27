@@ -62,6 +62,24 @@ def register():
              "expires_at": expires_at},
         )
         conn.commit()
+
+        # Send verification email (non-blocking — failure doesn't stop registration)
+        try:
+            from auth.email import send_verification_email
+            import secrets
+            from datetime import datetime, timedelta, timezone as tz
+            verify_token = secrets.token_urlsafe(32)
+            verify_expires = datetime.now(tz.utc) + timedelta(hours=24)
+            conn.execute(
+                "UPDATE users SET email_verify_token = %(token)s, "
+                "email_verify_expires = %(expires)s WHERE id = %(uid)s",
+                {"token": verify_token, "expires": verify_expires, "uid": user["id"]},
+            )
+            conn.commit()
+            send_verification_email(email, verify_token)
+        except Exception:
+            logger.warning("Verification email failed for %s — user can still log in", email, exc_info=True)
+
         result = {
             "access_token": access_token,
             "refresh_token": refresh_token,
