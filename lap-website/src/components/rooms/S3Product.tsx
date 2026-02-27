@@ -7,6 +7,30 @@ import { useTranslation } from '@/i18n';
 export function S3Product() {
   const { t } = useTranslation();
 
+  const strategistPanels = [
+    {
+      position: 0,
+      label: t('home.product.strategistTile1Label'),
+      description: t('home.product.strategistTile1Detail'),
+      image: '/images/screenshots/dashboard-hero.png',
+      alt: 'Race strategy dashboard with stint and pit planning widgets',
+    },
+    {
+      position: 1,
+      label: t('home.product.strategistTile2Label'),
+      description: t('home.product.strategistTile2Detail'),
+      image: '/images/screenshots/lap-table.png',
+      alt: 'Live lap table with pace deltas and stint progress indicators',
+    },
+    {
+      position: 2,
+      label: t('home.product.strategistTile3Label'),
+      description: t('home.product.strategistTile3Detail'),
+      image: '/images/screenshots/dashboard-hero.png',
+      alt: 'Pit call planning board with projected outcomes and decision support',
+    },
+  ];
+
   const engineerTiles = [
     { labelKey: 'home.product.engineerTile1Label', detailKey: 'home.product.engineerTile1Detail' },
     { labelKey: 'home.product.engineerTile2Label', detailKey: 'home.product.engineerTile2Detail' },
@@ -68,6 +92,12 @@ export function S3Product() {
             <p className="font-body text-steel text-sm mb-6">
               {t('home.product.strategistTagline')}
             </p>
+
+            <ReportScrubber
+              className="mb-6"
+              panels={strategistPanels}
+              ariaLabel="Scrub through strategist views"
+            />
 
             <div className="space-y-3">
               {strategistTiles.map((tile) => (

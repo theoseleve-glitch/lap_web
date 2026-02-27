@@ -6,9 +6,19 @@ import { trackS3ScrubberInteract } from '@/lib/analytics';
 
 interface ReportScrubberProps {
   className?: string;
+  panels?: ScrubberPanel[];
+  ariaLabel?: string;
 }
 
-const panels = [
+export interface ScrubberPanel {
+  position: number;
+  label: string;
+  description: string;
+  image: string;
+  alt: string;
+}
+
+const defaultPanels: ScrubberPanel[] = [
   {
     position: 0,
     label: 'SCORE OVERVIEW',
@@ -32,7 +42,7 @@ const panels = [
   },
 ];
 
-export function ReportScrubber({ className = '' }: ReportScrubberProps) {
+export function ReportScrubber({ className = '', panels = defaultPanels, ariaLabel = 'Scrub through report views' }: ReportScrubberProps) {
   const [position, setPosition] = useState(0);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -95,7 +105,7 @@ export function ReportScrubber({ className = '' }: ReportScrubberProps) {
           className="w-full h-1 appearance-none bg-concrete rounded-none cursor-pointer
             [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-chalk
             [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:bg-chalk [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:rounded-none"
-          aria-label="Scrub through report views"
+          aria-label={ariaLabel}
         />
         <div className="flex justify-between mt-2">
           {panels.map((p, i) => (
