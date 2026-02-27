@@ -484,6 +484,12 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (25, "Phase 25 schema — session_weather_laps for per-lap weather data"),
     )
 
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (26, "Phase 26 schema — stripe_events for webhook idempotency"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

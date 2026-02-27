@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 25
+SCHEMA_VERSION = 26
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -955,5 +955,24 @@ PHASE_18_TABLES: list[tuple[str, str]] = [
     ("session_weather_laps", _SESSION_WEATHER_LAPS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 19 tables — Stripe webhook idempotency
+# ------------------------------------------------------------------
+
+_STRIPE_EVENTS_TABLE = """
+CREATE TABLE IF NOT EXISTS stripe_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id     TEXT    NOT NULL UNIQUE,
+    type         TEXT    NOT NULL,
+    processed_at TEXT,
+    status       TEXT    NOT NULL,
+    payload_hash TEXT    NOT NULL
+);
+"""
+
+PHASE_19_TABLES: list[tuple[str, str]] = [
+    ("stripe_events", _STRIPE_EVENTS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES
