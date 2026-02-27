@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,7 +19,6 @@ from tasks.concurrency import (
     release_workspace_lock,
     check_queue_depth,
     check_worker_memory,
-    WorkspaceBusyError,
     QueueFullError,
 )
 
@@ -211,3 +211,18 @@ class TestCheckWorkerMemory:
         mock_psutil.Process.return_value = mock_proc
         check_worker_memory()
         mock_sys.exit.assert_called_once_with(0)
+
+
+    @patch("tasks.concurrency.psutil", None)
+    @patch("tasks.concurrency.resource")
+    def test_fallback_to_resource_when_psutil_missing(self, mock_resource):
+        mock_resource.RUSAGE_SELF = 0
+        # On Linux ru_maxrss is in KB: 800 MB -> 819200 KB
+        mock_resource.getrusage.return_value = SimpleNamespace(ru_maxrss=800 * 1024)
+        with patch("tasks.concurrency.sys.platform", "linux"):
+            assert check_worker_memory(max_rss_mb=700, exit_on_exceed=False) is True
+
+    @patch("tasks.concurrency.psutil", None)
+    @patch("tasks.concurrency.resource", None)
+    def test_returns_false_when_no_memory_provider_available(self):
+        assert check_worker_memory(exit_on_exceed=False) is False
