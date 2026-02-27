@@ -205,18 +205,25 @@ def init_pg() -> None:
     from alembic import command
     from alembic.config import Config
 
-    # Locate alembic.ini relative to the project root.
+    # Locate alembic.ini — try telemetry_tool/ first (Docker layout),
+    # then project root (local dev layout).
     from pathlib import Path
 
-    project_root = Path(__file__).resolve().parent.parent.parent
-    ini_path = project_root / "alembic.ini"
+    pkg_root = Path(__file__).resolve().parent.parent  # telemetry_tool/
+    ini_path = pkg_root / "alembic.ini"
     if not ini_path.exists():
-        logger.warning("alembic.ini not found at %s -- skipping migrations", ini_path)
+        ini_path = pkg_root.parent / "alembic.ini"  # project root fallback
+    if not ini_path.exists():
+        logger.warning("alembic.ini not found -- skipping migrations")
         return
 
     cfg = Config(str(ini_path))
     # Override the DB URL so we always use the runtime value.
     cfg.set_main_option("sqlalchemy.url", _get_pg_url())
+    # Resolve script_location relative to alembic.ini (handles Docker layout
+    # where CWD != the directory containing alembic.ini).
+    script_dir = ini_path.parent / cfg.get_main_option("script_location", "alembic")
+    cfg.set_main_option("script_location", str(script_dir))
     command.upgrade(cfg, "head")
     logger.info("Alembic migrations applied to head")
 
