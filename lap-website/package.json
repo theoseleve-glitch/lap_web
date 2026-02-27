@@ -17,7 +17,9 @@
     "test:e2e": "playwright test",
     "test:e2e:vitest": "vitest run src/__tests__/journeys.e2e.test.tsx",
     "qa:content": "node scripts/content-qa.mjs",
-    "ci": "npm run lint && npm run test && npm run build && npm run qa:content"
+    "ci": "npm run lint && npm run test && npm run build && npm run qa:content",
+    "qa:sitemap-preview": "node scripts/check-sitemap-preview.mjs",
+    "ci:preview": "npm run qa:sitemap-preview"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
