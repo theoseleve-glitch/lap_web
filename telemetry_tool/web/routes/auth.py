@@ -286,22 +286,27 @@ def oauth_redirect(provider):
 
 @bp.route("/oauth/<provider>/callback", methods=["GET"])
 def oauth_callback(provider):
-    """Handle OAuth callback -- create/link user, issue tokens."""
+    """Handle OAuth callback -- create/link user, redirect to frontend.
+
+    This is a browser redirect flow (not AJAX), so we redirect the user
+    back to the frontend after setting the httpOnly refresh cookie.
+    The access token is passed in the URL hash fragment (never reaches
+    server logs) and is read client-side by the OAuth callback page.
+    """
+    from flask import redirect as flask_redirect
     from auth.oauth import oauth as oauth_registry, get_or_create_oauth_user
+
+    frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
 
     client = oauth_registry.create_client(provider)
     if client is None:
-        return api_error(
-            ErrorCode.NOT_FOUND, "Unknown OAuth provider", status=404,
-        )
+        return flask_redirect(f"{frontend_url}/login?error=unknown_provider")
 
     try:
         token = client.authorize_access_token()
     except Exception:
         logger.exception("OAuth token exchange failed for %s", provider)
-        return api_error(
-            ErrorCode.VALIDATION_ERROR, "OAuth authentication failed", status=400,
-        )
+        return flask_redirect(f"{frontend_url}/login?error=oauth_failed")
 
     if provider == "google":
         userinfo = token.get("userinfo", {})
@@ -318,43 +323,35 @@ def oauth_callback(provider):
         if not profile.get("email"):
             emails = client.get("user/emails").json()
             if not emails:
-                return api_error(
-                    ErrorCode.VALIDATION_ERROR,
-                    "No email address found on GitHub account",
-                    status=400,
-                )
+                return flask_redirect(f"{frontend_url}/login?error=no_github_email")
             primary = next((e for e in emails if e["primary"]), emails[0])
             profile["email"] = primary["email"]
             email_verified = primary.get("verified", False)
         else:
-            # If email came from /user directly, fetch /user/emails to check verified status
             emails = client.get("user/emails").json()
             match = next((e for e in emails if e["email"] == profile["email"]), None)
             email_verified = match.get("verified", False) if match else False
         profile["email_verified"] = email_verified
     else:
-        return api_error(
-            ErrorCode.NOT_FOUND, "Unsupported OAuth provider", status=404,
-        )
+        return flask_redirect(f"{frontend_url}/login?error=unsupported_provider")
 
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
     try:
         result = get_or_create_oauth_user(conn, provider, profile, secret)
-        resp = make_response(api_response(result))
+        # Redirect to frontend OAuth callback with access token in hash fragment.
+        # Hash fragments never leave the browser (not in server logs or referrer).
+        redirect_url = f"{frontend_url}/auth/oauth-callback#access_token={result['access_token']}"
+        resp = make_response(flask_redirect(redirect_url))
         if result.get("refresh_token"):
             _set_refresh_cookie(resp, result["refresh_token"])
         return resp
     except Exception as e:
         from auth.service import AuthError
         if isinstance(e, AuthError):
-            return api_error(
-                ErrorCode.FORBIDDEN, str(e), status=403,
-            )
+            return flask_redirect(f"{frontend_url}/login?error=oauth_denied")
         logger.exception("OAuth user creation failed for %s", provider)
-        return api_error(
-            ErrorCode.INTERNAL_ERROR, "OAuth login failed", status=500,
-        )
+        return flask_redirect(f"{frontend_url}/login?error=oauth_failed")
 
 
 @bp.route("/verify-email", methods=["POST"])

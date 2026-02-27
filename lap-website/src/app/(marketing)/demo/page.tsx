@@ -1,10 +1,9 @@
 import { Suspense } from 'react';
-import Link from 'next/link';
 import { LeadForm } from '@/components/forms/LeadForm';
 import { PageShell } from '@/components/site/PageShell';
 import { StatusPill } from '@/components/site/StatusPill';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
-import { PitButton } from '@/components/ui/PitButton';
+import { DemoCtaSection } from '@/components/marketing/DemoCtaSection';
 
 export default function DemoPage() {
   return (
@@ -21,12 +20,7 @@ export default function DemoPage() {
             description="Create your account, upload one session, and get your first free analysis report. No sales call required."
             className="mb-4"
           />
-          <div className="flex flex-wrap gap-3">
-            <PitButton href="/register?source=demo">Create Account</PitButton>
-            <Link href="/app/analyze" className="border border-steel/30 px-4 py-3 text-sm">
-              Go to Analysis Page
-            </Link>
-          </div>
+          <DemoCtaSection />
         </article>
 
         <article className="border border-steel/20 bg-concrete/40 p-5">

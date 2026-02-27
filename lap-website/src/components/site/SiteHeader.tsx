@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { topNavLinks } from '@/data/navigation';
@@ -14,25 +14,30 @@ interface SiteHeaderProps {
 
 export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeaderProps) {
   const pathname = usePathname();
-  const [persona, setPersona] = useState('drivers');
+  const [visible, setVisible] = useState(true);
+  const lastScrollY = useRef(0);
 
   useEffect(() => {
-    const cookie = document.cookie
-      .split(';')
-      .map((part) => part.trim())
-      .find((part) => part.startsWith('lap_persona='));
-    if (!cookie) return;
-    const value = cookie.split('=').slice(1).join('=');
-    if (value) setPersona(value);
+    const handleScroll = () => {
+      const y = window.scrollY;
+      // Show when at top or scrolling up, hide when scrolling down
+      if (y <= 50 || y < lastScrollY.current) {
+        setVisible(true);
+      } else if (y > lastScrollY.current) {
+        setVisible(false);
+      }
+      lastScrollY.current = y;
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const personaCta =
-    persona === 'circuits' || persona === 'teams' || persona === 'endurance'
-      ? { label: 'Book B2B Demo', href: '/demo?audience=b2b' }
-      : { label: 'Start Free Report', href: '/register?source=free-report&redirect=/free-report/analyze' };
-
   return (
-    <header className="sticky top-0 z-50 border-b border-steel/20 bg-asphalt/95 backdrop-blur">
+    <header
+      className="sticky top-0 z-50 border-b border-steel/20 bg-asphalt/95 backdrop-blur transition-transform duration-300"
+      style={{ transform: visible ? 'translateY(0)' : 'translateY(-100%)' }}
+    >
       <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
         <Link
           href="/"
@@ -75,14 +80,28 @@ export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeade
             </Link>
           );
         })}
-          <Link
-            href={personaCta.href}
-            className="px-3 py-1 border border-pit-orange text-xs font-telemetry tracking-[0.12em] uppercase text-chalk hover:bg-pit-orange hover:text-asphalt transition-colors duration-[420ms]"
-            onClick={() => trackNavRouteClick(personaCta.href, 'header_persona_cta')}
-          >
-            {personaCta.label}
-          </Link>
           <LocaleSwitcher />
+
+          <span className="w-px h-5 bg-steel/30 mx-1 hidden sm:block" />
+
+          <Link
+            href="/login"
+            className={`px-3 py-1 border text-xs font-telemetry tracking-[0.12em] uppercase ${
+              pathname === '/login'
+                ? 'border-pit-orange text-chalk'
+                : 'border-steel/30 text-steel hover:text-chalk hover:border-steel'
+            }`}
+            onClick={() => trackNavRouteClick('/login', 'header')}
+          >
+            Log In
+          </Link>
+          <Link
+            href="/register"
+            className="px-3 py-1 border text-xs font-telemetry tracking-[0.12em] uppercase bg-pit-orange/90 border-pit-orange text-asphalt hover:bg-pit-orange transition-colors duration-[420ms]"
+            onClick={() => trackNavRouteClick('/register', 'header')}
+          >
+            Sign Up
+          </Link>
         </nav>
       </div>
     </header>

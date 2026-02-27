@@ -1,57 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
-import { register, login, storeTokens } from '@/lib/auth';
+import { useAuth } from '@/hooks/useAuth';
+import { OAuthButtons } from '@/components/auth/OAuthButtons';
 
-export default function RegisterPage() {
+function RegisterForm() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect') ?? '/app/dashboard';
+  const { register, loading, error } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError(null);
+
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setValidationError('Passwords do not match');
       return;
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setValidationError('Password must be at least 8 characters');
       return;
     }
 
-    setLoading(true);
-    setError(null);
-    try {
-      await register(email, password, displayName);
-
-      // Auto-login after registration
-      const loginResult = await login(email, password);
-      storeTokens(loginResult.access_token, loginResult.refresh_token);
-
-      // Redirect to specified destination or default
-      const redirect = new URLSearchParams(window.location.search).get('redirect');
-      router.push(redirect ?? '/login?registered=true');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Registration failed');
-    } finally {
-      setLoading(false);
-    }
+    await register(email, password, displayName, redirect);
   };
+
+  const displayError = validationError ?? error;
 
   return (
     <div>
       <h1 className="font-monument text-2xl text-chalk mb-6 text-center">Create Account</h1>
 
-      {error && (
+      {displayError && (
         <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 rounded">
-          <p className="text-safety-red font-telemetry text-sm">{error}</p>
+          <p className="text-safety-red font-telemetry text-sm">{displayError}</p>
         </div>
       )}
 
@@ -102,6 +92,8 @@ export default function RegisterPage() {
         </button>
       </form>
 
+      <OAuthButtons />
+
       <div className="mt-6 text-center">
         <p className="text-steel font-body text-sm">
           Already have an account?{' '}
@@ -111,5 +103,13 @@ export default function RegisterPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={null}>
+      <RegisterForm />
+    </Suspense>
   );
 }

@@ -74,6 +74,9 @@ class Config:
     OAUTH_REDIRECT_BASE: str = os.environ.get(
         "OAUTH_REDIRECT_BASE", "http://localhost:5000"
     )
+    FRONTEND_URL: str = os.environ.get(
+        "FRONTEND_URL", "http://localhost:3000"
+    )
 
     def validate(self) -> None:
         """Raise if configuration is unsafe for production."""

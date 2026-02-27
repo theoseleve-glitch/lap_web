@@ -29,13 +29,13 @@ export function useAuth() {
   }, []);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, redirectTo?: string) => {
       setLoading(true);
       setError(null);
       try {
         const result = await apiLogin(email, password);
         setUser(result.user);
-        router.push('/app/dashboard');
+        router.push(redirectTo ?? '/app/dashboard');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Login failed');
       } finally {
@@ -46,13 +46,13 @@ export function useAuth() {
   );
 
   const register = useCallback(
-    async (email: string, password: string, displayName: string) => {
+    async (email: string, password: string, displayName: string, redirectTo?: string) => {
       setLoading(true);
       setError(null);
       try {
         const result = await apiRegister(email, password, displayName);
         setUser(result.user);
-        router.push('/app/dashboard');
+        router.push(redirectTo ?? '/app/dashboard');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Registration failed');
       } finally {

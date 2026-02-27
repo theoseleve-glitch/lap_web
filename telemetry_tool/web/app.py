@@ -120,6 +120,7 @@ def create_app(config: Config | None = None) -> Flask:
         GITHUB_CLIENT_ID=cfg.GITHUB_CLIENT_ID,
         GITHUB_CLIENT_SECRET=cfg.GITHUB_CLIENT_SECRET,
         OAUTH_REDIRECT_BASE=cfg.OAUTH_REDIRECT_BASE,
+        FRONTEND_URL=cfg.FRONTEND_URL,
         RATE_LIMIT_ENABLED=cfg.RATE_LIMIT_ENABLED,
         REDIS_URL=cfg.REDIS_URL,
     )

@@ -33,14 +33,14 @@ export function ReversibleCard({ title, description, className = '' }: Reversibl
           transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
         }}
       >
-        <div className="absolute inset-0" style={{ backfaceVisibility: 'hidden' }}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center text-center" style={{ backfaceVisibility: 'hidden' }}>
           <p className="font-monument text-[var(--text-h3)] leading-[0.9]">{title}</p>
           <p className="mt-3 font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase">
             Click to reveal
           </p>
         </div>
         <div
-          className="absolute inset-0 text-steel"
+          className="absolute inset-0 flex flex-col items-center justify-center text-center text-steel"
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
         >
           <p className="text-sm md:text-base leading-relaxed">{description}</p>

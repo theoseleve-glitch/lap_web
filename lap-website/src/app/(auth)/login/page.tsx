@@ -1,27 +1,34 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
+import { OAuthButtons } from '@/components/auth/OAuthButtons';
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const searchParams = useSearchParams();
+  const redirect = searchParams.get('redirect') ?? '/app/dashboard';
+  const oauthError = searchParams.get('error');
   const { login, loading, error } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(email, password);
+    await login(email, password, redirect);
   };
+
+  const displayError = error ?? (oauthError ? `Sign-in failed: ${oauthError.replace(/_/g, ' ')}` : null);
 
   return (
     <div>
       <h1 className="font-monument text-2xl text-chalk mb-6 text-center">Sign In</h1>
 
-      {error && (
+      {displayError && (
         <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 rounded">
-          <p className="text-safety-red font-telemetry text-sm">{error}</p>
+          <p className="text-safety-red font-telemetry text-sm">{displayError}</p>
         </div>
       )}
 
@@ -55,6 +62,8 @@ export default function LoginPage() {
         </button>
       </form>
 
+      <OAuthButtons />
+
       <div className="mt-6 text-center">
         <p className="text-steel font-body text-sm">
           Don&apos;t have an account?{' '}
@@ -64,5 +73,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

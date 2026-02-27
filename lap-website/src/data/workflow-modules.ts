@@ -73,7 +73,7 @@ export const workflowModules: WorkflowModule[] = [
       'Incident and alert queue',
       'Session feed health diagnostics',
     ],
-    status: 'enterprise_on_request',
+    status: 'available_now',
   },
   {
     id: 'coaching-plans',

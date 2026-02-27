@@ -4,16 +4,18 @@ import { useScrollProgress } from '@/hooks/useScrollProgress';
 import { useMemo } from 'react';
 
 function formatTimecode(progress: number): string {
-  const totalMs = progress * 4 * 60 * 1000; // 0 -> 4:00.000
+  // 0 → 6:29.090 (389 090 ms) — real session total
+  const totalMs = progress * 389090;
   const mins = Math.floor(totalMs / 60000);
   const secs = Math.floor((totalMs % 60000) / 1000);
-  const ms = Math.floor(totalMs % 1000);
-  return `T+ ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+  const cs = Math.floor((totalMs % 1000) / 10); // centiseconds
+  return `T+ ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(cs).padStart(2, '0')}`;
 }
 
 function formatDistance(progress: number): string {
-  const km = progress * 4.2;
-  return `D ${km.toFixed(2)} km`;
+  // 0 → 20.832 km — real session distance
+  const km = progress * 20.832;
+  return `D ${km.toFixed(3)} km`;
 }
 
 function AnimatedDigits({ text }: { text: string }) {
@@ -39,10 +41,10 @@ export function TimecodeCounter() {
 
   return (
     <div
-      className="fixed top-[72px] right-4 md:right-6 font-telemetry text-[13px] md:text-[14px] tracking-[0.12em] text-steel text-right"
+      className="fixed top-[72px] right-4 md:right-6 font-telemetry text-[14px] md:text-base tracking-[0.12em] text-steel text-right"
       style={{ zIndex: 'var(--z-timecode)' as unknown as number }}
     >
-      <div className="bg-concrete/70 border border-steel/30 px-3 py-1.5">
+      <div className="bg-concrete/70 border border-steel/30 px-4 py-2.5">
         <div><AnimatedDigits text={timecode} /></div>
         <div className="text-chalk"><AnimatedDigits text={distance} /></div>
       </div>

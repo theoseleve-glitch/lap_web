@@ -57,7 +57,7 @@ export function StartLights({ onComplete, reducedMotion = false }: StartLightsPr
 
   return (
     <div
-      className="flex items-center justify-center gap-4 md:gap-6 select-none touch-none cursor-pointer py-8"
+      className="flex items-center justify-center gap-5 md:gap-8 select-none touch-none cursor-pointer py-10"
       onPointerDown={startHold}
       onPointerUp={endHold}
       onPointerLeave={endHold}
@@ -76,17 +76,23 @@ export function StartLights({ onComplete, reducedMotion = false }: StartLightsPr
       role="button"
       aria-label="Hold to start — press and hold for 2 seconds"
     >
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div
-          key={i}
-          className="w-12 h-12 md:w-16 md:h-16 rounded-full transition-all duration-300"
-          style={{
-            background: i < litCount ? colors.safetyRed : colors.concrete,
-            boxShadow: i < litCount ? `0 0 30px ${colors.safetyRed}, 0 0 60px ${colors.safetyRed}40` : 'none',
-            opacity: i < litCount ? 1 : 0.3,
-          }}
-        />
-      ))}
+      {Array.from({ length: 5 }).map((_, i) => {
+        const lit = i < litCount;
+        return (
+          <div
+            key={i}
+            className="w-14 h-14 md:w-20 md:h-20 rounded-full border-2 transition-all duration-300"
+            style={{
+              background: lit ? colors.safetyRed : 'rgba(255,42,42,0.08)',
+              borderColor: lit ? colors.safetyRed : 'rgba(255,42,42,0.25)',
+              boxShadow: lit
+                ? `0 0 30px ${colors.safetyRed}, 0 0 60px ${colors.safetyRed}60, 0 0 100px ${colors.safetyRed}30, inset 0 0 20px rgba(255,255,255,0.15)`
+                : `inset 0 0 15px rgba(255,42,42,0.06)`,
+              opacity: lit ? 1 : 0.5,
+            }}
+          />
+        );
+      })}
     </div>
   );
 }

@@ -6,23 +6,14 @@ import { StartLights } from '@/components/mechanisms/StartLights';
 import { startGrid } from '@/data/copy';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { trackStartGridHold, trackStartGridComplete } from '@/lib/analytics';
-import { getVariantForKey } from '@/lib/experiments';
+import { colors } from '@/lib/tokens';
 
 export function StartGrid() {
   const [launched, setLaunched] = useState(false);
   const [flashing, setFlashing] = useState(false);
-  const [heroVariant, setHeroVariant] = useState<'control' | 'performance_focus'>('control');
   const holdStartRef = useRef(0);
   const scrollIntentRef = useRef(0);
   const { reducedMotion } = useReducedMotion();
-  useEffect(() => {
-    const variant = getVariantForKey('hero', 'control');
-    setHeroVariant(variant === 'performance_focus' ? 'performance_focus' : 'control');
-  }, []);
-  const monument =
-    heroVariant === 'performance_focus'
-      ? ['YOUR DATA', 'HAS A LAP-TIME EDGE']
-      : startGrid.monument;
 
   const handleComplete = useCallback(async () => {
     if (launched) return;
@@ -77,7 +68,16 @@ export function StartGrid() {
       <div className="grid-lap">
         <div className="col-span-full flex flex-col items-center justify-center text-center gap-8 md:gap-12">
           <MonumentText size="xl" as="h1" className="text-center">
-            {monument[0]}<br />{monument[1]}
+            EVERY{' '}
+            <span
+              style={{
+                color: colors.safetyRed,
+                textShadow: `0 0 20px ${colors.safetyRed}80, 0 0 50px ${colors.safetyRed}40`,
+              }}
+            >
+              LAP
+            </span>
+            <br />HAS A SECRET
           </MonumentText>
 
           {!launched && (
@@ -86,8 +86,11 @@ export function StartGrid() {
                 onComplete={handleComplete}
                 reducedMotion={reducedMotion}
               />
-              <p className="font-telemetry text-steel">
-                {startGrid.instruction} {/* OR SCROLL TO LAUNCH */}
+              <p className="font-telemetry text-steel text-sm md:text-base tracking-widest animate-pulse">
+                {startGrid.instruction}
+              </p>
+              <p className="font-telemetry text-steel/50 text-xs tracking-widest">
+                OR SCROLL DOWN TO SKIP
               </p>
             </>
           )}
