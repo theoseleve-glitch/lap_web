@@ -1,20 +1,37 @@
-FROM python:3.11-slim AS base
-WORKDIR /app
+# ── Builder stage: compile C extensions (psycopg2, argon2) ────────────
+FROM python:3.11-slim AS builder
+WORKDIR /build
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq-dev gcc && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn resend stripe
+RUN pip install --no-cache-dir --prefix=/install \
+    -r requirements.txt gunicorn resend stripe prometheus_client
 
-COPY telemetry_tool/ telemetry_tool/
-COPY kart_envelope/ kart_envelope/
+# ── Final stage: slim runtime without gcc ─────────────────────────────
+FROM python:3.11-slim AS runtime
+WORKDIR /app
 
-# Data directories (volumes mount over these)
-RUN mkdir -p /data/uploads /data/parquet /data/exports
+# Runtime dependency: libpq for psycopg2 (no gcc, no -dev headers)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder
+COPY --from=builder /install /usr/local
+
+# Non-root user
+RUN adduser --system --no-create-home --group app \
+    && mkdir -p /data/uploads /data/parquet /data/exports \
+    && chown -R app:app /data
+
+COPY --chown=app:app telemetry_tool/ telemetry_tool/
+COPY --chown=app:app kart_envelope/ kart_envelope/
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
+
+USER app
 
 EXPOSE 5000
 
