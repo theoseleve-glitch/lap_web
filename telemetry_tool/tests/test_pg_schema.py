@@ -155,6 +155,8 @@ EXPECTED_TABLES = [
     "refresh_tokens",
     # Phase 19 (OAuth)
     "oauth_connections",
+    # Phase 20 (Stripe webhook idempotency)
+    "stripe_events",
 ]
 
 
