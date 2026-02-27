@@ -22,6 +22,7 @@ export const easing = {
   overshoot: 'back.out(1.7)',       // approx cubic-bezier(0.34, 1.56, 0.64, 1)
   spring: 'back.out(1.2)',          // approx cubic-bezier(0.22, 1.2, 0.36, 1)
   snap: 'power2.in',               // approx cubic-bezier(0.7, 0, 0.84, 0)
+  anticipate: 'power2.inOut',       // approx cubic-bezier(0.45, 0, 0.55, 1)
 } as const;
 
 export const roomAccents: Record<string, string> = {
