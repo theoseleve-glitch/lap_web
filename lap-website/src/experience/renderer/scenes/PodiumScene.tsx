@@ -2,7 +2,7 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { AtmosphereBase } from './AtmosphereBase';
+import { LivingSurface } from './LivingSurface';
 import type { ChapterSceneProps } from '@/experience/state/types';
 
 export function PodiumScene(props: ChapterSceneProps) {
@@ -16,7 +16,7 @@ export function PodiumScene(props: ChapterSceneProps) {
 
   return (
     <group>
-      <AtmosphereBase {...props} color="#0B0C0F" fogDensity={0.04} particleCount={300} />
+      <LivingSurface {...props} color="#0B0C0F" fogDensity={0.04} />
       {props.active && (
         <pointLight
           ref={lightRef}

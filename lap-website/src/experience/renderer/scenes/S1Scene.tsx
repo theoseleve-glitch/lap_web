@@ -2,7 +2,7 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
-import { AtmosphereBase } from './AtmosphereBase';
+import { LivingSurface } from './LivingSurface';
 import type { ChapterSceneProps } from '@/experience/state/types';
 
 export function S1Scene(props: ChapterSceneProps) {
@@ -17,7 +17,7 @@ export function S1Scene(props: ChapterSceneProps) {
 
   return (
     <group>
-      <AtmosphereBase {...props} color="#0B0C0F" fogDensity={0.03} particleCount={250} />
+      <LivingSurface {...props} color="#0B0C0F" fogDensity={0.03} />
       {props.active && (
         <pointLight
           ref={lightRef}
