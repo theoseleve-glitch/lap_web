@@ -716,7 +716,7 @@ class RaceStateEngine:
             quick = pit_type == "quick"
             stop_dur = (self.config.get("quick_pit_stop_s") or pit_time) if quick else pit_time
             refueled = self._refuel_map.get(s.stint_order, True)
-            driver_change = int(prev.driver_id != s.driver_id)
+            driver_change = bool(prev.driver_id != s.driver_id)
 
             # Find the stint_id just inserted for the preceding stint
             row = cur.execute(
@@ -737,7 +737,7 @@ class RaceStateEngine:
                     prev.planned_end_s,
                     stop_dur,
                     driver_change,
-                    int(refueled),
+                    bool(refueled),
                     pit_type,
                 ),
             )
@@ -756,8 +756,8 @@ class RaceStateEngine:
                     w.get("label"),
                     w["start_s"],
                     w["end_s"],
-                    w.get("refuel_allowed", 1),
-                    w.get("driver_change_allowed", 1),
+                    bool(w.get("refuel_allowed", 1)),
+                    bool(w.get("driver_change_allowed", 1)),
                     w.get("window_order", 1),
                 ),
             )

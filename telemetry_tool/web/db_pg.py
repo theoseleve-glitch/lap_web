@@ -54,6 +54,35 @@ def _new_connection():
 
 
 # ---------------------------------------------------------------------------
+# Cursor wrapper — translates SQLite SQL in cur.execute() calls
+# ---------------------------------------------------------------------------
+
+class _PgCursorWrapper:
+    """Thin wrapper around a psycopg2 cursor that translates SQL."""
+
+    def __init__(self, raw_cursor):
+        self._cur = raw_cursor
+
+    def execute(self, sql: str, params=None):
+        from db.sql_compat import translate_params
+        translated = translate_params(sql)
+        if params is not None:
+            self._cur.execute(translated, params)
+        else:
+            self._cur.execute(translated)
+        return self  # allow chaining: cur.execute(...).fetchone()
+
+    def executemany(self, sql: str, seq_of_params):
+        from db.sql_compat import translate_params
+        translated = translate_params(sql)
+        self._cur.executemany(translated, seq_of_params)
+        return self
+
+    def __getattr__(self, name):
+        return getattr(self._cur, name)
+
+
+# ---------------------------------------------------------------------------
 # Connection wrapper — makes psycopg2 behave like sqlite3.Connection
 # ---------------------------------------------------------------------------
 
@@ -99,6 +128,18 @@ class PgConnectionWrapper:
         cur = self._conn.cursor()
         cur.executemany(translated, seq_of_params)
         return cur
+
+    def cursor(self):
+        """Return a translating cursor wrapper with **tuple** rows.
+
+        Code that calls ``conn.cursor()`` then ``cur.execute(sql)`` (e.g.
+        RaceStateEngine.save) gets SQL translation automatically.  Uses a
+        plain tuple cursor (not RealDictCursor) because legacy code like
+        RaceStateEngine uses positional indexing (``row[0]``).
+        """
+        import psycopg2.extensions
+        raw_cur = self._conn.cursor(cursor_factory=psycopg2.extensions.cursor)
+        return _PgCursorWrapper(raw_cur)
 
     # -- Forward everything else to the underlying connection -------------
 

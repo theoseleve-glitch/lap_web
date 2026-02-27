@@ -28,6 +28,13 @@ if _root not in sys.path:
 from race_state_engine import RaceStateEngine  # noqa: E402
 from race_strategy_v2 import optimize_stints, reoptimize_remaining  # noqa: E402
 
+
+def _pg_bool(val, default=False) -> bool:
+    """Convert 0/1/None to Python bool for PG boolean columns."""
+    if val is None:
+        return default
+    return bool(int(val))
+
 logger = logging.getLogger(__name__)
 
 
@@ -128,15 +135,22 @@ def _get_last_insert_id(conn, cur, table: str, pk_col: str) -> int | None:
     """Get the ID of the last inserted row.
 
     Works for both SQLite (``cur.lastrowid``) and PostgreSQL (``currval``).
+    PG's RealDictCursor returns dicts so we handle both tuple and dict rows.
     """
-    race_id = cur.lastrowid
+    race_id = getattr(cur, "lastrowid", None)
     if race_id is None or race_id == 0:
         # PG mode: lastrowid not set, need explicit query
         row = conn.execute(
-            "SELECT currval(pg_get_serial_sequence(?, ?))",
+            "SELECT currval(pg_get_serial_sequence(?, ?)) AS last_id",
             (table, pk_col),
         ).fetchone()
-        race_id = row[0] if row else None
+        if row is None:
+            return None
+        # Handle both dict rows (RealDictCursor) and tuple rows (SQLite)
+        if isinstance(row, dict):
+            race_id = row.get("last_id")
+        else:
+            race_id = row[0]
     return race_id
 
 
@@ -247,11 +261,11 @@ def create_race(conn, data: dict) -> int:
             race.get("empty_kart_kg"),
             race.get("full_tank_kg"),
             race.get("min_total_kart_kg"),
-            race.get("weigh_on_pit_exit", 0),
+            _pg_bool(race.get("weigh_on_pit_exit", 0)),
             race.get("qualifying_duration_s"),
-            race.get("refuel_after_quali", 0),
-            race.get("mandatory_driver_change", 1),
-            race.get("refueling_allowed", 1),
+            _pg_bool(race.get("refuel_after_quali", 0)),
+            _pg_bool(race.get("mandatory_driver_change", 1), default=True),
+            _pg_bool(race.get("refueling_allowed", 1), default=True),
         ),
     )
     race_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
@@ -303,7 +317,7 @@ def update_race(conn, race_id: int, data: dict) -> bool:
             empty_kart_kg=?, full_tank_kg=?, min_total_kart_kg=?,
             weigh_on_pit_exit=?, qualifying_duration_s=?, refuel_after_quali=?,
             mandatory_driver_change=?, refueling_allowed=?,
-            updated_at=datetime('now'), status='draft'
+            updated_at=CURRENT_TIMESTAMP, status='draft'
         WHERE race_id=?""",
         (
             cfg.get("race_name", race.get("race_name", "Untitled Race")),
@@ -321,11 +335,11 @@ def update_race(conn, race_id: int, data: dict) -> bool:
             cfg.get("empty_kart_kg", race.get("empty_kart_kg")),
             cfg.get("full_tank_kg", race.get("full_tank_kg")),
             cfg.get("min_total_kart_kg", race.get("min_total_kart_kg")),
-            cfg.get("weigh_on_pit_exit", race.get("weigh_on_pit_exit", 0)),
+            _pg_bool(cfg.get("weigh_on_pit_exit", race.get("weigh_on_pit_exit", 0))),
             cfg.get("qualifying_duration_s", race.get("qualifying_duration_s")),
-            cfg.get("refuel_after_quali", race.get("refuel_after_quali", 0)),
-            cfg.get("mandatory_driver_change", race.get("mandatory_driver_change", 1)),
-            cfg.get("refueling_allowed", race.get("refueling_allowed", 1)),
+            _pg_bool(cfg.get("refuel_after_quali", race.get("refuel_after_quali", 0))),
+            _pg_bool(cfg.get("mandatory_driver_change", race.get("mandatory_driver_change", 1)), default=True),
+            _pg_bool(cfg.get("refueling_allowed", race.get("refueling_allowed", 1)), default=True),
             race_id,
         ),
     )
@@ -385,7 +399,7 @@ def run_optimization(conn, race_id: int) -> dict:
     # Update status
     new_status = "ready" if result["feasible"] else "draft"
     conn.execute(
-        "UPDATE race_configs SET status = ?, updated_at = datetime('now') WHERE race_id = ?",
+        "UPDATE race_configs SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE race_id = ?",
         (new_status, race_id),
     )
     conn.commit()
@@ -417,7 +431,7 @@ def go_live(conn, race_id: int) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         "UPDATE race_configs SET status = 'live', race_start_ts = ?, "
-        "updated_at = datetime('now') WHERE race_id = ?",
+        "updated_at = CURRENT_TIMESTAMP WHERE race_id = ?",
         (now, race_id),
     )
 
@@ -463,7 +477,7 @@ def finish_race(conn, race_id: int) -> bool:
         )
 
     conn.execute(
-        "UPDATE race_configs SET status = 'finished', updated_at = datetime('now') "
+        "UPDATE race_configs SET status = 'finished', updated_at = CURRENT_TIMESTAMP "
         "WHERE race_id = ?",
         (race_id,),
     )
@@ -590,8 +604,8 @@ def end_stint(
             race_id,
             active["stint_id"],
             elapsed,
-            1 if driver_change else 0,
-            1 if refueled else 0,
+            bool(driver_change),
+            bool(refueled),
             notes,
         ),
     )
@@ -798,11 +812,11 @@ def import_race(conn, data: dict) -> int:
             race.get("empty_kart_kg"),
             race.get("full_tank_kg"),
             race.get("min_total_kart_kg"),
-            race.get("weigh_on_pit_exit", 0),
+            _pg_bool(race.get("weigh_on_pit_exit", 0)),
             race.get("qualifying_duration_s"),
-            race.get("refuel_after_quali", 0),
-            race.get("mandatory_driver_change", 1),
-            race.get("refueling_allowed", 1),
+            _pg_bool(race.get("refuel_after_quali", 0)),
+            _pg_bool(race.get("mandatory_driver_change", 1), default=True),
+            _pg_bool(race.get("refueling_allowed", 1), default=True),
         ),
     )
     new_race_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
@@ -957,11 +971,11 @@ def duplicate_race(conn, race_id: int) -> int | None:
             r["empty_kart_kg"],
             r["full_tank_kg"],
             r["min_total_kart_kg"],
-            r["weigh_on_pit_exit"],
+            _pg_bool(r["weigh_on_pit_exit"]),
             r["qualifying_duration_s"],
-            r["refuel_after_quali"],
-            r["mandatory_driver_change"],
-            r["refueling_allowed"],
+            _pg_bool(r["refuel_after_quali"]),
+            _pg_bool(r["mandatory_driver_change"], default=True),
+            _pg_bool(r["refueling_allowed"], default=True),
         ),
     )
     new_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
