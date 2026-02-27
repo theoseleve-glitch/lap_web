@@ -23,7 +23,7 @@ class TestIntegration:
             "driver_profiles", "driver_progression", "driving_style_features",
             "theoretical_data", "reference_lines", "session_sectors",
             "data_health", "session_tags", "corner_metrics", "corner_best_practices",
-            "session_weather", "vehicle_setups", "what_if_scenarios",
+            "session_weather", "session_weather_laps", "vehicle_setups", "what_if_scenarios",
             "session_annotations", "development_plans", "custom_dashboards", "export_templates",
         }
         assert expected.issubset(table_names)
