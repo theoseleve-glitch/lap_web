@@ -1,6 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import type { Plan } from '@/data/pricing';
+import { useCurrency } from '@/hooks/useCurrency';
 import { PitButton } from './PitButton';
 import { StampButton } from './StampButton';
 
@@ -17,6 +19,46 @@ export function PricingTable({
   onCtaClick,
   className = '',
 }: PricingTableProps) {
+  const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const { currency } = useCurrency();
+
+  async function handleCheckout(plan: Plan) {
+    onCtaClick?.(plan.name);
+
+    // Free plan — go straight to register
+    if (plan.priceAnnualPerMonth === 'Free') {
+      window.location.href = '/register?source=demo';
+      return;
+    }
+
+    setLoadingPlan(plan.name);
+    try {
+      const response = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          plan: plan.name,
+          billingCycle: billingPeriod,
+          currency,
+        }),
+      });
+
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        checkoutUrl?: string;
+      } | null;
+
+      if (data?.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
+    } catch {
+      // On failure, fall back to billing page
+      window.location.href = plan.ctaHref;
+    } finally {
+      setLoadingPlan(null);
+    }
+  }
+
   return (
     <div className={`grid grid-cols-1 md:grid-cols-3 gap-0 ${className}`}>
       {plans.map((plan, i) => {
@@ -25,6 +67,7 @@ export function PricingTable({
         const displayPrice = showAnnual
           ? plan.priceAnnualPerMonth
           : plan.priceMonthly;
+        const isLoading = loadingPlan === plan.name;
 
         return (
           <div
@@ -78,19 +121,17 @@ export function PricingTable({
 
             {plan.highlighted ? (
               <PitButton
-                href={plan.ctaHref}
-                onClick={() => onCtaClick?.(plan.name)}
+                onClick={() => handleCheckout(plan)}
                 className="w-full"
               >
-                {plan.cta}
+                {isLoading ? 'Redirecting...' : plan.cta}
               </PitButton>
             ) : (
               <StampButton
-                href={plan.ctaHref}
-                onClick={() => onCtaClick?.(plan.name)}
+                onClick={() => handleCheckout(plan)}
                 className="w-full"
               >
-                {plan.cta}
+                {isLoading ? 'Redirecting...' : plan.cta}
               </StampButton>
             )}
           </div>

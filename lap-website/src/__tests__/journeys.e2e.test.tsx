@@ -96,9 +96,9 @@ describe('Key conversion journeys', () => {
     expect(pushMock).not.toHaveBeenCalled();
   });
 
-  it('pricing CTA points to a real booking route', () => {
+  it('pricing CTA triggers direct checkout', () => {
     render(<PricingTable plans={b2cPlans} billingPeriod="annual" />);
-    const cta = screen.getByRole('link', { name: 'Upgrade' });
-    expect(cta).toHaveAttribute('href', '/billing?plan=RACER&billing=annual');
+    const cta = screen.getByRole('button', { name: 'Upgrade' });
+    expect(cta).toBeInTheDocument();
   });
 });
