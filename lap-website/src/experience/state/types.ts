@@ -130,6 +130,24 @@ export interface FinishState {
   finalDelta: number;
 }
 
+export interface BackgroundState {
+  cornerYaw: number;       // current yaw offset in degrees
+  cornerBank: number;      // current bank offset in degrees
+  streakIntensity: number; // 0-1, modulated by DRS + velocity
+  ribbonProgress: number;  // 0-1, where camera is on ribbon
+}
+
+export interface AssetState {
+  loaded: Record<string, boolean>;   // per-asset load state
+  visible: Record<string, boolean>;  // per-asset visibility
+}
+
+export interface SafetyCarState {
+  active: boolean;
+  reason: string;
+  enteredAt: number;
+}
+
 export interface ExtendedKernelState {
   hudTower: HudTowerState;
   hudDelta: HudDeltaState;
@@ -154,4 +172,25 @@ export interface ExtendedKernelActions {
   crossFinishLine: () => void;
 }
 
-export type KernelStore = KernelState & KernelActions & ExtendedKernelState & ExtendedKernelActions;
+export interface BackgroundActions {
+  setCornerYaw: (yaw: number) => void;
+  setCornerBank: (bank: number) => void;
+  setStreakIntensity: (intensity: number) => void;
+  setRibbonProgress: (progress: number) => void;
+}
+
+export interface AssetActions {
+  setAssetLoaded: (id: string, loaded: boolean) => void;
+  setAssetVisible: (id: string, visible: boolean) => void;
+}
+
+export interface SafetyCarActions {
+  enterSafetyCar: (reason: string) => void;
+  exitSafetyCar: () => void;
+}
+
+export type KernelStore = KernelState & KernelActions
+  & ExtendedKernelState & ExtendedKernelActions
+  & { background: BackgroundState } & BackgroundActions
+  & { assets: AssetState } & AssetActions
+  & { safetyCar: SafetyCarState } & SafetyCarActions;
