@@ -34,8 +34,16 @@ function generateSteeringTrace(steps: number): number[] {
   });
 }
 
+function generateThrottleTrace(steps: number): number[] {
+  return Array.from({ length: steps }, (_, i) => {
+    const t = i / steps;
+    return 0.7 + 0.25 * Math.sin(t * Math.PI * 5) - 0.15 * Math.abs(Math.sin(t * Math.PI * 8));
+  });
+}
+
 const TRACES = [
   { name: 'speed', color: colors.chalk, data: generateSpeedTrace(200), width: 3 },
+  { name: 'throttle', color: colors.acidGreen, data: generateThrottleTrace(200), width: 2.5 },
   { name: 'brake', color: colors.safetyRed, data: generateBrakeTrace(200), width: 2.5 },
   { name: 'steering', color: colors.steel, data: generateSteeringTrace(200), width: 2 },
 ];
@@ -100,7 +108,7 @@ export function TelemetryTracesCanvas({
     <canvas
       ref={canvasRef}
       className={`w-full h-64 md:h-80 ${className}`}
-      aria-label="Telemetry traces visualization — speed, brake, and steering data"
+      aria-label="Telemetry traces visualization — speed, throttle, brake, and steering data"
       role="img"
     />
   );
