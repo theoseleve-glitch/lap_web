@@ -1185,15 +1185,41 @@ def insert_theoretical_data(
     if best_time and actual_best and best_time > 0:
         gap_pct = round((actual_best - best_time) / best_time * 100, 2)
 
+    # Serialize new kart_envelope fields
+    corner_coaching = summary.get("corner_coaching")
+    corner_coaching_json = _json_dumps(corner_coaching) if corner_coaching else None
+    session_scalars = summary.get("session_scalars")
+    session_scalars_json = _json_dumps(session_scalars) if session_scalars else None
+    # Delta map summary: store top-N time loss segments (not the full DataFrame)
+    delta_map_json = None
+    delta_map = summary.get("delta_map")
+    if delta_map is not None and hasattr(delta_map, "to_dict"):
+        try:
+            if "segment" in delta_map.columns and "delta_s" in delta_map.columns:
+                seg_summary = (
+                    delta_map.groupby("segment")
+                    .agg({"delta_s": "sum", "distance_m": "mean"})
+                    .reset_index()
+                    .sort_values("delta_s", ascending=False)
+                    .head(10)
+                    .to_dict(orient="records")
+                )
+                delta_map_json = _json_dumps(seg_summary)
+        except Exception:
+            pass
+
     conn.execute(Q.INSERT_THEORETICAL_DATA, {
-        "session_id":          session_id,
-        "theoretical_time_s":  _safe_float(best_time),
-        "actual_best_time_s":  _safe_float(actual_best),
-        "gap_pct":             _safe_float(gap_pct),
-        "simulation_method":   theo_metrics.get("simulation_method"),
-        "speed_profile_json":  speed_profile_json,
-        "distance_json":       distance_json,
-        "metrics_json":        _json_dumps(theo_metrics),
+        "session_id":              session_id,
+        "theoretical_time_s":      _safe_float(best_time),
+        "actual_best_time_s":      _safe_float(actual_best),
+        "gap_pct":                 _safe_float(gap_pct),
+        "simulation_method":       theo_metrics.get("simulation_method"),
+        "speed_profile_json":      speed_profile_json,
+        "distance_json":           distance_json,
+        "metrics_json":            _json_dumps(theo_metrics),
+        "corner_coaching_json":    corner_coaching_json,
+        "delta_map_json":          delta_map_json,
+        "session_scalars_json":    session_scalars_json,
     })
 
 
@@ -1214,6 +1240,12 @@ def get_theoretical_data(
         d["distances"] = json.loads(d["distance_json"])
     if d.get("metrics_json"):
         d["metrics"] = json.loads(d["metrics_json"])
+    if d.get("corner_coaching_json"):
+        d["corner_coaching"] = json.loads(d["corner_coaching_json"])
+    if d.get("delta_map_json"):
+        d["delta_map_summary"] = json.loads(d["delta_map_json"])
+    if d.get("session_scalars_json"):
+        d["session_scalars"] = json.loads(d["session_scalars_json"])
     return d
 
 
