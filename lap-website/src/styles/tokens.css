@@ -46,11 +46,11 @@
   --z-panels: 10;
   --z-stamps: 20;
   --z-delta: 30;
-  --z-sector: 40;
-  --z-timecode: 50;
   --z-hud: 35;
   --z-drs: 36;
   --z-finish-line: 37;
+  --z-sector: 40;
+  --z-timecode: 50;
   --z-nav: 60;
   --z-overlay: 100;
   --z-cursor: 999;
