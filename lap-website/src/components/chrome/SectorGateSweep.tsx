@@ -9,6 +9,7 @@ export function SectorGateSweep() {
   const sectors = useKernelStore((s) => s.hudTower.sectors);
   const lineRef = useRef<HTMLDivElement>(null);
   const prevCompletedRef = useRef<number>(0);
+  const tweenRef = useRef<gsap.core.Tween | null>(null);
 
   useEffect(() => {
     const completedCount = sectors.filter((s) => s.status === 'completed').length;
@@ -18,7 +19,10 @@ export function SectorGateSweep() {
       const el = lineRef.current;
       el.style.opacity = '1';
 
-      gsap.fromTo(
+      // Kill any in-flight tween before starting a new one
+      tweenRef.current?.kill();
+
+      tweenRef.current = gsap.fromTo(
         el,
         { scaleX: 0, transformOrigin: 'left center' },
         {
@@ -34,6 +38,11 @@ export function SectorGateSweep() {
 
     prevCompletedRef.current = completedCount;
   }, [sectors]);
+
+  // Cleanup GSAP tween on unmount
+  useEffect(() => {
+    return () => { tweenRef.current?.kill(); };
+  }, []);
 
   return (
     <div

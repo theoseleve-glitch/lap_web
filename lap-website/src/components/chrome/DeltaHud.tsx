@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { useKernelStore } from '@/experience/state/store';
 import { colors } from '@/lib/tokens';
 
@@ -13,16 +13,29 @@ export function DeltaHud() {
   const formatted = `${value >= 0 ? '+' : ''}${value.toFixed(2)}s`;
   const deltaColor = isGain ? colors.acidGreen : colors.safetyRed;
 
-  // Compute jitter offset — random-ish but deterministic per render
-  const jitterOffset = useMemo(() => {
-    if (settled || jitter === 0) return { x: 0, y: 0 };
-    // Use value as a seed for pseudo-random offset
-    const seed = Math.abs(value * 1000) % 1;
-    return {
-      x: (seed - 0.5) * jitter,
-      y: ((seed * 7.3) % 1 - 0.5) * jitter,
-    };
-  }, [value, jitter, settled]);
+  // Time-based jitter using RAF for visual tremor even at constant values
+  const [jitterOffset, setJitterOffset] = useState({ x: 0, y: 0 });
+  const rafRef = useRef<number>(0);
+
+  const tick = useCallback(() => {
+    if (settled || jitter === 0) {
+      setJitterOffset({ x: 0, y: 0 });
+      return;
+    }
+    const t = performance.now() * 0.01;
+    setJitterOffset({
+      x: Math.sin(t * 1.7) * jitter * 0.5,
+      y: Math.cos(t * 2.3) * jitter * 0.5,
+    });
+    rafRef.current = requestAnimationFrame(tick);
+  }, [jitter, settled]);
+
+  useEffect(() => {
+    if (!settled && jitter > 0) {
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    return () => { cancelAnimationFrame(rafRef.current); };
+  }, [tick, jitter, settled]);
 
   return (
     <div

@@ -1,7 +1,7 @@
 'use client';
 
 import { useKernelStore } from '@/experience/state/store';
-import { sectorTabs } from '@/lib/tokens';
+import { sectorTabs, colors } from '@/lib/tokens';
 
 const RING_RADIUS = 8;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -72,8 +72,8 @@ export function TimingTower() {
               <span
                 className="font-telemetry text-[11px] tracking-[0.12em] uppercase transition-all duration-[420ms]"
                 style={{
-                  color: isCompleted ? '#D946EF' : isActive ? 'var(--chalk)' : 'var(--steel)',
-                  textShadow: isActive ? '0 0 8px rgba(217, 70, 239, 0.4)' : 'none',
+                  color: isCompleted ? colors.racingPurple : isActive ? 'var(--chalk)' : 'var(--steel)',
+                  textShadow: isActive ? `0 0 8px ${colors.racingPurple}66` : 'none',
                 }}
               >
                 {sector.id}
@@ -101,7 +101,7 @@ export function TimingTower() {
               onClick={() => handleClick(tab.id)}
               className="w-2 h-2 rounded-full transition-all duration-[420ms]"
               style={{
-                background: isCompleted ? '#D946EF' : isActive ? 'var(--chalk)' : 'var(--steel)',
+                background: isCompleted ? colors.racingPurple : isActive ? 'var(--chalk)' : 'var(--steel)',
               }}
               aria-label={`Go to ${sector.id}`}
             />

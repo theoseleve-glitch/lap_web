@@ -10,6 +10,7 @@ export function FinishLine() {
   const bandRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
   const hasAnimated = useRef(false);
+  const tweensRef = useRef<gsap.core.Tween[]>([]);
 
   useEffect(() => {
     if (!crossed || hasAnimated.current || !bandRef.current) return;
@@ -19,7 +20,7 @@ export function FinishLine() {
     const el = bandRef.current;
 
     // Sweep from left to right
-    gsap.fromTo(
+    const sweep = gsap.fromTo(
       el,
       { x: '-100%', opacity: 1 },
       {
@@ -28,16 +29,23 @@ export function FinishLine() {
         ease: 'power2.inOut',
         onComplete: () => {
           // Hold briefly then fade
-          gsap.to(el, {
+          const fade = gsap.to(el, {
             opacity: 0,
             duration: 0.4,
             delay: 0.6,
             onComplete: () => setVisible(false),
           });
+          tweensRef.current.push(fade);
         },
       },
     );
+    tweensRef.current.push(sweep);
   }, [crossed]);
+
+  // Cleanup GSAP tweens on unmount
+  useEffect(() => {
+    return () => { tweensRef.current.forEach((t) => t.kill()); };
+  }, []);
 
   if (!visible && !crossed) return null;
 
