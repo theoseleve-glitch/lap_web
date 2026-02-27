@@ -49,6 +49,27 @@ const initialState = {
   drs: { active: false, remaining: 0, multiplier: 1.0, trigger: '' },
   trackPath: { heading: 0, headingDelta: 0, isCorner: false, pitMode: false, velocityMultiplier: 1.0 },
   finish: { crossed: false, finalDelta: 0 },
+
+  // ── Background state ──────────────────────
+  background: {
+    cornerYaw: 0,
+    cornerBank: 0,
+    streakIntensity: 0,
+    ribbonProgress: 0,
+  },
+
+  // ── Asset state ────────────────────────────
+  assets: {
+    loaded: {} as Record<string, boolean>,
+    visible: {} as Record<string, boolean>,
+  },
+
+  // ── Safety Car state ───────────────────────
+  safetyCar: {
+    active: false,
+    reason: '',
+    enteredAt: 0,
+  },
 };
 
 export const useKernelStore = create<KernelStore>()((set) => ({
@@ -142,4 +163,26 @@ export const useKernelStore = create<KernelStore>()((set) => ({
       finish: { crossed: true, finalDelta: state.hudDelta.value },
       hudDelta: { ...state.hudDelta, settled: true, jitter: 0 },
     })),
+
+  // ── Background actions ────────────────────
+  setCornerYaw: (yaw) =>
+    set((state) => ({ background: { ...state.background, cornerYaw: yaw } })),
+  setCornerBank: (bank) =>
+    set((state) => ({ background: { ...state.background, cornerBank: bank } })),
+  setStreakIntensity: (intensity) =>
+    set((state) => ({ background: { ...state.background, streakIntensity: Math.max(0, Math.min(1, intensity)) } })),
+  setRibbonProgress: (progress) =>
+    set((state) => ({ background: { ...state.background, ribbonProgress: Math.max(0, Math.min(1, progress)) } })),
+
+  // ── Asset actions ─────────────────────────
+  setAssetLoaded: (id, loaded) =>
+    set((state) => ({ assets: { ...state.assets, loaded: { ...state.assets.loaded, [id]: loaded } } })),
+  setAssetVisible: (id, visible) =>
+    set((state) => ({ assets: { ...state.assets, visible: { ...state.assets.visible, [id]: visible } } })),
+
+  // ── Safety Car actions ────────────────────
+  enterSafetyCar: (reason) =>
+    set({ safetyCar: { active: true, reason, enteredAt: Date.now() } }),
+  exitSafetyCar: () =>
+    set({ safetyCar: { active: false, reason: '', enteredAt: 0 } }),
 }));
