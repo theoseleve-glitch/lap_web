@@ -21,6 +21,33 @@ const initialState = {
   webglAvailable: true,
   loadProgress: 0,
   preloaderComplete: false,
+
+  // ── Narrative state ─────────────────────
+  hudTower: {
+    sectors: [
+      { id: 'S1', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'S2', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'S3', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'S4', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'S5', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'PIT', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'GAR', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'POD', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+    ],
+    activeSectorIndex: 0,
+  },
+  hudDelta: { value: 0, jitter: 8, settled: false },
+  reveal: {
+    maskCoverage: 0,
+    brushRadius: 80,
+    turbulenceLevel: 0,
+    smoothedPointer: { x: 0.5, y: 0.5 },
+    layerSubject: 'telemetry-truth',
+    active: true,
+  },
+  drs: { active: false, remaining: 0, multiplier: 1.0, trigger: '' },
+  trackPath: { heading: 0, headingDelta: 0, isCorner: false, pitMode: false, velocityMultiplier: 1.0 },
+  finish: { crossed: false, finalDelta: 0 },
 };
 
 export const useKernelStore = create<KernelStore>()((set) => ({
@@ -53,4 +80,66 @@ export const useKernelStore = create<KernelStore>()((set) => ({
     set({ loadProgress: Math.max(0, Math.min(1, progress)) }),
   completePreloader: () =>
     set({ preloaderComplete: true, loadProgress: 1, mode: 'idle' }),
+
+  // ── Narrative actions ───────────────────
+  completeSector: (index) =>
+    set((state) => {
+      const sectors = [...state.hudTower.sectors];
+      if (index >= 0 && index < sectors.length) {
+        sectors[index] = { ...sectors[index], status: 'completed', color: '#D946EF', progress: 1 };
+      }
+      const nextActive = Math.min(index + 1, sectors.length - 1);
+      if (nextActive < sectors.length && sectors[nextActive].status === 'pending') {
+        sectors[nextActive] = { ...sectors[nextActive], status: 'active' };
+      }
+      return { hudTower: { sectors, activeSectorIndex: nextActive } };
+    }),
+
+  setSectorProgress: (index, progress) =>
+    set((state) => {
+      const sectors = [...state.hudTower.sectors];
+      if (index >= 0 && index < sectors.length) {
+        sectors[index] = { ...sectors[index], progress: Math.max(0, Math.min(1, progress)) };
+      }
+      return { hudTower: { ...state.hudTower, sectors } };
+    }),
+
+  setDeltaValue: (value) =>
+    set((state) => ({ hudDelta: { ...state.hudDelta, value } })),
+
+  setDeltaJitter: (jitter) =>
+    set((state) => ({
+      hudDelta: { ...state.hudDelta, jitter: Math.max(0, Math.min(8, jitter)) },
+    })),
+
+  settleDelta: () =>
+    set((state) => ({ hudDelta: { ...state.hudDelta, settled: true, jitter: 0 } })),
+
+  setMaskCoverage: (coverage) =>
+    set((state) => ({
+      reveal: { ...state.reveal, maskCoverage: Math.max(0, Math.min(1, coverage)) },
+    })),
+
+  setRevealActive: (active) =>
+    set((state) => ({ reveal: { ...state.reveal, active } })),
+
+  activateDrs: (trigger) =>
+    set({ drs: { active: true, remaining: 2000, multiplier: 1.4, trigger } }),
+
+  deactivateDrs: () =>
+    set({ drs: { active: false, remaining: 0, multiplier: 1.0, trigger: '' } }),
+
+  setTrackPath: (path) =>
+    set((state) => ({ trackPath: { ...state.trackPath, ...path } })),
+
+  setPitMode: (active) =>
+    set((state) => ({
+      trackPath: { ...state.trackPath, pitMode: active, velocityMultiplier: active ? 0.3 : 1.0 },
+    })),
+
+  crossFinishLine: () =>
+    set((state) => ({
+      finish: { crossed: true, finalDelta: state.hudDelta.value },
+      hudDelta: { ...state.hudDelta, settled: true, jitter: 0 },
+    })),
 }));
