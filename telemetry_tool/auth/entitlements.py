@@ -84,7 +84,7 @@ PLAN_ENTITLEMENTS["demo"] = PLAN_ENTITLEMENTS["free"]
 KNOWN_PLANS = set(PLAN_ENTITLEMENTS.keys())
 
 # Maps metric names to entitlement keys for usage limit checks
-_METRIC_TO_ENTITLEMENT: dict[str, str] = {
+METRIC_TO_ENTITLEMENT: dict[str, str] = {
     "reports": "reports_per_month",
     "uploads": "uploads_per_month",
 }
@@ -104,7 +104,7 @@ def check_usage_limit(
     limit, used, and remaining.  -1 means unlimited.
     """
     ent = get_plan_entitlements(plan)
-    ent_key = _METRIC_TO_ENTITLEMENT.get(metric)
+    ent_key = METRIC_TO_ENTITLEMENT.get(metric)
     if ent_key is None:
         # Unknown metric — deny by default
         return False, {"limit": 0, "used": current_count, "remaining": 0}
@@ -319,12 +319,24 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
         entitlements["reports_remaining"] = entitlements.get("reports_per_month")
 
     # Handle subscription status impact on entitlements
+    # | active/trialing  | Full per plan           |
+    # | past_due         | Full per plan (grace)   |
+    # | canceled         | Downgrade to demo after period ends |
+    # | paused           | Read-only (no new uploads/analyses) |
     if sub_status == "paused":
-        # Paused: read-only, block new uploads and analyses
+        # Paused: read-only access, block new uploads and analyses
         entitlements["_paused"] = True
+        entitlements["reports_per_month"] = 0
+        entitlements["reports_remaining"] = 0
     elif sub_status == "canceled":
-        # Canceled but within grace period: keep current tier features
+        # Canceled: grace period features kept, but flag for downstream
         entitlements["_cancel_pending"] = True
+    elif sub_status in ("active", "trialing"):
+        # Full access per plan tier (default state, nothing to override)
+        pass
+    elif sub_status == "past_due":
+        # Grace period: full access, but flag it
+        entitlements["_past_due"] = True
 
     return entitlements
 

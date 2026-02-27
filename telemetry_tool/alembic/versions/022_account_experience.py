@@ -1,19 +1,19 @@
-"""021 -- Account experience: preferences, TOTP 2FA, usage counters, support tickets.
+"""022 -- Account experience: preferences, TOTP 2FA, usage counters, support tickets.
 
 Adds user preferences (JSONB), TOTP 2FA columns, usage_counters table
 with RLS, support_tickets table with RLS, and device-info columns on
 refresh_tokens.
 
-Revision ID: 021
-Revises: 020
+Revision ID: 022
+Revises: 021
 Create Date: 2026-02-27
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "021"
-down_revision = "020"
+revision = "022"
+down_revision = "021"
 branch_labels = None
 depends_on = None
 
@@ -73,7 +73,8 @@ def upgrade():
     conn.execute(sa.text('ALTER TABLE "usage_counters" ENABLE ROW LEVEL SECURITY'))
     conn.execute(sa.text(
         'CREATE POLICY "usage_counters_tenant_isolation" ON "usage_counters" '
-        "USING (workspace_id = current_setting('app.current_workspace_id')::integer)"
+        "USING (workspace_id = current_setting('app.current_workspace_id')::integer) "
+        "WITH CHECK (workspace_id = current_setting('app.current_workspace_id')::integer)"
     ))
 
     # ── 3. Support tickets ───────────────────────────────────────────
@@ -105,7 +106,8 @@ def upgrade():
     conn.execute(sa.text('ALTER TABLE "support_tickets" ENABLE ROW LEVEL SECURITY'))
     conn.execute(sa.text(
         'CREATE POLICY "support_tickets_tenant_isolation" ON "support_tickets" '
-        "USING (workspace_id = current_setting('app.current_workspace_id')::integer)"
+        "USING (workspace_id = current_setting('app.current_workspace_id')::integer) "
+        "WITH CHECK (workspace_id = current_setting('app.current_workspace_id')::integer)"
     ))
 
     # ── 4. Add device-info tracking to refresh_tokens ────────────────

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from auth.entitlements import get_plan_entitlements, _METRIC_TO_ENTITLEMENT
+from auth.entitlements import get_plan_entitlements, METRIC_TO_ENTITLEMENT
 
 
 def get_current_period() -> str:
@@ -49,7 +49,8 @@ def increment_usage(
         "DO UPDATE SET count = usage_counters.count + %(amt)s, updated_at = NOW()",
         {"ws": workspace_id, "m": metric, "p": period, "amt": amount},
     )
-    conn.commit()
+    # Note: no conn.commit() here — let the request teardown handle commit.
+    # Calling commit() mid-request resets SET LOCAL RLS context.
     return get_usage_count(conn, workspace_id, metric, period)
 
 
@@ -74,7 +75,7 @@ def get_usage_snapshot(conn, workspace_id: int, plan: str) -> dict:
         reset_date = f"{now.year}-{now.month + 1:02d}-01"
 
     snapshot = {}
-    for metric, ent_key in _METRIC_TO_ENTITLEMENT.items():
+    for metric, ent_key in METRIC_TO_ENTITLEMENT.items():
         used = get_usage_count(conn, workspace_id, metric, period)
         limit = ent.get(ent_key, 0)
         if limit == -1:

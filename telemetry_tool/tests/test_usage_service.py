@@ -99,11 +99,11 @@ class TestIncrementUsage:
         assert "usage_counters" in first_sql
         assert "ON CONFLICT" in first_sql
 
-    def test_commits_after_upsert(self):
+    def test_does_not_commit_mid_request(self):
         conn = MagicMock()
         conn.execute.return_value.fetchone.return_value = {"count": 1}
         increment_usage(conn, workspace_id=1, metric="uploads")
-        conn.commit.assert_called_once()
+        conn.commit.assert_not_called()
 
     def test_default_amount_is_one(self):
         conn = MagicMock()
