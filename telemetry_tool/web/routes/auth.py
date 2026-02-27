@@ -341,7 +341,7 @@ def oauth_callback(provider):
         result = get_or_create_oauth_user(conn, provider, profile, secret)
         # Redirect to frontend OAuth callback with access token in hash fragment.
         # Hash fragments never leave the browser (not in server logs or referrer).
-        redirect_url = f"{frontend_url}/auth/oauth-callback#access_token={result['access_token']}"
+        redirect_url = f"{frontend_url}/oauth-callback#access_token={result['access_token']}"
         resp = make_response(flask_redirect(redirect_url))
         if result.get("refresh_token"):
             _set_refresh_cookie(resp, result["refresh_token"])
