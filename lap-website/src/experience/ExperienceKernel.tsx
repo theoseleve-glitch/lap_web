@@ -5,6 +5,8 @@ import { InputManager } from './input/InputManager';
 import { QualityManager } from './quality/QualityManager';
 import { DebugHUD } from './quality/DebugHUD';
 import { MotionOrchestrator } from './motion/MotionOrchestrator';
+import { SectorGateController } from './narrative/SectorGateController';
+import { DrsController } from './narrative/DrsController';
 import { chapters } from './state/chapters';
 import { registerChapter } from './renderer/SceneManager';
 
@@ -21,6 +23,8 @@ export function ExperienceKernel({ children }: ExperienceKernelProps) {
       <QualityManager />
       <InputManager />
       <MotionOrchestrator />
+      <SectorGateController />
+      <DrsController />
       <DebugHUD />
       {children}
     </>
