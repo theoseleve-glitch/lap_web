@@ -30,7 +30,7 @@ def _make_integration_app():
 
     @app.before_request
     def _inject_user():
-        g.user_id = 1
+        g.current_user_id = 1
         g.workspace_id = "ws_test"
 
     # Register v1 data and account blueprints

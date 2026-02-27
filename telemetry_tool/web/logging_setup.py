@@ -39,7 +39,7 @@ class RequestIdFilter(logging.Filter):
         try:
             record.request_id = getattr(g, "request_id", "-")
             record.workspace_id = getattr(g, "workspace_id", "-")
-            record.user_id = getattr(g, "user_id", "-")
+            record.user_id = getattr(g, "current_user_id", "-")
         except RuntimeError:
             # Outside Flask request context
             record.request_id = "-"

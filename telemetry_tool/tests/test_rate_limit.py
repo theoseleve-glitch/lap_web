@@ -108,7 +108,7 @@ class TestBelowLimit:
         with patch("web.rate_limit.get_redis", return_value=mock_r):
             client = app.test_client()
             with app.test_request_context():
-                g.user_id = "user_42"
+                g.current_user_id = "user_42"
             resp = client.get("/limited", headers={"X-User-Id": "user_42"})
         assert resp.status_code == 200
         body = resp.get_json()
@@ -203,13 +203,13 @@ class TestKeyScoping:
         assert resp.status_code == 200
 
     def test_read_tier_uses_user_id(self):
-        """Read tier builds key from user_id."""
+        """Read tier builds key from current_user_id."""
         app = _make_app(tier="read")
         mock_r = _mock_redis(eval_return=1)
 
         @app.before_request
         def set_user():
-            g.user_id = "user_99"
+            g.current_user_id = "user_99"
 
         with patch("web.rate_limit.get_redis", return_value=mock_r):
             client = app.test_client()
@@ -221,13 +221,13 @@ class TestKeyScoping:
         assert resp.status_code == 200
 
     def test_write_tier_uses_user_id(self):
-        """Write tier also keys on user_id."""
+        """Write tier also keys on current_user_id."""
         app = _make_app(tier="write")
         mock_r = _mock_redis(eval_return=1)
 
         @app.before_request
         def set_user():
-            g.user_id = "user_77"
+            g.current_user_id = "user_77"
 
         with patch("web.rate_limit.get_redis", return_value=mock_r):
             client = app.test_client()

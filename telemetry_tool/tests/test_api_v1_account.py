@@ -21,7 +21,7 @@ from web.routes.api_v1_account import bp as api_v1_account_bp
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_app():
+def _make_app(authenticated=True):
     """Create a minimal Flask app with api_v1_account blueprint."""
     app = Flask(__name__)
     app.config["TESTING"] = True
@@ -30,8 +30,8 @@ def _make_app():
 
     @app.before_request
     def _inject_user():
-        """Simulate authenticated user."""
-        g.user_id = 1
+        if authenticated:
+            g.current_user_id = 1
         g.workspace_id = "ws_001"
 
     return app
@@ -39,12 +39,17 @@ def _make_app():
 
 @pytest.fixture
 def app():
-    return _make_app()
+    return _make_app(authenticated=True)
 
 
 @pytest.fixture
 def client(app):
     return app.test_client()
+
+
+@pytest.fixture
+def anonymous_client():
+    return _make_app(authenticated=False).test_client()
 
 
 def _mock_conn():
@@ -59,6 +64,30 @@ def _mock_cursor_with_id(row_id):
     cursor = MagicMock()
     cursor.fetchone.return_value = {"id": row_id}
     return cursor
+
+
+class TestAuthRequiredForEveryEndpoint:
+    @pytest.mark.parametrize(
+        "method,path,payload",
+        [
+            ("post", "/api/v1/account/export", None),
+            ("get", "/api/v1/account/export/exp_001/status", None),
+            ("get", "/api/v1/account/export/exp_001/download", None),
+            ("delete", "/api/v1/account/", None),
+            ("post", "/api/v1/account/cancel-deletion", None),
+            ("patch", "/api/v1/account/profile", {"display_name": "New Name"}),
+        ],
+    )
+    def test_anonymous_user_gets_403(self, anonymous_client, method, path, payload):
+        kwargs = {}
+        if payload is not None:
+            kwargs["data"] = json.dumps(payload)
+            kwargs["content_type"] = "application/json"
+        resp = getattr(anonymous_client, method)(path, **kwargs)
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert body["error"]["code"] == "FORBIDDEN"
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +185,7 @@ class TestExportDownload:
         mock_db.return_value = conn
         mock_send.return_value = MagicMock(status_code=200)
 
-        resp = client.get("/api/v1/account/export/exp_001/download")
+        client.get("/api/v1/account/export/exp_001/download")
         mock_send.assert_called_once()
 
 

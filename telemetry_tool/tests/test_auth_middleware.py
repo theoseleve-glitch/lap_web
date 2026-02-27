@@ -81,6 +81,23 @@ class TestRequireAuthDecorator:
         })
         assert resp.status_code == 401
 
+
+    def test_sets_legacy_user_id_alias_for_migration(self):
+        from auth.service import create_access_token
+        token = create_access_token(user_id=7, secret="test-secret")
+
+        app = _make_app(auth_required=True)
+
+        @app.route("/api/v1/legacy-alias")
+        def legacy_alias():
+            return jsonify({"user_id": getattr(g, "user_id", None)})
+
+        client = app.test_client()
+        resp = client.get("/api/v1/legacy-alias", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["user_id"] == 7
+
     def test_public_route_accessible_without_auth(self):
         app = _make_app(auth_required=True)
         client = app.test_client()
