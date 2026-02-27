@@ -7,9 +7,12 @@ import pytest
 from kart_envelope.ingest.columns import (
     COL_ACCEL_LAT,
     COL_ACCEL_LONG,
+    COL_BRAKE_PCT,
     COL_DIST,
     COL_LAP,
     COL_SPEED,
+    COL_STEERING_ANGLE_DEG,
+    COL_THROTTLE_PCT,
     COL_TIME,
     normalize_columns,
 )
@@ -72,3 +75,14 @@ class TestNormalizeColumns:
         df = normalize_columns(raw)
         # speed_mps and distance_m missing
         assert COL_SPEED not in df.columns
+
+    def test_control_channel_aliases(self):
+        raw = _make_raw_df(**{
+            "Steering angle (deg)": [1.0, 2.0, 3.0],
+            "Throttle position (%)": [10.0, 20.0, 30.0],
+            "Brake pressure (%)": [0.0, 25.0, 10.0],
+        })
+        df = normalize_columns(raw)
+        assert COL_STEERING_ANGLE_DEG in df.columns
+        assert COL_THROTTLE_PCT in df.columns
+        assert COL_BRAKE_PCT in df.columns

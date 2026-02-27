@@ -1,1 +1,1 @@
-"""Solver sub-package: minimum-time speed profile, record calibration."""
+"""Solver sub-package: minimum-time, OCP backend, calibration, runtime surrogates."""

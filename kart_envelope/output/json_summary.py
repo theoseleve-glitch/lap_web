@@ -31,6 +31,8 @@ def build_session_summary(
     best_lap_num: int,
     record_cal: RecordCalibration | None = None,
     coaching_text: str = "",
+    driver_diagnostics: dict[str, Any] | None = None,
+    acd_engine: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the session_summary.json structure."""
     best_time = lap_times.get(best_lap_num, 0.0)
@@ -45,11 +47,34 @@ def build_session_summary(
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "session": {
             "file": metadata.session_file,
+            "product_tier": metadata.product_tier,
+            "layout_id": metadata.layout_id,
+            "domain_whitelist_id": metadata.domain_whitelist_id,
+            "sensor_profile": metadata.sensor_profile,
             "kart_id": metadata.kart_id,
+            "kart_model": metadata.kart_model,
             "kart_class": metadata.kart_class,
             "track_name": metadata.track_name or "",
             "condition_label": metadata.condition_label or scalars.condition_label,
             "driver_weight_kg": metadata.driver_weight_kg,
+            "kart_weight_kg": metadata.kart_weight_kg,
+            "engine_peak_power_kw": metadata.engine_peak_power_kw,
+            "engine_peak_power_hp": metadata.engine_peak_power_hp,
+            "engine_peak_torque_nm": metadata.engine_peak_torque_nm,
+            "engine_type": metadata.engine_type,
+            "engine_size_cc": metadata.engine_size_cc,
+            "kart_data_acd": metadata.kart_data_acd,
+            "tire_type": metadata.tire_type,
+            "track_lidar_profile_path": metadata.track_lidar_profile_path,
+            "track_grip_map_path": metadata.track_grip_map_path,
+            "load_transfer_fe_map_path": metadata.load_transfer_fe_map_path,
+            "aero_cda": metadata.aero_cda,
+            "aero_cl": metadata.aero_cl,
+            "gear_count": metadata.gear_count,
+            "gear_ratios": metadata.gear_ratios,
+            "final_drive_ratio": metadata.final_drive_ratio,
+            "shift_rpm_up": metadata.shift_rpm_up,
+            "shift_rpm_down": metadata.shift_rpm_down,
         },
         "lap_statistics": {
             "n_laps": len(lap_times),
@@ -74,6 +99,10 @@ def build_session_summary(
 
     if record_cal is not None:
         summary["record_calibration"] = record_cal.to_dict()
+    if driver_diagnostics is not None:
+        summary["driver_diagnostics"] = driver_diagnostics
+    if acd_engine is not None:
+        summary["acd_engine"] = acd_engine
 
     return summary
 

@@ -1,1 +1,1 @@
-"""Inference sub-package: session scalar inference, condition classification."""
+"""Inference sub-package: scalar inference, bundle inference, policy, calibration, validation."""

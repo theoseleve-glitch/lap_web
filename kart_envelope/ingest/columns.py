@@ -35,6 +35,12 @@ COL_HEADING: Final[str] = "heading_deg"
 COL_ALTITUDE: Final[str] = "altitude_m"
 COL_SATELLITES: Final[str] = "satellites"
 COL_ACCURACY: Final[str] = "accuracy_m"
+COL_COMBINED_G: Final[str] = "combined_g"
+COL_GRADE_PCT: Final[str] = "grade_pct"
+COL_BANK_ANGLE_DEG: Final[str] = "bank_angle_deg"
+COL_STEERING_ANGLE_DEG: Final[str] = "steering_angle_deg"
+COL_THROTTLE_PCT: Final[str] = "throttle_pct"
+COL_BRAKE_PCT: Final[str] = "brake_pct"
 
 # ---------------------------------------------------------------------------
 # Ordered mapping: RaceChrono raw name → (canonical name, needs_G_conversion)
@@ -63,6 +69,24 @@ _RAW_MAP: list[tuple[str, str, bool]] = [
     ("Satellites (sats)",                     COL_SATELLITES,  False),
     ("Satellites",                            COL_SATELLITES,  False),
     ("Accuracy (m)",                          COL_ACCURACY,    False),
+    ("Combined acceleration (G) *calc",       COL_COMBINED_G,  False),
+    ("combined_g",                            COL_COMBINED_G,  False),
+    ("grade_pct",                             COL_GRADE_PCT,   False),
+    ("bank_angle_deg",                        COL_BANK_ANGLE_DEG, False),
+    ("Steering angle (deg)",                  COL_STEERING_ANGLE_DEG, False),
+    ("Steering Angle (deg)",                  COL_STEERING_ANGLE_DEG, False),
+    ("Steering angle",                        COL_STEERING_ANGLE_DEG, False),
+    ("Steering (deg)",                        COL_STEERING_ANGLE_DEG, False),
+    ("steering_angle_deg",                    COL_STEERING_ANGLE_DEG, False),
+    ("steering_angle",                        COL_STEERING_ANGLE_DEG, False),
+    ("Throttle position (%)",                 COL_THROTTLE_PCT, False),
+    ("Throttle (%)",                          COL_THROTTLE_PCT, False),
+    ("throttle_pct",                          COL_THROTTLE_PCT, False),
+    ("throttle_position_pct",                 COL_THROTTLE_PCT, False),
+    ("Brake pressure (%)",                    COL_BRAKE_PCT, False),
+    ("Brake (%)",                             COL_BRAKE_PCT, False),
+    ("brake_pct",                             COL_BRAKE_PCT, False),
+    ("brake_pressure_pct",                    COL_BRAKE_PCT, False),
 ]
 
 # Quick look-up: raw_name → canonical
@@ -103,7 +127,9 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         Copy with canonical column names.  Columns that do not map to any
         canonical name are kept as-is (may be useful downstream).
     """
-    out = df.copy()
+    # Avoid doubling memory on very large sessions: normalization only needs
+    # structural edits (subset/rename/replace), not an eager deep copy.
+    out = df.copy(deep=False)
 
     # Step 1 — de-duplicate: keep original, drop .N copies
     seen: set[str] = set()

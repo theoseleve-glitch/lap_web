@@ -1,6 +1,7 @@
 """Tests for the minimum-time QSS solver."""
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 import numpy as np
@@ -34,6 +35,8 @@ class TestSolver:
         )
 
         result = compute_theoretical_lap(geom, known_envelope, config=default_config())
+        assert result.solver_backend == "qss"
+        assert isinstance(result.solver_diagnostics, dict)
 
         expected_v = math.sqrt(8.0 / 0.04)  # 14.14 m/s
         mean_v = float(np.mean(result.speed_profile_mps))
@@ -101,3 +104,44 @@ class TestSolver:
         assert "lap_time_s" in d
         assert d["lap_time_s"] > 0
         assert "pct_cornering_limited" in d
+        assert d.get("solver_backend") == "qss"
+        assert isinstance(d.get("solver_diagnostics"), dict)
+
+    def test_solver_backend_alias_qss(self, known_envelope, oval_geometry):
+        cfg = replace(default_config(), solver_backend="envelope_qss")
+        result = compute_theoretical_lap(oval_geometry, known_envelope, config=cfg)
+        assert result.method == "envelope_qss"
+
+    def test_solver_backend_fallback_from_casadi(
+        self, known_envelope, oval_geometry, monkeypatch
+    ):
+        import kart_envelope.solver.ocp_casadi as ocp
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("forced casadi failure")
+
+        monkeypatch.setattr(ocp, "compute_theoretical_lap_casadi", _raise)
+        cfg = replace(
+            default_config(),
+            solver_backend="casadi_ocp",
+            solver_backend_fallback_to_qss=True,
+        )
+        result = compute_theoretical_lap(oval_geometry, known_envelope, config=cfg)
+        assert result.method == "envelope_qss_fallback"
+
+    def test_solver_backend_no_fallback_raises(
+        self, known_envelope, oval_geometry, monkeypatch
+    ):
+        import kart_envelope.solver.ocp_casadi as ocp
+
+        def _raise(*args, **kwargs):
+            raise RuntimeError("forced casadi failure")
+
+        monkeypatch.setattr(ocp, "compute_theoretical_lap_casadi", _raise)
+        cfg = replace(
+            default_config(),
+            solver_backend="casadi_ocp",
+            solver_backend_fallback_to_qss=False,
+        )
+        with pytest.raises(SolverError):
+            compute_theoretical_lap(oval_geometry, known_envelope, config=cfg)

@@ -22,7 +22,10 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from telemetry_tool.gps_filtering import filter_gps_quality  # noqa: E402
 from telemetry_tool.derived_channels import (                  # noqa: E402
+    compute_bank_angle_estimate,
+    compute_combined_g,
     compute_distance,
+    compute_elevation_profile,
     compute_longitudinal_accel,
     compute_lateral_accel_from_xy,
     compute_yaw_rate_from_heading,
@@ -100,6 +103,28 @@ def clean_and_derive(
             out = fn(out)
         except Exception as exc:
             logger.debug("Derived channel '%s' unavailable: %s", label, exc)
+
+    # --- 4. Additional channels used by lap optimization + diagnostics ---
+    try:
+        out = compute_combined_g(out)
+    except Exception as exc:
+        logger.debug("Derived channel 'combined_g' unavailable: %s", exc)
+
+    try:
+        out["grade_pct"] = compute_elevation_profile(
+            out,
+            smoothing_window=max(int(sw * 3), 9),
+        )
+    except Exception as exc:
+        logger.debug("Derived channel 'grade_pct' unavailable: %s", exc)
+
+    try:
+        out["bank_angle_deg"] = compute_bank_angle_estimate(
+            out,
+            smoothing_window=max(int(sw), 3),
+        )
+    except Exception as exc:
+        logger.debug("Derived channel 'bank_angle_deg' unavailable: %s", exc)
 
     logger.info("Cleaning complete: %d rows, derived channels added.", len(out))
     return out

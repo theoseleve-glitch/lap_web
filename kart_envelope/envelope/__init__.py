@@ -1,1 +1,1 @@
-"""Envelope sub-package: capability envelope learning, combined-slip model."""
+"""Envelope sub-package: capability envelopes, combined-slip, and tire runtime stack."""

@@ -1,1 +1,1 @@
-"""Coaching sub-package: delta analysis, corner coaching, cause ranking."""
+"""Coaching sub-package: delta analysis, corner coaching, cause ranking, diagnostics."""
