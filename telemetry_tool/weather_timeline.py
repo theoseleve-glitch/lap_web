@@ -18,7 +18,6 @@ Public API
 from __future__ import annotations
 
 import logging
-import math
 from datetime import datetime, timedelta
 from typing import Any, List, Optional
 
