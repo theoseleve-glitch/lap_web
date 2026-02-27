@@ -3,14 +3,16 @@
 import { useState, useRef, useEffect } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PipelineBlocks } from '@/components/mechanisms/PipelineBlocks';
-import { ReversibleCard } from '@/components/ui/ReversibleCard';
+import { RadioCard } from '@/components/ui/RadioCard';
 import { s2Pipeline } from '@/data/copy';
 import { trackS2PipelineComplete } from '@/lib/analytics';
+import { useKernelStore } from '@/experience/state/store';
 
 export function S2Pipeline() {
   const [progress, setProgress] = useState(0);
   const sectionRef = useRef<HTMLElement>(null);
   const trackedComplete = useRef(false);
+  const activateDrs = useKernelStore((s) => s.activateDrs);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -29,6 +31,7 @@ export function S2Pipeline() {
         if (p >= 1 && !trackedComplete.current) {
           trackedComplete.current = true;
           trackS2PipelineComplete();
+          activateDrs('pipeline-complete');
         }
       }
     };
@@ -59,12 +62,10 @@ export function S2Pipeline() {
             <PipelineBlocks progress={progress} />
           </div>
 
-          <div className="col-span-full text-center">
-            <ReversibleCard
-              title="Fast Pipeline Outcome"
-              description={s2Pipeline.body}
-              className="max-w-xl mx-auto"
-            />
+          <div className="col-span-full max-w-xl mx-auto">
+            <RadioCard label="PIPELINE OUTCOME">
+              {s2Pipeline.body}
+            </RadioCard>
           </div>
         </div>
       </div>

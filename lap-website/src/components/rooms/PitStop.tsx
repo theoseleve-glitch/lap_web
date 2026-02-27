@@ -35,7 +35,7 @@ export function PitStop() {
       aria-label="Pit Stop — Pricing and demo"
     >
       {/* Decorative wheel behind pricing content */}
-      <div className="absolute right-8 top-1/3 -translate-y-1/2 hidden lg:block">
+      <div className="absolute right-8 top-1/3 -translate-y-1/2 hidden lg:block z-0">
         <PitWheel />
       </div>
 

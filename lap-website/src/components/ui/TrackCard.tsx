@@ -22,20 +22,33 @@ export function TrackCard({
   const containerRef = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0 });
   const [hovering, setHovering] = useState(false);
+  const rafPending = useRef(false);
+
+  // Check reduced motion — prefer the CSS media query approach
+  const prefersReducedMotion = useRef(
+    typeof window !== 'undefined'
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false,
+  );
 
   const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (rafPending.current || prefersReducedMotion.current) return;
+    rafPending.current = true;
+
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) { rafPending.current = false; return; }
 
     const rect = el.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = (e.clientY - rect.top) / rect.height;
 
-    // Map 0..1 to -8..+8 degrees
-    const rotateY = (x - 0.5) * 16;  // max +/-8
-    const rotateX = (0.5 - y) * 16;  // max +/-8, inverted for natural feel
-
-    setTilt({ rotateX, rotateY });
+    requestAnimationFrame(() => {
+      setTilt({
+        rotateX: (0.5 - y) * 16,  // max +/-8, inverted for natural feel
+        rotateY: (x - 0.5) * 16,  // max +/-8
+      });
+      rafPending.current = false;
+    });
   }, []);
 
   const handlePointerEnter = useCallback(() => {
@@ -46,10 +59,6 @@ export function TrackCard({
     setHovering(false);
     setTilt({ rotateX: 0, rotateY: 0 });
   }, []);
-
-  const handleClick = useCallback(() => {
-    onClick?.();
-  }, [onClick]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
@@ -90,7 +99,7 @@ export function TrackCard({
             : 'rotateX(0deg) rotateY(0deg)',
           transformStyle: 'preserve-3d',
         }}
-        onClick={handleClick}
+        onClick={onClick}
         onKeyDown={handleKeyDown}
         role={onClick ? 'button' : undefined}
         tabIndex={onClick ? 0 : undefined}

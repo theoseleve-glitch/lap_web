@@ -77,6 +77,15 @@ body {
   outline: none;
 }
 
+/* ── Radio card waveform animation ────── */
+@keyframes radio-wave {
+  0%, 100% { height: 3px; }
+  50% { height: 12px; }
+}
+.radio-bar {
+  animation: radio-wave 0.8s ease-in-out infinite;
+}
+
 /* ── Microinteractions ─────────────────── */
 
 /* Animated underline on links */

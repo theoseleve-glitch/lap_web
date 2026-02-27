@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
-import { Tooltip } from '@/components/ui/Tooltip';
+import { RadioCard } from '@/components/ui/RadioCard';
 import { CornerDrag } from '@/components/mechanisms/CornerDrag';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { s1Pain } from '@/data/copy';
@@ -41,22 +41,16 @@ export function S1Pain() {
             className="max-w-lg"
           />
 
-          <div className="flex flex-wrap gap-4 mt-2">
-            <Tooltip content={s1Pain.tooltips.entry}>
-              <span className="font-telemetry text-steel cursor-help border-b border-dashed border-steel/40">
-                ENTRY
-              </span>
-            </Tooltip>
-            <Tooltip content={s1Pain.tooltips.apex}>
-              <span className="font-telemetry text-steel cursor-help border-b border-dashed border-steel/40">
-                APEX
-              </span>
-            </Tooltip>
-            <Tooltip content={s1Pain.tooltips.exit}>
-              <span className="font-telemetry text-steel cursor-help border-b border-dashed border-steel/40">
-                EXIT
-              </span>
-            </Tooltip>
+          <div className="flex flex-col gap-2 mt-2">
+            <RadioCard label="ENTRY">
+              {s1Pain.tooltips.entry}
+            </RadioCard>
+            <RadioCard label="APEX">
+              {s1Pain.tooltips.apex}
+            </RadioCard>
+            <RadioCard label="EXIT">
+              {s1Pain.tooltips.exit}
+            </RadioCard>
           </div>
 
           {hasInteracted && (

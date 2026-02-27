@@ -40,7 +40,7 @@ export function Placard({
         className="transition-transform duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
           transformStyle: revealContent ? 'preserve-3d' : undefined,
-          transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+          transform: revealContent ? (flipped ? 'rotateY(180deg)' : 'rotateY(0deg)') : undefined,
         }}
       >
         {/* Front */}
@@ -65,7 +65,7 @@ export function Placard({
         {/* Back */}
         {revealContent && (
           <div
-            className="absolute inset-0 bg-concrete p-6"
+            className="absolute inset-0 bg-concrete p-6 overflow-y-auto"
             style={{
               backfaceVisibility: 'hidden',
               transform: 'rotateY(180deg)',

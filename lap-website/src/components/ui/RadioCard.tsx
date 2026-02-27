@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, type ReactNode } from 'react';
+import { useState, useCallback, useRef, useLayoutEffect, type ReactNode } from 'react';
 
 interface RadioCardProps {
   label: string;
@@ -10,10 +10,29 @@ interface RadioCardProps {
 
 export function RadioCard({ label, children, className = '' }: RadioCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState(0);
 
   const toggle = useCallback(() => {
     setExpanded((prev) => !prev);
   }, []);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        toggle();
+      }
+    },
+    [toggle],
+  );
+
+  // Measure content height for smooth accordion animation
+  useLayoutEffect(() => {
+    if (contentRef.current) {
+      setContentHeight(contentRef.current.scrollHeight);
+    }
+  }, [children]);
 
   return (
     <div
@@ -23,12 +42,7 @@ export function RadioCard({ label, children, className = '' }: RadioCardProps) {
           : 'border-steel/20 hover:border-steel/40'
       } ${className}`}
       onClick={toggle}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          toggle();
-        }
-      }}
+      onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
       aria-expanded={expanded}
@@ -57,29 +71,18 @@ export function RadioCard({ label, children, className = '' }: RadioCardProps) {
         </div>
       </div>
 
-      {/* Expanded content */}
+      {/* Expanded content — uses measured scrollHeight for smooth animation */}
       <div
         className="overflow-hidden transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
-          maxHeight: expanded ? '500px' : '0px',
+          maxHeight: expanded ? `${contentHeight}px` : '0px',
           opacity: expanded ? 1 : 0,
         }}
       >
-        <div className="px-4 pb-4 pt-1 font-body text-sm text-steel leading-relaxed border-t border-steel/10">
+        <div ref={contentRef} className="px-4 pb-4 pt-1 font-body text-sm text-steel leading-relaxed border-t border-steel/10">
           {children}
         </div>
       </div>
-
-      {/* Waveform animation keyframes */}
-      <style jsx>{`
-        @keyframes radio-wave {
-          0%, 100% { height: 3px; }
-          50% { height: 12px; }
-        }
-        .radio-bar {
-          animation: radio-wave 0.8s ease-in-out infinite;
-        }
-      `}</style>
     </div>
   );
 }

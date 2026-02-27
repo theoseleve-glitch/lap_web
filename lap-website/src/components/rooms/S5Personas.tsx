@@ -9,6 +9,7 @@ import { useKernelStore } from '@/experience/state/store';
 
 export function S5Personas() {
   const activateDrs = useKernelStore((s) => s.activateDrs);
+  // Fire DRS exactly once when user first engages with any persona card in this section
   const drsTriggered = useRef(false);
 
   const handlePersonaClick = useCallback(() => {
