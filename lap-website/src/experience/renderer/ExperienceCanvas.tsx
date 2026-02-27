@@ -5,6 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { useKernelStore } from '@/experience/state/store';
 import { SceneManager } from './SceneManager';
 import { PostStack } from './PostStack';
+import { RevealMaskPipeline } from '@/experience/reveal/RevealMaskPipeline';
 
 export function ExperienceCanvas() {
   const webglAvailable = useKernelStore((s) => s.webglAvailable);
@@ -32,6 +33,7 @@ export function ExperienceCanvas() {
       >
         <Suspense fallback={null}>
           <SceneManager />
+          <RevealMaskPipeline />
           {!reducedMotion && qualityTier !== 'low' && <PostStack />}
         </Suspense>
       </Canvas>
