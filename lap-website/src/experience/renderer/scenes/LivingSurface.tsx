@@ -30,6 +30,10 @@ const PARTICLE_COUNT = 200;
 const CONTOUR_SEGMENTS = 64;
 const STREAK_POOL_SIZE = background.streakCount;
 
+// Pre-allocated vectors for useFrame (avoid per-frame allocations)
+const _vignetteTarget = new THREE.Vector2();
+const _vignetteCenter = new THREE.Vector2(0, 0);
+
 // ── Helpers ────────────────────────────────────────────
 
 /** Build a single organic contour ring as a set of points */
@@ -85,9 +89,9 @@ export function LivingSurface({
     });
   }, [grainUniforms]);
 
-  // ── Layer 2: Contour lines (high + balanced only) ──
+  // ── Layer 2: Contour lines (high quality only) ──────
 
-  const contourCount = isHigh ? background.contourCount : isBalanced ? 0 : 0;
+  const contourCount = isHigh ? background.contourCount : 0;
 
   const contourData = useMemo(() => {
     if (contourCount === 0) return null;
@@ -145,16 +149,11 @@ export function LivingSurface({
     return new Float32Array(STREAK_POOL_SIZE * 6);
   }, []);
 
-  const streakOpacities = useMemo(() => {
-    return new Float32Array(STREAK_POOL_SIZE * 2);
-  }, []);
-
   const streakGeo = useMemo(() => {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(streakPositions, 3));
-    geo.setAttribute('opacity', new THREE.BufferAttribute(streakOpacities, 1));
     return geo;
-  }, [streakPositions, streakOpacities]);
+  }, [streakPositions]);
 
   const streakMat = useMemo(() => {
     return new THREE.LineBasicMaterial({
@@ -279,7 +278,6 @@ export function LivingSurface({
       for (let i = 0; i < pool.length; i++) {
         const s = pool[i];
         const base = i * 6;
-        const opBase = i * 2;
 
         if (s.alive) {
           s.age += delta * 1000; // convert to ms
@@ -289,9 +287,6 @@ export function LivingSurface({
         }
 
         if (s.alive) {
-          const lifeFrac = s.age / lifetime;
-          // Fade in quickly, fade out
-          const alpha = lifeFrac < 0.15 ? lifeFrac / 0.15 : 1 - (lifeFrac - 0.15) / 0.85;
           const cosH = Math.cos(s.heading);
           const sinH = Math.sin(s.heading);
           // Start point
@@ -303,35 +298,32 @@ export function LivingSurface({
           streakPositions[base + 4] = s.y + sinH * halfLen;
           streakPositions[base + 5] = 0;
 
-          streakOpacities[opBase] = alpha;
-          streakOpacities[opBase + 1] = alpha;
         } else {
-          // Hide dead streaks by collapsing vertices
+          // Hide dead streaks by collapsing vertices to zero-length
           streakPositions[base] = 0;
           streakPositions[base + 1] = 0;
           streakPositions[base + 2] = 0;
           streakPositions[base + 3] = 0;
           streakPositions[base + 4] = 0;
           streakPositions[base + 5] = 0;
-          streakOpacities[opBase] = 0;
-          streakOpacities[opBase + 1] = 0;
         }
       }
       streakGeo.attributes.position.needsUpdate = true;
-      streakGeo.attributes.opacity.needsUpdate = true;
 
       // Modulate global streak material opacity based on velocity
       const vel = Math.abs(scrollVelocity);
       streakMat.opacity = Math.min(0.5, (vel - background.streakSpawnThreshold) * 0.8);
     }
 
-    // -- Vignette: shift toward corner apex
+    // -- Vignette: shift toward corner apex (pre-allocated vectors to avoid GC)
     if (trackPath.isCorner) {
-      const shiftX = Math.sin(trackPath.heading) * background.vignetteShift;
-      const shiftY = -Math.cos(trackPath.heading) * background.vignetteShift;
-      vignetteUniforms.uShift.value.lerp(new THREE.Vector2(shiftX, shiftY), 0.05);
+      _vignetteTarget.set(
+        Math.sin(trackPath.heading) * background.vignetteShift,
+        -Math.cos(trackPath.heading) * background.vignetteShift,
+      );
+      vignetteUniforms.uShift.value.lerp(_vignetteTarget, 0.05);
     } else {
-      vignetteUniforms.uShift.value.lerp(new THREE.Vector2(0, 0), 0.03);
+      vignetteUniforms.uShift.value.lerp(_vignetteCenter, 0.03);
     }
   });
 
