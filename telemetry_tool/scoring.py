@@ -1781,6 +1781,190 @@ def _compute_phase_scores(
     return result
 
 
+def _score_adaptation_v2(
+    lap_metrics: list[dict[str, Any]],
+    weather_timeline: "pd.DataFrame | None" = None,
+    theory_best: "float | None" = None,
+) -> float:
+    """
+    Weather-aware adaptation sub-score (0 -- MAX_ADAPTATION).
+
+    Three sub-metrics weighted per constants:
+    1. **Transition speed** (40%) — how quickly the driver adjusts after
+       a condition change (measured by lap-time convergence speed).
+    2. **Phase-relative pace** (35%) — how close the driver is to the
+       grip-adjusted theoretical in each phase.
+    3. **Condition-appropriate execution** (25%) — technique quality
+       (smoothness proxy via lap-time jitter) in each phase.
+
+    Returns neutral (~75% of MAX_ADAPTATION) when:
+    - weather_timeline is None / empty
+    - Session has only one phase (no transitions to judge)
+    """
+    neutral = round(MAX_ADAPTATION * ADAPT_V2_STABLE_DEFAULT_FRAC, 4)
+
+    if weather_timeline is None or (hasattr(weather_timeline, "empty") and weather_timeline.empty):
+        return neutral
+
+    if not lap_metrics:
+        return neutral
+
+    # Need at least a phase_id or phase identifier column
+    phase_col = None
+    for candidate in ("phase_id", "phase", "condition"):
+        if candidate in weather_timeline.columns:
+            phase_col = candidate
+            break
+    if phase_col is None:
+        return neutral
+
+    phases = weather_timeline[phase_col].unique()
+    if len(phases) <= 1:
+        return neutral
+
+    # Build a per-lap phase map from weather_timeline
+    lap_phase: dict[int, Any] = {}
+    for _, row in weather_timeline.iterrows():
+        start = int(row.get("start_lap", 1))
+        end = int(row.get("end_lap", start))
+        pid = row[phase_col]
+        for lap_num in range(start, end + 1):
+            lap_phase[lap_num] = pid
+
+    # Sort laps and assign phases
+    laps_sorted = sorted(lap_metrics, key=lambda x: x.get("lap_number", 0))
+    lap_times: dict[int, float] = {}
+    for lm in laps_sorted:
+        ln = lm.get("lap_number")
+        lt = lm.get("lap_time_s")
+        if ln is not None and lt is not None:
+            lap_times[int(ln)] = float(lt)
+
+    if not lap_times:
+        return neutral
+
+    # --- Sub-metric 1: Transition speed (40%) ---
+    # Measure how quickly lap times stabilise after a phase boundary.
+    transition_scores: list[float] = []
+    prev_phase = None
+    transition_lap = None
+    post_transition_times: list[float] = []
+
+    for ln in sorted(lap_times.keys()):
+        current_phase = lap_phase.get(ln)
+        if current_phase is None:
+            continue
+        if prev_phase is not None and current_phase != prev_phase:
+            # Phase boundary found — evaluate previous transition
+            if post_transition_times:
+                # How many laps to converge (measured by when lap times
+                # stop improving > 0.5s per lap)
+                n_converge = len(post_transition_times)
+                t = min(n_converge, ADAPT_V2_TRANSITION_ZERO_LAPS)
+                frac = max(0.0, 1.0 - (
+                    (t - ADAPT_V2_TRANSITION_FULL_LAPS)
+                    / (ADAPT_V2_TRANSITION_ZERO_LAPS - ADAPT_V2_TRANSITION_FULL_LAPS)
+                ) ** ADAPT_V2_DECAY_EXP)
+                frac = min(1.0, frac)
+                transition_scores.append(frac)
+            post_transition_times = []
+            transition_lap = ln
+
+        if transition_lap is not None and current_phase == lap_phase.get(transition_lap):
+            post_transition_times.append(lap_times[ln])
+
+        prev_phase = current_phase
+
+    # Score the final transition segment
+    if post_transition_times and transition_lap is not None:
+        n_converge = len(post_transition_times)
+        t = min(n_converge, ADAPT_V2_TRANSITION_ZERO_LAPS)
+        frac = max(0.0, 1.0 - (
+            (t - ADAPT_V2_TRANSITION_FULL_LAPS)
+            / (ADAPT_V2_TRANSITION_ZERO_LAPS - ADAPT_V2_TRANSITION_FULL_LAPS)
+        ) ** ADAPT_V2_DECAY_EXP)
+        frac = min(1.0, frac)
+        transition_scores.append(frac)
+
+    transition_metric = (
+        sum(transition_scores) / len(transition_scores)
+        if transition_scores else 0.5
+    )
+
+    # --- Sub-metric 2: Phase-relative pace (35%) ---
+    # How close is the driver to the grip-adjusted theoretical per phase?
+    pace_scores: list[float] = []
+    for _, row in weather_timeline.iterrows():
+        pid = row[phase_col]
+        start = int(row.get("start_lap", 1))
+        end = int(row.get("end_lap", start))
+        grip = float(row.get("avg_grip", 100.0))
+
+        phase_times = [
+            lap_times[ln] for ln in range(start, end + 1)
+            if ln in lap_times
+        ]
+        if not phase_times:
+            continue
+
+        best_phase = min(phase_times)
+        if theory_best is not None and theory_best > 0:
+            # Grip-adjusted theoretical: t_adj = t_dry / sqrt(grip/100)
+            grip_frac = max(0.1, grip / 100.0)
+            adjusted_ref = theory_best / (grip_frac ** 0.5)
+            gap_pct = (best_phase - adjusted_ref) / adjusted_ref * 100
+        else:
+            # No theoretical — use median as reference
+            median_phase = sorted(phase_times)[len(phase_times) // 2]
+            gap_pct = (best_phase - median_phase) / median_phase * 100
+
+        gap_pct = abs(gap_pct)
+        frac = max(0.0, 1.0 - (
+            (gap_pct - ADAPT_V2_PHASE_PACE_FULL_PCT)
+            / (ADAPT_V2_PHASE_PACE_ZERO_PCT - ADAPT_V2_PHASE_PACE_FULL_PCT)
+        ))
+        frac = min(1.0, frac)
+        pace_scores.append(frac)
+
+    pace_metric = (
+        sum(pace_scores) / len(pace_scores)
+        if pace_scores else 0.5
+    )
+
+    # --- Sub-metric 3: Condition-appropriate execution (25%) ---
+    # Smoothness proxy: lower within-phase CV is better.
+    exec_scores: list[float] = []
+    for _, row in weather_timeline.iterrows():
+        start = int(row.get("start_lap", 1))
+        end = int(row.get("end_lap", start))
+        phase_times = [
+            lap_times[ln] for ln in range(start, end + 1)
+            if ln in lap_times
+        ]
+        if len(phase_times) < 2:
+            exec_scores.append(0.5)
+            continue
+        arr = np.array(phase_times, dtype=float)
+        cv = float(np.std(arr, ddof=1) / np.mean(arr) * 100) if np.mean(arr) > 0 else 0.0
+        # CV < 1% = perfect, CV > 5% = 0
+        frac = max(0.0, min(1.0, 1.0 - (cv - 1.0) / 4.0))
+        exec_scores.append(frac)
+
+    exec_metric = (
+        sum(exec_scores) / len(exec_scores)
+        if exec_scores else 0.5
+    )
+
+    # --- Combine ---
+    combined = (
+        ADAPT_V2_TRANSITION_WEIGHT * transition_metric
+        + ADAPT_V2_PHASE_PACE_WEIGHT * pace_metric
+        + ADAPT_V2_TECHNIQUE_WEIGHT * exec_metric
+    )
+    score = round(combined * MAX_ADAPTATION, 4)
+    return max(0.0, min(MAX_ADAPTATION, score))
+
+
 def _compute_adaptation_score(
     phases_df: pd.DataFrame,
     lap_to_phase: dict[int, int],
@@ -1851,6 +2035,211 @@ def _compute_adaptation_score(
         capture_ratio, capture_score, intra_cv, cv_score, adaptation,
     )
     return float(np.clip(adaptation, 0.0, 1.0))
+
+
+def _score_adaptation_v2(
+    *,
+    lap_metrics: list[dict[str, Any]],
+    weather_timeline: Optional[pd.DataFrame] = None,
+    theory_best: Optional[float] = None,
+) -> float:
+    """
+    Weather-aware adaptation scoring (V2).
+
+    Produces a weighted score in [0, MAX_ADAPTATION] based on three
+    sub-metrics:
+
+    1. **Transition Speed** (40%): After a phase change, how many laps
+       until pace stabilises.  Full marks at <= 2 laps, zero at >= 8.
+    2. **Phase-Relative Pace** (35%): Best lap in each phase vs
+       grip-adjusted theoretical.  Full marks at <= 3% gap, zero >= 12%.
+    3. **Condition-Appropriate Execution** (25%): Did driving technique
+       change in the right direction between phases?
+
+    When *weather_timeline* is None or has a single phase, returns a
+    neutral score of 75% of MAX_ADAPTATION.
+    """
+    neutral = round(MAX_ADAPTATION * ADAPT_V2_STABLE_DEFAULT_FRAC, 4)
+
+    # --- Guard: no weather data or single phase -> neutral -
+    if weather_timeline is None or len(weather_timeline) < 2:
+        return neutral
+    if not lap_metrics:
+        return neutral
+
+    lm_df = pd.DataFrame(lap_metrics)
+    if "lap_number" not in lm_df.columns or "lap_time_s" not in lm_df.columns:
+        return neutral
+
+    lm_df["lap_time_s"] = pd.to_numeric(lm_df["lap_time_s"], errors="coerce")
+    lm_df = lm_df.dropna(subset=["lap_time_s"]).sort_values("lap_number").reset_index(drop=True)
+
+    if lm_df.empty:
+        return neutral
+
+    # Build phase mapping from weather_timeline
+    wt = weather_timeline.copy().sort_values("start_lap").reset_index(drop=True)
+    phases = []
+    for _, row in wt.iterrows():
+        phases.append({
+            "phase_id": int(row.get("phase_id", len(phases))),
+            "start_lap": int(row["start_lap"]),
+            "end_lap": int(row["end_lap"]),
+            "avg_grip": float(row.get("avg_grip", 100.0)),
+            "condition": str(row.get("condition", "unknown")),
+        })
+
+    if len(phases) < 2:
+        return neutral
+
+    # Map each lap to its phase
+    def _lap_phase(lap_num: int) -> Optional[int]:
+        for p in phases:
+            if p["start_lap"] <= lap_num <= p["end_lap"]:
+                return p["phase_id"]
+        return None
+
+    lm_df["_phase_id"] = lm_df["lap_number"].apply(_lap_phase)
+    lm_df = lm_df.dropna(subset=["_phase_id"])
+    lm_df["_phase_id"] = lm_df["_phase_id"].astype(int)
+
+    # ---- Sub-metric 1: Transition Speed (40%) ----
+    transition_scores: list[float] = []
+    for i in range(1, len(phases)):
+        cur_phase = phases[i]
+        phase_laps = lm_df[lm_df["_phase_id"] == cur_phase["phase_id"]].sort_values("lap_number")
+        if len(phase_laps) < 3:
+            continue
+
+        times = phase_laps["lap_time_s"].values
+        # Compute rolling CV of 3 laps
+        phase_mean = float(np.mean(times))
+        phase_cv = float(np.std(times) / phase_mean) if phase_mean > 0 else 0.0
+        threshold_cv = 2.0 * phase_cv if phase_cv > 0 else 0.02
+
+        # Count laps until rolling 3-lap CV drops below threshold
+        stabilised_at = len(times)  # worst case
+        for j in range(2, len(times)):
+            window = times[max(0, j - 2):j + 1]
+            w_mean = float(np.mean(window))
+            w_cv = float(np.std(window) / w_mean) if w_mean > 0 else 0.0
+            if w_cv <= threshold_cv:
+                stabilised_at = j + 1  # 1-indexed lap count into phase
+                break
+
+        t_score = _ratio_score(
+            float(stabilised_at),
+            ADAPT_V2_TRANSITION_FULL_LAPS,
+            ADAPT_V2_TRANSITION_ZERO_LAPS,
+            higher_is_better=False,
+            exp=ADAPT_V2_DECAY_EXP,
+        )
+        transition_scores.append(t_score)
+
+    trans_sub = float(np.mean(transition_scores)) if transition_scores else 0.5
+
+    # ---- Sub-metric 2: Phase-Relative Pace (35%) ----
+    pace_scores: list[float] = []
+    for p in phases:
+        phase_laps = lm_df[lm_df["_phase_id"] == p["phase_id"]]
+        if phase_laps.empty:
+            continue
+        best_in_phase = float(phase_laps["lap_time_s"].min())
+
+        if theory_best is not None and theory_best > 0:
+            avg_grip = p["avg_grip"]
+            if avg_grip <= 0:
+                avg_grip = 100.0
+            adjusted_theory = theory_best / math.sqrt(avg_grip / 100.0)
+            gap_pct = (best_in_phase - adjusted_theory) / adjusted_theory * 100.0
+            gap_pct = max(0.0, gap_pct)  # negative gap means faster than theory
+        else:
+            # No theory available -- give partial credit
+            gap_pct = 6.0  # midpoint
+
+        p_score = _ratio_score(
+            gap_pct,
+            ADAPT_V2_PHASE_PACE_FULL_PCT,
+            ADAPT_V2_PHASE_PACE_ZERO_PCT,
+            higher_is_better=False,
+            exp=ADAPT_V2_DECAY_EXP,
+        )
+        pace_scores.append(p_score)
+
+    pace_sub = float(np.mean(pace_scores)) if pace_scores else 0.5
+
+    # ---- Sub-metric 3: Condition-Appropriate Execution (25%) ----
+    technique_scores: list[float] = []
+    for i in range(1, len(phases)):
+        prev_phase = phases[i - 1]
+        cur_phase = phases[i]
+        prev_laps = lm_df[lm_df["_phase_id"] == prev_phase["phase_id"]]
+        cur_laps = lm_df[lm_df["_phase_id"] == cur_phase["phase_id"]]
+
+        if prev_laps.empty or cur_laps.empty:
+            continue
+
+        # Determine if transitioning to wetter or drier conditions
+        going_wet = cur_phase["avg_grip"] < prev_phase["avg_grip"]
+        checks = 0
+        correct = 0
+
+        # Check jerk_rms: should decrease in wet (smoother driving)
+        if "jerk_rms_mps3" in lm_df.columns:
+            prev_jerk = pd.to_numeric(prev_laps.get("jerk_rms_mps3", pd.Series(dtype=float)), errors="coerce").mean()
+            cur_jerk = pd.to_numeric(cur_laps.get("jerk_rms_mps3", pd.Series(dtype=float)), errors="coerce").mean()
+            if math.isfinite(prev_jerk) and math.isfinite(cur_jerk):
+                checks += 1
+                if going_wet and cur_jerk < prev_jerk:
+                    correct += 1
+                elif not going_wet and cur_jerk >= prev_jerk:
+                    correct += 1
+
+        # Check braking: should decrease in wet (less available grip)
+        if "braking_max_mps2" in lm_df.columns:
+            prev_brake = pd.to_numeric(prev_laps.get("braking_max_mps2", pd.Series(dtype=float)), errors="coerce").mean()
+            cur_brake = pd.to_numeric(cur_laps.get("braking_max_mps2", pd.Series(dtype=float)), errors="coerce").mean()
+            if math.isfinite(prev_brake) and math.isfinite(cur_brake):
+                checks += 1
+                if going_wet and cur_brake < prev_brake:
+                    correct += 1
+                elif not going_wet and cur_brake >= prev_brake:
+                    correct += 1
+
+        # Check line_length: should increase in wet (wider lines)
+        if "line_length_m" in lm_df.columns:
+            prev_line = pd.to_numeric(prev_laps.get("line_length_m", pd.Series(dtype=float)), errors="coerce").mean()
+            cur_line = pd.to_numeric(cur_laps.get("line_length_m", pd.Series(dtype=float)), errors="coerce").mean()
+            if math.isfinite(prev_line) and math.isfinite(cur_line):
+                checks += 1
+                if going_wet and cur_line > prev_line:
+                    correct += 1
+                elif not going_wet and cur_line <= prev_line:
+                    correct += 1
+
+        if checks > 0:
+            technique_scores.append(correct / checks)
+        else:
+            technique_scores.append(0.5)  # no data -> neutral
+
+    tech_sub = float(np.mean(technique_scores)) if technique_scores else 0.5
+
+    # ---- Combine sub-metrics ----
+    combined = (
+        ADAPT_V2_TRANSITION_WEIGHT * trans_sub
+        + ADAPT_V2_PHASE_PACE_WEIGHT * pace_sub
+        + ADAPT_V2_TECHNIQUE_WEIGHT * tech_sub
+    )
+
+    score = float(np.clip(combined, 0.0, 1.0)) * MAX_ADAPTATION
+
+    logger.info(
+        "Adaptation V2: trans=%.3f, pace=%.3f, tech=%.3f, combined=%.3f, "
+        "score=%.2f/%.0f",
+        trans_sub, pace_sub, tech_sub, combined, score, MAX_ADAPTATION,
+    )
+
+    return round(score, 4)
 
 
 def _compute_grip_capture(

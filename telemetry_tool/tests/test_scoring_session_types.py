@@ -8,7 +8,7 @@ class TestScoringSessionTypes:
         from scoring import _SESSION_WEIGHT_OVERRIDES
         for stype, weights in _SESSION_WEIGHT_OVERRIDES.items():
             total = sum(weights.values())
-            assert 3.0 < total < 5.0, f"{stype} weights sum to {total}"
+            assert 3.0 < total < 7.0, f"{stype} weights sum to {total}"
 
     def test_qualifying_prioritizes_pace(self):
         from scoring import _SESSION_WEIGHT_OVERRIDES
@@ -27,7 +27,7 @@ class TestScoringSessionTypes:
                 w = _SESSION_WEIGHT_OVERRIDES[key]
                 assert w.get("robustness", 0) >= 1.4
 
-    def test_all_types_have_four_keys(self):
+    def test_all_types_have_five_keys(self):
         from scoring import _SESSION_WEIGHT_OVERRIDES
         for stype, weights in _SESSION_WEIGHT_OVERRIDES.items():
-            assert set(weights.keys()) == {"pace", "consistency", "execution", "robustness"}
+            assert set(weights.keys()) == {"pace", "consistency", "execution", "robustness", "adaptation"}
