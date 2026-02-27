@@ -22,18 +22,20 @@ interface UsageData {
 interface EntitlementsData {
   plan: string;
   entitlements: {
-    reports_per_month: number | null;
-    uploads_per_month: number | null;
+    reports_per_month: number;
+    uploads_per_month: number;
     raw_retention_days: number;
-    comparison_enabled: boolean;
-    coaching_plans_enabled: boolean;
-    visualization_enabled: boolean;
+    report_retention: string;
+    comparison_progress: boolean;
+    coaching_drills: boolean;
+    viz_workspace: boolean;
+    strategy_dashboard: string;
+    live_pace: boolean;
+    pit_planning: boolean;
+    pdf_reports: boolean;
     api_access: boolean;
-    live_monitoring: boolean;
-    race_strategy_limit: string | null;
-    export_formats: string[];
-    max_upload_size_mb: number;
-    max_concurrent_jobs: number;
+    track_management: string;
+    max_workspace_members: number;
   };
 }
 
@@ -224,40 +226,44 @@ export default function UsagePage() {
               value={`${entitlements.entitlements.raw_retention_days} days`}
             />
             <FeatureRow
-              label="Max upload size"
-              value={`${entitlements.entitlements.max_upload_size_mb} MB`}
-            />
-            <FeatureRow
-              label="Concurrent jobs"
-              value={entitlements.entitlements.max_concurrent_jobs}
-            />
-            <FeatureRow
               label="Lap comparison"
-              value={entitlements.entitlements.comparison_enabled}
+              value={entitlements.entitlements.comparison_progress}
             />
             <FeatureRow
-              label="Coaching plans"
-              value={entitlements.entitlements.coaching_plans_enabled}
+              label="Coaching drills"
+              value={entitlements.entitlements.coaching_drills}
             />
             <FeatureRow
-              label="Visualization"
-              value={entitlements.entitlements.visualization_enabled}
+              label="Visualization workspace"
+              value={entitlements.entitlements.viz_workspace}
+            />
+            <FeatureRow
+              label="Strategy dashboard"
+              value={entitlements.entitlements.strategy_dashboard}
+            />
+            <FeatureRow
+              label="Live pace"
+              value={entitlements.entitlements.live_pace}
+            />
+            <FeatureRow
+              label="Pit planning"
+              value={entitlements.entitlements.pit_planning}
+            />
+            <FeatureRow
+              label="PDF reports"
+              value={entitlements.entitlements.pdf_reports}
             />
             <FeatureRow
               label="API access"
               value={entitlements.entitlements.api_access}
             />
             <FeatureRow
-              label="Live monitoring"
-              value={entitlements.entitlements.live_monitoring}
+              label="Track management"
+              value={entitlements.entitlements.track_management}
             />
             <FeatureRow
-              label="Race strategy"
-              value={entitlements.entitlements.race_strategy_limit ?? 'Unlimited'}
-            />
-            <FeatureRow
-              label="Export formats"
-              value={entitlements.entitlements.export_formats.join(', ')}
+              label="Workspace members"
+              value={entitlements.entitlements.max_workspace_members}
             />
           </div>
         ) : (
