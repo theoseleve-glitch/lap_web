@@ -9,8 +9,12 @@ import { FallbackShell } from './quality/FallbackShell';
 import { useKernelStore } from './state/store';
 import { useChapter } from './hooks/useChapter';
 import { CustomCursor } from '@/components/chrome/CustomCursor';
-import { DeltaStrip } from '@/components/chrome/DeltaStrip';
-import { SectorTabs } from '@/components/chrome/SectorTabs';
+import { TimingTower } from '@/components/chrome/TimingTower';
+import { DeltaHud } from '@/components/chrome/DeltaHud';
+import { MiniTrackMap } from '@/components/chrome/MiniTrackMap';
+import { DrsLabel } from '@/components/chrome/DrsLabel';
+import { SectorGateSweep } from '@/components/chrome/SectorGateSweep';
+import { FinishLine } from '@/components/chrome/FinishLine';
 import { TimecodeCounter } from '@/components/chrome/TimecodeCounter';
 import { IndexOverlay } from '@/components/chrome/IndexOverlay';
 import { SiteHeader } from '@/components/site/SiteHeader';
@@ -31,8 +35,12 @@ function ExperienceContent({ children }: { children: ReactNode }) {
       <SiteHeader showIndexToggle onIndexToggle={toggleOverlay} />
       <CustomCursor />
       <TimecodeCounter />
-      <SectorTabs />
-      <DeltaStrip />
+      <TimingTower />
+      <DeltaHud />
+      <MiniTrackMap />
+      <DrsLabel />
+      <SectorGateSweep />
+      <FinishLine />
       <IndexOverlay isOpen={overlayOpen} onClose={closeOverlay} fromSection={activeRoom} />
 
       {/* Layer 1: WebGL */}
