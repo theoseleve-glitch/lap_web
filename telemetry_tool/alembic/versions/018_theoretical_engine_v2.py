@@ -1,14 +1,14 @@
 """Add kart_envelope coaching columns to theoretical_data.
 
-Revision ID: 017
-Revises: 016
+Revision ID: 018
+Revises: 017
 Create Date: 2026-02-27
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "017"
-down_revision = "016"
+revision = "018"
+down_revision = "017"
 
 
 def upgrade():
