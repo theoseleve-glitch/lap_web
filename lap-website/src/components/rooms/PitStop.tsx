@@ -134,7 +134,7 @@ export function PitStop() {
         {/* CTAs */}
         <div className="col-span-full flex flex-col md:flex-row items-center justify-center gap-4 mb-12">
           <PitButton
-            href={audience === 'b2c' ? '/register?source=free-report' : '/demo?audience=b2b'}
+            href={audience === 'b2c' ? '/register?source=free-report&redirect=/free-report/analyze' : '/demo?audience=b2b'}
             onClick={() => trackCtaClick('try_demo', 'pit-stop', audience)}
           >
             {audience === 'b2c' ? 'START FREE REPORT' : 'BOOK B2B DEMO'}

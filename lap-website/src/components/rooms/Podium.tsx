@@ -82,7 +82,7 @@ export function Podium() {
             ) : (
               <>
                 <PitButton
-                  href="/register?source=podium-free-report"
+                  href="/register?source=free-report&redirect=/free-report/analyze"
                   onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
                 >
                   START FREE REPORT

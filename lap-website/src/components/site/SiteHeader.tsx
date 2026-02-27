@@ -29,7 +29,7 @@ export function SiteHeader({ showIndexToggle = false, onIndexToggle }: SiteHeade
   const personaCta =
     persona === 'circuits' || persona === 'teams' || persona === 'endurance'
       ? { label: 'Book B2B Demo', href: '/demo?audience=b2b' }
-      : { label: 'Start Free Report', href: '/register?source=header-demo' };
+      : { label: 'Start Free Report', href: '/register?source=free-report&redirect=/free-report/analyze' };
 
   return (
     <header className="sticky top-0 z-50 border-b border-steel/20 bg-asphalt/95 backdrop-blur">
