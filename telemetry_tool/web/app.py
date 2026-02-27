@@ -261,6 +261,15 @@ def create_app(config: Config | None = None) -> Flask:
             from .middleware.tenant import tenant_middleware
             app.before_request(tenant_middleware)
             logger.debug("Registered tenant middleware")
+            from .middleware.legacy_guard import init_legacy_guard
+            init_legacy_guard(app)
+            logger.debug("Registered legacy route guard")
+            from .middleware.entitlements import (
+                entitlement_middleware, record_successful_usage,
+            )
+            app.before_request(entitlement_middleware)
+            app.after_request(record_successful_usage)
+            logger.debug("Registered entitlement middleware")
             from .routes.workspaces import bp as workspaces_bp
             from .routes.teams import bp as teams_bp
             app.register_blueprint(workspaces_bp)
@@ -296,6 +305,11 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.billing import bp as billing_bp
             app.register_blueprint(billing_bp)
             logger.debug("Registered billing webhook blueprint")
+
+            # Billing API (authenticated — subscription info, invoices, usage)
+            from .routes.api_v1_billing import bp as api_v1_billing_bp
+            app.register_blueprint(api_v1_billing_bp)
+            logger.debug("Registered api_v1_billing blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
