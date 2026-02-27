@@ -1026,6 +1026,108 @@ def load_theoretical_lap(
 
 # -- -
 
+# 6. Grip-scaled theoretical lap
+
+# -- -
+
+
+def scale_theoretical_by_grip(
+    theoretical_df: pd.DataFrame,
+    grip_factor: float,
+) -> pd.DataFrame:
+    """
+    Apply physics-based grip scaling to a dry theoretical lap.
+
+    Parameters
+    ----------
+    theoretical_df:
+        Theoretical lap DataFrame with columns ``_OUT_DIST``, ``_OUT_SPEED``,
+        ``_OUT_ACCEL``, ``_OUT_BRAKE``.
+    grip_factor:
+        Grip fraction in [0, 1].  1.0 = dry (identity), 0.0 = no grip (all
+        speed/accel/brake zeroed).  Values outside [0, 1] are clamped.
+
+    Returns
+    -------
+    pd.DataFrame
+        A **new** DataFrame (copy) with scaled columns.  The input is never
+        modified.
+
+    Notes
+    -----
+    Scaling physics:
+    - Speed:  ``v_scaled = v_dry * sqrt(grip_factor)``  (lateral-force-limited
+      cornering — centripetal force proportional to grip, speed to sqrt).
+    - Accel:  ``a_scaled = a_dry * grip_factor``  (traction limited).
+    - Brake:  ``b_scaled = b_dry * grip_factor``  (traction limited, preserves
+      negative sign).
+    - Distance: unchanged.
+    """
+    # Clamp grip factor to [0, 1]
+    grip_factor = max(0.0, min(1.0, grip_factor))
+
+    result = theoretical_df.copy()
+
+    result[_OUT_SPEED] = theoretical_df[_OUT_SPEED] * math.sqrt(grip_factor)
+    result[_OUT_ACCEL] = theoretical_df[_OUT_ACCEL] * grip_factor
+    result[_OUT_BRAKE] = theoretical_df[_OUT_BRAKE] * grip_factor
+    # _OUT_DIST is unchanged
+
+    return result
+
+
+def get_phase_theoreticals(
+    dry_theoretical: pd.DataFrame,
+    weather_timeline: pd.DataFrame,
+    phases_df: pd.DataFrame,
+) -> dict[int, pd.DataFrame]:
+    """
+    Compute a grip-scaled theoretical lap for each condition phase.
+
+    Parameters
+    ----------
+    dry_theoretical:
+        Base dry theoretical lap DataFrame (from :func:`build_theoretical_lap`).
+    weather_timeline:
+        DataFrame with at least ``lap_number`` and ``grip_score`` columns.
+        ``grip_score`` is 0--100.
+    phases_df:
+        DataFrame with ``phase_id``, ``lap_start``, ``lap_end`` columns
+        describing contiguous phases.
+
+    Returns
+    -------
+    dict[int, pd.DataFrame]
+        ``{phase_id: scaled_theoretical_df}`` — one scaled theoretical per
+        phase, keyed by ``phase_id``.
+    """
+    result: dict[int, pd.DataFrame] = {}
+
+    for _, phase_row in phases_df.iterrows():
+        phase_id = int(phase_row["phase_id"])
+        lap_start = int(phase_row["lap_start"])
+        lap_end = int(phase_row["lap_end"])
+
+        # Filter weather_timeline to laps within this phase
+        mask = (
+            (weather_timeline["lap_number"] >= lap_start)
+            & (weather_timeline["lap_number"] <= lap_end)
+        )
+        phase_weather = weather_timeline.loc[mask]
+
+        if len(phase_weather) > 0:
+            avg_grip = float(phase_weather["grip_score"].mean())
+        else:
+            avg_grip = 100.0  # default to dry if no data
+
+        grip_factor = avg_grip / 100.0
+        result[phase_id] = scale_theoretical_by_grip(dry_theoretical, grip_factor)
+
+    return result
+
+
+# -- -
+
 # Unit tests
 
 # -- -
