@@ -1,30 +1,37 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, type CSSProperties } from 'react';
 import Image from 'next/image';
 import { trackS3ScrubberInteract } from '@/lib/analytics';
 
 interface ReportScrubberProps {
   className?: string;
+  panels?: ScrubberPanel[];
+  ariaLabel?: string;
+  accentColor?: string;
 }
 
-const panels = [
+export interface ScrubberPanel {
+  label: string;
+  description: string;
+  image: string;
+  alt: string;
+}
+
+const defaultPanels: ScrubberPanel[] = [
   {
-    position: 0,
     label: 'SCORE OVERVIEW',
     description: 'Four-pillar scoring: Pace, Consistency, Execution, Robustness. Grade A at 86/100.',
     image: '/images/screenshots/score-overview.png',
     alt: 'Session score overview showing four performance pillars',
   },
   {
-    position: 1,
     label: 'CORNER COACHING',
     description: 'Corner-by-corner analysis with brake point, apex speed, and exit drive breakdowns.',
     image: '/images/screenshots/corner-replay.png',
     alt: 'Corner replay with cockpit gauges and track map',
   },
   {
-    position: 2,
     label: 'LAP DATA',
     description: 'Full lap-by-lap telemetry table. Best lap highlighted. Speed, braking, line distance tracked.',
     image: '/images/screenshots/lap-table.png',
@@ -32,7 +39,12 @@ const panels = [
   },
 ];
 
-export function ReportScrubber({ className = '' }: ReportScrubberProps) {
+export function ReportScrubber({
+  className = '',
+  panels = defaultPanels,
+  ariaLabel = 'Scrub through report views',
+  accentColor = 'var(--accent)',
+}: ReportScrubberProps) {
   const [position, setPosition] = useState(0);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,7 +54,7 @@ export function ReportScrubber({ className = '' }: ReportScrubberProps) {
   }, []);
 
   return (
-    <div className={`${className}`}>
+    <div className={`${className}`} style={{ '--accent': accentColor } as CSSProperties}>
       {/* Screenshot with art direction: grayscale + grain + single accent */}
       <div
         className="relative w-full aspect-video bg-concrete border border-steel/20 overflow-hidden mb-6"
@@ -95,7 +107,7 @@ export function ReportScrubber({ className = '' }: ReportScrubberProps) {
           className="w-full h-1 appearance-none bg-concrete rounded-none cursor-pointer
             [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-chalk
             [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:bg-chalk [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:rounded-none"
-          aria-label="Scrub through report views"
+          aria-label={ariaLabel}
         />
         <div className="flex justify-between mt-2">
           {panels.map((p, i) => (
