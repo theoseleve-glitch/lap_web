@@ -71,7 +71,7 @@ export default function AnalyzePage() {
   // Data fetching
   const { data: filesData } = useQuery({
     queryKey: ['files', 'list'],
-    queryFn: () => api.get<{ files: FileEntry[] }>('/files/list'),
+    queryFn: () => api.get<{ files: FileEntry[] }>('/files'),
     enabled: step === 1,
   });
 
