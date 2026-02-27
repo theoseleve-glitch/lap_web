@@ -81,6 +81,19 @@ class TestRequireAuthDecorator:
         })
         assert resp.status_code == 401
 
+
+    def test_options_preflight_bypasses_auth(self):
+        app = _make_app(auth_required=True)
+        client = app.test_client()
+
+        resp = client.options("/api/v1/protected", headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+        })
+
+        # OPTIONS should not be blocked by auth middleware.
+        assert 200 <= resp.status_code < 300
+
     def test_public_route_accessible_without_auth(self):
         app = _make_app(auth_required=True)
         client = app.test_client()

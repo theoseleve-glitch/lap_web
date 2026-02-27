@@ -17,10 +17,14 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 from uuid import uuid4
 
-from flask import Flask, g, jsonify
+from flask import Flask, g, jsonify, request
+
+
+logger = logging.getLogger("web.request")
 
 
 # ---------------------------------------------------------------------------
@@ -129,3 +133,15 @@ def init_request_id(app: Flask) -> None:
     @app.before_request
     def _set_request_id() -> None:
         g.request_id = uuid4().hex
+
+    @app.after_request
+    def _log_options_request(response):
+        """Emit explicit logs for CORS preflight requests."""
+        if request.method == "OPTIONS":
+            logger.info(
+                "OPTIONS request path=%s origin=%s status=%s",
+                request.path,
+                request.headers.get("Origin", "-"),
+                response.status_code,
+            )
+        return response
