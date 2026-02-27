@@ -32,7 +32,7 @@ export interface ChapterConfig {
     exit: TransitionType;
   };
   snapWeight: number;
-  accentColor: 'none' | 'green' | 'red' | 'yellow' | 'orange';
+  accentColor: 'none' | 'green' | 'red' | 'yellow' | 'orange' | 'purple';
 }
 
 export interface ChapterSceneProps {

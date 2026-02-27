@@ -1,6 +1,7 @@
 // src/experience/state/store.ts
 import { create } from 'zustand';
 import type { KernelStore } from './types';
+import { colors } from '@/lib/tokens';
 
 const CHAPTER_COUNT = 11;
 
@@ -25,14 +26,14 @@ const initialState = {
   // ── Narrative state ─────────────────────
   hudTower: {
     sectors: [
-      { id: 'S1', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'S2', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'S3', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'S4', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'S5', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'PIT', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'GAR', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
-      { id: 'POD', status: 'pending' as const, progress: 0, color: '#F3F0E8' },
+      { id: 'S1', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'S2', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'S3', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'S4', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'S5', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'PIT', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'GAR', status: 'pending' as const, progress: 0, color: colors.chalk },
+      { id: 'POD', status: 'pending' as const, progress: 0, color: colors.chalk },
     ],
     activeSectorIndex: 0,
   },
@@ -84,12 +85,11 @@ export const useKernelStore = create<KernelStore>()((set) => ({
   // ── Narrative actions ───────────────────
   completeSector: (index) =>
     set((state) => {
+      if (index < 0 || index >= state.hudTower.sectors.length) return {};
       const sectors = [...state.hudTower.sectors];
-      if (index >= 0 && index < sectors.length) {
-        sectors[index] = { ...sectors[index], status: 'completed', color: '#D946EF', progress: 1 };
-      }
+      sectors[index] = { ...sectors[index], status: 'completed', color: colors.racingPurple, progress: 1 };
       const nextActive = Math.min(index + 1, sectors.length - 1);
-      if (nextActive < sectors.length && sectors[nextActive].status === 'pending') {
+      if (sectors[nextActive].status === 'pending') {
         sectors[nextActive] = { ...sectors[nextActive], status: 'active' };
       }
       return { hudTower: { sectors, activeSectorIndex: nextActive } };
