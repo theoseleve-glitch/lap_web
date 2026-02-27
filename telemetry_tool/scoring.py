@@ -482,7 +482,10 @@ def _score_pace(
     gap_s   = driver_best - theory_best
     gap_pct = 100.0 * gap_s / theory_best
 
-    is_physics = simulation_method in ("physics", "hybrid")
+    is_physics = simulation_method in (
+        "physics", "hybrid",
+        "kart_envelope_qss", "kart_envelope_casadi",
+    )
 
     if is_physics:
         # --- Blended percentage + absolute scoring -- -
@@ -673,7 +676,10 @@ def _score_execution(
 
     Missing values fall back to partial credit (0.5 ratio).
     """
-    is_physics = simulation_method in ("physics", "hybrid")
+    is_physics = simulation_method in (
+        "physics", "hybrid",
+        "kart_envelope_qss", "kart_envelope_casadi",
+    )
 
     # Select threshold set
 
@@ -1203,6 +1209,7 @@ def score_session(
     session_type:         str = "practice",
     *,
     is_wet:               bool = False,
+    corner_coaching:      list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Compute a structured performance score for a driver session.
@@ -1319,6 +1326,15 @@ def score_session(
     exec_score,        exec_detail  = _score_execution(
         metrics_dict, theoretical_metrics, simulation_method=sim_method,
     )
+    # Blend with granular corner-level execution when available
+    if corner_coaching:
+        granular = compute_granular_execution(corner_performances=corner_coaching)
+        if granular.get("has_corner_data"):
+            # 70% granular (corner-level), 30% aggregate (speed/accel/brake)
+            granular_score = granular["composite"] * MAX_EXECUTION
+            exec_score = round(0.70 * granular_score + 0.30 * exec_score, 4)
+            exec_detail["granular"] = granular
+            exec_detail["has_corner_data"] = True
     robust_score,      robust_detail= _score_robustness(
         metrics_dict, theoretical_metrics,
     )
