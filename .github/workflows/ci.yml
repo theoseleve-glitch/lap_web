@@ -7,6 +7,23 @@ on:
     branches: [main]
 
 jobs:
+
+  check-api-security-headers:
+    runs-on: ubuntu-latest
+    env:
+      API_PREVIEW_URL: ${{ vars.API_PREVIEW_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate preview endpoint is configured
+        run: |
+          if [ -z "${API_PREVIEW_URL}" ]; then
+            echo "API_PREVIEW_URL repo variable is required for header regression checks" >&2
+            exit 1
+          fi
+
+      - name: Check API security headers on preview
+        run: scripts/check_api_security_headers.sh "${API_PREVIEW_URL}" /healthz
   test-backend:
     runs-on: ubuntu-latest
     steps:

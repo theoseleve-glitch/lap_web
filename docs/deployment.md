@@ -110,6 +110,26 @@ curl -s -X POST https://api.lap.racing/api/auth/login \
   -d '{"email":"test@test.com","password":"test"}' | jq .
 ```
 
+### Expected API Security Headers
+
+`https://api.lap-coach.racing/healthz` (and all API responses) should include:
+
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin` (aligned with frontend policy in `lap-website/next.config.mjs`)
+- `Permissions-Policy: camera=(), microphone=(), geolocation=()`
+- `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'`
+
+Runbook check:
+
+```bash
+scripts/check_api_security_headers.sh https://api.lap-coach.racing /healthz
+```
+
+CI also runs the same script against the preview API endpoint configured via the `API_PREVIEW_URL` repository variable.
+
+
 ## 4. Environment Checklist
 
 | Variable | Backend (.env) | Frontend (Vercel) |
