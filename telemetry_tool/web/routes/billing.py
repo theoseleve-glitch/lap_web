@@ -15,6 +15,7 @@ import os
 from flask import Blueprint, g, request, jsonify
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.middleware.audit import audit_log
 
 try:
     import stripe
@@ -306,6 +307,7 @@ def _handle_checkout_completed(session: dict):
             plan_tier=plan_tier,
             metadata={"checkout_session": session.get("id"), "customer": customer_id},
         )
+        audit_log(conn, "billing_checkout_completed", {"user_id": uid, "tier": plan_tier})
     else:
         logger.warning("Checkout completed but user not found: %s", customer_email)
 
@@ -346,6 +348,7 @@ def _handle_subscription_updated(subscription: dict):
         {"status": status, "cid": customer_id, **tier_params},
     )
     conn.commit()
+    audit_log(conn, "billing_subscription_updated", {"user_id": customer_id, "status": status})
     logger.info("Subscription updated for customer %s: status=%s%s",
                 customer_id, status,
                 f" tier={tier_params.get('tier')}" if tier_params else "")
@@ -385,6 +388,7 @@ def _handle_subscription_deleted(subscription: dict):
         conn, uid, "canceled",
         metadata={"customer": customer_id, "subscription": subscription.get("id")},
     )
+    audit_log(conn, "billing_subscription_deleted", {"user_id": uid})
     logger.info("Subscription canceled for customer %s — grace period started", customer_id)
 
 
@@ -408,6 +412,7 @@ def _handle_payment_failed(invoice: dict):
         conn, uid, "past_due",
         metadata={"invoice": invoice.get("id"), "customer": customer_id},
     )
+    audit_log(conn, "billing_invoice_failed", {"user_id": uid})
     logger.info("Payment failed for customer %s — marked past_due", customer_id)
 
 

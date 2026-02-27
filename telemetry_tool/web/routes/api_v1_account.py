@@ -22,6 +22,7 @@ from datetime import datetime, timezone, timedelta, date
 from flask import Blueprint, g, request, send_file
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.middleware.audit import audit_log
 from web.middleware.entitlements import (
     entitlement_snapshot,
     require_api_access,
@@ -104,6 +105,7 @@ def create_export():
     row = cursor.fetchone()
     export_id = row["id"] if isinstance(row, dict) else dict(row)["id"]
     conn.commit()
+    audit_log(conn, "gdpr_export_requested", {})
 
     # Dispatch Celery task
     if export_user_data is not None and hasattr(export_user_data, "delay"):
@@ -558,6 +560,7 @@ def revoke_session(token_id: int):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     conn.commit()
+    audit_log(conn, "session_revoked", {"token_id": token_id})
     return api_response({"revoked": True})
 
 
@@ -600,6 +603,7 @@ def revoke_all_sessions():
         )
 
     conn.commit()
+    audit_log(conn, "all_sessions_revoked", {})
     return api_response({"message": "All other sessions revoked"})
 
 
