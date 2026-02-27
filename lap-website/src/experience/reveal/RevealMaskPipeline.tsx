@@ -164,8 +164,10 @@ export function RevealMaskPipeline() {
   }, [quadGeo, stampMat, decayMat, blurMatH, blurMatV]);
 
   // Coverage sampling pixel buffer + throttle counter
+  // Detect if readback from HalfFloat FBOs is supported (many WebGL impls reject it)
   const coveragePixels = useMemo(() => new Float32Array(4), []);
   const frameCountRef = useRef(0);
+  const readbackSupported = useRef<boolean | null>(null);
 
   useFrame(() => {
     const { pointerX, pointerY, reveal } = useKernelStore.getState();
@@ -213,16 +215,29 @@ export function RevealMaskPipeline() {
 
     gl.setRenderTarget(null);
 
-    // Sample coverage every 10 frames to avoid GPU pipeline stall from readRenderTargetPixels
+    // Sample coverage every 30 frames. readPixels on HalfFloat FBOs triggers
+    // INVALID_OPERATION warnings on many WebGL impls — detect once and skip.
     frameCountRef.current++;
-    if (frameCountRef.current % 10 === 0) {
+    if (frameCountRef.current % 30 === 0 && readbackSupported.current !== false) {
+      const glCtx = gl.getContext();
+      const hadError = glCtx.getError(); // clear any prior error
+      void hadError;
+
       gl.setRenderTarget(maskFboB);
       gl.readRenderTargetPixels(maskFboB, resolution / 2, resolution / 2, 1, 1, coveragePixels);
       gl.setRenderTarget(null);
-      const newCoverage = Math.min(1, coveragePixels[0] * 2);
-      const currentCoverage = useKernelStore.getState().reveal.maskCoverage;
-      if (Math.abs(newCoverage - currentCoverage) > 0.01) {
-        useKernelStore.getState().setMaskCoverage(newCoverage);
+
+      const err = glCtx.getError();
+      if (err !== glCtx.NO_ERROR) {
+        // HalfFloat readback not supported — disable permanently
+        readbackSupported.current = false;
+      } else {
+        readbackSupported.current = true;
+        const newCoverage = Math.min(1, coveragePixels[0] * 2);
+        const currentCoverage = useKernelStore.getState().reveal.maskCoverage;
+        if (Math.abs(newCoverage - currentCoverage) > 0.01) {
+          useKernelStore.getState().setMaskCoverage(newCoverage);
+        }
       }
     }
   });
