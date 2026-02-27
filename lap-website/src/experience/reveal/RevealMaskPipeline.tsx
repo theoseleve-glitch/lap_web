@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo, useEffect } from 'react';
+import { useRef, useMemo, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useFBO } from '@react-three/drei';
 import * as THREE from 'three';
@@ -11,6 +11,10 @@ import { maskStampVertex, maskStampFragment } from './shaders/mask-stamp';
 import { maskDecayVertex, maskDecayFragment } from './shaders/mask-decay';
 import { maskBlurVertex, maskBlurFragment } from './shaders/mask-blur';
 
+export interface RevealMaskPipelineHandle {
+  getMaskTexture: () => THREE.Texture | null;
+}
+
 /**
  * RevealMaskPipeline — FBO ping-pong system for persistent cursor reveal.
  *
@@ -20,7 +24,8 @@ import { maskBlurVertex, maskBlurFragment } from './shaders/mask-blur';
  * 3. BLUR:  separable Gaussian on maskFBO_B -> maskFBO_A (high tier only)
  * 4. Result stays in maskFBO_B (or maskFBO_A after blur)
  */
-export function RevealMaskPipeline() {
+export const RevealMaskPipeline = forwardRef<RevealMaskPipelineHandle>(
+  function RevealMaskPipeline(_, ref) {
   const { gl, size } = useThree();
   const qualityTier = useKernelStore((s) => s.qualityTier);
   const reducedMotion = useKernelStore((s) => s.reducedMotion);
@@ -169,6 +174,10 @@ export function RevealMaskPipeline() {
   const frameCountRef = useRef(0);
   const readbackSupported = useRef<boolean | null>(null);
 
+    useImperativeHandle(ref, () => ({
+      getMaskTexture: () => maskFboB.texture,
+    }));
+
   useFrame(() => {
     const { pointerX, pointerY, reveal } = useKernelStore.getState();
     if (!reveal.active || resolution === 0) return;
@@ -243,4 +252,4 @@ export function RevealMaskPipeline() {
   });
 
   return null;
-}
+});
