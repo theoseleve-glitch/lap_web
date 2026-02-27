@@ -39,6 +39,7 @@ export function TrackRibbon() {
           uSectorGlow: { value: background.ribbonSegmentGlow },
           uSectorStart: { value: 0 },
           uSectorEnd: { value: 0 },
+          uFinishProgress: { value: 0.95 },
         },
         transparent: true,
         depthWrite: false,

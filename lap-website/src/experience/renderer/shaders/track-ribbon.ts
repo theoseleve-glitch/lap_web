@@ -21,6 +21,7 @@ uniform vec3 uSectorColor;
 uniform float uSectorGlow;
 uniform float uSectorStart;
 uniform float uSectorEnd;
+uniform float uFinishProgress;
 
 varying vec2 vUv;
 varying float vProgress;
@@ -43,8 +44,16 @@ void main() {
   float sectorMask = step(uSectorStart, vProgress) * step(vProgress, uSectorEnd);
   vec3 sector = uSectorColor * sectorMask * uSectorGlow * edgeMask;
 
-  vec3 color = base + edge + forward + sector;
-  float alpha = 0.8 * edgeMask + 0.15 + forwardMask * 0.3 + sectorMask * 0.2;
+  // Finish line checkered pattern
+  float finishDist = abs(vProgress - uFinishProgress);
+  float finishMask = smoothstep(0.012, 0.0, finishDist);
+  float checkerX = step(0.5, fract(vUv.x * 8.0));
+  float checkerY = step(0.5, fract(vProgress * 200.0));
+  float checker = abs(checkerX - checkerY); // XOR pattern
+  vec3 finishColor = mix(vec3(0.9), vec3(0.1), checker) * finishMask;
+
+  vec3 color = base + edge + forward + sector + finishColor;
+  float alpha = 0.8 * edgeMask + 0.15 + forwardMask * 0.3 + sectorMask * 0.2 + finishMask * 0.8;
 
   gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0));
 }
