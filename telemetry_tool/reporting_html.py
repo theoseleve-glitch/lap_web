@@ -2120,6 +2120,14 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 </div>
 {% endif %}
 
+<!-- ====== Weather Conditions Banner (Section 1) ====== -->
+{% if weather_banner_html %}
+<h2>Session Weather</h2>
+<div class="card">
+  {{ weather_banner_html }}
+</div>
+{% endif %}
+
 <!-- ====== Session Score ====== -->
 <h2>Session Score</h2>
 <div class="card">
@@ -2216,6 +2224,15 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 </div>
 {% endif %}
 
+<!-- ====== Condition Timeline Strip (Section 2) ====== -->
+{% if condition_timeline_img %}
+<h2>Condition Timeline</h2>
+<div class="card">
+  <img class="plot-img" src="{{ condition_timeline_img }}" alt="Condition timeline strip">
+  <p class="section-note">Colour-coded lap-by-lap track condition. Dry = green, Greasy = yellow, Damp = light blue, Wet = blue. Numbers = air temperature.</p>
+</div>
+{% endif %}
+
 <!-- ====== Delta Heatmap ====== -->
 <h2>Segment Delta Heatmap</h2>
 <div class="card">
@@ -2295,6 +2312,28 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 <div class="card">
   <img class="plot-img" src="{{ grip_evolution_img }}" alt="Grip evolution chart">
   <p class="section-note">Peak lateral and braking G per lap with degradation trend.  Orange triangles = lap time (right axis).</p>
+</div>
+{% endif %}
+
+<!-- ====== Per-Phase Analysis (Section 3) ====== -->
+{% if phase_cards_html %}
+<h2>Per-Phase Analysis</h2>
+{{ phase_cards_html }}
+{% endif %}
+
+<!-- ====== Adaptation Score (Section 4) ====== -->
+{% if adaptation_score_html %}
+<h2>Weather Adaptation Score</h2>
+<div class="card">
+  {{ adaptation_score_html }}
+</div>
+{% endif %}
+
+<!-- ====== Weather Coaching (Section 5) ====== -->
+{% if weather_coaching_html %}
+<h2>Weather-Adjusted Coaching</h2>
+<div class="card">
+  {{ weather_coaching_html }}
 </div>
 {% endif %}
 
@@ -2472,6 +2511,506 @@ def _highlight_column(
 
 # ============================================================================
 
+# Weather / Meteo section builders
+
+# ============================================================================
+
+# Condition colour mapping used by both the banner and the timeline strip.
+_CONDITION_COLORS: Final[dict[str, str]] = {
+    "dry":    "#3ddc84",
+    "greasy": "#ffd600",
+    "damp":   "#4fc3f7",
+    "wet":    "#1565c0",
+}
+
+
+def _condition_color(label: str) -> str:
+    """Return the hex colour for a track-condition label (case-insensitive)."""
+    return _CONDITION_COLORS.get(str(label).strip().lower(), "#888888")
+
+
+def _build_weather_conditions_banner(
+    weather_timeline: pd.DataFrame,
+) -> str:
+    """
+    **Section 1 -- Session Conditions Banner**
+
+    Renders a compact banner summarising the session weather: condition
+    transitions, temperature range, wind range, and grip range.
+
+    Expects *weather_timeline* to have per-lap rows with columns such as
+    ``condition`` (str), ``air_temp_c`` (float), ``track_temp_c`` (float),
+    ``wind_speed_mps`` (float), ``grip_index`` (float).  All columns are
+    optional; the banner degrades gracefully.
+    """
+    if weather_timeline is None or weather_timeline.empty:
+        return ""
+
+    parts: list[str] = []
+
+    # --- Condition summary (e.g. "Dry -> Wet" or "Dry throughout") ---
+    conditions: list[str] = []
+    if "condition" in weather_timeline.columns:
+        raw = weather_timeline["condition"].dropna().astype(str).str.strip().str.capitalize()
+        # Deduplicate consecutive identical conditions
+        prev = None
+        for c in raw:
+            if c != prev:
+                conditions.append(c)
+                prev = c
+
+    if len(conditions) == 0:
+        cond_text = "Unknown"
+    elif len(conditions) == 1:
+        cond_text = f"{conditions[0]} throughout"
+    else:
+        cond_text = " &rarr; ".join(conditions)
+
+    # Colour badges for each unique condition
+    badges = ""
+    seen: set[str] = set()
+    for c in conditions:
+        if c.lower() not in seen:
+            seen.add(c.lower())
+            col = _condition_color(c)
+            badges += (
+                f'<span style="display:inline-block;width:12px;height:12px;'
+                f'border-radius:3px;background:{col};margin-right:4px;'
+                f'vertical-align:middle;"></span>'
+            )
+    parts.append(
+        f'<div style="font-size:1.05rem;font-weight:700;margin-bottom:8px;">'
+        f'{badges}{cond_text}</div>'
+    )
+
+    # --- Stat pills row ---
+    pills: list[str] = []
+
+    def _range_pill(label: str, col: str, unit: str, fmt: str = ".0f") -> None:
+        if col in weather_timeline.columns:
+            vals = pd.to_numeric(weather_timeline[col], errors="coerce").dropna()
+            if len(vals):
+                lo, hi = vals.min(), vals.max()
+                if abs(hi - lo) < 0.05:
+                    pills.append(f"<b>{label}:</b> {lo:{fmt}}{unit}")
+                else:
+                    pills.append(f"<b>{label}:</b> {lo:{fmt}}&ndash;{hi:{fmt}}{unit}")
+
+    _range_pill("Air temp", "air_temp_c", "\u00b0C")
+    _range_pill("Track temp", "track_temp_c", "\u00b0C")
+    _range_pill("Wind", "wind_speed_mps", " m/s", ".1f")
+    _range_pill("Grip", "grip_index", "", ".2f")
+
+    if "humidity_pct" in weather_timeline.columns:
+        hvals = pd.to_numeric(weather_timeline["humidity_pct"], errors="coerce").dropna()
+        if len(hvals):
+            pills.append(f"<b>Humidity:</b> {hvals.mean():.0f}%")
+
+    if pills:
+        pill_html = "".join(
+            f'<span style="background:#22252e;border-radius:6px;padding:5px 12px;'
+            f'font-size:0.82rem;color:#9a9a9a;">{p}</span>'
+            for p in pills
+        )
+        parts.append(
+            f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">'
+            f'{pill_html}</div>'
+        )
+
+    return "\n".join(parts)
+
+
+def _plot_condition_timeline_strip(
+    weather_timeline: pd.DataFrame,
+) -> str:
+    """
+    **Section 2 -- Condition Timeline Strip**
+
+    Returns a base64-encoded PNG of a horizontal colour-coded bar showing
+    condition phases across laps, with temperature overlay text and rain
+    indicators.
+
+    Returns an empty string if the timeline is insufficient.
+    """
+    if weather_timeline is None or weather_timeline.empty:
+        return ""
+    if "condition" not in weather_timeline.columns:
+        return ""
+
+    n_laps = len(weather_timeline)
+    if n_laps < 1:
+        return ""
+
+    fig, ax = plt.subplots(figsize=(10.0, 1.8), facecolor=_BG_DARK)
+    ax.set_facecolor(_BG_DARK)
+
+    conditions = weather_timeline["condition"].fillna("unknown").astype(str).str.strip().str.lower()
+
+    # Draw colour bar segments
+    for i, cond in enumerate(conditions):
+        col = _condition_color(cond)
+        ax.barh(0, 1, left=i, height=0.6, color=col, edgecolor="none")
+
+    # Temperature overlay text (if available)
+    has_temp = "air_temp_c" in weather_timeline.columns
+    if has_temp:
+        temps = pd.to_numeric(weather_timeline["air_temp_c"], errors="coerce")
+        for i, t in enumerate(temps):
+            if pd.notna(t):
+                ax.text(
+                    i + 0.5, 0, f"{t:.0f}\u00b0",
+                    ha="center", va="center",
+                    fontsize=7, color=_TEXT_LIGHT, fontweight="bold",
+                )
+
+    # Rain indicator triangles
+    has_rain = "rain_intensity" in weather_timeline.columns
+    if has_rain:
+        rain = pd.to_numeric(weather_timeline["rain_intensity"], errors="coerce")
+        for i, r in enumerate(rain):
+            if pd.notna(r) and r > 0:
+                ax.plot(i + 0.5, 0.45, marker="v", markersize=5,
+                        color="#ffffff", markeredgecolor="none")
+
+    # Axis formatting
+    ax.set_xlim(0, n_laps)
+    ax.set_ylim(-0.4, 0.6)
+    ax.set_yticks([])
+    ax.set_xticks([i + 0.5 for i in range(n_laps)])
+    ax.set_xticklabels(
+        [f"L{i+1}" for i in range(n_laps)],
+        fontsize=7, color=_TEXT_MED,
+    )
+    ax.tick_params(axis="x", length=0, pad=4)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    # Legend
+    legend_x = 0
+    for label, col in _CONDITION_COLORS.items():
+        ax.annotate(
+            f"  {label.capitalize()}",
+            xy=(legend_x, -0.35), fontsize=6.5, color=col,
+            va="top", ha="left",
+            annotation_clip=False,
+        )
+        legend_x += n_laps / 4
+
+    fig.tight_layout(pad=0.3)
+    return _fig_to_base64(fig)
+
+
+def _build_phase_analysis_cards(
+    weather_timeline: pd.DataFrame,
+    phase_theoreticals: Optional[dict],
+    lap_times: Optional[list[float]],
+) -> str:
+    """
+    **Section 3 -- Per-Phase Analysis Cards**
+
+    One card per contiguous condition phase showing: condition label,
+    lap range, best lap time, and condition-adjusted theoretical (if
+    available from *phase_theoreticals*).
+
+    Returns empty string when no weather data is available.
+    """
+    if weather_timeline is None or weather_timeline.empty:
+        return ""
+    if "condition" not in weather_timeline.columns:
+        return ""
+
+    phase_theoreticals = phase_theoreticals or {}
+    lap_times = lap_times or []
+    conditions = (
+        weather_timeline["condition"]
+        .fillna("unknown").astype(str).str.strip().str.lower().tolist()
+    )
+
+    # Build contiguous phases
+    phases: list[dict[str, Any]] = []
+    start = 0
+    for i in range(1, len(conditions) + 1):
+        if i == len(conditions) or conditions[i] != conditions[start]:
+            phases.append({
+                "condition": conditions[start].capitalize(),
+                "lap_start": start + 1,  # 1-indexed
+                "lap_end": i,            # inclusive
+            })
+            start = i
+
+    cards: list[str] = []
+    for phase in phases:
+        cond = phase["condition"]
+        ls, le = phase["lap_start"], phase["lap_end"]
+        col = _condition_color(cond)
+
+        # Best lap in this phase range
+        phase_laps = lap_times[ls - 1: le] if lap_times else []
+        finite_laps = [t for t in phase_laps if isinstance(t, (int, float)) and math.isfinite(t)]
+        best_lap_str = f"{min(finite_laps):.3f}s" if finite_laps else "n/a"
+
+        # Condition-adjusted theoretical
+        phase_key = cond.lower()
+        theo = phase_theoreticals.get(phase_key)
+        if theo is not None and isinstance(theo, (int, float)) and math.isfinite(theo):
+            theo_str = f"{theo:.3f}s"
+            # Delta from best to theoretical
+            if finite_laps:
+                delta = min(finite_laps) - theo
+                delta_col = _GREEN if delta < 0.1 else (_YELLOW if delta < 0.5 else _RED)
+                delta_str = (
+                    f'<span style="color:{delta_col};font-weight:600;">'
+                    f'{delta:+.3f}s</span>'
+                )
+            else:
+                delta_str = ""
+        else:
+            theo_str = "n/a"
+            delta_str = ""
+
+        lap_range_str = f"L{ls}" if ls == le else f"L{ls}&ndash;L{le}"
+
+        card = (
+            f'<div class="card" style="border-left:4px solid {col};margin-bottom:10px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+            f'<div>'
+            f'<span style="font-weight:700;font-size:0.95rem;color:{col};">{cond}</span>'
+            f'<span style="color:#9a9a9a;font-size:0.82rem;margin-left:10px;">{lap_range_str}</span>'
+            f'</div>'
+            f'<div style="text-align:right;font-size:0.85rem;">'
+            f'Best: <b>{best_lap_str}</b>'
+        )
+        if theo_str != "n/a":
+            card += f' &middot; Theoretical: <b>{theo_str}</b> {delta_str}'
+        card += '</div></div></div>'
+        cards.append(card)
+
+    return "\n".join(cards)
+
+
+def _build_adaptation_score_section(
+    adaptation_result: Optional[dict[str, Any]],
+) -> str:
+    """
+    **Section 4 -- Adaptation Score Breakdown**
+
+    Renders the three sub-metric scores from the weather adaptation
+    scorer: transition_speed, phase_pace, technique_adaptation.
+
+    Expects *adaptation_result* to contain at least:
+      - ``overall_score`` (float, 0--100)
+      - ``grade`` (str)
+      - ``sub_scores`` dict with keys ``transition_speed``,
+        ``phase_pace``, ``technique_adaptation`` each having a
+        ``score`` and ``max`` field.
+
+    Returns empty string if adaptation_result is None.
+    """
+    if adaptation_result is None:
+        return ""
+
+    overall = adaptation_result.get("overall_score")
+    grade = adaptation_result.get("grade", "")
+    sub = adaptation_result.get("sub_scores", {})
+
+    parts: list[str] = []
+
+    # Overall score badge
+    if overall is not None:
+        grade_class = f"grade-{grade}" if grade else ""
+        parts.append(
+            f'<div style="display:flex;align-items:center;margin-bottom:12px;">'
+            f'<div class="grade-badge {grade_class}" style="width:44px;height:44px;'
+            f'font-size:1.3rem;margin-right:12px;">{grade}</div>'
+            f'<div><span style="font-size:1.5rem;font-weight:700;">'
+            f'{overall:.1f}</span>'
+            f'<span style="color:#9a9a9a;font-size:0.9rem;"> / 100</span></div>'
+            f'</div>'
+        )
+
+    # Sub-metric bars
+    _METRIC_LABELS: dict[str, str] = {
+        "transition_speed": "Transition Speed",
+        "phase_pace": "Phase Pace",
+        "technique_adaptation": "Technique Adaptation",
+    }
+    _METRIC_ICONS: dict[str, str] = {
+        "transition_speed": "&#9201;",       # stopwatch
+        "phase_pace": "&#127939;",           # runner
+        "technique_adaptation": "&#128295;", # wrench
+    }
+
+    for key in ("transition_speed", "phase_pace", "technique_adaptation"):
+        info = sub.get(key, {})
+        score = info.get("score")
+        max_score = info.get("max", 100)
+        description = info.get("description", "")
+        label = _METRIC_LABELS.get(key, key)
+        icon = _METRIC_ICONS.get(key, "")
+
+        if score is None:
+            continue
+
+        pct = min(100, max(0, (score / max_score * 100) if max_score else 0))
+        bar_col = _GREEN if pct >= 75 else (_YELLOW if pct >= 50 else _RED)
+
+        parts.append(
+            f'<div style="margin-bottom:10px;">'
+            f'<div style="display:flex;justify-content:space-between;'
+            f'font-size:0.85rem;margin-bottom:3px;">'
+            f'<span>{icon} {label}</span>'
+            f'<span style="font-weight:600;">{score:.1f} / {max_score:.0f}</span>'
+            f'</div>'
+            f'<div style="background:#22252e;border-radius:4px;height:8px;overflow:hidden;">'
+            f'<div style="width:{pct:.0f}%;height:100%;background:{bar_col};'
+            f'border-radius:4px;"></div>'
+            f'</div>'
+        )
+        if description:
+            parts.append(
+                f'<div style="font-size:0.78rem;color:#9a9a9a;margin-top:2px;">'
+                f'{description}</div>'
+            )
+        parts.append('</div>')
+
+    return "\n".join(parts)
+
+
+def _build_weather_coaching_section(
+    weather_timeline: pd.DataFrame,
+    adaptation_result: Optional[dict[str, Any]],
+    lap_times: Optional[list[float]],
+) -> str:
+    """
+    **Section 5 -- Enhanced Weather Coaching**
+
+    Generates contextual coaching advice based on how the driver
+    performed across different weather phases.
+
+    Returns empty string when no weather data.
+    """
+    if weather_timeline is None or weather_timeline.empty:
+        return ""
+    if "condition" not in weather_timeline.columns:
+        return ""
+
+    lap_times = lap_times or []
+    conditions = (
+        weather_timeline["condition"]
+        .fillna("unknown").astype(str).str.strip().str.lower().tolist()
+    )
+
+    tips: list[str] = []
+
+    # --- Analyse per-phase performance ---
+    # Build phases (contiguous condition blocks)
+    phases: list[dict[str, Any]] = []
+    start = 0
+    for i in range(1, len(conditions) + 1):
+        if i == len(conditions) or conditions[i] != conditions[start]:
+            phase_laps = lap_times[start:i] if lap_times else []
+            finite = [t for t in phase_laps if isinstance(t, (int, float)) and math.isfinite(t)]
+            phases.append({
+                "condition": conditions[start],
+                "start": start,
+                "end": i,
+                "laps": finite,
+            })
+            start = i
+
+    # Improvement within wet/damp phases
+    for phase in phases:
+        cond = phase["condition"]
+        laps = phase["laps"]
+        if cond in ("wet", "damp") and len(laps) >= 3:
+            first_half = laps[: len(laps) // 2]
+            second_half = laps[len(laps) // 2:]
+            avg_first = sum(first_half) / len(first_half)
+            avg_second = sum(second_half) / len(second_half)
+            if avg_first > 0:
+                improvement_pct = (avg_first - avg_second) / avg_first * 100
+                cond_cap = cond.capitalize()
+                if improvement_pct > 1:
+                    tips.append(
+                        f'<div style="border-left:3px solid {_GREEN};padding:6px 12px;'
+                        f'margin:6px 0;border-radius:4px;background:rgba(61,220,132,0.08);">'
+                        f'In {cond_cap} phases (L{phase["start"]+1}&ndash;L{phase["end"]}), '
+                        f'your lap times improved by <b>{improvement_pct:.1f}%</b> '
+                        f'from early to late laps &mdash; good adaptation.</div>'
+                    )
+                elif improvement_pct < -1:
+                    tips.append(
+                        f'<div style="border-left:3px solid {_RED};padding:6px 12px;'
+                        f'margin:6px 0;border-radius:4px;background:rgba(255,68,68,0.08);">'
+                        f'In {cond_cap} phases (L{phase["start"]+1}&ndash;L{phase["end"]}), '
+                        f'lap times degraded by <b>{abs(improvement_pct):.1f}%</b> &mdash; '
+                        f'focus on maintaining tyre temperature and smooth inputs.</div>'
+                    )
+                else:
+                    tips.append(
+                        f'<div style="border-left:3px solid {_YELLOW};padding:6px 12px;'
+                        f'margin:6px 0;border-radius:4px;background:rgba(255,214,0,0.08);">'
+                        f'Consistent pace in {cond_cap} phase '
+                        f'(L{phase["start"]+1}&ndash;L{phase["end"]}).</div>'
+                    )
+
+    # Transition analysis
+    for i in range(1, len(phases)):
+        prev_cond = phases[i - 1]["condition"]
+        curr_cond = phases[i]["condition"]
+        prev_laps = phases[i - 1]["laps"]
+        curr_laps = phases[i]["laps"]
+        if prev_laps and curr_laps:
+            last_prev = prev_laps[-1]
+            first_curr = curr_laps[0]
+            # A big jump at a transition suggests slow adaptation
+            if last_prev > 0:
+                delta_pct = (first_curr - last_prev) / last_prev * 100
+                p_cap = prev_cond.capitalize()
+                c_cap = curr_cond.capitalize()
+                if delta_pct > 5:
+                    tips.append(
+                        f'<div style="border-left:3px solid {_ACCENT_WARM};padding:6px 12px;'
+                        f'margin:6px 0;border-radius:4px;background:rgba(255,107,53,0.08);">'
+                        f'Transition {p_cap} &rarr; {c_cap}: first lap was '
+                        f'<b>{delta_pct:.1f}%</b> slower. '
+                        f'Try adjusting brake points and throttle application earlier '
+                        f'when conditions change.</div>'
+                    )
+
+    # Adaptation result coaching (if available)
+    if adaptation_result is not None:
+        coaching_notes = adaptation_result.get("coaching_notes", [])
+        for note in coaching_notes:
+            tips.append(
+                f'<div style="border-left:3px solid {_ACCENT};padding:6px 12px;'
+                f'margin:6px 0;border-radius:4px;background:rgba(0,212,255,0.08);">'
+                f'{note}</div>'
+            )
+
+    # Generic condition-specific tips when no specific analysis produced output
+    if not tips:
+        unique_conds = set(conditions)
+        if "wet" in unique_conds or "damp" in unique_conds:
+            tips.append(
+                f'<div style="border-left:3px solid {_ACCENT};padding:6px 12px;'
+                f'margin:6px 0;border-radius:4px;background:rgba(0,212,255,0.08);">'
+                f'Session included changing conditions. Focus on smooth steering '
+                f'inputs and progressive throttle application in low-grip phases.</div>'
+            )
+        else:
+            tips.append(
+                f'<div style="border-left:3px solid {_ACCENT};padding:6px 12px;'
+                f'margin:6px 0;border-radius:4px;background:rgba(0,212,255,0.08);">'
+                f'Conditions remained stable throughout the session. '
+                f'Weather had minimal impact on performance.</div>'
+            )
+
+    return "\n".join(tips)
+
+
+# ============================================================================
+
 # Public API
 
 # ============================================================================
@@ -2560,6 +3099,10 @@ def generate_report(
     # --- Trimmed laps (excluded from analysis) -
     trimmed_laps:         Optional[list[dict[str, Any]]]  = None,
     theoretical_lap_time: Optional[float]                  = None,
+    # --- Weather / meteo integration (all optional, backward-compatible) -
+    weather_timeline:     Optional[pd.DataFrame]           = None,
+    adaptation_result:    Optional[dict[str, Any]]         = None,
+    phase_theoreticals:   Optional[dict]                   = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -2794,6 +3337,25 @@ def generate_report(
 
     conditions_html = _build_conditions_section(context, phases_df)
 
+    # --- Weather / meteo sections (all guarded by weather_timeline) -- -
+
+    weather_banner_html = ""
+    condition_timeline_img = ""
+    phase_cards_html = ""
+    adaptation_score_html = ""
+    weather_coaching_html = ""
+
+    if weather_timeline is not None:
+        weather_banner_html = _build_weather_conditions_banner(weather_timeline)
+        condition_timeline_img = _plot_condition_timeline_strip(weather_timeline)
+        phase_cards_html = _build_phase_analysis_cards(
+            weather_timeline, phase_theoreticals, _clean_lap_times,
+        )
+        adaptation_score_html = _build_adaptation_score_section(adaptation_result)
+        weather_coaching_html = _build_weather_coaching_section(
+            weather_timeline, adaptation_result, _clean_lap_times,
+        )
+
     # --- Render Jinja2 template -- -
 
     env = Environment(loader=BaseLoader(), autoescape=False)
@@ -2827,6 +3389,12 @@ def generate_report(
         data_theoretical_time=(
             f"{theoretical_lap_time:.3f}s" if theoretical_lap_time and math.isfinite(theoretical_lap_time) else None
         ),
+        # Weather / meteo sections
+        weather_banner_html=weather_banner_html,
+        condition_timeline_img=condition_timeline_img,
+        phase_cards_html=phase_cards_html,
+        adaptation_score_html=adaptation_score_html,
+        weather_coaching_html=weather_coaching_html,
         # Colour variables for CSS
 
         bg_dark=_BG_DARK,
