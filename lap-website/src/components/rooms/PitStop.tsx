@@ -56,11 +56,14 @@ export function PitStop() {
             MONTHLY
           </span>
           <button
+            role="switch"
+            aria-checked={billingPeriod === 'annual'}
             className="relative w-12 h-6 bg-concrete border border-steel/30"
             onClick={toggleBilling}
-            aria-label={`Switch to ${billingPeriod === 'monthly' ? 'annual' : 'monthly'} billing`}
+            aria-label="Annual billing"
           >
             <span
+              aria-hidden="true"
               className="absolute top-1 w-4 h-4 bg-pit-orange transition-all duration-300"
               style={{ left: billingPeriod === 'annual' ? 'calc(100% - 20px)' : '4px' }}
             />

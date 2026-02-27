@@ -68,9 +68,12 @@ export function S1Pain() {
           <CornerDrag onDeltaChange={handleDeltaChange} />
 
           {/* Live delta readout */}
-          <div className="font-monument text-[var(--text-h2)] text-center" style={{
-            color: delta <= 0 ? colors.acidGreen : colors.safetyRed,
-          }}>
+          <div
+            className="font-monument text-[var(--text-h2)] text-center"
+            style={{ color: delta <= 0 ? colors.acidGreen : colors.safetyRed }}
+            aria-live="polite"
+            aria-label={`Corner delta: ${delta >= 0 ? '+' : ''}${delta.toFixed(2)} seconds`}
+          >
             {delta >= 0 ? '+' : ''}{delta.toFixed(2)}s
           </div>
 

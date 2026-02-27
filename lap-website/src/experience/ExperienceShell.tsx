@@ -21,6 +21,7 @@ import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { GsapProvider } from '@/components/providers/GsapProvider';
 import { PerformanceProvider } from '@/lib/performance-context';
+import { EXPERIENCE_V2 } from '@/lib/feature-flags';
 
 function ExperienceContent({ children }: { children: ReactNode }) {
   const [overlayOpen, setOverlayOpen] = useState(false);
@@ -35,12 +36,12 @@ function ExperienceContent({ children }: { children: ReactNode }) {
       <SiteHeader showIndexToggle onIndexToggle={toggleOverlay} />
       <CustomCursor />
       <TimecodeCounter />
-      <TimingTower />
-      <DeltaHud />
-      <MiniTrackMap />
-      <DrsLabel />
-      <SectorGateSweep />
-      <FinishLine />
+      {EXPERIENCE_V2 && <TimingTower />}
+      {EXPERIENCE_V2 && <DeltaHud />}
+      {EXPERIENCE_V2 && <MiniTrackMap />}
+      {EXPERIENCE_V2 && <DrsLabel />}
+      {EXPERIENCE_V2 && <SectorGateSweep />}
+      {EXPERIENCE_V2 && <FinishLine />}
       <IndexOverlay isOpen={overlayOpen} onClose={closeOverlay} fromSection={activeRoom} />
 
       {/* Layer 1: WebGL */}

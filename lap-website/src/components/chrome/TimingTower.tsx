@@ -10,7 +10,7 @@ function ProgressRing({ progress, color }: { progress: number; color: string }) 
   const dashOffset = RING_CIRCUMFERENCE * (1 - progress);
 
   return (
-    <svg width="22" height="22" viewBox="0 0 22 22" className="flex-shrink-0">
+    <svg width="22" height="22" viewBox="0 0 22 22" className="flex-shrink-0" aria-hidden="true">
       {/* Background ring */}
       <circle
         cx="11"
@@ -66,7 +66,8 @@ export function TimingTower() {
               key={sector.id}
               onClick={() => handleClick(tab.id)}
               className="flex items-center gap-2 py-1 pl-1 pr-3 transition-all duration-[420ms] group"
-              aria-label={`Go to ${sector.id}`}
+              aria-label={`Go to ${tab.label}`}
+              aria-current={isActive ? 'true' : undefined}
             >
               <ProgressRing progress={sector.progress} color={sector.color} />
               <span
@@ -103,7 +104,8 @@ export function TimingTower() {
               style={{
                 background: isCompleted ? colors.racingPurple : isActive ? 'var(--chalk)' : 'var(--steel)',
               }}
-              aria-label={`Go to ${sector.id}`}
+              aria-label={`Go to ${tab.label}`}
+              aria-current={isActive ? 'true' : undefined}
             />
           );
         })}

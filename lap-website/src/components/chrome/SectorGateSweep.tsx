@@ -17,23 +17,34 @@ export function SectorGateSweep() {
     // Only trigger on new completions
     if (completedCount > prevCompletedRef.current && lineRef.current) {
       const el = lineRef.current;
-      el.style.opacity = '1';
+      const { reducedMotion } = useKernelStore.getState();
 
       // Kill any in-flight tween before starting a new one
       tweenRef.current?.kill();
 
-      tweenRef.current = gsap.fromTo(
-        el,
-        { scaleX: 0, transformOrigin: 'left center' },
-        {
-          scaleX: 1,
-          duration: timing.sectorGate,
-          ease: easing.sectorGate,
-          onComplete: () => {
-            el.style.opacity = '0';
+      if (reducedMotion) {
+        // Instant flash — acknowledge sector completion without sweep animation
+        el.style.opacity = '1';
+        el.style.transform = 'scaleX(1)';
+        requestAnimationFrame(() => {
+          el.style.opacity = '0';
+          el.style.transform = 'scaleX(0)';
+        });
+      } else {
+        el.style.opacity = '1';
+        tweenRef.current = gsap.fromTo(
+          el,
+          { scaleX: 0, transformOrigin: 'left center' },
+          {
+            scaleX: 1,
+            duration: timing.sectorGate,
+            ease: easing.sectorGate,
+            onComplete: () => {
+              el.style.opacity = '0';
+            },
           },
-        },
-      );
+        );
+      }
     }
 
     prevCompletedRef.current = completedCount;

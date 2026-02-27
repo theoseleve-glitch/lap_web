@@ -18,6 +18,21 @@ export function FinishLine() {
 
     setVisible(true);
     const el = bandRef.current;
+    const { reducedMotion } = useKernelStore.getState();
+
+    if (reducedMotion) {
+      // Show band at full width instantly, then fade quickly
+      el.style.opacity = '1';
+      el.style.transform = 'translateX(0%)';
+      const fade = gsap.to(el, {
+        opacity: 0,
+        duration: 0.3,
+        delay: 0.5,
+        onComplete: () => setVisible(false),
+      });
+      tweensRef.current.push(fade);
+      return;
+    }
 
     // Sweep from left to right
     const sweep = gsap.fromTo(

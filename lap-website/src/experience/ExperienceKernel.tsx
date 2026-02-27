@@ -10,6 +10,7 @@ import { DrsController } from './narrative/DrsController';
 import { DeltaTickController } from './narrative/DeltaTickController';
 import { chapters } from './state/chapters';
 import { registerChapter } from './renderer/SceneManager';
+import { EXPERIENCE_V2 } from '@/lib/feature-flags';
 
 // Register all chapters on module load
 chapters.forEach(registerChapter);
@@ -24,9 +25,9 @@ export function ExperienceKernel({ children }: ExperienceKernelProps) {
       <QualityManager />
       <InputManager />
       <MotionOrchestrator />
-      <SectorGateController />
-      <DrsController />
-      <DeltaTickController />
+      {EXPERIENCE_V2 && <SectorGateController />}
+      {EXPERIENCE_V2 && <DrsController />}
+      {EXPERIENCE_V2 && <DeltaTickController />}
       <DebugHUD />
       {children}
     </>

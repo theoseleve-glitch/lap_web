@@ -46,20 +46,19 @@ export function S5Personas() {
               key={persona.slug}
               title={persona.title}
               description={persona.subtitle}
-              onClick={handlePersonaClick}
             >
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/${persona.slug}`}
                   className="border border-chalk/50 px-3 py-1 text-xs font-telemetry tracking-[0.12em]"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={handlePersonaClick}
                 >
                   OPEN PAGE
                 </Link>
                 <Link
                   href={persona.primaryCta.href}
                   className="border border-pit-orange px-3 py-1 text-xs font-telemetry tracking-[0.12em]"
-                  onClick={(e) => e.stopPropagation()}
+                  onClick={handlePersonaClick}
                 >
                   {persona.primaryCta.label.toUpperCase()}
                 </Link>

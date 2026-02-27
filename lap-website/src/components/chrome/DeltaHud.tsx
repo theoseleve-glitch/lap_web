@@ -18,7 +18,8 @@ export function DeltaHud() {
   const rafRef = useRef<number>(0);
 
   const tick = useCallback(() => {
-    if (settled || jitter === 0) {
+    const { reducedMotion } = useKernelStore.getState();
+    if (settled || jitter === 0 || reducedMotion) {
       setJitterOffset({ x: 0, y: 0 });
       return;
     }

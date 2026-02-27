@@ -43,8 +43,11 @@ export function Placard({
           transform: revealContent ? (flipped ? 'rotateY(180deg)' : 'rotateY(0deg)') : undefined,
         }}
       >
-        {/* Front */}
-        <div style={{ backfaceVisibility: revealContent ? 'hidden' : undefined }}>
+        {/* Front — inert when flipped to prevent hidden-face focus trap */}
+        <div
+          style={{ backfaceVisibility: revealContent ? 'hidden' : undefined }}
+          {...(revealContent && flipped ? { inert: '' as unknown as boolean } : {})}
+        >
           <h3 className="font-monument text-[var(--text-h3)] mb-3">{title}</h3>
           <div className="font-body text-steel leading-relaxed">{children}</div>
           {stamp && (
@@ -56,13 +59,15 @@ export function Placard({
             <button
               className="mt-4 font-telemetry text-[11px] tracking-[0.12em] uppercase text-[var(--accent)] hover:underline"
               onClick={handleReveal}
+              aria-expanded={flipped}
+              aria-label={`Reveal ${title}`}
             >
               REVEAL
             </button>
           )}
         </div>
 
-        {/* Back */}
+        {/* Back — inert when not flipped to prevent hidden-face focus trap */}
         {revealContent && (
           <div
             className="absolute inset-0 bg-concrete p-6 overflow-y-auto"
@@ -70,11 +75,13 @@ export function Placard({
               backfaceVisibility: 'hidden',
               transform: 'rotateY(180deg)',
             }}
+            {...(!flipped ? { inert: '' as unknown as boolean } : {})}
           >
             <div className="font-body text-steel leading-relaxed text-sm">{revealContent}</div>
             <button
               className="mt-4 font-telemetry text-[11px] tracking-[0.12em] uppercase text-[var(--accent)] hover:underline"
               onClick={() => setFlipped(false)}
+              aria-label={`Close ${title}`}
             >
               CLOSE
             </button>

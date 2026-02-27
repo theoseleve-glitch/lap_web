@@ -191,7 +191,10 @@ export function LivingSurface({
 
     // Read high-frequency state via getState() to avoid re-renders
     const state = useKernelStore.getState();
-    const { trackPath, scrollVelocity, pointerX, pointerY } = state;
+    const { trackPath, scrollVelocity, pointerX, pointerY, reducedMotion } = state;
+
+    // Under reduced motion, keep layers static (grain frozen, no drift/streaks/vignette shift)
+    if (reducedMotion) return;
 
     // -- Grain: animate time
     grainUniforms.uTime.value += delta;
