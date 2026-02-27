@@ -12,6 +12,23 @@ import sys
 from pathlib import Path
 
 
+def _is_strong_secret(value: str, *, min_len: int = 32) -> bool:
+    """Return True when a secret looks production-safe."""
+    if not value or len(value) < min_len:
+        return False
+    lowered = value.lower()
+    weak_markers = (
+        "change-me",
+        "dev",
+        "default",
+        "example",
+        "local",
+        "test",
+        "secret",
+    )
+    return not any(marker in lowered for marker in weak_markers)
+
+
 def _resolve_base_dir() -> Path:
     """Return the project base directory (same logic as path_manager).
 
@@ -78,18 +95,77 @@ class Config:
         "FRONTEND_URL", "http://localhost:3000"
     )
 
+    @property
+    def _oauth_google_configured(self) -> bool:
+        return bool(self.GOOGLE_CLIENT_ID and self.GOOGLE_CLIENT_SECRET)
+
+    @property
+    def _oauth_github_configured(self) -> bool:
+        return bool(self.GITHUB_CLIENT_ID and self.GITHUB_CLIENT_SECRET)
+
+    def hardening_summary(self) -> dict:
+        """Return startup hardening diagnostics without exposing secret values."""
+        oauth_providers = []
+        if self._oauth_google_configured:
+            oauth_providers.append("google")
+        if self._oauth_github_configured:
+            oauth_providers.append("github")
+
+        return {
+            "env": self.ENV,
+            "use_pg": self.USE_PG,
+            "auth_required": self.AUTH_REQUIRED,
+            "auth_required_explicit": os.environ.get("AUTH_REQUIRED") == "1",
+            "secret_key_strong": _is_strong_secret(self.SECRET_KEY),
+            "jwt_secret_strong": _is_strong_secret(self.JWT_SECRET),
+            "oauth_google_configured": self._oauth_google_configured,
+            "oauth_github_configured": self._oauth_github_configured,
+            "oauth_provider_count": len(oauth_providers),
+            "oauth_providers": oauth_providers,
+            "oauth_redirect_base_set": bool(self.OAUTH_REDIRECT_BASE),
+            "frontend_url_set": bool(self.FRONTEND_URL),
+        }
+
     def validate(self) -> None:
         """Raise if configuration is unsafe for production."""
-        if self.AUTH_REQUIRED:
-            if self.JWT_SECRET in ("jwt-dev-secret-change-me", "telemetry-jwt-dev-key-change-me"):
+        if self.ENV == "production":
+            if os.environ.get("AUTH_REQUIRED") != "1":
+                raise ValueError("ENV=production requires explicit AUTH_REQUIRED=1")
+
+        if self.AUTH_REQUIRED or self.ENV == "production" or self.USE_PG:
+            if not _is_strong_secret(self.JWT_SECRET):
                 raise ValueError(
-                    "TELEMETRY_JWT_SECRET must be set to a strong secret "
-                    "when AUTH_REQUIRED=1"
+                    "TELEMETRY_JWT_SECRET must be set to a strong secret"
                 )
-            if self.SECRET_KEY == "telemetry-local-dev-key":
+            if not _is_strong_secret(self.SECRET_KEY):
                 raise ValueError(
-                    "TELEMETRY_SECRET_KEY must be changed for production"
+                    "TELEMETRY_SECRET_KEY must be set to a strong secret"
                 )
+
+        if self.USE_PG:
+            if not self.AUTH_REQUIRED:
+                raise ValueError("USE_PG=1 requires AUTH_REQUIRED=1")
+
+            google_partial = bool(self.GOOGLE_CLIENT_ID) ^ bool(self.GOOGLE_CLIENT_SECRET)
+            github_partial = bool(self.GITHUB_CLIENT_ID) ^ bool(self.GITHUB_CLIENT_SECRET)
+            if google_partial:
+                raise ValueError(
+                    "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET must both be set"
+                )
+            if github_partial:
+                raise ValueError(
+                    "GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must both be set"
+                )
+
+            has_oauth_provider = self._oauth_google_configured or self._oauth_github_configured
+            if not has_oauth_provider:
+                raise ValueError(
+                    "USE_PG=1 requires at least one OAuth provider configuration"
+                )
+            if not self.OAUTH_REDIRECT_BASE:
+                raise ValueError("USE_PG=1 requires OAUTH_REDIRECT_BASE")
+            if not self.FRONTEND_URL:
+                raise ValueError("USE_PG=1 requires FRONTEND_URL")
 
     # Directories
     DATA_RAW_DIR: Path = BASE_DIR / "data" / "raw"
@@ -117,3 +193,4 @@ class Config:
     CORS_ALLOWED_ORIGINS: str = os.environ.get(
         "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
     )
+    ENV: str = os.environ.get("ENV", "development").lower()

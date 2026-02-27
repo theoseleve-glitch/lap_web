@@ -22,6 +22,7 @@ def app():
     app = Flask(__name__)
     app.config["TESTING"] = True
     app.config["USE_PG"] = False
+    app.config["HARDENING_SUMMARY"] = {"env": "development", "auth_required": False}
     app.register_blueprint(bp)
     return app
 
@@ -68,3 +69,33 @@ class TestHealthz:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["db"] == "ok"
+
+
+    def test_startup_diagnostics_endpoint(self, app):
+        app.config["HARDENING_SUMMARY"] = {
+            "env": "production",
+            "auth_required": True,
+            "auth_required_explicit": True,
+            "secret_key_strong": True,
+            "jwt_secret_strong": True,
+        }
+        client = app.test_client()
+        resp = client.get("/healthz/startup")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "hardened"
+        assert "hardening" in data
+
+    def test_startup_diagnostics_not_hardened(self, app):
+        app.config["HARDENING_SUMMARY"] = {
+            "env": "production",
+            "auth_required": False,
+            "auth_required_explicit": False,
+            "secret_key_strong": False,
+            "jwt_secret_strong": False,
+        }
+        client = app.test_client()
+        resp = client.get("/healthz/startup")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "not_hardened"
