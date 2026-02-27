@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import { useKernelStore } from '@/experience/state/store';
+import { colors } from '@/lib/tokens';
 
 interface FallbackShellProps {
   children: ReactNode;
@@ -8,6 +10,7 @@ interface FallbackShellProps {
 
 export function FallbackShell({ children }: FallbackShellProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const safetyCarActive = useKernelStore((s) => s.safetyCar.active);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -32,6 +35,18 @@ export function FallbackShell({ children }: FallbackShellProps) {
           background: `radial-gradient(circle 120px at var(--pointer-x, 50%) var(--pointer-y, 50%), rgba(217, 70, 239, 0.08) 0%, transparent 100%)`,
         }}
       />
+      {safetyCarActive && (
+        <div
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 font-telemetry text-[11px] tracking-[0.3em] uppercase px-4 py-1.5 rounded-full border pointer-events-none"
+          style={{
+            color: colors.marshalYellow,
+            backgroundColor: `${colors.asphalt}CC`,
+            borderColor: `${colors.marshalYellow}4D`,
+          }}
+        >
+          Safety Car
+        </div>
+      )}
       {children}
     </div>
   );

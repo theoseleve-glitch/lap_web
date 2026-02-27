@@ -42,6 +42,7 @@ function ProgressRing({ progress, color }: { progress: number; color: string }) 
 export function TimingTower() {
   const sectors = useKernelStore((s) => s.hudTower.sectors);
   const activeSectorIndex = useKernelStore((s) => s.hudTower.activeSectorIndex);
+  const safetyCarActive = useKernelStore((s) => s.safetyCar.active);
 
   const handleClick = (id: string) => {
     document.getElementById(id)?.scrollIntoView({ behavior: 'smooth' });
@@ -49,6 +50,16 @@ export function TimingTower() {
 
   return (
     <>
+      {/* Safety Car indicator */}
+      {safetyCarActive && (
+        <div
+          className="fixed left-4 top-[calc(50%-180px)] hidden md:block pointer-events-none font-telemetry text-[9px] tracking-[0.2em] uppercase"
+          style={{ zIndex: 'var(--z-sector)' as unknown as number, color: colors.marshalYellow }}
+        >
+          SC
+        </div>
+      )}
+
       {/* Desktop: vertical left rail */}
       <nav
         className="fixed left-4 top-1/2 -translate-y-1/2 hidden md:flex flex-col gap-2"
