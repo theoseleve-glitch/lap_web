@@ -21,6 +21,7 @@ export default function Home() {
       <S2Proof />
       <S3Product />
       <S4WorkflowCoverage />
+      <div id="s5-personas" aria-hidden="true" />
       <PitStop />
       <Garage />
       <Podium />
