@@ -74,3 +74,22 @@ def healthz():
 
     status_code = 200 if checks["status"] == "ok" else 503
     return jsonify(checks), status_code
+
+
+@bp.route("/healthz/startup")
+def startup_diagnostics():
+    """Return startup hardening diagnostics without secret values."""
+    summary = dict(current_app.config.get("HARDENING_SUMMARY", {}))
+    status = "hardened"
+
+    if summary.get("env") == "production":
+        required = (
+            summary.get("auth_required"),
+            summary.get("auth_required_explicit"),
+            summary.get("secret_key_strong"),
+            summary.get("jwt_secret_strong"),
+        )
+        if not all(required):
+            status = "not_hardened"
+
+    return jsonify({"status": status, "hardening": summary}), 200

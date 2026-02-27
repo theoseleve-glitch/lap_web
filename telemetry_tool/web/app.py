@@ -123,7 +123,10 @@ def create_app(config: Config | None = None) -> Flask:
         FRONTEND_URL=cfg.FRONTEND_URL,
         RATE_LIMIT_ENABLED=cfg.RATE_LIMIT_ENABLED,
         REDIS_URL=cfg.REDIS_URL,
+        HARDENING_SUMMARY=cfg.hardening_summary(),
     )
+
+    logger.info("Startup hardening summary: %s", app.config["HARDENING_SUMMARY"])
 
     # Phase 4 API infrastructure — request ID and structured logging.
     try:
@@ -379,8 +382,11 @@ def create_app(config: Config | None = None) -> Flask:
             return json.dumps(info, indent=2, default=str), 200, {"Content-Type": "application/json"}
 
     logger.info(
-        "Telemetry dashboard ready (db=%s, %d routes).",
-        cfg.DB_PATH, len(list(app.url_map.iter_rules())),
+        "Telemetry dashboard ready (db=%s, %d routes, env=%s, hardened=%s).",
+        cfg.DB_PATH,
+        len(list(app.url_map.iter_rules())),
+        cfg.ENV,
+        app.config["HARDENING_SUMMARY"],
     )
 
     return app
