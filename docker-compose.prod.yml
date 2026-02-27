@@ -46,9 +46,16 @@ services:
     networks:
       - internal
 
-  celery-worker:
+  celery-pipeline:
     build: .
-    command: celery -A telemetry_tool.celery_app worker -l info
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q pipeline
+      --concurrency=2
+      --soft-time-limit=1800
+      --time-limit=2100
+      --max-tasks-per-child=50
+      -l info
     env_file: .env.production
     volumes:
       - upload_data:/data/uploads
@@ -63,6 +70,46 @@ services:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  celery-default:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q default
+      --concurrency=4
+      --soft-time-limit=600
+      --time-limit=900
+      --max-tasks-per-child=200
+      -l info
+    env_file: .env.production
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  celery-beat:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app beat
+      -l info
+      --schedule /tmp/celerybeat-schedule
+    env_file: .env.production
+    depends_on:
+      redis:
         condition: service_healthy
     restart: unless-stopped
     networks:
