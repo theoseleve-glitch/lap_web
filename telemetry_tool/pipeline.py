@@ -2513,6 +2513,33 @@ def run_full_analysis(
             except Exception as _prof_err:
                 logger.warning("Driver profile update skipped: %s", _prof_err)
 
+            # ── Persist weather timeline to session_weather_laps ──────
+            if weather_timeline is not None and not weather_timeline.empty:
+                try:
+                    for _, _wrow in weather_timeline.iterrows():
+                        conn.execute(
+                            "INSERT OR IGNORE INTO session_weather_laps "
+                            "(session_id, lap_number, timestamp, air_temp_c, "
+                            "humidity_pct, wind_speed_mps, wind_dir_deg, "
+                            "rain_mm, cloud_cover_pct, weather_code, "
+                            "grip_score, track_state, track_temp_est_c) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                session_id, int(_wrow["lap_number"]),
+                                _wrow.get("timestamp"), _wrow.get("air_temp_c"),
+                                _wrow.get("humidity_pct"), _wrow.get("wind_speed_mps"),
+                                _wrow.get("wind_dir_deg"), _wrow.get("rain_mm"),
+                                _wrow.get("cloud_cover_pct"), _wrow.get("weather_code"),
+                                _wrow.get("grip_score"), _wrow.get("track_state"),
+                                _wrow.get("track_temp_est_c"),
+                            ),
+                        )
+                    logger.info("Saved weather timeline for %d laps",
+                                len(weather_timeline))
+                except Exception as _wt_err:
+                    logger.warning("Failed to persist weather timeline: %s",
+                                   _wt_err)
+
         # with conn: auto-commits on success, rolls back on exception
         logger.info("Persisted session %s to SQLite.", session_id)
         return session_id
