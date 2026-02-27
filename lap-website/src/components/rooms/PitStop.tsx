@@ -7,7 +7,7 @@ import { PricingTable } from '@/components/ui/PricingTable';
 import { FaqAccordion } from '@/components/ui/FaqAccordion';
 import { PitButton } from '@/components/ui/PitButton';
 import { StampButton } from '@/components/ui/StampButton';
-import { b2cPlans, b2bCard } from '@/data/pricing';
+import { b2bCard } from '@/data/pricing';
 import {
   trackPricingToggle,
   trackFaqExpand,
@@ -15,10 +15,12 @@ import {
 } from '@/lib/analytics';
 import { PitWheel } from '@/components/chrome/PitWheel';
 import { useTranslation } from '@/i18n';
+import { useCurrency } from '@/hooks/useCurrency';
 
 export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
   const { t } = useTranslation();
+  const { localizedPlans } = useCurrency();
 
   const toggleBilling = useCallback(() => {
     const next = billingPeriod === 'monthly' ? 'annual' : 'monthly';
@@ -101,7 +103,7 @@ export function PitStop() {
         {/* Pricing Table + B2B card */}
         <div className="col-span-full grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0 mb-8">
           <PricingTable
-            plans={b2cPlans}
+            plans={localizedPlans}
             billingPeriod={billingPeriod}
             onCtaClick={(plan) => trackCtaClick(plan, 'pit-stop', 'b2c')}
           />

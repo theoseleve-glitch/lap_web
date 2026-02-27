@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 
 type Locale = 'en' | 'fr';
-type Currency = 'eur' | 'usd';
+type Currency = 'eur' | 'usd' | 'gbp';
 
 function getCookie(name: string): string | undefined {
   if (typeof document === 'undefined') return undefined;
@@ -27,7 +27,7 @@ export function LocaleSwitcher() {
     const cookieLocale = getCookie('lap_locale');
     const cookieCurrency = getCookie('lap_currency');
     if (cookieLocale === 'fr' || cookieLocale === 'en') setLocale(cookieLocale);
-    if (cookieCurrency === 'usd' || cookieCurrency === 'eur') setCurrency(cookieCurrency);
+    if (cookieCurrency === 'usd' || cookieCurrency === 'eur' || cookieCurrency === 'gbp') setCurrency(cookieCurrency);
   }, []);
 
   return (
@@ -62,6 +62,7 @@ export function LocaleSwitcher() {
       >
         <option value="eur">EUR</option>
         <option value="usd">USD</option>
+        <option value="gbp">GBP</option>
       </select>
     </div>
   );

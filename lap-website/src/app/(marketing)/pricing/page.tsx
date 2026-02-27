@@ -4,12 +4,10 @@ import { useState, useCallback } from 'react';
 import { PageShell } from '@/components/site/PageShell';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
-import {
-  b2cPlans,
-  b2bCard,
-} from '@/data/pricing';
+import { b2bCard } from '@/data/pricing';
 import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
+import { useCurrency } from '@/hooks/useCurrency';
 
 interface MatrixRow {
   featureKey: string;
@@ -51,6 +49,7 @@ const GROUP_LABEL_KEYS: Record<string, string> = {
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual');
   const { t } = useTranslation();
+  const { localizedPlans } = useCurrency();
 
   const toggleBilling = useCallback(() => {
     const next = billing === 'monthly' ? 'annual' : 'monthly';
@@ -101,7 +100,7 @@ export default function PricingPage() {
       {/* Pricing Table + B2B card */}
       <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
         <PricingTable
-          plans={b2cPlans}
+          plans={localizedPlans}
           billingPeriod={billing}
           onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
         />

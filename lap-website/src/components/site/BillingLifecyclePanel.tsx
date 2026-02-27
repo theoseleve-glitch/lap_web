@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { PitButton } from '@/components/ui/PitButton';
 import { StampButton } from '@/components/ui/StampButton';
 import { b2cPlans } from '@/data/pricing';
+import { useCurrency } from '@/hooks/useCurrency';
 
 async function postJson<T>(url: string, body: Record<string, string>): Promise<T> {
   const response = await fetch(url, {
@@ -32,6 +33,7 @@ export function BillingLifecyclePanel() {
   const [nextPlan, setNextPlan] = useState('WORLD-CLASS');
   const [status, setStatus] = useState('');
   const [loadingAction, setLoadingAction] = useState<'checkout' | 'portal' | 'switch' | null>(null);
+  const { currency } = useCurrency();
 
   const b2cPlanNames = useMemo(
     () => b2cPlans.filter((item) => item.name !== 'DEMO').map((item) => item.name),
@@ -81,7 +83,7 @@ export function BillingLifecyclePanel() {
                 plan,
                 billingCycle,
                 email,
-                currency: 'eur',
+                currency,
               });
               window.location.href = result.checkoutUrl;
             } catch (error) {
