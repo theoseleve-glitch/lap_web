@@ -47,6 +47,51 @@ If endpoints are not configured, API routes return fallback responses so local d
 npm run dev
 ```
 
+## Deploy to Cloudflare Workers
+
+One-time setup:
+
+```bash
+npx wrangler login
+```
+
+Build and preview locally with the Cloudflare runtime:
+
+```bash
+npm run cf:preview
+```
+
+Deploy:
+
+```bash
+npm run cf:deploy
+```
+
+Notes:
+1. Worker name is set to `lap-website` in `wrangler.jsonc`.
+2. `WORKER_SELF_REFERENCE` is configured for ISR revalidation support.
+3. Add runtime secrets in Cloudflare before deploy, for example `CRM_WEBHOOK_URL`, `EMAIL_WEBHOOK_URL`, and Stripe keys if used.
+
+### Styling Reliability (Marketing Routes)
+
+Use these scripts if marketing pages (`/`, `/pricing`, `/demo`, `/billing`, etc.) ever load as mostly unstyled HTML.
+
+```bash
+# Start from a clean local Next.js state
+npm run dev:clean
+
+# Check that marketing CSS/chunk assets resolve to HTTP 200
+npm run health:assets
+
+# One-command recovery: stop process on :3000, clear .next, start dev, run health check
+npm run dev:reset
+```
+
+Recommended recovery flow:
+1. Hard refresh the browser (`Ctrl+F5` / `Cmd+Shift+R`).
+2. If still broken, run `npm run dev:reset`.
+3. Reopen `http://localhost:3000` and verify theme/colors/spacing are back.
+
 ## Quality Gates
 
 ```bash

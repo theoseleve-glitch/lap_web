@@ -76,3 +76,62 @@ body {
 :focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ── Microinteractions ─────────────────── */
+
+/* Animated underline on links */
+.room a:not(.no-underline):not([class*="pit-"]):not([class*="stamp-"]) {
+  position: relative;
+  text-decoration: none;
+}
+
+.room a:not(.no-underline):not([class*="pit-"]):not([class*="stamp-"])::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent);
+  transition: width var(--duration-micro) var(--ease-inertia);
+}
+
+.room a:not(.no-underline):not([class*="pit-"]):not([class*="stamp-"]):hover::after {
+  width: 100%;
+}
+
+/* Button press depth + rebound */
+.room button,
+.room [role="button"] {
+  transition: transform var(--duration-micro) var(--ease-spring);
+}
+
+.room button:hover,
+.room [role="button"]:hover {
+  transform: scale(1.02);
+}
+
+.room button:active,
+.room [role="button"]:active {
+  transform: scale(0.97);
+  transition-duration: 60ms;
+}
+
+/* ── Room Transitions (kernel-driven) ──── */
+.room {
+  transition: opacity var(--duration-room) var(--ease-inertia),
+              filter var(--duration-room) var(--ease-inertia),
+              transform var(--duration-room) var(--ease-inertia);
+}
+
+.room-exiting {
+  opacity: 0;
+  filter: blur(8px);
+  transform: translateY(-20px);
+}
+
+.room-entering {
+  opacity: 1;
+  filter: blur(0);
+  transform: translateY(0);
+}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
-import { register } from '@/lib/auth';
+import { register, login, storeTokens } from '@/lib/auth';
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -30,7 +30,14 @@ export default function RegisterPage() {
     setError(null);
     try {
       await register(email, password, displayName);
-      router.push('/login?registered=true');
+
+      // Auto-login after registration
+      const loginResult = await login(email, password);
+      storeTokens(loginResult.access_token, loginResult.refresh_token);
+
+      // Redirect to specified destination or default
+      const redirect = new URLSearchParams(window.location.search).get('redirect');
+      router.push(redirect ?? '/login?registered=true');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {
