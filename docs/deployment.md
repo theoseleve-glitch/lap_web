@@ -23,7 +23,7 @@ cd tele8tool
 # Create .env from template
 cp .env.example .env
 # Edit: set TELEMETRY_SECRET_KEY, TELEMETRY_JWT_SECRET, PG_PASSWORD
-# Set: AUTH_REQUIRED=1, CORS_ALLOWED_ORIGINS=https://lap.racing
+# Set: AUTH_REQUIRED=1, CORS_ALLOWED_ORIGINS=https://lap-coach.racing,https://www.lap-coach.racing,http://localhost:3000,https://staging.lap-coach.racing
 
 # Start all services
 docker compose -f docker-compose.prod.yml up -d
@@ -59,6 +59,12 @@ certbot --nginx -d api.lap.racing
 ```
 
 **With Railway/Fly:** TLS is automatic.
+
+### Reverse Proxy CORS Note (nginx/Caddy/Cloudflare)
+
+- Do **not** strip or override `Access-Control-*` headers on proxied responses.
+- Ensure `OPTIONS` preflight requests are forwarded to Flask/Gunicorn (or answered with equivalent CORS headers at the proxy).
+- Verify with the preflight check in [Post-Deploy Verification](#3-post-deploy-verification).
 
 ## 2. Deploy Next.js Frontend
 
@@ -99,10 +105,20 @@ curl -s https://lap.racing | grep -q "lap.racing" && echo "OK"
 # API health
 curl -s https://api.lap.racing/healthz | jq .
 
-# CORS headers
-curl -s -H "Origin: https://lap.racing" \
+# CORS headers (both production origins)
+curl -s -H "Origin: https://lap-coach.racing" \
   -I https://api.lap.racing/api/v1/dashboard/stats \
   | grep -i access-control
+
+curl -s -H "Origin: https://www.lap-coach.racing" \
+  -I https://api.lap.racing/api/v1/dashboard/stats \
+  | grep -i access-control
+
+# Preflight / OPTIONS should include CORS headers (proxy must pass them through)
+curl -s -X OPTIONS https://api.lap.racing/api/v1/dashboard/stats \
+  -H "Origin: https://www.lap-coach.racing" \
+  -H "Access-Control-Request-Method: GET" \
+  -I | grep -i access-control
 
 # Auth flow
 curl -s -X POST https://api.lap.racing/api/auth/login \
@@ -118,6 +134,6 @@ curl -s -X POST https://api.lap.racing/api/auth/login \
 | `TELEMETRY_JWT_SECRET` | Random 32+ chars | - |
 | `PG_PASSWORD` | Random 32+ chars | - |
 | `AUTH_REQUIRED` | `1` | - |
-| `CORS_ALLOWED_ORIGINS` | `https://lap.racing` | - |
+| `CORS_ALLOWED_ORIGINS` | `https://lap-coach.racing,https://www.lap-coach.racing,http://localhost:3000,https://staging.lap-coach.racing` | - |
 | `NEXT_PUBLIC_API_URL` | - | `https://api.lap.racing` |
 | `STRIPE_SECRET_KEY` | - | `sk_live_...` |
