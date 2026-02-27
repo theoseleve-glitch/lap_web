@@ -1,0 +1,515 @@
+%PDF-1.4
+%
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Length 2613 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 48 744 Tm
+0 -14 Td
+(# LAP Webapp Feature Review) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Date: 2026-02-27) Tj
+0 -14 Td
+(Source: Repository inspection of `lap-website` \(routes, app navigation, workflow definitions,) Tj
+0 -14 Td
+(API handlers, and E2E coverage\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Companion export: `docs/reports/webapp-feature-review.pdf`) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## Executive Summary) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The webapp is organized into five product surfaces:) Tj
+0 -14 Td
+(1. **Marketing and acquisition site** \(`/\(marketing\)` routes\).) Tj
+0 -14 Td
+(2. **Authentication and account onboarding** \(`/\(auth\)` routes\).) Tj
+0 -14 Td
+(3. **Free-report funnel** \(`/\(free-report\)` routes\).) Tj
+0 -14 Td
+(4. **Core telemetry application** \(`/app/*` routes\).) Tj
+0 -14 Td
+(5. **Backend-facing web APIs** \(`/api/*` routes\) for leads, conversion tracking, billing, and) Tj
+0 -14 Td
+(public status.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 1\) Marketing + Conversion Features) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Public marketing pages) Tj
+0 -14 Td
+(- Landing and product messaging \(`/`, `/product`, `/pricing`, `/demo`, `/book`\).) Tj
+0 -14 Td
+(- Persona pages \(`/drivers`, `/circuits`, `/teams`, `/endurance`\).) Tj
+0 -14 Td
+(- Trust and policy pages \(`/security`, `/status`, `/privacy`, `/terms`, `/dpa`\).) Tj
+0 -14 Td
+(- Proof/SEO pages \(`/customers`, `/insights`, `/insights/[slug]`\).) Tj
+0 -14 Td
+(- Lead-capture support pages \(`/contact`, `/waitlist`, `/thank-you/[form]`, `/billing`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Navigation model) Tj
+0 -14 Td
+(- **Top navigation**: Product, Pricing, Drivers, Circuits, Teams, Endurance, Customers,) Tj
+0 -14 Td
+(Security, Insights.) Tj
+0 -14 Td
+(- **Footer navigation**: Contact, Book, Waitlist, Billing, Status, Privacy, Terms, DPA.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Conversion mechanics) Tj
+0 -14 Td
+(- Lead forms are validated and forwarded to CRM/email webhook targets.) Tj
+0 -14 Td
+(- Attribution + session IDs can be carried from cookies into lead payloads.) Tj
+0 -14 Td
+(- Server-side conversion events are emitted for analytics pipelines.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 2\) Auth + User Access Features) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- `/login` for sign-in.) Tj
+0 -14 Td
+(- `/register` for account creation.) Tj
+0 -14 Td
+(- `/verify-email` flow for email verification.) Tj
+0 -14 Td
+(- Billing API paths enforce auth for sensitive actions \(portal and plan switch\), with optional) Tj
+0 -14 Td
+(guest mode based on billing auth policy.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+ET
+endstream
+endobj
+3 0 obj
+<< /Length 2023 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 48 744 Tm
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 3\) Free Report Funnel Features) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- `/free-report/analyze`: upload and trigger a free telemetry analysis flow.) Tj
+0 -14 Td
+(- `/free-report/report/[id]`: view generated free report result page by report/session id.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 4\) Core App Feature Review \(`/app`\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The in-product sidebar exposes these primary modules:) Tj
+0 -14 Td
+(- Dashboard) Tj
+0 -14 Td
+(- Sessions) Tj
+0 -14 Td
+(- Tracks) Tj
+0 -14 Td
+(- Drivers) Tj
+0 -14 Td
+(- Analyze) Tj
+0 -14 Td
+(- Compare) Tj
+0 -14 Td
+(- Strategy) Tj
+0 -14 Td
+(- Leaderboard) Tj
+0 -14 Td
+(- Analytics) Tj
+0 -14 Td
+(- Karts) Tj
+0 -14 Td
+(- Weekends) Tj
+0 -14 Td
+(- Annotations) Tj
+0 -14 Td
+(- Dev Plans) Tj
+0 -14 Td
+(- Exports) Tj
+0 -14 Td
+(- Data Health) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.1 Dashboard) Tj
+0 -14 Td
+(- Portfolio-level telemetry overview with key stats:) Tj
+0 -14 Td
+(  - total sessions) Tj
+0 -14 Td
+(  - personal best time) Tj
+0 -14 Td
+(  - average score) Tj
+0 -14 Td
+(  - total drivers) Tj
+0 -14 Td
+(- Sparkline trend cards \(recent score trend and lap-time trend\).) Tj
+0 -14 Td
+(- Recent sessions data table with click-through into session detail.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.2 Session Intelligence) Tj
+0 -14 Td
+(- Session list \(`/app/sessions`\) and session detail \(`/app/sessions/[id]`\).) Tj
+0 -14 Td
+(- Corner-level drilldown \(`/app/sessions/[id]/corners/[cornerId]`\).) Tj
+0 -14 Td
+(- Workflow module definitions reference dedicated views across) Tj
+0 -14 Td
+(overview/corners/timeline/analytics/lap-data style analysis surfaces.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.3 Track Intelligence) Tj
+0 -14 Td
+(- Track directory \(`/app/tracks`\).) Tj
+0 -14 Td
+(- Track detail pages \(`/app/tracks/[id]`\).) Tj
+0 -14 Td
+(- Track evolution history view \(`/app/tracks/[id]/evolution`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.4 Driver Management + Progression) Tj
+0 -14 Td
+ET
+endstream
+endobj
+4 0 obj
+<< /Length 2782 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 48 744 Tm
+0 -14 Td
+(- Driver roster \(`/app/drivers`\).) Tj
+0 -14 Td
+(- Driver profile \(`/app/drivers/[id]`\).) Tj
+0 -14 Td
+(- Driver progression timeline \(`/app/drivers/[id]/progression`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.5 Data Capture and Analysis) Tj
+0 -14 Td
+(- New analysis workflow \(`/app/analyze`\) for ingest/processing.) Tj
+0 -14 Td
+(- Setup tracker \(`/app/setup-tracker`\) for setup configuration records.) Tj
+0 -14 Td
+(- Annotation workspace \(`/app/annotations`\) for contextual notes.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.6 Comparison Suite) Tj
+0 -14 Td
+(- Comparison home \(`/app/compare`\).) Tj
+0 -14 Td
+(- Session-vs-session comparison \(`/app/compare/sessions`\).) Tj
+0 -14 Td
+(- Driver-vs-driver comparison \(`/app/compare/drivers`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.7 Strategy Control Room) Tj
+0 -14 Td
+(- Strategy index \(`/app/race-strategy`\).) Tj
+0 -14 Td
+(- Create strategy plan \(`/app/race-strategy/new`\).) Tj
+0 -14 Td
+(- Strategy detail \(`/app/race-strategy/[id]`\).) Tj
+0 -14 Td
+(- Live strategy mode \(`/app/race-strategy/[id]/live`\).) Tj
+0 -14 Td
+(- Strategy summary/report \(`/app/race-strategy/[id]/summary`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.8 Performance Ranking + Analytics) Tj
+0 -14 Td
+(- Leaderboard \(`/app/leaderboard`\).) Tj
+0 -14 Td
+(- Analytics hub \(`/app/analytics`\) and focused tools:) Tj
+0 -14 Td
+(  - Performance trends \(`/app/analytics/trends`\)) Tj
+0 -14 Td
+(  - Weather analysis \(`/app/analytics/weather`\)) Tj
+0 -14 Td
+(  - Meteo correlation \(`/app/analytics/meteo`\)) Tj
+0 -14 Td
+(  - Pace predictor \(`/app/analytics/pace-predictor`\)) Tj
+0 -14 Td
+(  - Weight simulator \(`/app/analytics/weight-simulator`\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### 4.9 Entity Management and Operations) Tj
+0 -14 Td
+(- Kart list/create/detail \(`/app/karts`, `/app/karts/new`, `/app/karts/[id]`\).) Tj
+0 -14 Td
+(- Weekend list/create/detail \(`/app/weekends`, `/app/weekends/new`, `/app/weekends/[id]`\).) Tj
+0 -14 Td
+(- Export center \(`/app/exports`\).) Tj
+0 -14 Td
+(- Data health queue/list \(`/app/data-health`\) + job detail \(`/app/data-health/[id]`\).) Tj
+0 -14 Td
+(- Dev plans list/detail \(`/app/dev-plans`, `/app/dev-plans/[id]`\).) Tj
+0 -14 Td
+(- Visualization workspace \(`/app/visualize/[id]`\).) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 5\) API Feature Review) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Lead + conversion APIs) Tj
+0 -14 Td
+(- `POST /api/leads`) Tj
+0 -14 Td
+(  - validates payload fields) Tj
+0 -14 Td
+(  - enriches UTM/session attribution from cookies) Tj
+0 -14 Td
+(  - forwards to CRM + email delivery targets) Tj
+0 -14 Td
+(  - emits `lead_submitted` conversion event) Tj
+0 -14 Td
+(  - returns fallback success messaging if integrations are not configured) Tj
+0 -14 Td
+ET
+endstream
+endobj
+5 0 obj
+<< /Length 2032 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 48 744 Tm
+0 -14 Td
+(- `POST /api/conversions`) Tj
+0 -14 Td
+(  - records server-side conversion events for specified event names) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Billing APIs) Tj
+0 -14 Td
+(- `POST /api/billing/checkout`) Tj
+0 -14 Td
+(  - supports starter redirect, B2B contact-only mode, Stripe checkout, provider webhook) Tj
+0 -14 Td
+(fallback, and local fallback URLs) Tj
+0 -14 Td
+(- `POST /api/billing/portal`) Tj
+0 -14 Td
+(  - authenticated billing portal access via Stripe when available, with provider/fallback) Tj
+0 -14 Td
+(options) Tj
+0 -14 Td
+(- `POST /api/billing/switch`) Tj
+0 -14 Td
+(  - authenticated subscription plan change path via Stripe, provider webhook, or fallback) Tj
+0 -14 Td
+(record mode) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(### Status API) Tj
+0 -14 Td
+(- `GET /api/status`) Tj
+0 -14 Td
+(  - pulls public operational status from status endpoints) Tj
+0 -14 Td
+(  - gracefully returns fallback "Operational" payload when upstream endpoints are unavailable) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 6\) Workflow Capability Matrix \(as declared in data model\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Declared product workflow modules include:) Tj
+0 -14 Td
+(- Upload and Analyze) Tj
+0 -14 Td
+(- Session Intelligence) Tj
+0 -14 Td
+(- Comparison and Progress) Tj
+0 -14 Td
+(- Data Management) Tj
+0 -14 Td
+(- Visualization Workspace) Tj
+0 -14 Td
+(- Race Strategy Control Room) Tj
+0 -14 Td
+(- Coaching Plans) Tj
+0 -14 Td
+(- Account and Team) Tj
+0 -14 Td
+(- Data Rights) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(Most are marked **available_now**, while strategy control room and account/team are marked) Tj
+0 -14 Td
+(**enterprise_on_request**.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 7\) QA and Test Surface \(Webapp\)) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(The webapp includes E2E specs covering key journeys:) Tj
+0 -14 Td
+(- auth) Tj
+0 -14 Td
+(- marketing) Tj
+0 -14 Td
+(- upload) Tj
+0 -14 Td
+(- sessions) Tj
+0 -14 Td
+(- tracks) Tj
+0 -14 Td
+(- compare) Tj
+0 -14 Td
+(- strategy) Tj
+0 -14 Td
+ET
+endstream
+endobj
+6 0 obj
+<< /Length 731 >>
+stream
+BT
+/F1 10 Tf
+1 0 0 1 48 744 Tm
+0 -14 Td
+(- exports) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(This indicates automated coverage around both acquisition pages and core telemetry workflows.) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(---) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(## 8\) Notes / Limitations of This Review) Tj
+0 -14 Td
+() Tj
+0 -14 Td
+(- This review is code- and route-driven from the repository rather than runtime UX validation.) Tj
+0 -14 Td
+(- Some pages are scaffolded with placeholder/demo data patterns; exact production behavior) Tj
+0 -14 Td
+(depends on backend availability and environment configuration.) Tj
+0 -14 Td
+(- Capability tags in workflow data represent declared product intent and may differ by) Tj
+0 -14 Td
+(deployment tier.) Tj
+0 -14 Td
+ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 2 0 R >>
+endobj
+8 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 3 0 R >>
+endobj
+9 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 4 0 R >>
+endobj
+10 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 5 0 R >>
+endobj
+11 0 obj
+<< /Type /Page /Parent 12 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R >> >> /Contents 6 0 R >>
+endobj
+12 0 obj
+<< /Type /Pages /Kids [7 0 R 8 0 R 9 0 R 10 0 R 11 0 R] /Count 5 >>
+endobj
+13 0 obj
+<< /Type /Catalog /Pages 12 0 R >>
+endobj
+xref
+0 14
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000002750 00000 n 
+0000004825 00000 n 
+0000007659 00000 n 
+0000009743 00000 n 
+0000010525 00000 n 
+0000010652 00000 n 
+0000010779 00000 n 
+0000010906 00000 n 
+0000011034 00000 n 
+0000011162 00000 n 
+0000011246 00000 n 
+trailer
+<< /Size 14 /Root 13 0 R >>
+startxref
+11297
+%%EOF
