@@ -308,9 +308,10 @@ def cancel_deletion():
 @bp.route("/profile", methods=["PATCH"])
 @rate_limit(tier="write")
 def update_profile():
-    """Update the user's display_name and/or email.
+    """Update the user's profile: display_name, email, avatar_url, preferences.
 
     Email changes set ``email_verified = False`` and trigger re-verification.
+    Preferences are merged (not replaced) with existing JSONB preferences.
 
     Returns:
         200 with updated profile data.
@@ -327,16 +328,30 @@ def update_profile():
     body = request.get_json(silent=True) or {}
     display_name = body.get("display_name")
     email = body.get("email")
+    avatar_url = body.get("avatar_url")
+    preferences = body.get("preferences")
 
-    if not display_name and not email:
+    if not display_name and not email and avatar_url is None and preferences is None:
         return api_error(
             ErrorCode.VALIDATION_ERROR,
-            "At least one of display_name or email is required",
+            "At least one of display_name, email, avatar_url, or preferences is required",
             status=400,
         )
 
+    # Validate preferences if provided
+    if preferences is not None:
+        try:
+            from web.schemas.account import UserPreferences
+            UserPreferences(**preferences)
+        except Exception as e:
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                f"Invalid preferences: {e}",
+                status=400,
+            )
+
     user = conn.execute(
-        text("SELECT id, display_name, email FROM users WHERE id = :uid"),
+        text("SELECT id, display_name, email, avatar_url, preferences FROM users WHERE id = :uid"),
         {"uid": user_id},
     ).fetchone()
 
@@ -359,14 +374,37 @@ def update_profile():
         params["email"] = email
         email_verification_required = True
 
+    if avatar_url is not None:
+        set_clauses.append("avatar_url = :avatar_url")
+        params["avatar_url"] = avatar_url if avatar_url else None
+
+    if preferences is not None:
+        # JSONB merge: existing || new (new keys overwrite, existing preserved)
+        set_clauses.append("preferences = COALESCE(preferences, '{}'::jsonb) || :prefs::jsonb")
+        params["prefs"] = json.dumps(preferences)
+
     if set_clauses:
         sql = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = :uid"
         conn.execute(text(sql), params)
         conn.commit()
 
+    # Re-read to get merged preferences
+    updated = conn.execute(
+        text("SELECT display_name, email, avatar_url, preferences FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    updated_data = dict(updated) if not isinstance(updated, dict) else updated
+
+    prefs = updated_data.get("preferences")
+    if isinstance(prefs, str):
+        prefs = json.loads(prefs)
+
     result = {
-        "display_name": display_name or current.get("display_name"),
-        "email": email or current.get("email"),
+        "display_name": updated_data.get("display_name"),
+        "email": updated_data.get("email"),
+        "avatar_url": updated_data.get("avatar_url"),
+        "preferences": prefs or {},
     }
     if email_verification_required:
         result["email_verification_required"] = True
@@ -1475,3 +1513,398 @@ def terms_status():
         "accepted_at": accepted_at.isoformat() if accepted_at else None,
         "needs_acceptance": needs_acceptance,
     })
+
+
+# ---------------------------------------------------------------------------
+# GET /entitlements — plan-based feature entitlements
+# ---------------------------------------------------------------------------
+
+@bp.route("/entitlements", methods=["GET"])
+@rate_limit(tier="read")
+def get_entitlements():
+    """Return plan-based feature entitlements for the current user.
+
+    Returns:
+        200 with ``{plan, entitlements}``
+    """
+    from auth.entitlements import get_plan_entitlements
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    conn = get_pg_connection()
+    from sqlalchemy import text
+
+    row = conn.execute(
+        text("SELECT plan_tier FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+    entitlements = get_plan_entitlements(plan)
+
+    return api_response({
+        "plan": plan,
+        "entitlements": entitlements,
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /usage — current month usage snapshot
+# ---------------------------------------------------------------------------
+
+@bp.route("/usage", methods=["GET"])
+@rate_limit(tier="read")
+def get_usage():
+    """Return usage snapshot for the current billing period.
+
+    Uses the entitlements-aware ``get_usage_snapshot()`` function.
+
+    Returns:
+        200 with usage dict.
+    """
+    from auth.usage import get_usage_snapshot
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+    if workspace_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "No workspace context", status=403)
+
+    conn = get_pg_connection()
+    from sqlalchemy import text
+
+    row = conn.execute(
+        text("SELECT plan_tier FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    plan = "demo"
+    if row is not None:
+        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+
+    snapshot = get_usage_snapshot(conn, workspace_id, plan)
+
+    return api_response(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# GET /retention — data retention schedule per session
+# ---------------------------------------------------------------------------
+
+@bp.route("/retention", methods=["GET"])
+@rate_limit(tier="read")
+def get_retention():
+    """Return data retention info: per-session expiry dates.
+
+    Lists the 100 most recent sessions with their calculated ``expires_at``
+    based on the plan's ``raw_retention_days``.
+
+    Returns:
+        200 with ``{plan, raw_retention_days, report_retention, sessions}``
+    """
+    from auth.entitlements import get_plan_entitlements
+    from sqlalchemy import text
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+
+    conn = get_pg_connection()
+
+    row = conn.execute(
+        text("SELECT plan_tier FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    plan = "demo"
+    if row is not None:
+        plan = (dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo"
+
+    ent = get_plan_entitlements(plan)
+    retention_days = ent.get("raw_retention_days", 30)
+    report_retention = ent.get("report_retention", "indefinite")
+
+    # Query sessions (workspace-scoped if available, otherwise user-scoped)
+    if workspace_id is not None:
+        rows = conn.execute(
+            text(
+                "SELECT session_id, file_name, created_at "
+                "FROM sessions "
+                "WHERE workspace_id = :wsid "
+                "ORDER BY created_at DESC LIMIT 100"
+            ),
+            {"wsid": workspace_id},
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            text(
+                "SELECT session_id, file_name, created_at "
+                "FROM sessions "
+                "WHERE user_id = :uid "
+                "ORDER BY created_at DESC LIMIT 100"
+            ),
+            {"uid": user_id},
+        ).fetchall()
+
+    sessions = []
+    for row in rows:
+        r = dict(row) if not isinstance(row, dict) else row
+        created = r.get("created_at")
+        if created is None:
+            continue
+        if isinstance(created, str):
+            created = datetime.fromisoformat(created)
+        if hasattr(created, "tzinfo") and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+
+        expires_at = created + timedelta(days=retention_days)
+        sessions.append({
+            "session_id": r.get("session_id"),
+            "file_name": r.get("file_name"),
+            "created_at": created.isoformat(),
+            "expires_at": expires_at.isoformat(),
+        })
+
+    return api_response({
+        "plan": plan,
+        "raw_retention_days": retention_days,
+        "report_retention": report_retention,
+        "sessions": sessions,
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /oauth-connections — list OAuth connections (alias for /connections)
+# ---------------------------------------------------------------------------
+
+@bp.route("/oauth-connections", methods=["GET"])
+@rate_limit(tier="read")
+def list_oauth_connections():
+    """List linked OAuth providers.
+
+    Returns:
+        200 with list of ``{provider, provider_user_id, created_at}``
+    """
+    from sqlalchemy import text
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    conn = get_pg_connection()
+    rows = conn.execute(
+        text(
+            "SELECT provider, provider_user_id, created_at "
+            "FROM oauth_connections WHERE user_id = :uid "
+            "ORDER BY created_at"
+        ),
+        {"uid": user_id},
+    ).fetchall()
+
+    connections = []
+    for row in rows:
+        r = dict(row) if not isinstance(row, dict) else row
+        connections.append({
+            "provider": r["provider"],
+            "provider_user_id": r["provider_user_id"],
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+        })
+
+    return api_response(connections)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /oauth-connections/<provider> — unlink OAuth provider
+# ---------------------------------------------------------------------------
+
+@bp.route("/oauth-connections/<provider>", methods=["DELETE"])
+@rate_limit(tier="write")
+def unlink_oauth_connection(provider: str):
+    """Unlink an OAuth provider.
+
+    Safety check: cannot unlink if this is the user's last auth method
+    (no password set AND only one OAuth connection remaining).
+
+    Returns:
+        200 with ``{unlinked: provider}``
+        400 with LAST_AUTH_METHOD if this is the only login method
+        404 if connection not found
+    """
+    from sqlalchemy import text
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    conn = get_pg_connection()
+
+    # Check if user has a password
+    user_row = conn.execute(
+        text("SELECT password_hash FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    if user_row is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    user = dict(user_row) if not isinstance(user_row, dict) else user_row
+    has_password = bool(user.get("password_hash"))
+
+    # Count remaining OAuth connections
+    count_row = conn.execute(
+        text(
+            "SELECT COUNT(*) AS cnt FROM oauth_connections "
+            "WHERE user_id = :uid"
+        ),
+        {"uid": user_id},
+    ).fetchone()
+
+    total_count = (dict(count_row)["cnt"] if not isinstance(count_row, dict)
+                   else count_row["cnt"])
+
+    if not has_password and total_count <= 1:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Cannot unlink: this is your last authentication method. Set a password first.",
+            status=400,
+            details=[{"code": "LAST_AUTH_METHOD"}],
+        )
+
+    # Delete the connection
+    result = conn.execute(
+        text(
+            "DELETE FROM oauth_connections "
+            "WHERE user_id = :uid AND provider = :provider "
+            "RETURNING id"
+        ),
+        {"uid": user_id, "provider": provider},
+    ).fetchone()
+
+    if result is None:
+        return api_error(ErrorCode.NOT_FOUND, "Connection not found", status=404)
+
+    conn.commit()
+    return api_response({"unlinked": provider})
+
+
+# ---------------------------------------------------------------------------
+# POST /support/ticket — create support ticket
+# ---------------------------------------------------------------------------
+
+@bp.route("/support/ticket", methods=["POST"])
+@rate_limit(tier="write")
+def create_support_ticket():
+    """Create a support ticket from the account settings page.
+
+    Stores in support_tickets table and sends notification email.
+
+    Accepts:
+        issue_type: str (required)
+        description: str (required, min 10 chars)
+        session_id: int (optional)
+    """
+    from sqlalchemy import text
+
+    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+
+    body = request.get_json(silent=True) or {}
+    issue_type = (body.get("issue_type") or "").strip()
+    description = (body.get("description") or "").strip()
+    session_id = body.get("session_id")
+
+    if not issue_type:
+        return api_error(ErrorCode.VALIDATION_ERROR, "issue_type is required", status=400)
+
+    if not description or len(description) < 10:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "description must be at least 10 characters",
+            status=400,
+        )
+
+    if len(description) > 5000:
+        return api_error(ErrorCode.VALIDATION_ERROR, "description too long (max 5000)", status=400)
+
+    conn = get_pg_connection()
+
+    # Get user email for the notification
+    user_row = conn.execute(
+        text("SELECT email, display_name, plan_tier FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    user_data = dict(user_row) if user_row and not isinstance(user_row, dict) else (user_row or {})
+
+    # Insert ticket
+    row = conn.execute(
+        text(
+            "INSERT INTO support_tickets "
+            "(user_id, workspace_id, issue_type, description, session_id, status) "
+            "VALUES (:uid, :wsid, :type, :desc, :sid, 'open') "
+            "RETURNING id, created_at"
+        ),
+        {
+            "uid": user_id,
+            "wsid": workspace_id,
+            "type": issue_type,
+            "desc": description,
+            "sid": session_id,
+        },
+    ).fetchone()
+
+    ticket_data = dict(row) if not isinstance(row, dict) else row
+    ticket_id = ticket_data["id"]
+    conn.commit()
+
+    # Send notification email to support
+    try:
+        from auth.email import _send
+        email = user_data.get("email", "unknown") if isinstance(user_data, dict) else "unknown"
+        plan = user_data.get("plan_tier", "unknown") if isinstance(user_data, dict) else "unknown"
+        name = user_data.get("display_name", "User") if isinstance(user_data, dict) else "User"
+
+        subject = f"[LAP Support #{ticket_id}] {issue_type}: {description[:60]}"
+        html = f"""\
+<div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
+  <h2 style="color: #F3F0E8;">New Support Ticket #{ticket_id}</h2>
+  <table style="border-collapse: collapse; margin: 12px 0;">
+    <tr>
+      <td style="color: #8A8F98; padding: 4px 12px 4px 0;">User:</td>
+      <td style="color: #F3F0E8;">{name} ({email})</td>
+    </tr>
+    <tr>
+      <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Plan:</td>
+      <td style="color: #F3F0E8;">{plan}</td>
+    </tr>
+    <tr>
+      <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Type:</td>
+      <td style="color: #F3F0E8;">{issue_type}</td>
+    </tr>
+  </table>
+  <h3 style="color: #F3F0E8;">Description</h3>
+  <p style="color: #8A8F98; white-space: pre-wrap;">{description}</p>
+</div>"""
+        _send("support@lap-coach.racing", subject, html)
+    except Exception:
+        logger.exception("Failed to send support notification email for ticket %s", ticket_id)
+
+    logger.info("Support ticket created: id=%s, user=%s, type=%s", ticket_id, user_id, issue_type)
+
+    return api_response({
+        "ticket_id": ticket_id,
+        "status": "open",
+        "message": "Your support ticket has been submitted. We'll respond within 24 hours.",
+    }, status=201)
