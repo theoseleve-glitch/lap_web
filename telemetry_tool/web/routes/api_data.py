@@ -888,20 +888,62 @@ def files_list():
 @require_upload_size("file")
 def files_upload():
     """Upload a CSV file to data/raw/."""
+    import csv
+    import io
+
     if "file" not in request.files:
         return jsonify({"error": "no file provided"}), 400
 
     f = request.files["file"]
-    if not f.filename or not f.filename.lower().endswith(".csv"):
+    if not f.filename:
         return jsonify({"error": "only .csv files allowed"}), 400
 
-    # Content sniff: reject binary files masquerading as CSV
-    sample = f.read(1024)
+    # ── Double-extension rejection ──────────────────────────────
+    # secure_filename handles path traversal, but we also reject
+    # double extensions like "data.csv.exe" or "data.csv.php"
+    basename = f.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    dot_parts = basename.split(".")
+    if len(dot_parts) > 2:
+        return jsonify({"error": "only .csv files allowed"}), 400
+    if not basename.lower().endswith(".csv"):
+        return jsonify({"error": "only .csv files allowed"}), 400
+
+    # ── Size guard (500 MB for direct upload) ───────────────────
+    # Streaming ingest handles larger files via /api/ingest/*
+    max_direct_upload = 500 * 1024 * 1024  # 500 MB
+    content_length = request.content_length or 0
+    if content_length > max_direct_upload:
+        return jsonify({"error": "File too large for direct upload (max 500 MB). Use streaming ingest for larger files."}), 413
+
+    # ── Content validation ──────────────────────────────────────
+    sample = f.read(8192)
     f.seek(0)
+
+    # Binary detection (null bytes)
     if b"\x00" in sample:
         return jsonify({"error": "File appears to be binary, not CSV"}), 400
 
-    # Sanitize filename (werkzeug secure_filename for safety)
+    # Text decode check (UTF-8, fallback to Latin-1)
+    try:
+        text_sample = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            text_sample = sample.decode("latin-1")
+        except UnicodeDecodeError:
+            return jsonify({"error": "File is not valid text"}), 400
+
+    # CSV structure: first line must have at least 2 columns
+    first_line = text_sample.split("\n", 1)[0].strip()
+    if first_line:
+        reader = csv.reader(io.StringIO(first_line))
+        try:
+            headers = next(reader)
+            if len(headers) < 2:
+                return jsonify({"error": "CSV must have at least 2 columns"}), 400
+        except (csv.Error, StopIteration):
+            return jsonify({"error": "File does not appear to be valid CSV"}), 400
+
+    # ── Sanitize and save ───────────────────────────────────────
     safe_name = secure_filename(f.filename) or "upload.csv"
     if not safe_name.lower().endswith(".csv"):
         safe_name += ".csv"
