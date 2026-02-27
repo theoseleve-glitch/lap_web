@@ -37,13 +37,13 @@ export default function ProductPage() {
         data={{
           '@context': 'https://schema.org',
           '@type': 'TechArticle',
-          headline: 'LAP Product Workflow Coverage',
+          headline: 'LAP Telemetry Analysis: Upload to Race Strategy',
           about: ['Telemetry analysis', 'Motorsport analytics workflow'],
-          url: 'https://lap.racing/product',
+          url: 'https://www.lap-coach.racing/product',
         }}
       />
       <PageShell
-        eyebrow="Product Workflow Coverage"
+        eyebrow="Product"
         title="From Upload to Strategy: Fast, Clear Performance Decisions"
         description="Move from raw telemetry to clear next actions with workflows built for drivers, coaches, and operators."
       >

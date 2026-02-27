@@ -32,6 +32,9 @@ pytest>=7.0
 # CORS
 flask-cors>=4.0
 
+# Billing
+stripe>=8.0
+
 # PDF generation (optional — install if you want PDF reports)
 # pdfkit>=1.0
 # weasyprint>=60.0

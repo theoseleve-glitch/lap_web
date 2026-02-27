@@ -28,6 +28,7 @@ def auth_middleware():
     _AUTH_PUBLIC_PATHS = {
         "/auth/register", "/auth/login", "/auth/logout",
         "/auth/refresh", "/auth/verify-email",
+        "/api/v1/billing/webhook",  # Uses Stripe signature verification
     }
     if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path):
         return

@@ -24,13 +24,12 @@ export function PersonaPage({ persona }: PersonaPageProps) {
           '@type': 'WebPage',
           name: persona.title,
           description: persona.summary,
-          url: `https://lap.racing/${persona.slug}`,
+          url: `https://www.lap-coach.racing/${persona.slug}`,
         }}
       />
-      <PageShell eyebrow="Persona Landing" title={persona.title} description={persona.summary}>
+      <PageShell eyebrow={persona.title} title={persona.subtitle} description={persona.summary}>
         <section className="grid lg:grid-cols-[2fr_1fr] gap-6">
           <article className="border border-steel/20 p-5 bg-concrete/40">
-            <p className="font-monument text-[var(--text-h3)] mb-4">{persona.subtitle}</p>
             <img
               src={heroImageBySlug[persona.slug]}
               alt={`${persona.title} workflow`}

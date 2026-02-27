@@ -9,7 +9,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ['/api/'],
       },
     ],
-    sitemap: 'https://lap.racing/sitemap.xml',
-    host: 'https://lap.racing',
+    sitemap: 'https://www.lap-coach.racing/sitemap.xml',
+    host: 'https://www.lap-coach.racing',
   };
 }

@@ -21,21 +21,21 @@
 | S-05 | P1 | .env.production not in .gitignore | 1 | **FIXED** — Added .env.production/.staging/.*.local |
 | S-06 | P1 | Next.js HIGH/CRITICAL npm vulnerabilities | 1 | **Mitigated** — unoptimized images + CF Workers; requires Next.js 15 migration |
 | D-01 | P1 | No database backups configured | 2 | **FIXED** — Daily pg_dump at 3AM UTC, 7-day retention |
-| D-02 | P2 | WAL archiving disabled | 2 | Deferred — not critical with daily backups in place |
+| D-02 | P2 | WAL archiving disabled | 2 | **FIXED** — archive_mode=on, 300s timeout, 2-day retention |
 | B-01 | P2 | No content-type validation on file uploads | 3 | **FIXED** — Binary sniffing on first 1KB |
 | B-02 | P2 | JSON import accepts unbounded file sizes | 3 | **FIXED** — 10MB limit on JSON imports |
-| B-03 | P2 | Stripe in test mode | 3 | Deferred — requires live Stripe keys + pricing config |
+| B-03 | P2 | Stripe in test mode | 3 | **READY** — stripe pkg added, webhook allowlisted, go-live checklist written |
 | R-01 | P2 | Health check doesn't report Redis/Celery status | 4 | **FIXED** — All 4 checks: db, redis, celery, status |
 | R-02 | P2 | No structured logging with correlation IDs | 4 | **FIXED** — TELEMETRY_LOG_FORMAT=json with request_id |
 | R-03 | P2 | Celery worker import error (ModuleNotFoundError: web) | 4 | **FIXED** — sys.path fix in celery_app.py |
 | F-01 | P2 | Frontend bug bash (all routes) | 5 | **DONE** — See bug bash results below |
-| F-02 | P2 | Design system audit | 6 | Deferred — low priority, no blockers found |
-| P-01 | P2 | Performance baseline + optimization | 7 | Deferred — no perf issues observed in testing |
-| M-01 | P2 | Marketing content audit + rewrite | 8 | Deferred — all pages load correctly |
-| M-02 | P2 | B2B "Book a Call" lead form | 8 | Deferred — form infrastructure exists, needs B2B copy |
+| F-02 | P2 | Design system audit | 6 | **DONE** — Report generated, no blockers |
+| P-01 | P2 | Performance baseline + optimization | 7 | **DONE** — TTFB <75ms, load <300ms, stale chunks fixed |
+| M-01 | P2 | Marketing content audit + rewrite | 8 | **DONE** — 47 issues documented, SEO quick wins deployed |
+| M-02 | P2 | B2B "Book a Call" lead form | 8 | **DONE** — All 4 forms verified E2E, webhook config documented |
 | S-07 | P3 | x-powered-by: Next.js header exposed | 1 | **FIXED** — poweredByHeader: false |
 | R-04 | P2 | Alembic.ini path broken in Docker | 4 | **FIXED** — Resolve script_location relative to ini_path |
-| F-03 | P3 | CORS 404 on /api/v1/dashboard/stats | 5 | Open — endpoint not implemented yet; dashboard gracefully degrades |
+| F-03 | P3 | CORS 404 on /api/v1/dashboard/stats | 5 | **FIXED** — OPTIONS bypass in auth middleware + response shape remapped |
 
 ---
 

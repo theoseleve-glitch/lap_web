@@ -35,14 +35,14 @@ export default function PricingPage() {
             '@context': 'https://schema.org',
             '@type': 'WebPage',
             name: 'LAP Pricing',
-            url: 'https://lap.racing/pricing',
+            url: 'https://www.lap-coach.racing/pricing',
           }),
         }}
       />
       <PageShell
-        eyebrow="Pricing and Billing"
-        title="Plans, Eligibility, and Conversion Paths"
-        description="All pricing CTAs are wired to booking and contact routes. Features are separated by availability now, enterprise/on request, and roadmap."
+        eyebrow="Pricing"
+        title="Plans for Drivers, Coaches, and Circuits"
+        description="Self-serve plans for individual drivers. Contact us for team, circuit, and enterprise setups."
       >
       <section className="mb-8 flex flex-wrap items-center gap-3">
         <button
