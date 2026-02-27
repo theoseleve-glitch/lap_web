@@ -7,22 +7,50 @@ import { StampButton } from '@/components/ui/StampButton';
 import {
   b2cPlans,
   b2bCard,
-  featureEligibilityMatrix,
-  dataLifecycle,
 } from '@/data/pricing';
-import type { EligibilityRow } from '@/data/pricing';
 import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
+import { useTranslation } from '@/i18n';
 
-const GROUP_LABELS: Record<EligibilityRow['group'], string> = {
-  engineer: 'ENGINEER',
-  strategist: 'STRATEGIST',
-  data: 'DATA & OPS',
+interface MatrixRow {
+  featureKey: string;
+  group: 'engineer' | 'strategist' | 'data';
+  demoKey: string;
+  racerKey: string;
+  worldClassKey: string;
+}
+
+const featureMatrix: MatrixRow[] = [
+  // ENGINEER
+  { featureKey: 'pricing.matrix.uploadAnalyze', group: 'engineer', demoKey: 'pricing.matrix.1report', racerKey: 'pricing.matrix.10mo', worldClassKey: 'pricing.value.unlimited' },
+  { featureKey: 'pricing.matrix.fourPillar', group: 'engineer', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.cornerCoaching', group: 'engineer', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.sessionTabs', group: 'engineer', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.comparisonProgress', group: 'engineer', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.coachingDrills', group: 'engineer', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.vizWorkspace', group: 'engineer', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // STRATEGIST
+  { featureKey: 'pricing.matrix.strategyDashboard', group: 'strategist', demoKey: 'pricing.matrix.3hLimit', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.livePace', group: 'strategist', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.pitPlanning', group: 'strategist', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.incidentAlert', group: 'strategist', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // DATA & OPS
+  { featureKey: 'pricing.matrix.trackManagement', group: 'data', demoKey: 'pricing.matrix.basic', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.pdfReports', group: 'data', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.apiAccess', group: 'data', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.rawRetention', group: 'data', demoKey: 'pricing.value.1month', racerKey: 'pricing.value.3months', worldClassKey: 'pricing.value.12months' },
+  { featureKey: 'pricing.matrix.reportRetention', group: 'data', demoKey: 'pricing.value.indefinite', racerKey: 'pricing.value.indefinite', worldClassKey: 'pricing.value.indefinite' },
+];
+
+const GROUP_ORDER: Array<'engineer' | 'strategist' | 'data'> = ['engineer', 'strategist', 'data'];
+const GROUP_LABEL_KEYS: Record<string, string> = {
+  engineer: 'pricing.groupEngineer',
+  strategist: 'pricing.groupStrategist',
+  data: 'pricing.groupData',
 };
-
-const GROUP_ORDER: EligibilityRow['group'][] = ['engineer', 'strategist', 'data'];
 
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual');
+  const { t } = useTranslation();
 
   const toggleBilling = useCallback(() => {
     const next = billing === 'monthly' ? 'annual' : 'monthly';
@@ -30,161 +58,189 @@ export default function PricingPage() {
     trackPricingToggle(next);
   }, [billing]);
 
-  /* Group rows by their group field, preserving order */
   const groupedRows = GROUP_ORDER.map((group) => ({
     group,
-    label: GROUP_LABELS[group],
-    rows: featureEligibilityMatrix.filter((r) => r.group === group),
+    labelKey: GROUP_LABEL_KEYS[group],
+    rows: featureMatrix.filter((r) => r.group === group),
   }));
 
-  /* JSON-LD structured data for SEO — hardcoded, no user input */
-  const jsonLd = {
-    '@context': 'https://schema.org',
-    '@type': 'WebPage',
-    name: 'LAP Pricing',
-    url: 'https://www.lap-coach.racing/pricing',
-  };
-
   return (
-    <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
-      <PageShell
-        eyebrow="Pricing"
-        title="Choose Your Depth"
-        description="Three tiers for individual drivers. Custom pricing for teams and circuits."
-      >
-        {/* Billing toggle */}
-        <div className="flex items-center justify-center gap-3 mb-8">
+    <PageShell
+      eyebrow={t('pricing.eyebrow')}
+      title={t('pricing.title')}
+      description={t('pricing.description')}
+    >
+      {/* Billing toggle */}
+      <div className="flex items-center justify-center gap-3 mb-8">
+        <span
+          className={`font-telemetry text-[11px] ${
+            billing === 'monthly' ? 'text-chalk' : 'text-steel'
+          }`}
+        >
+          {t('pricing.toggleMonthly')}
+        </span>
+        <button
+          className="relative w-12 h-6 bg-concrete border border-steel/30"
+          onClick={toggleBilling}
+          aria-label={`Switch to ${billing === 'monthly' ? 'annual' : 'monthly'} billing`}
+        >
           <span
-            className={`font-telemetry text-[11px] ${
-              billing === 'monthly' ? 'text-chalk' : 'text-steel'
-            }`}
-          >
-            MONTHLY
-          </span>
-          <button
-            className="relative w-12 h-6 bg-concrete border border-steel/30"
-            onClick={toggleBilling}
-            aria-label={`Switch to ${billing === 'monthly' ? 'annual' : 'monthly'} billing`}
-          >
-            <span
-              className="absolute top-1 w-4 h-4 bg-pit-orange transition-all duration-300"
-              style={{ left: billing === 'annual' ? 'calc(100% - 20px)' : '4px' }}
-            />
-          </button>
-          <span
-            className={`font-telemetry text-[11px] ${
-              billing === 'annual' ? 'text-chalk' : 'text-steel'
-            }`}
-          >
-            ANNUAL
-          </span>
-        </div>
-
-        {/* Pricing Table + B2B card */}
-        <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
-          <PricingTable
-            plans={b2cPlans}
-            billingPeriod={billing}
-            onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
+            className="absolute top-1 w-4 h-4 bg-pit-orange transition-all duration-300"
+            style={{ left: billing === 'annual' ? 'calc(100% - 20px)' : '4px' }}
           />
+        </button>
+        <span
+          className={`font-telemetry text-[11px] ${
+            billing === 'annual' ? 'text-chalk' : 'text-steel'
+          }`}
+        >
+          {t('pricing.toggleAnnual')}
+        </span>
+      </div>
 
-          {/* B2B card */}
-          <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
-            <p className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase mb-2">
-              B2B
-            </p>
-            <h3 className="font-monument text-[var(--text-h3)] mb-4">{b2bCard.name}</h3>
-            <ul className="space-y-2 mb-6">
-              {b2bCard.features.map((feature) => (
-                <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
-                  <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <StampButton
-              href={b2bCard.ctaHref}
-              onClick={() => trackCtaClick('contact_sales', 'pricing', 'b2b')}
-              className="w-full"
-            >
-              {b2bCard.cta}
-            </StampButton>
-          </div>
-        </section>
+      {/* Pricing Table + B2B card */}
+      <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
+        <PricingTable
+          plans={b2cPlans}
+          billingPeriod={billing}
+          onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
+        />
 
-        {/* Feature Eligibility Matrix */}
-        <section className="mb-10 overflow-x-auto">
-          <h2 className="font-monument text-[var(--text-h2)] mb-4">Feature Eligibility Matrix</h2>
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-concrete">
-                <th className="border border-steel/20 p-2 text-left text-steel">Feature</th>
-                <th className="border border-steel/20 p-2 text-left text-steel">Demo</th>
-                <th className="border border-steel/20 p-2 text-left text-steel">Racer</th>
-                <th className="border border-steel/20 p-2 text-left text-steel">World-Class</th>
-              </tr>
-            </thead>
-            <tbody>
-              {groupedRows.map(({ group, label, rows }) => (
-                <>
-                  <tr key={`group-${group}`}>
-                    <td
-                      colSpan={4}
-                      className="bg-asphalt/60 font-monument text-xs tracking-[0.12em] uppercase p-2 text-chalk border border-steel/20"
-                    >
-                      {label}
-                    </td>
-                  </tr>
-                  {rows.map((row) => (
-                    <tr key={row.feature}>
-                      <td className="border border-steel/20 p-2 text-steel">{row.feature}</td>
-                      <td className="border border-steel/20 p-2 text-chalk">{row.demo}</td>
-                      <td className="border border-steel/20 p-2 text-chalk">{row.racer}</td>
-                      <td className="border border-steel/20 p-2 text-chalk">{row.worldClass}</td>
-                    </tr>
-                  ))}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </section>
-
-        {/* Data Lifecycle Transparency */}
-        <section className="mb-10">
-          <h2 className="font-monument text-[var(--text-h2)] mb-4">
-            Data Lifecycle Transparency
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {dataLifecycle.map((item) => (
-              <article
-                key={item.category}
-                className="border border-steel/20 bg-concrete/40 p-5"
-              >
-                <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
-                  {item.category}
-                </h3>
-                <p className="text-steel text-sm mb-4">{item.description}</p>
-                <div className="space-y-2 mb-4">
-                  {item.tiers.map((tier) => (
-                    <div
-                      key={tier.label}
-                      className="flex justify-between text-sm font-body"
-                    >
-                      <span className="text-steel">{tier.label}</span>
-                      <span className="text-chalk">{tier.value}</span>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-steel/60 text-xs italic">{item.note}</p>
-              </article>
+        {/* B2B card */}
+        <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
+          <p className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase mb-2">
+            {t('pricing.b2bLabel')}
+          </p>
+          <h3 className="font-monument text-[var(--text-h3)] mb-4">{t('pricing.b2b.name')}</h3>
+          <ul className="space-y-2 mb-6">
+            {[
+              t('pricing.b2b.feature1'),
+              t('pricing.b2b.feature2'),
+              t('pricing.b2b.feature3'),
+              t('pricing.b2b.feature4'),
+              t('pricing.b2b.feature5'),
+            ].map((feature) => (
+              <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
+                <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
+                {feature}
+              </li>
             ))}
-          </div>
-        </section>
-      </PageShell>
-    </>
+          </ul>
+          <StampButton
+            href={b2bCard.ctaHref}
+            onClick={() => trackCtaClick('contact_sales', 'pricing', 'b2b')}
+            className="w-full"
+          >
+            {t('cta.contactSales')}
+          </StampButton>
+        </div>
+      </section>
+
+      {/* Feature Eligibility Matrix */}
+      <section className="mb-10 overflow-x-auto">
+        <h2 className="font-monument text-[var(--text-h2)] mb-4">{t('pricing.matrixTitle')}</h2>
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="bg-concrete">
+              <th className="border border-steel/20 p-2 text-left text-steel">{t('pricing.matrixFeature')}</th>
+              <th className="border border-steel/20 p-2 text-left text-steel">{t('pricing.matrixDemo')}</th>
+              <th className="border border-steel/20 p-2 text-left text-steel">{t('pricing.matrixRacer')}</th>
+              <th className="border border-steel/20 p-2 text-left text-steel">{t('pricing.matrixWorldClass')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groupedRows.map(({ group, labelKey, rows }) => (
+              <>
+                <tr key={`group-${group}`}>
+                  <td
+                    colSpan={4}
+                    className="bg-asphalt/60 font-monument text-xs tracking-[0.12em] uppercase p-2 text-chalk border border-steel/20"
+                  >
+                    {t(labelKey)}
+                  </td>
+                </tr>
+                {rows.map((row) => (
+                  <tr key={row.featureKey}>
+                    <td className="border border-steel/20 p-2 text-steel">{t(row.featureKey)}</td>
+                    <td className="border border-steel/20 p-2 text-chalk">{t(row.demoKey)}</td>
+                    <td className="border border-steel/20 p-2 text-chalk">{t(row.racerKey)}</td>
+                    <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
+                  </tr>
+                ))}
+              </>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      {/* Data Lifecycle Transparency */}
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-4">
+          {t('pricing.dataLifecycleTitle')}
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Raw Telemetry */}
+          <article className="border border-steel/20 bg-concrete/40 p-5">
+            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+              {t('pricing.lifecycle.rawTelemetry')}
+            </h3>
+            <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.rawDesc')}</p>
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">Demo</span>
+                <span className="text-chalk">{t('pricing.lifecycle.rawDemoTier')}</span>
+              </div>
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">Racer</span>
+                <span className="text-chalk">{t('pricing.lifecycle.rawRacerTier')}</span>
+              </div>
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">World-Class</span>
+                <span className="text-chalk">{t('pricing.lifecycle.rawWorldClassTier')}</span>
+              </div>
+            </div>
+            <p className="text-steel/60 text-xs italic">{t('pricing.lifecycle.rawNote')}</p>
+          </article>
+
+          {/* Processed Reports */}
+          <article className="border border-steel/20 bg-concrete/40 p-5">
+            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+              {t('pricing.lifecycle.processedReports')}
+            </h3>
+            <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.processedDesc')}</p>
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">{t('pricing.lifecycle.allB2cLabel')}</span>
+                <span className="text-chalk">{t('pricing.lifecycle.processedB2cTier')}</span>
+              </div>
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">{t('pricing.lifecycle.b2bLabel')}</span>
+                <span className="text-chalk">{t('pricing.lifecycle.processedB2bTier')}</span>
+              </div>
+            </div>
+            <p className="text-steel/60 text-xs italic">{t('pricing.lifecycle.processedNote')}</p>
+          </article>
+
+          {/* Live Event Data */}
+          <article className="border border-steel/20 bg-concrete/40 p-5">
+            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+              {t('pricing.lifecycle.liveEvent')}
+            </h3>
+            <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.liveDesc')}</p>
+            <div className="space-y-2 mb-4">
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">{t('pricing.lifecycle.rawStreamLabel')}</span>
+                <span className="text-chalk">{t('pricing.lifecycle.liveStreamTier')}</span>
+              </div>
+              <div className="flex justify-between text-sm font-body">
+                <span className="text-steel">{t('pricing.lifecycle.summariesLabel')}</span>
+                <span className="text-chalk">{t('pricing.lifecycle.liveSummaryTier')}</span>
+              </div>
+            </div>
+            <p className="text-steel/60 text-xs italic">{t('pricing.lifecycle.liveNote')}</p>
+          </article>
+        </div>
+      </section>
+    </PageShell>
   );
 }

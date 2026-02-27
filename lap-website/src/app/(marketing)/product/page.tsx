@@ -1,112 +1,97 @@
+'use client';
+
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
-import { StructuredData } from '@/components/site/StructuredData';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
-
-const engineerViews = [
-  {
-    title: 'Key Corner Replay',
-    description: 'Replay entry, apex, and exit traces to spot where the lap was won or lost.',
-    image: '/images/screenshots/corner-replay.png',
-  },
-  {
-    title: 'Full-Screen Analysis Mode',
-    description: 'Review speed traces, G-G model context, and map overlays in one immersive view.',
-    image: '/images/screenshots/score-overview.png',
-  },
-];
-
-const strategistViews = [
-  {
-    title: 'Race Strategy Dashboard',
-    description: 'Live operational board for stint calls, pace deltas, and pit-window decisions.',
-    image: '/images/screenshots/dashboard-hero.png',
-  },
-  {
-    title: 'Track Map + Trace Context',
-    description: 'See speed traces on the track map so coaching points are instantly understandable.',
-    image: '/images/screenshots/lap-table.png',
-  },
-];
+import { useTranslation } from '@/i18n';
 
 export default function ProductPage() {
+  const { t } = useTranslation();
+
+  const engineerViews = [
+    {
+      titleKey: 'product.engineerView1Title',
+      descKey: 'product.engineerView1Desc',
+      image: '/images/screenshots/corner-replay.png',
+    },
+    {
+      titleKey: 'product.engineerView2Title',
+      descKey: 'product.engineerView2Desc',
+      image: '/images/screenshots/score-overview.png',
+    },
+  ];
+
+  const strategistViews = [
+    {
+      titleKey: 'product.strategistView1Title',
+      descKey: 'product.strategistView1Desc',
+      image: '/images/screenshots/dashboard-hero.png',
+    },
+    {
+      titleKey: 'product.strategistView2Title',
+      descKey: 'product.strategistView2Desc',
+      image: '/images/screenshots/lap-table.png',
+    },
+  ];
+
   return (
-    <>
-      <StructuredData
-        data={{
-          '@context': 'https://schema.org',
-          '@type': 'TechArticle',
-          headline: 'LAP: Engineer Mode + Strategist Mode',
-          about: [
-            'Engineer Mode — telemetry scoring, corner analysis, coaching',
-            'Strategist Mode — race strategy, live monitoring, pit planning',
-            'Dual-mode motorsport analytics platform',
-          ],
-          url: 'https://www.lap-coach.racing/product',
-        }}
-      />
-      <PageShell
-        eyebrow="Product"
-        title="Two Modes. One System."
-        description="Engineer Mode finds where you lose time. Strategist Mode plans how you gain it back. Data flows from one into the other."
-      >
-        <section className="mb-10">
-          <WorkflowCoverage />
-        </section>
+    <PageShell
+      eyebrow={t('product.eyebrow')}
+      title={t('product.title')}
+      description={t('product.description')}
+    >
+      <section className="mb-10">
+        <WorkflowCoverage />
+      </section>
 
-        <section className="mb-10">
-          <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">Engineer Mode</h2>
-          <p className="text-steel mb-4">Upload. Score. Coach. Compare. Visualize.</p>
-          <div className="grid md:grid-cols-2 gap-4">
-            {engineerViews.map((view) => (
-              <article key={view.title} className="border border-steel/20 bg-concrete/30 p-4">
-                <img src={view.image} alt={view.title} className="w-full h-52 object-cover mb-3 border border-steel/20" />
-                <ReversibleCard title={view.title} description={view.description} />
-              </article>
-            ))}
-          </div>
-        </section>
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">{t('product.engineerTitle')}</h2>
+        <p className="text-steel mb-4">{t('product.engineerSubtitle')}</p>
+        <div className="grid md:grid-cols-2 gap-4">
+          {engineerViews.map((view) => (
+            <article key={view.titleKey} className="border border-steel/20 bg-concrete/30 p-4">
+              <img src={view.image} alt={t(view.titleKey)} className="w-full h-52 object-cover mb-3 border border-steel/20" />
+              <ReversibleCard title={t(view.titleKey)} description={t(view.descKey)} />
+            </article>
+          ))}
+        </div>
+      </section>
 
-        <section className="mb-10">
-          <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">Strategist Mode</h2>
-          <p className="text-steel mb-4">Control Room. Live Monitoring. Pit Planning. Incidents.</p>
-          <div className="grid md:grid-cols-2 gap-4">
-            {strategistViews.map((view) => (
-              <article key={view.title} className="border border-steel/20 bg-concrete/30 p-4">
-                <img src={view.image} alt={view.title} className="w-full h-52 object-cover mb-3 border border-steel/20" />
-                <ReversibleCard title={view.title} description={view.description} />
-              </article>
-            ))}
-          </div>
-        </section>
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">{t('product.strategistTitle')}</h2>
+        <p className="text-steel mb-4">{t('product.strategistSubtitle')}</p>
+        <div className="grid md:grid-cols-2 gap-4">
+          {strategistViews.map((view) => (
+            <article key={view.titleKey} className="border border-steel/20 bg-concrete/30 p-4">
+              <img src={view.image} alt={t(view.titleKey)} className="w-full h-52 object-cover mb-3 border border-steel/20" />
+              <ReversibleCard title={t(view.titleKey)} description={t(view.descKey)} />
+            </article>
+          ))}
+        </div>
+      </section>
 
-        <section className="mb-10 border border-steel/20 bg-concrete/20 p-5">
-          <h2 className="font-monument text-[var(--text-h3)] mb-3">How They Connect</h2>
-          <p className="text-steel text-sm leading-relaxed">
-            Engineer Mode produces per-lap scores, corner diagnostics, and coaching
-            recommendations. That data feeds directly into Strategist Mode, where
-            stint plans, pit windows, and live pace deltas are built on top of the
-            same underlying telemetry. One upload powers both workflows — analysis
-            flows into strategy without re-importing or switching tools.
-          </p>
-        </section>
+      <section className="mb-10 border border-steel/20 bg-concrete/20 p-5">
+        <h2 className="font-monument text-[var(--text-h3)] mb-3">{t('product.connectTitle')}</h2>
+        <p className="text-steel text-sm leading-relaxed">
+          {t('product.connectBody')}
+        </p>
+      </section>
 
-        <section className="mt-10 border border-steel/20 p-5 bg-concrete/20">
-          <h2 className="font-monument text-[var(--text-h3)] mb-2">Next Actions</h2>
-          <div className="flex flex-wrap gap-3">
-            <Link href="/demo" className="border border-pit-orange px-4 py-2 text-sm">
-              Try Demo
-            </Link>
-            <Link href="/pricing" className="border border-steel/30 px-4 py-2 text-sm">
-              Compare Plans
-            </Link>
-            <Link href="/contact" className="border border-steel/30 px-4 py-2 text-sm">
-              Contact Sales
-            </Link>
-          </div>
-        </section>
-      </PageShell>
-    </>
+      <section className="mt-10 border border-steel/20 p-5 bg-concrete/20">
+        <h2 className="font-monument text-[var(--text-h3)] mb-2">{t('product.nextActions')}</h2>
+        <div className="flex flex-wrap gap-3">
+          <Link href="/demo" className="border border-pit-orange px-4 py-2 text-sm">
+            {t('cta.tryDemo')}
+          </Link>
+          <Link href="/pricing" className="border border-steel/30 px-4 py-2 text-sm">
+            {t('cta.comparePlans')}
+          </Link>
+          <Link href="/contact" className="border border-steel/30 px-4 py-2 text-sm">
+            {t('cta.contactSales')}
+          </Link>
+        </div>
+      </section>
+    </PageShell>
   );
 }

@@ -15,6 +15,7 @@ import {
   trackFormSubmitTiming,
 } from '@/lib/analytics';
 import { PitButton } from '@/components/ui/PitButton';
+import { useTranslation } from '@/i18n';
 
 interface LeadFormProps {
   type: LeadType;
@@ -46,6 +47,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const { t } = useTranslation();
 
   const [form, setForm] = useState<FormState>({
     name: '',
@@ -82,11 +84,11 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
     for (const field of requiredFields) {
       const value = form[field];
       if (!value || value.trim().length === 0) {
-        nextErrors[field] = 'Required';
+        nextErrors[field] = t('form.required');
       }
     }
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-      nextErrors.email = 'Invalid email';
+      nextErrors.email = t('form.invalidEmail');
     }
     setFieldErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
@@ -143,7 +145,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
     <form onSubmit={handleSubmit} className={`space-y-4 ${className}`} noValidate>
       <div>
         <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-name`}>
-          Name
+          {t('form.name')}
         </label>
         <input
           id={`${type}-name`}
@@ -157,7 +159,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
 
       <div>
         <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-email`}>
-          Email
+          {t('form.email')}
         </label>
         <input
           id={`${type}-email`}
@@ -173,7 +175,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
       {showCompany && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-company`}>
-            Company
+            {t('form.company')}
           </label>
           <input
             id={`${type}-company`}
@@ -190,7 +192,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
 
       <div>
         <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-phone`}>
-          Phone (optional)
+          {t('form.phone')}
         </label>
         <input
           id={`${type}-phone`}
@@ -204,7 +206,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
       {showPlan && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-plan`}>
-            Interested plan
+            {t('form.plan')}
           </label>
           <select
             id={`${type}-plan`}
@@ -213,7 +215,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
             onBlur={() => trackFormFieldBlur(type, 'plan')}
             className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
           >
-            <option value="">Select a plan</option>
+            <option value="">{t('form.planPlaceholder')}</option>
             {planOptions.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -226,7 +228,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
       {showSeats && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-seats`}>
-            Team size (optional)
+            {t('form.teamSize')}
           </label>
           <input
             id={`${type}-seats`}
@@ -240,7 +242,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
 
       <div>
         <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-persona`}>
-          Persona (optional)
+          {t('form.persona')}
         </label>
         <select
           id={`${type}-persona`}
@@ -249,18 +251,18 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           onBlur={() => trackFormFieldBlur(type, 'persona')}
           className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
         >
-          <option value="">Select a persona</option>
-          <option value="drivers">For Drivers</option>
-          <option value="circuits">For Circuits</option>
-          <option value="teams">For Teams</option>
-          <option value="endurance">For Endurance Programs</option>
+          <option value="">{t('form.personaPlaceholder')}</option>
+          <option value="drivers">{t('form.personaDrivers')}</option>
+          <option value="circuits">{t('form.personaCircuits')}</option>
+          <option value="teams">{t('form.personaTeams')}</option>
+          <option value="endurance">{t('form.personaEndurance')}</option>
         </select>
       </div>
 
       {showPreferredDate && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-date`}>
-            Preferred booking date
+            {t('form.preferredDate')}
           </label>
           <input
             id={`${type}-date`}
@@ -281,7 +283,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
       {showMessage && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-message`}>
-            {type === 'waitlist' ? 'What are you waiting for?' : 'How can we help?'}
+            {type === 'waitlist' ? t('form.messageWaitlist') : t('form.messageContact')}
           </label>
           <textarea
             id={`${type}-message`}
@@ -314,7 +316,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
       />
 
       <PitButton type="submit" className="w-full sm:w-auto">
-        {isSubmitting ? 'Submitting...' : submitLabel}
+        {isSubmitting ? t('form.submitting') : submitLabel}
       </PitButton>
     </form>
   );

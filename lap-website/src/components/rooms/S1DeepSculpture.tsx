@@ -5,14 +5,15 @@ import { MonumentText } from '@/components/ui/MonumentText';
 import { Tooltip } from '@/components/ui/Tooltip';
 import { TelemetryTraces } from '@/components/mechanisms/TelemetryTraces';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
-import { s1Deep } from '@/data/copy';
 import { colors } from '@/lib/tokens';
 import { useGpuCapability } from '@/hooks/useGpuCapability';
 import { trackS1DeepTraceHover } from '@/lib/analytics';
+import { useTranslation } from '@/i18n';
 
 export function S1DeepSculpture() {
   const [hoveredTrace, setHoveredTrace] = useState<string | null>(null);
   const { hasWebGL } = useGpuCapability();
+  const { t } = useTranslation();
 
   const handleTraceHover = useCallback((trace: string | null) => {
     setHoveredTrace(trace);
@@ -20,9 +21,9 @@ export function S1DeepSculpture() {
   }, []);
 
   const tooltipMap: Record<string, string> = {
-    speed: s1Deep.tooltips.speed,
-    brake: s1Deep.tooltips.brake,
-    steering: s1Deep.tooltips.steering,
+    speed: t('home.deep.tooltipSpeed'),
+    brake: t('home.deep.tooltipBrake'),
+    steering: t('home.deep.tooltipSteering'),
   };
 
   return (
@@ -35,7 +36,7 @@ export function S1DeepSculpture() {
       <div className="grid-lap">
         <div className="col-span-full text-center mb-8">
           <MonumentText size="h1" as="h2" reveal>
-            {s1Deep.monument}
+            {t('home.deep.monument')}
           </MonumentText>
         </div>
 
@@ -50,14 +51,14 @@ export function S1DeepSculpture() {
 
         <div className="col-span-full">
           <ReversibleCard
-            title="Telemetry Made Actionable"
-            description={s1Deep.body}
+            title={t('home.deep.cardTitle')}
+            description={t('home.deep.body')}
             className="max-w-2xl mx-auto mb-6"
           />
 
           {/* Trace legend with tooltips */}
           <div className="flex flex-wrap justify-center gap-6">
-            <Tooltip content={s1Deep.tooltips.speed}>
+            <Tooltip content={t('home.deep.tooltipSpeed')}>
               <span
                 className="font-telemetry cursor-help flex items-center gap-2"
                 style={{ color: hoveredTrace === 'speed' ? colors.chalk : colors.steel }}
@@ -65,10 +66,10 @@ export function S1DeepSculpture() {
                 onMouseLeave={() => handleTraceHover(null)}
               >
                 <span className="w-4 h-0.5 inline-block" style={{ background: colors.chalk }} />
-                SPEED
+                {t('home.deep.labelSpeed')}
               </span>
             </Tooltip>
-            <Tooltip content={s1Deep.tooltips.brake}>
+            <Tooltip content={t('home.deep.tooltipBrake')}>
               <span
                 className="font-telemetry cursor-help flex items-center gap-2"
                 style={{ color: hoveredTrace === 'brake' ? colors.safetyRed : colors.steel }}
@@ -76,10 +77,10 @@ export function S1DeepSculpture() {
                 onMouseLeave={() => handleTraceHover(null)}
               >
                 <span className="w-4 h-0.5 inline-block" style={{ background: colors.safetyRed }} />
-                BRAKE
+                {t('home.deep.labelBrake')}
               </span>
             </Tooltip>
-            <Tooltip content={s1Deep.tooltips.steering}>
+            <Tooltip content={t('home.deep.tooltipSteering')}>
               <span
                 className="font-telemetry cursor-help flex items-center gap-2"
                 style={{ color: hoveredTrace === 'steering' ? colors.steel : colors.steel }}
@@ -87,7 +88,7 @@ export function S1DeepSculpture() {
                 onMouseLeave={() => handleTraceHover(null)}
               >
                 <span className="w-4 h-0.5 inline-block" style={{ background: colors.steel }} />
-                STEERING
+                {t('home.deep.labelSteering')}
               </span>
             </Tooltip>
           </div>

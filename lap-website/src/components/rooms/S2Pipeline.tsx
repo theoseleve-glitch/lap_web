@@ -4,15 +4,16 @@ import { useState, useRef, useEffect } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PipelineBlocks } from '@/components/mechanisms/PipelineBlocks';
 import { RadioCard } from '@/components/ui/RadioCard';
-import { s2Pipeline } from '@/data/copy';
 import { trackS2PipelineComplete } from '@/lib/analytics';
 import { useKernelStore } from '@/experience/state/store';
+import { useTranslation } from '@/i18n';
 
 export function S2Pipeline() {
   const [progress, setProgress] = useState(0);
   const sectionRef = useRef<HTMLElement>(null);
   const trackedComplete = useRef(false);
   const activateDrs = useKernelStore((s) => s.activateDrs);
+  const { t } = useTranslation();
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -54,7 +55,7 @@ export function S2Pipeline() {
         <div className="grid-lap">
           <div className="col-span-full text-center mb-12">
             <MonumentText size="h2" as="h2" reveal>
-              {s2Pipeline.monument}
+              {t('home.pipeline.monument')}
             </MonumentText>
           </div>
 
@@ -63,8 +64,8 @@ export function S2Pipeline() {
           </div>
 
           <div className="col-span-full max-w-xl mx-auto">
-            <RadioCard label="PIPELINE OUTCOME">
-              {s2Pipeline.body}
+            <RadioCard label={t('home.pipeline.label')}>
+              {t('home.pipeline.body')}
             </RadioCard>
           </div>
         </div>

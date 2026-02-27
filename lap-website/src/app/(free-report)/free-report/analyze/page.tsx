@@ -6,11 +6,11 @@ import { useRouter } from 'next/navigation';
 // api-client no longer used here — direct fetch to backend
 import { FormField } from '@/components/app';
 import Link from 'next/link';
+import { useTranslation } from '@/i18n';
 
 type Step = 1 | 2 | 3;
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-const SESSION_TYPES = ['Practice', 'Qualifying', 'Race', 'Test'] as const;
 
 interface AnalysisJob {
   job_id: string;
@@ -22,6 +22,7 @@ interface AnalysisJob {
 
 export default function FreeReportAnalyzePage() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -32,7 +33,7 @@ export default function FreeReportAnalyzePage() {
   // Step 2
   const [driverName, setDriverName] = useState('');
   const [trackName, setTrackName] = useState('');
-  const [sessionType, setSessionType] = useState<string>(SESSION_TYPES[0]);
+  const [sessionType, setSessionType] = useState<string>('Practice');
 
   // Step 3
   const [jobId, setJobId] = useState<string | null>(null);
@@ -41,6 +42,13 @@ export default function FreeReportAnalyzePage() {
   // One-report limit
   const [alreadyUsed, setAlreadyUsed] = useState(false);
   const [existingSessionId, setExistingSessionId] = useState<string | null>(null);
+
+  const sessionTypeKeys: { key: string; value: string }[] = [
+    { key: 'freeReport.sessionPractice', value: 'Practice' },
+    { key: 'freeReport.sessionQualifying', value: 'Qualifying' },
+    { key: 'freeReport.sessionRace', value: 'Race' },
+    { key: 'freeReport.sessionTest', value: 'Test' },
+  ];
 
   useEffect(() => {
     try {
@@ -125,9 +133,9 @@ export default function FreeReportAnalyzePage() {
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);
-      setJobStatus({ job_id: result.job_id, status: 'pending', progress: 0, message: 'Starting analysis...' });
+      setJobStatus({ job_id: result.job_id, status: 'pending', progress: 0, message: t('freeReport.startingAnalysis') });
     } catch {
-      setJobStatus({ job_id: '', status: 'failed', progress: 0, message: 'Failed to start analysis' });
+      setJobStatus({ job_id: '', status: 'failed', progress: 0, message: t('freeReport.failedToStart') });
     }
   };
 
@@ -138,9 +146,9 @@ export default function FreeReportAnalyzePage() {
         <div className="w-16 h-16 rounded-full bg-pit-orange/20 flex items-center justify-center mx-auto mb-4">
           <span className="text-pit-orange font-monument text-2xl">1</span>
         </div>
-        <h2 className="font-monument text-xl text-chalk mb-2">FREE REPORT ALREADY USED</h2>
+        <h2 className="font-monument text-xl text-chalk mb-2">{t('freeReport.alreadyUsedTitle')}</h2>
         <p className="text-steel font-body mb-6 max-w-md mx-auto">
-          You&apos;ve already generated your free report. Upgrade to Performance to analyze unlimited sessions.
+          {t('freeReport.alreadyUsedDesc')}
         </p>
         <div className="flex gap-3 justify-center">
           {existingSessionId && (
@@ -148,14 +156,14 @@ export default function FreeReportAnalyzePage() {
               href={`/free-report/report/${existingSessionId}`}
               className="px-5 py-2.5 bg-concrete border border-steel/30 text-chalk font-telemetry text-sm rounded hover:bg-asphalt/50 transition-colors"
             >
-              View Your Report
+              {t('freeReport.viewReport')}
             </Link>
           )}
           <Link
             href="/pricing"
             className="px-5 py-2.5 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
           >
-            Upgrade Now
+            {t('freeReport.upgradeNow')}
           </Link>
         </div>
       </div>
@@ -165,14 +173,14 @@ export default function FreeReportAnalyzePage() {
   return (
     <div>
       <div className="text-center mb-8">
-        <h1 className="font-monument text-3xl text-chalk tracking-tight mb-2">YOUR FREE REPORT</h1>
-        <p className="text-steel font-body">Upload your telemetry CSV and get instant analysis</p>
+        <h1 className="font-monument text-3xl text-chalk tracking-tight mb-2">{t('freeReport.heading')}</h1>
+        <p className="text-steel font-body">{t('freeReport.subheading')}</p>
       </div>
 
       {/* Step 1: Upload */}
       {step === 1 && (
         <div className="bg-concrete rounded-lg border border-steel/20 p-6 max-w-2xl mx-auto">
-          <h2 className="font-body text-chalk text-lg mb-4">Upload Your Data</h2>
+          <h2 className="font-body text-chalk text-lg mb-4">{t('freeReport.step1Title')}</h2>
 
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -182,13 +190,13 @@ export default function FreeReportAnalyzePage() {
               dragOver ? 'border-acid-green bg-acid-green/5' : 'border-steel/30'
             }`}
           >
-            <p className="text-steel font-body mb-2">Drop your RaceChrono or RaceBox CSV here</p>
+            <p className="text-steel font-body mb-2">{t('freeReport.dropHint')}</p>
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
               className="px-5 py-2.5 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
             >
-              Choose File
+              {t('freeReport.chooseFile')}
             </button>
             <input
               ref={fileInputRef}
@@ -210,13 +218,13 @@ export default function FreeReportAnalyzePage() {
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <span className="text-steel font-telemetry text-xs mt-1">Uploading...</span>
+              <span className="text-steel font-telemetry text-xs mt-1">{t('freeReport.uploading')}</span>
             </div>
           )}
 
           {selectedFile && (
             <div className="mt-4 p-3 bg-acid-green/5 border border-acid-green/20 rounded text-acid-green font-telemetry text-sm">
-              Selected: {selectedFile}
+              {t('freeReport.selected')} {selectedFile}
             </div>
           )}
 
@@ -227,7 +235,7 @@ export default function FreeReportAnalyzePage() {
               onClick={() => setStep(2)}
               className="px-6 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-acid-green/80 transition-colors"
             >
-              Next: Configure
+              {t('freeReport.nextConfigure')}
             </button>
           </div>
         </div>
@@ -236,41 +244,41 @@ export default function FreeReportAnalyzePage() {
       {/* Step 2: Configure */}
       {step === 2 && (
         <div className="bg-concrete rounded-lg border border-steel/20 p-6 max-w-2xl mx-auto">
-          <h2 className="font-body text-chalk text-lg mb-4">Session Details</h2>
+          <h2 className="font-body text-chalk text-lg mb-4">{t('freeReport.step2Title')}</h2>
 
           <div className="mb-3 p-3 bg-asphalt/50 rounded border border-steel/20 flex items-center gap-2">
-            <span className="text-steel">File:</span>
+            <span className="text-steel">{t('freeReport.fileLabel')}</span>
             <span className="text-acid-green font-telemetry text-sm">{selectedFile}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
-                Session Type
+                {t('freeReport.sessionType')}
               </label>
               <select
                 value={sessionType}
                 onChange={(e) => setSessionType(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"
               >
-                {SESSION_TYPES.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {sessionTypeKeys.map((st) => (
+                  <option key={st.value} value={st.value}>{t(st.key)}</option>
                 ))}
               </select>
             </div>
 
             <FormField
-              label="Driver Name"
+              label={t('freeReport.driverName')}
               type="text"
-              placeholder="Your name (optional)"
+              placeholder={t('freeReport.driverPlaceholder')}
               value={driverName}
               onChange={(e) => setDriverName(e.target.value)}
             />
 
             <FormField
-              label="Track / Circuit"
+              label={t('freeReport.trackName')}
               type="text"
-              placeholder="Auto-detected if possible"
+              placeholder={t('freeReport.trackPlaceholder')}
               value={trackName}
               onChange={(e) => setTrackName(e.target.value)}
             />
@@ -282,14 +290,14 @@ export default function FreeReportAnalyzePage() {
               onClick={() => setStep(1)}
               className="px-4 py-2 text-steel font-telemetry text-sm hover:text-chalk transition-colors"
             >
-              Back
+              {t('freeReport.back')}
             </button>
             <button
               type="button"
               onClick={handleSubmit}
               className="px-6 py-2.5 bg-acid-green text-asphalt font-monument text-sm tracking-wider rounded hover:bg-acid-green/80 transition-colors"
             >
-              Start Analysis
+              {t('freeReport.startAnalysis')}
             </button>
           </div>
         </div>
@@ -304,7 +312,7 @@ export default function FreeReportAnalyzePage() {
                 <div className="w-16 h-16 rounded-full bg-acid-green/20 flex items-center justify-center mb-4">
                   <span className="text-acid-green text-3xl">✓</span>
                 </div>
-                <p className="text-chalk font-body text-lg mb-2">Analysis Complete</p>
+                <p className="text-chalk font-body text-lg mb-2">{t('freeReport.analysisComplete')}</p>
                 <p className="text-steel font-body text-sm mb-6">{jobStatus.message}</p>
                 <button
                   type="button"
@@ -317,7 +325,7 @@ export default function FreeReportAnalyzePage() {
                   }
                   className="px-6 py-2.5 bg-acid-green text-asphalt font-monument text-sm tracking-wider rounded hover:bg-acid-green/80 transition-colors"
                 >
-                  View Your Report
+                  {t('freeReport.viewReport')}
                 </button>
               </>
             ) : jobStatus?.status === 'failed' ? (
@@ -325,7 +333,7 @@ export default function FreeReportAnalyzePage() {
                 <div className="w-16 h-16 rounded-full bg-safety-red/20 flex items-center justify-center mb-4">
                   <span className="text-safety-red text-3xl">✗</span>
                 </div>
-                <p className="text-chalk font-body text-lg mb-2">Analysis Failed</p>
+                <p className="text-chalk font-body text-lg mb-2">{t('freeReport.analysisFailed')}</p>
                 <p className="text-safety-red font-body text-sm mb-6">{jobStatus.message}</p>
                 <button
                   type="button"
@@ -336,14 +344,14 @@ export default function FreeReportAnalyzePage() {
                   }}
                   className="px-4 py-2 text-steel font-telemetry text-sm hover:text-chalk transition-colors"
                 >
-                  Try Again
+                  {t('freeReport.tryAgain')}
                 </button>
               </>
             ) : (
               <>
                 <div className="w-12 h-12 border-3 border-steel/30 border-t-acid-green rounded-full animate-spin mb-4" />
                 <p className="text-chalk font-body mb-2">
-                  {jobStatus?.message ?? 'Starting analysis...'}
+                  {jobStatus?.message ?? t('freeReport.startingAnalysis')}
                 </p>
                 <div className="w-full max-w-md">
                   <div className="w-full bg-steel/20 rounded-full h-2 mb-1">

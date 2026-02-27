@@ -6,6 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
 import { useAuth } from '@/hooks/useAuth';
 import { OAuthButtons } from '@/components/auth/OAuthButtons';
+import { useTranslation } from '@/i18n';
 
 function RegisterForm() {
   const [displayName, setDisplayName] = useState('');
@@ -16,17 +17,18 @@ function RegisterForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') ?? '/app/dashboard';
   const { register, loading, error } = useAuth();
+  const { t } = useTranslation();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setValidationError(null);
 
     if (password !== confirmPassword) {
-      setValidationError('Passwords do not match');
+      setValidationError(t('auth.register.passwordMismatch'));
       return;
     }
     if (password.length < 8) {
-      setValidationError('Password must be at least 8 characters');
+      setValidationError(t('auth.register.passwordTooShort'));
       return;
     }
 
@@ -37,7 +39,7 @@ function RegisterForm() {
 
   return (
     <div>
-      <h1 className="font-monument text-2xl text-chalk mb-6 text-center">Create Account</h1>
+      <h1 className="font-monument text-2xl text-chalk mb-6 text-center">{t('auth.register.title')}</h1>
 
       {displayError && (
         <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 rounded">
@@ -47,35 +49,35 @@ function RegisterForm() {
 
       <form onSubmit={handleSubmit}>
         <FormField
-          label="Display Name"
+          label={t('auth.register.displayName')}
           type="text"
-          placeholder="Your name"
+          placeholder={t('auth.register.displayNamePlaceholder')}
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
           required
         />
         <FormField
-          label="Email"
+          label={t('auth.register.email')}
           type="email"
-          placeholder="driver@example.com"
+          placeholder={t('auth.register.emailPlaceholder')}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
         />
         <FormField
-          label="Password"
+          label={t('auth.register.password')}
           type="password"
-          placeholder="Minimum 8 characters"
+          placeholder={t('auth.register.passwordPlaceholder')}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
           autoComplete="new-password"
         />
         <FormField
-          label="Confirm Password"
+          label={t('auth.register.confirmPassword')}
           type="password"
-          placeholder="Re-enter password"
+          placeholder={t('auth.register.confirmPlaceholder')}
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
@@ -88,7 +90,7 @@ function RegisterForm() {
           className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
             rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Creating account...' : 'Create Account'}
+          {loading ? t('auth.register.submitting') : t('auth.register.submit')}
         </button>
       </form>
 
@@ -96,9 +98,9 @@ function RegisterForm() {
 
       <div className="mt-6 text-center">
         <p className="text-steel font-body text-sm">
-          Already have an account?{' '}
+          {t('auth.register.hasAccount')}{' '}
           <Link href="/login" className="text-pit-orange hover:underline">
-            Sign in
+            {t('auth.register.signIn')}
           </Link>
         </p>
       </div>

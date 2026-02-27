@@ -6,13 +6,14 @@ import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 import { RadioCard } from '@/components/ui/RadioCard';
 import { CornerDrag } from '@/components/mechanisms/CornerDrag';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
-import { s1Pain } from '@/data/copy';
 import { colors } from '@/lib/tokens';
 import { trackS1CornerInteract } from '@/lib/analytics';
+import { useTranslation } from '@/i18n';
 
 export function S1Pain() {
   const [delta, setDelta] = useState(0);
   const [hasInteracted, setHasInteracted] = useState(false);
+  const { t } = useTranslation();
 
   const handleDeltaChange = useCallback((newDelta: number) => {
     setDelta(newDelta);
@@ -32,32 +33,32 @@ export function S1Pain() {
       <div className="grid-lap">
         <div className="col-span-full md:col-span-6 flex flex-col justify-center gap-6">
           <MonumentText size="h1" as="h2" reveal>
-            {s1Pain.monument[0]}<br />{s1Pain.monument[1]}
+            {t('home.pain.monument1')}<br />{t('home.pain.monument2')}
           </MonumentText>
 
           <ReversibleCard
-            title="Where Time Is Lost"
-            description={s1Pain.body}
+            title={t('home.pain.cardTitle')}
+            description={t('home.pain.body')}
             className="max-w-lg"
           />
 
           <div className="flex flex-col gap-2 mt-2">
             <RadioCard label="ENTRY">
-              {s1Pain.tooltips.entry}
+              {t('home.pain.tooltipEntry')}
             </RadioCard>
             <RadioCard label="APEX">
-              {s1Pain.tooltips.apex}
+              {t('home.pain.tooltipApex')}
             </RadioCard>
             <RadioCard label="EXIT">
-              {s1Pain.tooltips.exit}
+              {t('home.pain.tooltipExit')}
             </RadioCard>
           </div>
 
           {hasInteracted && (
             <div className="mt-4">
               <ScrutineeringStamp
-                label={s1Pain.stamp.label}
-                detail={s1Pain.stamp.detail}
+                label={t('home.pain.stampLabel')}
+                detail={t('home.pain.stampDetail')}
                 variant="slam"
               />
             </div>
@@ -78,7 +79,7 @@ export function S1Pain() {
           </div>
 
           <p className="font-telemetry text-steel text-center">
-            DRAG THE POINTS // FIND THE LINE
+            {t('home.pain.dragHint')}
           </p>
         </div>
       </div>

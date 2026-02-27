@@ -3,10 +3,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { StartLights } from '@/components/mechanisms/StartLights';
-import { startGrid } from '@/data/copy';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { trackStartGridHold, trackStartGridComplete } from '@/lib/analytics';
 import { colors } from '@/lib/tokens';
+import { useTranslation } from '@/i18n';
 
 export function StartGrid() {
   const [launched, setLaunched] = useState(false);
@@ -14,6 +14,7 @@ export function StartGrid() {
   const holdStartRef = useRef(0);
   const scrollIntentRef = useRef(0);
   const { reducedMotion } = useReducedMotion();
+  const { t } = useTranslation();
 
   const handleComplete = useCallback(async () => {
     if (launched) return;
@@ -68,16 +69,16 @@ export function StartGrid() {
       <div className="grid-lap">
         <div className="col-span-full flex flex-col items-center justify-center text-center gap-8 md:gap-12">
           <MonumentText size="xl" as="h1" className="text-center">
-            EVERY{' '}
+            {t('home.startGrid.heading1')}{' '}
             <span
               style={{
                 color: colors.safetyRed,
                 textShadow: `0 0 20px ${colors.safetyRed}80, 0 0 50px ${colors.safetyRed}40`,
               }}
             >
-              LAP
+              {t('home.startGrid.heading2')}
             </span>
-            <br />HAS A SECRET
+            <br />{t('home.startGrid.heading3')}
           </MonumentText>
 
           {!launched && (
@@ -87,10 +88,10 @@ export function StartGrid() {
                 reducedMotion={reducedMotion}
               />
               <p className="font-telemetry text-steel text-sm md:text-base tracking-widest animate-pulse">
-                {startGrid.instruction}
+                {t('home.startGrid.instruction')}
               </p>
               <p className="font-telemetry text-steel/50 text-xs tracking-widest">
-                OR SCROLL DOWN TO SKIP
+                {t('home.startGrid.scrollHint')}
               </p>
             </>
           )}

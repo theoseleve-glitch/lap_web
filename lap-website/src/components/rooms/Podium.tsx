@@ -4,15 +4,16 @@ import { useState, useEffect, useRef } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PitButton } from '@/components/ui/PitButton';
 import { StampButton } from '@/components/ui/StampButton';
-import { podium } from '@/data/copy';
 import { trackCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
 import { getVariantForKey } from '@/lib/experiments';
+import { useTranslation } from '@/i18n';
 
 export function Podium() {
   const [showRestart, setShowRestart] = useState(false);
   const [ctaVariant, setCtaVariant] = useState<'demo_first' | 'book_first'>('demo_first');
   const trackedRef = useRef(false);
   const startTimeRef = useRef(Date.now());
+  const { t } = useTranslation();
 
   useEffect(() => {
     const variant = getVariantForKey('cta', 'demo_first');
@@ -60,7 +61,7 @@ export function Podium() {
       <div className="grid-lap">
         <div className="col-span-full flex flex-col items-center justify-center text-center gap-8">
           <MonumentText size="xl" as="h2" reveal>
-            {podium.monument[0]}<br />{podium.monument[1]}
+            {t('home.podium.monument1')}<br />{t('home.podium.monument2')}
           </MonumentText>
 
           <div className="flex flex-col sm:flex-row items-center gap-4">
@@ -70,13 +71,13 @@ export function Podium() {
                   href="/book"
                   onClick={() => trackCtaClick('book', 'podium', 'mixed')}
                 >
-                  BOOK NOW
+                  {t('cta.bookNow')}
                 </PitButton>
                 <StampButton
                   href="/demo"
                   onClick={() => trackCtaClick('try_demo', 'podium', 'mixed')}
                 >
-                  {podium.ctaPrimary}
+                  {t('cta.tryDemo')}
                 </StampButton>
               </>
             ) : (
@@ -85,20 +86,20 @@ export function Podium() {
                   href="/register?source=free-report&redirect=/free-report/analyze"
                   onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
                 >
-                  START FREE REPORT
+                  {t('cta.startFreeReport')}
                 </PitButton>
                 <StampButton
                   href="/contact"
                   onClick={() => trackCtaClick('talk', 'podium', 'b2b')}
                 >
-                  {podium.ctaSecondary}
+                  {t('cta.talkToSales')}
                 </StampButton>
               </>
             )}
           </div>
 
           <p className="font-telemetry text-steel max-w-lg">
-            {podium.subtext}
+            {t('home.podium.subtext')}
           </p>
 
           {showRestart && (
@@ -106,7 +107,7 @@ export function Podium() {
               className="font-telemetry text-steel/50 hover:text-steel transition-opacity duration-[420ms] mt-8"
               onClick={handleRestart}
             >
-              {podium.restart}
+              {t('home.podium.restart')}
             </button>
           )}
         </div>

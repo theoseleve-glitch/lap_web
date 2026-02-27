@@ -2,17 +2,25 @@
 
 import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { garage } from '@/data/copy';
 import { trackGaragePanelExpand } from '@/lib/analytics';
+import { useTranslation } from '@/i18n';
 
 export function Garage() {
   const [openPanel, setOpenPanel] = useState<number | null>(null);
+  const { t } = useTranslation();
+
+  const panels = [
+    { titleKey: 'home.garage.stackTitle', contentKey: 'home.garage.stackContent' },
+    { titleKey: 'home.garage.dataTitle', contentKey: 'home.garage.dataContent' },
+    { titleKey: 'home.garage.methodTitle', contentKey: 'home.garage.methodContent' },
+    { titleKey: 'home.garage.privacyTitle', contentKey: 'home.garage.privacyContent' },
+  ];
 
   const togglePanel = useCallback((index: number) => {
     const next = openPanel === index ? null : index;
     setOpenPanel(next);
-    if (next !== null) trackGaragePanelExpand(garage.panels[next].title);
-  }, [openPanel]);
+    if (next !== null) trackGaragePanelExpand(t(panels[next].titleKey));
+  }, [openPanel, t, panels]);
 
   return (
     <section
@@ -32,22 +40,22 @@ export function Garage() {
       <div className="grid-lap">
         <div className="col-span-full text-center mb-4">
           <MonumentText size="h1" as="h2">
-            {garage.monument}
+            {t('home.garage.monument')}
           </MonumentText>
         </div>
         <div className="col-span-full text-center mb-12">
-          <p className="font-telemetry text-steel">{garage.subhead}</p>
+          <p className="font-telemetry text-steel">{t('home.garage.subhead')}</p>
         </div>
 
         <div className="col-span-full max-w-3xl mx-auto">
-          {garage.panels.map((panel, i) => (
-            <div key={panel.title} className="border-b border-steel/20">
+          {panels.map((panel, i) => (
+            <div key={panel.titleKey} className="border-b border-steel/20">
               <button
                 className="w-full flex items-center justify-between py-4 text-left font-monument text-[var(--text-h3)] hover:text-chalk transition-colors duration-300"
                 onClick={() => togglePanel(i)}
                 aria-expanded={openPanel === i}
               >
-                {panel.title}
+                {t(panel.titleKey)}
                 <span
                   className="text-steel text-xl transition-transform duration-[420ms]"
                   style={{ transform: openPanel === i ? 'rotate(45deg)' : 'rotate(0deg)' }}
@@ -61,7 +69,7 @@ export function Garage() {
               >
                 <div className="overflow-hidden">
                   <div className="pb-6 font-telemetry text-steel text-[11px] tracking-[0.12em] leading-relaxed whitespace-pre-line">
-                    {panel.content}
+                    {t(panel.contentKey)}
                   </div>
                 </div>
               </div>
