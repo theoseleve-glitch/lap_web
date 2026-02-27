@@ -2054,6 +2054,7 @@ def run_full_analysis(
         return score_mod.score_session(
             m, theo_metrics, meta.get("session_type", "practice"),
             is_wet=_is_wet,
+            corner_coaching=_corner_coaching,
         )
 
     score_result, err = _safe_step("13_score_session", _score)
