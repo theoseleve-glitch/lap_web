@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 24
+SCHEMA_VERSION = 25
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -292,15 +292,18 @@ PHASE_3_TABLES: list[tuple[str, str]] = [
 
 _THEORETICAL_DATA_TABLE = """
 CREATE TABLE IF NOT EXISTS theoretical_data (
-    session_id          TEXT PRIMARY KEY REFERENCES sessions(session_id),
-    theoretical_time_s  REAL,
-    actual_best_time_s  REAL,
-    gap_pct             REAL,
-    simulation_method   TEXT,
-    speed_profile_json  TEXT,
-    distance_json       TEXT,
-    metrics_json        TEXT,
-    created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    session_id             TEXT PRIMARY KEY REFERENCES sessions(session_id),
+    theoretical_time_s     REAL,
+    actual_best_time_s     REAL,
+    gap_pct                REAL,
+    simulation_method      TEXT,
+    speed_profile_json     TEXT,
+    distance_json          TEXT,
+    metrics_json           TEXT,
+    corner_coaching_json   TEXT,
+    delta_map_json         TEXT,
+    session_scalars_json   TEXT,
+    created_at             TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
@@ -925,5 +928,32 @@ PHASE_17_TABLES: list[tuple[str, str]] = [
     ("race_rival_events",    _RACE_RIVAL_EVENTS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 18 tables — weather per lap
+# ------------------------------------------------------------------
+
+_SESSION_WEATHER_LAPS_TABLE = """
+CREATE TABLE IF NOT EXISTS session_weather_laps (
+    session_id      TEXT    NOT NULL,
+    lap_number      INTEGER NOT NULL,
+    timestamp       TEXT,
+    air_temp_c      REAL,
+    humidity_pct    REAL,
+    wind_speed_mps  REAL,
+    wind_dir_deg    REAL,
+    rain_mm         REAL,
+    cloud_cover_pct REAL,
+    weather_code    INTEGER,
+    grip_score      REAL,
+    track_state     TEXT,
+    track_temp_est_c REAL,
+    PRIMARY KEY (session_id, lap_number)
+);
+"""
+
+PHASE_18_TABLES: list[tuple[str, str]] = [
+    ("session_weather_laps", _SESSION_WEATHER_LAPS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES
