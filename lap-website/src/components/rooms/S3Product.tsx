@@ -9,21 +9,18 @@ export function S3Product() {
 
   const strategistPanels = [
     {
-      position: 0,
       label: t('home.product.strategistTile1Label'),
       description: t('home.product.strategistTile1Detail'),
       image: '/images/screenshots/dashboard-hero.png',
       alt: 'Race strategy dashboard with stint and pit planning widgets',
     },
     {
-      position: 1,
       label: t('home.product.strategistTile2Label'),
       description: t('home.product.strategistTile2Detail'),
       image: '/images/screenshots/lap-table.png',
       alt: 'Live lap table with pace deltas and stint progress indicators',
     },
     {
-      position: 2,
       label: t('home.product.strategistTile3Label'),
       description: t('home.product.strategistTile3Detail'),
       image: '/images/screenshots/dashboard-hero.png',
@@ -69,7 +66,7 @@ export function S3Product() {
               {t('home.product.engineerTagline')}
             </p>
 
-            <ReportScrubber className="mb-6" />
+            <ReportScrubber className="mb-6" accentColor="var(--color-acid-green)" />
 
             <div className="space-y-3">
               {engineerTiles.map((tile) => (
@@ -97,6 +94,7 @@ export function S3Product() {
               className="mb-6"
               panels={strategistPanels}
               ariaLabel="Scrub through strategist views"
+              accentColor="var(--color-pit-orange)"
             />
 
             <div className="space-y-3">
