@@ -34,6 +34,7 @@ interface FormState {
   seats: string;
   preferredDate: string;
   website: string;
+  challengeToken: string;
 }
 
 function requiredFieldsFor(type: LeadType): Array<keyof FormState> {
@@ -60,6 +61,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
     seats: '',
     preferredDate: '',
     website: '',
+    challengeToken: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitError, setSubmitError] = useState<string>('');
@@ -114,6 +116,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           sourcePath,
           utm: getAttributionFromCookie(),
           sessionId: getSessionIdFromCookie(),
+          challengeToken: form.challengeToken,
         }),
       });
 
@@ -304,6 +307,15 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
           {submitError}
         </div>
       )}
+
+
+      <input
+        type="hidden"
+        value={form.challengeToken}
+        onChange={(event) =>
+          setForm((prev) => ({ ...prev, challengeToken: event.target.value }))
+        }
+      />
 
       <input
         aria-hidden="true"
