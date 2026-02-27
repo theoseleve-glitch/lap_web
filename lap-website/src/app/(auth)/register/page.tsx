@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
-import { register } from '@/lib/auth';
+import { register, login, storeTokens } from '@/lib/auth';
 
 export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
@@ -14,6 +14,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +31,14 @@ export default function RegisterPage() {
     setError(null);
     try {
       await register(email, password, displayName);
-      router.push('/login?registered=true');
+
+      // Auto-login after registration
+      const loginResult = await login(email, password);
+      storeTokens(loginResult.access_token, loginResult.refresh_token);
+
+      // Redirect to specified destination or default
+      const redirect = searchParams.get('redirect');
+      router.push(redirect ?? '/login?registered=true');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed');
     } finally {

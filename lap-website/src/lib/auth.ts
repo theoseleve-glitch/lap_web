@@ -39,3 +39,15 @@ export async function logout(): Promise<void> {
 export async function refreshToken(): Promise<{ access_token: string }> {
   return api.post<{ access_token: string }>('/auth/refresh');
 }
+
+/** Store auth tokens in localStorage */
+export function storeTokens(accessToken: string, refreshToken: string) {
+  localStorage.setItem('lap_access_token', accessToken);
+  localStorage.setItem('lap_refresh_token', refreshToken);
+}
+
+/** Clear stored auth tokens */
+export function clearTokens() {
+  localStorage.removeItem('lap_access_token');
+  localStorage.removeItem('lap_refresh_token');
+}
