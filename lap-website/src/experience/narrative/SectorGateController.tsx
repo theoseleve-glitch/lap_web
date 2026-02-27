@@ -44,7 +44,8 @@ export function SectorGateController() {
     // Pit mode
     if (path.type === 'pit-lane') {
       setPitMode(true);
-    } else if (getChapterPath(prevChapterRef.current).type === 'pit-lane' && path.type !== 'pit-lane') {
+    } else if (getChapterPath(prevChapterRef.current).type === 'pit-lane') {
+      // Exiting pit-lane — path.type is already not 'pit-lane' in this branch
       setPitMode(false);
     }
 
