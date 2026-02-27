@@ -170,6 +170,7 @@ export async function POST(request: Request) {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { challengeToken: _challengeToken, ...deliverablePayload } = payload;
 
   const delivery = await deliverLead(deliverablePayload);

@@ -83,7 +83,7 @@ export function isDuplicateLead(params: {
   const normalizedEmail = params.email.trim().toLowerCase();
   const key = `${normalizedEmail}:${params.type}:${keyBucket(now, DEDUPE_WINDOW_MS)}`;
 
-  for (const [storedKey, timestamp] of dedupeHits.entries()) {
+  for (const [storedKey, timestamp] of Array.from(dedupeHits.entries())) {
     if (timestamp < now - DEDUPE_WINDOW_MS) {
       dedupeHits.delete(storedKey);
     }
