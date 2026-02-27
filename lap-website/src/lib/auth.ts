@@ -41,10 +41,50 @@ async function authFetch<T>(path: string, body?: unknown): Promise<T> {
   return envelope.data;
 }
 
-export async function login(email: string, password: string): Promise<LoginResponse> {
-  const result = await authFetch<LoginResponse>('/login', { email, password });
+export interface TwoFaRequired {
+  requires_2fa: true;
+  temp_token: string;
+}
+
+/** Login can return either normal tokens or a 2FA challenge. */
+export type LoginResult = LoginResponse | TwoFaRequired;
+
+export async function login(email: string, password: string): Promise<LoginResult> {
+  const result = await authFetch<LoginResult>('/login', { email, password });
+  if ('access_token' in result) {
+    setAccessToken(result.access_token);
+  }
+  return result;
+}
+
+/** Complete 2FA login by verifying a TOTP code or backup code. */
+export async function verify2fa(
+  tempToken: string,
+  code: string,
+  isBackup?: boolean,
+): Promise<LoginResponse> {
+  const body = isBackup
+    ? { temp_token: tempToken, backup_code: code }
+    : { temp_token: tempToken, totp_code: code };
+  const result = await authFetch<LoginResponse>('/2fa/verify', body);
   setAccessToken(result.access_token);
   return result;
+}
+
+/** Request a password reset email. Always succeeds (prevents enumeration). */
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+  return authFetch<{ message: string }>('/forgot-password', { email });
+}
+
+/** Reset password using a token from the reset email. */
+export async function resetPassword(
+  token: string,
+  newPassword: string,
+): Promise<{ message: string }> {
+  return authFetch<{ message: string }>('/reset-password', {
+    token,
+    new_password: newPassword,
+  });
 }
 
 export async function register(

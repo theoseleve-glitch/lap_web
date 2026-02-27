@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, Suspense } from 'react';
+import { useState, useRef, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
@@ -14,16 +14,112 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirect = searchParams.get('redirect') ?? '/app/dashboard';
   const oauthError = searchParams.get('error');
-  const { login, loading, error } = useAuth();
+  const { login, verify2fa, loading, error } = useAuth();
   const { t } = useTranslation();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // 2FA state
+  const [twoFaStep, setTwoFaStep] = useState(false);
+  const [tempToken, setTempToken] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [useBackupCode, setUseBackupCode] = useState(false);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await login(email, password, redirect);
+    const result = await login(email, password, redirect);
+    if (result && 'requires_2fa' in result && result.requires_2fa) {
+      setTempToken(result.temp_token);
+      setTwoFaStep(true);
+      // Focus the code input after render
+      setTimeout(() => codeInputRef.current?.focus(), 100);
+    }
+  };
+
+  const handle2faSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await verify2fa(tempToken, totpCode, useBackupCode, redirect);
+  };
+
+  const handleBackToLogin = () => {
+    setTwoFaStep(false);
+    setTempToken('');
+    setTotpCode('');
+    setUseBackupCode(false);
   };
 
   const displayError = error ?? (oauthError ? `${t('auth.login.oauthError')} ${oauthError.replace(/_/g, ' ')}` : null);
 
+  // --- 2FA verification step ---
+  if (twoFaStep) {
+    return (
+      <div>
+        <h1 className="font-monument text-2xl text-chalk mb-2 text-center">
+          Two-Factor Authentication
+        </h1>
+        <p className="text-steel font-body text-sm text-center mb-6">
+          {useBackupCode
+            ? 'Enter one of your backup codes to continue.'
+            : 'Enter the 6-digit code from your authenticator app.'}
+        </p>
+
+        {displayError && (
+          <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 rounded">
+            <p className="text-safety-red font-telemetry text-sm">{displayError}</p>
+          </div>
+        )}
+
+        <form onSubmit={handle2faSubmit}>
+          <FormField
+            ref={codeInputRef}
+            label={useBackupCode ? 'Backup Code' : 'Authentication Code'}
+            type="text"
+            placeholder={useBackupCode ? 'Enter backup code' : '000000'}
+            value={totpCode}
+            onChange={(e) => setTotpCode(e.target.value)}
+            required
+            autoComplete="one-time-code"
+            inputMode={useBackupCode ? 'text' : 'numeric'}
+            pattern={useBackupCode ? undefined : '[0-9]{6}'}
+            maxLength={useBackupCode ? 20 : 6}
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
+              rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? 'Verifying...' : 'Verify'}
+          </button>
+        </form>
+
+        <div className="mt-4 text-center">
+          <button
+            type="button"
+            onClick={() => {
+              setUseBackupCode(!useBackupCode);
+              setTotpCode('');
+            }}
+            className="text-pit-orange hover:underline font-body text-sm"
+          >
+            {useBackupCode ? 'Use authenticator app instead' : 'Use a backup code instead'}
+          </button>
+        </div>
+
+        <div className="mt-2 text-center">
+          <button
+            type="button"
+            onClick={handleBackToLogin}
+            className="text-steel hover:text-chalk font-body text-sm transition-colors"
+          >
+            Back to login
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // --- Normal login form ---
   return (
     <div>
       <h1 className="font-monument text-2xl text-chalk mb-6 text-center">{t('auth.login.title')}</h1>
@@ -34,7 +130,7 @@ function LoginForm() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleLoginSubmit}>
         <FormField
           label={t('auth.login.email')}
           type="email"
@@ -53,6 +149,15 @@ function LoginForm() {
           required
           autoComplete="current-password"
         />
+
+        <div className="flex justify-end mb-2">
+          <Link
+            href="/forgot-password"
+            className="text-pit-orange hover:underline font-body text-sm"
+          >
+            Forgot password?
+          </Link>
+        </div>
 
         <button
           type="submit"
