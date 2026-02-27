@@ -117,10 +117,10 @@ def test_insert_or_replace():
 # ------------------------------------------------------------------
 
 def test_does_not_mangle_like():
-    """LIKE '%test%' must not be confused with %s params."""
+    """LIKE '%test%' — literal % must be escaped to %% for psycopg2."""
     sql = "SELECT * FROM sessions WHERE csv_filename LIKE '%test%';"
     result = translate_params(sql)
-    assert "'%test%'" in result
+    assert "'%%test%%'" in result
 
 
 def test_like_with_named_param():
@@ -130,7 +130,7 @@ def test_like_with_named_param():
         "WHERE csv_filename LIKE '%test%' AND driver_id = :driver_id;"
     )
     result = translate_params(sql)
-    assert "'%test%'" in result
+    assert "'%%test%%'" in result
     assert "%(driver_id)s" in result
 
 
