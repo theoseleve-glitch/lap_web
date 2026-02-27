@@ -17,10 +17,14 @@ Usage::
 """
 from __future__ import annotations
 
+import logging
+import time
 from typing import Any
 from uuid import uuid4
 
-from flask import Flask, g, jsonify
+from flask import Flask, g, jsonify, request
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -120,12 +124,37 @@ def api_error(
 # ---------------------------------------------------------------------------
 
 def init_request_id(app: Flask) -> None:
-    """Register a ``before_request`` hook that assigns ``g.request_id``.
+    """Register before/after hooks for request ID, timing, and correlation header.
 
-    The ID is a 32-character hex UUID4 string (no dashes) and is included
-    in every response envelope via :func:`_build_meta`.
+    The request ID is a 32-character hex UUID4 string (no dashes), included
+    in every response envelope via :func:`_build_meta` and echoed back
+    in the ``X-Request-Id`` response header for client-side correlation.
+
+    Request timing is logged on every response at INFO level.
     """
 
     @app.before_request
     def _set_request_id() -> None:
         g.request_id = uuid4().hex
+        g._request_start_time = time.monotonic()
+
+    @app.after_request
+    def _add_request_headers(response):
+        # Echo request ID for client-side correlation
+        req_id = getattr(g, "request_id", None)
+        if req_id:
+            response.headers["X-Request-Id"] = req_id
+
+        # Log request duration
+        start = getattr(g, "_request_start_time", None)
+        if start is not None:
+            duration_ms = (time.monotonic() - start) * 1000
+            logger.info(
+                "%s %s %s %.1fms",
+                request.method,
+                request.path,
+                response.status_code,
+                duration_ms,
+            )
+
+        return response

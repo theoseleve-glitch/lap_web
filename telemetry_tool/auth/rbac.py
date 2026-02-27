@@ -80,3 +80,26 @@ def require_permission(action: str):
     """Decorator: endpoint requires a specific permission."""
     min_role = PERMISSIONS.get(action, "owner")
     return require_role(min_role)
+
+
+def require_email_verified(f):
+    """Decorator: blocks unverified users from write endpoints.
+
+    Checks ``g.email_verified``. If ``False``, returns 403 with
+    ``EMAIL_NOT_VERIFIED`` error code. Read-only endpoints should
+    NOT use this decorator so users can still browse.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        email_verified = getattr(g, "email_verified", None)
+        if email_verified is False:
+            return jsonify({
+                "ok": False,
+                "error": {
+                    "code": "EMAIL_NOT_VERIFIED",
+                    "message": "Please verify your email to unlock full access",
+                },
+                "meta": {},
+            }), 403
+        return f(*args, **kwargs)
+    return decorated

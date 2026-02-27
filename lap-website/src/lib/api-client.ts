@@ -42,6 +42,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
+
+    // Attach CSRF token from cookie (double-submit pattern)
+    const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
+    if (csrfMatch) {
+      headers['X-CSRF-Token'] = csrfMatch[1];
+    }
   }
 
   const res = await fetch(`${API_BASE}${path}`, {

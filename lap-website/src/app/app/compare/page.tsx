@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { PageHeader } from '@/components/app';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 
 const compareCards = [
   {
@@ -21,6 +23,9 @@ const compareCards = [
 ];
 
 export default function CompareHubPage() {
+  const { canUse } = useEntitlements();
+  const comparisonAllowed = canUse('comparison');
+
   return (
     <div>
       <PageHeader
@@ -28,12 +33,26 @@ export default function CompareHubPage() {
         subtitle="Side-by-side analysis of sessions and drivers"
       />
 
+      {!comparisonAllowed && (
+        <div className="mb-6">
+          <UpgradeBanner
+            feature="comparison"
+            context="Session comparison is available on the World-Class plan"
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
         {compareCards.map((card) => (
           <Link
             key={card.href}
-            href={card.href}
-            className="group bg-concrete rounded-lg border border-steel/20 p-6 hover:border-acid-green/40 transition-colors"
+            href={comparisonAllowed ? card.href : '#'}
+            className={`group bg-concrete rounded-lg border border-steel/20 p-6 transition-colors ${
+              comparisonAllowed
+                ? 'hover:border-acid-green/40'
+                : 'opacity-50 pointer-events-none'
+            }`}
+            aria-disabled={!comparisonAllowed}
           >
             <div className="flex items-start gap-4">
               <span className="font-telemetry text-3xl text-acid-green">{card.icon}</span>
@@ -48,7 +67,7 @@ export default function CompareHubPage() {
             </div>
             <div className="mt-4 text-right">
               <span className="font-telemetry text-xs text-steel group-hover:text-acid-green transition-colors">
-                Open →
+                {comparisonAllowed ? 'Open →' : 'Requires World-Class'}
               </span>
             </div>
           </Link>

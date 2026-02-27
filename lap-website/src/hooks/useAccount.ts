@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '@/lib/api-client';
+import { api, apiFetch } from '@/lib/api-client';
 
 export interface AccountProfile {
   id: number;
@@ -48,7 +48,10 @@ export function useAccount() {
         Pick<AccountProfile, 'display_name' | 'email' | 'avatar_url' | 'preferences'>
       >,
     ) => {
-      const data = await api.put<AccountProfile>('/account/profile', updates);
+      const data = await apiFetch<AccountProfile>('/account/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(updates),
+      });
       setProfile(data);
       return data;
     },

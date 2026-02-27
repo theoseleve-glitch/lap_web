@@ -253,8 +253,19 @@ def stripe_webhook():
             _handle_charge_refunded(data)
         else:
             logger.debug("Unhandled Stripe event type: %s", event_type)
+        # Track successful webhook processing
+        try:
+            from web.metrics import incr_counter
+            incr_counter("webhook_processed")
+        except Exception:
+            pass
     except Exception:
         logger.exception("Error processing Stripe event %s", event_type)
+        try:
+            from web.metrics import incr_counter
+            incr_counter("webhook_failed")
+        except Exception:
+            pass
         return jsonify({"status": "error_logged"}), 200
 
     # Record event after successful processing

@@ -79,6 +79,13 @@ def tenant_middleware():
             "meta": {},
         }), 403
 
+    # Resolve plan tier (used by rate limiter and feature gating)
+    try:
+        from auth.entitlements import get_user_plan_tier
+        g.plan_tier = get_user_plan_tier(conn, user_id)
+    except Exception:
+        g.plan_tier = "demo"  # Graceful fallback
+
 
 def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:
     """Check if user has access to the given workspace."""

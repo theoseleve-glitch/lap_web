@@ -29,7 +29,7 @@ def auth_middleware():
         "/auth/register", "/auth/login", "/auth/logout",
         "/auth/refresh", "/auth/verify-email",
         "/auth/forgot-password", "/auth/reset-password",
-        "/auth/login/2fa",
+        "/auth/2fa/verify",
         "/api/v1/billing/webhook",  # Uses Stripe signature verification
     }
     if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path):
@@ -64,6 +64,24 @@ def auth_middleware():
             "error": {"code": e.code, "message": str(e)},
             "meta": {},
         }), 401
+
+    # Check account suspension (after successful JWT decode)
+    if g.current_user_id is not None:
+        try:
+            from web.db import get_db_connection
+            conn = get_db_connection()
+            row = conn.execute(
+                "SELECT suspended_at FROM users WHERE id = %(uid)s AND suspended_at IS NOT NULL",
+                {"uid": g.current_user_id},
+            ).fetchone()
+            if row is not None:
+                return jsonify({
+                    "ok": False,
+                    "error": {"code": "ACCOUNT_SUSPENDED", "message": "Account suspended"},
+                    "meta": {},
+                }), 403
+        except Exception:
+            pass  # Fail open — don't block if DB check fails
 
 
 def require_auth(f):

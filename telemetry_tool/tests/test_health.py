@@ -62,7 +62,8 @@ class TestHealthz:
     def test_pg_mode_uses_pg_connection(self, app):
         app.config["USE_PG"] = True
         client = app.test_client()
-        with patch("web.db_pg.get_pg_connection") as mock_pg:
+        with patch("web.db_pg.get_pg_connection") as mock_pg, \
+             patch("web.routes.health._get_db_stats", return_value={}):
             mock_conn = MagicMock()
             mock_pg.return_value = mock_conn
             resp = client.get("/healthz")

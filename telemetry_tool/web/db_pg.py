@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -104,20 +105,39 @@ class PgConnectionWrapper:
 
     # -- sqlite3-compatible execute API -----------------------------------
 
+    # Slow query threshold (milliseconds)
+    SLOW_QUERY_THRESHOLD_MS = 500
+
     def execute(self, sql: str, params=None):
         """Execute SQL and return the cursor (sqlite3.Connection-compatible).
 
         The SQL is translated from SQLite to PostgreSQL dialect before
         execution (named params, positional params, INSERT OR IGNORE, etc.).
+        Queries exceeding SLOW_QUERY_THRESHOLD_MS are logged as warnings.
         """
         from db.sql_compat import translate_params
 
         translated = translate_params(sql)
         cur = self._conn.cursor()
+        start = time.monotonic()
         if params is not None:
             cur.execute(translated, params)
         else:
             cur.execute(translated)
+        elapsed_ms = (time.monotonic() - start) * 1000
+        if elapsed_ms > self.SLOW_QUERY_THRESHOLD_MS:
+            req_id = None
+            try:
+                from flask import g
+                req_id = getattr(g, "request_id", None)
+            except (ImportError, RuntimeError):
+                pass
+            logger.warning(
+                "Slow query (%.0fms): %s",
+                elapsed_ms,
+                sql[:200],
+                extra={"duration_ms": elapsed_ms, "request_id": req_id},
+            )
         return cur
 
     def executemany(self, sql: str, seq_of_params):

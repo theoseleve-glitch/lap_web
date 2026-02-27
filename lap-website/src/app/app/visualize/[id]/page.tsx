@@ -5,6 +5,8 @@ import { useParams } from 'next/navigation';
 import { useState, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 import { useCanvas } from '@/hooks/useCanvas';
+import { useEntitlements } from '@/hooks/useEntitlements';
+import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 
 /* ---------- types ---------- */
 
@@ -65,6 +67,8 @@ function speedToColor(speed: number, min: number, max: number): string {
 export default function VisualizePage() {
   const { id } = useParams<{ id: string }>();
   const [visibleLaps, setVisibleLaps] = useState<Set<number>>(new Set());
+  const { canUse } = useEntitlements();
+  const visualizationAllowed = canUse('visualization');
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['visualize', id],
@@ -355,6 +359,17 @@ export default function VisualizePage() {
   const ggCanvasRef = useCanvas(drawGgDiagram, [drawGgDiagram]);
 
   /* ---------- render ---------- */
+  if (!visualizationAllowed) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[calc(100vh-6rem)] gap-6 px-4">
+        <UpgradeBanner
+          feature="visualization"
+          context="Telemetry visualization is available on the Racer plan and above"
+        />
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">

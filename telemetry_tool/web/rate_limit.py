@@ -5,6 +5,10 @@ sliding window counter.  Five configurable tiers control per-route
 limits.  The ``@rate_limit(tier)`` decorator rejects excess requests
 with HTTP 429, ``RATE_LIMITED`` error code, and a ``Retry-After`` header.
 
+**Plan-aware**: base limits are multiplied by the user's plan-tier
+multiplier (``g.plan_tier`` → ``PLAN_RATE_MULTIPLIERS``).  A DEMO user
+gets the base limit, WORLD-CLASS gets 5×, B2B gets 10×.
+
 Usage::
 
     from web.rate_limit import rate_limit
@@ -24,6 +28,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import math
 import time
 from typing import Any
 
@@ -43,6 +48,15 @@ RATE_TIERS: dict[str, dict[str, int]] = {
     "write": {"max_requests": 60, "window_seconds": 60},
     "analyze": {"max_requests": 5, "window_seconds": 3600},
     "upload": {"max_requests": 10, "window_seconds": 3600},
+}
+
+# Plan-tier multipliers — applied to base limits above.
+# Matches rate_multiplier values in plan_definitions table.
+PLAN_RATE_MULTIPLIERS: dict[str, float] = {
+    "demo": 1.0,
+    "racer": 2.0,
+    "world-class": 5.0,
+    "b2b": 10.0,
 }
 
 # ---------------------------------------------------------------------------
@@ -103,6 +117,17 @@ def get_redis():
 # Decorator
 # ---------------------------------------------------------------------------
 
+def _get_effective_limit(base_max: int, tier_name: str) -> int:
+    """Apply the user's plan-tier multiplier to a base rate limit.
+
+    Reads ``g.plan_tier`` (set by tenant middleware).  Falls back to
+    1.0x if the plan tier is unknown or unavailable.
+    """
+    plan_tier = getattr(g, "plan_tier", None) or "demo"
+    multiplier = PLAN_RATE_MULTIPLIERS.get(plan_tier, 1.0)
+    return math.ceil(base_max * multiplier)
+
+
 def rate_limit(tier: str = "read"):
     """Decorator that enforces a sliding-window rate limit.
 
@@ -112,12 +137,16 @@ def rate_limit(tier: str = "read"):
         One of the keys in :data:`RATE_TIERS` — ``"auth"``, ``"read"``,
         ``"write"``, ``"analyze"``, or ``"upload"``.
 
+    The base limit is multiplied by the user's plan-tier multiplier
+    (from ``g.plan_tier``).  DEMO users get the base limit, WORLD-CLASS
+    get 5x, B2B get 10x.
+
     When the limit is exceeded the decorator short-circuits with a
     429 response containing the ``RATE_LIMITED`` error code and a
     ``Retry-After`` header set to the tier's window in seconds.
     """
     tier_cfg = RATE_TIERS[tier]
-    max_requests = tier_cfg["max_requests"]
+    base_max_requests = tier_cfg["max_requests"]
     window_seconds = tier_cfg["window_seconds"]
 
     def decorator(fn):
@@ -125,13 +154,14 @@ def rate_limit(tier: str = "read"):
         def wrapper(*args, **kwargs):
             r = get_redis()
             if r is None:
-                # Fail open — no Redis means no rate limiting
                 return fn(*args, **kwargs)
 
-            # Determine scope key
+            # Apply plan-aware multiplier (auth tier is always IP-based, no plan)
             if tier == "auth":
+                max_requests = base_max_requests
                 scope_value = request.remote_addr or "unknown"
             else:
+                max_requests = _get_effective_limit(base_max_requests, tier)
                 scope_value = getattr(g, "current_user_id", None) or request.remote_addr or "unknown"
 
             redis_key = f"ratelimit:{tier}:{scope_value}"
@@ -141,7 +171,8 @@ def rate_limit(tier: str = "read"):
             member = f"{now}:{id(request)}"
 
             try:
-                count = r.eval(
+                # Redis EVAL command (Lua script), not Python eval()
+                count = int(r.eval(  # noqa: S307
                     _SLIDING_WINDOW_LUA,
                     1,              # number of KEYS
                     redis_key,      # KEYS[1]
@@ -149,8 +180,7 @@ def rate_limit(tier: str = "read"):
                     now,            # ARGV[2]
                     member,         # ARGV[3]
                     window_seconds, # ARGV[4]
-                )
-                count = int(count)
+                ))
             except Exception:
                 logger.warning(
                     "Rate limit Redis error for tier=%s key=%s — failing open",
@@ -159,6 +189,11 @@ def rate_limit(tier: str = "read"):
                 return fn(*args, **kwargs)
 
             if count > max_requests:
+                plan_tier = getattr(g, "plan_tier", "demo")
+                logger.info(
+                    "Rate limited: tier=%s plan=%s scope=%s count=%d limit=%d",
+                    tier, plan_tier, scope_value, count, max_requests,
+                )
                 resp, status = api_error(
                     ErrorCode.RATE_LIMITED,
                     f"Rate limit exceeded for tier '{tier}'. "

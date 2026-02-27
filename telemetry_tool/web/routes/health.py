@@ -47,6 +47,51 @@ def _check_celery() -> str:
     return "no_workers"
 
 
+def _get_db_stats() -> dict:
+    """Return database performance stats (PG only)."""
+    if not current_app.config.get("USE_PG"):
+        return {}
+    try:
+        from web.db_pg import get_pg_connection
+        conn = get_pg_connection()
+
+        # Active connection count
+        cur = conn.execute(
+            "SELECT count(*) AS cnt FROM pg_stat_activity "
+            "WHERE datname = current_database()"
+        )
+        row = cur.fetchone()
+        conn_count = row["cnt"] if row else 0
+
+        # Database size
+        cur = conn.execute(
+            "SELECT pg_database_size(current_database()) AS db_size"
+        )
+        row = cur.fetchone()
+        db_size_mb = round((row["db_size"] or 0) / (1024 * 1024), 1) if row else 0
+
+        # Top tables by size
+        cur = conn.execute(
+            "SELECT relname, pg_total_relation_size(c.oid) AS total_bytes "
+            "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+            "WHERE n.nspname = 'public' AND c.relkind = 'r' "
+            "ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 5"
+        )
+        top_tables = [
+            {"table": r["relname"], "size_mb": round(r["total_bytes"] / (1024 * 1024), 2)}
+            for r in cur.fetchall()
+        ]
+
+        return {
+            "connections": conn_count,
+            "database_size_mb": db_size_mb,
+            "top_tables": top_tables,
+        }
+    except Exception as exc:
+        logger.warning("DB stats error: %s", exc)
+        return {"error": str(exc)}
+
+
 @bp.route("/healthz")
 def healthz():
     """Return service health with DB, Redis, and Celery checks.
@@ -71,6 +116,14 @@ def healthz():
         checks["celery"] = _check_celery()
     except Exception:
         checks["celery"] = "unavailable"
+
+    # Include DB stats when running on PG
+    try:
+        db_stats = _get_db_stats()
+        if db_stats:
+            checks["db_stats"] = db_stats
+    except Exception:
+        pass
 
     status_code = 200 if checks["status"] == "ok" else 503
     return jsonify(checks), status_code

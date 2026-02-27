@@ -72,6 +72,31 @@ def make_celery(app=None) -> Celery:
                 "schedule": 3600,  # Hourly
                 "options": {"queue": "default"},
             },
+            "enforce-grace-periods": {
+                "task": "tasks.billing_tasks.enforce_subscription_grace_periods",
+                "schedule": 86400,  # Daily
+                "options": {"queue": "default"},
+            },
+            "alerting-checks": {
+                "task": "tasks.alerting_tasks.run_alerting_checks",
+                "schedule": 300,  # Every 5 minutes
+                "options": {"queue": "default"},
+            },
+            "create-future-partitions": {
+                "task": "tasks.archival_tasks.create_future_partitions",
+                "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
+            "archive-old-usage-events": {
+                "task": "tasks.archival_tasks.archive_old_usage_events",
+                "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
+            "archive-old-audit-logs": {
+                "task": "tasks.archival_tasks.archive_old_audit_logs",
+                "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
         },
     )
 

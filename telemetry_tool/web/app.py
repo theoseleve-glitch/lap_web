@@ -286,7 +286,9 @@ def create_app(config: Config | None = None) -> Flask:
             app.register_blueprint(workspaces_bp)
             app.register_blueprint(teams_bp)
             app.register_blueprint(invitations_bp)
-            logger.debug("Registered workspace and team blueprints")
+            from .routes.admin import bp as admin_bp
+            app.register_blueprint(admin_bp)
+            logger.debug("Registered workspace, team, and admin blueprints")
             # Initialize Celery with Flask app context
             from celery_app import make_celery
             celery_inst = make_celery(app)

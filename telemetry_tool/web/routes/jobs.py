@@ -125,6 +125,66 @@ def cancel(job_id: str):
     return api_response({"cancelled": True})
 
 
+@bp.route("/<job_id>/retry", methods=["POST"])
+@rate_limit(tier="write")
+def retry(job_id: str):
+    """Retry a failed job by creating a new Celery task.
+
+    Returns:
+        200 with ``{"retried": true, "new_job_id": "..."}``
+        404 if not found
+        409 if job is not in a failed/cancelled state
+    """
+    conn = get_pg_connection()
+    job = get_job(conn, job_id, g.workspace_id)
+
+    if job is None:
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+
+    if job.get("status") not in ("failed", "cancelled"):
+        return api_error(
+            ErrorCode.CONFLICT,
+            f"Only failed/cancelled jobs can be retried (current: {job.get('status')})",
+            status=409,
+        )
+
+    # Check compute budget before retrying
+    try:
+        from web.compute_budget import check_compute_budget
+        plan_tier = getattr(g, "plan_tier", None)
+        allowed, info = check_compute_budget(conn, getattr(g, "current_user_id", 0), g.workspace_id, plan_tier)
+        if not allowed:
+            return api_error(
+                ErrorCode.RATE_LIMITED,
+                f"Compute budget exceeded: {info['running_jobs']}/{info['max_jobs']} jobs running",
+                status=429,
+            )
+    except Exception:
+        logger.warning("Compute budget check failed — allowing retry", exc_info=True)
+
+    # Create a new job entry as a retry
+    import uuid
+    new_job_id = str(uuid.uuid4())
+    conn.execute(
+        text(
+            "INSERT INTO ingestion_jobs (job_id, workspace_id, file_name, status, stage_name) "
+            "SELECT :new_id, workspace_id, file_name, 'queued', 'retry_queued' "
+            "FROM ingestion_jobs WHERE job_id = :old_id AND workspace_id = :ws"
+        ),
+        {"new_id": new_job_id, "old_id": job_id, "ws": g.workspace_id},
+    )
+    conn.commit()
+
+    # Dispatch the pipeline task
+    try:
+        from tasks.pipeline_tasks import run_pipeline
+        run_pipeline.delay(new_job_id)
+    except Exception:
+        logger.exception("Failed to dispatch retry task for %s", new_job_id)
+
+    return api_response({"retried": True, "new_job_id": new_job_id})
+
+
 @bp.route("/<job_id>/resume", methods=["POST"])
 @rate_limit(tier="write")
 @validate_body(ResumeJobSchema)
