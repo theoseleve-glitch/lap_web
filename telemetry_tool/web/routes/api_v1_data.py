@@ -232,7 +232,7 @@ def v1_theoretical(session_id: str):
     data = get_theoretical_data(conn, session_id)
     if data is None:
         return api_error(ErrorCode.NOT_FOUND, "No theoretical data", status=404)
-    return api_response({
+    response = {
         "theoretical_time_s": data.get("theoretical_time_s"),
         "actual_best_time_s": data.get("actual_best_time_s"),
         "gap_pct": data.get("gap_pct"),
@@ -240,7 +240,15 @@ def v1_theoretical(session_id: str):
         "speeds": data.get("speeds"),
         "distances": data.get("distances"),
         "metrics": data.get("metrics"),
-    })
+    }
+    # New kart_envelope fields (optional — None if old engine was used)
+    if data.get("corner_coaching"):
+        response["corner_coaching"] = data["corner_coaching"]
+    if data.get("session_scalars"):
+        response["session_scalars"] = data["session_scalars"]
+    if data.get("delta_map_summary"):
+        response["delta_map_summary"] = data["delta_map_summary"]
+    return api_response(response)
 
 
 # ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Optional
 
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
@@ -30,6 +30,131 @@ def _row_to_dict(row) -> dict:
 def _rows_to_list(rows) -> list[dict]:
     """Convert list of sqlite3.Row to list of dict."""
     return [dict(r) for r in rows]
+
+
+# ── Weather alert helpers ─────────────────────────
+
+_forecast_cache: dict[int, tuple[float, dict]] = {}
+_FORECAST_CACHE_TTL = 300  # 5 minutes
+
+
+def _check_weather_alerts(race_id: int, lat: float, lon: float, conn) -> Optional[dict]:
+    """
+    Check forecast for upcoming rain and generate an alert if appropriate.
+
+    Uses an in-memory cache (TTL 5 min) to avoid hammering the weather API
+    on every polling request.
+
+    Returns an alert dict or None.
+    """
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _root = str(_Path(__file__).resolve().parents[2])
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+
+    from meteo_service import get_weather_forecast, estimate_track_conditions
+
+    # 1. Check cache
+    now = time.time()
+    cached = _forecast_cache.get(race_id)
+    if cached and (now - cached[0]) < _FORECAST_CACHE_TTL:
+        forecast = cached[1]
+    else:
+        # Fetch fresh forecast and cache it
+        forecast = get_weather_forecast(lat, lon, hours=3)
+        _forecast_cache[race_id] = (now, forecast)
+
+    # 2. If forecast errored, bail
+    if "error" in forecast or "forecast" not in forecast:
+        return None
+
+    hourly = forecast["forecast"]
+    if not hourly:
+        return None
+
+    # 3. Check next 2 hours for rain
+    window = hourly[:2] if len(hourly) >= 2 else hourly
+    max_rain_prob = max((h.get("rain_prob_pct", 0) or 0) for h in window)
+    max_rain_mm = max((h.get("rain_mm", 0) or 0) for h in window)
+
+    if max_rain_prob < 50 and max_rain_mm < 0.5:
+        return None  # dry — no alert needed
+
+    # 4. Check if we already sent a weather alert in the last 30 min
+    try:
+        recent = conn.execute(
+            "SELECT id FROM race_alerts "
+            "WHERE race_id = ? AND alert_type = 'weather' "
+            "AND created_at > datetime('now', '-30 minutes') "
+            "ORDER BY id DESC LIMIT 1",
+            (race_id,),
+        ).fetchone()
+        if recent:
+            return None  # already alerted recently
+    except Exception:
+        # Table may not exist in SQLite dev mode — skip dedup
+        pass
+
+    # 5. Determine severity
+    if max_rain_mm > 2 or max_rain_prob > 80:
+        severity = "critical"
+    else:
+        severity = "warning"
+
+    # 6. Build compound recommendation from conditions
+    rain_hour = next(
+        (h for h in window if (h.get("rain_prob_pct", 0) or 0) > 50 or (h.get("rain_mm", 0) or 0) > 0.5),
+        window[0],
+    )
+    conditions = estimate_track_conditions({
+        "air_temp_c": rain_hour.get("air_temp_c"),
+        "humidity_pct": rain_hour.get("humidity_pct"),
+        "rain_mm": rain_hour.get("rain_mm", 0),
+        "wind_speed_mps": rain_hour.get("wind_speed_mps"),
+    })
+    compound = conditions.get("recommended_compound", "wet")
+
+    # ETA: which hour in the window triggers the alert
+    eta_label = rain_hour.get("time", "soon")
+    message = (
+        f"Rain expected at {eta_label} "
+        f"(prob {max_rain_prob}%, {max_rain_mm:.1f} mm). "
+        f"Recommended compound: {compound}."
+    )
+
+    # 7. Insert alert into DB
+    try:
+        conn.execute(
+            "INSERT INTO race_alerts "
+            "(race_id, alert_type, severity, title, message, payload_json) "
+            "VALUES (?, 'weather', ?, 'Weather Alert', ?, ?)",
+            (
+                race_id,
+                severity,
+                message,
+                json.dumps({
+                    "rain_prob_pct": max_rain_prob,
+                    "rain_mm": max_rain_mm,
+                    "recommended_compound": compound,
+                    "grip_score": conditions.get("grip_score"),
+                }),
+            ),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.debug("Failed to persist weather alert for race %d: %s", race_id, exc)
+
+    return {
+        "severity": severity,
+        "title": "Weather Alert",
+        "message": message,
+        "rain_prob_pct": max_rain_prob,
+        "rain_mm": max_rain_mm,
+        "recommended_compound": compound,
+        "grip_score": conditions.get("grip_score"),
+    }
 
 
 @bp.route("/")
@@ -700,6 +825,33 @@ def api_state(race_id: int):
     except Exception:
         logger.debug("Engine load failed for race %d, returning basic state", race_id)
 
+    # ── Weather alert check ──────────────────────────
+    weather_alert = None
+    try:
+        import sys as _sys
+        from pathlib import Path as _Path
+
+        _root = str(_Path(__file__).resolve().parents[2])
+        if _root not in _sys.path:
+            _sys.path.insert(0, _root)
+
+        from meteo_service import get_known_tracks
+
+        track_name = race.get("track_name")
+        if track_name:
+            tracks = get_known_tracks(conn)
+            track = next(
+                (t for t in tracks if t.get("track_name", "").lower() == track_name.lower()
+                 or t.get("name", "").lower() == track_name.lower()),
+                None,
+            )
+            if track and track.get("lat") and track.get("lon"):
+                weather_alert = _check_weather_alerts(
+                    race_id, track["lat"], track["lon"], conn,
+                )
+    except Exception as exc:
+        logger.debug("Weather alert check failed for race %d: %s", race_id, exc)
+
     return jsonify({
         "race": race,
         "drivers": drivers,
@@ -709,6 +861,7 @@ def api_state(race_id: int):
         "active_stint": active_stint,
         "next_stint": next_stint,
         "driver_cumulative": driver_cumulative,
+        "weather_alert": weather_alert,
         **engine_data,
     })
 

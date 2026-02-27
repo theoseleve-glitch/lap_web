@@ -338,16 +338,23 @@ def theoretical_data(session_id: str):
             (jsonify({"error": "no theoretical data"}), 404),
             f"/api/v1/sessions/{session_id}/theoretical",
         )
+    response = {
+        "theoretical_time_s": data.get("theoretical_time_s"),
+        "actual_best_time_s": data.get("actual_best_time_s"),
+        "gap_pct":            data.get("gap_pct"),
+        "simulation_method":  data.get("simulation_method"),
+        "speeds":             data.get("speeds"),
+        "distances":          data.get("distances"),
+        "metrics":            data.get("metrics"),
+    }
+    if data.get("corner_coaching"):
+        response["corner_coaching"] = data["corner_coaching"]
+    if data.get("session_scalars"):
+        response["session_scalars"] = data["session_scalars"]
+    if data.get("delta_map_summary"):
+        response["delta_map_summary"] = data["delta_map_summary"]
     return _with_deprecation(
-        jsonify({
-            "theoretical_time_s": data.get("theoretical_time_s"),
-            "actual_best_time_s": data.get("actual_best_time_s"),
-            "gap_pct":            data.get("gap_pct"),
-            "simulation_method":  data.get("simulation_method"),
-            "speeds":             data.get("speeds"),
-            "distances":          data.get("distances"),
-            "metrics":            data.get("metrics"),
-        }),
+        jsonify(response),
         f"/api/v1/sessions/{session_id}/theoretical",
     )
 

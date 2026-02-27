@@ -1,7 +1,7 @@
 """
 scoring.py -- Session performance scoring for motorsport telemetry analysis.
 
-Scores a driver session against a theoretical reference across four
+Scores a driver session against a theoretical reference across five
 categories, returning a structured result with named strengths and
 weaknesses.
 
@@ -17,17 +17,20 @@ Architecture
 
 Scoring categories
 ~~~~~~~~~~~~~~~~~~
-  Pace                 (0 -- 30 pts)
+  Pace                 (0 -- 25 pts)
     How close is the best lap to the theoretical reference?
 
   Consistency          (0 -- 25 pts)
     How repeatable is performance across laps?
 
-  Execution Quality    (0 -- 25 pts)
+  Execution Quality    (0 -- 20 pts)
     How efficiently are corners driven?  (speed, accel, braking)
 
-  Racecraft / Endurance Robustness  (0 -- 20 pts)
+  Racecraft / Endurance Robustness  (0 -- 15 pts)
     How well does the driver sustain pace and stability over a long stint?
+
+  Adaptation           (0 -- 15 pts)
+    How well does the driver adapt to changing conditions (weather, grip)?
 
 Return structure
 ~~~~~~~~~~~~~~~~
@@ -35,10 +38,11 @@ Return structure
     "total_score":  float,          # 0 -- 100
     "grade":        str,            # "S", "A", "B", "C", "D", "F"
     "sub_scores": {
-        "pace":          {"score": float, "max": 30, ...},
+        "pace":          {"score": float, "max": 25, ...},
         "consistency":   {"score": float, "max": 25, ...},
-        "execution":     {"score": float, "max": 25, ...},
-        "robustness":    {"score": float, "max": 20, ...},
+        "execution":     {"score": float, "max": 20, ...},
+        "robustness":    {"score": float, "max": 15, ...},
+        "adaptation":    {"score": float, "max": 15, ...},
     },
     "strengths":  [str],
     "weaknesses": [str],
@@ -63,11 +67,12 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-MAX_PACE:        Final[float] = 30.0
+MAX_PACE:        Final[float] = 25.0
 MAX_CONSISTENCY: Final[float] = 25.0
-MAX_EXECUTION:   Final[float] = 25.0
-MAX_ROBUSTNESS:  Final[float] = 20.0
-TOTAL_MAX:       Final[float] = MAX_PACE + MAX_CONSISTENCY + MAX_EXECUTION + MAX_ROBUSTNESS  # 100.0
+MAX_EXECUTION:   Final[float] = 20.0
+MAX_ROBUSTNESS:  Final[float] = 15.0
+MAX_ADAPTATION:  Final[float] = 15.0
+TOTAL_MAX:       Final[float] = MAX_PACE + MAX_CONSISTENCY + MAX_EXECUTION + MAX_ROBUSTNESS + MAX_ADAPTATION  # 100.0
 
 # =============================================================================
 
@@ -242,6 +247,18 @@ ADAPT_W_INTRA_PHASE: Final[float] = 0.40
 
 ADAPT_MIN_EVOLUTION_PCT: Final[float] = 2.0
 
+# --- Adaptation V2 scoring constants (weather-aware) -
+
+ADAPT_V2_TRANSITION_FULL_LAPS: Final[float] = 2.0
+ADAPT_V2_TRANSITION_ZERO_LAPS: Final[float] = 8.0
+ADAPT_V2_TRANSITION_WEIGHT:    Final[float] = 0.40
+ADAPT_V2_PHASE_PACE_FULL_PCT:  Final[float] = 3.0
+ADAPT_V2_PHASE_PACE_ZERO_PCT:  Final[float] = 12.0
+ADAPT_V2_PHASE_PACE_WEIGHT:    Final[float] = 0.35
+ADAPT_V2_TECHNIQUE_WEIGHT:     Final[float] = 0.25
+ADAPT_V2_STABLE_DEFAULT_FRAC:  Final[float] = 0.75
+ADAPT_V2_DECAY_EXP:            Final[float] = 1.4
+
 # =============================================================================
 
 # GRANULAR EXECUTION SUB-SCORE CONSTANTS
@@ -328,11 +345,11 @@ RACE_W_RETENTION: Final[float] = 0.35
 # =============================================================================
 
 
-GRADE_S: Final[float] = 92.0
-GRADE_A: Final[float] = 80.0
-GRADE_B: Final[float] = 65.0
-GRADE_C: Final[float] = 50.0
-GRADE_D: Final[float] = 35.0
+GRADE_S: Final[float] = 90.0
+GRADE_A: Final[float] = 78.0
+GRADE_B: Final[float] = 63.0
+GRADE_C: Final[float] = 48.0
+GRADE_D: Final[float] = 33.0
 # below GRADE_D -- F"
 
 
@@ -1094,19 +1111,19 @@ def compute_racecraft_score(
 # Weights are multiplied against the base category max, then renormalised
 # so the total always equals 100.
 _SESSION_WEIGHT_OVERRIDES: dict[str, dict[str, float]] = {
-    "qualifying":      {"pace": 1.40, "consistency": 0.90, "execution": 1.10, "robustness": 0.60},
-    "race":            {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40},
-    "sprint_race":     {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40},
-    "practice":        {"pace": 1.00, "consistency": 1.00, "execution": 1.20, "robustness": 0.80},
-    "test":            {"pace": 0.80, "consistency": 1.10, "execution": 1.30, "robustness": 0.80},
-    "warmup":          {"pace": 0.60, "consistency": 0.80, "execution": 1.30, "robustness": 0.60},
-    "heat":            {"pace": 1.20, "consistency": 1.00, "execution": 1.00, "robustness": 0.80},
-    "final":           {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90},
-    "feature_race":    {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40},
-    "endurance_stint": {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60},
-    "endurance_race":  {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60},
-    "sprint":          {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90},
-    "endurance":       {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60},
+    "qualifying":      {"pace": 1.40, "consistency": 0.90, "execution": 1.10, "robustness": 0.60, "adaptation": 0.60},
+    "race":            {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.20},
+    "sprint_race":     {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.10},
+    "practice":        {"pace": 1.00, "consistency": 1.00, "execution": 1.20, "robustness": 0.80, "adaptation": 1.00},
+    "test":            {"pace": 0.80, "consistency": 1.10, "execution": 1.30, "robustness": 0.80, "adaptation": 1.00},
+    "warmup":          {"pace": 0.60, "consistency": 0.80, "execution": 1.30, "robustness": 0.60, "adaptation": 0.80},
+    "heat":            {"pace": 1.20, "consistency": 1.00, "execution": 1.00, "robustness": 0.80, "adaptation": 1.00},
+    "final":           {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90, "adaptation": 1.00},
+    "feature_race":    {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.20},
+    "endurance_stint": {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
+    "endurance_race":  {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
+    "sprint":          {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90, "adaptation": 1.00},
+    "endurance":       {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
 }
 
 # Synonyms: map alternative type names to canonical keys
@@ -1159,6 +1176,7 @@ _BASE_MAXES: dict[str, float] = {
     "consistency": MAX_CONSISTENCY,
     "execution":   MAX_EXECUTION,
     "robustness":  MAX_ROBUSTNESS,
+    "adaptation":  MAX_ADAPTATION,
 }
 
 
@@ -1339,11 +1357,16 @@ def score_session(
         metrics_dict, theoretical_metrics,
     )
 
+    # Adaptation defaults to neutral (75% of max) in score_session;
+    # score_session_phase_aware overrides with the real v2 score.
+    adapt_default = round(MAX_ADAPTATION * ADAPT_V2_STABLE_DEFAULT_FRAC, 4)
+
     raw_scores: dict[str, float] = {
         "pace":        pace_score,
         "consistency": cons_score,
         "execution":   exec_score,
         "robustness":  robust_score,
+        "adaptation":  adapt_default,
     }
 
     # --- Apply session-type reweighting -- -
@@ -1380,19 +1403,21 @@ def score_session(
         "consistency": cons_detail,
         "execution":   exec_detail,
         "robustness":  robust_detail,
+        "adaptation":  {"source": "default_neutral"},
     }
     labels = {
         "pace":        "Pace",
         "consistency": "Consistency",
         "execution":   "Execution Quality",
         "robustness":  "Racecraft / Endurance Robustness",
+        "adaptation":  "Adaptation",
     }
 
     sub_scores: dict[str, Any] = {}
     strengths:  list[str] = []
     weaknesses: list[str] = []
 
-    for cat in ("pace", "consistency", "execution", "robustness"):
+    for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
         s   = final_scores[cat]
         mx  = norm_max[cat]
         frac = s / mx if mx > 0 else 0.0
@@ -1450,6 +1475,7 @@ def score_session_phase_aware(
     lap_metrics: Optional[list[dict[str, Any]]] = None,
     track_evolution: Optional[dict[str, Any]] = None,
     corner_performances: Optional[list[dict[str, Any]]] = None,
+    weather_timeline: Optional[pd.DataFrame] = None,
 ) -> dict[str, Any]:
     """
     Phase-aware wrapper around :func:`score_session`.
@@ -1556,7 +1582,7 @@ def score_session_phase_aware(
 
                             new_total = sum(
                                 result["sub_scores"][cat]["score"]
-                                for cat in ("pace", "consistency", "execution", "robustness")
+                                for cat in ("pace", "consistency", "execution", "robustness", "adaptation")
                                 if cat in result["sub_scores"]
                             )
                             new_total = _apply_confidence(
@@ -1612,7 +1638,7 @@ def score_session_phase_aware(
 
             new_total = sum(
                 result["sub_scores"][cat]["score"]
-                for cat in ("pace", "consistency", "execution", "robustness")
+                for cat in ("pace", "consistency", "execution", "robustness", "adaptation")
                 if cat in result["sub_scores"]
             )
             new_total = _apply_confidence(
@@ -1651,6 +1677,40 @@ def score_session_phase_aware(
 
     result["phase_scores"] = phase_scores
     result["adaptation_score"] = round(adaptation, 4)
+
+    # --- Adaptation V2: weather-aware sub-score -
+    # Compute the weighted adaptation sub-score and inject into sub_scores.
+    theory_best = theoretical_metrics.get("best_s", None)
+    try:
+        adapt_v2_score = _score_adaptation_v2(
+            lap_metrics=lap_metrics or [],
+            weather_timeline=weather_timeline,
+            theory_best=float(theory_best) if theory_best is not None else None,
+        )
+    except Exception as exc:
+        logger.warning("Adaptation V2 scoring failed: %s", exc)
+        adapt_v2_score = round(MAX_ADAPTATION * ADAPT_V2_STABLE_DEFAULT_FRAC, 4)
+
+    if "adaptation" in result.get("sub_scores", {}):
+        result["sub_scores"]["adaptation"]["score"] = round(adapt_v2_score, 4)
+        mx = result["sub_scores"]["adaptation"]["max"]
+        frac = adapt_v2_score / mx if mx > 0 else 0.0
+        result["sub_scores"]["adaptation"]["pct"] = round(frac * 100, 2)
+        result["sub_scores"]["adaptation"]["detail"] = {"source": "adaptation_v2"}
+
+    # Recompute total with real adaptation score
+    new_total = sum(
+        result["sub_scores"][cat]["score"]
+        for cat in ("pace", "consistency", "execution", "robustness", "adaptation")
+        if cat in result["sub_scores"]
+    )
+    new_total = _apply_confidence(
+        new_total, result.get("data_confidence", 1.0),
+    )
+    if math.isnan(new_total):
+        new_total = result["total_score"]
+    result["total_score"] = round(min(100.0, max(0.0, new_total)), 4)
+    result["grade"] = _assign_grade(result["total_score"])
 
     # Surface track evolution summary in scoring result
 

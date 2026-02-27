@@ -598,6 +598,8 @@ def run_full_analysis(
         # Joker lap detection (step 08j)
         "joker_detection_result": None,
         "joker_lap_number":      None,
+        # Weather timeline (step 08e)
+        "weather_timeline":      None,
     }
 
     # Phase-tracking state (populated by step 08d)
@@ -957,6 +959,72 @@ def run_full_analysis(
             evo_result.get("grip_trend", "unknown"),
         )
     summary["track_evolution"] = track_evolution
+
+    # -- 08e: Weather timeline (per-lap weather interpolation) --
+
+    weather_timeline: "pd.DataFrame | None" = None
+
+    def _weather_timeline():
+        wt_mod = _import("weather_timeline")
+        ms_mod = _import("meteo_service")
+        if wt_mod is None or ms_mod is None:
+            return None
+
+        # Try to get session datetime
+        session_dt = wt_mod.parse_session_datetime(csv_path)
+        if session_dt is None:
+            # Check user-provided datetime from web form
+            _dt_str = meta.get("session_datetime") or meta.get("date")
+            if _dt_str:
+                try:
+                    session_dt = datetime.fromisoformat(str(_dt_str))
+                except (ValueError, TypeError):
+                    pass
+        if session_dt is None:
+            logger.info("No session datetime available; skipping weather timeline")
+            return None
+
+        # Get track coordinates
+        _tid = summary.get("track_id")
+        if not _tid or not conn:
+            return None
+        try:
+            _track_row = conn.execute(
+                "SELECT start_lat, start_lon FROM tracks WHERE track_id = ?",
+                (_tid,)
+            ).fetchone()
+        except Exception:
+            _track_row = None
+        if not _track_row or not _track_row["start_lat"]:
+            return None
+
+        lat, lon = _track_row["start_lat"], _track_row["start_lon"]
+
+        # Fetch hourly weather
+        hourly = ms_mod.fetch_historical_weather(
+            lat, lon, session_dt.strftime("%Y-%m-%d"),
+        )
+        if "error" in hourly:
+            logger.warning("Weather API error: %s", hourly.get("error"))
+            return None
+
+        # Build per-lap timestamps from lap_times
+        _lap_ts: list[float] = []
+        cumulative = 0.0
+        for lt in (summary.get("lap_times") or []):
+            _lap_ts.append(cumulative)
+            cumulative += lt
+        if not _lap_ts:
+            return None
+
+        return wt_mod.build_weather_timeline(hourly, _lap_ts, session_dt)
+
+    weather_tl, err = _safe_step("08e_weather_timeline", _weather_timeline)
+    _record("08e_weather_timeline", weather_tl, err)
+    if weather_tl is not None and not weather_tl.empty:
+        weather_timeline = weather_tl
+        logger.info("Weather timeline: %d laps enriched", len(weather_tl))
+    summary["weather_timeline"] = weather_timeline
 
     # -- 08d3: Tyre degradation / grip evolution (from telemetry)
 
@@ -2042,6 +2110,7 @@ def run_full_analysis(
                 lap_metrics=lap_metrics,
                 track_evolution=track_evolution,
                 corner_performances=corner_performances,
+                weather_timeline=weather_timeline,
             )
         # Detect wet from context for non-phase-aware fallback
 
@@ -2178,6 +2247,7 @@ def run_full_analysis(
                 grip_evolution=grip_evolution_result,
                 data_quality=data_quality_rpt,
                 theoretical_result=_sim_result,
+                weather_timeline=weather_timeline,
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)

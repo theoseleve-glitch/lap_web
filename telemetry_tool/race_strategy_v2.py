@@ -377,3 +377,82 @@ def _compute_stint_ballast(
     fuel_kg = max(0, fuel_kg)
 
     return compute_ballast(min_kart, empty, fuel_kg, driver_weight)
+
+
+def adjust_stints_for_weather(
+    remaining_stints: list[dict[str, Any]],
+    forecast: dict[str, Any],
+    config: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """
+    Annotate remaining stints with weather risk and adjusted lap time estimates.
+
+    For each stint:
+    - Estimate conditions at stint time from forecast
+    - Flag 'wet_risk' if rain_prob > 50% or rain_mm > 0.5
+    - Suggest compound via estimate_track_conditions()
+
+    Does NOT modify strategy -- returns annotated copies.
+
+    Parameters
+    ----------
+    remaining_stints : list[dict]
+        Stints to annotate, each with planned_start_s / planned_end_s.
+    forecast : dict
+        Weather forecast from get_weather_forecast(). Must contain a
+        ``"forecast"`` key with hourly entries, or an ``"error"`` key.
+    config : dict
+        Race configuration (unused currently, reserved for future
+        pace-adjustment logic).
+
+    Returns
+    -------
+    list[dict]
+        Shallow copies of stints with weather annotations added.
+    """
+    # If forecast is broken or missing the hourly list, return plain copies.
+    if "error" in forecast or "forecast" not in forecast:
+        return [dict(s) for s in remaining_stints]
+
+    hourly = forecast["forecast"]
+    if not hourly:
+        return [dict(s) for s in remaining_stints]
+
+    # Lazy import to avoid circular imports at module level
+    from meteo_service import estimate_track_conditions
+
+    annotated: list[dict[str, Any]] = []
+    for stint in remaining_stints:
+        s = dict(stint)  # shallow copy — never mutate the original
+
+        # Midpoint of the stint in seconds from race start
+        mid_s = (s.get("planned_start_s", 0) + s.get("planned_end_s", 0)) / 2.0
+
+        # Map midpoint to the closest forecast hour (index)
+        hour_idx = int(round(mid_s / 3600.0))
+        hour_idx = max(0, min(hour_idx, len(hourly) - 1))
+
+        hour = hourly[hour_idx]
+        rain_prob = hour.get("rain_prob_pct", 0) or 0
+        rain_mm = hour.get("rain_mm", 0) or 0
+
+        if rain_prob > 50 or rain_mm > 0.5:
+            s["wet_risk"] = True
+
+            # Build a pseudo-weather dict for estimate_track_conditions
+            weather_for_hour = {
+                "air_temp_c": hour.get("air_temp_c"),
+                "humidity_pct": hour.get("humidity_pct"),
+                "rain_mm": rain_mm,
+                "wind_speed_mps": hour.get("wind_speed_mps"),
+            }
+            conditions = estimate_track_conditions(weather_for_hour)
+
+            s["recommended_compound"] = conditions.get("recommended_compound")
+            s["grip_score_forecast"] = conditions.get("grip_score")
+        else:
+            s["wet_risk"] = False
+
+        annotated.append(s)
+
+    return annotated
