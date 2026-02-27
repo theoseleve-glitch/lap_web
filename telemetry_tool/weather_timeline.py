@@ -11,6 +11,9 @@ categorical ``weather_code`` by nearest hour, and computes per-lap track conditi
 
 Public API
 ~~~~~~~~~~
+``parse_session_datetime(csv_path)``
+    Extract session date/time from CSV metadata headers.
+
 ``build_weather_timeline(hourly_weather, lap_timestamps, session_start)``
     Returns a DataFrame with one row per lap.
 """
@@ -18,7 +21,9 @@ Public API
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, List, Optional
 
 import pandas as pd
@@ -50,6 +55,93 @@ REQUIRED_COLUMNS = [
     "track_state",
     "track_temp_est_c",
 ]
+
+
+# Regex for ISO-8601 timestamp in comment lines (e.g. "# Session: 2026-02-20T09:30:00Z")
+_ISO_TIMESTAMP_RE = re.compile(
+    r"#\s*\w+:\s*(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z?"
+)
+
+_MAX_HEADER_LINES = 30
+
+
+def parse_session_datetime(csv_path: Path) -> Optional[datetime]:
+    """
+    Extract session date/time from CSV metadata headers.
+
+    RaceChrono CSVs have comment lines starting with ``#`` that may contain
+    date/time info.  This function reads the first 30 lines looking for:
+
+    1. RaceChrono ``# Date:`` / ``# Time:`` headers (highest priority)
+    2. ISO-8601 timestamp in a comment line, e.g. ``# Session: 2026-02-20T09:30:00Z``
+    3. Returns ``None`` if nothing found (caller must prompt user)
+
+    Parameters
+    ----------
+    csv_path : Path
+        Path to the CSV file.
+
+    Returns
+    -------
+    Optional[datetime]
+        Parsed session datetime, or None if no date metadata found.
+    """
+    csv_path = Path(csv_path)
+
+    date_str: Optional[str] = None
+    time_str: Optional[str] = None
+    iso_match: Optional[str] = None
+
+    try:
+        with open(csv_path, "r", encoding="utf-8", errors="replace") as fh:
+            for i, line in enumerate(fh):
+                if i >= _MAX_HEADER_LINES:
+                    break
+
+                stripped = line.strip()
+                if not stripped.startswith("#"):
+                    continue
+
+                # Priority 1: RaceChrono "# Date:" / "# Time:" headers
+                lower = stripped.lower()
+                if lower.startswith("# date:"):
+                    date_str = stripped.split(":", 1)[1].strip()
+                elif lower.startswith("# time:"):
+                    time_str = stripped.split(":", 1)[1].strip()
+
+                # Priority 2: ISO-8601 timestamp in comment line
+                if iso_match is None:
+                    m = _ISO_TIMESTAMP_RE.match(stripped)
+                    if m:
+                        iso_match = m.group(1)
+
+    except OSError:
+        logger.warning("Could not read CSV header from %s", csv_path)
+        return None
+
+    # Priority 1: explicit Date/Time headers
+    if date_str is not None:
+        try:
+            date_part = datetime.strptime(date_str, "%Y-%m-%d")
+            if time_str is not None:
+                time_part = datetime.strptime(time_str, "%H:%M:%S")
+                return date_part.replace(
+                    hour=time_part.hour,
+                    minute=time_part.minute,
+                    second=time_part.second,
+                )
+            return date_part  # midnight
+        except ValueError:
+            logger.warning("Could not parse date/time: date=%r time=%r", date_str, time_str)
+
+    # Priority 2: ISO-8601 from comment line
+    if iso_match is not None:
+        try:
+            return datetime.fromisoformat(iso_match)
+        except ValueError:
+            logger.warning("Could not parse ISO timestamp: %r", iso_match)
+
+    return None
 
 
 def _empty_dataframe() -> pd.DataFrame:

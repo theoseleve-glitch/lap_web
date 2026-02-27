@@ -6,7 +6,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from weather_timeline import build_weather_timeline
+from weather_timeline import build_weather_timeline, parse_session_datetime
 from datetime import datetime
 
 
@@ -186,3 +186,60 @@ class TestWeatherTimeline:
             assert col in df.columns, f"Missing column: {col}"
         # lap_number should be 1-indexed
         assert list(df["lap_number"]) == [1, 2, 3]
+
+
+# ---------------------------------------------------------------------------
+# Tests for parse_session_datetime
+# ---------------------------------------------------------------------------
+
+class TestParseSessionDatetime:
+
+    def test_racechrono_date_header(self, tmp_path):
+        """CSV with RaceChrono '# Date:' and '# Time:' headers."""
+        csv_file = tmp_path / "session.csv"
+        csv_file.write_text(
+            "# RaceChrono Pro v1.2\n"
+            "# Date: 2026-02-15\n"
+            "# Time: 14:05:30\n"
+            "# Track: Spa-Francorchamps\n"
+            "Lap #,Speed (m/s),Lat,Lon\n"
+            "1,25.4,50.437,5.971\n"
+        )
+        result = parse_session_datetime(csv_file)
+        assert result == datetime(2026, 2, 15, 14, 5, 30)
+
+    def test_date_only_no_time(self, tmp_path):
+        """CSV with '# Date:' but no '# Time:' header -> midnight."""
+        csv_file = tmp_path / "session.csv"
+        csv_file.write_text(
+            "# RaceChrono Pro v1.2\n"
+            "# Date: 2026-03-10\n"
+            "Lap #,Speed (m/s),Lat,Lon\n"
+            "1,30.0,50.437,5.971\n"
+        )
+        result = parse_session_datetime(csv_file)
+        assert result == datetime(2026, 3, 10, 0, 0, 0)
+
+    def test_no_metadata_returns_none(self, tmp_path):
+        """CSV with no date headers at all -> None."""
+        csv_file = tmp_path / "session.csv"
+        csv_file.write_text(
+            "Lap #,Speed (m/s),Lat,Lon\n"
+            "1,25.4,50.437,5.971\n"
+            "2,26.1,50.438,5.972\n"
+        )
+        result = parse_session_datetime(csv_file)
+        assert result is None
+
+    def test_racebox_timestamp_header(self, tmp_path):
+        """CSV with ISO-8601 '# Session:' timestamp."""
+        csv_file = tmp_path / "session.csv"
+        csv_file.write_text(
+            "# RaceBox Mini S\n"
+            "# Session: 2026-02-20T09:30:00Z\n"
+            "# Driver: Test Driver\n"
+            "Lap #,Speed (m/s),Lat,Lon\n"
+            "1,28.0,45.621,9.285\n"
+        )
+        result = parse_session_datetime(csv_file)
+        assert result == datetime(2026, 2, 20, 9, 30, 0)
