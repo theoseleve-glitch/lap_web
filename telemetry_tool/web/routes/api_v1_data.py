@@ -1402,43 +1402,55 @@ def v1_dashboard_stats():
     """Return dashboard overview statistics.
 
     Returns:
-        200 with stats dict (total_sessions, total_drivers, avg_score, etc.)
+        200 with {total_sessions, total_drivers, avg_score, pb_time,
+        recent_scores: number[], recent_times: number[],
+        recent_sessions: SessionRow[]}
     """
     conn = get_db_connection()
-    stats = get_dashboard_stats(conn)
+    raw = get_dashboard_stats(conn)
 
-    # Recent sessions
-    recent = get_sessions(conn, limit=5, offset=0)
+    # Map DB column names to frontend-expected names
+    stats = {
+        "total_sessions": raw.get("total_sessions", 0) or 0,
+        "total_drivers": raw.get("total_drivers", 0) or 0,
+        "avg_score": raw.get("avg_score"),
+        "pb_time": raw.get("overall_best_time_s"),
+    }
 
-    # Recent scores
+    # Recent sessions — map to frontend SessionRow shape
+    sessions = get_sessions(conn, limit=5, offset=0)
+    stats["recent_sessions"] = [
+        {
+            "id": s.get("session_id", ""),
+            "date": s.get("session_date", ""),
+            "track_name": s.get("track_name", ""),
+            "driver_name": s.get("driver_name", ""),
+            "laps": s.get("n_laps", 0) or 0,
+            "best_time": s.get("best_lap_time_s"),
+            "score": s.get("total_score"),
+        }
+        for s in sessions
+    ]
+
+    # Recent scores — flat number array for sparkline
     score_rows = conn.execute(
-        """SELECT s.session_id, s.session_date, s.total_score, s.grade,
-                  d.driver_name, t.track_name
+        """SELECT s.total_score
            FROM sessions s
-           JOIN drivers d ON s.driver_id = d.driver_id
-           LEFT JOIN tracks t ON s.track_id = t.track_id
            WHERE s.total_score IS NOT NULL
            ORDER BY s.session_date DESC
-           LIMIT 10""",
+           LIMIT 20""",
     ).fetchall()
-    recent_scores = [dict(r) for r in score_rows]
+    stats["recent_scores"] = [r["total_score"] for r in score_rows]
 
-    # Recent best times
+    # Recent best times — flat number array for sparkline
     time_rows = conn.execute(
-        """SELECT s.session_id, s.session_date, s.best_lap_time_s,
-                  d.driver_name, t.track_name
+        """SELECT s.best_lap_time_s
            FROM sessions s
-           JOIN drivers d ON s.driver_id = d.driver_id
-           LEFT JOIN tracks t ON s.track_id = t.track_id
            WHERE s.best_lap_time_s IS NOT NULL
            ORDER BY s.session_date DESC
-           LIMIT 10""",
+           LIMIT 20""",
     ).fetchall()
-    recent_times = [dict(r) for r in time_rows]
-
-    stats["recent_scores"] = recent_scores
-    stats["recent_times"] = recent_times
-    stats["recent_sessions"] = recent
+    stats["recent_times"] = [r["best_lap_time_s"] for r in time_rows]
 
     return api_response(stats)
 

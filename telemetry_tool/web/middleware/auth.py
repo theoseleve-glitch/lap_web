@@ -18,6 +18,11 @@ def auth_middleware():
     if not current_app.config.get("AUTH_REQUIRED"):
         return  # Legacy mode -- no auth required
 
+    # Let CORS preflight through — browsers never attach auth headers
+    # to OPTIONS requests, so rejecting them breaks the CORS handshake.
+    if request.method == "OPTIONS":
+        return
+
     # Skip auth for public auth endpoints (explicit allowlist, not prefix,
     # so future /auth/admin/* routes are still protected).
     _AUTH_PUBLIC_PATHS = {
