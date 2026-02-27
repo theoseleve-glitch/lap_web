@@ -16,6 +16,20 @@ interface LeaderboardRow {
   date: string;
 }
 
+interface Track {
+  track_id: string;
+  track_name: string;
+}
+
+interface TrackLeaderboardEntry {
+  rank: number;
+  session_id: string;
+  session_date: string;
+  best_lap_time_s: number;
+  total_score: number | null;
+  driver_name: string;
+}
+
 function formatTime(s: number | null): string {
   if (s == null) return '—';
   const m = Math.floor(s / 60);
@@ -43,18 +57,50 @@ export default function LeaderboardPage() {
   const router = useRouter();
   const [selectedTrack, setSelectedTrack] = useState(TRACK_ALL);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['leaderboard', selectedTrack],
-    queryFn: () =>
-      api.get<{ entries: LeaderboardRow[]; tracks: string[] }>(
-        selectedTrack === TRACK_ALL
-          ? '/leaderboard'
-          : `/leaderboard?track=${encodeURIComponent(selectedTrack)}`,
-      ),
+  const { data: tracksData, isLoading: isTracksLoading } = useQuery({
+    queryKey: ['tracks'],
+    queryFn: () => api.get<{ tracks: Track[] }>('/tracks'),
+  });
+
+  const tracks = tracksData?.tracks ?? [];
+  const trackNameById = new Map(tracks.map((track) => [track.track_id, track.track_name]));
+
+  const { data, isLoading: isLeaderboardLoading } = useQuery({
+    queryKey: ['leaderboard', selectedTrack, tracks.map((track) => track.track_id).join(',')],
+    queryFn: async () => {
+      const selectedTrackIds =
+        selectedTrack === TRACK_ALL ? tracks.map((track) => track.track_id) : [selectedTrack];
+
+      const responses = await Promise.all(
+        selectedTrackIds.map((trackId) =>
+          api.get<{ track_id: string; leaderboard: TrackLeaderboardEntry[] }>(
+            `/tracks/${encodeURIComponent(trackId)}/leaderboard`,
+          ),
+        ),
+      );
+
+      const entries = responses
+        .flatMap((response) =>
+          response.leaderboard.map((entry) => ({
+            rank: entry.rank,
+            session_id: entry.session_id,
+            driver_name: entry.driver_name,
+            track_name: trackNameById.get(response.track_id) ?? response.track_id,
+            best_time: entry.best_lap_time_s,
+            score: entry.total_score,
+            date: entry.session_date,
+          })),
+        )
+        .sort((a, b) => a.best_time - b.best_time)
+        .map((entry, index) => ({ ...entry, rank: index + 1 }));
+
+      return { entries };
+    },
+    enabled: tracks.length > 0,
   });
 
   const entries = data?.entries ?? [];
-  const tracks = data?.tracks ?? [];
+  const isLoading = isTracksLoading || isLeaderboardLoading;
 
   return (
     <div>
@@ -71,9 +117,9 @@ export default function LeaderboardPage() {
               onChange={(e) => setSelectedTrack(e.target.value)}
             >
               <option value={TRACK_ALL}>All Tracks</option>
-              {tracks.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {tracks.map((track) => (
+                <option key={track.track_id} value={track.track_id}>
+                  {track.track_name}
                 </option>
               ))}
             </select>
