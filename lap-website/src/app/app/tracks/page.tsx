@@ -6,12 +6,13 @@ import { api } from '@/lib/api-client';
 import { PageHeader, DataTable } from '@/components/app';
 
 interface TrackRow {
-  id: number;
-  name: string;
-  country: string;
-  city: string;
-  sessions_count: number;
-  best_time: number | null;
+  track_id: string;
+  track_name: string;
+  session_count?: number;
+  best_time_s?: number | null;
+  lap_length_m?: number | null;
+  start_lat?: number | null;
+  start_lon?: number | null;
 }
 
 function formatTime(s: number | null): string {
@@ -41,18 +42,36 @@ export default function TracksPage() {
       ) : (
         <DataTable
           columns={[
-            { key: 'name', header: 'Track', sortable: true },
-            { key: 'country', header: 'Country', sortable: true },
-            { key: 'city', header: 'City', sortable: true },
-            { key: 'sessions_count', header: 'Sessions', sortable: true, className: 'font-telemetry text-right' },
             {
-              key: 'best_time', header: 'Record', sortable: true, className: 'font-telemetry',
-              render: (row: TrackRow) => <span className="text-acid-green">{formatTime(row.best_time)}</span>,
+              key: 'track_name',
+              header: 'Track',
+              sortable: true,
+              render: (row: TrackRow) => <span>{row.track_name}</span>,
+            },
+            {
+              key: 'lap_length_m',
+              header: 'Lap Length',
+              sortable: true,
+              className: 'font-telemetry',
+              render: (row: TrackRow) => (
+                <span>{typeof row.lap_length_m === 'number' && row.lap_length_m > 0 ? `${Math.round(row.lap_length_m)} m` : '—'}</span>
+              ),
+            },
+            {
+              key: 'session_count',
+              header: 'Sessions',
+              sortable: true,
+              className: 'font-telemetry text-right',
+              render: (row: TrackRow) => <span>{row.session_count ?? 0}</span>,
+            },
+            {
+              key: 'best_time_s', header: 'Record', sortable: true, className: 'font-telemetry',
+              render: (row: TrackRow) => <span className="text-acid-green">{formatTime(row.best_time_s ?? null)}</span>,
             },
           ]}
           data={tracks}
-          keyField="id"
-          onRowClick={(row) => router.push(`/app/tracks/${row.id}`)}
+          keyField="track_id"
+          onRowClick={(row) => router.push(`/app/tracks/${row.track_id}`)}
           emptyMessage="No tracks found"
         />
       )}
