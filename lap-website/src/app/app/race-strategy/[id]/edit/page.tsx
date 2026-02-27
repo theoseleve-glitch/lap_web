@@ -259,12 +259,13 @@ export default function EditRacePage() {
             <h2 className="font-monument text-lg text-chalk">Drivers</h2>
             <button type="button" onClick={addDriver} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10">+ Add Driver</button>
           </div>
+          <p className="text-steel font-body text-sm mb-3">Enter at least one driver name to build the strategy.</p>
           <div className="space-y-3">
             {drivers.map((d, i) => (
               <div key={i} className="bg-asphalt/40 border border-steel/10 p-3">
                 <div className="flex items-center gap-3 mb-2">
                   <input type="color" value={d.color_hex} onChange={e => updateDriver(i, 'color_hex', e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-                  <input className={`${inputCls} flex-1`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder={`Driver ${i + 1}`} />
+                  <input aria-label="Driver name" className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
                   <input className={`${inputCls} w-24`} value={d.weight_kg} onChange={e => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
                   <input className={`${inputCls} w-24`} value={d.com_channel} onChange={e => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
                   <button type="button" onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry">{d.showConstraints ? '▼' : '▶'} Rules</button>

@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
 
@@ -233,6 +233,13 @@ export default function DriverProgressionPage() {
     queryFn: () => api.get<{ tracks: TrackOption[] }>(`/drivers/${id}/tracks`),
   });
 
+  const trackOptions = useMemo(() => tracks?.tracks ?? [], [tracks]);
+
+  useEffect(() => {
+    if (trackId || trackOptions.length === 0) return;
+    setTrackId(String(trackOptions[0].id));
+  }, [trackId, trackOptions]);
+
   const draw = useCallback(() => {
     if (!data || !canvasRef.current) return;
     const canvas = canvasRef.current;
@@ -268,7 +275,6 @@ export default function DriverProgressionPage() {
   if (!data) return <div className="text-steel font-body">Driver not found</div>;
 
   const progression = data.progression ?? [];
-  const trackOptions = tracks?.tracks ?? [];
 
   return (
     <div>

@@ -7,12 +7,12 @@ import { api } from '@/lib/api-client';
 import { PageHeader, DataTable } from '@/components/app';
 
 interface KartRow {
-  id: number;
-  name: string;
-  number: string | null;
-  chassis: string | null;
-  engine: string | null;
-  sessions_count: number;
+  kart_id: number;
+  kart_name: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  engine?: string | null;
+  session_count?: number;
   notes: string | null;
 }
 
@@ -48,23 +48,23 @@ export default function KartsPage() {
         <DataTable
           columns={[
             {
-              key: 'name',
+              key: 'kart_name',
               header: 'Name / Number',
               sortable: true,
               render: (row: KartRow) => (
                 <span className="font-body">
-                  {row.name}
-                  {row.number && (
-                    <span className="ml-2 text-steel font-telemetry text-xs">#{row.number}</span>
+                  {row.kart_name}
+                  {row.kart_id && (
+                    <span className="ml-2 text-steel font-telemetry text-xs">#{row.kart_id}</span>
                   )}
                 </span>
               ),
             },
             {
-              key: 'chassis',
+              key: 'manufacturer',
               header: 'Chassis',
               sortable: true,
-              render: (row: KartRow) => <span>{row.chassis ?? '—'}</span>,
+              render: (row: KartRow) => <span>{[row.manufacturer, row.model].filter(Boolean).join(' ') || '—'}</span>,
             },
             {
               key: 'engine',
@@ -73,10 +73,11 @@ export default function KartsPage() {
               render: (row: KartRow) => <span>{row.engine ?? '—'}</span>,
             },
             {
-              key: 'sessions_count',
+              key: 'session_count',
               header: 'Sessions',
               sortable: true,
               className: 'font-telemetry text-right',
+              render: (row: KartRow) => <span>{row.session_count ?? 0}</span>,
             },
             {
               key: 'notes',
@@ -87,8 +88,8 @@ export default function KartsPage() {
             },
           ]}
           data={karts}
-          keyField="id"
-          onRowClick={(row) => router.push(`/app/karts/${row.id}`)}
+          keyField="kart_id"
+          onRowClick={(row) => router.push(`/app/karts/${row.kart_id}`)}
           emptyMessage="No karts found. Add your first kart to get started."
         />
       )}

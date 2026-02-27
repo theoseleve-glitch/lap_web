@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
@@ -22,11 +22,19 @@ interface Driver {
 interface Track {
   track_id: number;
   track_name: string;
+  lap_length_m?: number | null;
+  start_lat?: number | null;
+  start_lon?: number | null;
 }
 
 interface Kart {
   id: number;
   name: string;
+  manufacturer?: string | null;
+  model?: string | null;
+  engine?: string | null;
+  power_hp?: number | null;
+  kart_weight_kg?: number | null;
 }
 
 interface AnalysisJob {
@@ -47,6 +55,33 @@ function formatSize(bytes: number): string {
 }
 
 const stepLabels = ['Select Data', 'Configure', 'Analyze'] as const;
+
+function isCompleteTrack(track: Track): boolean {
+  return Boolean(
+    track.track_name?.trim() &&
+      typeof track.lap_length_m === 'number' &&
+      track.lap_length_m > 0 &&
+      typeof track.start_lat === 'number' &&
+      typeof track.start_lon === 'number',
+  );
+}
+
+function isCompleteDriver(driver: Driver): boolean {
+  return Boolean(driver.driver_name?.trim());
+}
+
+function isCompleteKart(kart: Kart): boolean {
+  return Boolean(
+    kart.name?.trim() &&
+      kart.manufacturer?.trim() &&
+      kart.model?.trim() &&
+      kart.engine?.trim() &&
+      typeof kart.power_hp === 'number' &&
+      kart.power_hp > 0 &&
+      typeof kart.kart_weight_kg === 'number' &&
+      kart.kart_weight_kg > 0,
+  );
+}
 
 export default function AnalyzePage() {
   const router = useRouter();
@@ -163,10 +198,34 @@ export default function AnalyzePage() {
     }
   };
 
-  const files = filesData?.files ?? [];
-  const drivers = driversData?.drivers ?? [];
-  const tracks = tracksData?.tracks ?? [];
-  const karts = kartsData?.karts ?? [];
+  const files = useMemo(() => filesData?.files ?? [], [filesData]);
+  const drivers = useMemo(() => driversData?.drivers ?? [], [driversData]);
+  const tracks = useMemo(() => tracksData?.tracks ?? [], [tracksData]);
+  const karts = useMemo(() => kartsData?.karts ?? [], [kartsData]);
+
+  useEffect(() => {
+    if (step !== 2 || driverId || drivers.length === 0) return;
+    const defaultDriver = drivers.find(isCompleteDriver);
+    if (defaultDriver) {
+      setDriverId(String(defaultDriver.driver_id));
+    }
+  }, [step, drivers, driverId]);
+
+  useEffect(() => {
+    if (step !== 2 || trackId || tracks.length === 0) return;
+    const defaultTrack = tracks.find(isCompleteTrack);
+    if (defaultTrack) {
+      setTrackId(String(defaultTrack.track_id));
+    }
+  }, [step, tracks, trackId]);
+
+  useEffect(() => {
+    if (step !== 2 || kartId || karts.length === 0) return;
+    const defaultKart = karts.find(isCompleteKart);
+    if (defaultKart) {
+      setKartId(String(defaultKart.id));
+    }
+  }, [step, karts, kartId]);
 
   return (
     <div>
