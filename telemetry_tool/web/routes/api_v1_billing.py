@@ -100,7 +100,7 @@ def _get_stripe():
 @rate_limit(tier="read")
 def get_subscription():
     """Return current subscription details from Stripe (cached 5min)."""
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -194,7 +194,7 @@ def _fetch_subscription_from_stripe(sub_id: str) -> dict | None:
 @rate_limit(tier="read")
 def get_invoices():
     """Return paginated list of past invoices from Stripe."""
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -258,7 +258,7 @@ def get_invoices():
 @rate_limit(tier="read")
 def get_usage():
     """Return current month usage summary from usage_monthly table."""
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -342,7 +342,7 @@ def get_usage():
 @rate_limit(tier="write")
 def create_portal():
     """Generate a Stripe Customer Portal URL for plan management."""
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 

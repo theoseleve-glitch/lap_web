@@ -73,6 +73,7 @@ class TestBillingStatus:
         with app.test_request_context("/api/v1/billing/status"):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn):
                 response, status = billing_status()
                 data = response.get_json()
@@ -114,6 +115,7 @@ class TestBillingStatus:
         with app.test_request_context("/api/v1/billing/status"):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn), \
                  patch("web.routes.billing.STRIPE_SECRET_KEY", "sk_test_xxx"), \
                  patch("web.routes.billing.stripe") as mock_stripe:
@@ -154,6 +156,7 @@ class TestBillingPortal:
         ):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn):
                 response, status = billing_portal()
                 data = response.get_json()
@@ -186,6 +189,7 @@ class TestBillingPortal:
         ):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn), \
                  patch("web.routes.billing.STRIPE_SECRET_KEY", "sk_test_xxx"), \
                  patch("web.routes.billing.stripe") as mock_stripe:
@@ -224,6 +228,7 @@ class TestBillingEmail:
         ):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn):
                 response, status = billing_email()
                 data = response.get_json()
@@ -252,6 +257,7 @@ class TestBillingEmail:
         ):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=conn), \
                  patch("web.routes.billing.STRIPE_SECRET_KEY", "sk_test_xxx"), \
                  patch("web.routes.billing.stripe") as mock_stripe:
@@ -282,6 +288,7 @@ class TestBillingEmail:
         ):
             from flask import g
             g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.billing._get_conn", return_value=MagicMock()):
                 response, status = billing_email()
                 data = response.get_json()

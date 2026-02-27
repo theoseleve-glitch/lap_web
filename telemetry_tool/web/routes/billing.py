@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import sys
 
 from flask import Blueprint, g, request, jsonify
 
@@ -32,6 +33,16 @@ except ImportError:
         return decorator
 
 logger = logging.getLogger(__name__)
+
+
+def log_security_event(*args, **kwargs):
+    """Lazy proxy to avoid circular imports."""
+    try:
+        from admin.audit import log_security_event as _log
+        _log(*args, **kwargs)
+    except Exception:
+        logger.debug("Failed to log security event", exc_info=True)
+
 
 bp = Blueprint("billing", __name__, url_prefix="/api/v1/billing")
 
@@ -137,6 +148,19 @@ def _record_event(conn, stripe_event_id: str, event_type: str, payload_hash: str
     conn.commit()
 
 
+def _update_webhook_status(conn, stripe_event_id: str, status: str, error: str | None = None):
+    """Update the processing status of a webhook in stripe_webhook_log."""
+    try:
+        conn.execute(
+            "UPDATE stripe_webhook_log SET processing_status = %(s)s, "
+            "error_message = %(e)s WHERE stripe_event_id = %(id)s",
+            {"s": status, "e": error, "id": stripe_event_id},
+        )
+        conn.commit()
+    except Exception:
+        logger.debug("Failed to update webhook status", exc_info=True)
+
+
 def _resolve_tier_from_checkout(session: dict) -> str:
     """Resolve plan tier from a Stripe checkout session.
 
@@ -202,6 +226,10 @@ def stripe_webhook():
         )
     except stripe.error.SignatureVerificationError:
         logger.warning("Invalid Stripe webhook signature")
+        log_security_event("webhook_signature_invalid",
+                           ip_address=request.remote_addr,
+                           details={"sig_header_len": len(sig_header)},
+                           severity="warning")
         return jsonify({"error": "Invalid signature"}), 400
     except Exception:
         logger.exception("Stripe webhook construction failed")
@@ -232,6 +260,16 @@ def stripe_webhook():
 
     payload_hash = hashlib.sha256(payload.encode()).hexdigest()[:16]
 
+    # Log webhook to stripe_webhook_log (pending)
+    try:
+        from admin.audit import log_stripe_webhook, _sanitize_payload
+        sanitized = _sanitize_payload(event.get("data", {}).get("object", {}))
+        log_stripe_webhook(conn, event_id, event_type, sanitized,
+                           signature_valid=True, processing_status="pending")
+        conn.commit()
+    except Exception:
+        logger.debug("Failed to log webhook to stripe_webhook_log", exc_info=True)
+
     try:
         if event_type == "checkout.session.completed":
             _handle_checkout_completed(data)
@@ -254,6 +292,7 @@ def stripe_webhook():
         else:
             logger.debug("Unhandled Stripe event type: %s", event_type)
         # Track successful webhook processing
+        _update_webhook_status(conn, event_id, "processed")
         try:
             from web.metrics import incr_counter
             incr_counter("webhook_processed")
@@ -261,6 +300,7 @@ def stripe_webhook():
             pass
     except Exception:
         logger.exception("Error processing Stripe event %s", event_type)
+        _update_webhook_status(conn, event_id, "failed", str(sys.exc_info()[1]))
         try:
             from web.metrics import incr_counter
             incr_counter("webhook_failed")
@@ -679,7 +719,7 @@ def billing_status():
     """
     from datetime import datetime, timezone
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -747,7 +787,7 @@ def billing_portal():
     Returns 400 if user has no Stripe customer.
     Returns 503 if Stripe is not configured.
     """
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -798,7 +838,7 @@ def billing_email():
 
     Accepts ``{email}`` in body.  Requires an existing Stripe customer.
     """
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 

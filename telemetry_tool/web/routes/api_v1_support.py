@@ -62,7 +62,7 @@ def create_ticket():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -180,7 +180,7 @@ def list_tickets():
     """List the current user's support tickets."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 

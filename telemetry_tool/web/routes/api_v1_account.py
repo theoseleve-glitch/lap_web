@@ -79,7 +79,7 @@ def create_export():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -120,7 +120,7 @@ def export_status(export_id: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -155,7 +155,7 @@ def export_download(export_id: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -204,7 +204,7 @@ def delete_account():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -257,7 +257,7 @@ def cancel_deletion():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -305,7 +305,7 @@ def update_profile():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -414,7 +414,7 @@ def change_password_route():
     """
     from auth.service import change_password, hash_refresh_token, AuthError
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -466,7 +466,7 @@ def list_sessions():
     """List active sessions (from refresh_tokens table)."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -526,7 +526,7 @@ def revoke_session(token_id: int):
     """Revoke a specific session by its refresh token ID."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -559,7 +559,7 @@ def revoke_all_sessions():
     from sqlalchemy import text
     from auth.service import hash_refresh_token
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -606,7 +606,7 @@ def setup_2fa():
     from sqlalchemy import text
     from auth.totp import generate_totp_secret, generate_totp_uri, generate_qr_data_uri
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -661,7 +661,7 @@ def confirm_2fa():
     from sqlalchemy import text
     from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -731,7 +731,7 @@ def disable_2fa():
     from auth.service import verify_password, _log_audit
     from auth.totp import verify_totp, verify_backup_code
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -815,7 +815,7 @@ def regenerate_backup_codes():
     from auth.service import verify_password
     from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -876,7 +876,7 @@ def get_preferences():
     """Return current user preferences."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -902,7 +902,7 @@ def update_preferences():
     """Partial merge into user preferences JSONB column."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -954,7 +954,7 @@ def list_connections():
     """List linked OAuth providers."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -994,7 +994,7 @@ def unlink_connection(provider: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1057,7 +1057,7 @@ def login_activity():
     """Return paginated login activity from audit_log."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1104,7 +1104,7 @@ def data_summary():
     from sqlalchemy import text
     from auth.entitlements import get_user_entitlements
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1272,7 +1272,7 @@ def delete_sessions():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1363,7 +1363,7 @@ def retention_schedule():
     from sqlalchemy import text
     from auth.entitlements import get_user_entitlements
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1446,7 +1446,7 @@ def accept_terms():
     """Record that the user accepted the current terms version."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1476,7 +1476,7 @@ def terms_status():
     """Check if the user's terms acceptance is current."""
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1517,7 +1517,7 @@ def get_entitlements():
     """
     from auth.entitlements import get_plan_entitlements
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1557,7 +1557,7 @@ def get_usage():
     """
     from auth.usage import get_usage_snapshot
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1600,7 +1600,7 @@ def get_retention():
     from auth.entitlements import get_plan_entitlements
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1684,7 +1684,7 @@ def list_oauth_connections():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1729,7 +1729,7 @@ def unlink_oauth_connection(provider: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -1802,7 +1802,7 @@ def create_support_ticket():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None) or getattr(g, "current_user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 

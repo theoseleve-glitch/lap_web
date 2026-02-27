@@ -217,6 +217,7 @@ def _make_account_app():
     def _inject_user():
         g.user_id = 42
         g.current_user_id = 42
+        g.current_user_id = 42
         g.workspace_id = "ws_001"
 
     return app

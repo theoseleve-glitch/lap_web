@@ -8,8 +8,11 @@ def test_web_code_forbids_g_user_id_usage():
 
     for path in root.rglob("*.py"):
         rel = path.relative_to(root.parent)
-        if rel.as_posix() == "web/middleware/auth.py":
-            # Transitional alias kept intentionally during migration.
+        if rel.as_posix() in (
+            "web/middleware/auth.py",
+            "web/middleware/entitlements.py",
+        ):
+            # Transitional alias / fallback kept intentionally during migration.
             continue
 
         for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):

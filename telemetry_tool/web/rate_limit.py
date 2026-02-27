@@ -38,6 +38,15 @@ from .api_utils import ErrorCode, api_error
 
 logger = logging.getLogger(__name__)
 
+
+def log_security_event(*args, **kwargs):
+    """Lazy proxy to avoid circular imports."""
+    try:
+        from admin.audit import log_security_event as _log
+        _log(*args, **kwargs)
+    except Exception:
+        logger.debug("Failed to log security event", exc_info=True)
+
 # ---------------------------------------------------------------------------
 # Tier configuration
 # ---------------------------------------------------------------------------
@@ -194,6 +203,10 @@ def rate_limit(tier: str = "read"):
                     "Rate limited: tier=%s plan=%s scope=%s count=%d limit=%d",
                     tier, plan_tier, scope_value, count, max_requests,
                 )
+                log_security_event("rate_limited",
+                                   user_id=getattr(g, "current_user_id", None),
+                                   ip_address=request.remote_addr,
+                                   details={"tier": tier, "count": count, "limit": max_requests})
                 resp, status = api_error(
                     ErrorCode.RATE_LIMITED,
                     f"Rate limit exceeded for tier '{tier}'. "

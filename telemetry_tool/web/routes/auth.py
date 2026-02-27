@@ -650,7 +650,7 @@ def verify_email():
 @rate_limit(tier="auth")
 def resend_verification():
     """Resend email verification link. Requires auth, rate-limited to 3/hour."""
-    user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=401)
 

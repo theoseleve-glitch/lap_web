@@ -75,7 +75,7 @@ class TestEntitlements:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/entitlements"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = get_entitlements()
                 data = response.get_json()
@@ -99,7 +99,7 @@ class TestEntitlements:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/entitlements"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = get_entitlements()
                 data = response.get_json()
@@ -126,7 +126,7 @@ class TestUsage:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/usage"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn), \
                  patch("auth.usage.get_usage_count", return_value=5):
@@ -146,7 +146,7 @@ class TestUsage:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/usage"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             # No workspace_id set
             response, status = get_usage()
             data = response.get_json()
@@ -176,7 +176,7 @@ class TestRetention:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/retention"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = get_retention()
@@ -203,7 +203,7 @@ class TestRetention:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/retention"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = get_retention()
@@ -233,7 +233,7 @@ class TestOAuthConnections:
         app = _make_flask_app()
         with app.test_request_context("/api/v1/account/oauth-connections"):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = list_oauth_connections()
                 data = response.get_json()
@@ -257,7 +257,7 @@ class TestOAuthConnections:
             method="DELETE",
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = unlink_oauth_connection("google")
                 data = response.get_json()
@@ -281,7 +281,7 @@ class TestOAuthConnections:
             method="DELETE",
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = unlink_oauth_connection("google")
                 data = response.get_json()
@@ -307,7 +307,7 @@ class TestSupportTicket:
             data=json.dumps({"issue_type": "bug", "description": "short"}),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=MagicMock()):
                 response, status = create_support_ticket()
@@ -340,7 +340,7 @@ class TestSupportTicket:
             }),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn), \
                  patch("auth.email._send", return_value=True):
@@ -363,7 +363,7 @@ class TestSupportTicket:
             data=json.dumps({"description": "A valid description here."}),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             g.workspace_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=MagicMock()):
                 response, status = create_support_ticket()
@@ -406,7 +406,7 @@ class TestProfilePreferences:
             data=json.dumps({"avatar_url": "https://example.com/avatar.jpg"}),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = update_profile()
                 data = response.get_json()
@@ -444,7 +444,7 @@ class TestProfilePreferences:
             }),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=conn):
                 response, status = update_profile()
                 data = response.get_json()
@@ -467,7 +467,7 @@ class TestProfilePreferences:
             data=json.dumps({}),
         ):
             from flask import g
-            g.user_id = 1
+            g.current_user_id = 1
             with patch("web.routes.api_v1_account.get_pg_connection", return_value=MagicMock()):
                 response, status = update_profile()
                 assert status == 400

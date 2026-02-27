@@ -38,6 +38,7 @@ def app():
     def _set_context():
         g.workspace_id = 1
         g.user_id = 42
+        g.current_user_id = 42
 
     return app
 

@@ -390,25 +390,25 @@ class TestAdminEndpoints:
 
     def test_admin_guard_exists(self):
         """before_request guard checks is_platform_admin."""
-        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin.py").read_text()
+        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin" / "legacy.py").read_text()
         assert "is_platform_admin" in source
         assert "before_request" in source
         assert "Platform admin required" in source
 
     def test_suspend_requires_reason(self):
         """Suspend endpoint requires a reason."""
-        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin.py").read_text()
+        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin" / "legacy.py").read_text()
         assert "Reason is required" in source
 
     def test_impersonate_generates_token(self):
         """Impersonate generates JWT with 15-minute expiry."""
-        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin.py").read_text()
+        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin" / "legacy.py").read_text()
         assert "impersonated_by" in source
         assert "minutes=15" in source
 
     def test_impersonate_audits(self):
         """Impersonation is logged in audit_log."""
-        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin.py").read_text()
+        source = Path(_PROJECT_ROOT / "web" / "routes" / "admin" / "legacy.py").read_text()
         assert "admin_impersonation" in source
 
 

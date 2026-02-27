@@ -1675,7 +1675,7 @@ def v1_karts_list():
     except Exception:
         request_id = getattr(g, "request_id", None)
         workspace_id = getattr(g, "workspace_id", None)
-        user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+        user_id = getattr(g, "current_user_id", None)
         logger.exception(
             "Failed to load karts list "
             "(request_id=%s workspace_id=%s user_id=%s)",

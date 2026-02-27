@@ -12,6 +12,16 @@ from argon2.exceptions import VerifyMismatchError
 
 logger = logging.getLogger(__name__)
 
+
+def log_security_event(*args, **kwargs):
+    """Lazy proxy — imports admin.audit at call time to avoid circular imports."""
+    try:
+        from admin.audit import log_security_event as _log
+        _log(*args, **kwargs)
+    except Exception:
+        logger.debug("Failed to log security event", exc_info=True)
+
+
 _ph = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1)
 
 # Pre-computed dummy hash used to prevent timing-based user enumeration.
@@ -161,9 +171,14 @@ def login_user(
     # accounts where password_hash column is intentionally nullable).
     if user is None:
         verify_password(password, _DUMMY_HASH)
+        log_security_event(conn, "login_failed",
+                           ip_address=ip_address, details={"email": email, "reason": "user_not_found"})
         raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
 
     if not user["password_hash"] or not verify_password(password, user["password_hash"]):
+        log_security_event(conn, "login_failed",
+                           user_id=user["id"], ip_address=ip_address,
+                           details={"email": email, "reason": "wrong_password"})
         raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
 
     # If 2FA is enabled, return a temporary token instead of full auth
@@ -175,13 +190,17 @@ def login_user(
         }
 
     # Issue tokens
-    return _issue_tokens(
+    result = _issue_tokens(
         conn, user, secret,
         access_expiry_minutes=access_expiry_minutes,
         refresh_expiry_days=refresh_expiry_days,
         user_agent=user_agent,
         ip_address=ip_address,
     )
+    log_security_event(conn, "login_success",
+                       user_id=user["id"], ip_address=ip_address,
+                       user_agent=user_agent, details={"email": email})
+    return result
 
 
 def _issue_tokens(

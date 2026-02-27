@@ -65,6 +65,7 @@ def _make_app():
     @app.before_request
     def _inject_user():
         g.user_id = 1
+        g.current_user_id = 1
 
     @app.route("/exports", methods=["POST"])
     @require_feature("exports")

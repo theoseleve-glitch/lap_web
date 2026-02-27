@@ -38,7 +38,7 @@ def test_enforces_retention_and_deletes_old_files(tmp_path):
         sql_s = str(sql)
         if "SELECT w.id AS workspace_id" in sql_s:
             m = MagicMock()
-            m.fetchall.return_value = [{"workspace_id": 1, "tier": "racer"}]
+            m.fetchall.return_value = [{"workspace_id": 1, "tier": "free"}]
             return m
         if "DELETE FROM" in sql_s:
             return _Result(rowcount=2)

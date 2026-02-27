@@ -52,6 +52,7 @@ class TestRequestIdFilter:
             g.request_id = "abc123"
             g.workspace_id = "ws_001"
             g.user_id = "user_42"
+            g.current_user_id = "user_42"
             filt.filter(log_record)
             assert log_record.request_id == "abc123"
             assert log_record.workspace_id == "ws_001"

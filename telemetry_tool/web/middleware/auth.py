@@ -1,8 +1,20 @@
 """JWT auth middleware -- extracts user from Bearer token."""
+import logging
 import re
 from functools import wraps
 
 from flask import request, g, current_app, jsonify
+
+logger = logging.getLogger(__name__)
+
+
+def log_security_event(*args, **kwargs):
+    """Lazy proxy to avoid circular imports."""
+    try:
+        from admin.audit import log_security_event as _log
+        _log(*args, **kwargs)
+    except Exception:
+        logger.debug("Failed to log security event", exc_info=True)
 
 # Matches /auth/oauth/<provider> and /auth/oauth/<provider>/callback only
 _OAUTH_PATH_RE = re.compile(r"^/auth/oauth/[a-z]+(/callback)?$")
@@ -45,6 +57,9 @@ def auth_middleware():
 
     token = _extract_token()
     if token is None:
+        log_security_event("auth_denied",
+                           ip_address=request.remote_addr,
+                           details={"path": request.path, "reason": "missing_token"})
         return jsonify({
             "ok": False,
             "error": {"code": "UNAUTHORIZED", "message": "Authentication required"},
@@ -56,9 +71,14 @@ def auth_middleware():
     try:
         payload = decode_access_token(token, secret)
         g.current_user_id = payload["user_id"]
+        g.user_id = payload["user_id"]  # Transitional alias for migration
         g.email_verified = payload.get("email_verified", True)
         g.admin_verified = payload.get("admin_verified", False)
     except AuthError as e:
+        event_type = "token_expired" if e.code == "TOKEN_EXPIRED" else "auth_denied"
+        log_security_event(event_type,
+                           ip_address=request.remote_addr,
+                           details={"path": request.path, "error_code": e.code})
         return jsonify({
             "ok": False,
             "error": {"code": e.code, "message": str(e)},

@@ -268,6 +268,7 @@ class TestAuditQueries:
         with app.test_request_context():
             from flask import g
             g.user_id = 42
+            g.current_user_id = 42
             g.workspace_id = 1
             from web.queries.audit import log_audit_event
             conn = FakeConn({})

@@ -14,7 +14,6 @@ from flask import Blueprint, abort, current_app, jsonify, request
 from werkzeug.utils import secure_filename
 
 from web.db import get_db_connection
-from web.middleware.entitlements import require_upload_size
 from web.models import (
     delete_session_sector,
     get_gps_trace,
@@ -885,7 +884,6 @@ def files_list():
 
 
 @bp.route("/files/upload", methods=["POST"])
-@require_upload_size("file")
 def files_upload():
     """Upload a CSV file to data/raw/."""
     import csv

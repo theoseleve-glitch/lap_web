@@ -32,6 +32,7 @@ def _make_app():
     def _inject_user():
         g.user_id = 1
         g.current_user_id = 1
+        g.current_user_id = 1
         g.workspace_id = "ws_001"
 
     return app

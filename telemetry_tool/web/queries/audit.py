@@ -1,7 +1,7 @@
 """Audit logging query functions.
 
 Provides a single entry point for recording audit events using
-Flask request context (g.user_id, g.workspace_id, request.remote_addr).
+Flask request context (g.current_user_id, g.workspace_id, request.remote_addr).
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def log_audit_event(conn, action: str, details: dict | None = None) -> None:
 
     try:
         from flask import g, request
-        user_id = getattr(g, "user_id", None)
+        user_id = getattr(g, "current_user_id", None)
         workspace_id = getattr(g, "workspace_id", None)
         ip_address = request.remote_addr
         user_agent = request.headers.get("User-Agent", "")[:500]
