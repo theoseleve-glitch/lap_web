@@ -90,3 +90,25 @@ class TestReconcileStripe:
 
         assert result["healed"] == 0
         assert result["checked"] == 0
+
+
+class TestBeatSchedule:
+    def test_beat_schedule_has_reconcile(self):
+        """Celery beat schedule includes reconcile-stripe."""
+        from celery_app import celery
+        schedule = celery.conf.beat_schedule
+        assert "reconcile-stripe" in schedule
+        assert schedule["reconcile-stripe"]["task"] == "tasks.billing_tasks.reconcile_stripe"
+        assert schedule["reconcile-stripe"]["schedule"] == 3600
+
+    def test_beat_schedule_has_purge(self):
+        """Celery beat schedule includes purge-deleted-accounts."""
+        from celery_app import celery
+        schedule = celery.conf.beat_schedule
+        assert "purge-deleted-accounts" in schedule
+
+    def test_beat_schedule_has_export_cleanup(self):
+        """Celery beat schedule includes cleanup-expired-exports."""
+        from celery_app import celery
+        schedule = celery.conf.beat_schedule
+        assert "cleanup-expired-exports" in schedule

@@ -1,4 +1,4 @@
-"""End-to-end entitlement policy tests across Demo/Racer/World-Class/B2B tiers."""
+"""End-to-end entitlement policy tests across demo/racer/world_class tiers."""
 from __future__ import annotations
 
 import io
@@ -13,33 +13,49 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from auth.entitlements import get_policy_for_tier, report_quota_remaining
+from auth.entitlements import get_plan_entitlements, check_usage_limit
 from web.middleware.entitlements import require_feature, require_report_quota, require_upload_size
 
 
 @pytest.mark.parametrize(
-    "tier,expected",
+    "tier,key,expected",
     [
-        ("demo", {"quota": 5, "upload_mb": 200, "api": False, "live": False, "exports": False}),
-        ("racer", {"quota": 40, "upload_mb": 1024, "api": True, "live": False, "exports": True}),
-        ("world-class", {"quota": 200, "upload_mb": 4096, "api": True, "live": True, "exports": True}),
-        ("b2b", {"quota": 10_000, "upload_mb": 12 * 1024, "api": True, "live": True, "exports": True}),
+        ("free", "reports_per_month", 1),
+        ("free", "api_access", False),
+        ("free", "coaching_drills", False),
+        ("racer", "reports_per_month", 10),
+        ("racer", "coaching_drills", True),
+        ("racer", "api_access", False),
+        ("world_class", "reports_per_month", -1),
+        ("world_class", "api_access", True),
+        ("world_class", "comparison_progress", True),
     ],
 )
-def test_tier_policy_matrix(tier, expected):
-    policy = get_policy_for_tier(tier)
-    assert policy.report_quota_monthly == expected["quota"]
-    assert policy.max_upload_size_mb == expected["upload_mb"]
-    assert policy.api_access is expected["api"]
-    assert policy.strategy_live is expected["live"]
-    assert policy.exports is expected["exports"]
+def test_tier_policy_matrix(tier, key, expected):
+    policy = get_plan_entitlements(tier)
+    assert policy[key] == expected
 
 
 def test_report_quota_boundary_conditions():
-    demo = get_policy_for_tier("demo")
-    assert report_quota_remaining(demo, 4) == 1
-    assert report_quota_remaining(demo, 5) == 0
-    assert report_quota_remaining(demo, 6) == 0
+    # free tier has 1 report/month
+    allowed, info = check_usage_limit("free", "reports", 0)
+    assert allowed is True
+    assert info["remaining"] == 1
+
+    allowed, info = check_usage_limit("free", "reports", 1)
+    assert allowed is False
+    assert info["remaining"] == 0
+
+    allowed, info = check_usage_limit("free", "reports", 5)
+    assert allowed is False
+    assert info["remaining"] == 0
+
+
+def test_unlimited_quota():
+    # world_class has -1 (unlimited) reports
+    allowed, info = check_usage_limit("world_class", "reports", 9999)
+    assert allowed is True
+    assert info["remaining"] == -1
 
 
 def _make_app():
@@ -64,16 +80,16 @@ def _make_app():
     return app
 
 
-def test_demo_blocks_exports_and_racer_allows():
+def test_demo_blocks_feature_and_racer_allows():
     app = _make_app()
     with app.test_client() as client:
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": False, "tier_key": "demo", "max_upload_size_mb": 200}):
+        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": False, "plan_tier": "demo", "max_upload_size_mb": 200}):
             resp = client.post("/exports")
             assert resp.status_code == 403
 
         conn = MagicMock()
-        conn.execute.return_value.fetchone.return_value = {"cnt": 1}
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "tier_key": "racer", "max_upload_size_mb": 1024}), \
+        conn.execute.return_value.fetchone.return_value = {"cnt": 0}
+        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}), \
              patch("web.middleware.entitlements._get_conn", return_value=conn):
             resp = client.post("/exports")
             assert resp.status_code == 200
@@ -83,8 +99,9 @@ def test_quota_boundary_blocks_at_limit():
     app = _make_app()
     with app.test_client() as client:
         conn = MagicMock()
-        conn.execute.return_value.fetchone.return_value = {"cnt": 5}
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "tier_key": "demo", "max_upload_size_mb": 200}), \
+        # racer has 10 reports/month — at limit should block
+        conn.execute.return_value.fetchone.return_value = {"cnt": 10}
+        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}), \
              patch("web.middleware.entitlements._get_conn", return_value=conn):
             resp = client.post("/exports")
             assert resp.status_code == 429

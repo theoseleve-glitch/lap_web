@@ -50,10 +50,27 @@ def make_celery(app=None) -> Celery:
             "tasks.batch_tasks.*": {"queue": "default"},
         },
         task_default_queue="default",
+        # Beat schedule for periodic tasks
         beat_schedule={
             "enforce-raw-data-retention": {
                 "task": "tasks.gdpr_tasks.enforce_raw_data_retention",
                 "schedule": crontab(hour=2, minute=15),
+                "options": {"queue": "default"},
+            },
+            "purge-deleted-accounts": {
+                "task": "tasks.gdpr_tasks.purge_deleted_accounts",
+                "schedule": 86400,  # Daily (24h in seconds)
+                "options": {"queue": "default"},
+            },
+            "cleanup-expired-exports": {
+                "task": "tasks.gdpr_tasks.cleanup_expired_exports",
+                "schedule": 86400,  # Daily
+                "options": {"queue": "default"},
+            },
+            "reconcile-stripe": {
+                "task": "tasks.billing_tasks.reconcile_stripe",
+                "schedule": 3600,  # Hourly
+                "options": {"queue": "default"},
             },
         },
     )

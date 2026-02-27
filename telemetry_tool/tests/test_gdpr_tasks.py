@@ -228,3 +228,49 @@ class TestPurgeDeletedAccounts:
 
         purge_deleted_accounts()
         assert mock_logger.info.called
+
+
+class TestCleanupExpiredExports:
+    def test_deletes_old_files(self, tmp_path):
+        """Cleanup removes ZIP files older than 7 days."""
+        import time
+        old_file = tmp_path / "export_old.zip"
+        old_file.write_text("old")
+        old_mtime = time.time() - (8 * 86400)
+        os.utime(old_file, (old_mtime, old_mtime))
+
+        recent_file = tmp_path / "export_recent.zip"
+        recent_file.write_text("recent")
+
+        from tasks.gdpr_tasks import _cleanup_expired_exports_impl
+        result = _cleanup_expired_exports_impl(str(tmp_path))
+
+        assert not old_file.exists()
+        assert recent_file.exists()
+        assert result["deleted"] == 1
+
+    def test_skips_non_zip_files(self, tmp_path):
+        """Cleanup ignores non-ZIP files."""
+        import time
+        old_txt = tmp_path / "notes.txt"
+        old_txt.write_text("keep me")
+        old_mtime = time.time() - (8 * 86400)
+        os.utime(old_txt, (old_mtime, old_mtime))
+
+        from tasks.gdpr_tasks import _cleanup_expired_exports_impl
+        result = _cleanup_expired_exports_impl(str(tmp_path))
+
+        assert old_txt.exists()
+        assert result["deleted"] == 0
+
+    def test_handles_empty_directory(self, tmp_path):
+        """Cleanup handles empty export directory gracefully."""
+        from tasks.gdpr_tasks import _cleanup_expired_exports_impl
+        result = _cleanup_expired_exports_impl(str(tmp_path))
+        assert result["deleted"] == 0
+
+    def test_handles_missing_directory(self, tmp_path):
+        """Cleanup handles nonexistent export directory gracefully."""
+        from tasks.gdpr_tasks import _cleanup_expired_exports_impl
+        result = _cleanup_expired_exports_impl(str(tmp_path / "nonexistent"))
+        assert result["deleted"] == 0

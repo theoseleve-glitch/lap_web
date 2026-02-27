@@ -6,7 +6,7 @@ from functools import wraps
 
 from flask import current_app, g, request
 
-from auth.entitlements import get_workspace_entitlements, get_policy_for_tier, report_quota_remaining
+from auth.entitlements import get_user_entitlements, get_plan_entitlements
 from web.api_utils import ErrorCode, api_error
 
 
@@ -32,7 +32,7 @@ def entitlement_snapshot() -> dict:
     if workspace_id is None:
         workspace_id = current_app.config.get("DEFAULT_WORKSPACE_ID", 1)
     conn = _get_conn()
-    return get_workspace_entitlements(conn, workspace_id=workspace_id, user_id=user_id)
+    return get_user_entitlements(conn, user_id=user_id, workspace_id=workspace_id)
 
 
 def require_api_access(fn):
@@ -93,8 +93,9 @@ def require_report_quota(fn):
             ).fetchone()
             reports_used = int((dict(row) if row else {"cnt": 0}).get("cnt", 0))
 
-        policy = get_policy_for_tier(snapshot.get("tier_key"))
-        remaining = report_quota_remaining(policy, reports_used)
+        policy = get_plan_entitlements(snapshot.get("plan_tier", "demo"))
+        limit = policy.get("reports_per_month", 0)
+        remaining = max(0, limit - reports_used) if limit != -1 else 999
         if remaining <= 0:
             return api_error(
                 ErrorCode.QUOTA_EXCEEDED,

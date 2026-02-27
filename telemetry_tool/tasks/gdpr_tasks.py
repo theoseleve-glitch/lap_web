@@ -383,7 +383,7 @@ def _purge_deleted_accounts_impl() -> dict[str, int]:
 
 def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
     """Return workspace IDs with their effective normalized tier key."""
-    from auth.entitlements import normalize_tier
+    from auth.entitlements import KNOWN_PLANS
 
     rows = conn.execute(
         "SELECT w.id AS workspace_id, "
@@ -394,7 +394,11 @@ def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
     out = []
     for row in rows:
         data = dict(row)
-        out.append({"workspace_id": data["workspace_id"], "tier": normalize_tier(data.get("tier"))})
+        tier = data.get("tier", "demo")
+        # Normalize unknown tiers to "free"
+        if tier not in KNOWN_PLANS:
+            tier = "free"
+        out.append({"workspace_id": data["workspace_id"], "tier": tier})
     return out
 
 
@@ -486,6 +490,47 @@ def _enforce_raw_data_retention_impl() -> dict[str, int]:
     }
 
 # ---------------------------------------------------------------------------
+# Task: cleanup_expired_exports
+# ---------------------------------------------------------------------------
+
+def _cleanup_expired_exports_impl(export_dir: str | None = None) -> dict[str, int]:
+    """Delete export ZIP files past their 7-day expiry.
+
+    Scans the export directory for .zip files with mtime older than 7 days
+    and deletes them. Non-zip files are left untouched.
+
+    Args:
+        export_dir: Override export directory (used in tests).
+
+    Returns:
+        Dict with ``{"deleted": N}``
+    """
+    if export_dir is None:
+        export_dir = os.environ.get("TELEMETRY_EXPORT_DIR", "/tmp/telemetry_exports")
+
+    export_path = Path(export_dir)
+    if not export_path.is_dir():
+        logger.info("Export directory does not exist: %s", export_dir)
+        return {"deleted": 0}
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    deleted = 0
+
+    for f in export_path.glob("*.zip"):
+        try:
+            mtime = datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc)
+            if mtime < cutoff:
+                f.unlink()
+                deleted += 1
+                logger.info("Deleted expired export: %s", f.name)
+        except Exception as exc:
+            logger.error("Failed to delete export %s: %s", f.name, exc)
+
+    logger.info("Export cleanup complete: %d files deleted", deleted)
+    return {"deleted": deleted}
+
+
+# ---------------------------------------------------------------------------
 # Register as Celery tasks (or plain functions when Celery unavailable)
 # ---------------------------------------------------------------------------
 
@@ -501,8 +546,11 @@ if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(name="tasks.gdpr_tasks.enforce_raw_data_retention")
     def enforce_raw_data_retention() -> dict[str, int]:
         return _enforce_raw_data_retention_impl()
+
+    @_celery_app.task(name="tasks.gdpr_tasks.cleanup_expired_exports")
+    def cleanup_expired_exports() -> dict[str, int]:
+        return _cleanup_expired_exports_impl()
 else:
-    # Fallback: plain functions for testing without Celery
     def export_user_data(user_id: int, export_id: str) -> dict[str, Any]:  # type: ignore[misc]
         return _export_user_data_impl(user_id, export_id)
 
@@ -511,3 +559,6 @@ else:
 
     def enforce_raw_data_retention() -> dict[str, int]:  # type: ignore[misc]
         return _enforce_raw_data_retention_impl()
+
+    def cleanup_expired_exports() -> dict[str, int]:  # type: ignore[misc]
+        return _cleanup_expired_exports_impl()
