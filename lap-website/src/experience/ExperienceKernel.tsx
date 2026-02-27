@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { InputManager } from './input/InputManager';
 import { QualityManager } from './quality/QualityManager';
-import { SafetyCarMode } from './quality/SafetyCarMode';
+
 import { DebugHUD } from './quality/DebugHUD';
 import { MotionOrchestrator } from './motion/MotionOrchestrator';
 import { SectorGateController } from './narrative/SectorGateController';
@@ -19,7 +19,6 @@ export function ExperienceKernel({ children }: ExperienceKernelProps) {
   return (
     <>
       <QualityManager />
-      <SafetyCarMode />
       <InputManager />
       <MotionOrchestrator />
       {EXPERIENCE_V2 && <SectorGateController />}

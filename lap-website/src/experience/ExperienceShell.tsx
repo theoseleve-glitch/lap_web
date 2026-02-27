@@ -3,7 +3,7 @@
 import { type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { ExperienceKernel } from './ExperienceKernel';
-import { ExperienceCanvas } from './renderer/ExperienceCanvas';
+
 import { Preloader } from './preloader/Preloader';
 import { FallbackShell } from './quality/FallbackShell';
 import { useKernelStore } from './state/store';
@@ -36,10 +36,7 @@ function ExperienceContent({ children }: { children: ReactNode }) {
       {EXPERIENCE_V2 && <SectorGateSweep />}
       {EXPERIENCE_V2 && <FinishLine />}
 
-      {/* Layer 1: WebGL */}
-      {webglAvailable && <ExperienceCanvas />}
-
-      {/* Layer 2: DOM content */}
+      {/* DOM content */}
       <div className="relative z-10">
         {children}
       </div>
