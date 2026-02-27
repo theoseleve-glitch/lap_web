@@ -1,10 +1,7 @@
-"""Platform admin backoffice API.
+"""Legacy admin endpoints — migrated from admin.py into the admin package.
 
-All endpoints require ``is_platform_admin = True`` on the authenticated user.
 Provides user management, audit log viewing, system metrics access,
-impersonation, and billing overview.
-
-URL prefix: ``/api/v1/admin``
+impersonation, billing overview, and storage monitoring.
 """
 from __future__ import annotations
 
@@ -19,7 +16,8 @@ from web.middleware.audit import audit_log
 
 logger = logging.getLogger(__name__)
 
-bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
+legacy_bp = Blueprint("admin_legacy", __name__)
+bp = legacy_bp  # backward compat alias
 
 
 # ---------------------------------------------------------------------------
