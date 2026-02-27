@@ -93,11 +93,11 @@ export default function AnalyzePage() {
     enabled: step === 2,
   });
 
-  // Poll job status in step 3 (Flask serves at /analyze/api/status/:id)
+  // Poll job status in step 3 (Flask serves at /api/v1/ingest/status/:id)
   useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/analyze/api/status/${jobId}`);
+      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/status/${jobId}`);
       return res.json() as Promise<AnalysisJob>;
     },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
@@ -146,14 +146,14 @@ export default function AnalyzePage() {
     if (!selectedFile) return;
     setStep(3);
     try {
-      // Flask serves ingest start at /analyze/api/start (form data)
+      // Flask serves ingest start at /api/v1/ingest/start (form data)
       const form = new FormData();
       form.append('csv_file', selectedFile);
       if (driverId) form.append('driver_id', driverId);
       if (trackId) form.append('track_id', trackId);
       if (kartId) form.append('kart_id', kartId);
       form.append('session_type', sessionType);
-      const res = await fetch(`${BACKEND_URL}/analyze/api/start`, { method: 'POST', body: form });
+      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/start`, { method: 'POST', body: form });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);

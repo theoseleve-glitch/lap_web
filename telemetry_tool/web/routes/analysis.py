@@ -305,8 +305,7 @@ def analyze_form():
 
 # ── Async API endpoint ─────────────────────────────────────────────────
 
-@bp.route("/api/start", methods=["POST"])
-def analyze_start_api():
+def _analyze_start_impl():
     """Start analysis in background thread. Returns JSON with job_id."""
     # Resolve CSV path.
     csv_name = request.form.get("csv_file", "").strip()
@@ -408,8 +407,13 @@ def analyze_start_api():
     return jsonify({"job_id": job_id, "status": "queued"})
 
 
-@bp.route("/api/status/<job_id>")
-def analyze_status_api(job_id: str):
+@bp.route("/api/start", methods=["POST"])
+def analyze_start_api():
+    """Legacy analyze start endpoint."""
+    return _analyze_start_impl()
+
+
+def _analyze_status_impl(job_id: str):
     """Poll analysis progress. Returns JSON with status/stage/progress/session_id."""
     with _jobs_lock:
         job = _jobs.get(job_id)
@@ -449,6 +453,12 @@ def analyze_status_api(job_id: str):
         resp["joker_candidates"] = None  # already delivered
 
     return jsonify(resp)
+
+
+@bp.route("/api/status/<job_id>")
+def analyze_status_api(job_id: str):
+    """Legacy analyze status endpoint."""
+    return _analyze_status_impl(job_id)
 
 
 # ── Corner selection endpoint ──────────────────────────────────────────
