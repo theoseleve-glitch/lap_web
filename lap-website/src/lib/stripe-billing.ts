@@ -3,10 +3,10 @@ export type BillingCycle = 'monthly' | 'annual';
 const B2B_PLANS = new Set(['FOR TEAMS & CIRCUITS']);
 
 const PRICE_ENV_MAP: Record<string, string> = {
-  'RACER:monthly': 'STRIPE_PRICE_RACER_MONTHLY',
-  'RACER:annual': 'STRIPE_PRICE_RACER_ANNUAL',
-  'WORLD-CLASS:monthly': 'STRIPE_PRICE_WORLD_CLASS_MONTHLY',
-  'WORLD-CLASS:annual': 'STRIPE_PRICE_WORLD_CLASS_ANNUAL',
+  'RACER:monthly': 'STRIPE_PRICE_PERFORMANCE_MONTHLY',
+  'RACER:annual': 'STRIPE_PRICE_PERFORMANCE_ANNUAL',
+  'WORLD-CLASS:monthly': 'STRIPE_PRICE_PRO_RACER_MONTHLY',
+  'WORLD-CLASS:annual': 'STRIPE_PRICE_PRO_RACER_ANNUAL',
 };
 
 export function isB2BPlan(plan: string): boolean {
