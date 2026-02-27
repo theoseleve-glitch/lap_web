@@ -45,4 +45,20 @@ export const background = {
   yawDamping: 0.04,
   cornerParallaxFactor: 0.02,
   wheelFriction: 0.95,
+
+  // New: Track ribbon
+  ribbonWidth: 8,                  // world units
+  ribbonEdgeEmissive: 0.08,        // edge glow opacity
+  ribbonSegmentGlow: 0.12,         // completed sector glow opacity
+  ribbonForwardGlow: 0.20,         // brighter emission ahead of camera
+  ribbonStepSize: 0.5,             // world units per ribbon segment
+
+  // New: Corner feel
+  cornerYawRange: 3.0,             // max degrees (±3°)
+  cornerBankRange: 1.5,            // max degrees (±1.5°)
+  cornerLerp: 0.05,               // per-frame lerp toward target yaw/bank
+  cornerParticleDriftMultiplier: 2.0, // lateral drift amplifier in corners
+
+  // New: Streak DRS modulation
+  streakDrsThresholdReduction: 0.4, // spawn threshold × (1 - this) during DRS
 } as const;
