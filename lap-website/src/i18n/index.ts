@@ -15,7 +15,7 @@ interface TranslationContextValue {
 
 export const I18nContext = createContext<TranslationContextValue>({
   locale: 'en',
-  t: (key: string, fallback?: string) => fallback ?? key,
+  t: (key: string, fallback?: string) => (en as Record<string, string>)[key] ?? fallback ?? key,
 });
 
 export function useTranslation() {
