@@ -7,6 +7,7 @@ import { DebugHUD } from './quality/DebugHUD';
 import { MotionOrchestrator } from './motion/MotionOrchestrator';
 import { SectorGateController } from './narrative/SectorGateController';
 import { DrsController } from './narrative/DrsController';
+import { DeltaTickController } from './narrative/DeltaTickController';
 import { chapters } from './state/chapters';
 import { registerChapter } from './renderer/SceneManager';
 
@@ -25,6 +26,7 @@ export function ExperienceKernel({ children }: ExperienceKernelProps) {
       <MotionOrchestrator />
       <SectorGateController />
       <DrsController />
+      <DeltaTickController />
       <DebugHUD />
       {children}
     </>
