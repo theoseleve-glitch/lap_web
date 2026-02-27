@@ -107,12 +107,10 @@ export async function POST(request: Request) {
     }
   }
 
-  const fallbackUrl = `/book?plan=${encodeURIComponent(body.plan)}&billing=${encodeURIComponent(
-    body.billingCycle,
-  )}`;
+  // B2C fallback: Stripe not configured or failed — redirect to pricing with error
   return NextResponse.json({
     ok: true,
-    checkoutUrl: fallbackUrl,
+    checkoutUrl: `/pricing?checkout=error&plan=${encodeURIComponent(body.plan)}`,
     mode: 'fallback',
   });
 }
