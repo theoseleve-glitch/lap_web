@@ -61,6 +61,15 @@ export const rooms = [
   { id: 'podium', label: 'POD', sector: 'POD' },
 ] as const;
 
+// Sector gate triggers: chapter index → sector ID completed
+export const sectorGates: Record<number, string> = {
+  1: 'S1',     // Start Grid → S1 Pain
+  3: 'S2',     // S1 Deep → S2 Pipeline
+  5: 'S3',     // S2 Proof → S3 Product
+  8: 'PIT',    // S5 Personas → Pit Stop
+  10: 'FINISH', // Garage → Podium
+} as const;
+
 // Sector tab entries (deduplicated for display)
 export const sectorTabs = [
   { id: 's1-pain', label: 'S1' },

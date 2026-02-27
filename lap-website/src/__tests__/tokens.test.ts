@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { colors, timing, easing, rooms, sectorTabs, roomAccents } from '@/lib/tokens';
+import { colors, timing, easing, rooms, sectorTabs, roomAccents, sectorGates } from '@/lib/tokens';
 
 describe('Token system', () => {
   it('exports all base colors', () => {
@@ -59,5 +59,21 @@ describe('Token system', () => {
     expect(timing.drs).toBe(2.0);
     expect(timing.pit).toBe(0.6);
     expect(timing.finish).toBe(0.6);
+  });
+
+  it('defines sector gates mapping chapters to sector IDs', () => {
+    expect(sectorGates[1]).toBe('S1');
+    expect(sectorGates[3]).toBe('S2');
+    expect(sectorGates[5]).toBe('S3');
+    expect(sectorGates[8]).toBe('PIT');
+    expect(sectorGates[10]).toBe('FINISH');
+  });
+
+  it('sector gate chapters are valid room indices', () => {
+    Object.keys(sectorGates).forEach((key) => {
+      const idx = Number(key);
+      expect(idx).toBeGreaterThanOrEqual(0);
+      expect(idx).toBeLessThanOrEqual(10);
+    });
   });
 });
