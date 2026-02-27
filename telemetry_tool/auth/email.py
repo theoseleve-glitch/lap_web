@@ -14,10 +14,18 @@ logger = logging.getLogger(__name__)
 RESEND_API_KEY: str = os.environ.get("RESEND_API_KEY", "")
 EMAIL_FROM: str = os.environ.get("EMAIL_FROM", "LAP <noreply@lap-coach.racing>")
 FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://www.lap-coach.racing")
+EMAIL_SUPPRESS: bool = os.environ.get("EMAIL_SUPPRESS", "0") == "1"
 
 
 def _send(to: str, subject: str, html: str) -> bool:
-    """Send an email via Resend.  Returns True on success."""
+    """Send an email via Resend.  Returns True on success.
+
+    Set ``EMAIL_SUPPRESS=1`` in dev/staging to log emails without sending.
+    """
+    if EMAIL_SUPPRESS:
+        logger.info("EMAIL_SUPPRESS=1 — would send to %s: %s", to, subject)
+        return True
+
     if not RESEND_API_KEY:
         logger.warning("RESEND_API_KEY not set — skipping email to %s", to)
         return False
@@ -354,6 +362,36 @@ def send_2fa_disabled_email(to: str) -> bool:
   </p>
 </div>"""
     return _send(to, "2FA disabled on your LAP account", html)
+
+
+def send_team_invite_email(
+    to: str, token: str, team_name: str, inviter_name: str,
+) -> bool:
+    """Send a team invitation email with an accept link."""
+    accept_url = f"{FRONTEND_URL}/invitations/accept?token={token}"
+    html = f"""\
+<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
+  <h2 style="color: #F3F0E8;">You've been invited to join {team_name}</h2>
+  <p style="color: #8A8F98;">
+    <strong style="color: #F3F0E8;">{inviter_name}</strong> has invited you to
+    join <strong style="color: #F3F0E8;">{team_name}</strong> on LAP.
+  </p>
+  <a href="{accept_url}"
+     style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
+            padding: 12px 24px; border-radius: 6px; text-decoration: none;
+            font-weight: 600; margin: 16px 0;">
+    Accept Invitation
+  </a>
+  <p style="color: #8A8F98; font-size: 13px;">
+    Or copy this link: <br>
+    <code style="color: #F3F0E8;">{accept_url}</code>
+  </p>
+  <p style="color: #8A8F98; font-size: 12px;">
+    This invitation expires in 7 days. If you don't have an account,
+    you'll be asked to create one first.
+  </p>
+</div>"""
+    return _send(to, f"You're invited to join {team_name} on LAP", html)
 
 
 def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -> bool:
