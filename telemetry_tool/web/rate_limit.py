@@ -132,7 +132,7 @@ def rate_limit(tier: str = "read"):
             if tier == "auth":
                 scope_value = request.remote_addr or "unknown"
             else:
-                scope_value = getattr(g, "user_id", None) or request.remote_addr or "unknown"
+                scope_value = getattr(g, "current_user_id", None) or request.remote_addr or "unknown"
 
             redis_key = f"ratelimit:{tier}:{scope_value}"
 

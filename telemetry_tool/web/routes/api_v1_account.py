@@ -70,7 +70,7 @@ def create_export():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -110,7 +110,7 @@ def export_status(export_id: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -145,7 +145,7 @@ def export_download(export_id: str):
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -194,7 +194,7 @@ def delete_account():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -247,7 +247,7 @@ def cancel_deletion():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
@@ -294,7 +294,7 @@ def update_profile():
     """
     from sqlalchemy import text
 
-    user_id = getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
