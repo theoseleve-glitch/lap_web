@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripePriceId, getStripeSecretKey, isB2BPlan } from '@/lib/stripe-billing';
+import { getSiteUrl } from '@/lib/site-url';
 
 interface CheckoutBody {
   plan: string;
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
 
   const stripeKey = getStripeSecretKey();
   const stripePriceId = getStripePriceId(body.plan, body.billingCycle);
-  const origin = request.headers.get('origin') ?? 'https://lap.racing';
+  const origin = request.headers.get('origin') ?? getSiteUrl();
   const successUrl = `${origin}/thank-you/book`;
   const cancelUrl = `${origin}/pricing?checkout=cancelled`;
 

@@ -17,7 +17,8 @@
     "test:e2e": "playwright test",
     "test:e2e:vitest": "vitest run src/__tests__/journeys.e2e.test.tsx",
     "qa:content": "node scripts/content-qa.mjs",
-    "ci": "npm run lint && npm run test && npm run build && npm run qa:content"
+    "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run ci:assert-site-url",
+    "ci:assert-site-url": "node scripts/assert-no-legacy-domain.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

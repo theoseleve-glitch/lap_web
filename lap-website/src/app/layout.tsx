@@ -2,10 +2,14 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Script from 'next/script';
 import { TranslationProvider } from '@/i18n/TranslationProvider';
+import { getSiteHostname, getSiteUrlAsUrl } from '@/lib/site-url';
 import './globals.css';
 
+const siteUrl = getSiteUrlAsUrl();
+const siteHostname = getSiteHostname();
+
 export const metadata: Metadata = {
-  metadataBase: new URL('https://lap.racing'),
+  metadataBase: siteUrl,
   title: { default: 'LAP — Find Time.', template: '%s | LAP' },
   description: 'Motorsport telemetry analysis for kart and car drivers.',
 };
@@ -28,7 +32,7 @@ const jsonLd = {
     {
       '@type': 'Organization',
       name: 'LAP Racing',
-      url: 'https://lap.racing',
+      url: siteUrl.href,
     },
   ],
 };
@@ -54,7 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </TranslationProvider>
         <Script
           defer
-          data-domain="lap.racing"
+          data-domain={siteHostname}
           src="https://plausible.io/js/script.js"
           strategy="afterInteractive"
         />
