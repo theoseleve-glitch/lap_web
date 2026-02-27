@@ -10,6 +10,7 @@ from typing import Any, Optional
 from flask import Blueprint, abort, jsonify, redirect, render_template, request, url_for
 
 from web.db import get_db_connection
+from web.middleware.entitlements import require_feature
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +183,7 @@ def index():
 # ── Import / Export ──────────────────────────────
 
 @bp.route("/<int:race_id>/export")
+@require_feature("exports")
 def export(race_id: int):
     """Export race as JSON file download."""
     import re
@@ -631,6 +633,7 @@ def optimize(race_id: int):
 # ── Live Dashboard + API ─────────────────────────────────
 
 @bp.route("/<int:race_id>/go-live", methods=["POST"])
+@require_feature("strategy_live")
 def go_live(race_id: int):
     """Start the race — set status to live and record start timestamp."""
     conn = get_db_connection()
@@ -660,6 +663,7 @@ def go_live(race_id: int):
 
 
 @bp.route("/<int:race_id>/live")
+@require_feature("strategy_live")
 def live(race_id: int):
     """Live dashboard page."""
     conn = get_db_connection()
@@ -1067,6 +1071,7 @@ def api_weather(race_id: int):
 # ── Stint Plan Export / Import ────────────────────
 
 @bp.route("/<int:race_id>/export-plan")
+@require_feature("exports")
 def export_plan(race_id: int):
     """Export stint plan only (lightweight) as JSON download."""
     import re
