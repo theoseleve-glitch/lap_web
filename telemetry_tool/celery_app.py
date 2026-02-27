@@ -1,6 +1,15 @@
 """Celery application factory."""
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+# Ensure telemetry_tool/ is on sys.path so that ``from web.config``
+# resolves correctly when Celery runs as a standalone worker process.
+_PKG_DIR = str(Path(__file__).resolve().parent)
+if _PKG_DIR not in sys.path:
+    sys.path.insert(0, _PKG_DIR)
+
 from celery import Celery
 
 
