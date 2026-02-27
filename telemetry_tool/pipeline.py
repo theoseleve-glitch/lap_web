@@ -1539,15 +1539,59 @@ def run_full_analysis(
 
     _sim_method: str = "none"
     _sim_result: Any = None   # TheoreticalLapResult (if physics used)
+    _corner_coaching: list[dict[str, Any]] | None = None
+    _delta_map: pd.DataFrame | None = None
+    _session_scalars: dict[str, Any] | None = None
 
     def _theoretical() -> pd.DataFrame:
         nonlocal _sim_method, _sim_result
+        nonlocal _corner_coaching, _delta_map, _session_scalars
 
         # Best driver time for sanity checking
 
         best_driver_time = float("inf")
         if valid_times:
             best_driver_time = min(t for _, t in valid_times)
+
+        # -- Priority 0: kart_envelope solver via adapter --
+        try:
+            from theoretical_adapter import compute_theoretical_via_envelope
+            adapter_result = compute_theoretical_via_envelope(
+                resampled_laps,
+                curvature_profile,
+                vehicle_params,
+                data_quality_rpt,
+                best_driver_time_s=(
+                    best_driver_time
+                    if math.isfinite(best_driver_time) else None
+                ),
+            )
+            _sim_method = adapter_result.method
+            _sim_result = adapter_result.theoretical_result
+            _corner_coaching = adapter_result.corner_coaching
+            _delta_map = adapter_result.delta_map
+            if adapter_result.session_scalars is not None:
+                sc = adapter_result.session_scalars
+                _session_scalars = {
+                    "mu": round(sc.mu_session, 4),
+                    "p": round(sc.p_session, 4),
+                    "b": round(sc.b_session, 4),
+                    "confidence": round(sc.confidence, 4),
+                    "condition_label": sc.condition_label,
+                }
+            logger.info(
+                "kart_envelope solver [%s]: %.2fs (driver best %.2fs).",
+                adapter_result.method,
+                adapter_result.theoretical_result.lap_time_s
+                if adapter_result.theoretical_result else float("nan"),
+                best_driver_time,
+            )
+            return adapter_result.theoretical_df
+        except Exception as exc:
+            logger.warning(
+                "kart_envelope adapter failed: %s — falling back to "
+                "legacy engines.", exc,
+            )
 
         # -- Priority 1: Hybrid physics simulation (telemetry-fitted
         #    vehicle model + forward-backward solver, with internal
@@ -1692,6 +1736,9 @@ def run_full_analysis(
     _record("10b_theoretical_metrics", theo_metrics, err)
     theo_metrics = theo_metrics or {}
     summary["theoretical_metrics"] = theo_metrics
+    summary["corner_coaching"] = _corner_coaching
+    summary["delta_map"] = _delta_map
+    summary["session_scalars"] = _session_scalars
 
     # -- 10c: Corner analysis (requires corners + theoretical + friction) --
 
