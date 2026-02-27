@@ -375,6 +375,116 @@ def _purge_deleted_accounts_impl() -> dict[str, int]:
     return {"purged": purged}
 
 
+
+
+# ---------------------------------------------------------------------------
+# Task: enforce_raw_data_retention
+# ---------------------------------------------------------------------------
+
+def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
+    """Return workspace IDs with their effective normalized tier key."""
+    from auth.entitlements import normalize_tier
+
+    rows = conn.execute(
+        "SELECT w.id AS workspace_id, "
+        "COALESCE(w.plan_tier, owner.billing_plan, 'demo') AS tier "
+        "FROM workspaces w "
+        "LEFT JOIN users owner ON owner.id = w.owner_user_id"
+    ).fetchall()
+    out = []
+    for row in rows:
+        data = dict(row)
+        out.append({"workspace_id": data["workspace_id"], "tier": normalize_tier(data.get("tier"))})
+    return out
+
+
+def _write_retention_audit(conn, workspace_id: int, tier: str, deleted_rows: int, deleted_files: int) -> None:
+    """Best-effort audit trail write for retention enforcement."""
+    from sqlalchemy import text
+
+    try:
+        conn.execute(
+            text(
+                "INSERT INTO audit_log (event_type, workspace_id, details_json, created_at) "
+                "VALUES ('raw_retention_enforced', :ws, :details, now())"
+            ),
+            {
+                "ws": workspace_id,
+                "details": json.dumps({
+                    "tier": tier,
+                    "deleted_rows": deleted_rows,
+                    "deleted_files": deleted_files,
+                }),
+            },
+        )
+    except Exception:
+        logger.info(
+            "Retention audit (fallback-log): workspace_id=%s tier=%s deleted_rows=%s deleted_files=%s",
+            workspace_id, tier, deleted_rows, deleted_files,
+        )
+
+
+def _enforce_raw_data_retention_impl() -> dict[str, int]:
+    """Delete raw telemetry artifacts based on per-tier SLA retention windows."""
+    from sqlalchemy import text
+    from auth.entitlements import get_policy_for_tier
+
+    conn = get_pg_connection()
+    workspace_tiers = _iter_workspace_tiers(conn)
+
+    total_deleted_rows = 0
+    total_deleted_files = 0
+
+    raw_base = Path(os.environ.get("TELEMETRY_RAW_DIR", "data/raw"))
+
+    for item in workspace_tiers:
+        ws_id = int(item["workspace_id"])
+        tier = item["tier"]
+        policy = get_policy_for_tier(tier)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=policy.raw_retention_days)
+
+        deleted_rows = 0
+        for table in ("raw_telemetry", "gps_traces"):
+            try:
+                result = conn.execute(
+                    text(
+                        f"DELETE FROM {table} WHERE workspace_id = :ws "
+                        "AND created_at < :cutoff"
+                    ),
+                    {"ws": ws_id, "cutoff": cutoff},
+                )
+                deleted_rows += int(getattr(result, "rowcount", 0) or 0)
+            except Exception:
+                continue
+
+        deleted_files = 0
+        ws_dir = raw_base / str(ws_id)
+        if ws_dir.exists() and ws_dir.is_dir():
+            for path in ws_dir.glob("**/*"):
+                if not path.is_file():
+                    continue
+                if datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) < cutoff:
+                    try:
+                        path.unlink()
+                        deleted_files += 1
+                    except Exception:
+                        continue
+
+        _write_retention_audit(conn, ws_id, tier, deleted_rows, deleted_files)
+        total_deleted_rows += deleted_rows
+        total_deleted_files += deleted_files
+
+    conn.commit()
+    logger.info(
+        "Retention enforcement complete: workspaces=%s deleted_rows=%s deleted_files=%s",
+        len(workspace_tiers), total_deleted_rows, total_deleted_files,
+    )
+    return {
+        "workspaces": len(workspace_tiers),
+        "deleted_rows": total_deleted_rows,
+        "deleted_files": total_deleted_files,
+    }
+
 # ---------------------------------------------------------------------------
 # Register as Celery tasks (or plain functions when Celery unavailable)
 # ---------------------------------------------------------------------------
@@ -387,6 +497,10 @@ if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(name="tasks.gdpr_tasks.purge_deleted_accounts")
     def purge_deleted_accounts() -> dict[str, int]:
         return _purge_deleted_accounts_impl()
+
+    @_celery_app.task(name="tasks.gdpr_tasks.enforce_raw_data_retention")
+    def enforce_raw_data_retention() -> dict[str, int]:
+        return _enforce_raw_data_retention_impl()
 else:
     # Fallback: plain functions for testing without Celery
     def export_user_data(user_id: int, export_id: str) -> dict[str, Any]:  # type: ignore[misc]
@@ -394,3 +508,6 @@ else:
 
     def purge_deleted_accounts() -> dict[str, int]:  # type: ignore[misc]
         return _purge_deleted_accounts_impl()
+
+    def enforce_raw_data_retention() -> dict[str, int]:  # type: ignore[misc]
+        return _enforce_raw_data_retention_impl()

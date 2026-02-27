@@ -17,6 +17,12 @@ from datetime import datetime, timezone
 from flask import Blueprint, g, request, send_file
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.middleware.entitlements import (
+    entitlement_snapshot,
+    require_api_access,
+    require_feature,
+    require_report_quota,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +68,9 @@ except ImportError:
 @bp.route("/export", methods=["POST"])
 @rate_limit(tier="write")
 @idempotent
+@require_api_access
+@require_feature("exports")
+@require_report_quota
 def create_export():
     """Create a data export request and dispatch Celery task.
 
@@ -93,6 +102,13 @@ def create_export():
         export_user_data.delay(user_id=user_id, export_id=str(export_id))
 
     return api_response({"export_id": str(export_id)}, status=202)
+
+
+@bp.route("/entitlements", methods=["GET"])
+@rate_limit(tier="read")
+def get_entitlements():
+    """Return effective entitlement snapshot for frontend feature gating."""
+    return api_response(entitlement_snapshot())
 
 
 # ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ if _PKG_DIR not in sys.path:
     sys.path.insert(0, _PKG_DIR)
 
 from celery import Celery
+from celery.schedules import crontab
 
 
 def make_celery(app=None) -> Celery:
@@ -49,6 +50,12 @@ def make_celery(app=None) -> Celery:
             "tasks.batch_tasks.*": {"queue": "default"},
         },
         task_default_queue="default",
+        beat_schedule={
+            "enforce-raw-data-retention": {
+                "task": "tasks.gdpr_tasks.enforce_raw_data_retention",
+                "schedule": crontab(hour=2, minute=15),
+            },
+        },
     )
 
     if app is not None:
