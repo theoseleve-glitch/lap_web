@@ -9,6 +9,9 @@
     "dev:reset": "node scripts/check-marketing-assets.mjs --reset",
     "build": "next build",
     "start": "next start",
+    "cf:build": "opennextjs-cloudflare build",
+    "cf:preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "cf:deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "lint": "next lint",
     "test": "vitest run",
     "test:e2e": "playwright test",
@@ -18,6 +21,7 @@
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
+    "@opennextjs/cloudflare": "^1.15.1",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
     "@react-three/postprocessing": "^2.19.1",
@@ -49,6 +53,7 @@
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
     "typescript": "^5",
-    "vitest": "^4.0.18"
+    "vitest": "^4.0.18",
+    "wrangler": "^4.69.0"
   }
 }
