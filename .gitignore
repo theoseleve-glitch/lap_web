@@ -51,6 +51,9 @@ docs/web-app-audit.pdf
 # Environment
 .env
 .env.local
+.env.production
+.env.staging
+.env.*.local
 telemetry_tool/test_output.txt
 
 # Next.js

@@ -1,9 +1,12 @@
 /**
  * Typed API client for the Flask telemetry backend.
- * All requests go through /api/v1/ which Next.js rewrites to the Flask server.
+ * Calls the backend API directly via CORS (no Next.js rewrite proxy).
  */
 
-const API_BASE = '/api/v1';
+import { getAccessToken } from './auth-store';
+
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export class ApiError extends Error {
   constructor(
@@ -29,10 +32,22 @@ interface ApiEnvelope<T> {
  * Throws ApiError on non-ok responses.
  */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+
+  // Attach JWT token from in-memory store (never localStorage)
+  if (typeof window !== 'undefined') {
+    const token = getAccessToken();
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...headers,
       ...init?.headers,
     },
     credentials: 'include',

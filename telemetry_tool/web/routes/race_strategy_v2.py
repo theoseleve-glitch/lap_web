@@ -82,6 +82,9 @@ def export(race_id: int):
     )
 
 
+_MAX_JSON_IMPORT_BYTES = 10 * 1024 * 1024  # 10 MB
+
+
 @bp.route("/import", methods=["POST"])
 def import_race():
     """Import race from JSON file upload."""
@@ -92,8 +95,13 @@ def import_race():
         flash("No file selected.", "error")
         return redirect(url_for("race_strategy_v2.index"))
 
+    raw = file.read(_MAX_JSON_IMPORT_BYTES + 1)
+    if len(raw) > _MAX_JSON_IMPORT_BYTES:
+        flash("Import file too large (max 10 MB).", "error")
+        return redirect(url_for("race_strategy_v2.index"))
+
     try:
-        data = json.loads(file.read().decode("utf-8"))
+        data = json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         flash("Invalid JSON file.", "error")
         return redirect(url_for("race_strategy_v2.index"))
@@ -948,8 +956,13 @@ def import_plan(race_id: int):
         flash("No file selected.", "error")
         return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
 
+    raw = file.read(_MAX_JSON_IMPORT_BYTES + 1)
+    if len(raw) > _MAX_JSON_IMPORT_BYTES:
+        flash("Import file too large (max 10 MB).", "error")
+        return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
+
     try:
-        data = json.loads(file.read().decode("utf-8"))
+        data = json.loads(raw.decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError):
         flash("Invalid JSON file.", "error")
         return redirect(url_for("race_strategy_v2.detail", race_id=race_id))

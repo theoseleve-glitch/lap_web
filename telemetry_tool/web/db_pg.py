@@ -1,8 +1,7 @@
 """
 PostgreSQL connection management for the Flask app.
 
-Mirrors the SQLite ``db.py`` interface but uses a ``psycopg2``
-ThreadedConnectionPool and Alembic for migrations.
+Mirrors the SQLite ``db.py`` interface using per-request connections.
 
 The ``PgConnectionWrapper`` bridges the API gap between sqlite3.Connection
 and psycopg2 — it provides ``.execute()`` / ``.executemany()`` directly
@@ -10,6 +9,12 @@ on the connection object, and translates SQLite-flavoured SQL via
 ``sql_compat.translate_params()`` automatically.
 
 Enabled when the ``USE_PG`` environment variable is set to ``"1"``.
+
+Connection strategy: simple per-request connections instead of a pool.
+Gunicorn sync workers handle 1 request at a time, so pooling offers no
+concurrency benefit. Per-request connections are simpler and eliminate
+pool-exhaustion bugs that arise with ThreadedConnectionPool in pre-fork
+Gunicorn deployments.
 """
 
 from __future__ import annotations
@@ -17,7 +22,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-import threading
 from pathlib import Path
 from typing import Optional
 
@@ -31,13 +35,6 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
-# ---------------------------------------------------------------------------
-# Module-level pool (lazy-initialised on first call)
-# ---------------------------------------------------------------------------
-
-_pool = None
-_pool_lock = threading.Lock()
-
 _PG_URL_DEFAULT = "postgresql://telemetry:telemetry@localhost:5432/telemetry"
 
 
@@ -46,26 +43,14 @@ def _get_pg_url() -> str:
     return os.environ.get("TELEMETRY_PG_URL", _PG_URL_DEFAULT)
 
 
-def _ensure_pool():
-    """Lazily create the connection pool (thread-safe, one-shot)."""
-    global _pool
-    if _pool is not None:
-        return
+def _new_connection():
+    """Create a fresh psycopg2 connection with RealDictCursor."""
+    import psycopg2
+    import psycopg2.extras
 
-    with _pool_lock:
-        # Double-checked locking
-        if _pool is not None:
-            return
-
-        import psycopg2.pool
-
-        url = _get_pg_url()
-        logger.info("Creating PostgreSQL connection pool (%s)", url.split("@")[-1])
-        _pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=2,
-            maxconn=10,
-            dsn=url,
-        )
+    conn = psycopg2.connect(_get_pg_url())
+    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    return conn
 
 
 # ---------------------------------------------------------------------------
@@ -135,29 +120,23 @@ def get_pg_connection():
     SQL dialect automatically.
 
     Inside a Flask request the connection is cached on ``flask.g``
-    (identical pattern to ``db.py``).  Outside Flask it is returned
-    directly from the pool -- callers are responsible for closing it
+    (identical pattern to ``db.py``).  Outside Flask a new connection
+    is returned directly -- callers are responsible for closing it
     via ``return_pg_connection()``.
     """
-    import psycopg2.extras
-
-    _ensure_pool()
-
     # Try Flask context first.
     try:
         from flask import g
 
         if "pg_conn" not in g:
-            conn = _pool.getconn()
-            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            conn = _new_connection()
             g.pg_conn = PgConnectionWrapper(conn)
         return g.pg_conn
     except (ImportError, RuntimeError):
         pass
 
-    # Standalone mode -- caller must return the connection.
-    conn = _pool.getconn()
-    conn.cursor_factory = psycopg2.extras.RealDictCursor
+    # Standalone mode -- caller must close the connection.
+    conn = _new_connection()
     return PgConnectionWrapper(conn)
 
 
@@ -169,21 +148,25 @@ def _unwrap(conn):
 
 
 def return_pg_connection(conn) -> None:
-    """Return a standalone connection to the pool (for non-Flask usage)."""
-    if _pool is not None and conn is not None:
+    """Close a standalone connection (for non-Flask usage)."""
+    if conn is not None:
         raw = _unwrap(conn)
         try:
             raw.rollback()
         except Exception:
             pass
-        _pool.putconn(raw)
+        try:
+            raw.close()
+        except Exception:
+            pass
 
 
 def close_pg(exc: Optional[BaseException] = None) -> None:
     """
-    Flask teardown hook -- return the per-request connection to the pool.
+    Flask teardown hook -- close the per-request connection.
 
-    On error the connection is rolled back before being returned.
+    On success the connection is committed, on error it is rolled back.
+    The connection is always closed in the ``finally`` block.
     """
     try:
         from flask import g
@@ -191,18 +174,24 @@ def close_pg(exc: Optional[BaseException] = None) -> None:
         conn = g.pop("pg_conn", None)
         if conn is not None:
             raw = _unwrap(conn)
-            if exc is not None:
-                try:
+            try:
+                if exc is not None:
                     raw.rollback()
+                else:
+                    try:
+                        raw.commit()
+                    except Exception:
+                        try:
+                            raw.rollback()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            finally:
+                try:
+                    raw.close()
                 except Exception:
                     pass
-            else:
-                try:
-                    raw.commit()
-                except Exception:
-                    raw.rollback()
-            if _pool is not None:
-                _pool.putconn(raw)
     except (ImportError, RuntimeError):
         pass
 
@@ -233,9 +222,5 @@ def init_pg() -> None:
 
 
 def close_pool() -> None:
-    """Shut down the connection pool (call on app teardown / test cleanup)."""
-    global _pool
-    with _pool_lock:
-        if _pool is not None:
-            _pool.closeall()
-            _pool = None
+    """No-op — kept for API compatibility (pool was removed)."""
+    pass

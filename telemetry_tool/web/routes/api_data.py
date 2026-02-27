@@ -886,6 +886,12 @@ def files_upload():
     if not f.filename or not f.filename.lower().endswith(".csv"):
         return jsonify({"error": "only .csv files allowed"}), 400
 
+    # Content sniff: reject binary files masquerading as CSV
+    sample = f.read(1024)
+    f.seek(0)
+    if b"\x00" in sample:
+        return jsonify({"error": "File appears to be binary, not CSV"}), 400
+
     # Sanitize filename (werkzeug secure_filename for safety)
     safe_name = secure_filename(f.filename) or "upload.csv"
     if not safe_name.lower().endswith(".csv"):

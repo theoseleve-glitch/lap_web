@@ -37,6 +37,7 @@ interface AnalysisJob {
   session_id?: string;
 }
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const SESSION_TYPES = ['Practice', 'Qualifying', 'Race', 'Test'] as const;
 
 function formatSize(bytes: number): string {
@@ -92,10 +93,13 @@ export default function AnalyzePage() {
     enabled: step === 2,
   });
 
-  // Poll job status in step 3
+  // Poll job status in step 3 (Flask serves at /analyze/api/status/:id)
   useQuery({
     queryKey: ['analysis-job', jobId],
-    queryFn: () => api.get<AnalysisJob>(`/ingest/status/${jobId}`),
+    queryFn: async () => {
+      const res = await fetch(`${BACKEND_URL}/analyze/api/status/${jobId}`);
+      return res.json() as Promise<AnalysisJob>;
+    },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
     refetchInterval: 2000,
     select: (data) => {
@@ -110,7 +114,7 @@ export default function AnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch('/api/v1/files/upload', {
+      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -142,13 +146,16 @@ export default function AnalyzePage() {
     if (!selectedFile) return;
     setStep(3);
     try {
-      const result = await api.post<{ job_id: string }>('/ingest/start', {
-        csv_file: selectedFile,
-        driver_id: driverId || null,
-        track_id: trackId || null,
-        kart_id: kartId || null,
-        session_type: sessionType,
-      });
+      // Flask serves ingest start at /analyze/api/start (form data)
+      const form = new FormData();
+      form.append('csv_file', selectedFile);
+      if (driverId) form.append('driver_id', driverId);
+      if (trackId) form.append('track_id', trackId);
+      if (kartId) form.append('kart_id', kartId);
+      form.append('session_type', sessionType);
+      const res = await fetch(`${BACKEND_URL}/analyze/api/start`, { method: 'POST', body: form });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);
       setJobStatus({ job_id: result.job_id, status: 'pending', progress: 0, message: 'Starting analysis...' });
     } catch {

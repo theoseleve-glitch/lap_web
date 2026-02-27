@@ -1,7 +1,7 @@
 """Auth routes -- register, login, refresh, logout, me."""
 import logging
 
-from flask import Blueprint, request, current_app, g
+from flask import Blueprint, make_response, request, current_app, g
 
 from web.api_utils import api_response, api_error, ErrorCode
 from web.rate_limit import rate_limit
@@ -14,6 +14,37 @@ bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 # Password max — Argon2 DoS prevention (still checked on non-schema routes).
 _PASSWORD_MAX = 1024
+
+_REFRESH_COOKIE = "lap_refresh_token"
+_REFRESH_COOKIE_MAX_AGE = 30 * 24 * 3600  # 30 days
+
+
+def _set_refresh_cookie(resp, refresh_token: str):
+    """Set the refresh token as an httpOnly secure cookie."""
+    resp.set_cookie(
+        _REFRESH_COOKIE,
+        refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="Lax",
+        max_age=_REFRESH_COOKIE_MAX_AGE,
+        path="/auth/refresh",
+    )
+    return resp
+
+
+def _clear_refresh_cookie(resp):
+    """Remove the refresh token cookie."""
+    resp.set_cookie(
+        _REFRESH_COOKIE,
+        "",
+        httponly=True,
+        secure=True,
+        samesite="Lax",
+        max_age=0,
+        path="/auth/refresh",
+    )
+    return resp
 
 
 def _get_conn():
@@ -85,7 +116,9 @@ def register():
             "refresh_token": refresh_token,
             "user": user,
         }
-        return api_response(result, status=201)
+        resp = make_response(api_response(result, status=201))
+        _set_refresh_cookie(resp, refresh_token)
+        return resp
     except AuthError as e:
         status_code = 409 if e.code == "CONFLICT" else 400
         return api_error(ErrorCode.CONFLICT if e.code == "CONFLICT" else ErrorCode.VALIDATION_ERROR, str(e), status=status_code)
@@ -111,7 +144,10 @@ def login():
     secret = current_app.config["JWT_SECRET"]
     try:
         result = login_user(conn, email, password, secret)
-        return api_response(result)
+        resp = make_response(api_response(result))
+        if result.get("refresh_token"):
+            _set_refresh_cookie(resp, result["refresh_token"])
+        return resp
     except AuthError as e:
         return api_error(ErrorCode.INVALID_CREDENTIALS, str(e), status=401)
     except Exception:
@@ -124,9 +160,14 @@ def logout():
     from auth.service import hash_refresh_token
 
     body = request.get_json(silent=True) or {}
-    refresh_token = body.get("refresh_token")
+    refresh_token = (
+        request.cookies.get(_REFRESH_COOKIE)
+        or body.get("refresh_token")
+    )
     if not refresh_token:
-        return api_response({"message": "Logged out"})
+        resp = make_response(api_response({"message": "Logged out"}))
+        _clear_refresh_cookie(resp)
+        return resp
 
     conn = _get_conn()
     token_hash = hash_refresh_token(refresh_token)
@@ -135,7 +176,9 @@ def logout():
         {"token_hash": token_hash},
     )
     conn.commit()
-    return api_response({"message": "Logged out"})
+    resp = make_response(api_response({"message": "Logged out"}))
+    _clear_refresh_cookie(resp)
+    return resp
 
 
 @bp.route("/refresh", methods=["POST"])
@@ -153,7 +196,10 @@ def refresh():
     from datetime import datetime, timedelta, timezone
 
     body = request.get_json(silent=True) or {}
-    refresh_token = body.get("refresh_token", "").strip()
+    refresh_token = (
+        request.cookies.get(_REFRESH_COOKIE)
+        or body.get("refresh_token", "")
+    ).strip()
     if not refresh_token:
         return api_error(
             ErrorCode.VALIDATION_ERROR, "Refresh token required", status=400,
@@ -210,11 +256,14 @@ def refresh():
         )
         user = cur.fetchone()
 
-        return api_response({
+        result = {
             "access_token": new_access,
             "refresh_token": new_refresh,
             "user": dict(user) if user else {},
-        })
+        }
+        resp = make_response(api_response(result))
+        _set_refresh_cookie(resp, new_refresh)
+        return resp
     except Exception:
         logger.exception("Token refresh failed")
         return api_error(
@@ -292,7 +341,10 @@ def oauth_callback(provider):
     secret = current_app.config["JWT_SECRET"]
     try:
         result = get_or_create_oauth_user(conn, provider, profile, secret)
-        return api_response(result)
+        resp = make_response(api_response(result))
+        if result.get("refresh_token"):
+            _set_refresh_cookie(resp, result["refresh_token"])
+        return resp
     except Exception as e:
         from auth.service import AuthError
         if isinstance(e, AuthError):

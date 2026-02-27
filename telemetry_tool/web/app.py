@@ -121,6 +121,7 @@ def create_app(config: Config | None = None) -> Flask:
         GITHUB_CLIENT_SECRET=cfg.GITHUB_CLIENT_SECRET,
         OAUTH_REDIRECT_BASE=cfg.OAUTH_REDIRECT_BASE,
         RATE_LIMIT_ENABLED=cfg.RATE_LIMIT_ENABLED,
+        REDIS_URL=cfg.REDIS_URL,
     )
 
     # Phase 4 API infrastructure — request ID and structured logging.
@@ -138,6 +139,20 @@ def create_app(config: Config | None = None) -> Flask:
     from flask_cors import CORS
     origins = [o.strip() for o in cfg.CORS_ALLOWED_ORIGINS.split(",")]
     CORS(app, origins=origins, supports_credentials=True)
+
+    # Redis client for rate limiting + caching.
+    # The rate_limit module's get_redis() reads from app.extensions["redis"].
+    redis_url = cfg.REDIS_URL
+    if redis_url:
+        import redis as redis_lib
+        try:
+            r = redis_lib.from_url(redis_url, socket_timeout=2, decode_responses=True)
+            r.ping()
+            app.extensions["redis"] = r
+            app.config["REDIS_URL"] = redis_url
+            logger.info("Redis connected: %s", redis_url.split("@")[-1] if "@" in redis_url else redis_url)
+        except Exception as exc:
+            logger.warning("Redis connection failed — rate limiting disabled: %s", exc)
 
     # Ensure directories exist.
     for d in (cfg.DATA_RAW_DIR, cfg.RESULTS_DIR, cfg.UPLOAD_DIR):

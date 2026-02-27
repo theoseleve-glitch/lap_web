@@ -3,12 +3,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api-client';
+// api-client no longer used here — direct fetch to backend
 import { FormField } from '@/components/app';
 import Link from 'next/link';
 
 type Step = 1 | 2 | 3;
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const SESSION_TYPES = ['Practice', 'Qualifying', 'Race', 'Test'] as const;
 
 interface AnalysisJob {
@@ -56,10 +57,13 @@ export default function FreeReportAnalyzePage() {
     }
   }, []);
 
-  // Poll job status
+  // Poll job status (Flask serves at /analyze/api/status/:id)
   useQuery({
     queryKey: ['analysis-job', jobId],
-    queryFn: () => api.get<AnalysisJob>(`/ingest/status/${jobId}`),
+    queryFn: async () => {
+      const res = await fetch(`${BACKEND_URL}/analyze/api/status/${jobId}`);
+      return res.json() as Promise<AnalysisJob>;
+    },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
     refetchInterval: 2000,
     select: (data) => {
@@ -80,7 +84,7 @@ export default function FreeReportAnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch('/api/v1/files/upload', {
+      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
         method: 'POST',
         body: formData,
       });
@@ -111,12 +115,15 @@ export default function FreeReportAnalyzePage() {
     if (!selectedFile) return;
     setStep(3);
     try {
-      const result = await api.post<{ job_id: string }>('/ingest/start', {
-        csv_file: selectedFile,
-        driver_name: driverName || null,
-        track_name: trackName || null,
-        session_type: sessionType,
-      });
+      // Flask serves ingest start at /analyze/api/start (form data)
+      const form = new FormData();
+      form.append('csv_file', selectedFile);
+      if (driverName) form.append('driver_name', driverName);
+      if (trackName) form.append('track_name', trackName);
+      form.append('session_type', sessionType);
+      const res = await fetch(`${BACKEND_URL}/analyze/api/start`, { method: 'POST', body: form });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);
       setJobStatus({ job_id: result.job_id, status: 'pending', progress: 0, message: 'Starting analysis...' });
     } catch {
