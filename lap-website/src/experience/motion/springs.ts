@@ -11,3 +11,38 @@ export const physics = {
   velocityMax: 1.0,
   snapVelocityThreshold: 0.05,
 } as const;
+
+export const reveal = {
+  brushRadius: 80,
+  brushSoftness: 0.6,
+  decayFactor: 0.985,
+  blurKernelSize: 5,
+  blurSigma: 2.0,
+  inertiaLerp: 0.08,
+  turbulenceStrength: 0.3,
+  turbulenceScale: 4.0,
+  drsRadiusMultiplier: 1.4,
+  idleDecayRate: 0.97,
+  idleTimeout: 2000,
+  mobileBurstRadius: 120,
+  mobileBurstDecay: 0.96,
+} as const;
+
+export const background = {
+  grainIntensity: 0.04,
+  contourCount: 30,
+  contourDriftSpeed: 0.001,
+  contourPointerInfluence: 0.03,
+  particleDriftX: 2.0,
+  particleDriftY: 2.0,
+  particlePointerRadius: 100,
+  streakCount: 15,
+  streakSpawnThreshold: 0.4,
+  streakLifetime: 300,
+  streakLength: 40,
+  vignetteRadius: 0.7,
+  vignetteShift: 0.05,
+  yawDamping: 0.04,
+  cornerParallaxFactor: 0.02,
+  wheelFriction: 0.95,
+} as const;
