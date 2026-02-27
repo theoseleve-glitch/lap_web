@@ -390,3 +390,31 @@ class TestV1DeleteSession:
         body = resp.get_json()
         assert body["ok"] is True
         assert body["data"]["session_id"] == "s1"
+
+# ---------------------------------------------------------------------------
+# Karts list
+# ---------------------------------------------------------------------------
+
+class TestV1KartsList:
+    @patch("web.routes.api_v1_data.validate_karts_schema")
+    @patch("web.routes.api_v1_data.get_all_karts", side_effect=Exception("db failure"))
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_returns_internal_error_envelope_on_db_failure(
+        self,
+        mock_db,
+        mock_get_karts,
+        mock_validate_schema,
+        client,
+    ):
+        """GET /api/v1/karts returns stable error envelope on DB failure."""
+        mock_db.return_value = _mock_conn()
+
+        resp = client.get("/api/v1/karts")
+
+        assert resp.status_code == 500
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert body["error"]["code"] == ErrorCode.INTERNAL_ERROR
+        assert body["error"]["message"] == "Internal server error"
+        assert "request_id" in body["meta"]
+        mock_validate_schema.assert_called_once()

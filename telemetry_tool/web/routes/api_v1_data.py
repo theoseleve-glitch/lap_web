@@ -17,10 +17,10 @@ import math
 from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, g, request
 
 from web.api_utils import ErrorCode, api_error, api_response
-from web.db import get_db_connection
+from web.db import get_db_connection, validate_karts_schema
 from web.models import (
     get_all_drivers,
     get_all_karts,
@@ -1670,7 +1670,34 @@ def v1_karts_list():
         200 with ``{"karts": [...]}``
     """
     conn = get_db_connection()
-    karts = get_all_karts(conn)
+    try:
+        karts = get_all_karts(conn)
+    except Exception:
+        request_id = getattr(g, "request_id", None)
+        workspace_id = getattr(g, "workspace_id", None)
+        user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+        logger.exception(
+            "Failed to load karts list "
+            "(request_id=%s workspace_id=%s user_id=%s)",
+            request_id,
+            workspace_id,
+            user_id,
+        )
+
+        # Surface migration/schema drift in logs when operational errors occur.
+        if current_app.config.get("USE_PG"):
+            logger.warning("Karts schema validation check skipped for PostgreSQL backend.")
+        else:
+            try:
+                validate_karts_schema(conn)
+            except Exception:
+                logger.warning("Unable to validate karts schema state after failure.", exc_info=True)
+
+        return api_error(
+            ErrorCode.INTERNAL_ERROR,
+            "Internal server error",
+            status=500,
+        )
     return api_response({"karts": karts})
 
 
