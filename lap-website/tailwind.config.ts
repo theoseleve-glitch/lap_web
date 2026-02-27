@@ -13,6 +13,7 @@ const config: Config = {
         'safety-red': '#FF2A2A',
         'marshal-yellow': '#FFD400',
         'pit-orange': '#FF6A00',
+        'racing-purple': '#D946EF',
       },
       fontFamily: {
         monument: ['Teko', 'sans-serif'],
@@ -30,6 +31,9 @@ const config: Config = {
         delta: 30,
         sector: 40,
         timecode: 50,
+        hud: 35,
+        drs: 36,
+        'finish-line': 37,
         nav: 60,
         overlay: 100,
         cursor: 999,

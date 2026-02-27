@@ -49,4 +49,15 @@ describe('Token system', () => {
       expect(roomAccents[r.id]).toBeDefined();
     });
   });
+
+  it('exports racing-purple color', () => {
+    expect(colors.racingPurple).toBe('#D946EF');
+  });
+
+  it('exports narrative timing tokens', () => {
+    expect(timing.sectorGate).toBe(0.4);
+    expect(timing.drs).toBe(2.0);
+    expect(timing.pit).toBe(0.6);
+    expect(timing.finish).toBe(0.6);
+  });
 });

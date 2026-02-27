@@ -9,12 +9,17 @@ export const colors = {
   safetyRed: '#FF2A2A',
   marshalYellow: '#FFD400',
   pitOrange: '#FF6A00',
+  racingPurple: '#D946EF',
 } as const;
 
 export const timing = {
   micro: 0.42,    // 420ms in seconds (for GSAP)
   room: 0.9,      // 900ms
   monument: 1.4,  // 1400ms
+  sectorGate: 0.4,
+  drs: 2.0,
+  pit: 0.6,
+  finish: 0.6,
 } as const;
 
 export const easing = {
@@ -23,6 +28,9 @@ export const easing = {
   spring: 'back.out(1.2)',          // approx cubic-bezier(0.22, 1.2, 0.36, 1)
   snap: 'power2.in',               // approx cubic-bezier(0.7, 0, 0.84, 0)
   anticipate: 'power2.inOut',       // approx cubic-bezier(0.45, 0, 0.55, 1)
+  sectorGate: 'power4.out',
+  pitEnter: 'power2.in',
+  pitExit: 'power4.out',
 } as const;
 
 export const roomAccents: Record<string, string> = {

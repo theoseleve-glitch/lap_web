@@ -10,6 +10,7 @@
   --safety-red: #FF2A2A;
   --marshal-yellow: #FFD400;
   --pit-orange: #FF6A00;
+  --racing-purple: #D946EF;
 
   /* ── Active accent (overridden per room via data-accent) ── */
   --accent: var(--chalk);
@@ -47,6 +48,9 @@
   --z-delta: 30;
   --z-sector: 40;
   --z-timecode: 50;
+  --z-hud: 35;
+  --z-drs: 36;
+  --z-finish-line: 37;
   --z-nav: 60;
   --z-overlay: 100;
   --z-cursor: 999;
@@ -55,6 +59,10 @@
   --duration-micro: 420ms;
   --duration-room: 900ms;
   --duration-monument: 1400ms;
+  --duration-sector-gate: 400ms;
+  --duration-drs: 2000ms;
+  --duration-pit: 600ms;
+  --duration-finish: 600ms;
 
   /* ── Easing ────────────────────────── */
   --ease-inertia: cubic-bezier(0.16, 1, 0.3, 1);
@@ -62,6 +70,11 @@
   --ease-spring: cubic-bezier(0.22, 1.2, 0.36, 1);
   --ease-snap: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-anticipate: cubic-bezier(0.45, 0, 0.55, 1);
+
+  /* ── Narrative Easing ─────────────── */
+  --ease-sector-gate: cubic-bezier(0.0, 0, 0.2, 1);
+  --ease-pit-enter: cubic-bezier(0.8, 0, 1, 1);
+  --ease-pit-exit: cubic-bezier(0, 0, 0.2, 1);
 
   /* Layered background system */
   --bg-radial-1: radial-gradient(1200px 720px at 10% -10%, rgba(255, 106, 0, 0.14), transparent 68%);
@@ -77,3 +90,4 @@
 [data-accent="red"]     { --accent: var(--safety-red); }
 [data-accent="yellow"]  { --accent: var(--marshal-yellow); }
 [data-accent="orange"]  { --accent: var(--pit-orange); }
+[data-accent="purple"]  { --accent: var(--racing-purple); }
