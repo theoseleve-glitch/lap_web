@@ -1,8 +1,11 @@
+'use client';
+
 import Link from 'next/link';
 import { workflowModules } from '@/data/workflow-modules';
 import type { WorkflowModule } from '@/data/workflow-modules';
 import { StatusPill } from '@/components/site/StatusPill';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
+import { TrackCard } from '@/components/ui/TrackCard';
 
 const GROUP_LABELS: Record<
   WorkflowModule['group'],
@@ -55,23 +58,20 @@ export function S4WorkflowCoverage() {
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {modules.map((module) => (
-                  <article
+                  <TrackCard
                     key={module.id}
-                    className="border border-steel/20 bg-concrete/40 p-4"
+                    title={module.title}
+                    description={module.summary}
                   >
                     <div className="flex items-start justify-between gap-3 mb-2">
-                      <h3 className="font-monument text-[var(--text-h3)]">
-                        {module.title}
-                      </h3>
                       <StatusPill status={module.status} />
                     </div>
-                    <p className="text-sm text-steel mb-3">{module.summary}</p>
                     <ul className="space-y-1 text-xs text-chalk">
                       {module.steps.slice(0, 3).map((step) => (
                         <li key={step}>- {step}</li>
                       ))}
                     </ul>
-                  </article>
+                  </TrackCard>
                 ))}
               </div>
             </div>

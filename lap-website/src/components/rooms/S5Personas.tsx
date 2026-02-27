@@ -1,8 +1,23 @@
+'use client';
+
+import { useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { personaPages } from '@/data/personas';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
+import { TrackCard } from '@/components/ui/TrackCard';
+import { useKernelStore } from '@/experience/state/store';
 
 export function S5Personas() {
+  const activateDrs = useKernelStore((s) => s.activateDrs);
+  const drsTriggered = useRef(false);
+
+  const handlePersonaClick = useCallback(() => {
+    if (!drsTriggered.current) {
+      drsTriggered.current = true;
+      activateDrs('persona-expand');
+    }
+  }, [activateDrs]);
+
   return (
     <section
       id="s5-personas"
@@ -26,24 +41,29 @@ export function S5Personas() {
 
         <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-4">
           {personaPages.map((persona) => (
-            <article key={persona.slug} className="border border-steel/20 bg-concrete/40 p-5">
-              <h3 className="font-monument text-[var(--text-h3)] mb-2">{persona.title}</h3>
-              <p className="text-sm text-steel mb-3">{persona.subtitle}</p>
+            <TrackCard
+              key={persona.slug}
+              title={persona.title}
+              description={persona.subtitle}
+              onClick={handlePersonaClick}
+            >
               <div className="flex flex-wrap gap-2">
                 <Link
                   href={`/${persona.slug}`}
                   className="border border-chalk/50 px-3 py-1 text-xs font-telemetry tracking-[0.12em]"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   OPEN PAGE
                 </Link>
                 <Link
                   href={persona.primaryCta.href}
                   className="border border-pit-orange px-3 py-1 text-xs font-telemetry tracking-[0.12em]"
+                  onClick={(e) => e.stopPropagation()}
                 >
                   {persona.primaryCta.label.toUpperCase()}
                 </Link>
               </div>
-            </article>
+            </TrackCard>
           ))}
         </div>
       </div>

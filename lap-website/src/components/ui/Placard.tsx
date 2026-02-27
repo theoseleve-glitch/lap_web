@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { ScrutineeringStamp } from './ScrutineeringStamp';
+import { useKernelStore } from '@/experience/state/store';
 
 interface PlacardProps {
   title: string;
@@ -19,6 +20,16 @@ export function Placard({
   className = '',
 }: PlacardProps) {
   const [flipped, setFlipped] = useState(false);
+  const drsTriggered = useRef(false);
+  const activateDrs = useKernelStore((s) => s.activateDrs);
+
+  const handleReveal = useCallback(() => {
+    setFlipped(true);
+    if (!drsTriggered.current) {
+      drsTriggered.current = true;
+      activateDrs('card-reveal');
+    }
+  }, [activateDrs]);
 
   return (
     <div
@@ -44,7 +55,7 @@ export function Placard({
           {revealContent && (
             <button
               className="mt-4 font-telemetry text-[11px] tracking-[0.12em] uppercase text-[var(--accent)] hover:underline"
-              onClick={() => setFlipped(true)}
+              onClick={handleReveal}
             >
               REVEAL
             </button>

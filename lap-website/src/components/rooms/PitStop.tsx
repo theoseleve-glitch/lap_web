@@ -15,6 +15,7 @@ import {
   trackFaqExpand,
   trackCtaClick,
 } from '@/lib/analytics';
+import { PitWheel } from '@/components/chrome/PitWheel';
 
 export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
@@ -33,7 +34,12 @@ export function PitStop() {
       style={{ minHeight: '100vh' }}
       aria-label="Pit Stop — Pricing and demo"
     >
-      <div className="grid-lap">
+      {/* Decorative wheel behind pricing content */}
+      <div className="absolute right-8 top-1/3 -translate-y-1/2 hidden lg:block">
+        <PitWheel />
+      </div>
+
+      <div className="grid-lap relative" style={{ zIndex: 1 }}>
         {/* Header */}
         <div className="col-span-full text-center mb-4">
           <MonumentText size="h1" as="h2">
