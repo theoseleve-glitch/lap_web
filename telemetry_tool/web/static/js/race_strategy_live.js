@@ -627,6 +627,36 @@
         if (paceEl && c.grip_score) {
             paceEl.textContent = 'Grip score: ' + (c.grip_score * 100).toFixed(0) + '%';
         }
+
+        // Also populate the conditions strip
+        var strip = document.getElementById('rs-conditions-strip');
+        if (strip) {
+            strip.style.display = '';
+            setText('rs-cond-temp', w.air_temp_c != null ? w.air_temp_c.toFixed(1) + '\u00B0C' : '--');
+            var gripPct = c.grip_score ? Math.round(c.grip_score * 100) : 0;
+            var gripBar = document.getElementById('rs-cond-grip-bar');
+            if (gripBar) gripBar.style.width = gripPct + '%';
+            setText('rs-cond-grip', gripPct + '%');
+            setText('rs-cond-track-state', (c.track_state || '--').toUpperCase());
+            setText('rs-cond-wind', w.wind_speed_mps ? (w.wind_speed_mps * 3.6).toFixed(0) + ' km/h' : '--');
+        }
+    }
+
+    // ── 8b. Weather Alerts (from api/state polling) ──
+
+    function updateWeatherAlert() {
+        var alertEl = document.getElementById('rs-weather-alert');
+        if (!alertEl) return;
+        var alert = state && state.weather_alert;
+        if (alert) {
+            alertEl.classList.remove('hidden', 'warning', 'critical');
+            alertEl.classList.add(alert.severity || 'warning');
+            setText('rs-weather-alert-title',
+                alert.severity === 'critical' ? 'RAIN ALERT' : 'Weather Warning');
+            setText('rs-weather-alert-message', alert.message || '');
+        } else {
+            alertEl.classList.add('hidden');
+        }
     }
 
     function renderForecast() {
@@ -1205,6 +1235,7 @@
                 updateChat();
                 updateNeutralizationUI();
                 updateIntelligence();
+                updateWeatherAlert();
                 alertManager.check(state);
 
                 // Set chart frames to ready after data loads

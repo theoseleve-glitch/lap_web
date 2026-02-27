@@ -71,6 +71,38 @@
     <!-- Alert Toast Strip -->
     <div class="rs-alert-strip rs-full" id="rs-alert-strip"></div>
 
+    <!-- Weather Alert Banner (populated from api/state polling) -->
+    <div class="rs-weather-alert rs-full hidden" id="rs-weather-alert">
+        <div class="rs-weather-alert-icon">&#9888;</div>
+        <div class="rs-weather-alert-content">
+            <strong id="rs-weather-alert-title">Weather Alert</strong>
+            <p id="rs-weather-alert-message"></p>
+        </div>
+    </div>
+
+    <!-- Current Conditions Strip (populated from weather endpoint) -->
+    <div class="rs-conditions-strip rs-full" id="rs-conditions-strip" style="display:none;">
+        <div class="rs-cond-item">
+            <span class="rs-cond-label">Temp</span>
+            <span class="rs-cond-value" id="rs-cond-temp">--</span>
+        </div>
+        <div class="rs-cond-item">
+            <span class="rs-cond-label">Grip</span>
+            <div class="rs-grip-bar-wrap">
+                <div class="rs-grip-bar-fill" id="rs-cond-grip-bar" style="width:0%;"></div>
+            </div>
+            <span class="rs-cond-value" id="rs-cond-grip">--</span>
+        </div>
+        <div class="rs-cond-item">
+            <span class="rs-cond-label">Track</span>
+            <span class="rs-cond-value" id="rs-cond-track-state">--</span>
+        </div>
+        <div class="rs-cond-item">
+            <span class="rs-cond-label">Wind</span>
+            <span class="rs-cond-value" id="rs-cond-wind">--</span>
+        </div>
+    </div>
+
     <!-- 1. Race Timer -->
     <div class="rs-live-card">
         <h3>Race Timer <span class="rs-connection-dot" id="rs-connection-dot"></span></h3>

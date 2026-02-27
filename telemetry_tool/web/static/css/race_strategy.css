@@ -1688,6 +1688,61 @@ details[open].rs-form-section > summary::before {
     font-size: 0.85rem;
 }
 
+/* ── Weather Alert Banner ──────────────────── */
+
+.rs-weather-alert {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    animation: rs-sc-banner-pulse 2s ease-in-out infinite;
+}
+.rs-weather-alert.hidden { display: none; }
+.rs-weather-alert.warning {
+    background: linear-gradient(90deg, rgba(255, 200, 50, 0.12) 0%, rgba(255, 200, 50, 0.06) 100%);
+    border: 1px solid rgba(255, 214, 0, 0.4);
+    color: #ffd600;
+}
+.rs-weather-alert.critical {
+    background: linear-gradient(90deg, rgba(255, 68, 68, 0.12) 0%, rgba(255, 68, 68, 0.06) 100%);
+    border: 1px solid rgba(255, 68, 68, 0.4);
+    color: #ff4444;
+}
+.rs-weather-alert-icon { font-size: 1.5rem; }
+.rs-weather-alert-content p { margin: 0.2rem 0 0; font-size: 0.85rem; opacity: 0.85; }
+
+/* ── Conditions Strip ─────────────────────── */
+
+.rs-conditions-strip {
+    display: flex;
+    gap: 1.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--rs-inner-bg);
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+.rs-cond-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.rs-cond-label { color: var(--text-secondary); }
+.rs-cond-value { font-variant-numeric: tabular-nums; font-weight: 600; }
+.rs-grip-bar-wrap {
+    width: 50px;
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.rs-grip-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    background: #3ddc84;
+}
+
 /* ── Intelligence Row ───────────────────────── */
 
 .rs-live-card.rs-intel-row {
