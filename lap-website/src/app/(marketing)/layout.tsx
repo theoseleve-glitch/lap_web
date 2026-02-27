@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ChromeLayout } from '@/components/chrome/ChromeLayout';
+import { ExperienceShell } from '@/experience/ExperienceShell';
 import { CookieConsentBanner } from '@/components/site/CookieConsentBanner';
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
@@ -11,7 +11,7 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
       >
         Skip to pricing
       </a>
-      <ChromeLayout>{children}</ChromeLayout>
+      <ExperienceShell>{children}</ExperienceShell>
       <CookieConsentBanner />
     </>
   );
