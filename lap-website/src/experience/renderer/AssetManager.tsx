@@ -69,19 +69,19 @@ function AssetInstance({ entry }: { entry: AssetEntry }) {
 export function AssetManager() {
   const currentChapter = useKernelStore((s) => s.currentChapter);
   const qualityTier = useKernelStore((s) => s.qualityTier);
+  const isLow = qualityTier === 'low';
 
-  // Don't load 3D assets on low quality tier
-  if (qualityTier === 'low') return null;
-
-  // Preload assets within 2 chapters
+  // Preload assets within 2 chapters (hook must always run)
   const nearbyAssets = useMemo(
     () =>
-      ASSET_MANIFEST.filter(
-        (a) =>
-          currentChapter >= a.chapterRange[0] - 2 &&
-          currentChapter <= a.chapterRange[1] + 2,
-      ),
-    [currentChapter],
+      isLow
+        ? []
+        : ASSET_MANIFEST.filter(
+            (a) =>
+              currentChapter >= a.chapterRange[0] - 2 &&
+              currentChapter <= a.chapterRange[1] + 2,
+          ),
+    [currentChapter, isLow],
   );
 
   for (const asset of nearbyAssets) {
@@ -90,13 +90,18 @@ export function AssetManager() {
 
   const visibleAssets = useMemo(
     () =>
-      ASSET_MANIFEST.filter(
-        (a) =>
-          currentChapter >= a.chapterRange[0] &&
-          currentChapter <= a.chapterRange[1],
-      ),
-    [currentChapter],
+      isLow
+        ? []
+        : ASSET_MANIFEST.filter(
+            (a) =>
+              currentChapter >= a.chapterRange[0] &&
+              currentChapter <= a.chapterRange[1],
+          ),
+    [currentChapter, isLow],
   );
+
+  // Don't render 3D assets on low quality tier
+  if (isLow) return null;
 
   return (
     <group>

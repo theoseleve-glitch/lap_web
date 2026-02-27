@@ -8,6 +8,7 @@ import { background } from '@/experience/motion/springs';
 import { isCornerChapter, getChapterPath } from '@/experience/narrative/TrackPath';
 import { Atmosphere } from './Atmosphere';
 import { TrackRibbon } from './TrackRibbon';
+import { AssetManager } from './AssetManager';
 
 function lerpAngle(current: number, target: number, factor: number): number {
   return current + (target - current) * factor;
@@ -19,9 +20,10 @@ function lerpAngle(current: number, target: number, factor: number): number {
  * Contains:
  * - Atmosphere (grain + particles + streaks + vignette)
  * - TrackRibbon (the track layout mesh)
+ * - AssetManager (progressive 3D asset loading + visibility gating)
  * - Camera corner-feel (yaw + bank on corner chapters)
  *
- * AssetManager and RevealBlendMesh will be added as children in Prototype 2.
+ * RevealBlendMesh is mounted as a sibling in ExperienceCanvas (needs mask pipeline ref).
  */
 export function PersistentScene() {
   const groupRef = useRef<THREE.Group>(null);
@@ -63,6 +65,7 @@ export function PersistentScene() {
       <ambientLight intensity={0.1} />
       <Atmosphere />
       <TrackRibbon />
+      <AssetManager />
     </group>
   );
 }

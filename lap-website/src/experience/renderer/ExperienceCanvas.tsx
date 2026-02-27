@@ -1,17 +1,19 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { useKernelStore } from '@/experience/state/store';
 import { PersistentScene } from './PersistentScene';
 import { PostStack } from './PostStack';
-import { RevealMaskPipeline } from '@/experience/reveal/RevealMaskPipeline';
+import { RevealMaskPipeline, type RevealMaskPipelineHandle } from '@/experience/reveal/RevealMaskPipeline';
+import { RevealBlendMesh } from '@/experience/reveal/RevealBlendMesh';
 
 export function ExperienceCanvas() {
   const webglAvailable = useKernelStore((s) => s.webglAvailable);
   const reducedMotion = useKernelStore((s) => s.reducedMotion);
   const qualityTier = useKernelStore((s) => s.qualityTier);
   const safetyCarActive = useKernelStore((s) => s.safetyCar.active);
+  const maskPipelineRef = useRef<RevealMaskPipelineHandle>(null);
 
   if (!webglAvailable || safetyCarActive) return null;
 
@@ -34,7 +36,8 @@ export function ExperienceCanvas() {
       >
         <Suspense fallback={null}>
           <PersistentScene />
-          <RevealMaskPipeline />
+          <RevealMaskPipeline ref={maskPipelineRef} />
+          <RevealBlendMesh maskPipelineRef={maskPipelineRef} />
           {!reducedMotion && qualityTier !== 'low' && <PostStack />}
         </Suspense>
       </Canvas>
