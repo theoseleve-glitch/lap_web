@@ -6,9 +6,18 @@ import { usePathname } from 'next/navigation';
 import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
 import { LocaleSwitcher } from '@/components/site/LocaleSwitcher';
+import { useTranslation } from '@/i18n';
+
+const navLabelKey: Record<string, string> = {
+  Product: 'nav.product',
+  Pricing: 'nav.pricing',
+  Demo: 'nav.demo',
+  Contact: 'nav.contact',
+};
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(true);
   const lastScrollY = useRef(0);
 
@@ -61,7 +70,7 @@ export function SiteHeader() {
                 }`}
               onClick={() => trackNavRouteClick(link.href, 'header')}
             >
-              {link.label}
+              {t(navLabelKey[link.label] ?? '', link.label)}
             </Link>
           );
         })}
@@ -78,14 +87,14 @@ export function SiteHeader() {
             }`}
             onClick={() => trackNavRouteClick('/login', 'header')}
           >
-            Log In
+            {t('nav.login')}
           </Link>
           <Link
             href="/register"
             className="px-3 py-1 border text-xs font-telemetry tracking-[0.12em] uppercase bg-pit-orange/90 border-pit-orange text-asphalt hover:bg-pit-orange transition-colors duration-[420ms]"
             onClick={() => trackNavRouteClick('/register', 'header')}
           >
-            Sign Up
+            {t('nav.signup')}
           </Link>
         </nav>
       </div>
