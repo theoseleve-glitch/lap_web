@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { EffectComposer, Bloom, Noise, ChromaticAberration } from '@react-three/postprocessing';
 import { BlendFunction } from 'postprocessing';
 import { useKernelStore } from '@/experience/state/store';
@@ -18,6 +19,11 @@ export function PostStack() {
         ? Math.abs(scrollVelocity) * 0.002
         : 0;
 
+  const chromaOffset = useMemo(
+    () => new Vector2(chromaIntensity, chromaIntensity),
+    [chromaIntensity],
+  );
+
   return (
     <EffectComposer multisampling={qualityTier === 'high' ? 4 : 0}>
       <Bloom
@@ -31,13 +37,11 @@ export function PostStack() {
         blendFunction={BlendFunction.SOFT_LIGHT}
         opacity={0.15}
       />
-      {chromaIntensity > 0 && (
-        <ChromaticAberration
-          offset={new Vector2(chromaIntensity, chromaIntensity)}
-          radialModulation={false}
-          modulationOffset={0}
-        />
-      )}
+      <ChromaticAberration
+        offset={chromaOffset}
+        radialModulation={false}
+        modulationOffset={0}
+      />
     </EffectComposer>
   );
 }

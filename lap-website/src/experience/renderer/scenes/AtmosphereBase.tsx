@@ -62,7 +62,7 @@ export function AtmosphereBase({
 
   return (
     <group ref={groupRef} visible={active}>
-      <fog attach="fog" args={[color, 5, 25]} />
+      <fogExp2 attach="fog" args={[color, fogDensity]} />
       <ambientLight intensity={0.1} />
 
       <points ref={particlesRef}>
@@ -76,7 +76,7 @@ export function AtmosphereBase({
           size={0.03}
           color="#F3F0E8"
           transparent
-          opacity={0.3}
+          opacity={0.2 + progress * 0.1}
           sizeAttenuation
           depthWrite={false}
         />
