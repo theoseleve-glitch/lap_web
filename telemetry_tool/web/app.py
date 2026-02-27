@@ -128,7 +128,7 @@ def create_app(config: Config | None = None) -> Flask:
 
     logger.info("Startup hardening summary: %s", app.config["HARDENING_SUMMARY"])
 
-    # Phase 4 API infrastructure — request ID and structured logging.
+    # Phase 4 API infrastructure — request ID, structured logging, metrics.
     try:
         from .api_utils import init_request_id
         from .logging_setup import setup_logging
@@ -138,6 +138,13 @@ def create_app(config: Config | None = None) -> Flask:
         logger.debug("Initialized Phase 4 API infrastructure (request_id + logging)")
     except ImportError:
         logger.debug("Phase 4 API modules not yet available — skipping init_request_id / setup_logging")
+
+    try:
+        from .metrics import init_metrics
+        init_metrics(app)
+        logger.debug("Initialized metrics collection")
+    except ImportError:
+        logger.debug("Metrics module not available — skipping")
 
     # CORS — allow Next.js frontend origin
     from flask_cors import CORS
@@ -410,6 +417,11 @@ def create_app(config: Config | None = None) -> Flask:
                     info["template_exists"][name] = str(e)
             info["routes_count"] = len(list(app.url_map.iter_rules()))
             return json.dumps(info, indent=2, default=str), 200, {"Content-Type": "application/json"}
+
+    # Prometheus metrics (optional — graceful when prometheus_client absent)
+    from .middleware.metrics import init_metrics as init_prometheus_metrics
+    init_prometheus_metrics(app)
+    logger.debug("Initialized Prometheus metrics")
 
     logger.info(
         "Telemetry dashboard ready (db=%s, %d routes, env=%s, hardened=%s).",
