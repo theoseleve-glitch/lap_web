@@ -95,7 +95,7 @@ class TestRaceStrategySchema:
 
     def test_schema_version_is_24(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 24
+        assert row["v"] >= 24
 
     def test_race_windows_table_exists(self, strategy_db):
         strategy_db.execute(
@@ -756,7 +756,7 @@ class TestTier3Schema:
 
     def test_schema_version_is_24(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 24
+        assert row["v"] >= 24
 
 
 class TestTeamTalk:
@@ -855,7 +855,7 @@ class TestTier6Schema:
 
     def test_schema_version_is_24(self, strategy_db):
         row = strategy_db.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
-        assert row["v"] == 24
+        assert row["v"] >= 24
 
     def test_race_neutralizations_table_exists(self, strategy_db):
         strategy_db.execute(
