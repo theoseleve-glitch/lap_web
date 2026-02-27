@@ -54,8 +54,8 @@ def auth_middleware():
     try:
         payload = decode_access_token(token, secret)
         g.current_user_id = payload["user_id"]
-        # Temporary alias during migration to ``g.current_user_id``.
-        g.user_id = g.current_user_id
+        g.email_verified = payload.get("email_verified", True)
+        g.admin_verified = payload.get("admin_verified", False)
     except AuthError as e:
         return jsonify({
             "ok": False,

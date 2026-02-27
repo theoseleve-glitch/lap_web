@@ -45,15 +45,25 @@ def create_access_token(
     user_id: int,
     secret: str,
     expiry_minutes: int = 15,
+    email_verified: bool = True,
+    admin_verified: bool = False,
 ) -> str:
-    """Create a signed JWT access token for *user_id*."""
+    """Create a signed JWT access token for *user_id*.
+
+    *email_verified* lets middleware enforce verification without a DB
+    lookup (15-min TTL is acceptable).  *admin_verified* indicates the
+    user has passed the admin 2FA challenge.
+    """
     now = datetime.now(timezone.utc)
     payload = {
         "user_id": user_id,
         "type": "access",
         "iat": now,
         "exp": now + timedelta(minutes=expiry_minutes),
+        "email_verified": email_verified,
     }
+    if admin_verified:
+        payload["admin_verified"] = True
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
