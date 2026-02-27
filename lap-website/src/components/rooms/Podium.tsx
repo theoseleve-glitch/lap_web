@@ -44,16 +44,10 @@ export function Podium() {
     return () => clearTimeout(timer);
   }, []);
 
-  const handleRestart = async () => {
+  const handleRestart = () => {
     trackRestartLap();
-    const { gsap } = await import('gsap');
-    const { ScrollToPlugin } = await import('gsap/ScrollToPlugin');
-    gsap.registerPlugin(ScrollToPlugin);
-    gsap.to(window, {
-      scrollTo: 0,
-      duration: 1.4,
-      ease: 'power3.out',
-    });
+    // Lenis intercepts native smooth scroll
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   return (

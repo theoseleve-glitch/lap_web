@@ -39,15 +39,11 @@ export function StartGrid() {
     setFlashing(false);
     setLaunched(true);
 
-    // Scroll to S1
-    const { gsap } = await import('gsap');
-    const { ScrollToPlugin } = await import('gsap/ScrollToPlugin');
-    gsap.registerPlugin(ScrollToPlugin);
-    gsap.to(window, {
-      scrollTo: '#s1-pain',
-      duration: 0.9,
-      ease: 'power3.out',
-    });
+    // Scroll to S1 (Lenis intercepts native smooth scroll)
+    const target = document.getElementById('s1-pain');
+    if (target) {
+      target.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [launched]);
 
   useEffect(() => {

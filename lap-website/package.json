@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "node scripts/check-marketing-assets.mjs --clean-start",
+    "health:assets": "node scripts/check-marketing-assets.mjs",
+    "dev:reset": "node scripts/check-marketing-assets.mjs --reset",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -15,15 +18,18 @@
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.5.0",
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.19.1",
     "@tanstack/react-query": "^5.90.21",
     "gsap": "^3.14.2",
     "howler": "^2.2.4",
+    "lenis": "^1.3.17",
     "next": "14.2.35",
     "react": "^18",
     "react-dom": "^18",
-    "three": "^0.183.1"
+    "three": "^0.183.1",
+    "zustand": "^5.0.11"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
