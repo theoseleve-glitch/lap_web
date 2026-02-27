@@ -6,6 +6,22 @@ import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel } from '@/components/app';
 
+interface WeatherAlert {
+  severity: 'warning' | 'critical';
+  message: string;
+  rain_prob_pct?: number;
+  rain_mm?: number;
+  recommended_compound?: string;
+  grip_score?: number;
+}
+
+interface WeatherConditions {
+  air_temp_c?: number;
+  grip_score?: number;
+  track_state?: string;
+  wind_speed_mps?: number;
+}
+
 interface LiveState {
   current_lap: number;
   total_laps: number;
@@ -20,6 +36,8 @@ interface LiveState {
   fuel_remaining: number | null;
   next_pit_lap: number | null;
   alerts: { type: string; message: string }[];
+  weather_alert?: WeatherAlert | null;
+  engine_data?: { weather?: WeatherConditions };
 }
 
 const compoundColors: Record<string, string> = {
@@ -85,6 +103,56 @@ export default function RaceStrategyLivePage() {
           />
         </div>
       </div>
+
+      {/* Weather Alert */}
+      {live.weather_alert && (
+        <div className={`rounded-lg p-3 mb-4 flex items-center gap-3 ${
+          live.weather_alert.severity === 'critical'
+            ? 'bg-safety-red/10 border border-safety-red/40'
+            : 'bg-marshal-yellow/10 border border-marshal-yellow/40'
+        }`}>
+          <span className="text-2xl">
+            {live.weather_alert.severity === 'critical' ? '\u{1F327}' : '\u26A0\uFE0F'}
+          </span>
+          <div>
+            <p className={`font-telemetry text-sm font-semibold ${
+              live.weather_alert.severity === 'critical' ? 'text-safety-red' : 'text-marshal-yellow'
+            }`}>
+              {live.weather_alert.severity === 'critical' ? 'RAIN ALERT' : 'Weather Warning'}
+            </p>
+            <p className="text-sm text-steel">{live.weather_alert.message}</p>
+            {live.weather_alert.recommended_compound && (
+              <p className="text-xs text-steel mt-0.5">
+                Recommended: <span className="text-chalk font-semibold uppercase">{live.weather_alert.recommended_compound}</span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Current Conditions */}
+      {live.engine_data?.weather && (
+        <div className="flex gap-6 bg-concrete rounded-lg border border-steel/20 px-4 py-2 mb-4 text-sm font-telemetry">
+          <div>
+            <span className="text-steel">Temp</span>{' '}
+            <span className="text-chalk tabular-nums">{live.engine_data.weather.air_temp_c?.toFixed(1)}&deg;C</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-steel">Grip</span>
+            <div className="w-16 h-2 bg-steel/20 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-acid-green rounded-full transition-all"
+                style={{ width: `${live.engine_data.weather.grip_score ?? 0}%` }}
+              />
+            </div>
+            <span className="text-chalk tabular-nums">{live.engine_data.weather.grip_score ?? '--'}%</span>
+          </div>
+          <div>
+            <span className="text-steel">Track</span>{' '}
+            <span className="text-chalk uppercase">{live.engine_data.weather.track_state ?? '--'}</span>
+          </div>
+        </div>
+      )}
 
       {/* Primary stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
