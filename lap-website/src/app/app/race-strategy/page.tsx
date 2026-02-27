@@ -3,108 +3,110 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import type { ReactNode } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, DataTable } from '@/components/app';
 
-interface StrategyRow {
-  id: number;
-  name: string;
-  track_name: string;
-  race_laps: number;
-  pit_stops: number;
-  total_time: number | null;
-  status: 'draft' | 'active' | 'completed';
+interface RaceRow {
+  race_id: number;
+  race_name: string;
+  track_name: string | null;
+  team_name: string | null;
+  race_duration_s: number;
+  desired_stints: number;
+  status: 'draft' | 'ready' | 'live' | 'finished';
   created_at: string;
 }
 
-function formatTime(s: number | null): string {
-  if (s == null) return '—';
-  const mins = Math.floor(s / 60);
-  const secs = s % 60;
-  return `${mins}:${secs.toFixed(1).padStart(4, '0')}`;
+function formatDuration(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}h${m.toString().padStart(2, '0')}` : `${m}m`;
 }
 
-const statusColors: Record<string, string> = {
-  draft: 'text-steel',
-  active: 'text-acid-green',
-  completed: 'text-marshal-yellow',
+const statusConfig: Record<string, { label: string; className: string }> = {
+  draft: { label: 'DRAFT', className: 'text-steel bg-steel/10 border-steel/30' },
+  ready: { label: 'READY', className: 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30' },
+  live: { label: 'LIVE', className: 'text-acid-green bg-acid-green/10 border-acid-green/30 animate-pulse' },
+  finished: { label: 'FINISHED', className: 'text-chalk bg-chalk/10 border-chalk/30' },
 };
 
 export default function RaceStrategyListPage() {
   const router = useRouter();
+
   const { data, isLoading } = useQuery({
-    queryKey: ['race-strategies'],
-    queryFn: () => api.get<{ strategies: StrategyRow[] }>('/race-strategy'),
+    queryKey: ['race-strategy'],
+    queryFn: () => api.get<{ races: RaceRow[] }>('/race-strategy/'),
   });
 
-  const strategies = data?.strategies ?? [];
+  const races = data?.races ?? [];
+
+  const columns = [
+    { key: 'race_name', header: 'Race', sortable: true },
+    {
+      key: 'track_name',
+      header: 'Track',
+      sortable: true,
+      render: (row: RaceRow) => (row.track_name || '—') as ReactNode,
+    },
+    {
+      key: 'team_name',
+      header: 'Team',
+      render: (row: RaceRow) => (row.team_name || '—') as ReactNode,
+    },
+    {
+      key: 'race_duration_s',
+      header: 'Duration',
+      render: (row: RaceRow) => formatDuration(row.race_duration_s) as ReactNode,
+    },
+    { key: 'desired_stints', header: 'Stints' },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (row: RaceRow) => {
+        const cfg = statusConfig[row.status] || statusConfig.draft;
+        return (
+          <span
+            className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${cfg.className}`}
+          >
+            {cfg.label}
+          </span>
+        );
+      },
+    },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Race Strategy"
-        subtitle="Optimise pit stops, tyre compounds, and fuel load"
+        subtitle="Endurance race management — plan, optimize, and run"
         actions={
           <Link
             href="/app/race-strategy/new"
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors"
           >
-            + New Strategy
+            + New Race
           </Link>
         }
       />
-
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <div className="text-steel font-body p-8 text-center">Loading races...</div>
       ) : (
         <DataTable
-          columns={[
-            { key: 'name', header: 'Strategy', sortable: true },
-            { key: 'track_name', header: 'Track', sortable: true },
-            {
-              key: 'race_laps',
-              header: 'Laps',
-              sortable: true,
-              className: 'font-telemetry text-right',
-            },
-            {
-              key: 'pit_stops',
-              header: 'Pit Stops',
-              sortable: true,
-              className: 'font-telemetry text-right',
-            },
-            {
-              key: 'total_time',
-              header: 'Est. Total',
-              className: 'font-telemetry',
-              render: (row: StrategyRow) => (
-                <span className="text-acid-green">{formatTime(row.total_time)}</span>
-              ),
-            },
-            {
-              key: 'status',
-              header: 'Status',
-              render: (row: StrategyRow) => (
-                <span
-                  className={`font-telemetry text-xs uppercase ${statusColors[row.status] ?? 'text-steel'}`}
-                >
-                  {row.status}
-                </span>
-              ),
-            },
-            {
-              key: 'created_at',
-              header: 'Created',
-              sortable: true,
-              className: 'font-telemetry text-sm',
-            },
-          ]}
-          data={strategies}
-          keyField="id"
-          onRowClick={(row) => router.push(`/app/race-strategy/${row.id}`)}
-          emptyMessage="No strategies yet. Create your first race strategy."
+          columns={columns}
+          data={races}
+          keyField="race_id"
+          onRowClick={(row: RaceRow) => {
+            if (row.status === 'live') {
+              router.push(`/app/race-strategy/${row.race_id}/live`);
+            } else if (row.status === 'finished') {
+              router.push(`/app/race-strategy/${row.race_id}/summary`);
+            } else {
+              router.push(`/app/race-strategy/${row.race_id}`);
+            }
+          }}
+          emptyMessage="No races yet. Create your first endurance race strategy."
         />
       )}
     </div>

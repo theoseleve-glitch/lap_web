@@ -1,252 +1,518 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useRef, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel } from '@/components/app';
+import { PageHeader } from '@/components/app';
+
+/* ── shared types ─────────────────────────────────────────────────── */
+
+interface RaceConfig {
+  race_id: number;
+  race_name: string;
+  track_name: string | null;
+  team_name: string | null;
+  race_duration_s: number;
+  desired_stints: number;
+  fuel_autonomy_s: number | null;
+  min_pit_stop_s: number;
+  empty_kart_kg: number | null;
+  full_tank_kg: number | null;
+  min_total_kart_kg: number | null;
+  reference_weight_kg: number | null;
+  status: 'draft' | 'ready' | 'live' | 'finished';
+  race_start_ts: string | null;
+  created_at: string;
+}
+
+interface Driver {
+  id: number;
+  driver_name: string;
+  driver_order: number;
+  weight_kg: number | null;
+  com_channel: string | null;
+  color_hex: string | null;
+  min_stint_s: number | null;
+  max_stint_s: number | null;
+}
 
 interface Stint {
-  stint_number: number;
-  compound: string;
-  start_lap: number;
-  end_lap: number;
-  laps: number;
-  avg_time: number;
+  stint_id: number;
+  stint_order: number;
+  driver_id: number;
+  driver_name: string;
+  planned_start_s: number | null;
+  planned_end_s: number | null;
+  planned_duration_s: number | null;
+  actual_start_s: number | null;
+  actual_end_s: number | null;
+  actual_duration_s: number | null;
+  fuel_at_start: number | null;
+  fuel_at_end: number | null;
+  ballast_kg: number | null;
+  status: 'planned' | 'active' | 'completed' | 'skipped';
 }
 
-interface StrategyDetail {
-  id: number;
-  name: string;
-  track_name: string;
-  race_laps: number;
-  base_lap_time: number;
-  pit_stops: number;
-  total_time: number;
-  optimal_time: number;
-  time_penalty: number;
+interface PitStop {
+  pit_id: number;
+  planned_at_s: number | null;
+  actual_at_s: number | null;
+  duration_s: number | null;
+  driver_change: number;
+  refueled: number;
+  fuel_added_kg: number | null;
+  pit_type: string;
+}
+
+interface RaceDetail {
+  race: RaceConfig;
+  drivers: Driver[];
   stints: Stint[];
-  lap_times: number[];
-  status: string;
+  pit_stops: PitStop[];
+  windows: Array<Record<string, unknown>>;
 }
 
-const compoundColors: Record<string, string> = {
-  soft: '#FF2A2A',
-  medium: '#FFD400',
-  hard: '#F3F0E8',
-  wet: '#3B82F6',
-  inter: '#22C55E',
+/* ── helpers ──────────────────────────────────────────────────────── */
+
+function formatTime(s: number | null | undefined): string {
+  if (s == null) return '\u2014';
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+const statusConfig: Record<string, { label: string; className: string }> = {
+  draft: { label: 'DRAFT', className: 'text-steel bg-steel/10 border-steel/30' },
+  ready: { label: 'READY', className: 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30' },
+  live: { label: 'LIVE', className: 'text-acid-green bg-acid-green/10 border-acid-green/30 animate-pulse' },
+  finished: { label: 'FINISHED', className: 'text-chalk bg-chalk/10 border-chalk/30' },
 };
 
-function drawStrategyChart(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  data: StrategyDetail,
-) {
-  ctx.clearRect(0, 0, w, h);
-  const pad = { top: 20, right: 20, bottom: 30, left: 50 };
-  const cw = w - pad.left - pad.right;
-  const ch = h - pad.top - pad.bottom;
+const stintStatusConfig: Record<string, { label: string; className: string }> = {
+  planned: { label: 'PLANNED', className: 'text-steel bg-steel/10 border-steel/30' },
+  active: { label: 'ACTIVE', className: 'text-acid-green bg-acid-green/10 border-acid-green/30 animate-pulse' },
+  completed: { label: 'DONE', className: 'text-chalk bg-chalk/10 border-chalk/30' },
+  skipped: { label: 'SKIPPED', className: 'text-safety-red bg-safety-red/10 border-safety-red/30' },
+};
 
-  if (data.lap_times.length === 0) return;
-
-  const minT = Math.min(...data.lap_times) * 0.98;
-  const maxT = Math.max(...data.lap_times) * 1.02;
-  const scaleX = cw / (data.lap_times.length - 1 || 1);
-  const scaleY = ch / (maxT - minT || 1);
-
-  // Grid
-  ctx.strokeStyle = 'rgba(138,143,152,0.15)';
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i < 5; i++) {
-    const y = pad.top + (ch * i) / 4;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(pad.left + cw, y);
-    ctx.stroke();
-  }
-
-  // Stint backgrounds
-  for (const stint of data.stints) {
-    const x1 = pad.left + (stint.start_lap - 1) * scaleX;
-    const x2 = pad.left + (stint.end_lap - 1) * scaleX;
-    ctx.fillStyle = (compoundColors[stint.compound] ?? '#8A8F98') + '15';
-    ctx.fillRect(x1, pad.top, x2 - x1, ch);
-  }
-
-  // Lap time line
-  ctx.strokeStyle = '#B6FF2E';
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  data.lap_times.forEach((t, i) => {
-    const x = pad.left + i * scaleX;
-    const y = pad.top + (maxT - t) * scaleY;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+function buildDriverColorMap(drivers: Driver[]): Record<number, string> {
+  const fallback = ['#ef4444', '#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'];
+  const map: Record<number, string> = {};
+  drivers.forEach((d, i) => {
+    map[d.id] = d.color_hex || fallback[i % fallback.length];
   });
-  ctx.stroke();
-
-  // Dots
-  data.lap_times.forEach((t, i) => {
-    const stint = data.stints.find((s) => i + 1 >= s.start_lap && i + 1 <= s.end_lap);
-    const color = stint ? (compoundColors[stint.compound] ?? '#8A8F98') : '#B6FF2E';
-    const x = pad.left + i * scaleX;
-    const y = pad.top + (maxT - t) * scaleY;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(x, y, 3, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  // X-axis label
-  ctx.fillStyle = '#8A8F98';
-  ctx.font = '10px "IBM Plex Mono"';
-  ctx.textAlign = 'center';
-  ctx.fillText('Lap', pad.left + cw / 2, h - 4);
-
-  // Y-axis label
-  ctx.save();
-  ctx.translate(12, pad.top + ch / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Lap Time (s)', 0, 0);
-  ctx.restore();
+  return map;
 }
 
-function formatTime(s: number): string {
-  const mins = Math.floor(s / 60);
-  const secs = s % 60;
-  return `${mins}:${secs.toFixed(1).padStart(4, '0')}`;
+/* ── StintTimeline ────────────────────────────────────────────────── */
+
+function StintTimeline({
+  stints,
+  totalDuration,
+  driverColors,
+}: {
+  stints: Stint[];
+  totalDuration: number;
+  driverColors: Record<number, string>;
+}) {
+  if (!stints.length || !totalDuration) return null;
+  return (
+    <div className="flex h-10 w-full overflow-hidden border border-steel/20 rounded">
+      {stints.map((s) => {
+        const dur = s.planned_duration_s || s.actual_duration_s || 0;
+        const pct = (dur / totalDuration) * 100;
+        const bg = driverColors[s.driver_id] || '#888';
+        return (
+          <div
+            key={s.stint_id}
+            className="flex items-center justify-center text-[10px] font-telemetry text-asphalt truncate border-r border-asphalt/30 last:border-r-0"
+            style={{ width: `${pct}%`, backgroundColor: bg }}
+            title={`${s.driver_name} \u2014 ${formatTime(dur)}`}
+          >
+            {pct > 8 ? s.driver_name : ''}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-export default function RaceStrategyDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+/* ── Detail Page ──────────────────────────────────────────────────── */
 
-  const { data: strategy, isLoading } = useQuery({
-    queryKey: ['race-strategy', id],
-    queryFn: () => api.get<StrategyDetail>(`/race-strategy/${id}`),
+export default function RaceDetailPage() {
+  const params = useParams();
+  const router = useRouter();
+  const qc = useQueryClient();
+  const raceId = params.id as string;
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['race-strategy', raceId],
+    queryFn: () => api.get<RaceDetail>(`/race-strategy/${raceId}`),
   });
 
-  useEffect(() => {
-    if (!strategy || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    drawStrategyChart(ctx, rect.width, rect.height, strategy);
-  }, [strategy]);
+  /* ── mutations ──────────────────────────────────────────────────── */
+
+  const optimizeMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/optimize`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
+  });
+
+  const goLiveMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/go-live`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['race-strategy', raceId] });
+      router.push(`/app/race-strategy/${raceId}/live`);
+    },
+  });
+
+  const duplicateMut = useMutation({
+    mutationFn: () => api.post<{ race_id: number }>(`/race-strategy/${raceId}/duplicate`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['race-strategy'] });
+      router.push(`/app/race-strategy/${res.race_id}`);
+    },
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.delete<unknown>(`/race-strategy/${raceId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['race-strategy'] });
+      router.push('/app/race-strategy');
+    },
+  });
+
+  /* ── loading / error ────────────────────────────────────────────── */
 
   if (isLoading) {
+    return <div className="text-steel font-body p-8 text-center">Loading race details...</div>;
+  }
+
+  if (error || !data) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div className="text-safety-red font-body p-8 text-center">
+        Failed to load race.{' '}
+        <button onClick={() => router.push('/app/race-strategy')} className="underline text-pit-orange">
+          Back to list
+        </button>
       </div>
     );
   }
 
-  if (!strategy) return <div className="text-steel font-body">Strategy not found</div>;
+  const { race, drivers, stints, pit_stops } = data;
+  const driverColors = buildDriverColorMap(drivers);
+  const cfg = statusConfig[race.status] || statusConfig.draft;
+  const editable = race.status === 'draft' || race.status === 'ready';
+
+  /* ── render ─────────────────────────────────────────────────────── */
 
   return (
-    <div>
+    <div className="space-y-6">
+      {/* Header */}
       <PageHeader
-        title={strategy.name}
-        subtitle={`${strategy.track_name} · ${strategy.race_laps} laps · ${strategy.pit_stops} stops`}
+        title={race.race_name}
+        subtitle={[race.track_name, race.team_name].filter(Boolean).join(' \u2014 ') || undefined}
         actions={
-          <Link
-            href={`/app/race-strategy/${id}/live`}
-            className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm rounded hover:bg-acid-green/80 transition-colors"
-          >
-            Go Live
-          </Link>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span
+              className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${cfg.className}`}
+            >
+              {cfg.label}
+            </span>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Time" value={formatTime(strategy.total_time)} />
-        <StatCard label="Optimal" value={formatTime(strategy.optimal_time)} trend="up" />
-        <StatCard
-          label="Penalty"
-          value={`+${strategy.time_penalty.toFixed(1)}s`}
-          trend={strategy.time_penalty > 5 ? 'down' : 'neutral'}
-        />
-        <StatCard label="Pit Stops" value={strategy.pit_stops} />
+      {/* Action Buttons */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {editable && (
+          <button
+            onClick={() => optimizeMut.mutate()}
+            disabled={optimizeMut.isPending}
+            className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50"
+          >
+            {optimizeMut.isPending ? 'Optimizing...' : 'Optimize'}
+          </button>
+        )}
+        {race.status === 'ready' && (
+          <button
+            onClick={() => {
+              if (window.confirm('Start the race? This will set the timer running.')) {
+                goLiveMut.mutate();
+              }
+            }}
+            disabled={goLiveMut.isPending}
+            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+          >
+            {goLiveMut.isPending ? 'Going Live...' : 'Go Live'}
+          </button>
+        )}
+        {editable && (
+          <Link
+            href={`/app/race-strategy/${raceId}/edit`}
+            className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors"
+          >
+            Edit
+          </Link>
+        )}
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/race-strategy/${raceId}/export`}
+          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors"
+          download
+        >
+          Export
+        </a>
+        <button
+          onClick={() => duplicateMut.mutate()}
+          disabled={duplicateMut.isPending}
+          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors disabled:opacity-50"
+        >
+          {duplicateMut.isPending ? 'Duplicating...' : 'Duplicate'}
+        </button>
+        <button
+          onClick={() => {
+            if (window.confirm('Delete this race? This cannot be undone.')) {
+              deleteMut.mutate();
+            }
+          }}
+          disabled={deleteMut.isPending}
+          className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors disabled:opacity-50"
+        >
+          {deleteMut.isPending ? 'Deleting...' : 'Delete'}
+        </button>
       </div>
 
-      {/* Strategy chart */}
-      <ChartPanel title="Lap Time Projection" subtitle="Projected lap times by stint and compound">
-        <canvas ref={canvasRef} className="w-full h-64" />
-      </ChartPanel>
-
-      {/* Stints table */}
-      <div className="mt-6 bg-concrete rounded-lg border border-steel/20 overflow-hidden">
-        <div className="px-4 py-3 border-b border-steel/20">
-          <h3 className="font-body text-chalk text-sm">Stint Plan</h3>
+      {/* Config Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Race */}
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4 space-y-3">
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Race</h3>
+          <div className="space-y-2 text-sm font-body">
+            <div className="flex justify-between">
+              <span className="text-steel">Duration</span>
+              <span className="text-chalk">{formatTime(race.race_duration_s)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Stints</span>
+              <span className="text-chalk">{race.desired_stints}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Min Pit Stop</span>
+              <span className="text-chalk">{formatTime(race.min_pit_stop_s)}</span>
+            </div>
+          </div>
         </div>
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-steel/20">
-              <th className="text-left px-4 py-2 text-steel font-telemetry text-xs uppercase">
-                Stint
-              </th>
-              <th className="text-left px-4 py-2 text-steel font-telemetry text-xs uppercase">
-                Compound
-              </th>
-              <th className="text-left px-4 py-2 text-steel font-telemetry text-xs uppercase">
-                Laps
-              </th>
-              <th className="text-left px-4 py-2 text-steel font-telemetry text-xs uppercase">
-                Range
-              </th>
-              <th className="text-left px-4 py-2 text-steel font-telemetry text-xs uppercase">
-                Avg Time
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {strategy.stints.map((s) => (
-              <tr key={s.stint_number} className="border-b border-steel/10">
-                <td className="px-4 py-2 font-telemetry text-chalk">{s.stint_number}</td>
-                <td className="px-4 py-2">
-                  <span
-                    className="font-telemetry text-sm uppercase"
-                    style={{ color: compoundColors[s.compound] ?? '#8A8F98' }}
-                  >
-                    {s.compound}
-                  </span>
-                </td>
-                <td className="px-4 py-2 font-telemetry text-chalk">{s.laps}</td>
-                <td className="px-4 py-2 font-telemetry text-steel text-sm">
-                  L{s.start_lap}–L{s.end_lap}
-                </td>
-                <td className="px-4 py-2 font-telemetry text-acid-green">
-                  {s.avg_time.toFixed(3)}s
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Weight */}
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4 space-y-3">
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Weight</h3>
+          <div className="space-y-2 text-sm font-body">
+            <div className="flex justify-between">
+              <span className="text-steel">Empty Kart</span>
+              <span className="text-chalk">{race.empty_kart_kg != null ? `${race.empty_kart_kg} kg` : '\u2014'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Full Tank</span>
+              <span className="text-chalk">{race.full_tank_kg != null ? `${race.full_tank_kg} kg` : '\u2014'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Min Total</span>
+              <span className="text-chalk">{race.min_total_kart_kg != null ? `${race.min_total_kart_kg} kg` : '\u2014'}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Reference</span>
+              <span className="text-chalk">{race.reference_weight_kg != null ? `${race.reference_weight_kg} kg` : '\u2014'}</span>
+            </div>
+          </div>
+        </div>
+        {/* Fuel */}
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4 space-y-3">
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Fuel</h3>
+          <div className="space-y-2 text-sm font-body">
+            <div className="flex justify-between">
+              <span className="text-steel">Autonomy</span>
+              <span className="text-chalk">{formatTime(race.fuel_autonomy_s)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-steel">Min Pit Stop</span>
+              <span className="text-chalk">{formatTime(race.min_pit_stop_s)}</span>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-4 flex gap-3">
-        <Link
-          href={`/app/race-strategy/${id}/live`}
-          className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm rounded hover:bg-acid-green/80 transition-colors"
-        >
-          Start Live Session
-        </Link>
-        <Link
-          href={`/app/race-strategy/${id}/summary`}
-          className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk transition-colors"
-        >
-          View Summary
-        </Link>
+      {/* Driver Roster */}
+      <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+        <div className="px-4 py-3 border-b border-steel/20">
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Drivers</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-steel/20">
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Weight</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">COM</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Min Stint</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Max Stint</th>
+              </tr>
+            </thead>
+            <tbody>
+              {drivers.map((d) => (
+                <tr key={d.id} className="border-b border-steel/10">
+                  <td className="px-4 py-3 text-chalk font-body text-sm">{d.driver_order}</td>
+                  <td className="px-4 py-3 text-chalk font-body text-sm">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: driverColors[d.id] }}
+                      />
+                      {d.driver_name}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-chalk font-body text-sm">
+                    {d.weight_kg != null ? `${d.weight_kg} kg` : '\u2014'}
+                  </td>
+                  <td className="px-4 py-3 text-chalk font-body text-sm">{d.com_channel || '\u2014'}</td>
+                  <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(d.min_stint_s)}</td>
+                  <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(d.max_stint_s)}</td>
+                </tr>
+              ))}
+              {drivers.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-steel font-body text-sm">
+                    No drivers added yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Stint Timeline */}
+      <div className="space-y-2">
+        <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Stint Timeline</h3>
+        <StintTimeline stints={stints} totalDuration={race.race_duration_s} driverColors={driverColors} />
+      </div>
+
+      {/* Stint Table */}
+      <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+        <div className="px-4 py-3 border-b border-steel/20">
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Stints</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-steel/20">
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Start</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">End</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Start</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel End</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Ballast</th>
+                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stints.map((s) => {
+                const sCfg = stintStatusConfig[s.status] || stintStatusConfig.planned;
+                return (
+                  <tr key={s.stint_id} className="border-b border-steel/10">
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{s.stint_order}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: driverColors[s.driver_id] }}
+                        />
+                        {s.driver_name}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {formatTime(s.actual_start_s ?? s.planned_start_s)}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {formatTime(s.actual_end_s ?? s.planned_end_s)}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {formatTime(s.actual_duration_s ?? s.planned_duration_s)}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {s.fuel_at_start != null ? `${s.fuel_at_start.toFixed(1)} kg` : '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {s.fuel_at_end != null ? `${s.fuel_at_end.toFixed(1)} kg` : '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {s.ballast_kg != null ? `${s.ballast_kg} kg` : '\u2014'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${sCfg.className}`}
+                      >
+                        {sCfg.label}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {stints.length === 0 && (
+                <tr>
+                  <td colSpan={9} className="px-4 py-6 text-center text-steel font-body text-sm">
+                    No stints planned yet. Run Optimize to generate a plan.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Pit Stops */}
+      {pit_stops.length > 0 && (
+        <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+          <div className="px-4 py-3 border-b border-steel/20">
+            <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Pit Stops</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-steel/20">
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver Change</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Refueled</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Added</th>
+                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pit_stops.map((p, i) => (
+                  <tr key={p.pit_id} className="border-b border-steel/10">
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{i + 1}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(p.planned_at_s)}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(p.actual_at_s)}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(p.duration_s)}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{p.driver_change ? 'Yes' : 'No'}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{p.refueled ? 'Yes' : 'No'}</td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">
+                      {p.fuel_added_kg != null ? `${p.fuel_added_kg.toFixed(1)} kg` : '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-body text-sm">{p.pit_type || '\u2014'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
