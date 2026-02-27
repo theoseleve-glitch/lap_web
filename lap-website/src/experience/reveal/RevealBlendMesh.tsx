@@ -18,11 +18,11 @@ interface RevealBlendMeshProps {
  * For Prototype 1: Layer A = transparent (scene shows through),
  * Layer B = telemetry overlay texture (initially a simple tinted grid).
  *
- * TODO: Wire into ExperienceCanvas once RevealMaskPipeline exposes its
- * mask FBO texture (via ref or store). Currently scaffolded but not mounted —
- * the mask pipeline writes to internal FBOs and only feeds maskCoverage
- * back to the store. Integration deferred to Phase 6+ when layer content
- * (telemetry overlays) is ready.
+ * DEFERRED: Not mounted in ExperienceCanvas. The mask pipeline writes to
+ * internal FBOs and only feeds maskCoverage back to the store. To activate,
+ * RevealMaskPipeline must expose its mask FBO texture (via ref or store),
+ * and layer content textures (tLayerA / tLayerB) must be authored.
+ * Tracked for a future phase when telemetry overlay content is ready.
  */
 export function RevealBlendMesh({ maskTexture }: RevealBlendMeshProps) {
   const active = useKernelStore((s) => s.reveal.active);

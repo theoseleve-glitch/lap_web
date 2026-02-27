@@ -1,6 +1,7 @@
 'use client';
 
 import { useKernelStore } from '@/experience/state/store';
+import { colors } from '@/lib/tokens';
 
 export function DrsLabel() {
   const active = useKernelStore((s) => s.drs.active);
@@ -14,7 +15,7 @@ export function DrsLabel() {
       <span
         className="font-telemetry text-[13px] tracking-[0.2em] uppercase transition-opacity"
         style={{
-          color: '#D946EF',
+          color: colors.racingPurple,
           opacity: active ? 1 : 0,
           transitionDuration: active ? '300ms' : '200ms',
         }}

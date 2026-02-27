@@ -43,6 +43,7 @@ function getTrackPosition(progress: number): { x: number; y: number } {
 export function MiniTrackMap() {
   const globalProgress = useKernelStore((s) => s.globalProgress);
   const isCorner = useKernelStore((s) => s.trackPath.isCorner);
+  const reducedMotion = useKernelStore((s) => s.reducedMotion);
 
   const dotPos = useMemo(() => getTrackPosition(globalProgress), [globalProgress]);
 
@@ -94,13 +95,15 @@ export function MiniTrackMap() {
           fill={colors.racingPurple}
           className="transition-all duration-200"
         >
-          {/* Pulse animation */}
-          <animate
-            attributeName="r"
-            values="3;4;3"
-            dur="2s"
-            repeatCount="indefinite"
-          />
+          {/* Pulse animation — gated by store reducedMotion (SMIL ignores CSS media queries) */}
+          {!reducedMotion && (
+            <animate
+              attributeName="r"
+              values="3;4;3"
+              dur="2s"
+              repeatCount="indefinite"
+            />
+          )}
         </circle>
 
         {/* Dot glow */}
