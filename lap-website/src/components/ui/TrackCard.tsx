@@ -1,0 +1,161 @@
+'use client';
+
+import { useRef, useCallback, useState, type ReactNode } from 'react';
+
+interface TrackCardProps {
+  title: string;
+  description: string;
+  icon?: ReactNode;
+  onClick?: () => void;
+  className?: string;
+  children?: ReactNode;
+}
+
+export function TrackCard({
+  title,
+  description,
+  icon,
+  onClick,
+  className = '',
+  children,
+}: TrackCardProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0 });
+  const [hovering, setHovering] = useState(false);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width;
+    const y = (e.clientY - rect.top) / rect.height;
+
+    // Map 0..1 to -8..+8 degrees
+    const rotateY = (x - 0.5) * 16;  // max +/-8
+    const rotateX = (0.5 - y) * 16;  // max +/-8, inverted for natural feel
+
+    setTilt({ rotateX, rotateY });
+  }, []);
+
+  const handlePointerEnter = useCallback(() => {
+    setHovering(true);
+  }, []);
+
+  const handlePointerLeave = useCallback(() => {
+    setHovering(false);
+    setTilt({ rotateX: 0, rotateY: 0 });
+  }, []);
+
+  const handleClick = useCallback(() => {
+    onClick?.();
+  }, [onClick]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (onClick && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault();
+        onClick();
+      }
+    },
+    [onClick],
+  );
+
+  // Parallax offsets: title shifts slightly more than body
+  const titleShift = {
+    x: tilt.rotateY * 0.4,
+    y: -tilt.rotateX * 0.4,
+  };
+  const bodyShift = {
+    x: tilt.rotateY * 0.2,
+    y: -tilt.rotateX * 0.2,
+  };
+
+  return (
+    <div
+      ref={containerRef}
+      className={`group ${className}`}
+      style={{ perspective: '1200px' }}
+      onPointerMove={handlePointerMove}
+      onPointerEnter={handlePointerEnter}
+      onPointerLeave={handlePointerLeave}
+    >
+      <div
+        className={`relative border border-steel/20 bg-concrete/40 p-5 transition-transform duration-200 ease-out ${
+          onClick ? 'cursor-pointer' : ''
+        }`}
+        style={{
+          transform: hovering
+            ? `rotateX(${tilt.rotateX}deg) rotateY(${tilt.rotateY}deg)`
+            : 'rotateX(0deg) rotateY(0deg)',
+          transformStyle: 'preserve-3d',
+        }}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
+      >
+        {/* Icon layer */}
+        {icon && (
+          <div
+            className="mb-3 text-pit-orange transition-transform duration-200 ease-out"
+            style={{
+              transform: hovering
+                ? `translate(${titleShift.x}px, ${titleShift.y}px)`
+                : 'translate(0, 0)',
+            }}
+          >
+            {icon}
+          </div>
+        )}
+
+        {/* Title layer — shifts more for parallax */}
+        <h3
+          className="font-monument text-[var(--text-h3)] mb-2 transition-transform duration-200 ease-out"
+          style={{
+            transform: hovering
+              ? `translate(${titleShift.x}px, ${titleShift.y}px)`
+              : 'translate(0, 0)',
+          }}
+        >
+          {title}
+        </h3>
+
+        {/* Body layer — shifts less */}
+        <p
+          className="text-sm text-steel mb-3 transition-transform duration-200 ease-out"
+          style={{
+            transform: hovering
+              ? `translate(${bodyShift.x}px, ${bodyShift.y}px)`
+              : 'translate(0, 0)',
+          }}
+        >
+          {description}
+        </p>
+
+        {/* Optional children (buttons, etc.) */}
+        {children && (
+          <div
+            className="transition-transform duration-200 ease-out"
+            style={{
+              transform: hovering
+                ? `translate(${bodyShift.x}px, ${bodyShift.y}px)`
+                : 'translate(0, 0)',
+            }}
+          >
+            {children}
+          </div>
+        )}
+
+        {/* Sector highlight strip on hover */}
+        <div
+          className="absolute bottom-0 left-0 right-0 h-[2px] bg-racing-purple transition-all duration-300 ease-out"
+          style={{
+            transform: hovering ? 'scaleX(1)' : 'scaleX(0)',
+            transformOrigin: 'left center',
+          }}
+        />
+      </div>
+    </div>
+  );
+}
