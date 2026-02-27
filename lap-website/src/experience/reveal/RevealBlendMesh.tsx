@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useKernelStore } from '@/experience/state/store';
@@ -17,6 +17,12 @@ interface RevealBlendMeshProps {
  *
  * For Prototype 1: Layer A = transparent (scene shows through),
  * Layer B = telemetry overlay texture (initially a simple tinted grid).
+ *
+ * TODO: Wire into ExperienceCanvas once RevealMaskPipeline exposes its
+ * mask FBO texture (via ref or store). Currently scaffolded but not mounted —
+ * the mask pipeline writes to internal FBOs and only feeds maskCoverage
+ * back to the store. Integration deferred to Phase 6+ when layer content
+ * (telemetry overlays) is ready.
  */
 export function RevealBlendMesh({ maskTexture }: RevealBlendMeshProps) {
   const active = useKernelStore((s) => s.reveal.active);
@@ -39,6 +45,10 @@ export function RevealBlendMesh({ maskTexture }: RevealBlendMeshProps) {
       }),
     [],
   );
+
+  useEffect(() => {
+    return () => { material.dispose(); };
+  }, [material]);
 
   useFrame(() => {
     if (!active || resolution === 0 || !maskTexture) return;

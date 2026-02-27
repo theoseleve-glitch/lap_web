@@ -23,11 +23,7 @@ import { maskBlurVertex, maskBlurFragment } from './shaders/mask-blur';
 export function RevealMaskPipeline() {
   const { gl, size } = useThree();
   const qualityTier = useKernelStore((s) => s.qualityTier);
-  const pointerX = useKernelStore((s) => s.pointerX);
-  const pointerY = useKernelStore((s) => s.pointerY);
-  const revealActive = useKernelStore((s) => s.reveal.active);
   const reducedMotion = useKernelStore((s) => s.reducedMotion);
-  const setMaskCoverage = useKernelStore((s) => s.setMaskCoverage);
   const { getSmoothedPointer, getDecayFactor, getBrushRadius } = useRevealState();
 
   // Mobile touch burst refs
@@ -156,14 +152,24 @@ export function RevealMaskPipeline() {
     return mesh;
   }, [quadGeo, stampMat, quadScene]);
 
-  // Coverage sampling pixel buffer
-  const coveragePixels = useMemo(
-    () => new Float32Array(4),
-    [],
-  );
+  // GPU resource cleanup on unmount
+  useEffect(() => {
+    return () => {
+      quadGeo.dispose();
+      stampMat.dispose();
+      decayMat.dispose();
+      blurMatH.dispose();
+      blurMatV.dispose();
+    };
+  }, [quadGeo, stampMat, decayMat, blurMatH, blurMatV]);
+
+  // Coverage sampling pixel buffer + throttle counter
+  const coveragePixels = useMemo(() => new Float32Array(4), []);
+  const frameCountRef = useRef(0);
 
   useFrame(() => {
-    if (!revealActive || resolution === 0) return;
+    const { pointerX, pointerY, reveal, drs } = useKernelStore.getState();
+    if (!reveal.active || resolution === 0) return;
 
     // 1. STAMP PASS: stamp brush at smoothed pointer
     const smoothed = getSmoothedPointer(pointerX, pointerY);
@@ -207,11 +213,18 @@ export function RevealMaskPipeline() {
 
     gl.setRenderTarget(null);
 
-    // Sample coverage (read single pixel from center for approximation)
-    gl.setRenderTarget(maskFboB);
-    gl.readRenderTargetPixels(maskFboB, resolution / 2, resolution / 2, 1, 1, coveragePixels);
-    gl.setRenderTarget(null);
-    setMaskCoverage(Math.min(1, coveragePixels[0] * 2)); // scale up center sample
+    // Sample coverage every 10 frames to avoid GPU pipeline stall from readRenderTargetPixels
+    frameCountRef.current++;
+    if (frameCountRef.current % 10 === 0) {
+      gl.setRenderTarget(maskFboB);
+      gl.readRenderTargetPixels(maskFboB, resolution / 2, resolution / 2, 1, 1, coveragePixels);
+      gl.setRenderTarget(null);
+      const newCoverage = Math.min(1, coveragePixels[0] * 2);
+      const currentCoverage = useKernelStore.getState().reveal.maskCoverage;
+      if (Math.abs(newCoverage - currentCoverage) > 0.01) {
+        useKernelStore.getState().setMaskCoverage(newCoverage);
+      }
+    }
   });
 
   return null;
