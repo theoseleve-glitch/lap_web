@@ -1571,6 +1571,7 @@ def v1_sessions_browse():
             "driver_name": row.get("driver_name"),
             "laps": row.get("n_laps"),
             "best_time": row.get("best_lap_time_s"),
+            "mean_time": row.get("mean_lap_time_s"),
             "score": row.get("total_score"),
             "grade": row.get("grade"),
             "session_type": row.get("session_type"),
