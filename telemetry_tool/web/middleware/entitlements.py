@@ -312,6 +312,10 @@ def require_upload_size(max_field_name: str = "file"):
     def _decorator(fn):
         @wraps(fn)
         def _wrapped(*args, **kwargs):
+            # SQLite / desktop mode — no entitlement tables, allow upload
+            if not current_app.config.get("USE_PG"):
+                return fn(*args, **kwargs)
+
             snapshot = entitlement_snapshot()
             max_bytes = int(snapshot.get("max_upload_size_mb", 0) * 1024 * 1024)
 

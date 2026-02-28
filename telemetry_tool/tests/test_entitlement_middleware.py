@@ -529,3 +529,88 @@ class TestCheckAndRecordQuota:
         assert allowed is False
         assert ctx["remaining"] == 0
         assert ctx["used"] == 1
+
+
+class TestRequireUploadSize:
+    """Tests for the require_upload_size decorator."""
+
+    def test_require_upload_size_blocks_oversized(self):
+        """require_upload_size decorator rejects files exceeding tier limit."""
+        from io import BytesIO
+
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        app.config["TESTING"] = True
+
+        from web.middleware.entitlements import require_upload_size
+
+        @app.route("/upload", methods=["POST"])
+        @require_upload_size("file")
+        def upload():
+            return {"ok": True}
+
+        # 10 MB limit, upload 11 MB
+        fake_snapshot = {"max_upload_size_mb": 10, "plan_tier": "demo"}
+        with patch("web.middleware.entitlements.entitlement_snapshot", return_value=fake_snapshot):
+            with app.test_client() as client:
+                # Create a file larger than 10MB
+                data = b"x" * (11 * 1024 * 1024)
+                resp = client.post(
+                    "/upload",
+                    data={"file": (BytesIO(data), "big.csv")},
+                    content_type="multipart/form-data",
+                )
+                assert resp.status_code == 413
+                body = resp.get_json()
+                assert body["error"]["code"] == "FILE_TOO_LARGE"
+
+    def test_require_upload_size_allows_small_file(self):
+        """require_upload_size decorator allows files under the tier limit."""
+        from io import BytesIO
+
+        app = Flask(__name__)
+        app.config["USE_PG"] = True
+        app.config["TESTING"] = True
+
+        from web.middleware.entitlements import require_upload_size
+
+        @app.route("/upload", methods=["POST"])
+        @require_upload_size("file")
+        def upload():
+            return {"ok": True}
+
+        fake_snapshot = {"max_upload_size_mb": 10, "plan_tier": "demo"}
+        with patch("web.middleware.entitlements.entitlement_snapshot", return_value=fake_snapshot):
+            with app.test_client() as client:
+                data = b"x" * (5 * 1024 * 1024)  # 5 MB — under 10 MB limit
+                resp = client.post(
+                    "/upload",
+                    data={"file": (BytesIO(data), "small.csv")},
+                    content_type="multipart/form-data",
+                )
+                assert resp.status_code == 200
+
+    def test_require_upload_size_skips_when_no_pg(self):
+        """require_upload_size falls through in SQLite/desktop mode."""
+        from io import BytesIO
+
+        app = Flask(__name__)
+        app.config["USE_PG"] = False
+        app.config["TESTING"] = True
+
+        from web.middleware.entitlements import require_upload_size
+
+        @app.route("/upload", methods=["POST"])
+        @require_upload_size("file")
+        def upload():
+            return {"ok": True}
+
+        with app.test_client() as client:
+            # Large file — should be allowed because USE_PG is off
+            data = b"x" * (100 * 1024 * 1024)
+            resp = client.post(
+                "/upload",
+                data={"file": (BytesIO(data), "huge.csv")},
+                content_type="multipart/form-data",
+            )
+            assert resp.status_code == 200
