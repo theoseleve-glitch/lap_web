@@ -1,9 +1,11 @@
 'use client';
 
+import { useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useEffect } from 'react';
 import { api } from '@/lib/api-client';
 import { ChartPanel } from '@/components/app';
+import { ChartTooltip } from '@/components/app/ChartTooltip';
+import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
 interface TrendData {
   distances: number[];
@@ -15,110 +17,153 @@ interface Props {
   sessionId: string;
 }
 
-function draw(ctx: CanvasRenderingContext2D, w: number, h: number, data: TrendData) {
-  ctx.clearRect(0, 0, w, h);
-
-  const { distances, pace_delta, consistency_index } = data;
-  if (distances.length === 0) return;
-
-  const pad = { top: 15, right: 40, bottom: 30, left: 45 };
-  const plotW = w - pad.left - pad.right;
-  const plotH = h - pad.top - pad.bottom;
-
-  const minDist = distances[0];
-  const maxDist = distances[distances.length - 1];
-  const distRange = maxDist - minDist || 1;
-
-  const maxPace = Math.max(...pace_delta.map(Math.abs), 0.1);
-  const maxConsist = Math.max(...consistency_index, 0.01);
-
-  // Grid
-  ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';
-  ctx.lineWidth = 0.5;
-  for (let i = 0; i <= 4; i++) {
-    const y = pad.top + (i / 4) * plotH;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(pad.left + plotW, y);
-    ctx.stroke();
-  }
-
-  const toX = (d: number) => pad.left + ((d - minDist) / distRange) * plotW;
-  const cy = pad.top + plotH / 2;
-
-  // Pace delta (centered on zero)
-  ctx.beginPath();
-  ctx.strokeStyle = '#B6FF2E';
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < distances.length; i++) {
-    const x = toX(distances[i]);
-    const y = cy - (pace_delta[i] / maxPace) * (plotH / 2);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Consistency index
-  ctx.beginPath();
-  ctx.strokeStyle = '#FFD400';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4, 3]);
-  for (let i = 0; i < distances.length; i++) {
-    const x = toX(distances[i]);
-    const y = pad.top + plotH - (consistency_index[i] / maxConsist) * plotH;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Zero line
-  ctx.beginPath();
-  ctx.strokeStyle = '#8A8F98';
-  ctx.lineWidth = 0.5;
-  ctx.moveTo(pad.left, cy);
-  ctx.lineTo(pad.left + plotW, cy);
-  ctx.stroke();
-
-  // Legend
-  ctx.font = '9px "IBM Plex Mono", monospace';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#B6FF2E';
-  ctx.fillRect(pad.left + 5, pad.top + 2, 10, 3);
-  ctx.fillStyle = '#8A8F98';
-  ctx.fillText('Pace delta', pad.left + 20, pad.top + 6);
-  ctx.fillStyle = '#FFD400';
-  ctx.fillRect(pad.left + 95, pad.top + 2, 10, 3);
-  ctx.fillStyle = '#8A8F98';
-  ctx.fillText('Consistency', pad.left + 110, pad.top + 6);
-}
+const PAD = { top: 15, right: 40, bottom: 30, left: 45 };
 
 export function TrendChart({ sessionId }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { data, isLoading } = useQuery({
     queryKey: ['session', sessionId, 'trends'],
     queryFn: () => api.get<TrendData>(`/sessions/${sessionId}/trends`),
   });
 
-  useEffect(() => {
-    if (!data || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    draw(ctx, rect.width, rect.height, data);
-  }, [data]);
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number, hover: HoverPoint | null) => {
+      ctx.clearRect(0, 0, w, h);
+      if (!data || data.distances.length === 0) return;
 
-  if (isLoading) return <ChartPanel title="Performance Trend"><div className="h-48 flex items-center justify-center"><div className="w-6 h-6 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" /></div></ChartPanel>;
-  if (!data || data.distances.length === 0) return <ChartPanel title="Performance Trend"><div className="h-48 flex items-center justify-center text-steel font-telemetry text-xs">No data available</div></ChartPanel>;
+      const { distances, pace_delta, consistency_index } = data;
+      const plotW = w - PAD.left - PAD.right;
+      const plotH = h - PAD.top - PAD.bottom;
+
+      const minDist = distances[0], maxDist = distances[distances.length - 1];
+      const dR = maxDist - minDist || 1;
+      const maxPace = Math.max(...pace_delta.map(Math.abs), 0.1);
+      const maxConsist = Math.max(...consistency_index, 0.01);
+      const cy = PAD.top + plotH / 2;
+
+      const toX = (d: number) => PAD.left + ((d - minDist) / dR) * plotW;
+
+      // Grid
+      ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i <= 4; i++) {
+        const y = PAD.top + (i / 4) * plotH;
+        ctx.beginPath();
+        ctx.moveTo(PAD.left, y);
+        ctx.lineTo(PAD.left + plotW, y);
+        ctx.stroke();
+      }
+
+      // Pace delta line (centered on zero)
+      ctx.beginPath();
+      ctx.strokeStyle = '#B6FF2E';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < distances.length; i++) {
+        const x = toX(distances[i]);
+        const y = cy - (pace_delta[i] / maxPace) * (plotH / 2);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Consistency index line
+      ctx.beginPath();
+      ctx.strokeStyle = '#FFD400';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      for (let i = 0; i < distances.length; i++) {
+        const x = toX(distances[i]);
+        const y = PAD.top + plotH - (consistency_index[i] / maxConsist) * plotH;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Zero line
+      ctx.beginPath();
+      ctx.strokeStyle = '#8A8F98';
+      ctx.lineWidth = 0.5;
+      ctx.moveTo(PAD.left, cy);
+      ctx.lineTo(PAD.left + plotW, cy);
+      ctx.stroke();
+
+      // Hover dots
+      if (hover) {
+        const hoverDist = minDist + hover.nx * dR;
+        let idx = 0, diff = Infinity;
+        for (let i = 0; i < distances.length; i++) {
+          const d = Math.abs(distances[i] - hoverDist);
+          if (d < diff) { diff = d; idx = i; }
+        }
+        const x = toX(distances[idx]);
+        // Pace dot
+        ctx.beginPath();
+        ctx.arc(x, cy - (pace_delta[idx] / maxPace) * (plotH / 2), 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#B6FF2E';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        // Consistency dot
+        ctx.beginPath();
+        ctx.arc(x, PAD.top + plotH - (consistency_index[idx] / maxConsist) * plotH, 4, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFD400';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Legend
+      ctx.font = '9px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#B6FF2E';
+      ctx.fillRect(PAD.left + 5, PAD.top + 2, 10, 3);
+      ctx.fillStyle = '#8A8F98';
+      ctx.fillText('Pace delta', PAD.left + 20, PAD.top + 6);
+      ctx.fillStyle = '#FFD400';
+      ctx.fillRect(PAD.left + 95, PAD.top + 2, 10, 3);
+      ctx.fillStyle = '#8A8F98';
+      ctx.fillText('Consistency', PAD.left + 110, PAD.top + 6);
+    },
+    [data],
+  );
+
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      if (!data || data.distances.length === 0) return null;
+      const { distances, pace_delta, consistency_index } = data;
+      const hoverDist = distances[0] + hover.nx * (distances[distances.length - 1] - distances[0] || 1);
+      let idx = 0, diff = Infinity;
+      for (let i = 0; i < distances.length; i++) {
+        const d = Math.abs(distances[i] - hoverDist);
+        if (d < diff) { diff = d; idx = i; }
+      }
+      return {
+        header: `${distances[idx].toFixed(0)} m`,
+        lines: [
+          { label: 'Pace Delta', value: `${pace_delta[idx] >= 0 ? '+' : ''}${pace_delta[idx].toFixed(3)}s`, color: '#B6FF2E' },
+          { label: 'Consistency', value: consistency_index[idx].toFixed(3), color: '#FFD400' },
+        ],
+      };
+    },
+    [data],
+  );
+
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [data],
+    padding: PAD,
+    getTooltipData,
+    crosshair: true,
+  });
 
   return (
-    <ChartPanel title="Performance Trend" subtitle="Pace and consistency over distance">
-      <canvas ref={canvasRef} className="w-full h-48" />
+    <ChartPanel title="Performance Trend" subtitle="Pace and consistency over distance" loading={isLoading}>
+      <div ref={containerRef} className="relative">
+        <canvas ref={canvasRef} className="w-full h-48" />
+        <ChartTooltip tooltip={tooltip} />
+      </div>
     </ChartPanel>
   );
 }
