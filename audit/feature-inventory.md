@@ -33,26 +33,26 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0023 | Auth | Auth required guard raises RuntimeError if USE_PG not set | All | unit | — | pending |
 | F-0024 | Auth | Token expiry returns 401 and triggers client refresh | All | integration | — | pending |
 | F-0025 | Auth | CORS credential handling (Access-Control-Allow-Credentials) | All | integration | — | pending |
-| F-0026 | Upload/Ingest | CSV file upload via POST /api/v1/ingest/upload | All | integration | — | pending |
-| F-0027 | Upload/Ingest | RaceChrono CSV header detection (Lap #, Speed columns) | All | unit | — | pending |
-| F-0028 | Upload/Ingest | RaceBox CSV header detection (alternate column names) | All | unit | — | pending |
-| F-0029 | Upload/Ingest | Streaming ingest path active when TELEMETRY_INGEST_V2=1 | All | unit | — | pending |
-| F-0030 | Upload/Ingest | Adaptive chunk sizing via compute_chunk_size(n_cols) | All | unit | — | pending |
-| F-0031 | Upload/Ingest | Upload progress SSE stream emits real-time events | All | integration | — | pending |
-| F-0032 | Upload/Ingest | Upload progress polling endpoint returns job status | All | integration | — | pending |
-| F-0033 | Upload/Ingest | Upload resume via Parquet chunk cache (index-based flush) | All | unit | — | pending |
-| F-0034 | Upload/Ingest | Upload idempotency via SHA-256 checksum (partial + full) | All | unit | — | pending |
-| F-0035 | Upload/Ingest | Large file handling (>1GB) stays under 1GB peak memory | All | benchmark | — | pending |
-| F-0036 | Upload/Ingest | Invalid CSV file rejected with descriptive error | All | integration | — | pending |
-| F-0037 | Upload/Ingest | Empty CSV file rejected | All | integration | — | pending |
-| F-0038 | Upload/Ingest | Encoding fallback (UTF-8 to Latin-1) | All | unit | — | pending |
-| F-0039 | Upload/Ingest | Delimiter auto-detection (comma, semicolon, tab) | All | unit | — | pending |
-| F-0040 | Upload/Ingest | Numeric coercion in-place (no .copy() for memory budget) | All | unit | — | pending |
-| F-0041 | Upload/Ingest | Disk space check before cache creation (InsufficientDiskSpace) | All | unit | — | pending |
-| F-0042 | Upload/Ingest | Upload size limit enforcement per billing tier | Racer+ | integration | — | pending |
-| F-0043 | Upload/Ingest | Upload quota enforcement (monthly count per plan) | All | integration | — | pending |
-| F-0044 | Upload/Ingest | Upload job status tracking via JobStore (in-memory + SQLite) | All | unit | — | pending |
-| F-0045 | Upload/Ingest | Parquet chunk merge via PyArrow streaming writer (O(1) memory) | All | unit | — | pending |
+| F-0026 | Upload/Ingest | CSV file upload via POST /api/v1/ingest/upload | All | integration | — | passed |
+| F-0027 | Upload/Ingest | RaceChrono CSV header detection (Lap #, Speed columns) | All | unit | — | passed |
+| F-0028 | Upload/Ingest | RaceBox CSV header detection (alternate column names) | All | unit | — | no-test |
+| F-0029 | Upload/Ingest | Streaming ingest path active when TELEMETRY_INGEST_V2=1 | All | unit | — | passed |
+| F-0030 | Upload/Ingest | Adaptive chunk sizing via compute_chunk_size(n_cols) | All | unit | — | passed |
+| F-0031 | Upload/Ingest | Upload progress SSE stream emits real-time events | All | integration | — | no-test |
+| F-0032 | Upload/Ingest | Upload progress polling endpoint returns job status | All | integration | — | no-test |
+| F-0033 | Upload/Ingest | Upload resume via Parquet chunk cache (index-based flush) | All | unit | — | passed |
+| F-0034 | Upload/Ingest | Upload idempotency via SHA-256 checksum (partial + full) | All | unit | — | passed |
+| F-0035 | Upload/Ingest | Large file handling (>1GB) stays under 1GB peak memory | All | benchmark | — | no-test |
+| F-0036 | Upload/Ingest | Invalid CSV file rejected with descriptive error | All | integration | — | passed |
+| F-0037 | Upload/Ingest | Empty CSV file rejected | All | integration | — | no-test |
+| F-0038 | Upload/Ingest | Encoding fallback (UTF-8 to Latin-1) | All | unit | — | passed |
+| F-0039 | Upload/Ingest | Delimiter auto-detection (comma, semicolon, tab) | All | unit | — | passed |
+| F-0040 | Upload/Ingest | Numeric coercion in-place (no .copy() for memory budget) | All | unit | — | passed |
+| F-0041 | Upload/Ingest | Disk space check before cache creation (InsufficientDiskSpace) | All | unit | — | passed |
+| F-0042 | Upload/Ingest | Upload size limit enforcement per billing tier | Racer+ | integration | — | passed |
+| F-0043 | Upload/Ingest | Upload quota enforcement (monthly count per plan) | All | integration | — | passed |
+| F-0044 | Upload/Ingest | Upload job status tracking via JobStore (in-memory + SQLite) | All | unit | — | passed |
+| F-0045 | Upload/Ingest | Parquet chunk merge via PyArrow streaming writer (O(1) memory) | All | unit | — | passed |
 | F-0046 | Pipeline | GPS quality filtering (satellite count, HDOP threshold) | All | unit | OK_R1 | pending |
 | F-0047 | Pipeline | Derived channel: acceleration from speed | All | unit | OK_R1 | pending |
 | F-0048 | Pipeline | Derived channel: yaw rate from heading | All | unit | — | pending |
