@@ -1,39 +1,23 @@
 import type { MetadataRoute } from 'next';
 import { getSiteUrl } from '@/lib/site-url';
 import { insightEntries } from '@/data/insights-cms';
+import { collectMarketingSitemapRoutes } from '@/lib/sitemap-routes.mjs';
 
-const staticRoutes = [
-  '',
-  '/product',
-  '/pricing',
-  '/demo',
-  '/book',
-  '/contact',
-  '/waitlist',
-  '/drivers',
-  '/circuits',
-  '/teams',
-  '/endurance',
-  '/billing',
-  '/security',
-  '/status',
-  '/privacy',
-  '/terms',
-  '/dpa',
-  '/subprocessors',
-  '/customers',
-  '/insights',
-  '/free-report/analyze',
-];
+// Routes outside (marketing)/ that should still appear in the sitemap
+const extraRoutes = ['/free-report/analyze'];
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const siteUrl = getSiteUrl();
 
-  const pages: MetadataRoute.Sitemap = staticRoutes.map((route) => ({
+  // Dynamic marketing routes discovered from filesystem
+  const marketingRoutes = collectMarketingSitemapRoutes();
+  const allRoutes = [...marketingRoutes.map((r: string) => (r === '/' ? '' : r)), ...extraRoutes];
+
+  const pages: MetadataRoute.Sitemap = allRoutes.map((route) => ({
     url: `${siteUrl}${route}`,
     lastModified: now,
-    changeFrequency: route === '' ? 'weekly' : 'monthly',
+    changeFrequency: route === '' ? ('weekly' as const) : ('monthly' as const),
     priority: route === '' ? 1 : route === '/pricing' || route === '/product' ? 0.9 : 0.7,
   }));
 

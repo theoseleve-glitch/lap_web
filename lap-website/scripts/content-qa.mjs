@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { collectAppPageRoutes, collectMarketingSitemapRoutes } from '../src/lib/sitemap-routes.mjs';
+
 const root = process.cwd();
 const srcDir = path.join(root, 'src');
-const appDir = path.join(srcDir, 'app');
 const claimFile = path.join(srcDir, 'data', 'claim-registry.ts');
 
 function walk(dir, predicate) {
@@ -30,27 +31,13 @@ function normalizeRoute(route) {
   return cleaned || '/';
 }
 
-function stripRouteGroups(route) {
-  return route.replace(/\/\([^/]+\)/g, '');
-}
-
-function collectRoutes() {
-  const pages = walk(appDir, (filePath) => filePath.endsWith('page.tsx'));
-  return pages.map((pagePath) => {
-    const relative = path.relative(appDir, pagePath).replace(/\\/g, '/');
-    const withoutPage = relative.replace(/\/page\.tsx$/, '').replace(/^page\.tsx$/, '');
-    const route = stripRouteGroups(`/${withoutPage}`);
-    return normalizeRoute(route);
-  });
-}
-
 function buildRouteMatchers(routes) {
   return routes.map((route) => {
     if (!route.includes('[')) {
-      return { route, regex: new RegExp(`^${route.replace(/\//g, '\\/')}$`) };
+      return { route, regex: new RegExp(`^${route.replace(/\//g, '\/')}$`) };
     }
     const dynamic = route.replace(/\[[^/]+\]/g, '[^/]+');
-    return { route, regex: new RegExp(`^${dynamic.replace(/\//g, '\\/')}$`) };
+    return { route, regex: new RegExp(`^${dynamic.replace(/\//g, '\/')}$`) };
   });
 }
 
@@ -85,6 +72,20 @@ function validateLinks(routes) {
     const exists = matchers.some((matcher) => matcher.regex.test(link.href));
     if (!exists) {
       issues.push(`Broken internal route reference: ${link.href} in ${path.relative(root, link.filePath)}`);
+    }
+  }
+
+  return issues;
+}
+
+function validateSitemapEntries(routes) {
+  const issues = [];
+  const routeSet = new Set(routes);
+  const sitemapRoutes = collectMarketingSitemapRoutes(root);
+
+  for (const route of sitemapRoutes) {
+    if (!routeSet.has(route)) {
+      issues.push(`Sitemap route missing route file: ${route}`);
     }
   }
 
@@ -147,8 +148,8 @@ function validateClaims() {
 }
 
 function main() {
-  const routes = collectRoutes();
-  const issues = [...validateLinks(routes), ...validateClaims()];
+  const routes = collectAppPageRoutes(root);
+  const issues = [...validateLinks(routes), ...validateSitemapEntries(routes), ...validateClaims()];
 
   if (issues.length > 0) {
     console.error('Content QA failed:');
@@ -158,7 +159,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`Content QA passed. Checked ${routes.length} routes and claim registry consistency.`);
+  console.log(`Content QA passed. Checked ${routes.length} routes, sitemap consistency, and claim registry consistency.`);
 }
 
 main();
