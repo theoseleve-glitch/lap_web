@@ -31,10 +31,10 @@ function ToolPanel({ toolId, sessionId }: { toolId: ToolId; sessionId: string })
     'lap-overlay': <LapOverlay sessionId={sessionId} height="h-full" />,
     'lap-progress': <LapProgress sessionId={sessionId} height="h-full" />,
     'lap-distribution': <LapDistribution sessionId={sessionId} height="h-full" />,
-    'brake-analysis': <BrakeScatter sessionId={sessionId} />,
-    'corner-analysis': <CornerMastery sessionId={sessionId} />,
-    'stint-chart': <StintChart sessionId={sessionId} />,
-    fingerprint: <Fingerprint sessionId={sessionId} />,
+    'brake-analysis': <BrakeScatter sessionId={sessionId} height="h-full" />,
+    'corner-analysis': <CornerMastery sessionId={sessionId} height="h-full" />,
+    'stint-chart': <StintChart sessionId={sessionId} height="h-full" />,
+    fingerprint: <Fingerprint sessionId={sessionId} height="h-full" />,
   };
 
   return (
