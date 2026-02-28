@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useCallback, useMemo, useRef } from 'react';
 import { api } from '@/lib/api-client';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
@@ -570,7 +571,12 @@ export default function VisualizePage() {
   if (error) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
-        <p className="text-safety-red font-telemetry text-sm">Failed to load visualization data</p>
+        <div className="text-center">
+          <p className="text-safety-red font-telemetry text-sm mb-3">Failed to load visualization data</p>
+          <Link href="/app/visualize" className="text-pit-orange font-telemetry text-xs hover:underline">
+            ← Back to sessions
+          </Link>
+        </div>
       </div>
     );
   }

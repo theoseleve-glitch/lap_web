@@ -2,8 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
 
 interface WeekendDetail {
   id: number;
@@ -52,7 +53,7 @@ export default function WeekendDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const { data: weekend, isLoading: weekendLoading } = useQuery({
+  const { data: weekend, isLoading: weekendLoading, error: weekendError, refetch } = useQuery({
     queryKey: ['weekend', id],
     queryFn: () => api.get<WeekendDetail>(`/weekends/${id}`),
   });
@@ -60,6 +61,7 @@ export default function WeekendDetailPage() {
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['weekend-sessions', id],
     queryFn: () => api.get<{ sessions: SessionRow[] }>(`/weekends/${id}/sessions`),
+    enabled: !!weekend,
   });
 
   const sessions = sessionsData?.sessions ?? [];
@@ -67,16 +69,29 @@ export default function WeekendDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-40 mb-2" />
+          <SkeletonBox className="h-3 w-24" />
+        </div>
+        <SkeletonStatCards count={3} />
+        <SkeletonTableRows rows={4} cols={5} />
       </div>
     );
   }
 
+  if (weekendError) {
+    return <QueryError message="Couldn't load weekend details." onRetry={() => refetch()} />;
+  }
+
   if (!weekend) {
     return (
-      <div className="text-center py-16">
-        <p className="text-steel font-body">Weekend not found.</p>
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Weekend not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This weekend may have been deleted or the link is invalid.</p>
+        <Link href="/app/weekends" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to weekends
+        </Link>
       </div>
     );
   }
@@ -87,12 +102,12 @@ export default function WeekendDetailPage() {
         title={weekend.name}
         subtitle={`${weekend.track_name} · ${formatDateRange(weekend.start_date, weekend.end_date)}`}
         actions={
-          <button
-            onClick={() => router.back()}
+          <Link
+            href="/app/weekends"
             className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
           >
-            ← Back
-          </button>
+            ← All Weekends
+          </Link>
         }
       />
 

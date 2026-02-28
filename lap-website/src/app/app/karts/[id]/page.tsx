@@ -2,8 +2,9 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
 
 interface KartDetail {
   id: number;
@@ -47,7 +48,7 @@ export default function KartDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const { data: kart, isLoading: kartLoading } = useQuery({
+  const { data: kart, isLoading: kartLoading, error: kartError, refetch } = useQuery({
     queryKey: ['kart', id],
     queryFn: () => api.get<KartDetail>(`/karts/${id}`),
   });
@@ -55,6 +56,7 @@ export default function KartDetailPage() {
   const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
     queryKey: ['kart-sessions', id],
     queryFn: () => api.get<{ sessions: SessionRow[] }>(`/karts/${id}/sessions`),
+    enabled: !!kart,
   });
 
   const sessions = sessionsData?.sessions ?? [];
@@ -62,16 +64,29 @@ export default function KartDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-40 mb-2" />
+          <SkeletonBox className="h-3 w-24" />
+        </div>
+        <SkeletonStatCards count={3} />
+        <SkeletonTableRows rows={4} cols={6} />
       </div>
     );
   }
 
+  if (kartError) {
+    return <QueryError message="Couldn't load kart details." onRetry={() => refetch()} />;
+  }
+
   if (!kart) {
     return (
-      <div className="text-center py-16">
-        <p className="text-steel font-body">Kart not found.</p>
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Kart not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This kart may have been deleted or the link is invalid.</p>
+        <Link href="/app/karts" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to karts
+        </Link>
       </div>
     );
   }
@@ -82,12 +97,12 @@ export default function KartDetailPage() {
         title={kart.name}
         subtitle={[kart.chassis, kart.engine].filter(Boolean).join(' · ') || 'Kart details'}
         actions={
-          <button
-            onClick={() => router.back()}
+          <Link
+            href="/app/karts"
             className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
           >
-            ← Back
-          </button>
+            ← All Karts
+          </Link>
         }
       />
 

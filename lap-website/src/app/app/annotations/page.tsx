@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable } from '@/components/app';
+import { PageHeader, DataTable, QueryError } from '@/components/app';
 
 interface AnnotationRow {
   id: number;
@@ -37,7 +37,7 @@ export default function AnnotationsPage() {
   const router = useRouter();
   const [search, setSearch] = useState('');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['annotations'],
     queryFn: () => api.get<{ annotations: AnnotationRow[] }>('/annotations'),
   });
@@ -89,6 +89,8 @@ export default function AnnotationsPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load annotations." onRetry={() => refetch()} />
       ) : (
         <DataTable
           columns={[

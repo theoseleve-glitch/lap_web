@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
-import { PageHeader } from '@/components/app';
+import { PageHeader, SkeletonBox, SkeletonTableRows } from '@/components/app';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -187,16 +187,36 @@ export default function RaceDetailPage() {
   /* ── loading / error ────────────────────────────────────────────── */
 
   if (isLoading) {
-    return <div className="text-steel font-body p-8 text-center">Loading race details...</div>;
+    return (
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-48 mb-2" />
+          <SkeletonBox className="h-3 w-32" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="bg-concrete rounded-lg border border-steel/20 p-4">
+              <SkeletonBox className="h-3 w-16 mb-3" />
+              <SkeletonBox className="h-4 w-24 mb-2" />
+              <SkeletonBox className="h-4 w-20 mb-2" />
+              <SkeletonBox className="h-4 w-28" />
+            </div>
+          ))}
+        </div>
+        <SkeletonTableRows rows={4} cols={6} />
+      </div>
+    );
   }
 
   if (error || !data) {
     return (
-      <div className="text-safety-red font-body p-8 text-center">
-        Failed to load race.{' '}
-        <button type="button" onClick={() => router.push('/app/race-strategy')} className="underline text-pit-orange">
-          Back to list
-        </button>
+      <div className="bg-concrete rounded-lg border border-safety-red/20 p-8 text-center">
+        <div className="text-safety-red font-telemetry text-3xl mb-3" aria-hidden="true">!</div>
+        <p className="text-chalk font-body text-sm mb-1">Failed to load race</p>
+        <p className="text-steel font-body text-xs mb-4">The race may have been deleted or there was a network error.</p>
+        <Link href="/app/race-strategy" className="text-pit-orange font-telemetry text-xs hover:underline">
+          ← Back to all races
+        </Link>
       </div>
     );
   }
@@ -216,6 +236,12 @@ export default function RaceDetailPage() {
         subtitle={[race.track_name, race.team_name].filter(Boolean).join(' \u2014 ') || undefined}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/app/race-strategy"
+              className="px-3 py-1.5 border border-steel/30 text-steel font-telemetry text-xs rounded hover:text-chalk hover:border-steel/60 transition-colors"
+            >
+              ← All Races
+            </Link>
             <span
               className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${cfg.className}`}
             >

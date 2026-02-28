@@ -405,6 +405,14 @@ export default function TrackDetailPage() {
       <PageHeader
         title={track.track_name}
         subtitle={fmtLength(track.lap_length_m)}
+        actions={
+          <Link
+            href="/app/tracks"
+            className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
+          >
+            ← All Tracks
+          </Link>
+        }
       />
 
       {/* ── Stat Cards ──────────────────────────────────── */}

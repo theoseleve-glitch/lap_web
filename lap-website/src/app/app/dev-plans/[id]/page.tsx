@@ -54,7 +54,17 @@ export default function DevPlanDetailPage() {
     );
   }
 
-  if (!plan) return <div className="text-steel font-body">Plan not found</div>;
+  if (!plan) {
+    return (
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Plan not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This plan may have been deleted or the link is invalid.</p>
+        <Link href="/app/dev-plans" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to plans
+        </Link>
+      </div>
+    );
+  }
 
   const completedTasks = plan.tasks.filter((t) => t.status === 'completed').length;
 

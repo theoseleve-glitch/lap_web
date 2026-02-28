@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
@@ -288,7 +289,17 @@ export default function DriverProgressionPage() {
     );
   }
 
-  if (!data) return <div className="text-steel font-body">Driver not found</div>;
+  if (!data) {
+    return (
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Driver not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This driver may have been deleted or the link is invalid.</p>
+        <Link href="/app/drivers" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to drivers
+        </Link>
+      </div>
+    );
+  }
 
   const progression = data.progression ?? [];
 
@@ -298,24 +309,32 @@ export default function DriverProgressionPage() {
         title={data.driver_name}
         subtitle="Progression"
         actions={
-          <div>
-            <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
-              Track
-            </label>
-            <select
-              id={`${fieldId}-track`}
-              value={trackId}
-              onChange={(e) => setTrackId(e.target.value)}
-              className="bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
-                focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 transition-colors"
+          <div className="flex items-end gap-3">
+            <Link
+              href={`/app/drivers/${id}`}
+              className="px-3 py-2 border border-steel/30 text-steel font-telemetry text-xs rounded hover:text-chalk hover:border-steel/60 transition-colors"
             >
-              <option value="">All Tracks</option>
-              {trackOptions.map((t) => (
-                <option key={t.id} value={String(t.id)}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
+              ← Driver
+            </Link>
+            <div>
+              <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
+                Track
+              </label>
+              <select
+                id={`${fieldId}-track`}
+                value={trackId}
+                onChange={(e) => setTrackId(e.target.value)}
+                className="bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
+                  focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 transition-colors"
+              >
+                <option value="">All Tracks</option>
+                {trackOptions.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         }
       />

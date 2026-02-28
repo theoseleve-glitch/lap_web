@@ -268,6 +268,14 @@ export default function DriverDetailPage() {
       <PageHeader
         title={driver.driver_name}
         subtitle={`${driver.session_count} sessions · ${driver.total_laps} laps`}
+        actions={
+          <Link
+            href="/app/drivers"
+            className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
+          >
+            ← All Drivers
+          </Link>
+        }
       />
 
       {/* ── Stats ───────────────────────────────────────── */}

@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useCallback, useRef, useId } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
@@ -272,7 +273,17 @@ export default function TrackEvolutionPage() {
     );
   }
 
-  if (!data) return <div className="text-steel font-body">Track not found</div>;
+  if (!data) {
+    return (
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Track not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This track may have been deleted or the link is invalid.</p>
+        <Link href="/app/tracks" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to tracks
+        </Link>
+      </div>
+    );
+  }
 
   const evolution = data.evolution ?? [];
 
@@ -283,6 +294,12 @@ export default function TrackEvolutionPage() {
         subtitle="Track Evolution"
         actions={
           <div className="flex items-center gap-3">
+            <Link
+              href={`/app/tracks/${id}`}
+              className="px-3 py-2 border border-steel/30 text-steel font-telemetry text-xs rounded hover:text-chalk hover:border-steel/60 transition-colors"
+            >
+              ← Track
+            </Link>
             <div>
               <label htmlFor={`${fieldId}-from`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
                 From
