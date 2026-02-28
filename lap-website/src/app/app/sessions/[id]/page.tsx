@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 import {
   SpeedTrace,
   GGDiagram,
@@ -367,8 +367,39 @@ export default function SessionDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <SkeletonBox className="h-6 w-48 mb-2" />
+            <SkeletonBox className="h-3 w-32" />
+          </div>
+        </div>
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">
+          <div className="flex items-center gap-4 mb-3">
+            <SkeletonBox className="h-10 w-10 rounded-full" />
+            <div>
+              <SkeletonBox className="h-4 w-20 mb-1" />
+              <SkeletonBox className="h-3 w-14" />
+            </div>
+          </div>
+          <div className="grid grid-cols-4 gap-2">
+            {Array.from({ length: 4 }, (_, i) => (
+              <div key={i}>
+                <SkeletonBox className="h-2 w-full mb-1" />
+                <SkeletonBox className="h-3 w-8" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <SkeletonStatCards count={4} />
+        <div className="flex gap-2 mb-4">
+          {Array.from({ length: 5 }, (_, i) => (
+            <SkeletonBox key={i} className="h-8 w-20 rounded" />
+          ))}
+        </div>
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+          <SkeletonBox className="h-48 w-full" />
+        </div>
       </div>
     );
   }

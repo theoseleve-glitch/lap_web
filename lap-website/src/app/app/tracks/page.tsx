@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError } from '@/components/app';
+import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -111,9 +111,7 @@ export default function TracksPage() {
 
       {/* ── Loading / Error / Content ─────────────────── */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonCardGrid count={6} cols={3} />
       ) : error ? (
         <QueryError message="Couldn't load tracks." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonTableRows, SkeletonBox } from '@/components/app';
 import { Sparkline } from '@/components/app/charts';
 
 interface SessionRow {
@@ -49,9 +49,18 @@ export default function DashboardPage() {
     return (
       <div>
         <PageHeader title="Dashboard" subtitle="Your telemetry overview" />
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+        <SkeletonStatCards count={4} />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+            <SkeletonBox className="h-3 w-24 mb-3" />
+            <SkeletonBox className="h-24 w-full" />
+          </div>
+          <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+            <SkeletonBox className="h-3 w-24 mb-3" />
+            <SkeletonBox className="h-24 w-full" />
+          </div>
         </div>
+        <SkeletonTableRows rows={5} cols={6} />
       </div>
     );
   }

@@ -3,7 +3,7 @@
 import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable, QueryError } from '@/components/app';
+import { PageHeader, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 interface ExportRow {
   id: number;
@@ -119,9 +119,7 @@ export default function ExportsPage() {
 
       {/* Exports list */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonTableRows rows={5} cols={4} />
       ) : error ? (
         <QueryError message="Couldn't load exports." onRetry={() => refetch()} />
       ) : (

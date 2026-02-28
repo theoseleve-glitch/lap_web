@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -323,9 +323,7 @@ export default function SessionsPage() {
 
       {/* ── Table ───────────────────────────────────────── */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonTableRows rows={8} cols={7} />
       ) : error ? (
         <QueryError message="Couldn't load sessions." onRetry={() => refetch()} />
       ) : sessions.length === 0 && !hasFilters ? (

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError } from '@/components/app';
+import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -159,9 +159,7 @@ export default function RaceStrategyListPage() {
 
       {/* ── Content ─────────────────────────────────────── */}
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonCardGrid count={4} cols={2} />
       ) : error ? (
         <QueryError message="Couldn't load race strategies." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (

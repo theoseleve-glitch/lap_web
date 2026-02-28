@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 interface DataHealthStats {
   total_files: number;
@@ -119,9 +119,7 @@ export default function DataHealthPage() {
       <h2 className="font-monument text-lg text-chalk mb-3">Recent Processing Jobs</h2>
 
       {jobsLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonTableRows rows={5} cols={5} />
       ) : jobsError ? (
         <QueryError message="Couldn't load processing jobs." onRetry={() => refetchJobs()} />
       ) : (

@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useCallback, useMemo, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel, DataTable, QueryError } from '@/components/app';
+import { PageHeader, StatCard, ChartPanel, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
@@ -227,8 +227,17 @@ export default function DriverDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-40 mb-2" />
+          <SkeletonBox className="h-3 w-24" />
+        </div>
+        <SkeletonStatCards count={4} />
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">
+          <SkeletonBox className="h-3 w-32 mb-3" />
+          <SkeletonBox className="h-40 w-full" />
+        </div>
+        <SkeletonTableRows rows={5} cols={5} />
       </div>
     );
   }
