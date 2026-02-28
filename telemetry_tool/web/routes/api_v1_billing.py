@@ -105,13 +105,10 @@ def get_subscription():
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
     conn = get_pg_connection()
-    from sqlalchemy import text
 
     row = conn.execute(
-        text(
-            "SELECT plan_tier, subscription_status, stripe_customer_id, "
-            "stripe_subscription_id FROM users WHERE id = :uid"
-        ),
+        "SELECT plan_tier, subscription_status, stripe_customer_id, "
+        "stripe_subscription_id FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     ).fetchone()
 
@@ -199,10 +196,9 @@ def get_invoices():
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
     conn = get_pg_connection()
-    from sqlalchemy import text
 
     row = conn.execute(
-        text("SELECT stripe_customer_id FROM users WHERE id = :uid"),
+        "SELECT stripe_customer_id FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     ).fetchone()
 
@@ -273,14 +269,11 @@ def get_usage():
     entitlements = get_user_entitlements(conn, user_id, workspace_id)
 
     # Get current month usage
-    from sqlalchemy import text
     first_of_month = date.today().replace(day=1).isoformat()
 
     rows = conn.execute(
-        text(
-            "SELECT event_type, total FROM usage_monthly "
-            "WHERE workspace_id = :wsid AND period_start = :period"
-        ),
+        "SELECT event_type, total FROM usage_monthly "
+        "WHERE workspace_id = %(wsid)s AND period_start = %(period)s",
         {"wsid": workspace_id, "period": first_of_month},
     ).fetchall()
 
@@ -347,10 +340,9 @@ def create_portal():
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
     conn = get_pg_connection()
-    from sqlalchemy import text
 
     row = conn.execute(
-        text("SELECT stripe_customer_id FROM users WHERE id = :uid"),
+        "SELECT stripe_customer_id FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     ).fetchone()
 

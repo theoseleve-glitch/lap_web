@@ -1,6 +1,10 @@
 /**
  * Typed API client for the Flask telemetry backend.
  * Calls the backend API directly via CORS (no Next.js rewrite proxy).
+ *
+ * Includes a transparent 401 retry: when an API call fails with 401
+ * (expired access token), we attempt a single silent refresh via the
+ * httpOnly cookie and then replay the original request.
  */
 
 import { getAccessToken } from './auth-store';
@@ -21,16 +25,30 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * Fetch from the API, unwrapping the standard envelope.
- * Throws ApiError on non-ok responses.
- */
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+// Deduplication: only one silent-refresh in flight at a time.
+let _refreshPromise: Promise<boolean> | null = null;
+
+async function tryRefreshOnce(): Promise<boolean> {
+  if (_refreshPromise) return _refreshPromise;
+  _refreshPromise = (async () => {
+    try {
+      const { silentRefresh } = await import('./auth');
+      const user = await silentRefresh();
+      return user !== null;
+    } catch {
+      return false;
+    } finally {
+      _refreshPromise = null;
+    }
+  })();
+  return _refreshPromise;
+}
+
+function buildHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
   };
 
-  // Attach JWT token from in-memory store (never localStorage)
   if (typeof window !== 'undefined') {
     const token = getAccessToken();
     if (token) {
@@ -44,14 +62,35 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
   }
 
+  return headers;
+}
+
+/**
+ * Fetch from the API, unwrapping the standard envelope.
+ * On 401, transparently attempts a single silent refresh and retries.
+ */
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = buildHeaders();
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      ...headers,
-      ...init?.headers,
-    },
+    headers: { ...headers, ...init?.headers },
     credentials: 'include',
   });
+
+  // On 401 — try one silent refresh, then replay with the new token
+  if (res.status === 401 && typeof window !== 'undefined') {
+    const refreshed = await tryRefreshOnce();
+    if (refreshed) {
+      const retryHeaders = buildHeaders();
+      const retryRes = await fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers: { ...retryHeaders, ...init?.headers },
+        credentials: 'include',
+      });
+      return parseEnvelopeOrThrow<T>(retryRes);
+    }
+  }
 
   return parseEnvelopeOrThrow<T>(res);
 }

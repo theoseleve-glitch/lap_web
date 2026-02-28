@@ -108,14 +108,19 @@ class PgConnectionWrapper:
     # Slow query threshold (milliseconds)
     SLOW_QUERY_THRESHOLD_MS = 500
 
-    def execute(self, sql: str, params=None):
+    def execute(self, sql, params=None):
         """Execute SQL and return the cursor (sqlite3.Connection-compatible).
 
         The SQL is translated from SQLite to PostgreSQL dialect before
         execution (named params, positional params, INSERT OR IGNORE, etc.).
+        Accepts plain strings or SQLAlchemy ``text()`` objects (auto-unwrapped).
         Queries exceeding SLOW_QUERY_THRESHOLD_MS are logged as warnings.
         """
         from db.sql_compat import translate_params
+
+        # Unwrap SQLAlchemy text() objects to plain strings
+        if not isinstance(sql, str):
+            sql = str(sql)
 
         translated = translate_params(sql)
         cur = self._conn.cursor()

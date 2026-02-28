@@ -4,6 +4,7 @@ import { type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@/providers/query-provider';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 interface NavItem { href: string; label: string; icon: string; }
 interface NavGroup { label: string; items: NavItem[]; }
@@ -101,11 +102,13 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
       {/* Main content */}
       <QueryProvider>
-        <main className="flex-1 overflow-y-auto bg-asphalt">
-          <div className="max-w-7xl mx-auto px-6 py-6">
-            {children}
-          </div>
-        </main>
+        <AuthGuard>
+          <main className="flex-1 overflow-y-auto bg-asphalt">
+            <div className="max-w-7xl mx-auto px-6 py-6">
+              {children}
+            </div>
+          </main>
+        </AuthGuard>
       </QueryProvider>
     </div>
   );
