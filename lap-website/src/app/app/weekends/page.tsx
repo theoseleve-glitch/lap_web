@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard } from '@/components/app';
+import { PageHeader, StatCard, QueryError } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -54,7 +54,7 @@ export default function WeekendsPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'date' | 'name' | 'sessions'>('date');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['weekends'],
     queryFn: () => api.get<{ weekends: WeekendRow[] }>('/weekends'),
   });
@@ -136,6 +136,8 @@ export default function WeekendsPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load weekends." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
           {search ? (

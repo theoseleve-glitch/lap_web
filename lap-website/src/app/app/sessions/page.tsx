@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -134,7 +134,7 @@ export default function SessionsPage() {
     return params.toString();
   }, [page, sort, search, driverFilter, trackFilter]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions', 'browse', queryString],
     queryFn: () => api.get<BrowseResponse>(`/sessions/browse?${queryString}`),
   });
@@ -326,6 +326,8 @@ export default function SessionsPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load sessions." onRetry={() => refetch()} />
       ) : sessions.length === 0 && !hasFilters ? (
         /* Rich empty state */
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">

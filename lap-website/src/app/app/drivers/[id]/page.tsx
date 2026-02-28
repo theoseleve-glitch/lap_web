@@ -3,9 +3,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
+import { PageHeader, StatCard, ChartPanel, DataTable, QueryError } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
@@ -202,10 +202,16 @@ export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const { data: driver, isLoading } = useQuery({
+  const { data: driver, isLoading, error, refetch } = useQuery({
     queryKey: ['driver', id],
     queryFn: () => api.get<DriverDetail>(`/drivers/${id}`),
   });
+
+  useEffect(() => {
+    if (driver) {
+      document.title = `${driver.driver_name} | LAP Coach`;
+    }
+  }, [driver]);
 
   const { data: sessionsData } = useQuery({
     queryKey: ['driver', id, 'sessions'],
@@ -227,10 +233,18 @@ export default function DriverDetailPage() {
     );
   }
 
+  if (error) {
+    return <QueryError message="Couldn't load driver details." onRetry={() => refetch()} />;
+  }
+
   if (!driver) {
     return (
-      <div className="text-center py-12">
-        <p className="text-steel font-body">Driver not found</p>
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Driver not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This driver may have been deleted or the link is invalid.</p>
+        <Link href="/app/drivers" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to drivers
+        </Link>
       </div>
     );
   }

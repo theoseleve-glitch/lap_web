@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard } from '@/components/app';
+import { PageHeader, StatCard, QueryError } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -114,7 +114,7 @@ export default function JobsPage() {
   const queryClient = useQueryClient();
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['jobs', 50],
     queryFn: () => api.get<{ jobs: Job[] }>('/jobs?limit=50'),
     refetchInterval: 5000,
@@ -183,9 +183,7 @@ export default function JobsPage() {
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="bg-concrete rounded-lg border border-safety-red/20 p-6 text-center">
-          <p className="text-safety-red font-telemetry text-sm">{(error as Error).message}</p>
-        </div>
+        <QueryError message="Couldn't load processing jobs." onRetry={() => refetch()} />
       ) : jobs.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
           <div className="text-4xl mb-3" aria-hidden="true">⚙️</div>

@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable } from '@/components/app';
+import { PageHeader, DataTable, QueryError } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -80,7 +80,7 @@ export default function LeaderboardPage() {
   const tracks = tracksData?.tracks ?? [];
   const trackNameById = useMemo(() => new Map(tracks.map((t) => [t.track_id, t.track_name])), [tracks]);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['leaderboard', selectedTrack, tracks.map((t) => t.track_id).join(',')],
     queryFn: async () => {
       const selectedTrackIds =
@@ -151,6 +151,8 @@ export default function LeaderboardPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load leaderboard." onRetry={() => refetch()} />
       ) : entries.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
           <div className="text-4xl mb-3" aria-hidden="true">🏆</div>

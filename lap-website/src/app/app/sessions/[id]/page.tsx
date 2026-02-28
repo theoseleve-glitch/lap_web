@@ -2,10 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
 import {
   SpeedTrace,
   GGDiagram,
@@ -283,10 +283,16 @@ export default function SessionDetailPage() {
 
   /* ── Data Fetching ── */
 
-  const { data: session, isLoading } = useQuery({
+  const { data: session, isLoading, error, refetch } = useQuery({
     queryKey: ['session', id],
     queryFn: () => api.get<SessionDetail>(`/sessions/${id}/details`),
   });
+
+  useEffect(() => {
+    if (session) {
+      document.title = `${session.track_name} — ${session.date} | LAP Coach`;
+    }
+  }, [session]);
 
   const { data: lapsData } = useQuery({
     queryKey: ['session', id, 'laps'],
@@ -367,8 +373,20 @@ export default function SessionDetailPage() {
     );
   }
 
+  if (error) {
+    return <QueryError message="Couldn't load session details." onRetry={() => refetch()} />;
+  }
+
   if (!session) {
-    return <div className="text-steel font-body p-8">Session not found.</div>;
+    return (
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Session not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This session may have been deleted or the link is invalid.</p>
+        <Link href="/app/sessions" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to sessions
+        </Link>
+      </div>
+    );
   }
 
   /* ── Lap Table Columns ── */

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError } from '@/components/app';
 
 interface DataHealthStats {
   total_files: number;
@@ -50,7 +50,7 @@ export default function DataHealthPage() {
     refetchInterval: 10000,
   });
 
-  const { data: jobsData, isLoading: jobsLoading } = useQuery({
+  const { data: jobsData, isLoading: jobsLoading, error: jobsError, refetch: refetchJobs } = useQuery({
     queryKey: ['data-health-jobs'],
     queryFn: () => api.get<{ jobs: JobRow[] }>('/data-health/jobs'),
     refetchInterval: 5000,
@@ -122,6 +122,8 @@ export default function DataHealthPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : jobsError ? (
+        <QueryError message="Couldn't load processing jobs." onRetry={() => refetchJobs()} />
       ) : (
         <DataTable
           columns={[

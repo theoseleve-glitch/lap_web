@@ -3,7 +3,7 @@
 import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable } from '@/components/app';
+import { PageHeader, DataTable, QueryError } from '@/components/app';
 
 interface ExportRow {
   id: number;
@@ -35,7 +35,7 @@ export default function ExportsPage() {
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
   const [exportType, setExportType] = useState('sessions');
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['exports'],
     queryFn: () => api.get<{ exports: ExportRow[] }>('/exports'),
   });
@@ -122,6 +122,8 @@ export default function ExportsPage() {
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load exports." onRetry={() => refetch()} />
       ) : (
         <DataTable
           columns={[

@@ -6,3 +6,4 @@ export { ChartTooltip } from './ChartTooltip';
 export { FormField } from './FormField';
 export { LockedSection } from './LockedSection';
 export { UpgradeBanner } from './UpgradeBanner';
+export { QueryError } from './QueryError';

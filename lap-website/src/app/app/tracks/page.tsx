@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard } from '@/components/app';
+import { PageHeader, StatCard, QueryError } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -41,7 +41,7 @@ export default function TracksPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'record'>('sessions');
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tracks'],
     queryFn: () => api.get<{ tracks: TrackRow[] }>('/tracks'),
   });
@@ -109,11 +109,13 @@ export default function TracksPage() {
         </select>
       </div>
 
-      {/* ── Loading ─────────────────────────────────────── */}
+      {/* ── Loading / Error / Content ─────────────────── */}
       {isLoading ? (
         <div className="flex items-center justify-center h-48">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
         </div>
+      ) : error ? (
+        <QueryError message="Couldn't load tracks." onRetry={() => refetch()} />
       ) : filtered.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
           {search ? (

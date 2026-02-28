@@ -2,9 +2,10 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
-import { useCallback, useMemo } from 'react';
+import Link from 'next/link';
+import { useCallback, useMemo, useEffect } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
+import { PageHeader, StatCard, ChartPanel, DataTable, QueryError } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
@@ -320,10 +321,16 @@ export default function TrackDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const { data: track, isLoading } = useQuery({
+  const { data: track, isLoading, error, refetch } = useQuery({
     queryKey: ['track', id],
     queryFn: () => api.get<TrackDetail>(`/tracks/${id}`),
   });
+
+  useEffect(() => {
+    if (track) {
+      document.title = `${track.track_name} | LAP Coach`;
+    }
+  }, [track]);
 
   const { data: leaderboardData } = useQuery({
     queryKey: ['track', id, 'leaderboard'],
@@ -357,10 +364,18 @@ export default function TrackDetailPage() {
     );
   }
 
+  if (error) {
+    return <QueryError message="Couldn't load track details." onRetry={() => refetch()} />;
+  }
+
   if (!track) {
     return (
-      <div className="text-center py-12">
-        <p className="text-steel font-body">Track not found</p>
+      <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
+        <h2 className="font-monument text-lg text-chalk mb-2">Track not found</h2>
+        <p className="text-steel font-body text-sm mb-4">This track may have been deleted or the link is invalid.</p>
+        <Link href="/app/tracks" className="text-pit-orange font-telemetry text-xs hover:underline">
+          Back to tracks
+        </Link>
       </div>
     );
   }
