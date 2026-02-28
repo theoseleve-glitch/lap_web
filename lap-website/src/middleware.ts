@@ -52,7 +52,18 @@ function chooseVariant(cookieName: string, persona: string, attribution: Record<
   return 'control';
 }
 
+const CANONICAL_HOST = 'www.lap-coach.racing';
+
 export function middleware(request: NextRequest) {
+  // Canonical domain redirect: bare domain → www (301 permanent)
+  const host = request.headers.get('host') ?? '';
+  if (host === 'lap-coach.racing') {
+    const url = request.nextUrl.clone();
+    url.host = CANONICAL_HOST;
+    url.port = '';
+    return NextResponse.redirect(url, 301);
+  }
+
   const response = NextResponse.next();
 
   if (!request.cookies.get('lap_session_id')?.value) {

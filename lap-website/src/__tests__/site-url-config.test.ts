@@ -56,10 +56,10 @@ describe('SITE_URL config', () => {
     const robots = await loadRobotsWithSiteUrl();
     const metadata = await loadMetadataWithSiteUrl();
 
-    expect(sitemap[0]?.url).toBe('https://lap-coach.racing');
-    expect(robots.host).toBe('https://lap-coach.racing');
-    expect(robots.sitemap).toBe('https://lap-coach.racing/sitemap.xml');
-    expect(metadata.metadataBase?.href).toBe('https://lap-coach.racing/');
+    expect(sitemap[0]?.url).toBe('https://www.lap-coach.racing');
+    expect(robots.host).toBe('https://www.lap-coach.racing');
+    expect(robots.sitemap).toBe('https://www.lap-coach.racing/sitemap.xml');
+    expect(metadata.metadataBase?.href).toBe('https://www.lap-coach.racing/');
   });
 
   it('applies custom SITE_URL to sitemap/robots/metadata canonical values', async () => {

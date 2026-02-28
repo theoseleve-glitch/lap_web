@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = 'https://lap-coach.racing';
+const DEFAULT_SITE_URL = 'https://www.lap-coach.racing';
 
 function normalizeSiteUrl(value: string): string {
   let parsed: URL;
