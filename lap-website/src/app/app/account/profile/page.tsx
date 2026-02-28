@@ -354,6 +354,7 @@ export default function ProfilePage() {
             )}
 
             <button
+              type="button"
               onClick={() =>
                 prefsMutation.mutate({
                   language,

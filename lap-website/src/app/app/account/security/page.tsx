@@ -312,12 +312,14 @@ export default function SecurityPage() {
               </div>
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setShowRegen(true)}
                   className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
                 >
                   Regenerate Backup Codes
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowDisable(true)}
                   className="bg-concrete border border-safety-red/30 text-safety-red font-telemetry text-sm px-4 py-2 rounded-md hover:bg-safety-red/10 transition"
                 >
@@ -363,6 +365,7 @@ export default function SecurityPage() {
                   )}
                   <div className="flex gap-3">
                     <button
+                      type="button"
                       onClick={() => regenBackupMutation.mutate()}
                       disabled={!regenPassword || regenCode.length !== 6 || regenBackupMutation.isPending}
                       className="bg-acid-green text-asphalt font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -370,6 +373,7 @@ export default function SecurityPage() {
                       {regenBackupMutation.isPending ? 'Generating...' : 'Generate New Codes'}
                     </button>
                     <button
+                      type="button"
                       onClick={() => { setShowRegen(false); setRegenPassword(''); setRegenCode(''); }}
                       className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
                     >
@@ -417,6 +421,7 @@ export default function SecurityPage() {
                   )}
                   <div className="flex gap-3">
                     <button
+                      type="button"
                       onClick={() => disableTotpMutation.mutate()}
                       disabled={!disablePassword || disableCode.length !== 6 || disableTotpMutation.isPending}
                       className="bg-safety-red text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -424,6 +429,7 @@ export default function SecurityPage() {
                       {disableTotpMutation.isPending ? 'Disabling...' : 'Disable 2FA'}
                     </button>
                     <button
+                      type="button"
                       onClick={() => { setShowDisable(false); setDisablePassword(''); setDisableCode(''); }}
                       className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
                     >
@@ -445,6 +451,7 @@ export default function SecurityPage() {
                 </p>
               )}
               <button
+                type="button"
                 onClick={() => setupTotpMutation.mutate()}
                 disabled={setupTotpMutation.isPending}
                 className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -482,12 +489,14 @@ export default function SecurityPage() {
             </div>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setTwoFaStep('verify')}
                 className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
               >
                 Next: Enter Code
               </button>
               <button
+                type="button"
                 onClick={() => { setTwoFaStep('idle'); setTotpSetup(null); }}
                 className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
               >
@@ -522,6 +531,7 @@ export default function SecurityPage() {
             )}
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => confirmTotpMutation.mutate()}
                 disabled={totpCode.length !== 6 || confirmTotpMutation.isPending}
                 className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -529,6 +539,7 @@ export default function SecurityPage() {
                 {confirmTotpMutation.isPending ? 'Verifying...' : 'Verify & Enable'}
               </button>
               <button
+                type="button"
                 onClick={() => { setTwoFaStep('qr'); setTotpCode(''); }}
                 className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
               >
@@ -555,6 +566,7 @@ export default function SecurityPage() {
               ))}
             </div>
             <button
+              type="button"
               onClick={() => {
                 setTwoFaStep('idle');
                 setBackupCodes([]);
@@ -574,6 +586,7 @@ export default function SecurityPage() {
           <h3 className="font-monument text-sm text-chalk">Active Sessions</h3>
           {sessions && sessions.length > 1 && (
             <button
+              type="button"
               onClick={() => revokeAllMutation.mutate()}
               disabled={revokeAllMutation.isPending}
               className="bg-concrete border border-safety-red/30 text-safety-red font-telemetry text-xs px-3 py-1.5 rounded-md hover:bg-safety-red/10 transition disabled:opacity-50"
@@ -623,6 +636,7 @@ export default function SecurityPage() {
                     <td className="py-2.5 text-right">
                       {!session.is_current && (
                         <button
+                          type="button"
                           onClick={() => revokeSessionMutation.mutate(session.id)}
                           disabled={revokeSessionMutation.isPending}
                           className="text-safety-red text-xs font-telemetry hover:underline disabled:opacity-50"
@@ -668,6 +682,7 @@ export default function SecurityPage() {
                   </p>
                 </div>
                 <button
+                  type="button"
                   onClick={() => unlinkMutation.mutate(conn.provider)}
                   disabled={unlinkMutation.isPending}
                   className="text-safety-red text-xs font-telemetry hover:underline disabled:opacity-50"

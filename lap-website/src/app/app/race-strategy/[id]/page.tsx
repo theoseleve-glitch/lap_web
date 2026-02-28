@@ -194,7 +194,7 @@ export default function RaceDetailPage() {
     return (
       <div className="text-safety-red font-body p-8 text-center">
         Failed to load race.{' '}
-        <button onClick={() => router.push('/app/race-strategy')} className="underline text-pit-orange">
+        <button type="button" onClick={() => router.push('/app/race-strategy')} className="underline text-pit-orange">
           Back to list
         </button>
       </div>

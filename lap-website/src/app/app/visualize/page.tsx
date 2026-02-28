@@ -127,7 +127,7 @@ export default function VisualizeLandingPage() {
           {search ? (
             <>
               <p className="text-steel font-body text-sm">No sessions match &quot;{search}&quot;</p>
-              <button onClick={() => setSearch('')}
+              <button type="button" onClick={() => setSearch('')}
                 className="mt-3 text-pit-orange font-telemetry text-xs hover:underline">
                 Clear search
               </button>

@@ -142,7 +142,7 @@ export default function WeekendsPage() {
           {search ? (
             <>
               <p className="text-steel font-body text-sm">No weekends match &quot;{search}&quot;</p>
-              <button onClick={() => setSearch('')}
+              <button type="button" onClick={() => setSearch('')}
                 className="mt-3 text-pit-orange font-telemetry text-xs hover:underline">
                 Clear search
               </button>

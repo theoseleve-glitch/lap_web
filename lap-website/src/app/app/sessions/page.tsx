@@ -290,27 +290,28 @@ export default function SessionsPage() {
         <div className="flex items-center gap-2 mb-4">
           <span className="text-steel/60 text-xs font-telemetry">Filters:</span>
           {search && (
-            <button onClick={() => updateFilter(setSearch)('')}
+            <button type="button" onClick={() => updateFilter(setSearch)('')}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-pit-orange/10 text-pit-orange text-[10px] font-telemetry uppercase hover:bg-pit-orange/20 transition-colors"
             >
               &quot;{search}&quot; <span className="ml-1">×</span>
             </button>
           )}
           {driverFilter && (
-            <button onClick={() => updateFilter(setDriverFilter)('')}
+            <button type="button" onClick={() => updateFilter(setDriverFilter)('')}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-acid-green/10 text-acid-green text-[10px] font-telemetry uppercase hover:bg-acid-green/20 transition-colors"
             >
               Driver: {driverFilter} <span className="ml-1">×</span>
             </button>
           )}
           {trackFilter && (
-            <button onClick={() => updateFilter(setTrackFilter)('')}
+            <button type="button" onClick={() => updateFilter(setTrackFilter)('')}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-marshal-yellow/10 text-marshal-yellow text-[10px] font-telemetry uppercase hover:bg-marshal-yellow/20 transition-colors"
             >
               Track: {trackFilter} <span className="ml-1">×</span>
             </button>
           )}
           <button
+            type="button"
             onClick={() => { setSearch(''); setDriverFilter(''); setTrackFilter(''); setSort('date'); setPage(1); }}
             className="text-steel/40 text-[10px] font-telemetry uppercase hover:text-chalk transition-colors ml-2"
           >

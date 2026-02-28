@@ -120,6 +120,7 @@ export default function TracksPage() {
             <>
               <p className="text-steel font-body text-sm">No tracks match &quot;{search}&quot;</p>
               <button
+                type="button"
                 onClick={() => setSearch('')}
                 className="mt-3 text-pit-orange font-telemetry text-xs hover:underline"
               >
@@ -142,6 +143,7 @@ export default function TracksPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((track) => (
             <button
+              type="button"
               key={track.track_id}
               onClick={() => router.push(`/app/tracks/${track.track_id}`)}
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5

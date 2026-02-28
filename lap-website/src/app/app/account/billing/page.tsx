@@ -131,6 +131,7 @@ export default function BillingPage() {
           <span className="font-telemetry text-sm text-acid-green">Change Plan</span>
         </Link>
         <button
+          type="button"
           onClick={() => portalMutation.mutate()}
           disabled={portalMutation.isPending || !sub?.payment_method}
           className="bg-concrete rounded-lg border border-steel/20 p-4 text-center hover:border-acid-green/40 transition-colors disabled:opacity-50"
@@ -140,6 +141,7 @@ export default function BillingPage() {
           </span>
         </button>
         <button
+          type="button"
           onClick={() => portalMutation.mutate()}
           disabled={portalMutation.isPending || sub?.subscription_status === 'free' || sub?.subscription_status === 'canceled'}
           className="bg-concrete rounded-lg border border-steel/20 p-4 text-center hover:border-safety-red/40 transition-colors disabled:opacity-50"

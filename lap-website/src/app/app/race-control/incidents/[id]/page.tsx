@@ -36,7 +36,7 @@ export default function IncidentDetailPage() {
 
   return (
     <div>
-      <button onClick={() => router.back()} className="mb-4 text-xs text-steel hover:text-chalk">
+      <button type="button" onClick={() => router.back()} className="mb-4 text-xs text-steel hover:text-chalk">
         &larr; Back to Incidents
       </button>
 

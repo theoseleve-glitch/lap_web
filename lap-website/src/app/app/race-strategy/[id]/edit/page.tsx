@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
@@ -69,6 +69,7 @@ export default function EditRacePage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const fieldId = useId();
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
 
@@ -242,13 +243,13 @@ export default function EditRacePage() {
         <div className={sectionCls}>
           <h2 className="font-monument text-lg text-chalk mb-4">Race Details</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div><label className={labelCls}>Race Name *</label><input className={inputCls} value={raceName} onChange={e => setRaceName(e.target.value)} /></div>
-            <div><label className={labelCls}>Team Name</label><input className={inputCls} value={teamName} onChange={e => setTeamName(e.target.value)} /></div>
-            <div><label className={labelCls}>Track</label><input className={inputCls} value={trackName} onChange={e => setTrackName(e.target.value)} /></div>
+            <div><label htmlFor={`${fieldId}-race-name`} className={labelCls}>Race Name *</label><input id={`${fieldId}-race-name`} className={inputCls} value={raceName} onChange={e => setRaceName(e.target.value)} /></div>
+            <div><label htmlFor={`${fieldId}-team-name`} className={labelCls}>Team Name</label><input id={`${fieldId}-team-name`} className={inputCls} value={teamName} onChange={e => setTeamName(e.target.value)} /></div>
+            <div><label htmlFor={`${fieldId}-track`} className={labelCls}>Track</label><input id={`${fieldId}-track`} className={inputCls} value={trackName} onChange={e => setTrackName(e.target.value)} /></div>
             <div className="grid grid-cols-3 gap-2">
-              <div><label className={labelCls}>Duration (h)</label><input type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" /></div>
-              <div><label className={labelCls}>Minutes</label><input type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" /></div>
-              <div><label className={labelCls}>Stints</label><input type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" /></div>
+              <div><label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label><input id={`${fieldId}-dur-h`} type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" /></div>
+              <div><label htmlFor={`${fieldId}-dur-m`} className={labelCls}>Minutes</label><input id={`${fieldId}-dur-m`} type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" /></div>
+              <div><label htmlFor={`${fieldId}-stints`} className={labelCls}>Stints</label><input id={`${fieldId}-stints`} type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" /></div>
             </div>
           </div>
         </div>
@@ -264,20 +265,20 @@ export default function EditRacePage() {
             {drivers.map((d, i) => (
               <div key={i} className="bg-asphalt/40 border border-steel/10 p-3">
                 <div className="flex items-center gap-3 mb-2">
-                  <input type="color" value={d.color_hex} onChange={e => updateDriver(i, 'color_hex', e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-                  <input aria-label="Driver name" className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
-                  <input className={`${inputCls} w-24`} value={d.weight_kg} onChange={e => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
-                  <input className={`${inputCls} w-24`} value={d.com_channel} onChange={e => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
-                  <button type="button" onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry">{d.showConstraints ? '▼' : '▶'} Rules</button>
-                  {drivers.length > 1 && <button type="button" onClick={() => removeDriver(i)} className="text-safety-red hover:text-safety-red/80 text-sm">✕</button>}
+                  <input type="color" aria-label={`Driver ${i + 1} color`} value={d.color_hex} onChange={e => updateDriver(i, 'color_hex', e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
+                  <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
+                  <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={e => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
+                  <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={e => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
+                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry">{d.showConstraints ? '▼' : '▶'} Rules</button>
+                  {drivers.length > 1 && <button type="button" aria-label={`Remove driver ${i + 1}`} onClick={() => removeDriver(i)} className="text-safety-red hover:text-safety-red/80 text-sm">✕</button>}
                 </div>
                 {d.showConstraints && (
                   <div className="grid grid-cols-5 gap-2 mt-2 pl-11">
-                    <div><label className={labelCls}>Min stint(s)</label><input className={inputCls} value={d.min_stint_s} onChange={e => updateDriver(i, 'min_stint_s', e.target.value)} type="number" /></div>
-                    <div><label className={labelCls}>Max stint(s)</label><input className={inputCls} value={d.max_stint_s} onChange={e => updateDriver(i, 'max_stint_s', e.target.value)} type="number" /></div>
-                    <div><label className={labelCls}>Min total(s)</label><input className={inputCls} value={d.min_cumulative_s} onChange={e => updateDriver(i, 'min_cumulative_s', e.target.value)} type="number" /></div>
-                    <div><label className={labelCls}>Max total(s)</label><input className={inputCls} value={d.max_cumulative_s} onChange={e => updateDriver(i, 'max_cumulative_s', e.target.value)} type="number" /></div>
-                    <div><label className={labelCls}>Min rest(s)</label><input className={inputCls} value={d.min_rest_s} onChange={e => updateDriver(i, 'min_rest_s', e.target.value)} type="number" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-min-stint`} className={labelCls}>Min stint(s)</label><input id={`${fieldId}-d${i}-min-stint`} className={inputCls} value={d.min_stint_s} onChange={e => updateDriver(i, 'min_stint_s', e.target.value)} type="number" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-max-stint`} className={labelCls}>Max stint(s)</label><input id={`${fieldId}-d${i}-max-stint`} className={inputCls} value={d.max_stint_s} onChange={e => updateDriver(i, 'max_stint_s', e.target.value)} type="number" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-min-total`} className={labelCls}>Min total(s)</label><input id={`${fieldId}-d${i}-min-total`} className={inputCls} value={d.min_cumulative_s} onChange={e => updateDriver(i, 'min_cumulative_s', e.target.value)} type="number" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-max-total`} className={labelCls}>Max total(s)</label><input id={`${fieldId}-d${i}-max-total`} className={inputCls} value={d.max_cumulative_s} onChange={e => updateDriver(i, 'max_cumulative_s', e.target.value)} type="number" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-min-rest`} className={labelCls}>Min rest(s)</label><input id={`${fieldId}-d${i}-min-rest`} className={inputCls} value={d.min_rest_s} onChange={e => updateDriver(i, 'min_rest_s', e.target.value)} type="number" /></div>
                   </div>
                 )}
               </div>
@@ -289,9 +290,9 @@ export default function EditRacePage() {
         <div className={sectionCls}>
           <h2 className="font-monument text-lg text-chalk mb-4">Pit Strategy</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div><label className={labelCls}>Min Pit Stop (s)</label><input type="number" className={inputCls} value={minPitStop} onChange={e => setMinPitStop(e.target.value)} /></div>
-            <div><label className={labelCls}>Pit Speed (km/h)</label><input type="number" className={inputCls} value={pitSpeed} onChange={e => setPitSpeed(e.target.value)} step="0.1" /></div>
-            <div><label className={labelCls}>Quick Pit Stop (s)</label><input type="number" className={inputCls} value={quickPitStop} onChange={e => setQuickPitStop(e.target.value)} /></div>
+            <div><label htmlFor={`${fieldId}-min-pit`} className={labelCls}>Min Pit Stop (s)</label><input id={`${fieldId}-min-pit`} type="number" className={inputCls} value={minPitStop} onChange={e => setMinPitStop(e.target.value)} /></div>
+            <div><label htmlFor={`${fieldId}-pit-speed`} className={labelCls}>Pit Speed (km/h)</label><input id={`${fieldId}-pit-speed`} type="number" className={inputCls} value={pitSpeed} onChange={e => setPitSpeed(e.target.value)} step="0.1" /></div>
+            <div><label htmlFor={`${fieldId}-quick-pit`} className={labelCls}>Quick Pit Stop (s)</label><input id={`${fieldId}-quick-pit`} type="number" className={inputCls} value={quickPitStop} onChange={e => setQuickPitStop(e.target.value)} /></div>
           </div>
           <div className="flex gap-6 mt-4">
             <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer"><input type="checkbox" checked={mandatoryChange} onChange={e => setMandatoryChange(e.target.checked)} className="accent-pit-orange" />Mandatory driver change</label>
@@ -311,14 +312,14 @@ export default function EditRacePage() {
             <div className="space-y-3">
               {windows.map((w, i) => (
                 <div key={i} className="flex items-center gap-3 bg-asphalt/40 border border-steel/10 p-3">
-                  <select className={`${inputCls} w-32`} value={w.window_type} onChange={e => updateWindow(i, 'window_type', e.target.value)}>
+                  <select aria-label={`Window ${i + 1} type`} className={`${inputCls} w-32`} value={w.window_type} onChange={e => updateWindow(i, 'window_type', e.target.value)}>
                     <option value="pitlane">Pit Lane</option><option value="refuel">Refuel</option><option value="tech_stop">Tech Stop</option>
                   </select>
-                  <input className={`${inputCls} w-32`} value={w.label} onChange={e => updateWindow(i, 'label', e.target.value)} placeholder="Label" />
-                  <div className="flex items-center gap-1"><input type="number" className={`${inputCls} w-16`} value={w.start_mm} onChange={e => updateWindow(i, 'start_mm', e.target.value)} /><span className="text-steel">:</span><input type="number" className={`${inputCls} w-16`} value={w.start_ss} onChange={e => updateWindow(i, 'start_ss', e.target.value)} /></div>
+                  <input aria-label={`Window ${i + 1} label`} className={`${inputCls} w-32`} value={w.label} onChange={e => updateWindow(i, 'label', e.target.value)} placeholder="Label" />
+                  <div className="flex items-center gap-1"><input aria-label={`Window ${i + 1} start minutes`} type="number" className={`${inputCls} w-16`} value={w.start_mm} onChange={e => updateWindow(i, 'start_mm', e.target.value)} /><span className="text-steel">:</span><input aria-label={`Window ${i + 1} start seconds`} type="number" className={`${inputCls} w-16`} value={w.start_ss} onChange={e => updateWindow(i, 'start_ss', e.target.value)} /></div>
                   <span className="text-steel">→</span>
-                  <div className="flex items-center gap-1"><input type="number" className={`${inputCls} w-16`} value={w.end_mm} onChange={e => updateWindow(i, 'end_mm', e.target.value)} /><span className="text-steel">:</span><input type="number" className={`${inputCls} w-16`} value={w.end_ss} onChange={e => updateWindow(i, 'end_ss', e.target.value)} /></div>
-                  <button type="button" onClick={() => removeWindow(i)} className="text-safety-red text-sm">✕</button>
+                  <div className="flex items-center gap-1"><input aria-label={`Window ${i + 1} end minutes`} type="number" className={`${inputCls} w-16`} value={w.end_mm} onChange={e => updateWindow(i, 'end_mm', e.target.value)} /><span className="text-steel">:</span><input aria-label={`Window ${i + 1} end seconds`} type="number" className={`${inputCls} w-16`} value={w.end_ss} onChange={e => updateWindow(i, 'end_ss', e.target.value)} /></div>
+                  <button type="button" aria-label={`Remove window ${i + 1}`} onClick={() => removeWindow(i)} className="text-safety-red text-sm">✕</button>
                 </div>
               ))}
             </div>
@@ -329,21 +330,21 @@ export default function EditRacePage() {
         <div className={sectionCls}>
           <h2 className="font-monument text-lg text-chalk mb-4">Fuel & Weight</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div><label className={labelCls}>Fuel Autonomy</label><div className="flex items-center gap-1"><input type="number" className={`${inputCls} w-20`} value={fuelAutonomyM} onChange={e => setFuelAutonomyM(e.target.value)} placeholder="mm" /><span className="text-steel">:</span><input type="number" className={`${inputCls} w-20`} value={fuelAutonomyS} onChange={e => setFuelAutonomyS(e.target.value)} placeholder="ss" /></div></div>
-            <div><label className={labelCls}>Empty Kart (kg)</label><input type="number" className={inputCls} value={emptyKart} onChange={e => setEmptyKart(e.target.value)} step="0.1" /></div>
-            <div><label className={labelCls}>Full Tank (kg)</label><input type="number" className={inputCls} value={fullTank} onChange={e => setFullTank(e.target.value)} step="0.1" /></div>
-            <div><label className={labelCls}>Min Total (kg)</label><input type="number" className={inputCls} value={minTotal} onChange={e => setMinTotal(e.target.value)} step="0.1" /></div>
-            <div><label className={labelCls}>Reference Weight (kg)</label><input type="number" className={inputCls} value={referenceWeight} onChange={e => setReferenceWeight(e.target.value)} step="0.1" /></div>
+            <div><label className={labelCls}>Fuel Autonomy</label><div className="flex items-center gap-1"><input aria-label="Fuel autonomy minutes" type="number" className={`${inputCls} w-20`} value={fuelAutonomyM} onChange={e => setFuelAutonomyM(e.target.value)} placeholder="mm" /><span className="text-steel">:</span><input aria-label="Fuel autonomy seconds" type="number" className={`${inputCls} w-20`} value={fuelAutonomyS} onChange={e => setFuelAutonomyS(e.target.value)} placeholder="ss" /></div></div>
+            <div><label htmlFor={`${fieldId}-empty-kart`} className={labelCls}>Empty Kart (kg)</label><input id={`${fieldId}-empty-kart`} type="number" className={inputCls} value={emptyKart} onChange={e => setEmptyKart(e.target.value)} step="0.1" /></div>
+            <div><label htmlFor={`${fieldId}-full-tank`} className={labelCls}>Full Tank (kg)</label><input id={`${fieldId}-full-tank`} type="number" className={inputCls} value={fullTank} onChange={e => setFullTank(e.target.value)} step="0.1" /></div>
+            <div><label htmlFor={`${fieldId}-min-total-kg`} className={labelCls}>Min Total (kg)</label><input id={`${fieldId}-min-total-kg`} type="number" className={inputCls} value={minTotal} onChange={e => setMinTotal(e.target.value)} step="0.1" /></div>
+            <div><label htmlFor={`${fieldId}-ref-weight`} className={labelCls}>Reference Weight (kg)</label><input id={`${fieldId}-ref-weight`} type="number" className={inputCls} value={referenceWeight} onChange={e => setReferenceWeight(e.target.value)} step="0.1" /></div>
             <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer"><input type="checkbox" checked={weighOnExit} onChange={e => setWeighOnExit(e.target.checked)} className="accent-pit-orange" />Weigh on pit exit</label></div>
           </div>
         </div>
 
         {/* Qualifying */}
         <div className={sectionCls}>
-          <button type="button" onClick={() => setShowQuali(!showQuali)} className="flex items-center gap-2 font-monument text-lg text-chalk">{showQuali ? '▼' : '▶'} Qualifying</button>
+          <button type="button" aria-label="Toggle qualifying section" onClick={() => setShowQuali(!showQuali)} className="flex items-center gap-2 font-monument text-lg text-chalk">{showQuali ? '▼' : '▶'} Qualifying</button>
           {showQuali && (
             <div className="grid grid-cols-2 gap-4 mt-4">
-              <div><label className={labelCls}>Duration (s)</label><input type="number" className={inputCls} value={qualiDuration} onChange={e => setQualiDuration(e.target.value)} /></div>
+              <div><label htmlFor={`${fieldId}-quali-dur`} className={labelCls}>Duration (s)</label><input id={`${fieldId}-quali-dur`} type="number" className={inputCls} value={qualiDuration} onChange={e => setQualiDuration(e.target.value)} /></div>
               <div className="flex items-end pb-2"><label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer"><input type="checkbox" checked={refuelAfterQuali} onChange={e => setRefuelAfterQuali(e.target.checked)} className="accent-pit-orange" />Refuel after qualifying</label></div>
             </div>
           )}
