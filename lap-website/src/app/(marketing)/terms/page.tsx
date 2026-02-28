@@ -1,6 +1,19 @@
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
-import { ReversibleCard } from '@/components/ui/ReversibleCard';
+
+export const metadata = {
+  title: 'Terms of Service | LAP',
+  description: 'Terms governing your use of the LAP platform.',
+};
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <h2 className="font-monument text-[var(--text-h3)] mb-3">{title}</h2>
+      <div className="text-steel text-sm leading-relaxed space-y-3">{children}</div>
+    </section>
+  );
+}
 
 export default function TermsPage() {
   return (
@@ -10,45 +23,83 @@ export default function TermsPage() {
       description="Terms governing your use of the LAP platform. Last updated: February 2026."
       tone="document"
     >
-      <section className="grid gap-6">
-        <ReversibleCard
-          title="Account & Access"
-          description="You must be 16+ to create an account. You're responsible for maintaining the security of your credentials. Access is governed by your active subscription plan and its usage limits (reports, uploads, storage, API calls)."
-        />
-        <ReversibleCard
-          title="Subscriptions & Billing"
-          description="Paid plans are billed monthly or annually via Stripe. Subscriptions auto-renew unless cancelled before the period end. Downgrading may reduce data retention and feature access. Refunds are handled per our cancellation policy."
-        />
-        <ReversibleCard
-          title="Data Ownership & License"
-          description="You retain full ownership of all telemetry data you upload. By uploading, you grant LAP a limited license to process your data solely for providing analysis, reports, and platform features. We do not use your data for any other purpose."
-        />
-        <ReversibleCard
-          title="Data Retention & Deletion"
-          description="Raw telemetry data is retained per your plan tier (30/90/365 days). Reports and derived data are retained indefinitely while your account is active. Account deletion triggers a 30-day grace period, after which all data is permanently removed."
-        />
-        <ReversibleCard
-          title="Acceptable Use"
-          description="You may not use LAP to process data you don't have rights to, attempt to reverse-engineer the platform, exceed rate limits programmatically, or distribute analysis reports as a competing service. API access is limited to plans that include it."
-        />
-        <ReversibleCard
-          title="Service Availability"
-          description="LAP targets 99.5% uptime for the analysis API. Scheduled maintenance windows will be communicated in advance. We are not liable for temporary service interruptions or data loss caused by factors beyond our control."
-        />
-        <ReversibleCard
-          title="Support & SLA"
-          description="All plans include email support with 24-hour target response time. Enterprise customers receive priority support and custom SLAs. Support covers platform issues, not motorsport coaching or telemetry interpretation."
-        />
-        <ReversibleCard
-          title="Limitation of Liability"
-          description="LAP provides telemetry analysis as-is. We are not responsible for racing decisions made based on analysis outputs. Our total liability is limited to the fees paid in the 12 months preceding any claim."
-        />
-      </section>
+      <Section title="1. Account & Access">
+        <p>
+          You must be 16 or older to create an account. You are responsible for maintaining the
+          security of your credentials. Access is governed by your active subscription plan and its
+          usage limits (reports, uploads, storage, API calls).
+        </p>
+      </Section>
+
+      <Section title="2. Subscriptions & Billing">
+        <p>
+          Paid plans are billed monthly or annually via Stripe. Subscriptions auto-renew unless
+          cancelled before the period end. Downgrading may reduce data retention and feature access.
+          Refunds are handled per our cancellation policy.
+        </p>
+      </Section>
+
+      <Section title="3. Data Ownership & License">
+        <p>
+          You retain full ownership of all telemetry data you upload. By uploading, you grant LAP a
+          limited license to process your data solely for providing analysis, reports, and platform
+          features. We do not use your data for any other purpose.
+        </p>
+      </Section>
+
+      <Section title="4. Data Retention & Deletion">
+        <p>
+          Raw telemetry data is retained per your plan tier (30/90/365 days). Reports and derived
+          data are retained indefinitely while your account is active. Account deletion triggers a
+          30-day grace period, after which all data is permanently removed.
+        </p>
+      </Section>
+
+      <Section title="5. Acceptable Use">
+        <p>You may not use LAP to:</p>
+        <ul className="list-disc list-inside space-y-1 ml-2">
+          <li>Process data you do not have rights to</li>
+          <li>Attempt to reverse-engineer the platform</li>
+          <li>Exceed rate limits programmatically</li>
+          <li>Distribute analysis reports as a competing service</li>
+        </ul>
+        <p>API access is limited to plans that include it.</p>
+      </Section>
+
+      <Section title="6. Service Availability">
+        <p>
+          LAP targets 99.5% uptime for the analysis API. Scheduled maintenance windows will be
+          communicated in advance. We are not liable for temporary service interruptions or data loss
+          caused by factors beyond our control.
+        </p>
+      </Section>
+
+      <Section title="7. Support & SLA">
+        <p>
+          All plans include email support with a 24-hour target response time. Enterprise customers
+          receive priority support and custom SLAs. Support covers platform issues, not motorsport
+          coaching or telemetry interpretation.
+        </p>
+      </Section>
+
+      <Section title="8. Limitation of Liability">
+        <p>
+          LAP provides telemetry analysis as-is. We are not responsible for racing decisions made
+          based on analysis outputs. Our total liability is limited to the fees paid in the 12 months
+          preceding any claim.
+        </p>
+      </Section>
 
       <div className="mt-8 text-center text-xs text-steel font-body space-x-4">
-        <Link href="/privacy" className="hover:text-chalk transition">Privacy Policy</Link>
-        <Link href="/pricing" className="hover:text-chalk transition">Plans & Pricing</Link>
-        <Link href="/app/account/support" className="hover:text-chalk transition">Contact Support</Link>
+        <Link href="/privacy" className="hover:text-chalk transition">
+          Privacy Policy
+        </Link>
+        <Link href="/pricing" className="hover:text-chalk transition">
+          Plans &amp; Pricing
+        </Link>
+        <Link href="/app/account/support" className="hover:text-chalk transition">
+          Contact Support
+        </Link>
       </div>
     </PageShell>
   );

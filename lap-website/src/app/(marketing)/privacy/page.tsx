@@ -1,6 +1,19 @@
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
-import { ReversibleCard } from '@/components/ui/ReversibleCard';
+
+export const metadata = {
+  title: 'Privacy Policy | LAP',
+  description: 'How LAP collects, processes, and protects your data.',
+};
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-8">
+      <h2 className="font-monument text-[var(--text-h3)] mb-3">{title}</h2>
+      <div className="text-steel text-sm leading-relaxed space-y-3">{children}</div>
+    </section>
+  );
+}
 
 export default function PrivacyPage() {
   return (
@@ -10,45 +23,104 @@ export default function PrivacyPage() {
       description="How LAP collects, processes, and protects your data. Last updated: February 2026."
       tone="document"
     >
-      <section className="grid gap-6">
-        <ReversibleCard
-          title="Data We Collect"
-          description="Account information (email, name, password hash), telemetry CSV files (GPS traces, speed, throttle, brake data), usage analytics (feature usage, session counts), and payment information (processed by Stripe — we never store card numbers)."
-        />
-        <ReversibleCard
-          title="How We Use Your Data"
-          description="Telemetry data is processed to generate analysis reports, scoring, coaching plans, and visualizations. Account data supports authentication, billing, and support. Usage data helps us improve the platform. We do not sell your data."
-        />
-        <ReversibleCard
-          title="Data Retention"
-          description="Raw telemetry retention depends on your plan: Demo (30 days), Racer (90 days), World-Class (365 days). Reports, scores, and lap data are retained indefinitely. Account data is retained while your account is active and for 30 days after deletion request."
-        />
-        <ReversibleCard
-          title="Third-Party Processors"
-          description="Stripe (payment processing, PCI DSS compliant), Resend (transactional email), Cloudflare (CDN, DNS, DDoS protection), Hetzner (server hosting, EU data center). All processors operate under data processing agreements."
-        />
-        <ReversibleCard
-          title="Your Rights (GDPR)"
-          description="You have the right to: Access your data (data export), Rectification (update profile), Erasure (delete account), Data portability (ZIP export with GPS precision reduction), Restriction of processing, and Object to processing. Exercise rights via Settings > Data & Privacy or contact our DPO."
-        />
-        <ReversibleCard
-          title="Cookies"
-          description="We use necessary cookies for authentication and security. Analytics and marketing cookies are only activated with your explicit consent. You can manage preferences at any time via the cookie settings in the footer."
-        />
-        <ReversibleCard
-          title="Data Security"
-          description="Passwords are hashed with Argon2id. JWTs are signed with HS256. All connections use TLS. Database access is controlled with row-level security. Two-factor authentication is available for all accounts."
-        />
-        <ReversibleCard
-          title="Contact"
-          description="Data Protection Officer: dpo@lap-coach.racing. For privacy inquiries, support tickets, or to exercise your data rights, contact us through Settings > Support or email directly."
-        />
-      </section>
+      <Section title="Data We Collect">
+        <p>
+          Account information (email, name, password hash), telemetry CSV files (GPS traces, speed,
+          throttle, brake data), usage analytics (feature usage, session counts), and payment
+          information (processed by Stripe — we never store card numbers).
+        </p>
+      </Section>
+
+      <Section title="How We Use Your Data">
+        <p>
+          Telemetry data is processed to generate analysis reports, scoring, coaching plans, and
+          visualizations. Account data supports authentication, billing, and support. Usage data
+          helps us improve the platform. We do not sell your data.
+        </p>
+      </Section>
+
+      <Section title="Data Retention">
+        <p>
+          Raw telemetry retention depends on your plan: Demo (30 days), Racer (90 days), World-Class
+          (365 days). Reports, scores, and lap data are retained indefinitely while your account is
+          active. Account data is retained while your account is active and for 30 days after a
+          deletion request.
+        </p>
+      </Section>
+
+      <Section title="Third-Party Processors">
+        <p>
+          We use the following sub-processors, each operating under data processing agreements:
+        </p>
+        <ul className="list-disc list-inside space-y-1 ml-2">
+          <li>Stripe — payment processing (PCI DSS compliant)</li>
+          <li>Resend — transactional email</li>
+          <li>Cloudflare — CDN, DNS, DDoS protection</li>
+          <li>Hetzner — server hosting (EU data center, Falkenstein, Germany)</li>
+        </ul>
+        <p>
+          The full list is maintained at{' '}
+          <Link href="/subprocessors" className="text-pit-orange hover:underline">
+            /subprocessors
+          </Link>
+          .
+        </p>
+      </Section>
+
+      <Section title="Your Rights (GDPR)">
+        <p>You have the right to:</p>
+        <ul className="list-disc list-inside space-y-1 ml-2">
+          <li>Access your data (data export)</li>
+          <li>Rectification (update profile)</li>
+          <li>Erasure (delete account)</li>
+          <li>Data portability (ZIP export with GPS precision reduction)</li>
+          <li>Restriction of processing</li>
+          <li>Object to processing</li>
+        </ul>
+        <p>
+          Exercise rights via Settings &gt; Data &amp; Privacy or contact our DPO at{' '}
+          <span className="text-chalk">dpo@lap-coach.racing</span>.
+        </p>
+      </Section>
+
+      <Section title="Cookies">
+        <p>
+          We use necessary cookies for authentication and security. Analytics and marketing cookies
+          are only activated with your explicit consent. You can manage preferences at any time via
+          the cookie settings in the footer.
+        </p>
+      </Section>
+
+      <Section title="Data Security">
+        <ul className="list-disc list-inside space-y-1 ml-2">
+          <li>Passwords are hashed with Argon2id (time cost 3, memory 64 KiB)</li>
+          <li>JWTs are signed with HS256 with short-lived access tokens</li>
+          <li>All connections use TLS 1.2+</li>
+          <li>Database access is controlled with PostgreSQL Row-Level Security</li>
+          <li>Two-factor authentication is available for all accounts</li>
+          <li>Daily encrypted backups with 7-day retention</li>
+        </ul>
+      </Section>
+
+      <Section title="Contact">
+        <p>
+          Data Protection Officer:{' '}
+          <span className="text-chalk">dpo@lap-coach.racing</span>. For privacy inquiries, support
+          tickets, or to exercise your data rights, contact us through Settings &gt; Support or email
+          directly.
+        </p>
+      </Section>
 
       <div className="mt-8 text-center text-xs text-steel font-body space-x-4">
-        <Link href="/terms" className="hover:text-chalk transition">Terms of Service</Link>
-        <Link href="/pricing" className="hover:text-chalk transition">Plans & Retention</Link>
-        <Link href="/app/account/data" className="hover:text-chalk transition">Manage Your Data</Link>
+        <Link href="/terms" className="hover:text-chalk transition">
+          Terms of Service
+        </Link>
+        <Link href="/pricing" className="hover:text-chalk transition">
+          Plans &amp; Retention
+        </Link>
+        <Link href="/app/account/data" className="hover:text-chalk transition">
+          Manage Your Data
+        </Link>
       </div>
     </PageShell>
   );

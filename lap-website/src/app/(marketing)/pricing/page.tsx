@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { Fragment, useState, useCallback } from 'react';
 import { PageShell } from '@/components/site/PageShell';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
@@ -149,8 +149,8 @@ export default function PricingPage() {
           </thead>
           <tbody>
             {groupedRows.map(({ group, labelKey, rows }) => (
-              <>
-                <tr key={`group-${group}`}>
+              <Fragment key={group}>
+                <tr>
                   <td
                     colSpan={4}
                     className="bg-asphalt/60 font-monument text-xs tracking-[0.12em] uppercase p-2 text-chalk border border-steel/20"
@@ -166,7 +166,7 @@ export default function PricingPage() {
                     <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
                   </tr>
                 ))}
-              </>
+              </Fragment>
             ))}
           </tbody>
         </table>
