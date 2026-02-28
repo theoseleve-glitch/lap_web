@@ -414,7 +414,8 @@ def v1_fatigue(session_id: str):
     valid = sorted(valid, key=lambda l: l["lap_number"])
     lap_nums = [l["lap_number"] for l in valid]
     times = [l.get("lap_time_s", 0) for l in valid]
-    mean_time = sum(times) / len(times) if times else 1
+    # FIX-003: Guard div-by-zero when all lap times are 0
+    mean_time = sum(times) / len(times) if times and sum(times) > 0 else 1
 
     fatigue_index = []
     running_avg = times[0] if times else 0
@@ -812,6 +813,17 @@ def v1_cross_session(session_id: str):
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
+    # FIX-007: Use .get() for driver_id/track_id to avoid KeyError
+    driver_id = session.get("driver_id")
+    track_id = session.get("track_id")
+    if not driver_id or not track_id:
+        return api_response({
+            "session_id": session_id,
+            "driver_name": session.get("driver_name"),
+            "track_name": session.get("track_name"),
+            "comparisons": [],
+        })
+
     rows = conn.execute(
         """SELECT s.session_id, s.session_date, s.best_lap_time_s,
                   s.total_score, s.grade, s.n_laps, s.session_type
@@ -819,7 +831,7 @@ def v1_cross_session(session_id: str):
            WHERE s.driver_id = :driver_id
              AND s.track_id = :track_id
            ORDER BY s.session_date DESC""",
-        {"driver_id": session["driver_id"], "track_id": session["track_id"]},
+        {"driver_id": driver_id, "track_id": track_id},
     ).fetchall()
 
     comparisons = []
@@ -1013,15 +1025,18 @@ def v1_corner_coaching(session_id: str):
     coaching = []
     for r in rows:
         entry = dict(r)
-        # Try to fetch best practice for this corner
+        # FIX-005: Try to fetch best practice — table may not exist
         if session.get("track_id"):
-            bp_row = conn.execute(
-                """SELECT best_entry_mps, best_apex_mps, best_exit_mps,
-                          best_brake_m, best_time_s
-                   FROM corner_best_practices
-                   WHERE track_id = :tid AND corner_id = :cid""",
-                {"tid": session["track_id"], "cid": r["corner_id"]},
-            ).fetchone()
+            try:
+                bp_row = conn.execute(
+                    """SELECT best_entry_mps, best_apex_mps, best_exit_mps,
+                              best_brake_m, best_time_s
+                       FROM corner_best_practices
+                       WHERE track_id = :tid AND corner_id = :cid""",
+                    {"tid": session["track_id"], "cid": r["corner_id"]},
+                ).fetchone()
+            except Exception:
+                bp_row = None
             if bp_row:
                 entry["best_practice"] = dict(bp_row)
         coaching.append(entry)
@@ -1049,34 +1064,44 @@ def v1_session_badges(session_id: str):
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    # Driver badges
-    badge_rows = conn.execute(
-        """SELECT badge_type, badge_name, badge_level, metadata_json, earned_at
-           FROM driver_badges
-           WHERE driver_id = :did
-           ORDER BY earned_at DESC""",
-        {"did": session["driver_id"]},
-    ).fetchall()
+    # FIX-008: Use .get() for driver_id to avoid KeyError
+    driver_id = session.get("driver_id")
     badges = []
-    for r in badge_rows:
-        b = dict(r)
-        if b.get("metadata_json"):
-            try:
-                b["metadata"] = json.loads(b["metadata_json"])
-            except (json.JSONDecodeError, TypeError):
-                b["metadata"] = None
-            del b["metadata_json"]
-        badges.append(b)
+    if driver_id:
+        # FIX-006: Wrap badge queries in try/except — tables may not exist
+        try:
+            badge_rows = conn.execute(
+                """SELECT badge_type, badge_name, badge_level, metadata_json, earned_at
+                   FROM driver_badges
+                   WHERE driver_id = :did
+                   ORDER BY earned_at DESC""",
+                {"did": driver_id},
+            ).fetchall()
+            for r in badge_rows:
+                b = dict(r)
+                if b.get("metadata_json"):
+                    try:
+                        b["metadata"] = json.loads(b["metadata_json"])
+                    except (json.JSONDecodeError, TypeError):
+                        b["metadata"] = None
+                    del b["metadata_json"]
+                badges.append(b)
+        except Exception:
+            badges = []
 
     # Session tags as lightweight badges
-    tag_rows = conn.execute(
-        """SELECT tag, confidence, source, created_at
-           FROM session_tags
-           WHERE session_id = :sid
-           ORDER BY created_at""",
-        {"sid": session_id},
-    ).fetchall()
-    tags = [dict(r) for r in tag_rows]
+    tags = []
+    try:
+        tag_rows = conn.execute(
+            """SELECT tag, confidence, source, created_at
+               FROM session_tags
+               WHERE session_id = :sid
+               ORDER BY created_at""",
+            {"sid": session_id},
+        ).fetchall()
+        tags = [dict(r) for r in tag_rows]
+    except Exception:
+        tags = []
 
     return api_response({
         "session_id": session_id,
@@ -1208,7 +1233,13 @@ def v1_energy(session_id: str):
     if not session:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    best_lap = session.get("best_lap_number", 1)
+    # FIX-001: Use laps-table best-lap lookup (best_lap_number is not a real column)
+    laps = get_laps_for_session(conn, session_id)
+    best_lap_obj = next((l for l in laps if l.get("is_best")), laps[0] if laps else None)
+    if not best_lap_obj:
+        return api_response({"distances": [], "kinetic_energy": [], "braking_energy": []})
+    best_lap = best_lap_obj.get("lap_number", 1)
+
     gps = get_gps_trace(conn, session_id, best_lap)
     if not gps or not gps.get("distances") or not gps.get("speeds"):
         return api_response({"distances": [], "kinetic_energy": [], "braking_energy": []})
@@ -1217,11 +1248,12 @@ def v1_energy(session_id: str):
     speeds = gps["speeds"]
     mass = 80  # kart+driver approx kg
 
-    kinetic = [round(0.5 * mass * (v / 3.6) ** 2, 1) for v in speeds]
+    # EXTRA-FIX-B: RaceChrono GPS speeds are already in m/s — no /3.6 conversion
+    kinetic = [round(0.5 * mass * v ** 2, 1) for v in speeds]
 
     braking = [0.0]
     for i in range(1, len(speeds)):
-        dv = (speeds[i] - speeds[i - 1]) / 3.6
+        dv = speeds[i] - speeds[i - 1]
         if dv < 0:
             braking.append(round(0.5 * mass * dv ** 2, 1))
         else:
@@ -1510,18 +1542,19 @@ def v1_sessions_browse():
     # Build query with optional filters
     where_clauses = []
     params = {}
+    # FIX-011: Replace PG-only ILIKE with LOWER()+LIKE for cross-DB compat
     # Generic search: match driver name, track name, or session_id
     if q_filter:
         where_clauses.append(
-            "(d.driver_name ILIKE :q OR t.track_name ILIKE :q "
-            "OR s.session_id ILIKE :q)"
+            "(LOWER(d.driver_name) LIKE LOWER(:q) OR LOWER(t.track_name) LIKE LOWER(:q) "
+            "OR LOWER(s.session_id) LIKE LOWER(:q))"
         )
         params["q"] = f"%{q_filter}%"
     if driver_filter:
-        where_clauses.append("d.driver_name ILIKE :driver")
+        where_clauses.append("LOWER(d.driver_name) LIKE LOWER(:driver)")
         params["driver"] = f"%{driver_filter}%"
     if track_filter:
-        where_clauses.append("t.track_name ILIKE :track")
+        where_clauses.append("LOWER(t.track_name) LIKE LOWER(:track)")
         params["track"] = f"%{track_filter}%"
 
     where_sql = ""
@@ -3002,10 +3035,12 @@ def v1_create_weekend():
     conn = get_db_connection()
     import os
     if os.environ.get("USE_PG", "0") == "1":
+        # FIX-015: Use named params with dict for PG compatibility
         row = conn.execute(
             "INSERT INTO weekends (name, track_id, start_date, end_date, notes) "
-            "VALUES (%s, %s, %s, %s, %s) RETURNING weekend_id",
-            (name, track_id, start_date, end_date, notes),
+            "VALUES (:name, :track_id, :start_date, :end_date, :notes) RETURNING weekend_id",
+            {"name": name, "track_id": track_id, "start_date": start_date,
+             "end_date": end_date, "notes": notes},
         ).fetchone()
         weekend_id = row["weekend_id"] if row else 0
     else:
@@ -3191,7 +3226,8 @@ def v1_tyre_data(session_id: str):
 
     lap_nums = [l["lap_number"] for l in valid]
     times = [l.get("lap_time_s", 0) for l in valid]
-    best = min(times) if times else 1
+    # EXTRA-FIX-A: Guard div-by-zero when all times are 0
+    best = min(times) if times and min(times) > 0 else 1
 
     deg = [round(((t - best) / best) * 100, 2) for t in times]
 
@@ -3227,11 +3263,22 @@ def v1_weather(session_id: str):
     if not row:
         return api_response({"timestamps": [], "temperature": [], "humidity": [], "wind_speed": []})
 
+    # FIX-009: Use column names for PG RealDictCursor compatibility
+    # Support both dict (PG) and tuple (SQLite) row types
+    if isinstance(row, dict) or hasattr(row, "keys"):
+        air_temp = row.get("air_temp_c") or 0
+        humidity = row.get("humidity_pct") or 0
+        wind_speed = row.get("wind_speed_mps") or 0
+    else:
+        air_temp = row[0] or 0
+        humidity = row[2] or 0
+        wind_speed = row[3] or 0
+
     return api_response({
         "timestamps": [0],
-        "temperature": [row[0] or 0],
-        "humidity": [row[2] or 0],
-        "wind_speed": [round((row[3] or 0) * 3.6, 1)],
+        "temperature": [air_temp],
+        "humidity": [humidity],
+        "wind_speed": [round(wind_speed * 3.6, 1)],
     })
 
 
@@ -3248,7 +3295,13 @@ def v1_workload(session_id: str):
     if not session:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    best_lap = session.get("best_lap_number", 1)
+    # FIX-002: Use laps-table best-lap lookup (best_lap_number is not a real column)
+    laps = get_laps_for_session(conn, session_id)
+    best_lap_obj = next((l for l in laps if l.get("is_best")), laps[0] if laps else None)
+    if not best_lap_obj:
+        return api_response({"timestamps": [], "steering": [], "braking": [], "throttle": [], "total": []})
+    best_lap = best_lap_obj.get("lap_number", 1)
+
     gps = get_gps_trace(conn, session_id, best_lap)
     if not gps or not gps.get("speeds"):
         return api_response({"timestamps": [], "steering": [], "braking": [], "throttle": [], "total": []})

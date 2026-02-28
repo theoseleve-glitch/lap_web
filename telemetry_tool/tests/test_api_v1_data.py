@@ -418,3 +418,322 @@ class TestV1KartsList:
         assert body["error"]["message"] == "Internal server error"
         assert "request_id" in body["meta"]
         mock_validate_schema.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# FIX-003: Fatigue div-by-zero guard
+# ---------------------------------------------------------------------------
+
+class TestV1FatigueDivByZero:
+    """FIX-003: When all lap times are 0, /fatigue must not crash."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    def test_fatigue_all_zero_times(self, mock_laps, mock_sess, mock_db, client):
+        """All lap times = 0 should not cause ZeroDivisionError."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = [
+            {"lap_number": 1, "lap_time_s": 0, "is_valid": True},
+            {"lap_number": 2, "lap_time_s": 0, "is_valid": True},
+            {"lap_number": 3, "lap_time_s": 0, "is_valid": True},
+        ]
+        resp = client.get("/api/v1/sessions/s1/fatigue")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["fatigue_index"]) == 3
+        # All fatigue values should be finite (no crash)
+        for v in body["data"]["fatigue_index"]:
+            assert v is not None
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    def test_fatigue_normal_times(self, mock_laps, mock_sess, mock_db, client):
+        """Normal lap times produce valid fatigue data."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = [
+            {"lap_number": 1, "lap_time_s": 60.0, "is_valid": True},
+            {"lap_number": 2, "lap_time_s": 61.0, "is_valid": True},
+        ]
+        resp = client.get("/api/v1/sessions/s1/fatigue")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["fatigue_index"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# FIX-006: Missing driver_badges table in /badges
+# ---------------------------------------------------------------------------
+
+class TestV1BadgesMissingTable:
+    """FIX-006/008: /badges gracefully handles missing tables and missing driver_id."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_badges_missing_driver_id(self, mock_sess, mock_db, client):
+        """Session without driver_id returns empty badges, no crash."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}  # no driver_id key
+        resp = client.get("/api/v1/sessions/s1/badges")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["badges"] == []
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_badges_table_does_not_exist(self, mock_sess, mock_db, client):
+        """If driver_badges table doesn't exist, return empty badges."""
+        conn = _mock_conn()
+        # First call to execute (badge query) raises, second (tags) also raises
+        conn.execute.side_effect = Exception("no such table: driver_badges")
+        mock_db.return_value = conn
+        mock_sess.return_value = {"session_id": "s1", "driver_id": "d1"}
+        resp = client.get("/api/v1/sessions/s1/badges")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["badges"] == []
+        assert body["data"]["tags"] == []
+
+
+# ---------------------------------------------------------------------------
+# FIX-009: Weather column access (PG dict compat)
+# ---------------------------------------------------------------------------
+
+class TestV1WeatherColumnAccess:
+    """FIX-009: /weather uses column names for PG RealDictCursor compat."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_weather_with_dict_row(self, mock_db, client):
+        """Dict row (PG) is handled by column names."""
+        conn = _mock_conn()
+        conn.execute.return_value.fetchone.return_value = {
+            "air_temp_c": 25.0,
+            "track_temp_c": 35.0,
+            "humidity_pct": 60,
+            "wind_speed_mps": 5.0,
+        }
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/s1/weather")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["temperature"] == [25.0]
+        assert body["data"]["humidity"] == [60]
+        assert body["data"]["wind_speed"] == [18.0]  # 5.0 * 3.6
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_weather_no_data(self, mock_db, client):
+        """No weather row returns empty arrays."""
+        conn = _mock_conn()
+        conn.execute.return_value.fetchone.return_value = None
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/s1/weather")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["temperature"] == []
+
+
+# ---------------------------------------------------------------------------
+# FIX-001/002: Energy and workload best-lap lookup
+# ---------------------------------------------------------------------------
+
+class TestV1EnergyBestLapLookup:
+    """FIX-001: /energy uses laps-table for best lap, not session dict."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    @patch("web.routes.api_v1_data.get_gps_trace")
+    def test_energy_no_laps_returns_empty(self, mock_gps, mock_laps, mock_sess, mock_db, client):
+        """No laps returns empty energy data, not crash."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = []
+        resp = client.get("/api/v1/sessions/s1/energy")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["distances"] == []
+        mock_gps.assert_not_called()
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    @patch("web.routes.api_v1_data.get_gps_trace")
+    def test_energy_uses_best_lap_from_laps_table(self, mock_gps, mock_laps, mock_sess, mock_db, client):
+        """Energy endpoint finds best lap via is_best flag."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = [
+            {"lap_number": 1, "is_best": False},
+            {"lap_number": 3, "is_best": True},
+        ]
+        mock_gps.return_value = {"distances": [0, 10], "speeds": [10.0, 15.0]}
+        resp = client.get("/api/v1/sessions/s1/energy")
+        assert resp.status_code == 200
+        # Verify get_gps_trace was called with lap_number=3 (the best lap)
+        mock_gps.assert_called_once_with(mock_db.return_value, "s1", 3)
+
+
+class TestV1WorkloadBestLapLookup:
+    """FIX-002: /workload uses laps-table for best lap, not session dict."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    def test_workload_no_laps_returns_empty(self, mock_laps, mock_sess, mock_db, client):
+        """No laps returns empty workload data."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = []
+        resp = client.get("/api/v1/sessions/s1/workload")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["timestamps"] == []
+
+
+# ---------------------------------------------------------------------------
+# FIX-007: Cross-session missing driver_id
+# ---------------------------------------------------------------------------
+
+class TestV1CrossSessionMissingDriverId:
+    """FIX-007: /cross-session returns empty comparisons if driver_id is missing."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_cross_session_no_driver_id(self, mock_sess, mock_db, client):
+        """Session without driver_id returns empty comparisons."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1", "track_id": "t1"}  # no driver_id
+        resp = client.get("/api/v1/sessions/s1/cross-session")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["comparisons"] == []
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_cross_session_no_track_id(self, mock_sess, mock_db, client):
+        """Session without track_id returns empty comparisons."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1", "driver_id": "d1"}  # no track_id
+        resp = client.get("/api/v1/sessions/s1/cross-session")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["comparisons"] == []
+
+
+# ---------------------------------------------------------------------------
+# EXTRA-FIX-A: Tyre data div-by-zero
+# ---------------------------------------------------------------------------
+
+class TestV1TyreDataDivByZero:
+    """EXTRA-FIX-A: /tyre-data handles all-zero lap times."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    def test_tyre_data_all_zero_times(self, mock_laps, mock_db, client):
+        """All lap times = 0 should not cause ZeroDivisionError."""
+        mock_db.return_value = _mock_conn()
+        mock_laps.return_value = [
+            {"lap_number": 1, "lap_time_s": 0, "is_valid": True},
+            {"lap_number": 2, "lap_time_s": 0, "is_valid": True},
+        ]
+        resp = client.get("/api/v1/sessions/s1/tyre-data")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["laps"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# FIX-005: Corner coaching missing table
+# ---------------------------------------------------------------------------
+
+class TestV1CornerCoachingMissingTable:
+    """FIX-005: /corner-coaching handles missing corner_best_practices table."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_corner_coaching_missing_best_practices_table(self, mock_sess, mock_db, client):
+        """Missing corner_best_practices table returns coaching without best_practice."""
+        conn = _mock_conn()
+        # First call (corner_metrics query) returns rows
+        corner_row = MagicMock()
+        corner_row.__getitem__ = lambda self, k: {"corner_id": 1, "coaching_hint": "brake later"}.get(k)
+        corner_row.keys = lambda: ["corner_id", "coaching_hint", "avg_entry_speed_mps",
+                                    "avg_apex_speed_mps", "avg_exit_speed_mps", "avg_time_loss_ms"]
+
+        def _dict_from_row(r):
+            return {"corner_id": 1, "coaching_hint": "brake later",
+                    "avg_entry_speed_mps": 15.0, "avg_apex_speed_mps": 12.0,
+                    "avg_exit_speed_mps": 16.0, "avg_time_loss_ms": 50}
+
+        call_count = [0]
+        def mock_execute(sql, params=None):
+            result = MagicMock()
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # corner_metrics query
+                mock_row = MagicMock()
+                mock_row.__iter__ = lambda s: iter([])
+                mock_row.keys.return_value = ["corner_id", "coaching_hint"]
+
+                def make_dict(r):
+                    return {"corner_id": 1, "coaching_hint": "brake later",
+                            "avg_entry_speed_mps": 15.0, "avg_apex_speed_mps": 12.0,
+                            "avg_exit_speed_mps": 16.0, "avg_time_loss_ms": 50}
+                result_row = MagicMock()
+                result_row.__getitem__ = lambda self, k: make_dict(None).get(k)
+                result_row.keys.return_value = list(make_dict(None).keys())
+                result.fetchall.return_value = [result_row]
+            elif call_count[0] == 2:
+                # corner_best_practices query — table missing
+                raise Exception("no such table: corner_best_practices")
+            return result
+
+        conn.execute = mock_execute
+        mock_db.return_value = conn
+        mock_sess.return_value = {"session_id": "s1", "track_id": "t1"}
+        resp = client.get("/api/v1/sessions/s1/corner-coaching")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["coaching"]) == 1
+        assert "best_practice" not in body["data"]["coaching"][0]
+
+
+# ---------------------------------------------------------------------------
+# EXTRA-FIX-B: Energy speed unit (m/s not km/h)
+# ---------------------------------------------------------------------------
+
+class TestV1EnergySpeedUnit:
+    """EXTRA-FIX-B: Energy uses speeds directly (m/s), no /3.6 conversion."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_laps_for_session")
+    @patch("web.routes.api_v1_data.get_gps_trace")
+    def test_energy_calculation_uses_mps(self, mock_gps, mock_laps, mock_sess, mock_db, client):
+        """Energy calculated with v^2 directly (m/s), not (v/3.6)^2."""
+        mock_db.return_value = _mock_conn()
+        mock_sess.return_value = {"session_id": "s1"}
+        mock_laps.return_value = [{"lap_number": 1, "is_best": True}]
+        # Speed of 10 m/s, mass 80 kg → KE = 0.5 * 80 * 100 = 4000 J
+        mock_gps.return_value = {"distances": [0], "speeds": [10.0]}
+        resp = client.get("/api/v1/sessions/s1/energy")
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        # 0.5 * 80 * 10^2 = 4000.0
+        assert body["data"]["kinetic_energy"] == [4000.0]
