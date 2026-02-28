@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api-client';
+import { api, BACKEND_URL } from '@/lib/api-client';
 import { PageHeader, StatCard } from '@/components/app';
 
 /* ── shared types ─────────────────────────────────────────────────── */
@@ -406,7 +406,7 @@ export default function SummaryPage() {
       {/* Actions */}
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
         <a
-          href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/race-strategy/${raceId}/export`}
+          href={`${BACKEND_URL}/api/v1/race-strategy/${raceId}/export`}
           className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors"
           download
         >

@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api-client';
+import { api, BACKEND_URL } from '@/lib/api-client';
 import { PageHeader } from '@/components/app';
 
 /* ── shared types ─────────────────────────────────────────────────── */
@@ -258,7 +258,7 @@ export default function RaceDetailPage() {
           </Link>
         )}
         <a
-          href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/api/v1/race-strategy/${raceId}/export`}
+          href={`${BACKEND_URL}/api/v1/race-strategy/${raceId}/export`}
           className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors"
           download
         >

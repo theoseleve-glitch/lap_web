@@ -10,7 +10,7 @@
 import { getAccessToken } from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+export const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export class ApiError extends Error {

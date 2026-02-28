@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api-client';
+import { api, BACKEND_URL } from '@/lib/api-client';
 import { getAccessToken } from '@/lib/auth-store';
 import { PageHeader } from '@/components/app';
 
@@ -46,7 +46,6 @@ interface AnalysisJob {
   session_id?: string;
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const SESSION_TYPES = ['Practice', 'Qualifying', 'Race', 'Test'] as const;
 
 function formatSize(bytes: number): string {
