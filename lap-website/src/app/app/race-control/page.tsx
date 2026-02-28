@@ -6,19 +6,29 @@ import { MetricCard } from '@/components/admin/MetricCard';
 
 
 export default function RaceControlDashboard() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['admin-health'],
     queryFn: adminApi.healthOverview,
     refetchInterval: 30000,
   });
 
   if (isLoading) {
-    return <p className="text-steel">Loading health overview...</p>;
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      </div>
+    );
   }
 
   return (
     <div>
       <h1 className="mb-6 text-xl font-bold text-chalk">Health Overview</h1>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-safety-red/30 bg-safety-red/10 p-3 text-safety-red text-sm font-body">
+          Failed to load health data: {(error as Error).message}
+        </div>
+      )}
 
       {/* Services status */}
       <div className="mb-6">
@@ -31,8 +41,12 @@ export default function RaceControlDashboard() {
                   className={`h-2 w-2 rounded-full ${
                     status === 'ok' ? 'bg-green-400' : 'bg-red-400'
                   }`}
+                  aria-hidden="true"
                 />
                 <span className="text-sm text-chalk/70">{name}</span>
+                <span className={`text-[10px] font-telemetry ${status === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                  {status === 'ok' ? '✓' : '✕'}
+                </span>
               </div>
             ))}
         </div>

@@ -34,6 +34,7 @@ export function SectorTabs() {
                 borderLeft: isActive ? `3px solid ${accentColor}` : '3px solid transparent',
                 color: isActive ? accentColor : 'var(--steel)',
               }}
+              aria-current={isActive ? 'true' : undefined}
             >
               {tab.label}
             </button>
@@ -56,9 +57,10 @@ export function SectorTabs() {
             <button
               key={tab.id}
               onClick={() => handleClick(tab.id)}
-              className="w-2 h-2 rounded-full transition-all duration-[420ms]"
+              className={`rounded-full transition-all duration-[420ms] ${isActive ? 'w-2.5 h-2.5 ring-1 ring-white/30' : 'w-2 h-2'}`}
               style={{ background: isActive ? accentColor : 'var(--steel)' }}
               aria-label={`Go to ${tab.label}`}
+              aria-current={isActive ? 'true' : undefined}
             />
           );
         })}
