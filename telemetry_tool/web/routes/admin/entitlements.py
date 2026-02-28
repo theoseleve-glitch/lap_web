@@ -1,4 +1,4 @@
-"""Admin entitlements routes — plans, usage, anomalies, overrides.
+"""Admin entitlements routes — plans, usage, anomalies, overrides, retention.
 
 Endpoints:
 - GET  /admin/entitlements/plans — plan definitions
@@ -6,6 +6,7 @@ Endpoints:
 - GET  /admin/entitlements/anomalies — detected anomalies
 - POST /admin/entitlements/overrides — create override
 - POST /admin/entitlements/refresh/:user_id — refresh tier from Stripe
+- GET  /admin/entitlements/retention/pending — sessions near expiry + users pending purge
 """
 from __future__ import annotations
 
@@ -146,3 +147,58 @@ def refresh_tier(user_id: int):
         return api_error(ErrorCode.NOT_FOUND, result["error"], status=404)
 
     return api_response(result)
+
+
+@bp.route("/entitlements/retention/pending", methods=["GET"])
+@require_superadmin
+def retention_pending():
+    """Sessions approaching retention expiry + users pending hard purge.
+
+    Returns sessions whose retention window expires within the next 7 days
+    (based on plan_definitions.telemetry_retention_days) and users whose
+    soft-delete (deleted_at) passed the 30-day GDPR hard-purge threshold.
+    """
+    conn = _get_conn()
+
+    # Sessions approaching retention expiry (within 7 days).
+    # Sessions link to users via workspace -> workspaces.owner_user_id.
+    # Only considers plans with a finite retention (NULL = unlimited).
+    try:
+        expiring_rows = conn.execute(
+            "SELECT s.session_id, s.csv_filename, s.created_at, "
+            "       u.plan_tier, u.id AS user_id, "
+            "       s.created_at + (pd.telemetry_retention_days || ' days')::INTERVAL AS expires_at "
+            "FROM sessions s "
+            "JOIN workspaces w ON w.id = s.workspace_id "
+            "JOIN users u ON u.id = w.owner_user_id "
+            "JOIN plan_definitions pd ON pd.tier = u.plan_tier "
+            "WHERE pd.telemetry_retention_days IS NOT NULL "
+            "  AND s.retention_expired IS NOT TRUE "
+            "  AND s.created_at + (pd.telemetry_retention_days || ' days')::INTERVAL "
+            "      BETWEEN NOW() AND NOW() + INTERVAL '7 days' "
+            "ORDER BY expires_at ASC "
+            "LIMIT 100"
+        ).fetchall()
+    except Exception:
+        logger.exception("Failed to query expiring sessions")
+        expiring_rows = []
+
+    # Users pending hard purge (deleted_at > 30 days ago).
+    try:
+        purge_rows = conn.execute(
+            "SELECT id, email, deleted_at, "
+            "       deleted_at + INTERVAL '30 days' AS purge_at "
+            "FROM users "
+            "WHERE deleted_at IS NOT NULL "
+            "  AND deleted_at < NOW() - INTERVAL '30 days' "
+            "ORDER BY deleted_at ASC "
+            "LIMIT 50"
+        ).fetchall()
+    except Exception:
+        logger.exception("Failed to query pending purges")
+        purge_rows = []
+
+    return api_response({
+        "expiring_sessions": [_serialize_row(r) for r in expiring_rows],
+        "pending_purges": [_serialize_row(r) for r in purge_rows],
+    })
