@@ -8,31 +8,31 @@ Generated as part of the E2E certification harness (Task 12).
 
 | ID | Area | Feature | Tier | Test Method | Parity Ref | Status |
 |----|------|---------|------|-------------|------------|--------|
-| F-0001 | Auth | User registration (email + password) | All | integration | — | pending |
-| F-0002 | Auth | Email validation (format, length, uniqueness) | All | unit + integration | — | pending |
-| F-0003 | Auth | Password strength requirements (min length, complexity) | All | unit | — | pending |
-| F-0004 | Auth | Login with email and password | All | integration | — | pending |
-| F-0005 | Auth | Login error: wrong password returns 401 | All | integration | — | pending |
-| F-0006 | Auth | Login error: non-existent user returns 401 (timing-safe) | All | integration | — | pending |
-| F-0007 | Auth | JWT access token issuance on login | All | integration | — | pending |
-| F-0008 | Auth | Refresh token rotation (single-use, old token invalidated) | All | integration | — | pending |
-| F-0009 | Auth | Refresh token stored as httpOnly Secure SameSite=Lax cookie | All | integration | — | pending |
-| F-0010 | Auth | Silent refresh on page load via cookie | All | e2e | — | pending |
-| F-0011 | Auth | Logout invalidates refresh token | All | integration | — | pending |
-| F-0012 | Auth | Google OAuth redirect to OIDC provider | All | integration | — | pending |
-| F-0013 | Auth | Google OAuth callback processes id_token | All | integration | — | pending |
-| F-0014 | Auth | GitHub OAuth redirect to authorize URL | All | integration | — | pending |
-| F-0015 | Auth | GitHub OAuth callback exchanges code for token | All | integration | — | pending |
-| F-0016 | Auth | OAuth email_verified check blocks unverified emails | All | integration | — | pending |
-| F-0017 | Auth | OAuth upsert handles race conditions (ON CONFLICT) | All | integration | — | pending |
-| F-0018 | Auth | Email verification flow (token generation + confirmation) | All | integration | — | pending |
-| F-0019 | Auth | GET /api/v1/me returns current user profile | All | integration | — | pending |
-| F-0020 | Auth | Auth middleware verifies JWT signature on protected routes | All | integration | — | pending |
-| F-0021 | Auth | Auth middleware path allowlist skips public routes | All | unit | — | pending |
-| F-0022 | Auth | Auth middleware _OAUTH_PATH_RE matches OAuth routes | All | unit | — | pending |
-| F-0023 | Auth | Auth required guard raises RuntimeError if USE_PG not set | All | unit | — | pending |
-| F-0024 | Auth | Token expiry returns 401 and triggers client refresh | All | integration | — | pending |
-| F-0025 | Auth | CORS credential handling (Access-Control-Allow-Credentials) | All | integration | — | pending |
+| F-0001 | Auth | User registration (email + password) | All | integration | — | passed |
+| F-0002 | Auth | Email validation (format, length, uniqueness) | All | unit + integration | — | passed |
+| F-0003 | Auth | Password strength requirements (min length, complexity) | All | unit | — | passed |
+| F-0004 | Auth | Login with email and password | All | integration | — | passed |
+| F-0005 | Auth | Login error: wrong password returns 401 | All | integration | — | passed |
+| F-0006 | Auth | Login error: non-existent user returns 401 (timing-safe) | All | integration | — | passed |
+| F-0007 | Auth | JWT access token issuance on login | All | integration | — | passed |
+| F-0008 | Auth | Refresh token rotation (single-use, old token invalidated) | All | integration | — | passed |
+| F-0009 | Auth | Refresh token stored as httpOnly Secure SameSite=Lax cookie | All | integration | — | no-test |
+| F-0010 | Auth | Silent refresh on page load via cookie | All | e2e | — | passed |
+| F-0011 | Auth | Logout invalidates refresh token | All | integration | — | passed |
+| F-0012 | Auth | Google OAuth redirect to OIDC provider | All | integration | — | passed |
+| F-0013 | Auth | Google OAuth callback processes id_token | All | integration | — | passed |
+| F-0014 | Auth | GitHub OAuth redirect to authorize URL | All | integration | — | passed |
+| F-0015 | Auth | GitHub OAuth callback exchanges code for token | All | integration | — | passed |
+| F-0016 | Auth | OAuth email_verified check blocks unverified emails | All | integration | — | passed |
+| F-0017 | Auth | OAuth upsert handles race conditions (ON CONFLICT) | All | integration | — | passed |
+| F-0018 | Auth | Email verification flow (token generation + confirmation) | All | integration | — | passed |
+| F-0019 | Auth | GET /api/v1/me returns current user profile | All | integration | — | passed |
+| F-0020 | Auth | Auth middleware verifies JWT signature on protected routes | All | integration | — | passed |
+| F-0021 | Auth | Auth middleware path allowlist skips public routes | All | unit | — | passed |
+| F-0022 | Auth | Auth middleware _OAUTH_PATH_RE matches OAuth routes | All | unit | — | passed |
+| F-0023 | Auth | Auth required guard raises RuntimeError if USE_PG not set | All | unit | — | passed |
+| F-0024 | Auth | Token expiry returns 401 and triggers client refresh | All | integration | — | passed |
+| F-0025 | Auth | CORS credential handling (Access-Control-Allow-Credentials) | All | integration | — | passed |
 | F-0026 | Upload/Ingest | CSV file upload via POST /api/v1/ingest/upload | All | integration | — | passed |
 | F-0027 | Upload/Ingest | RaceChrono CSV header detection (Lap #, Speed columns) | All | unit | — | passed |
 | F-0028 | Upload/Ingest | RaceBox CSV header detection (alternate column names) | All | unit | — | no-test |
