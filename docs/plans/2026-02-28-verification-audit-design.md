@@ -46,7 +46,7 @@ Flask App (create_app factory, 32 blueprints)
   │    ├─ _FEATURE_GATES: route → feature mapping
   │    ├─ _QUOTA_GATES: route → meter_key + cost
   │    ├─ authorize_feature() → 403 PLAN_REQUIRED + upgrade CTA
-  │    └─ check_quota() → 429 QUOTA_EXCEEDED
+  │    └─ check_and_record_quota() → 429 QUOTA_EXCEEDED (atomic, SELECT FOR UPDATE)
   │
   ├─── 5. Route Handler (web/routes/*.py)
   │    ├─ @require_permission() decorator (RBAC)
@@ -230,17 +230,17 @@ Hard Purge (purge_deleted_accounts — daily Celery task)
 |---|-------------|------------|----------|-------|--------|
 | E-01 | Plan tiers (demo/racer/world-class/b2b) | auth/entitlements.py PLAN_ENTITLEMENTS | Static dict | test_entitlements.py | PASS |
 | E-02 | Feature gating (comparison, viz, API) | middleware/entitlements.py _FEATURE_GATES | before_request | test_entitlement_middleware.py | PASS |
-| E-03 | Quota enforcement (reports/month) | middleware/entitlements.py _QUOTA_GATES | before_request | test_entitlement_middleware.py | PARTIAL |
-| E-04 | Atomic quota reservation | auth/entitlements.py check_and_record_quota() | NOT CALLED | None | **FAIL** |
+| E-03 | Quota enforcement (reports/month) | middleware/entitlements.py _QUOTA_GATES | before_request (atomic) | test_entitlement_middleware.py | PASS |
+| E-04 | Atomic quota reservation | middleware/entitlements.py → check_and_record_quota() | before_request (SELECT FOR UPDATE) | test_entitlement_middleware.py | PASS — fixed c5878fb |
 | E-05 | Usage recording (append-only) | auth/entitlements.py record_usage() | after_request | test_entitlements.py | PASS |
 | E-06 | Monthly usage aggregation | tasks/usage_tasks.py | Daily beat | test_usage_tasks.py | PASS |
 | E-07 | Entitlement overrides | admin/entitlements.py | Admin API | test_admin_entitlements.py | PASS |
 | E-08 | Upgrade CTA on 403 | auth/entitlements.py @require_feature | Response body | test_entitlement_middleware.py | PASS |
-| E-09 | Worker-layer entitlement check | N/A | NOT IMPLEMENTED | None | **FAIL** |
-| E-10 | Upload quota enforcement | N/A | NOT IMPLEMENTED | None | **FAIL** |
-| E-11 | Upload size limit per tier | N/A | NOT IMPLEMENTED | None | **FAIL** |
-| E-12 | All mutation routes gated | middleware/entitlements.py | 6 gates / ~50+ routes | None | **FAIL** |
-| E-13 | Race strategy v1 API gated | N/A | NOT COVERED | None | PARTIAL |
+| E-09 | Worker-layer entitlement check | tasks/pipeline_tasks.py _verify_task_entitlements() | pipeline_ingest() guard | test_pipeline_entitlement_guard.py | PASS — fixed 1949663 |
+| E-10 | Upload quota enforcement | middleware/entitlements.py _QUOTA_GATES | before_request | test_entitlement_middleware.py | PASS — fixed dac4f28 |
+| E-11 | Upload size limit per tier | middleware/entitlements.py require_upload_size() | @require_upload_size decorator | test_entitlement_middleware.py | PASS — fixed dac4f28 |
+| E-12 | All mutation routes gated | middleware/entitlements.py | 14 feature + 5 quota gates | test_entitlement_middleware.py | PASS — fixed e8014a1 |
+| E-13 | Race strategy v1 API gated | middleware/entitlements.py _FEATURE_GATES | POST/PUT/DELETE gates | test_entitlement_middleware.py | PASS — fixed e8014a1 |
 | E-14 | Anomaly detection | admin/entitlements.py detect_anomalies() | Admin API | test_admin_entitlements.py | PASS |
 | E-15 | Subscription state machine | billing/state_machine.py | Webhook + reconciliation | test_billing_tasks.py | PASS |
 
@@ -304,7 +304,7 @@ Hard Purge (purge_deleted_accounts — daily Celery task)
 | R-11 | Admin actions logged | admin/audit.py | test_admin_security_route.py | PASS |
 | R-12 | Incident tracking | routes/admin/security.py | test_admin_security_route.py | PASS |
 | R-13 | Frontend (16 pages) | app/race-control/ | e2e/ tests | PASS |
-| R-14 | Retention deletion queue | NOT IMPLEMENTED | None | **FAIL** |
+| R-14 | Retention deletion queue | routes/admin/entitlements.py GET /retention/pending | test_admin_retention_queue.py | PASS — fixed 819fb70 |
 
 ### E) Multi-Tenant + Security
 
@@ -334,35 +334,35 @@ Hard Purge (purge_deleted_accounts — daily Celery task)
 | I-06 | Runbook: Queue stuck | docs/runbooks/job-queue-stuck.md | PASS |
 | I-07 | Runbook: DB spike | docs/runbooks/db-cpu-spike.md | PASS |
 | I-08 | Runbook: Upload failures | docs/runbooks/upload-failures.md | PASS |
-| I-09 | Runbook: GDPR backlog | NOT IMPLEMENTED | **FAIL** |
-| I-10 | Runbook: 5xx origin | NOT IMPLEMENTED | **FAIL** |
-| I-11 | Post-deploy CORS check | NOT IMPLEMENTED | **FAIL** |
-| I-12 | Post-deploy OPTIONS | NOT IMPLEMENTED | **FAIL** |
-| I-13 | Post-deploy auth smoke | NOT IMPLEMENTED | **FAIL** |
+| I-09 | Runbook: GDPR backlog | docs/runbooks/gdpr-backlog.md | PASS — fixed 606e829 |
+| I-10 | Runbook: 5xx origin | docs/runbooks/origin-5xx-errors.md | PASS — fixed 606e829 |
+| I-11 | Post-deploy CORS check | scripts/verify_production.sh (test 3) | PASS — fixed 606e829 |
+| I-12 | Post-deploy OPTIONS | scripts/verify_production.sh (test 4) | PASS — fixed 606e829 |
+| I-13 | Post-deploy auth smoke | scripts/verify_production.sh (test 5) | PASS — fixed 606e829 |
 
 ---
 
 ## 3. Gap Analysis
 
-### Critical (must fix)
+### Critical (must fix) — ALL RESOLVED
 
-| ID | Gap | File | Impact |
-|----|-----|------|--------|
-| G-01 | Middleware uses check_quota() not check_and_record_quota() — no SELECT FOR UPDATE | middleware/entitlements.py:117 | Concurrent quota overspend |
-| G-02 | ~50+ mutation routes have zero entitlement gates | middleware/entitlements.py:29-58 | Free-tier access to paid features |
-| G-03 | /files/upload has no quota or tier-aware size limit | routes/api_data.py:886 | Unlimited free-tier uploads |
-| G-04 | Celery workers don't re-check entitlements | tasks/pipeline_tasks.py | Queue injection bypasses gates |
-| G-05 | /api/v1/race-strategy/* routes not covered by middleware | middleware/entitlements.py | V1 API bypasses feature gates |
+| ID | Gap | Fix | Commit |
+|----|-----|-----|--------|
+| G-01 | Middleware uses check_quota() not check_and_record_quota() | Switched to atomic check_and_record_quota() with SELECT FOR UPDATE | c5878fb |
+| G-02 | ~50+ mutation routes have zero entitlement gates | Expanded to 14 feature gates + 5 quota gates | e8014a1 |
+| G-03 | /files/upload has no quota or tier-aware size limit | Added @require_upload_size decorator with tier-aware limits | dac4f28 |
+| G-04 | Celery workers don't re-check entitlements | Added _verify_task_entitlements() fail-open guard | 1949663 |
+| G-05 | /api/v1/race-strategy/* routes not covered by middleware | Added POST/PUT/DELETE gates for v1 race strategy | e8014a1 |
 
-### High (should fix)
+### High (should fix) — 4/5 RESOLVED
 
-| ID | Gap | Impact |
-|----|-----|--------|
-| G-06 | 2 missing runbooks (GDPR backlog, 5xx origin) | Operational gap |
-| G-07 | Post-deploy suite missing CORS/OPTIONS/auth smoke | No production verification |
-| G-08 | Export files not encrypted at rest | GDPR compliance risk |
-| G-09 | No admin endpoint for pending deletion queue | Race Control gap |
-| G-10 | No real PG RLS integration test | Untested isolation |
+| ID | Gap | Fix | Status |
+|----|-----|-----|--------|
+| G-06 | 2 missing runbooks (GDPR backlog, 5xx origin) | Created both runbooks | FIXED 606e829 |
+| G-07 | Post-deploy suite missing CORS/OPTIONS/auth smoke | Created scripts/verify_production.sh (8 checks) | FIXED 606e829 |
+| G-08 | Export files not encrypted at rest | Accepted risk — 7-day TTL, server-only | ACCEPTED |
+| G-09 | No admin endpoint for pending deletion queue | Added GET /admin/retention/pending | FIXED 819fb70 |
+| G-10 | No real PG RLS integration test | Deferred — requires PG test container | OPEN |
 
 ### Medium (nice to have)
 
@@ -459,6 +459,8 @@ Exit codes: 0 = all pass, 1 = any failure (with details).
 
 ## 7. Scorecard
 
+### Before (pre-audit)
+
 | Category | PASS | PARTIAL | FAIL | Total |
 |----------|------|---------|------|-------|
 | Entitlements (E) | 9 | 2 | 4 | 15 |
@@ -469,6 +471,26 @@ Exit codes: 0 = all pass, 1 = any failure (with details).
 | Infrastructure (I) | 8 | 0 | 5 | 13 |
 | **Total** | **70** | **5** | **11** | **86** |
 
-**Overall: 70 PASS / 5 PARTIAL / 11 FAIL (81% pass rate)**
+### After (post-audit fixes)
 
-Primary failure cluster: entitlement gate coverage (E-04, E-09, E-10, E-11, E-12) and infrastructure gaps (I-09 through I-13).
+| Category | PASS | PARTIAL | FAIL | Total | Delta |
+|----------|------|---------|------|-------|-------|
+| Entitlements (E) | 15 | 0 | 0 | 15 | +6 PASS |
+| Account (A) | 14 | 0 | 1 | 15 | — |
+| Hardening (H) | 17 | 1 | 0 | 18 | — |
+| Race Control (R) | 14 | 0 | 0 | 14 | +1 PASS |
+| Security (S) | 9 | 2 | 0 | 11 | — |
+| Infrastructure (I) | 13 | 0 | 0 | 13 | +5 PASS |
+| **Total** | **82** | **3** | **1** | **86** | **+12 PASS** |
+
+**Overall: 82 PASS / 3 PARTIAL / 1 FAIL (95% pass rate, up from 81%)**
+
+### Remaining items
+
+| ID | Status | Notes |
+|----|--------|-------|
+| A-15 | FAIL (accepted risk) | Export files not encrypted at rest — 7-day TTL, server-only |
+| H-08 | PARTIAL | CORS explicit origins — works but uses env var, not strict allowlist |
+| S-02 | PARTIAL | RLS isolation verified via mocks only, no PG integration test |
+| S-11 | PARTIAL | Legacy SQLite routes lack workspace filter (USE_PG=0 only) |
+| G-10 | OPEN (deferred) | Real PG RLS integration test requires test container |
