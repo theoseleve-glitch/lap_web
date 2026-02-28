@@ -255,12 +255,18 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                         confirmed_lap = None
                 return confirmed_lap  # int or None (if rejected)
 
+            # Use the app's configured RESULTS_DIR (writable in Docker)
+            # instead of the pipeline's hardcoded "Results/" which fails
+            # under non-root container users.
+            results_dir = current_app.config.get("RESULTS_DIR", "Results")
+
             p._safe_step = patched_safe_step
             try:
                 summary = orig_analysis(
                     csv_path=csv_path,
                     session_meta=meta,
                     enable_report=True,
+                    output_dir=results_dir,
                     corner_callback=_on_corners_ready,
                     joker_callback=_on_joker_ready,
                 )
@@ -780,7 +786,12 @@ def analyze_run():
 
     try:
         import pipeline as p
-        summary = p.run_full_analysis(csv_path=str(csv_path), session_meta=meta)
+        results_dir = current_app.config.get("RESULTS_DIR", "Results")
+        summary = p.run_full_analysis(
+            csv_path=str(csv_path),
+            session_meta=meta,
+            output_dir=results_dir,
+        )
     except Exception as exc:
         logger.exception("Pipeline failed: %s", exc)
         flash(f"Analysis failed: {exc}", "error")
