@@ -112,9 +112,9 @@ def entitlement_middleware():
 
     for gate_method, gate_prefix, meter_key, cost in _QUOTA_GATES:
         if method == gate_method and path.startswith(gate_prefix):
-            from auth.entitlements import check_quota, _get_conn, _quota_exceeded_response
+            from auth.entitlements import check_and_record_quota, _get_conn, _quota_exceeded_response
             conn = _get_conn()
-            allowed, ctx = check_quota(conn, user_id, workspace_id, meter_key, cost)
+            allowed, ctx = check_and_record_quota(conn, user_id, workspace_id, meter_key, cost)
             if not allowed:
                 logger.info("Quota gate blocked: user=%s meter=%s path=%s",
                             user_id, meter_key, path)
@@ -148,6 +148,14 @@ _USAGE_EVENTS: list[tuple[str, str, str]] = [
 ]
 
 
+# Routes where usage is already recorded atomically by check_and_record_quota
+_ATOMIC_QUOTA_ROUTES: set[tuple[str, str]] = {
+    ("POST", "/analyze/api/start"),
+    ("POST", "/analyze/sync"),
+    ("POST", "/api/v1/batch-reanalyze"),
+}
+
+
 def record_successful_usage(response):
     """After-request hook: record usage for successful mutations.
 
@@ -169,6 +177,8 @@ def record_successful_usage(response):
     method = request.method
 
     for gate_method, gate_prefix, event_type in _USAGE_EVENTS:
+        if (gate_method, gate_prefix) in _ATOMIC_QUOTA_ROUTES:
+            continue
         if method == gate_method and path.startswith(gate_prefix):
             try:
                 from auth.entitlements import record_usage, _get_conn

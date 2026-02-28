@@ -127,7 +127,7 @@ class TestQuotaGating:
             # But quota is exceeded
             ctx = {"remaining": 0, "limit": 1, "used": 1, "resets_at": "2026-04-01"}
             with patch("auth.entitlements.authorize_feature", return_value=(True, {})):
-                with patch("auth.entitlements.check_quota", return_value=(False, ctx)):
+                with patch("auth.entitlements.check_and_record_quota", return_value=(False, ctx)):
                     with patch("auth.entitlements._get_conn"):
                         from web.middleware.entitlements import entitlement_middleware
                         result = entitlement_middleware()
@@ -143,11 +143,39 @@ class TestQuotaGating:
             g.workspace_id = 1
 
             ctx = {"remaining": 5, "limit": 10, "used": 5, "resets_at": "2026-04-01"}
-            with patch("auth.entitlements.check_quota", return_value=(True, ctx)):
+            with patch("auth.entitlements.check_and_record_quota", return_value=(True, ctx)):
                 with patch("auth.entitlements._get_conn"):
                     from web.middleware.entitlements import entitlement_middleware
                     result = entitlement_middleware()
                     assert result is None  # Pass through
+
+    def test_middleware_calls_check_and_record_quota_not_check_quota(self, app):
+        """G-01: Verify middleware uses atomic check_and_record_quota (SELECT FOR UPDATE)
+        instead of non-atomic check_quota to prevent concurrent quota overspend."""
+        with app.test_request_context("/analyze/api/start", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"remaining": 9, "limit": 10, "used": 1, "resets_at": "2026-04-01"}
+            with patch("auth.entitlements._get_conn") as mock_get_conn:
+                mock_conn = MagicMock()
+                mock_get_conn.return_value = mock_conn
+
+                with patch("auth.entitlements.check_and_record_quota",
+                           return_value=(True, ctx)) as mock_atomic:
+                    with patch("auth.entitlements.check_quota") as mock_non_atomic:
+                        from web.middleware.entitlements import entitlement_middleware
+                        result = entitlement_middleware()
+
+                        # Atomic version MUST be called
+                        mock_atomic.assert_called_once_with(
+                            mock_conn, 1, 1, "reports", 1,
+                        )
+                        # Non-atomic version must NOT be called
+                        mock_non_atomic.assert_not_called()
+
+                        # Request should pass through
+                        assert result is None
 
 
 class TestExemptPaths:
@@ -196,23 +224,23 @@ class TestGracefulDegradation:
 
 
 class TestUsageRecording:
-    def test_records_usage_on_successful_analysis(self, app):
-        """After a successful POST to /analyze/api/start, usage should be recorded."""
+    def test_records_usage_on_successful_non_atomic_route(self, app):
+        """After a successful POST to a non-atomic route, usage should be recorded."""
         with app.test_client() as client:
-            with app.test_request_context("/analyze/api/start", method="POST"):
+            with app.test_request_context("/race-strategy/import", method="POST"):
                 g.current_user_id = 1
                 g.workspace_id = 1
 
                 # Create a mock response
                 from flask import make_response
-                response = make_response({"ok": True}, 202)
+                response = make_response({"ok": True}, 200)
 
                 with patch("auth.entitlements.record_usage") as mock_record:
                     with patch("auth.entitlements._get_conn") as mock_conn:
                         mock_conn.return_value = MagicMock()
                         from web.middleware.entitlements import record_successful_usage
                         result = record_successful_usage(response)
-                        assert result.status_code == 202
+                        assert result.status_code == 200
                         mock_record.assert_called_once()
 
     def test_skips_usage_on_error_response(self, app):
@@ -242,6 +270,24 @@ class TestUsageRecording:
             with patch("auth.entitlements.record_usage") as mock_record:
                 from web.middleware.entitlements import record_successful_usage
                 result = record_successful_usage(response)
+                mock_record.assert_not_called()
+
+    def test_skips_double_recording_for_atomic_quota_routes(self, app):
+        """Routes already recorded atomically by check_and_record_quota must not
+        be double-counted in record_successful_usage."""
+        with app.test_request_context("/analyze/api/start", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            from flask import make_response
+            response = make_response({"ok": True}, 202)
+
+            with patch("auth.entitlements.record_usage") as mock_record:
+                from web.middleware.entitlements import record_successful_usage
+                result = record_successful_usage(response)
+                assert result.status_code == 202
+                # record_usage must NOT be called because /analyze/api/start
+                # is in _ATOMIC_QUOTA_ROUTES and already recorded by the middleware
                 mock_record.assert_not_called()
 
 
