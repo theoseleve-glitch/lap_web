@@ -97,6 +97,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 2592000,  # Monthly (30 days)
                 "options": {"queue": "default"},
             },
+            "collect-system-metrics": {
+                "task": "admin.metrics_collector.collect_system_metrics_task",
+                "schedule": 60,  # Every minute
+                "options": {"queue": "default"},
+            },
         },
     )
 
