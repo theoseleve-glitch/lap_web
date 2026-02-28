@@ -83,10 +83,14 @@ export default function EntitlementsPage() {
 
         {showForm && (
           <div className="mt-3 rounded-lg border border-white/10 bg-concrete p-4 max-w-md">
-            <input type="number" placeholder="User ID" value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
-            <input placeholder="Key (e.g. reports_per_month)" value={form.override_key} onChange={(e) => setForm({ ...form, override_key: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
-            <input placeholder="Value" value={form.override_value} onChange={(e) => setForm({ ...form, override_value: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
-            <input placeholder="Reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
+            <label htmlFor="ent-user-id" className="sr-only">User ID</label>
+            <input id="ent-user-id" type="number" placeholder="User ID" value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
+            <label htmlFor="ent-key" className="sr-only">Override key</label>
+            <input id="ent-key" placeholder="Key (e.g. reports_per_month)" value={form.override_key} onChange={(e) => setForm({ ...form, override_key: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
+            <label htmlFor="ent-value" className="sr-only">Override value</label>
+            <input id="ent-value" placeholder="Value" value={form.override_value} onChange={(e) => setForm({ ...form, override_value: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
+            <label htmlFor="ent-reason" className="sr-only">Reason</label>
+            <input id="ent-reason" placeholder="Reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30" />
             <button
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending || !form.override_key || !form.reason}

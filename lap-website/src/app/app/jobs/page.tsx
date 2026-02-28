@@ -211,12 +211,12 @@ export default function JobsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/10 text-left">
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Session</th>
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Stage</th>
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Started</th>
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Duration</th>
-                <th className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Actions</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Session</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Status</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Stage</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Started</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Duration</th>
+                <th scope="col" className="px-4 py-3 text-steel/60 font-telemetry text-[10px] uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-steel/5">

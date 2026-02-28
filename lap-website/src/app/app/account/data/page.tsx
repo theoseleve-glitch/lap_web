@@ -325,8 +325,11 @@ export default function DataPrivacyPage() {
             <p className="text-safety-red font-telemetry text-xs mb-3">
               Are you sure? All your data will be permanently deleted after 30 days.
             </p>
+            <label htmlFor="delete-account-pw" className="sr-only">Confirm password</label>
             <input
+              id="delete-account-pw"
               type="password"
+              autoComplete="current-password"
               placeholder="Enter your password to confirm"
               value={deletePassword}
               onChange={(e) => setDeletePassword(e.target.value)}

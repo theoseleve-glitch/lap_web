@@ -238,12 +238,12 @@ export default function SummaryPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Drive</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Stints</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Longest</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Shortest</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">% of Race</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Drive</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Stints</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Longest</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Shortest</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">% of Race</th>
               </tr>
             </thead>
             <tbody>
@@ -303,12 +303,12 @@ export default function SummaryPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -372,13 +372,13 @@ export default function SummaryPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-steel/20">
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Time</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver Change</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Refueled</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Added</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Time</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver Change</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Refueled</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Added</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
                 </tr>
               </thead>
               <tbody>

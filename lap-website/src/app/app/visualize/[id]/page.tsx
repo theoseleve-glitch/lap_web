@@ -578,7 +578,7 @@ export default function VisualizePage() {
   return (
     <div className="flex h-[calc(100vh-6rem)] -mx-6 -my-6">
       {/* Sidebar — lap selector */}
-      <aside className="w-48 bg-concrete border-r border-steel/20 overflow-y-auto p-3 shrink-0">
+      <aside aria-label="Lap selector" className="w-48 bg-concrete border-r border-steel/20 overflow-y-auto p-3 shrink-0">
         <h2 className="font-monument text-sm text-chalk mb-3 tracking-tight">Laps</h2>
         {laps.length === 0 ? (
           <p className="text-steel font-telemetry text-xs">No laps available</p>

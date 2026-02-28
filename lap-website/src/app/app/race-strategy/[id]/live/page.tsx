@@ -408,12 +408,12 @@ export default function LiveDashboardPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody>

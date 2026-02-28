@@ -162,10 +162,10 @@ export default function BillingPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-steel font-telemetry text-xs border-b border-steel/20">
-                  <th className="pb-2">Date</th>
-                  <th className="pb-2">Amount</th>
-                  <th className="pb-2">Status</th>
-                  <th className="pb-2 text-right">PDF</th>
+                  <th scope="col" className="pb-2">Date</th>
+                  <th scope="col" className="pb-2">Amount</th>
+                  <th scope="col" className="pb-2">Status</th>
+                  <th scope="col" className="pb-2 text-right">PDF</th>
                 </tr>
               </thead>
               <tbody>

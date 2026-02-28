@@ -448,11 +448,11 @@ export default function TrackDetailPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-steel/20">
-                    <th className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">#</th>
-                    <th className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Time</th>
-                    <th className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Holder</th>
-                    <th className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Date</th>
-                    <th className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Class</th>
+                    <th scope="col" className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">#</th>
+                    <th scope="col" className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Time</th>
+                    <th scope="col" className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Holder</th>
+                    <th scope="col" className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Date</th>
+                    <th scope="col" className="px-4 py-2 text-left text-steel font-telemetry text-xs uppercase">Class</th>
                   </tr>
                 </thead>
                 <tbody>

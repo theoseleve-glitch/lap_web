@@ -539,11 +539,11 @@ export default function CompareSessionsPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-steel/20">
-                      <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Lap</th>
-                      <th className="text-left px-4 py-3 text-acid-green font-telemetry text-xs uppercase tracking-wider">Time A</th>
-                      <th className="text-left px-4 py-3 text-pit-orange font-telemetry text-xs uppercase tracking-wider">Time B</th>
-                      <th className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
-                      <th className="text-center px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Faster</th>
+                      <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Lap</th>
+                      <th scope="col" className="text-left px-4 py-3 text-acid-green font-telemetry text-xs uppercase tracking-wider">Time A</th>
+                      <th scope="col" className="text-left px-4 py-3 text-pit-orange font-telemetry text-xs uppercase tracking-wider">Time B</th>
+                      <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
+                      <th scope="col" className="text-center px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Faster</th>
                     </tr>
                   </thead>
                   <tbody>

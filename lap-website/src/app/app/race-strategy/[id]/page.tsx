@@ -351,12 +351,12 @@ export default function RaceDetailPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Weight</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">COM</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Min Stint</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Max Stint</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Weight</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">COM</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Min Stint</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Max Stint</th>
               </tr>
             </thead>
             <tbody>
@@ -407,15 +407,15 @@ export default function RaceDetailPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Start</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">End</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Start</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel End</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Ballast</th>
-                <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Start</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">End</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Start</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel End</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Ballast</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody>
@@ -483,14 +483,14 @@ export default function RaceDetailPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-steel/20">
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver Change</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Refueled</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Added</th>
-                  <th className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Duration</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver Change</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Refueled</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Added</th>
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
                 </tr>
               </thead>
               <tbody>
