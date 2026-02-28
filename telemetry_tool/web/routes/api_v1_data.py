@@ -1386,7 +1386,7 @@ def v1_corner_mastery(session_id: str):
     for c in corners:
         result_corners.append({
             "name": f"C{c['corner_id']}",
-            "score": round(c.get("mastery_score", 0), 1),
+            "score": round(c.get("mastery_score", 0) / 100, 3),  # Frontend expects 0-1
             "entry_speed": round((c.get("avg_entry_mps") or 0) * 3.6, 1),
             "apex_speed": round((c.get("avg_apex_mps") or 0) * 3.6, 1),
             "exit_speed": round((c.get("avg_exit_mps") or 0) * 3.6, 1),
@@ -1453,6 +1453,8 @@ def v1_session_details(session_id: str):
         "grade": session.get("grade"),
         "session_type": session.get("session_type"),
         "track_state": session.get("track_state"),
+        "condition": session.get("track_state"),
+        "kart_name": session.get("kart_name"),
         # Score sub-categories
         "pace_score": scores.get("pace_score") if scores else None,
         "pace_max": scores.get("pace_max") if scores else None,

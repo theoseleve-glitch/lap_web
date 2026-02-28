@@ -737,3 +737,181 @@ class TestV1EnergySpeedUnit:
         assert body["ok"] is True
         # 0.5 * 80 * 10^2 = 4000.0
         assert body["data"]["kinetic_energy"] == [4000.0]
+
+
+# ---------------------------------------------------------------------------
+# SHAPE-008: Corner mastery score normalized to 0-1
+# ---------------------------------------------------------------------------
+
+class TestV1CornerMasteryScoreScale:
+    """SHAPE-008: Corner mastery score must be 0-1, not 0-100."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corner_mastery_score_is_0_to_1(self, mock_db, client):
+        """Mastery score returned in 0-1 range for frontend consumption."""
+        conn = _mock_conn()
+        row = MagicMock()
+        row_dict = {
+            "corner_id": 1,
+            "lap_count": 5,
+            "avg_entry_mps": 20.0,
+            "avg_apex_mps": 15.0,
+            "avg_exit_mps": 22.0,
+            "avg_time_loss_ms": 50.0,
+            "min_time_loss_ms": 10.0,
+            "max_time_loss_ms": 100.0,
+            "avg_grip_util": 0.85,
+        }
+        row.__getitem__ = lambda self, k: row_dict[k]
+        row.keys = lambda: list(row_dict.keys())
+        # Make dict(row) work
+        row.__iter__ = lambda self: iter(row_dict)
+        type(row).__len__ = lambda self: len(row_dict)
+
+        def dict_from_mock(m):
+            return dict(row_dict)
+
+        conn.execute.return_value.fetchall.return_value = [row]
+        mock_db.return_value = conn
+
+        with patch("web.routes.api_v1_data.dict", side_effect=lambda r: dict(row_dict)):
+            resp = client.get("/api/v1/sessions/s1/corner-mastery")
+
+        body = resp.get_json()
+        assert body["ok"] is True
+        corners = body["data"]["corners"]
+        assert len(corners) == 1
+        score = corners[0]["score"]
+        # Score must be between 0 and 1 (not 0-100)
+        assert 0 <= score <= 1.0, f"Score {score} not in 0-1 range"
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corner_mastery_max_score_is_1(self, mock_db, client):
+        """Perfect corner mastery should be 1.0 (not 100)."""
+        conn = _mock_conn()
+        # Perfect grip utilization, no time loss → mastery = 50 + 0.85*30 = 75.5
+        row_dict = {
+            "corner_id": 2,
+            "lap_count": 10,
+            "avg_entry_mps": 25.0,
+            "avg_apex_mps": 18.0,
+            "avg_exit_mps": 27.0,
+            "avg_time_loss_ms": 0.0,
+            "min_time_loss_ms": 0.0,
+            "max_time_loss_ms": 0.0,
+            "avg_grip_util": 1.0,
+        }
+        row = MagicMock()
+        row.__getitem__ = lambda self, k: row_dict[k]
+        row.keys = lambda: list(row_dict.keys())
+        row.__iter__ = lambda self: iter(row_dict)
+        type(row).__len__ = lambda self: len(row_dict)
+
+        conn.execute.return_value.fetchall.return_value = [row]
+        mock_db.return_value = conn
+
+        with patch("web.routes.api_v1_data.dict", side_effect=lambda r: dict(row_dict)):
+            resp = client.get("/api/v1/sessions/s1/corner-mastery")
+
+        body = resp.get_json()
+        corners = body["data"]["corners"]
+        score = corners[0]["score"]
+        assert score <= 1.0, f"Score {score} exceeds 1.0 — not normalized"
+
+
+# ---------------------------------------------------------------------------
+# SHAPE-010: Session details missing condition and kart_name fields
+# ---------------------------------------------------------------------------
+
+class TestV1SessionDetailsMissingFields:
+    """SHAPE-010: Session detail must include condition and kart_name."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_score_details")
+    def test_session_details_includes_condition(self, mock_scores, mock_sess, mock_db, client):
+        """Session detail response includes 'condition' field."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        mock_sess.return_value = {
+            "session_id": "s1",
+            "session_date": "2026-01-15",
+            "track_name": "Monza",
+            "driver_name": "Test Driver",
+            "n_laps": 10,
+            "best_lap_time_s": 60.5,
+            "mean_lap_time_s": 62.0,
+            "total_score": 78,
+            "grade": "B",
+            "session_type": "practice",
+            "track_state": "dry",
+            "kart_name": "Rotax Senior #42",
+        }
+        mock_scores.return_value = {}
+
+        resp = client.get("/api/v1/sessions/s1/details")
+        body = resp.get_json()
+        assert body["ok"] is True
+        detail = body["data"]
+        assert "condition" in detail, "Missing 'condition' field in session detail"
+        assert detail["condition"] == "dry"
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_score_details")
+    def test_session_details_includes_kart_name(self, mock_scores, mock_sess, mock_db, client):
+        """Session detail response includes 'kart_name' field."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        mock_sess.return_value = {
+            "session_id": "s1",
+            "session_date": "2026-01-15",
+            "track_name": "Monza",
+            "driver_name": "Test Driver",
+            "n_laps": 10,
+            "best_lap_time_s": 60.5,
+            "mean_lap_time_s": 62.0,
+            "total_score": 78,
+            "grade": "B",
+            "session_type": "practice",
+            "track_state": "dry",
+            "kart_name": "Rotax Senior #42",
+        }
+        mock_scores.return_value = {}
+
+        resp = client.get("/api/v1/sessions/s1/details")
+        body = resp.get_json()
+        assert body["ok"] is True
+        detail = body["data"]
+        assert "kart_name" in detail, "Missing 'kart_name' field in session detail"
+        assert detail["kart_name"] == "Rotax Senior #42"
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    @patch("web.routes.api_v1_data.get_score_details")
+    def test_session_details_missing_fields_are_none(self, mock_scores, mock_sess, mock_db, client):
+        """When session lacks track_state/kart_name, fields are present but None."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        mock_sess.return_value = {
+            "session_id": "s1",
+            "session_date": "2026-01-15",
+            "track_name": "Monza",
+            "driver_name": "Test Driver",
+            "n_laps": 5,
+            "best_lap_time_s": 61.0,
+            "mean_lap_time_s": 63.0,
+            "total_score": 70,
+            "grade": "C",
+            "session_type": "race",
+        }
+        mock_scores.return_value = {}
+
+        resp = client.get("/api/v1/sessions/s1/details")
+        body = resp.get_json()
+        assert body["ok"] is True
+        detail = body["data"]
+        assert "condition" in detail, "Missing 'condition' field"
+        assert detail["condition"] is None
+        assert "kart_name" in detail, "Missing 'kart_name' field"
+        assert detail["kart_name"] is None
