@@ -26,15 +26,21 @@ logger = logging.getLogger(__name__)
 # Path patterns use simple prefix matching or regex.
 # Only POST/PUT/DELETE actions are gated (reads are generally free).
 
-_FEATURE_GATES: list[tuple[str, str, str]] = [
-    # (HTTP method, path prefix, feature_key)
+_FEATURE_GATES: list[tuple] = [
+    # (HTTP method, path prefix, feature_key[, required_suffix])
+    # When a 4th element (suffix) is present, the path must ALSO end with
+    # that suffix.  This prevents over-broad prefix matches such as gating
+    # all of /api/v1/sessions/ behind visualization when only the
+    # /api/v1/sessions/{id}/visualize sub-path should be gated.
 
     # Comparison — World-Class only
     ("GET", "/compare/", "comparison"),
     ("GET", "/api/v1/comparisons/", "comparison"),
+    ("GET", "/api/v1/compare/", "comparison"),
 
     # Visualization — Racer+
     ("GET", "/visualize/", "visualization"),
+    ("GET", "/api/v1/sessions/", "visualization", "/visualize"),
 
     # Race Strategy — all mutation endpoints (both URL schemes)
     ("POST", "/race-strategy/", "race_strategy"),
@@ -67,6 +73,7 @@ _QUOTA_GATES: list[tuple[str, str, str, int]] = [
 
     # Uploads
     ("POST", "/api/data/files/upload", "uploads", 1),
+    ("POST", "/api/v1/files/upload", "uploads", 1),
     ("POST", "/api/v1/ingest/start", "uploads", 1),
 ]
 
@@ -107,8 +114,12 @@ def entitlement_middleware():
     method = request.method
 
     # ── Feature gates ────────────────────────────────────────────────
-    for gate_method, gate_prefix, feature in _FEATURE_GATES:
+    for gate_entry in _FEATURE_GATES:
+        gate_method, gate_prefix, feature = gate_entry[0], gate_entry[1], gate_entry[2]
+        gate_suffix = gate_entry[3] if len(gate_entry) > 3 else None
         if method == gate_method and path.startswith(gate_prefix):
+            if gate_suffix and not path.endswith(gate_suffix):
+                continue
             from auth.entitlements import authorize_feature, _get_conn, _plan_required_response
             conn = _get_conn()
             allowed, ctx = authorize_feature(conn, user_id, feature)
@@ -159,6 +170,7 @@ _USAGE_EVENTS: list[tuple[str, str, str]] = [
     ("POST", "/race-strategy/new", "race_config_created"),
     ("POST", "/api/v1/sessions/", "csv_uploaded"),  # if upload route exists
     ("POST", "/api/data/files/upload", "csv_uploaded"),
+    ("POST", "/api/v1/files/upload", "csv_uploaded"),
     ("POST", "/api/v1/ingest/start", "csv_uploaded"),
 ]
 
@@ -169,6 +181,7 @@ _ATOMIC_QUOTA_ROUTES: set[tuple[str, str]] = {
     ("POST", "/analyze/sync"),
     ("POST", "/api/v1/batch-reanalyze"),
     ("POST", "/api/data/files/upload"),
+    ("POST", "/api/v1/files/upload"),
     ("POST", "/api/v1/ingest/start"),
 }
 
