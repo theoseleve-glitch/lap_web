@@ -53,7 +53,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   // === SPEEDOMETER (circular gauge) ===
   const speedCX = w * 0.3;
   const speedCY = midY;
-  const speedR = Math.min(w * 0.22, h * 0.32);
+  const speedR = Math.max(20, Math.min(w * 0.22, h * 0.32));
 
   // Outer ring
   ctx.beginPath();
@@ -68,7 +68,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   const arcRange = arcEnd - arcStart;
 
   // Tick marks
-  const tickR = speedR - 4;
+  const tickR = Math.max(0, speedR - 4);
   ctx.fillStyle = COLORS.steel;
   ctx.font = `${Math.max(8, speedR * 0.14)}px "IBM Plex Mono", monospace`;
   ctx.textAlign = 'center';
@@ -79,7 +79,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const isMajor = spd % 40 === 0;
-    const innerR = isMajor ? tickR - 8 : tickR - 4;
+    const innerR = Math.max(0, isMajor ? tickR - 8 : tickR - 4);
 
     ctx.beginPath();
     ctx.moveTo(speedCX + innerR * cos, speedCY + innerR * sin);
@@ -89,7 +89,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
     ctx.stroke();
 
     if (isMajor) {
-      const labelR = innerR - 10;
+      const labelR = Math.max(0, innerR - 10);
       ctx.fillStyle = COLORS.steel;
       ctx.fillText(`${spd}`, speedCX + labelR * cos, speedCY + labelR * sin);
     }
@@ -100,7 +100,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   const speedAngle = arcStart + speedFrac * arcRange;
 
   ctx.beginPath();
-  ctx.arc(speedCX, speedCY, speedR - 10, arcStart, speedAngle);
+  ctx.arc(speedCX, speedCY, Math.max(0, speedR - 10), arcStart, speedAngle);
   ctx.strokeStyle = COLORS.chalk;
   ctx.lineWidth = 4;
   ctx.lineCap = 'round';
@@ -108,7 +108,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   ctx.lineCap = 'butt';
 
   // Needle
-  const needleLen = speedR - 16;
+  const needleLen = Math.max(0, speedR - 16);
   const needleAngle = arcStart + speedFrac * arcRange;
   ctx.beginPath();
   ctx.moveTo(speedCX, speedCY);
@@ -140,7 +140,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   // === G-FORCE DIAMOND ===
   const gCX = w * 0.72;
   const gCY = midY;
-  const gR = Math.min(w * 0.18, h * 0.28);
+  const gR = Math.max(1, Math.min(w * 0.18, h * 0.28));
   const maxG = 2.0;
 
   // Diamond outline
@@ -252,7 +252,7 @@ function drawCockpit(ctx: CanvasRenderingContext2D, w: number, h: number, frame:
   // === STEERING ARC ===
   const steerCX = w * 0.72;
   const steerCY = h * 0.82;
-  const steerR = Math.min(w * 0.14, h * 0.12);
+  const steerR = Math.max(1, Math.min(w * 0.14, h * 0.12));
 
   // Arc background
   const steerArcStart = Math.PI;
