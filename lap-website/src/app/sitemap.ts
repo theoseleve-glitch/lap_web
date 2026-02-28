@@ -10,9 +10,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const siteUrl = getSiteUrl();
 
-  // Dynamic marketing routes discovered from filesystem
+  // Dynamic marketing routes discovered from filesystem (may be empty in test)
   const marketingRoutes = collectMarketingSitemapRoutes();
-  const allRoutes = [...marketingRoutes.map((r: string) => (r === '/' ? '' : r)), ...extraRoutes];
+  const discovered = marketingRoutes.map((r: string) => (r === '/' ? '' : r));
+  // Ensure root route is always present and first
+  const allRoutes = ['', ...discovered.filter((r: string) => r !== ''), ...extraRoutes];
 
   const pages: MetadataRoute.Sitemap = allRoutes.map((route) => ({
     url: `${siteUrl}${route}`,
