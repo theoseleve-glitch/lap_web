@@ -227,10 +227,11 @@ def generate_pdf() -> None:
 # ---------------------------------------------------------------------------
 
 def git_commit_and_push(cycle_number: int, feature: dict, summary: str) -> None:
-    """Git add -A, commit, push to recovery/e2e-certification."""
+    """Stage only audit/ and tools/ files, commit, push."""
     msg = f"audit(cycle-{cycle_number:04d}): {feature['id']} {summary}"
 
-    subprocess.run(["git", "add", "-A"], cwd=str(ROOT), check=True)
+    # Stage only harness-related directories — never git add -A
+    subprocess.run(["git", "add", "audit/", "tools/"], cwd=str(ROOT), check=True)
     subprocess.run(
         ["git", "commit", "-m", msg],
         cwd=str(ROOT),
