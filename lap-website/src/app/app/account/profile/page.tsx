@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/app';
 import { apiFetch } from '@/lib/api-client';
@@ -97,6 +97,7 @@ function ToggleSwitch({
 
 export default function ProfilePage() {
   const queryClient = useQueryClient();
+  const fieldId = useId();
 
   const { data: profile, isLoading } = useQuery<UserProfile>({
     queryKey: ['account', 'profile'],
@@ -201,8 +202,9 @@ export default function ProfilePage() {
           >
             {/* Display name */}
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Display Name</label>
+              <label htmlFor={`${fieldId}-name`} className="block text-steel text-xs font-telemetry mb-1">Display Name</label>
               <input
+                id={`${fieldId}-name`}
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
@@ -213,9 +215,10 @@ export default function ProfilePage() {
 
             {/* Email */}
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Email</label>
+              <label htmlFor={`${fieldId}-email`} className="block text-steel text-xs font-telemetry mb-1">Email</label>
               <div className="flex items-center gap-2">
                 <input
+                  id={`${fieldId}-email`}
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -237,8 +240,9 @@ export default function ProfilePage() {
 
             {/* Avatar URL */}
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Avatar URL</label>
+              <label htmlFor={`${fieldId}-avatar`} className="block text-steel text-xs font-telemetry mb-1">Avatar URL</label>
               <input
+                id={`${fieldId}-avatar`}
                 type="url"
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
@@ -282,8 +286,9 @@ export default function ProfilePage() {
           <div className="space-y-4">
             {/* Language */}
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Language</label>
+              <label htmlFor={`${fieldId}-lang`} className="block text-steel text-xs font-telemetry mb-1">Language</label>
               <select
+                id={`${fieldId}-lang`}
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
@@ -298,8 +303,9 @@ export default function ProfilePage() {
 
             {/* Timezone */}
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Timezone</label>
+              <label htmlFor={`${fieldId}-tz`} className="block text-steel text-xs font-telemetry mb-1">Timezone</label>
               <select
+                id={`${fieldId}-tz`}
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"

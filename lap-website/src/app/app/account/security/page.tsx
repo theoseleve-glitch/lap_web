@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/app';
 import { apiFetch } from '@/lib/api-client';
@@ -83,6 +83,7 @@ type TwoFaStep = 'idle' | 'qr' | 'verify' | 'backup';
 
 export default function SecurityPage() {
   const queryClient = useQueryClient();
+  const fieldId = useId();
 
   /* ── State ────────────────────────────────────────── */
   const [currentPassword, setCurrentPassword] = useState('');
@@ -237,27 +238,33 @@ export default function SecurityPage() {
           className="space-y-4"
         >
           <div>
-            <label className="block text-steel text-xs font-telemetry mb-1">Current Password</label>
+            <label htmlFor={`${fieldId}-cur-pw`} className="block text-steel text-xs font-telemetry mb-1">Current Password</label>
             <input
+              id={`${fieldId}-cur-pw`}
               type="password"
+              autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-steel text-xs font-telemetry mb-1">New Password</label>
+            <label htmlFor={`${fieldId}-new-pw`} className="block text-steel text-xs font-telemetry mb-1">New Password</label>
             <input
+              id={`${fieldId}-new-pw`}
               type="password"
+              autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-steel text-xs font-telemetry mb-1">Confirm New Password</label>
+            <label htmlFor={`${fieldId}-confirm-pw`} className="block text-steel text-xs font-telemetry mb-1">Confirm New Password</label>
             <input
+              id={`${fieldId}-confirm-pw`}
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
@@ -326,17 +333,20 @@ export default function SecurityPage() {
                     Enter your password and a current 2FA code to generate new backup codes. Previous codes will be invalidated.
                   </p>
                   <div>
-                    <label className="block text-steel text-xs font-telemetry mb-1">Password</label>
+                    <label htmlFor={`${fieldId}-regen-pw`} className="block text-steel text-xs font-telemetry mb-1">Password</label>
                     <input
+                      id={`${fieldId}-regen-pw`}
                       type="password"
+                      autoComplete="current-password"
                       value={regenPassword}
                       onChange={(e) => setRegenPassword(e.target.value)}
                       className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-steel text-xs font-telemetry mb-1">2FA Code</label>
+                    <label htmlFor={`${fieldId}-regen-code`} className="block text-steel text-xs font-telemetry mb-1">2FA Code</label>
                     <input
+                      id={`${fieldId}-regen-code`}
                       type="text"
                       inputMode="numeric"
                       maxLength={6}
@@ -377,17 +387,20 @@ export default function SecurityPage() {
                     Enter your password and a current 2FA code to disable two-factor authentication.
                   </p>
                   <div>
-                    <label className="block text-steel text-xs font-telemetry mb-1">Password</label>
+                    <label htmlFor={`${fieldId}-disable-pw`} className="block text-steel text-xs font-telemetry mb-1">Password</label>
                     <input
+                      id={`${fieldId}-disable-pw`}
                       type="password"
+                      autoComplete="current-password"
                       value={disablePassword}
                       onChange={(e) => setDisablePassword(e.target.value)}
                       className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
                     />
                   </div>
                   <div>
-                    <label className="block text-steel text-xs font-telemetry mb-1">2FA Code</label>
+                    <label htmlFor={`${fieldId}-disable-code`} className="block text-steel text-xs font-telemetry mb-1">2FA Code</label>
                     <input
+                      id={`${fieldId}-disable-code`}
                       type="text"
                       inputMode="numeric"
                       maxLength={6}
@@ -489,8 +502,9 @@ export default function SecurityPage() {
               Enter the 6-digit code from your authenticator app to verify setup:
             </p>
             <div>
-              <label className="block text-steel text-xs font-telemetry mb-1">Verification Code</label>
+              <label htmlFor={`${fieldId}-totp`} className="block text-steel text-xs font-telemetry mb-1">Verification Code</label>
               <input
+                id={`${fieldId}-totp`}
                 type="text"
                 inputMode="numeric"
                 maxLength={6}
@@ -579,10 +593,10 @@ export default function SecurityPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-steel font-telemetry text-xs border-b border-steel/20">
-                  <th className="pb-2">Browser</th>
-                  <th className="pb-2">IP Address</th>
-                  <th className="pb-2">Last Active</th>
-                  <th className="pb-2 text-right">Action</th>
+                  <th scope="col" className="pb-2">Browser</th>
+                  <th scope="col" className="pb-2">IP Address</th>
+                  <th scope="col" className="pb-2">Last Active</th>
+                  <th scope="col" className="pb-2 text-right">Action</th>
                 </tr>
               </thead>
               <tbody>
