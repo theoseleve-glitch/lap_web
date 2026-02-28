@@ -2,29 +2,18 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { api } from '@/lib/api-client';
-import { useCanvas } from '@/hooks/useCanvas';
+import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
+import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 
 /* ---------- types ---------- */
 
-interface GpsPoint {
-  lat: number;
-  lng: number;
-  speed: number;
-}
-
-interface GgPoint {
-  lat_g: number;
-  lon_g: number;
-}
-
-interface SpeedPoint {
-  distance: number;
-  speed: number;
-}
+interface GpsPoint { lat: number; lng: number; speed: number }
+interface GgPoint { lat_g: number; lon_g: number }
+interface SpeedPoint { distance: number; speed: number }
 
 interface LapData {
   lap_number: number;
@@ -33,121 +22,99 @@ interface LapData {
   speed_trace: SpeedPoint[];
 }
 
-interface VisualizeResponse {
-  laps: LapData[];
-}
+interface VisualizeResponse { laps: LapData[] }
 
 /* ---------- color helpers ---------- */
 
 const LAP_COLORS = [
-  '#B6FF2E', // acid green
-  '#FF6A00', // pit orange
-  '#FFD400', // marshal yellow
-  '#FF2A2A', // safety red
-  '#2AA5FF', // blue
-  '#A855F7', // purple
-  '#22D3EE', // cyan
-  '#F472B6', // pink
-  '#34D399', // emerald
-  '#FCD34D', // amber
+  '#B6FF2E', '#FF6A00', '#FFD400', '#FF2A2A', '#2AA5FF',
+  '#A855F7', '#22D3EE', '#F472B6', '#34D399', '#FCD34D',
 ];
 
 function speedToColor(speed: number, min: number, max: number): string {
-  const range = max - min || 1;
-  const t = Math.max(0, Math.min(1, (speed - min) / range));
-  // Blue (slow) -> Green (mid) -> Red (fast)
+  const t = Math.max(0, Math.min(1, (speed - min) / (max - min || 1)));
   const r = Math.round(t < 0.5 ? 0 : (t - 0.5) * 2 * 255);
   const g = Math.round(t < 0.5 ? t * 2 * 255 : (1 - t) * 2 * 255);
   const b = Math.round(t < 0.5 ? (1 - t * 2) * 255 : 0);
   return `rgb(${r},${g},${b})`;
 }
 
-/* ---------- component ---------- */
+function lapColor(lapNum: number, idx: Map<number, number>): string {
+  return LAP_COLORS[(idx.get(lapNum) ?? 0) % LAP_COLORS.length];
+}
 
-export default function VisualizePage() {
-  const { id } = useParams<{ id: string }>();
-  const [visibleLaps, setVisibleLaps] = useState<Set<number>>(new Set());
-  const { canUse } = useEntitlements();
-  const visualizationAllowed = canUse('visualization');
+/* ---------- GPS Map Panel ---------- */
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['visualize', id],
-    queryFn: () => api.get<VisualizeResponse>(`/sessions/${id}/visualize`),
-  });
+const GPS_PAD = { top: 10, right: 10, bottom: 40, left: 10 };
 
-  // Initialize visible laps once data loads
-  const laps = data?.laps ?? [];
-  if (laps.length > 0 && visibleLaps.size === 0) {
-    const initial = new Set(laps.map((l) => l.lap_number));
-    if (initial.size !== visibleLaps.size) {
-      setVisibleLaps(initial);
-    }
-  }
+function GpsMapPanel({ activeLaps }: { activeLaps: LapData[] }) {
+  const screenRef = useRef<{ x: number; y: number; speed: number; lat: number; lng: number; lap: number }[]>([]);
 
-  const toggleLap = (lapNum: number) => {
-    setVisibleLaps((prev) => {
-      const next = new Set(prev);
-      if (next.has(lapNum)) {
-        next.delete(lapNum);
-      } else {
-        next.add(lapNum);
-      }
-      return next;
-    });
-  };
-
-  const activeLaps = laps.filter((l) => visibleLaps.has(l.lap_number));
-
-  /* ---------- GPS Track Map ---------- */
-  const drawGpsMap = useCallback(
-    (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number, hover: HoverPoint | null) => {
       ctx.fillStyle = '#0B0C0F';
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, w, h);
 
       if (activeLaps.length === 0) {
         ctx.fillStyle = '#8A8F98';
         ctx.font = '12px "IBM Plex Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Select laps to display', width / 2, height / 2);
+        ctx.fillText('Select laps to display', w / 2, h / 2);
+        screenRef.current = [];
         return;
       }
 
-      // Gather all GPS points to compute bounds
       const allGps = activeLaps.flatMap((l) => l.gps);
       if (allGps.length === 0) {
         ctx.fillStyle = '#8A8F98';
         ctx.font = '12px "IBM Plex Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No GPS data', width / 2, height / 2);
+        ctx.fillText('No GPS data', w / 2, h / 2);
+        screenRef.current = [];
         return;
       }
 
       const lats = allGps.map((p) => p.lat);
       const lngs = allGps.map((p) => p.lng);
-      const minLat = Math.min(...lats);
-      const maxLat = Math.max(...lats);
-      const minLng = Math.min(...lngs);
-      const maxLng = Math.max(...lngs);
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+      const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+      const pad = 30;
+      const drawW = w - pad * 2, drawH = h - pad * 2;
+      const latR = maxLat - minLat || 0.001, lngR = maxLng - minLng || 0.001;
+      const scale = Math.min(drawW / lngR, drawH / latR);
 
-      const padding = 30;
-      const drawW = width - padding * 2;
-      const drawH = height - padding * 2;
-      const latRange = maxLat - minLat || 0.001;
-      const lngRange = maxLng - minLng || 0.001;
-      const scale = Math.min(drawW / lngRange, drawH / latRange);
+      const toX = (lng: number) => pad + (lng - minLng) * scale + (drawW - lngR * scale) / 2;
+      const toY = (lat: number) => pad + (maxLat - lat) * scale + (drawH - latR * scale) / 2;
 
-      const toX = (lng: number) => padding + (lng - minLng) * scale + (drawW - lngRange * scale) / 2;
-      const toY = (lat: number) => padding + (maxLat - lat) * scale + (drawH - latRange * scale) / 2;
+      const speeds = allGps.map((p) => p.speed);
+      const minSpd = Math.min(...speeds), maxSpd = Math.max(...speeds);
 
-      const allSpeeds = allGps.map((p) => p.speed);
-      const minSpd = Math.min(...allSpeeds);
-      const maxSpd = Math.max(...allSpeeds);
+      // Store screen positions for tooltip lookup
+      const pts: typeof screenRef.current = [];
+      for (const lap of activeLaps) {
+        for (const pt of lap.gps) {
+          pts.push({ x: toX(pt.lng), y: toY(pt.lat), speed: pt.speed, lat: pt.lat, lng: pt.lng, lap: lap.lap_number });
+        }
+      }
+      screenRef.current = pts;
 
+      // Find nearest point for hover
+      let nearIdx = -1;
+      if (hover) {
+        let nearDist = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const dx = pts[i].x - hover.x, dy = pts[i].y - hover.y;
+          const d = dx * dx + dy * dy;
+          if (d < nearDist) { nearDist = d; nearIdx = i; }
+        }
+        if (nearDist > 400) nearIdx = -1;
+      }
+
+      // Draw track lines colored by speed
       for (const lap of activeLaps) {
         if (lap.gps.length < 2) continue;
         for (let i = 1; i < lap.gps.length; i++) {
-          const prev = lap.gps[i - 1];
-          const curr = lap.gps[i];
+          const prev = lap.gps[i - 1], curr = lap.gps[i];
           ctx.beginPath();
           ctx.moveTo(toX(prev.lng), toY(prev.lat));
           ctx.lineTo(toX(curr.lng), toY(curr.lat));
@@ -157,126 +124,233 @@ export default function VisualizePage() {
         }
       }
 
+      // Hover highlight
+      if (nearIdx >= 0) {
+        const p = pts[nearIdx];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#F3F0E8';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+
       // Speed legend
-      const legendW = 120;
-      const legendH = 10;
-      const legendX = width - legendW - 16;
-      const legendY = height - 32;
-      for (let i = 0; i < legendW; i++) {
-        ctx.fillStyle = speedToColor(minSpd + (i / legendW) * (maxSpd - minSpd), minSpd, maxSpd);
-        ctx.fillRect(legendX + i, legendY, 1, legendH);
+      const lW = 120, lH = 10, lX = w - lW - 16, lY = h - 32;
+      for (let i = 0; i < lW; i++) {
+        ctx.fillStyle = speedToColor(minSpd + (i / lW) * (maxSpd - minSpd), minSpd, maxSpd);
+        ctx.fillRect(lX + i, lY, 1, lH);
       }
       ctx.fillStyle = '#8A8F98';
       ctx.font = '9px "IBM Plex Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillText(`${minSpd.toFixed(0)}`, legendX, legendY + legendH + 12);
+      ctx.fillText(`${minSpd.toFixed(0)}`, lX, lY + lH + 12);
       ctx.textAlign = 'right';
-      ctx.fillText(`${maxSpd.toFixed(0)} m/s`, legendX + legendW, legendY + legendH + 12);
+      ctx.fillText(`${maxSpd.toFixed(0)} m/s`, lX + lW, lY + lH + 12);
     },
     [activeLaps],
   );
 
-  /* ---------- Speed Trace Chart ---------- */
-  const drawSpeedTrace = useCallback(
-    (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      const pts = screenRef.current;
+      if (pts.length === 0) return null;
+      let nearest = 0, nearDist = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const dx = pts[i].x - hover.x, dy = pts[i].y - hover.y;
+        const d = dx * dx + dy * dy;
+        if (d < nearDist) { nearDist = d; nearest = i; }
+      }
+      if (nearDist > 400) return null;
+      const p = pts[nearest];
+      return {
+        header: `Lap ${p.lap}`,
+        lines: [
+          { label: 'Speed', value: `${p.speed.toFixed(1)} m/s`, color: '#B6FF2E' },
+          { label: 'Position', value: `${p.lat.toFixed(5)}, ${p.lng.toFixed(5)}` },
+        ],
+      };
+    },
+    [],
+  );
+
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [activeLaps],
+    padding: GPS_PAD,
+    getTooltipData,
+  });
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full">
+      <canvas ref={canvasRef} className="w-full h-full" />
+      <ChartTooltip tooltip={tooltip} />
+    </div>
+  );
+}
+
+/* ---------- Speed Trace Panel ---------- */
+
+const SPEED_PAD = { top: 20, right: 16, bottom: 32, left: 48 };
+
+function SpeedTracePanel({ activeLaps, lapIdx }: { activeLaps: LapData[]; lapIdx: Map<number, number> }) {
+  const bounds = useMemo(() => {
+    const all = activeLaps.flatMap((l) => l.speed_trace);
+    if (all.length === 0) return { minD: 0, maxD: 1, dR: 1, minS: 0, maxS: 1, sR: 1 };
+    const ds = all.map((p) => p.distance), ss = all.map((p) => p.speed);
+    const minD = Math.min(...ds), maxD = Math.max(...ds);
+    const minS = Math.min(...ss) * 0.95, maxS = Math.max(...ss) * 1.05;
+    return { minD, maxD, dR: maxD - minD || 1, minS, maxS, sR: maxS - minS || 1 };
+  }, [activeLaps]);
+
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number, hover: HoverPoint | null) => {
       ctx.fillStyle = '#0B0C0F';
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, w, h);
 
       if (activeLaps.length === 0) {
         ctx.fillStyle = '#8A8F98';
         ctx.font = '12px "IBM Plex Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Select laps to display', width / 2, height / 2);
+        ctx.fillText('Select laps to display', w / 2, h / 2);
         return;
       }
 
-      const allTraces = activeLaps.flatMap((l) => l.speed_trace);
-      if (allTraces.length === 0) {
-        ctx.fillStyle = '#8A8F98';
-        ctx.font = '12px "IBM Plex Mono", monospace';
-        ctx.textAlign = 'center';
-        ctx.fillText('No speed data', width / 2, height / 2);
-        return;
-      }
+      const { minD, dR, minS, sR } = bounds;
+      const plotW = w - SPEED_PAD.left - SPEED_PAD.right;
+      const plotH = h - SPEED_PAD.top - SPEED_PAD.bottom;
+      const toX = (d: number) => SPEED_PAD.left + ((d - minD) / dR) * plotW;
+      const toY = (s: number) => SPEED_PAD.top + plotH - ((s - minS) / sR) * plotH;
 
-      const allDist = allTraces.map((p) => p.distance);
-      const allSpd = allTraces.map((p) => p.speed);
-      const minD = Math.min(...allDist);
-      const maxD = Math.max(...allDist);
-      const minS = Math.min(...allSpd) * 0.95;
-      const maxS = Math.max(...allSpd) * 1.05;
-
-      const pad = { top: 20, right: 16, bottom: 32, left: 48 };
-      const drawW = width - pad.left - pad.right;
-      const drawH = height - pad.top - pad.bottom;
-      const distRange = maxD - minD || 1;
-      const spdRange = maxS - minS || 1;
-
-      const toX = (d: number) => pad.left + ((d - minD) / distRange) * drawW;
-      const toY = (s: number) => pad.top + drawH - ((s - minS) / spdRange) * drawH;
-
-      // Grid lines
+      // Grid
       ctx.strokeStyle = '#8A8F9820';
       ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
-        const y = pad.top + (i / 4) * drawH;
+        const y = SPEED_PAD.top + (i / 4) * plotH;
         ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(width - pad.right, y);
+        ctx.moveTo(SPEED_PAD.left, y);
+        ctx.lineTo(w - SPEED_PAD.right, y);
         ctx.stroke();
       }
 
       // Draw traces
-      activeLaps.forEach((lap, idx) => {
-        if (lap.speed_trace.length < 2) return;
+      for (const lap of activeLaps) {
+        if (lap.speed_trace.length < 2) continue;
+        const color = lapColor(lap.lap_number, lapIdx);
         ctx.beginPath();
         ctx.moveTo(toX(lap.speed_trace[0].distance), toY(lap.speed_trace[0].speed));
         for (let i = 1; i < lap.speed_trace.length; i++) {
           ctx.lineTo(toX(lap.speed_trace[i].distance), toY(lap.speed_trace[i].speed));
         }
-        ctx.strokeStyle = LAP_COLORS[idx % LAP_COLORS.length];
+        ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.stroke();
-      });
+      }
+
+      // Hover dots on traces at crosshair distance
+      if (hover) {
+        const hoverDist = minD + hover.nx * dR;
+        for (const lap of activeLaps) {
+          if (lap.speed_trace.length === 0) continue;
+          let best = 0, bestDiff = Infinity;
+          for (let i = 0; i < lap.speed_trace.length; i++) {
+            const diff = Math.abs(lap.speed_trace[i].distance - hoverDist);
+            if (diff < bestDiff) { bestDiff = diff; best = i; }
+          }
+          const pt = lap.speed_trace[best];
+          ctx.beginPath();
+          ctx.arc(toX(pt.distance), toY(pt.speed), 4, 0, Math.PI * 2);
+          ctx.fillStyle = lapColor(lap.lap_number, lapIdx);
+          ctx.fill();
+          ctx.strokeStyle = '#F3F0E8';
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        }
+      }
 
       // Axis labels
       ctx.fillStyle = '#8A8F98';
       ctx.font = '9px "IBM Plex Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('Distance (m)', width / 2, height - 6);
+      ctx.fillText('Distance (m)', w / 2, h - 6);
       ctx.save();
-      ctx.translate(12, height / 2);
+      ctx.translate(12, h / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.fillText('Speed (m/s)', 0, 0);
       ctx.restore();
 
-      // Axis tick labels
+      // Tick labels
       ctx.textAlign = 'center';
       for (let i = 0; i <= 4; i++) {
-        const d = minD + (i / 4) * distRange;
-        ctx.fillText(`${d.toFixed(0)}`, toX(d), height - pad.bottom + 14);
+        ctx.fillText(`${(minD + (i / 4) * dR).toFixed(0)}`, toX(minD + (i / 4) * dR), h - SPEED_PAD.bottom + 14);
       }
       ctx.textAlign = 'right';
       for (let i = 0; i <= 4; i++) {
-        const s = minS + (i / 4) * spdRange;
-        const y = pad.top + drawH - (i / 4) * drawH;
-        ctx.fillText(`${s.toFixed(0)}`, pad.left - 6, y + 3);
+        const s = minS + (i / 4) * sR;
+        ctx.fillText(`${s.toFixed(0)}`, SPEED_PAD.left - 6, SPEED_PAD.top + plotH - (i / 4) * plotH + 3);
       }
     },
-    [activeLaps],
+    [activeLaps, bounds, lapIdx],
   );
 
-  /* ---------- GG Scatter Diagram ---------- */
-  const drawGgDiagram = useCallback(
-    (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      if (activeLaps.length === 0) return null;
+      const hoverDist = bounds.minD + hover.nx * bounds.dR;
+      const lines: TooltipData['lines'] = [];
+      for (const lap of activeLaps) {
+        if (lap.speed_trace.length === 0) continue;
+        let best = 0, bestDiff = Infinity;
+        for (let i = 0; i < lap.speed_trace.length; i++) {
+          const diff = Math.abs(lap.speed_trace[i].distance - hoverDist);
+          if (diff < bestDiff) { bestDiff = diff; best = i; }
+        }
+        lines.push({
+          label: `Lap ${lap.lap_number}`,
+          value: `${lap.speed_trace[best].speed.toFixed(1)} m/s`,
+          color: lapColor(lap.lap_number, lapIdx),
+        });
+      }
+      return { header: `${hoverDist.toFixed(0)} m`, lines };
+    },
+    [activeLaps, bounds, lapIdx],
+  );
+
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [activeLaps],
+    padding: SPEED_PAD,
+    getTooltipData,
+    crosshair: true,
+  });
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full">
+      <canvas ref={canvasRef} className="w-full h-full" />
+      <ChartTooltip tooltip={tooltip} />
+    </div>
+  );
+}
+
+/* ---------- GG Diagram Panel ---------- */
+
+const GG_PAD = { top: 20, right: 16, bottom: 32, left: 48 };
+
+function GgDiagramPanel({ activeLaps, lapIdx }: { activeLaps: LapData[]; lapIdx: Map<number, number> }) {
+  const screenRef = useRef<{ x: number; y: number; lat_g: number; lon_g: number; lap: number }[]>([]);
+
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number, hover: HoverPoint | null) => {
       ctx.fillStyle = '#0B0C0F';
-      ctx.fillRect(0, 0, width, height);
+      ctx.fillRect(0, 0, w, h);
 
       if (activeLaps.length === 0) {
         ctx.fillStyle = '#8A8F98';
         ctx.font = '12px "IBM Plex Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('Select laps to display', width / 2, height / 2);
+        ctx.fillText('Select laps to display', w / 2, h / 2);
+        screenRef.current = [];
         return;
       }
 
@@ -285,7 +359,8 @@ export default function VisualizePage() {
         ctx.fillStyle = '#8A8F98';
         ctx.font = '12px "IBM Plex Mono", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('No GG data', width / 2, height / 2);
+        ctx.fillText('No GG data', w / 2, h / 2);
+        screenRef.current = [];
         return;
       }
 
@@ -293,24 +368,50 @@ export default function VisualizePage() {
       const lonGs = allGg.map((p) => Math.abs(p.lon_g));
       const maxG = Math.max(Math.max(...latGs), Math.max(...lonGs), 0.5) * 1.15;
 
-      const pad = { top: 20, right: 16, bottom: 32, left: 48 };
-      const drawW = width - pad.left - pad.right;
-      const drawH = height - pad.top - pad.bottom;
-      const cx = pad.left + drawW / 2;
-      const cy = pad.top + drawH / 2;
+      const drawW = w - GG_PAD.left - GG_PAD.right;
+      const drawH = h - GG_PAD.top - GG_PAD.bottom;
+      const cx = GG_PAD.left + drawW / 2;
+      const cy = GG_PAD.top + drawH / 2;
       const scaleX = drawW / (2 * maxG);
       const scaleY = drawH / (2 * maxG);
+
+      // Store screen positions
+      const pts: typeof screenRef.current = [];
+      for (const lap of activeLaps) {
+        for (const pt of lap.gg) {
+          pts.push({
+            x: cx + pt.lat_g * scaleX,
+            y: cy - pt.lon_g * scaleY,
+            lat_g: pt.lat_g,
+            lon_g: pt.lon_g,
+            lap: lap.lap_number,
+          });
+        }
+      }
+      screenRef.current = pts;
+
+      // Find nearest point for hover
+      let nearIdx = -1;
+      if (hover) {
+        let nearDist = Infinity;
+        for (let i = 0; i < pts.length; i++) {
+          const dx = pts[i].x - hover.x, dy = pts[i].y - hover.y;
+          const d = dx * dx + dy * dy;
+          if (d < nearDist) { nearDist = d; nearIdx = i; }
+        }
+        if (nearDist > 400) nearIdx = -1;
+      }
 
       // Cross-hairs
       ctx.strokeStyle = '#8A8F9830';
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(pad.left, cy);
-      ctx.lineTo(width - pad.right, cy);
+      ctx.moveTo(GG_PAD.left, cy);
+      ctx.lineTo(w - GG_PAD.right, cy);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(cx, pad.top);
-      ctx.lineTo(cx, height - pad.bottom);
+      ctx.moveTo(cx, GG_PAD.top);
+      ctx.lineTo(cx, h - GG_PAD.bottom);
       ctx.stroke();
 
       // Circle guides
@@ -327,9 +428,9 @@ export default function VisualizePage() {
       }
 
       // Plot points per lap
-      activeLaps.forEach((lap, idx) => {
-        const color = LAP_COLORS[idx % LAP_COLORS.length];
-        ctx.fillStyle = color + '80'; // semi-transparent
+      for (const lap of activeLaps) {
+        const color = lapColor(lap.lap_number, lapIdx);
+        ctx.fillStyle = color + '80';
         for (const pt of lap.gg) {
           const x = cx + pt.lat_g * scaleX;
           const y = cy - pt.lon_g * scaleY;
@@ -337,28 +438,116 @@ export default function VisualizePage() {
           ctx.arc(x, y, 2, 0, Math.PI * 2);
           ctx.fill();
         }
-      });
+      }
+
+      // Hover highlight
+      if (nearIdx >= 0) {
+        const p = pts[nearIdx];
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+        ctx.fillStyle = lapColor(p.lap, lapIdx);
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
 
       // Axis labels
       ctx.fillStyle = '#8A8F98';
       ctx.font = '9px "IBM Plex Mono", monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('Lateral G', width / 2, height - 6);
+      ctx.fillText('Lateral G', w / 2, h - 6);
       ctx.save();
-      ctx.translate(12, height / 2);
+      ctx.translate(12, h / 2);
       ctx.rotate(-Math.PI / 2);
       ctx.fillText('Longitudinal G', 0, 0);
       ctx.restore();
     },
-    [activeLaps],
+    [activeLaps, lapIdx],
   );
 
-  /* ---------- canvas refs ---------- */
-  const gpsCanvasRef = useCanvas(drawGpsMap, [drawGpsMap]);
-  const speedCanvasRef = useCanvas(drawSpeedTrace, [drawSpeedTrace]);
-  const ggCanvasRef = useCanvas(drawGgDiagram, [drawGgDiagram]);
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      const pts = screenRef.current;
+      if (pts.length === 0) return null;
+      let nearest = 0, nearDist = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        const dx = pts[i].x - hover.x, dy = pts[i].y - hover.y;
+        const d = dx * dx + dy * dy;
+        if (d < nearDist) { nearDist = d; nearest = i; }
+      }
+      if (nearDist > 400) return null;
+      const p = pts[nearest];
+      return {
+        header: `Lap ${p.lap}`,
+        lines: [
+          { label: 'Lateral G', value: `${p.lat_g.toFixed(2)}G`, color: lapColor(p.lap, lapIdx) },
+          { label: 'Longitudinal G', value: `${p.lon_g.toFixed(2)}G` },
+        ],
+      };
+    },
+    [lapIdx],
+  );
 
-  /* ---------- render ---------- */
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [activeLaps],
+    padding: GG_PAD,
+    getTooltipData,
+  });
+
+  return (
+    <div ref={containerRef} className="relative w-full h-full">
+      <canvas ref={canvasRef} className="w-full h-full" />
+      <ChartTooltip tooltip={tooltip} />
+    </div>
+  );
+}
+
+/* ---------- Main Page ---------- */
+
+export default function VisualizePage() {
+  const { id } = useParams<{ id: string }>();
+  const [visibleLaps, setVisibleLaps] = useState<Set<number>>(new Set());
+  const { canUse } = useEntitlements();
+  const visualizationAllowed = canUse('visualization');
+
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['visualize', id],
+    queryFn: () => api.get<VisualizeResponse>(`/sessions/${id}/visualize`),
+  });
+
+  const laps = data?.laps ?? [];
+
+  // Initialize visible laps once data loads
+  if (laps.length > 0 && visibleLaps.size === 0) {
+    const initial = new Set(laps.map((l) => l.lap_number));
+    if (initial.size !== visibleLaps.size) {
+      setVisibleLaps(initial);
+    }
+  }
+
+  const toggleLap = (lapNum: number) => {
+    setVisibleLaps((prev) => {
+      const next = new Set(prev);
+      if (next.has(lapNum)) next.delete(lapNum);
+      else next.add(lapNum);
+      return next;
+    });
+  };
+
+  // Stable color index: lap_number → index in full laps array
+  const lapIdx = useMemo(() => {
+    const m = new Map<number, number>();
+    laps.forEach((l, i) => m.set(l.lap_number, i));
+    return m;
+  }, [laps]);
+
+  const activeLaps = useMemo(
+    () => laps.filter((l) => visibleLaps.has(l.lap_number)),
+    [laps, visibleLaps],
+  );
+
   if (!visualizationAllowed) {
     return (
       <div className="flex flex-col items-center justify-center h-[calc(100vh-6rem)] gap-6 px-4">
@@ -388,33 +577,34 @@ export default function VisualizePage() {
 
   return (
     <div className="flex h-[calc(100vh-6rem)] -mx-6 -my-6">
-      {/* Sidebar - lap selector */}
+      {/* Sidebar — lap selector */}
       <aside className="w-48 bg-concrete border-r border-steel/20 overflow-y-auto p-3 shrink-0">
         <h2 className="font-monument text-sm text-chalk mb-3 tracking-tight">Laps</h2>
         {laps.length === 0 ? (
           <p className="text-steel font-telemetry text-xs">No laps available</p>
         ) : (
           <div className="space-y-1">
-            {laps.map((lap, idx) => (
-              <label
-                key={lap.lap_number}
-                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-asphalt/50 transition-colors cursor-pointer"
-              >
-                <input
-                  type="checkbox"
-                  checked={visibleLaps.has(lap.lap_number)}
-                  onChange={() => toggleLap(lap.lap_number)}
-                  className="accent-acid-green w-3.5 h-3.5"
-                />
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: LAP_COLORS[idx % LAP_COLORS.length] }}
-                />
-                <span className="font-telemetry text-xs text-chalk">
-                  Lap {lap.lap_number}
-                </span>
-              </label>
-            ))}
+            {laps.map((lap) => {
+              const ci = lapIdx.get(lap.lap_number) ?? 0;
+              return (
+                <label
+                  key={lap.lap_number}
+                  className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-asphalt/50 transition-colors cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={visibleLaps.has(lap.lap_number)}
+                    onChange={() => toggleLap(lap.lap_number)}
+                    className="accent-acid-green w-3.5 h-3.5"
+                  />
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: LAP_COLORS[ci % LAP_COLORS.length] }}
+                  />
+                  <span className="font-telemetry text-xs text-chalk">Lap {lap.lap_number}</span>
+                </label>
+              );
+            })}
           </div>
         )}
 
@@ -436,38 +626,38 @@ export default function VisualizePage() {
         )}
       </aside>
 
-      {/* Main panels */}
+      {/* Main chart panels */}
       <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-2 p-2 min-w-0">
-        {/* GPS Map - spans both rows in left column */}
+        {/* GPS Map — spans both rows in left column */}
         <div className="row-span-2 bg-concrete rounded-lg border border-steel/20 overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-steel/10">
             <h3 className="text-chalk font-body text-sm font-medium">GPS Track Map</h3>
-            <p className="text-steel font-telemetry text-xs mt-0.5">Colored by speed</p>
+            <p className="text-steel font-telemetry text-xs mt-0.5">Colored by speed — hover for details</p>
           </div>
           <div className="flex-1 relative">
-            <canvas ref={gpsCanvasRef} className="absolute inset-0 w-full h-full" />
+            <GpsMapPanel activeLaps={activeLaps} />
           </div>
         </div>
 
-        {/* Speed trace - top right */}
+        {/* Speed trace — top right */}
         <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-steel/10">
             <h3 className="text-chalk font-body text-sm font-medium">Speed Trace</h3>
-            <p className="text-steel font-telemetry text-xs mt-0.5">Speed vs distance</p>
+            <p className="text-steel font-telemetry text-xs mt-0.5">Speed vs distance — crosshair to compare</p>
           </div>
           <div className="flex-1 relative">
-            <canvas ref={speedCanvasRef} className="absolute inset-0 w-full h-full" />
+            <SpeedTracePanel activeLaps={activeLaps} lapIdx={lapIdx} />
           </div>
         </div>
 
-        {/* GG diagram - bottom right */}
+        {/* GG diagram — bottom right */}
         <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-steel/10">
             <h3 className="text-chalk font-body text-sm font-medium">GG Diagram</h3>
-            <p className="text-steel font-telemetry text-xs mt-0.5">Lateral vs longitudinal G</p>
+            <p className="text-steel font-telemetry text-xs mt-0.5">Lateral vs longitudinal G — hover for values</p>
           </div>
           <div className="flex-1 relative">
-            <canvas ref={ggCanvasRef} className="absolute inset-0 w-full h-full" />
+            <GgDiagramPanel activeLaps={activeLaps} lapIdx={lapIdx} />
           </div>
         </div>
       </div>

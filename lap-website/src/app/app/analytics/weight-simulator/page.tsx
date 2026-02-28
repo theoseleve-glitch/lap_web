@@ -2,18 +2,20 @@
 
 import { useState, useCallback } from 'react';
 import { PageHeader, ChartPanel } from '@/components/app';
-import { useCanvas } from '@/hooks/useCanvas';
+import { ChartTooltip } from '@/components/app/ChartTooltip';
+import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
 /* ---------- physics model ---------- */
 
-// Approximate lap time delta per kg of extra weight.
-// For a typical kart on a 40-60s circuit, ~0.03-0.05s per kg.
 const SECONDS_PER_KG = 0.04;
 
 function computeDelta(driverKg: number, kartKg: number, ballastKg: number, baseWeight: number): number {
-  const totalWeight = driverKg + kartKg + ballastKg;
-  return (totalWeight - baseWeight) * SECONDS_PER_KG;
+  return (driverKg + kartKg + ballastKg - baseWeight) * SECONDS_PER_KG;
 }
+
+/* ---------- chart ---------- */
+
+const PAD = { top: 24, right: 24, bottom: 40, left: 56 };
 
 /* ---------- component ---------- */
 
@@ -21,39 +23,34 @@ export default function WeightSimulatorPage() {
   const [driverWeight, setDriverWeight] = useState(75);
   const [kartWeight, setKartWeight] = useState(80);
   const [ballast, setBallast] = useState(0);
-  const [baseWeight] = useState(155); // reference total weight (driver + kart)
+  const [baseWeight] = useState(155);
 
   const totalWeight = driverWeight + kartWeight + ballast;
   const delta = computeDelta(driverWeight, kartWeight, ballast, baseWeight);
 
-  /* ---------- projection chart ---------- */
-  const drawChart = useCallback(
-    (ctx: CanvasRenderingContext2D, width: number, height: number) => {
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, width: number, height: number, hover: HoverPoint | null) => {
       ctx.fillStyle = '#0B0C0F';
       ctx.fillRect(0, 0, width, height);
 
-      const pad = { top: 24, right: 24, bottom: 40, left: 56 };
-      const drawW = width - pad.left - pad.right;
-      const drawH = height - pad.top - pad.bottom;
+      const drawW = width - PAD.left - PAD.right;
+      const drawH = height - PAD.top - PAD.bottom;
 
-      // Plot: weight offset (kg) vs delta time (s)
-      const rangeKg = 30; // -15 to +15 from base
-      const minKg = -rangeKg / 2;
-      const maxKg = rangeKg / 2;
-      const minDelta = minKg * SECONDS_PER_KG;
-      const maxDelta = maxKg * SECONDS_PER_KG;
+      const rangeKg = 30;
+      const minKg = -rangeKg / 2, maxKg = rangeKg / 2;
+      const minDelta = minKg * SECONDS_PER_KG, maxDelta = maxKg * SECONDS_PER_KG;
 
-      const toX = (kg: number) => pad.left + ((kg - minKg) / (maxKg - minKg)) * drawW;
-      const toY = (d: number) => pad.top + drawH - ((d - minDelta) / (maxDelta - minDelta)) * drawH;
+      const toX = (kg: number) => PAD.left + ((kg - minKg) / (maxKg - minKg)) * drawW;
+      const toY = (d: number) => PAD.top + drawH - ((d - minDelta) / (maxDelta - minDelta)) * drawH;
 
       // Grid
       ctx.strokeStyle = '#8A8F9818';
       ctx.lineWidth = 1;
       for (let i = 0; i <= 4; i++) {
-        const y = pad.top + (i / 4) * drawH;
+        const y = PAD.top + (i / 4) * drawH;
         ctx.beginPath();
-        ctx.moveTo(pad.left, y);
-        ctx.lineTo(width - pad.right, y);
+        ctx.moveTo(PAD.left, y);
+        ctx.lineTo(width - PAD.right, y);
         ctx.stroke();
       }
 
@@ -61,14 +58,13 @@ export default function WeightSimulatorPage() {
       ctx.strokeStyle = '#8A8F9840';
       ctx.lineWidth = 1;
       ctx.setLineDash([4, 4]);
-      const zeroY = toY(0);
       ctx.beginPath();
-      ctx.moveTo(pad.left, zeroY);
-      ctx.lineTo(width - pad.right, zeroY);
+      ctx.moveTo(PAD.left, toY(0));
+      ctx.lineTo(width - PAD.right, toY(0));
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Line: delta per kg
+      // Delta line
       ctx.beginPath();
       ctx.moveTo(toX(minKg), toY(minDelta));
       ctx.lineTo(toX(maxKg), toY(maxDelta));
@@ -89,12 +85,25 @@ export default function WeightSimulatorPage() {
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Label
         ctx.fillStyle = '#F3F0E8';
         ctx.font = '10px "IBM Plex Mono", monospace';
         ctx.textAlign = 'left';
         const sign = delta >= 0 ? '+' : '';
         ctx.fillText(`${sign}${delta.toFixed(2)}s`, cx + 10, cy - 4);
+      }
+
+      // Hover indicator
+      if (hover) {
+        const hoverKg = minKg + hover.nx * (maxKg - minKg);
+        const hoverDelta = hoverKg * SECONDS_PER_KG;
+        const hx = toX(hoverKg), hy = toY(hoverDelta);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#B6FF2E';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
 
       // Axis labels
@@ -112,19 +121,42 @@ export default function WeightSimulatorPage() {
       for (let i = 0; i <= 6; i++) {
         const kg = minKg + (i / 6) * (maxKg - minKg);
         ctx.textAlign = 'center';
-        ctx.fillText(`${kg >= 0 ? '+' : ''}${kg.toFixed(0)}`, toX(kg), height - pad.bottom + 14);
+        ctx.fillText(`${kg >= 0 ? '+' : ''}${kg.toFixed(0)}`, toX(kg), height - PAD.bottom + 14);
       }
       ctx.textAlign = 'right';
       for (let i = 0; i <= 4; i++) {
         const d = minDelta + (i / 4) * (maxDelta - minDelta);
-        const y = pad.top + drawH - (i / 4) * drawH;
-        ctx.fillText(`${d >= 0 ? '+' : ''}${d.toFixed(2)}`, pad.left - 6, y + 3);
+        const y = PAD.top + drawH - (i / 4) * drawH;
+        ctx.fillText(`${d >= 0 ? '+' : ''}${d.toFixed(2)}`, PAD.left - 6, y + 3);
       }
     },
     [totalWeight, baseWeight, delta],
   );
 
-  const chartRef = useCanvas(drawChart, [drawChart]);
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      const rangeKg = 30;
+      const minKg = -rangeKg / 2, maxKg = rangeKg / 2;
+      const hoverKg = minKg + hover.nx * (maxKg - minKg);
+      const hoverDelta = hoverKg * SECONDS_PER_KG;
+      return {
+        lines: [
+          { label: 'Offset', value: `${hoverKg >= 0 ? '+' : ''}${hoverKg.toFixed(1)} kg`, color: '#B6FF2E' },
+          { label: 'Delta', value: `${hoverDelta >= 0 ? '+' : ''}${hoverDelta.toFixed(3)}s`, color: hoverDelta > 0 ? '#FF2A2A' : '#B6FF2E' },
+        ],
+      };
+    },
+    [],
+  );
+
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [totalWeight, baseWeight, delta],
+    padding: PAD,
+    getTooltipData,
+    crosshair: true,
+    crosshairColor: 'rgba(182, 255, 46, 0.2)',
+  });
 
   return (
     <div>
@@ -213,8 +245,9 @@ export default function WeightSimulatorPage() {
             title="Projected Lap Time Change"
             subtitle={`${SECONDS_PER_KG}s per kg — orange dot = current setup`}
           >
-            <div className="h-80 relative">
-              <canvas ref={chartRef} className="absolute inset-0 w-full h-full" />
+            <div ref={containerRef} className="h-80 relative">
+              <canvas ref={canvasRef} className="w-full h-full" />
+              <ChartTooltip tooltip={tooltip} />
             </div>
           </ChartPanel>
         </div>
