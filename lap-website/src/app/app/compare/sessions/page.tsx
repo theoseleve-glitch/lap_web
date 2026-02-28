@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel } from '@/components/app';
@@ -268,6 +268,7 @@ function LapOverlayChart({ a, b }: { a: SessionData; b: SessionData }) {
 /* ── Main Page ──────────────────────────────────────────── */
 
 export default function CompareSessionsPage() {
+  const fieldId = useId();
   const [sessionA, setSessionA] = useState('');
   const [sessionB, setSessionB] = useState('');
   const [searchA, setSearchA] = useState('');
@@ -323,10 +324,11 @@ export default function CompareSessionsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {/* Picker A */}
         <div className="bg-concrete rounded-lg border border-acid-green/20 p-4">
-          <label className="block text-acid-green font-telemetry text-xs uppercase tracking-wider mb-2">
+          <label htmlFor={`${fieldId}-search-a`} className="block text-acid-green font-telemetry text-xs uppercase tracking-wider mb-2">
             Session A
           </label>
           <input
+            id={`${fieldId}-search-a`}
             type="text"
             placeholder="Search by driver, track, date..."
             value={searchA}
@@ -352,10 +354,11 @@ export default function CompareSessionsPage() {
 
         {/* Picker B */}
         <div className="bg-concrete rounded-lg border border-pit-orange/20 p-4">
-          <label className="block text-pit-orange font-telemetry text-xs uppercase tracking-wider mb-2">
+          <label htmlFor={`${fieldId}-search-b`} className="block text-pit-orange font-telemetry text-xs uppercase tracking-wider mb-2">
             Session B
           </label>
           <input
+            id={`${fieldId}-search-b`}
             type="text"
             placeholder="Search by driver, track, date..."
             value={searchB}

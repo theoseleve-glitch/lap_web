@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel, StatCard } from '@/components/app';
@@ -312,6 +312,7 @@ const RANGE_OPTIONS = [
 ];
 
 export default function TrendsPage() {
+  const fieldId = useId();
   const [from, setFrom] = useState(monthsAgo(3));
   const [to, setTo] = useState(todayIso());
   const [activeRange, setActiveRange] = useState('3M');
@@ -360,10 +361,11 @@ export default function TrendsPage() {
       <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">
         <div className="flex flex-wrap items-end gap-4">
           <div>
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-from`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               From
             </label>
             <input
+              id={`${fieldId}-from`}
               type="date"
               value={from}
               onChange={(e) => { setFrom(e.target.value); setActiveRange(''); }}
@@ -372,10 +374,11 @@ export default function TrendsPage() {
             />
           </div>
           <div>
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-to`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               To
             </label>
             <input
+              id={`${fieldId}-to`}
               type="date"
               value={to}
               onChange={(e) => { setTo(e.target.value); setActiveRange(''); }}

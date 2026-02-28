@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
@@ -86,6 +86,7 @@ function isCompleteKart(kart: Kart): boolean {
 
 export default function AnalyzePage() {
   const router = useRouter();
+  const fieldId = useId();
   const [step, setStep] = useState<Step>(1);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
@@ -408,10 +409,11 @@ export default function AnalyzePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+              <label htmlFor={`${fieldId}-type`} className="block text-steel font-telemetry text-xs uppercase mb-1">
                 Session Type
               </label>
               <select
+                id={`${fieldId}-type`}
                 value={sessionType}
                 onChange={(e) => setSessionType(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"
@@ -425,10 +427,11 @@ export default function AnalyzePage() {
             </div>
 
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+              <label htmlFor={`${fieldId}-driver`} className="block text-steel font-telemetry text-xs uppercase mb-1">
                 Driver
               </label>
               <select
+                id={`${fieldId}-driver`}
                 value={driverId}
                 onChange={(e) => setDriverId(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"
@@ -443,10 +446,11 @@ export default function AnalyzePage() {
             </div>
 
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+              <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase mb-1">
                 Track
               </label>
               <select
+                id={`${fieldId}-track`}
                 value={trackId}
                 onChange={(e) => setTrackId(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"
@@ -461,10 +465,11 @@ export default function AnalyzePage() {
             </div>
 
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+              <label htmlFor={`${fieldId}-kart`} className="block text-steel font-telemetry text-xs uppercase mb-1">
                 Kart
               </label>
               <select
+                id={`${fieldId}-kart`}
                 value={kartId}
                 onChange={(e) => setKartId(e.target.value)}
                 className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"

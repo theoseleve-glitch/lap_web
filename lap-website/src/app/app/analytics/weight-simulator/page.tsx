@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 import { PageHeader, ChartPanel } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
@@ -20,6 +20,7 @@ const PAD = { top: 24, right: 24, bottom: 40, left: 56 };
 /* ---------- component ---------- */
 
 export default function WeightSimulatorPage() {
+  const fieldId = useId();
   const [driverWeight, setDriverWeight] = useState(75);
   const [kartWeight, setKartWeight] = useState(80);
   const [ballast, setBallast] = useState(0);
@@ -171,10 +172,11 @@ export default function WeightSimulatorPage() {
           <h3 className="font-body text-chalk text-sm font-medium mb-4">Configuration</h3>
 
           <div className="mb-4">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-driver-w`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Driver Weight (kg)
             </label>
             <input
+              id={`${fieldId}-driver-w`}
               type="number"
               value={driverWeight}
               onChange={(e) => setDriverWeight(Number(e.target.value))}
@@ -187,10 +189,11 @@ export default function WeightSimulatorPage() {
           </div>
 
           <div className="mb-4">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-kart-w`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Kart Weight (kg)
             </label>
             <input
+              id={`${fieldId}-kart-w`}
               type="number"
               value={kartWeight}
               onChange={(e) => setKartWeight(Number(e.target.value))}
@@ -203,10 +206,11 @@ export default function WeightSimulatorPage() {
           </div>
 
           <div className="mb-6">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-ballast`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Ballast (kg)
             </label>
             <input
+              id={`${fieldId}-ballast`}
               type="number"
               value={ballast}
               onChange={(e) => setBallast(Number(e.target.value))}

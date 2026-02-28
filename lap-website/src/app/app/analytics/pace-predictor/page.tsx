@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, ChartPanel } from '@/components/app';
@@ -35,6 +35,7 @@ function formatTime(s: number): string {
 /* ---------- component ---------- */
 
 export default function PacePredictorPage() {
+  const fieldId = useId();
   const [trackId, setTrackId] = useState('');
   const [temperature, setTemperature] = useState(20);
   const [humidity, setHumidity] = useState(50);
@@ -71,10 +72,11 @@ export default function PacePredictorPage() {
 
           {/* Track selector */}
           <div className="mb-4">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Track
             </label>
             <select
+              id={`${fieldId}-track`}
               value={trackId}
               onChange={(e) => setTrackId(e.target.value)}
               className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
@@ -91,10 +93,11 @@ export default function PacePredictorPage() {
 
           {/* Temperature */}
           <div className="mb-4">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-temp`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Temperature (C)
             </label>
             <input
+              id={`${fieldId}-temp`}
               type="number"
               value={temperature}
               onChange={(e) => setTemperature(Number(e.target.value))}
@@ -108,10 +111,11 @@ export default function PacePredictorPage() {
 
           {/* Humidity */}
           <div className="mb-4">
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+            <label htmlFor={`${fieldId}-humid`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
               Humidity (%)
             </label>
             <input
+              id={`${fieldId}-humid`}
               type="number"
               value={humidity}
               onChange={(e) => setHumidity(Number(e.target.value))}

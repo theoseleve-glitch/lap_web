@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useId } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
@@ -246,6 +246,7 @@ function EvolutionChart({ entries }: { entries: EvolutionEntry[] }) {
 /* ------------------------------------------------------------------ */
 
 export default function TrackEvolutionPage() {
+  const fieldId = useId();
   const { id } = useParams<{ id: string }>();
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
@@ -283,10 +284,11 @@ export default function TrackEvolutionPage() {
         actions={
           <div className="flex items-center gap-3">
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
+              <label htmlFor={`${fieldId}-from`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
                 From
               </label>
               <input
+                id={`${fieldId}-from`}
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
@@ -295,10 +297,11 @@ export default function TrackEvolutionPage() {
               />
             </div>
             <div>
-              <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
+              <label htmlFor={`${fieldId}-to`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
                 To
               </label>
               <input
+                id={`${fieldId}-to`}
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, DataTable } from '@/components/app';
@@ -30,6 +30,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function ExportsPage() {
+  const fieldId = useId();
   const [generating, setGenerating] = useState(false);
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
   const [exportType, setExportType] = useState('sessions');
@@ -65,10 +66,11 @@ export default function ExportsPage() {
         <h3 className="font-body text-chalk text-sm mb-4">Generate Export</h3>
         <div className="flex flex-wrap gap-4 items-end">
           <div>
-            <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+            <label htmlFor={`${fieldId}-type`} className="block text-steel font-telemetry text-xs uppercase mb-1">
               Data Type
             </label>
             <select
+              id={`${fieldId}-type`}
               value={exportType}
               onChange={(e) => setExportType(e.target.value)}
               className="bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm focus:outline-none focus:border-pit-orange"
