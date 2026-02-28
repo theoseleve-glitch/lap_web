@@ -328,8 +328,8 @@ export default function SessionsPage() {
       ) : sessions.length === 0 && !hasFilters ? (
         /* Rich empty state */
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
-          <div className="text-5xl mb-4">🏁</div>
-          <h3 className="font-monument text-xl text-chalk mb-2">No sessions yet</h3>
+          <div className="text-5xl mb-4" aria-hidden="true">🏁</div>
+          <h2 className="font-monument text-xl text-chalk mb-2">No sessions yet</h2>
           <p className="text-steel font-body text-sm max-w-md mx-auto mb-6">
             This is where all your analyzed sessions will appear. Each session
             gets a score, grade, and detailed breakdown. Upload a RaceChrono or
@@ -339,7 +339,7 @@ export default function SessionsPage() {
             onClick={() => router.push('/app/analyze')}
             className="inline-flex items-center gap-2 px-6 py-3 bg-acid-green text-carbon font-monument text-sm rounded-lg hover:bg-acid-green/90 transition-colors"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
               <line x1="8" y1="2" x2="8" y2="14" />
               <line x1="2" y1="8" x2="14" y2="8" />
             </svg>

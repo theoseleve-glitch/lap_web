@@ -93,7 +93,7 @@ export default function BillingPage() {
 
       {/* ── Current Plan ──────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Current Plan</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Current Plan</h2>
         {subLoading ? (
           <div className="animate-pulse h-20 bg-steel/10 rounded" />
         ) : sub ? (
@@ -165,7 +165,7 @@ export default function BillingPage() {
 
       {/* ── Invoice History ────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Invoice History</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Invoice History</h2>
         {invLoading ? (
           <div className="animate-pulse space-y-2">
             {[1, 2, 3].map((i) => (

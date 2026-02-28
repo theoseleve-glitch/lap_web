@@ -18,6 +18,7 @@ export default function CornerReplayPage() {
 
   return (
     <div className="h-[calc(100vh-6rem)]">
+      <h1 className="sr-only">Corner Replay</h1>
       <CornerReplay sessionId={sessionId} cornerId={cornerId} />
     </div>
   );

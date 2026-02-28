@@ -178,8 +178,8 @@ export default function RaceStrategyListPage() {
             </>
           ) : (
             <>
-              <div className="text-4xl mb-3">🏁</div>
-              <h3 className="font-monument text-lg text-chalk mb-2">No races yet</h3>
+              <div className="text-4xl mb-3" aria-hidden="true">🏁</div>
+              <h2 className="font-monument text-lg text-chalk mb-2">No races yet</h2>
               <p className="text-steel font-body text-sm max-w-md mx-auto">
                 Create your first endurance race strategy. Plan pit stops, manage driver stints,
                 and optimize for the win.

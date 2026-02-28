@@ -63,7 +63,7 @@ export default function ExportsPage() {
 
       {/* Generate new export */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-body text-chalk text-sm mb-4">Generate Export</h3>
+        <h2 className="font-body text-chalk text-sm mb-4">Generate Export</h2>
         <div className="flex flex-wrap gap-4 items-end">
           <div>
             <label htmlFor={`${fieldId}-type`} className="block text-steel font-telemetry text-xs uppercase mb-1">
@@ -84,14 +84,15 @@ export default function ExportsPage() {
           </div>
 
           <div>
-            <label className="block text-steel font-telemetry text-xs uppercase mb-1">
+            <span className="block text-steel font-telemetry text-xs uppercase mb-1" id="format-label">
               Format
-            </label>
-            <div className="flex gap-2">
+            </span>
+            <div className="flex gap-2" role="group" aria-labelledby="format-label">
               {(['csv', 'json', 'pdf', 'parquet'] as ExportFormat[]).map((fmt) => (
                 <button
                   key={fmt}
                   type="button"
+                  aria-pressed={selectedFormat === fmt}
                   onClick={() => setSelectedFormat(fmt)}
                   className={`px-3 py-2 rounded border font-telemetry text-xs uppercase transition-colors ${
                     selectedFormat === fmt

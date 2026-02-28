@@ -62,33 +62,35 @@ export default function RaceControlLayout({ children }: { children: ReactNode })
           </span>
         </div>
 
-        {navGroups.map((group) => (
-          <div key={group.label} className="mb-4">
-            <p className="mb-1 px-3 text-[10px] font-semibold tracking-widest text-steel/60">
-              {group.label}
-            </p>
-            {group.items.map((item) => {
-              const isActive =
-                item.href === '/app/race-control'
-                  ? pathname === '/app/race-control'
-                  : pathname.startsWith(item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                    isActive
-                      ? 'bg-red-500/10 text-red-400'
-                      : 'text-chalk/50 hover:bg-white/5 hover:text-chalk/80'
-                  }`}
-                >
-                  <span className="text-xs">{item.icon}</span>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        ))}
+        <nav aria-label="Race Control navigation">
+          {navGroups.map((group) => (
+            <div key={group.label} className="mb-4">
+              <p className="mb-1 px-3 text-[10px] font-semibold tracking-widest text-steel/60">
+                {group.label}
+              </p>
+              {group.items.map((item) => {
+                const isActive =
+                  item.href === '/app/race-control'
+                    ? pathname === '/app/race-control'
+                    : pathname.startsWith(item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                      isActive
+                        ? 'bg-red-500/10 text-red-400'
+                        : 'text-chalk/50 hover:bg-white/5 hover:text-chalk/80'
+                    }`}
+                  >
+                    <span className="text-xs" aria-hidden="true">{item.icon}</span>
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ))}
+        </nav>
       </aside>
 
       {/* Main content */}

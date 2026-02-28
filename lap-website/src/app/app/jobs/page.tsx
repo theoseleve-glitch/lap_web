@@ -188,10 +188,10 @@ export default function JobsPage() {
         </div>
       ) : jobs.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
-          <div className="text-4xl mb-3">⚙️</div>
-          <h3 className="font-monument text-lg text-chalk mb-2">
+          <div className="text-4xl mb-3" aria-hidden="true">⚙️</div>
+          <h2 className="font-monument text-lg text-chalk mb-2">
             {statusFilter !== 'all' ? 'No matching jobs' : 'No processing jobs yet'}
-          </h3>
+          </h2>
           <p className="text-steel font-body text-sm max-w-md mx-auto">
             {statusFilter !== 'all'
               ? 'No jobs with the selected status. Try changing the filter.'

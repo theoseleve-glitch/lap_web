@@ -181,7 +181,7 @@ export default function ProfilePage() {
 
       {/* ── Personal Info ──────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Personal Information</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Personal Information</h2>
         {isLoading ? (
           <div className="animate-pulse space-y-3">
             <div className="h-10 bg-steel/10 rounded" />
@@ -276,7 +276,7 @@ export default function ProfilePage() {
 
       {/* ── Preferences ───────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Preferences</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Preferences</h2>
         {isLoading ? (
           <div className="animate-pulse space-y-3">
             <div className="h-10 bg-steel/10 rounded" />
@@ -377,7 +377,7 @@ export default function ProfilePage() {
 
       {/* ── Notifications ─────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Notifications</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Notifications</h2>
         {isLoading ? (
           <div className="animate-pulse space-y-3">
             {[1, 2, 3, 4].map((i) => (

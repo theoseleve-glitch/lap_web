@@ -129,8 +129,8 @@ export default function TracksPage() {
             </>
           ) : (
             <>
-              <div className="text-4xl mb-3">🏁</div>
-              <h3 className="font-monument text-lg text-chalk mb-2">No tracks yet</h3>
+              <div className="text-4xl mb-3" aria-hidden="true">🏁</div>
+              <h2 className="font-monument text-lg text-chalk mb-2">No tracks yet</h2>
               <p className="text-steel font-body text-sm max-w-md mx-auto">
                 Tracks are automatically detected when you upload session data.
                 Upload a telemetry CSV to get started.

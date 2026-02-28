@@ -229,7 +229,7 @@ export default function SecurityPage() {
 
       {/* ── Change Password ───────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Change Password</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Change Password</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -295,7 +295,7 @@ export default function SecurityPage() {
 
       {/* ── Two-Factor Authentication ─────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Two-Factor Authentication</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Two-Factor Authentication</h2>
         {meLoading ? (
           <div className="animate-pulse h-16 bg-steel/10 rounded" />
         ) : twoFaStep === 'idle' ? (
@@ -583,7 +583,7 @@ export default function SecurityPage() {
       {/* ── Active Sessions ───────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-monument text-sm text-chalk">Active Sessions</h3>
+          <h2 className="font-monument text-sm text-chalk">Active Sessions</h2>
           {sessions && sessions.length > 1 && (
             <button
               type="button"
@@ -660,7 +660,7 @@ export default function SecurityPage() {
 
       {/* ── Connected Accounts ────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Connected Accounts</h3>
+        <h2 className="font-monument text-sm text-chalk mb-4">Connected Accounts</h2>
         {connectionsLoading ? (
           <div className="animate-pulse space-y-2">
             <div className="h-12 bg-steel/10 rounded" />

@@ -264,7 +264,7 @@ function badgeLevelColor(level: string): string {
 
 function SectionHeader({ title }: { title: string }) {
   return (
-    <h3 className="font-body text-chalk text-lg font-semibold mb-4 mt-2">{title}</h3>
+    <h2 className="font-body text-chalk text-lg font-semibold mb-4 mt-2">{title}</h2>
   );
 }
 
@@ -580,7 +580,7 @@ export default function SessionDetailPage() {
           onClick={() => setFocusOpen(true)}
           className="flex items-center gap-2 px-3 py-1.5 mb-1 rounded-lg border border-steel/20 text-steel hover:text-acid-green hover:border-acid-green/40 transition-colors font-telemetry text-sm whitespace-nowrap"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true" focusable="false">
             <rect x="1" y="1" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
             <rect x="5" y="5" width="6" height="6" rx="1" fill="currentColor" />
           </svg>

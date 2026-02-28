@@ -152,8 +152,8 @@ export default function LeaderboardPage() {
         </div>
       ) : entries.length === 0 ? (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
-          <div className="text-4xl mb-3">🏆</div>
-          <h3 className="font-monument text-lg text-chalk mb-2">No entries yet</h3>
+          <div className="text-4xl mb-3" aria-hidden="true">🏆</div>
+          <h2 className="font-monument text-lg text-chalk mb-2">No entries yet</h2>
           <p className="text-steel font-body text-sm max-w-md mx-auto">
             Process some sessions to populate the leaderboard. The fastest laps
             across all drivers and tracks will appear here.

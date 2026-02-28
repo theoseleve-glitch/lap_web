@@ -595,8 +595,8 @@ export default function CompareSessionsPage() {
       {/* ── Prompt State ───────────────────────────────── */}
       {!canCompare && !comparing && (
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
-          <div className="text-4xl mb-3">⇄</div>
-          <h3 className="font-monument text-lg text-chalk mb-2">Select Two Sessions</h3>
+          <div className="text-4xl mb-3" aria-hidden="true">⇄</div>
+          <h2 className="font-monument text-lg text-chalk mb-2">Select Two Sessions</h2>
           <p className="text-steel font-body text-sm max-w-md mx-auto">
             Pick two different sessions above to see a side-by-side breakdown of lap times,
             scores, and driving performance.

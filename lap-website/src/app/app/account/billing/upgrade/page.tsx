@@ -44,6 +44,8 @@ export default function UpgradePage() {
       {/* Billing cycle toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
         <button
+          type="button"
+          aria-pressed={cycle === 'monthly'}
           onClick={() => setCycle('monthly')}
           className={`px-4 py-1.5 rounded-full font-telemetry text-xs transition-colors ${
             cycle === 'monthly'
@@ -54,6 +56,8 @@ export default function UpgradePage() {
           Monthly
         </button>
         <button
+          type="button"
+          aria-pressed={cycle === 'annual'}
           onClick={() => setCycle('annual')}
           className={`px-4 py-1.5 rounded-full font-telemetry text-xs transition-colors ${
             cycle === 'annual'
@@ -91,7 +95,7 @@ export default function UpgradePage() {
               {/* Header */}
               <div className="mb-4">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-monument text-lg text-chalk">{plan.name}</h3>
+                  <h2 className="font-monument text-lg text-chalk">{plan.name}</h2>
                   {isCurrent && (
                     <span className="bg-acid-green/20 text-acid-green text-[10px] font-telemetry px-2 py-0.5 rounded-full">
                       Current

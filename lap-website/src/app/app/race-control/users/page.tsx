@@ -19,7 +19,9 @@ export default function AdminUsersPage() {
     <div>
       <h1 className="mb-4 text-xl font-bold text-chalk">Users</h1>
 
+      <label htmlFor="user-search" className="sr-only">Search users by email</label>
       <input
+        id="user-search"
         type="text"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
