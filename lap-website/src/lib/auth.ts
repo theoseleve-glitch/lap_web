@@ -1,4 +1,11 @@
-import { setAccessToken, getAccessToken, setWorkspaceId } from './auth-store';
+import {
+  setAccessToken,
+  getAccessToken,
+  setWorkspaceId,
+  getWorkspaceId,
+  broadcastTokenRefresh,
+  broadcastLogout,
+} from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -77,6 +84,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   if ('access_token' in result) {
     setAccessToken(result.access_token);
     await resolveWorkspace();
+    broadcastTokenRefresh(result.access_token, getWorkspaceId());
   }
   return result;
 }
@@ -93,6 +101,7 @@ export async function verify2fa(
   const result = await authFetch<LoginResponse>('/2fa/verify', body);
   setAccessToken(result.access_token);
   await resolveWorkspace();
+  broadcastTokenRefresh(result.access_token, getWorkspaceId());
   return result;
 }
 
@@ -124,6 +133,7 @@ export async function register(
   });
   setAccessToken(result.access_token);
   await resolveWorkspace();
+  broadcastTokenRefresh(result.access_token, getWorkspaceId());
   return result;
 }
 
@@ -135,6 +145,7 @@ export async function logout(): Promise<void> {
   await authFetch('/logout');
   setAccessToken(null);
   setWorkspaceId(null);
+  broadcastLogout();
 }
 
 /**
@@ -146,6 +157,7 @@ export async function silentRefresh(): Promise<AuthUser | null> {
     const result = await authFetch<LoginResponse>('/refresh');
     setAccessToken(result.access_token);
     await resolveWorkspace();
+    broadcastTokenRefresh(result.access_token, getWorkspaceId());
     return result.user;
   } catch {
     setAccessToken(null);
@@ -157,6 +169,7 @@ export async function silentRefresh(): Promise<AuthUser | null> {
 export async function refreshToken(): Promise<{ access_token: string }> {
   const result = await authFetch<{ access_token: string; user?: AuthUser }>('/refresh');
   setAccessToken(result.access_token);
+  broadcastTokenRefresh(result.access_token, getWorkspaceId());
   return result;
 }
 
