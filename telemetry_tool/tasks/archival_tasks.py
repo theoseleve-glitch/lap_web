@@ -163,7 +163,7 @@ def _archive_old_partitions_impl(
 # ---------------------------------------------------------------------------
 
 try:
-    from telemetry_tool.celery_app import celery
+    from celery_app import celery
 
     @celery.task(name="tasks.archival_tasks.create_future_partitions", queue="default")
     def create_future_partitions():

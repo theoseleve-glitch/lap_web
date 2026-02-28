@@ -342,7 +342,7 @@ def _enforce_retention_impl() -> dict:
 # ── Register as Celery task or plain function ─────────────────────────
 
 try:
-    from tasks.celery_app import celery
+    from celery_app import celery
 
     @celery.task(queue="default", bind=True, max_retries=2)
     def enforce_telemetry_retention(self):

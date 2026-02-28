@@ -37,7 +37,22 @@ def make_celery(app=None) -> Celery:
         broker = app.config.get("CELERY_BROKER_URL", "redis://localhost:6379/0")
         backend = app.config.get("CELERY_RESULT_BACKEND", "redis://localhost:6379/0")
 
-    celery = Celery("telemetry_tool", broker=broker, backend=backend)
+    celery = Celery(
+        "telemetry_tool",
+        broker=broker,
+        backend=backend,
+        include=[
+            "tasks.pipeline_tasks",
+            "tasks.batch_tasks",
+            "tasks.gdpr_tasks",
+            "tasks.billing_tasks",
+            "tasks.alerting_tasks",
+            "tasks.email_tasks",
+            "tasks.archival_tasks",
+            "tasks.usage_tasks",
+            "tasks.retention_tasks",
+        ],
+    )
     celery.conf.update(
         task_serializer="json",
         accept_content=["json"],

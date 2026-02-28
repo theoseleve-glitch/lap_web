@@ -31,7 +31,7 @@ def _get_pg_conn():
 
 
 try:
-    from tasks.celery_app import celery
+    from celery_app import celery
 
     @celery.task(queue="default", bind=True, max_retries=2)
     def aggregate_monthly_usage(self):
