@@ -24,35 +24,45 @@ export default function FreeReportLayout({ children }: { children: ReactNode }) 
           </Link>
 
           {/* Step indicator */}
-          <div className="flex items-center gap-3">
-            {steps.map((step, i) => {
-              const isActive = i === currentStepIndex;
-              const isComplete = i < currentStepIndex;
-              return (
-                <div key={step.label} className="flex items-center gap-3">
-                  {i > 0 && (
-                    <div className={`w-8 h-0.5 ${isComplete ? 'bg-acid-green' : 'bg-steel/30'}`} />
-                  )}
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={`w-6 h-6 rounded-full flex items-center justify-center font-telemetry text-xs ${
-                        isActive
-                          ? 'bg-acid-green text-asphalt'
-                          : isComplete
-                            ? 'bg-acid-green/20 text-acid-green'
-                            : 'bg-concrete text-steel border border-steel/30'
-                      }`}
-                    >
-                      {isComplete ? '✓' : i + 1}
+          <nav aria-label="Analysis progress">
+            <ol className="flex items-center gap-3" role="list">
+              {steps.map((step, i) => {
+                const isActive = i === currentStepIndex;
+                const isComplete = i < currentStepIndex;
+                return (
+                  <li
+                    key={step.label}
+                    className="flex items-center gap-3"
+                    aria-current={isActive ? 'step' : undefined}
+                  >
+                    {i > 0 && (
+                      <div
+                        className={`w-8 h-0.5 ${isComplete ? 'bg-acid-green' : 'bg-steel/30'}`}
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-6 h-6 rounded-full flex items-center justify-center font-telemetry text-xs ${
+                          isActive
+                            ? 'bg-acid-green text-asphalt'
+                            : isComplete
+                              ? 'bg-acid-green/20 text-acid-green'
+                              : 'bg-concrete text-steel border border-steel/30'
+                        }`}
+                        aria-hidden="true"
+                      >
+                        {isComplete ? '✓' : i + 1}
+                      </div>
+                      <span className={`font-body text-sm ${isActive ? 'text-chalk' : 'text-steel'}`}>
+                        {step.label}
+                      </span>
                     </div>
-                    <span className={`font-body text-sm ${isActive ? 'text-chalk' : 'text-steel'}`}>
-                      {step.label}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
 
           <div className="w-12" />
         </div>
