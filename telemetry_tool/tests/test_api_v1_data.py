@@ -915,3 +915,272 @@ class TestV1SessionDetailsMissingFields:
         assert detail["condition"] is None
         assert "kart_name" in detail, "Missing 'kart_name' field"
         assert detail["kart_name"] is None
+
+
+# ---------------------------------------------------------------------------
+# MISSING-001: GET /sessions/<id>/pit-window
+# ---------------------------------------------------------------------------
+
+class TestV1PitWindow:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_pit_window_returns_envelope(self, mock_db, client):
+        """GET /api/v1/sessions/<id>/pit-window returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/pit-window")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+        assert "data" in body
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_pit_window_expected_fields(self, mock_db, client):
+        """Response has current_lap, window_open, window_close, optimal_lap, time_loss_per_lap."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/pit-window")
+        body = resp.get_json()
+        data = body["data"]
+        for key in ("current_lap", "window_open", "window_close", "optimal_lap", "time_loss_per_lap"):
+            assert key in data, f"Missing key '{key}' in pit-window response"
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_pit_window_with_lap_data(self, mock_db, client):
+        """When laps exist, pit-window computes from them."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        # Return 10 laps
+        lap_rows = [
+            {"lap_number": i, "lap_time_s": 60.0 + i * 0.1, "is_valid": 1}
+            for i in range(1, 11)
+        ]
+        conn.execute.return_value.fetchall.return_value = lap_rows
+        resp = client.get("/api/v1/sessions/sess_001/pit-window")
+        body = resp.get_json()
+        assert body["ok"] is True
+        data = body["data"]
+        assert data["current_lap"] == 10
+
+
+# ---------------------------------------------------------------------------
+# MISSING-002: GET /sessions/<id>/rival-gap
+# ---------------------------------------------------------------------------
+
+class TestV1RivalGap:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_rival_gap_returns_envelope(self, mock_db, client):
+        """GET /api/v1/sessions/<id>/rival-gap returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/rival-gap")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_rival_gap_has_expected_arrays(self, mock_db, client):
+        """Response has lap_numbers and gap_seconds as arrays."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/rival-gap")
+        body = resp.get_json()
+        data = body["data"]
+        assert isinstance(data["lap_numbers"], list)
+        assert isinstance(data["gap_seconds"], list)
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_rival_gap_returns_empty_arrays(self, mock_db, client):
+        """No rival data exists, so arrays should be empty."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/rival-gap")
+        body = resp.get_json()
+        data = body["data"]
+        assert data["lap_numbers"] == []
+        assert data["gap_seconds"] == []
+
+
+# ---------------------------------------------------------------------------
+# MISSING-003: GET /sessions/<id>/corners
+# ---------------------------------------------------------------------------
+
+class TestV1Corners:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corners_returns_envelope(self, mock_db, client):
+        """GET /api/v1/sessions/<id>/corners returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/corners")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corners_has_corners_list(self, mock_db, client):
+        """Response has 'corners' key with a list."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/corners")
+        body = resp.get_json()
+        assert isinstance(body["data"]["corners"], list)
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corners_with_data(self, mock_db, client):
+        """When corner_metrics has data, returns aggregated corners."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchall.return_value = [
+            {
+                "corner_id": 1,
+                "avg_entry_speed_mps": 20.0,
+                "avg_apex_speed_mps": 15.0,
+                "avg_exit_speed_mps": 22.0,
+            },
+            {
+                "corner_id": 2,
+                "avg_entry_speed_mps": 25.0,
+                "avg_apex_speed_mps": 18.0,
+                "avg_exit_speed_mps": 27.0,
+            },
+        ]
+        resp = client.get("/api/v1/sessions/sess_001/corners")
+        body = resp.get_json()
+        corners = body["data"]["corners"]
+        assert len(corners) == 2
+        assert corners[0]["corner_id"] == 1
+        for key in ("name", "entry_speed", "apex_speed", "exit_speed"):
+            assert key in corners[0], f"Missing key '{key}' in corner"
+
+
+# ---------------------------------------------------------------------------
+# MISSING-004: GET /sessions/<id>/corner-replay
+# ---------------------------------------------------------------------------
+
+class TestV1CornerReplay:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corner_replay_returns_envelope(self, mock_db, client):
+        """GET /api/v1/sessions/<id>/corner-replay returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/corner-replay")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_corner_replay_has_frames(self, mock_db, client):
+        """Response has 'frames' key with a list."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/sessions/sess_001/corner-replay")
+        body = resp.get_json()
+        assert isinstance(body["data"]["frames"], list)
+
+
+# ---------------------------------------------------------------------------
+# MISSING-005: GET /setup/status
+# ---------------------------------------------------------------------------
+
+class TestV1SetupStatus:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_setup_status_returns_envelope(self, mock_db, client):
+        """GET /api/v1/setup/status returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/setup/status")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_setup_status_has_steps(self, mock_db, client):
+        """Response has 'steps' key with a list of step objects."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/setup/status")
+        body = resp.get_json()
+        steps = body["data"]["steps"]
+        assert isinstance(steps, list)
+        assert len(steps) > 0
+        for step in steps:
+            assert "id" in step
+            assert "label" in step
+            assert "status" in step
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_setup_status_step_values(self, mock_db, client):
+        """Setup steps have valid statuses: 'complete' or 'pending'."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        resp = client.get("/api/v1/setup/status")
+        body = resp.get_json()
+        for step in body["data"]["steps"]:
+            assert step["status"] in ("complete", "pending"), \
+                f"Invalid status '{step['status']}' for step '{step['id']}'"
+
+
+# ---------------------------------------------------------------------------
+# MISSING-006: GET /data-health/jobs/<job_id>
+# ---------------------------------------------------------------------------
+
+class TestV1DataHealthJobDetail:
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_job_detail_returns_envelope(self, mock_db, client):
+        """GET /api/v1/data-health/jobs/<job_id> returns ok/data envelope."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = {
+            "job_id": "j1",
+            "file_path": "/tmp/data.csv",
+            "file_size": 1024,
+            "status": "completed",
+            "n_rows_total": 100,
+            "n_rows_loaded": 100,
+            "n_chunks": 1,
+            "error_message": None,
+            "elapsed_s": 1.5,
+            "started_at": "2026-01-01T00:00:00",
+            "completed_at": "2026-01-01T00:00:01",
+            "sha256_partial": "abc123",
+        }
+        resp = client.get("/api/v1/data-health/jobs/j1")
+        body = resp.get_json()
+        assert resp.status_code == 200
+        assert body["ok"] is True
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_job_detail_not_found(self, mock_db, client):
+        """Returns 404 when job does not exist."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = None
+        resp = client.get("/api/v1/data-health/jobs/nonexistent")
+        body = resp.get_json()
+        assert resp.status_code == 404
+        assert body["ok"] is False
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_job_detail_strips_file_path(self, mock_db, client):
+        """Response has file_name but not file_path (security)."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        conn.execute.return_value.fetchone.return_value = {
+            "job_id": "j1",
+            "file_path": "/home/user/data/my_session.csv",
+            "file_size": 2048,
+            "status": "completed",
+            "n_rows_total": 200,
+            "n_rows_loaded": 200,
+            "n_chunks": 2,
+            "error_message": None,
+            "elapsed_s": 3.0,
+            "started_at": "2026-01-01T00:00:00",
+            "completed_at": "2026-01-01T00:00:03",
+            "sha256_partial": "def456",
+        }
+        resp = client.get("/api/v1/data-health/jobs/j1")
+        body = resp.get_json()
+        data = body["data"]
+        assert "file_name" in data
+        assert data["file_name"] == "my_session.csv"
+        assert "file_path" not in data

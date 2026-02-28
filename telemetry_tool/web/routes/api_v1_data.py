@@ -3402,3 +3402,253 @@ def v1_trends(session_id: str):
         "pace_delta": pace_delta,
         "consistency_index": consistency,
     })
+
+
+# ---------------------------------------------------------------------------
+# MISSING-001: GET /sessions/<id>/pit-window — pit stop window analysis
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/pit-window", methods=["GET"])
+@rate_limit(tier="read")
+def v1_pit_window(session_id: str):
+    """Return pit stop window analysis for a session.
+
+    Computes optimal pit window from lap time data. If no laps exist,
+    returns null values for all fields.
+
+    Returns:
+        200 with ``{"current_lap", "window_open", "window_close",
+                     "optimal_lap", "time_loss_per_lap"}``
+    """
+    conn = get_db_connection()
+    try:
+        lap_rows = conn.execute(
+            """SELECT lap_number, lap_time_s
+               FROM laps
+               WHERE session_id = :sid AND is_valid = 1
+               ORDER BY lap_number""",
+            {"sid": session_id},
+        ).fetchall()
+    except Exception:
+        lap_rows = []
+
+    laps = [dict(r) if not isinstance(r, dict) else r for r in lap_rows]
+    valid_laps = [l for l in laps if l.get("lap_time_s") is not None]
+
+    if not valid_laps:
+        return api_response({
+            "current_lap": None,
+            "window_open": None,
+            "window_close": None,
+            "optimal_lap": None,
+            "time_loss_per_lap": None,
+        })
+
+    current_lap = max(l["lap_number"] for l in valid_laps)
+    times = [l["lap_time_s"] for l in valid_laps]
+    mean_time = sum(times) / len(times)
+    best_time = min(times)
+
+    # Estimate time loss per lap (degradation from best)
+    time_loss_per_lap = round(mean_time - best_time, 3)
+
+    # Simple pit window heuristic: open at 40%, close at 70% of total laps
+    n_laps = len(valid_laps)
+    window_open = max(1, round(n_laps * 0.4))
+    window_close = max(window_open + 1, round(n_laps * 0.7))
+
+    # Optimal lap is where degradation exceeds pit loss threshold
+    # (heuristic: midpoint of window)
+    optimal_lap = round((window_open + window_close) / 2)
+
+    return api_response({
+        "current_lap": current_lap,
+        "window_open": window_open,
+        "window_close": window_close,
+        "optimal_lap": optimal_lap,
+        "time_loss_per_lap": time_loss_per_lap,
+    })
+
+
+# ---------------------------------------------------------------------------
+# MISSING-002: GET /sessions/<id>/rival-gap — gap to rival over race
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/rival-gap", methods=["GET"])
+@rate_limit(tier="read")
+def v1_rival_gap(session_id: str):
+    """Return gap to rival over the course of a session.
+
+    No rival data currently exists in the database, so this returns
+    empty arrays. When rival/comparison data is added, this endpoint
+    will be populated.
+
+    Returns:
+        200 with ``{"lap_numbers": [], "gap_seconds": []}``
+    """
+    return api_response({
+        "lap_numbers": [],
+        "gap_seconds": [],
+    })
+
+
+# ---------------------------------------------------------------------------
+# MISSING-003: GET /sessions/<id>/corners — raw corner data
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/corners", methods=["GET"])
+@rate_limit(tier="read")
+def v1_corners(session_id: str):
+    """Return raw corner data aggregated from corner_metrics.
+
+    Different from /corner-mastery which returns mastery scores.
+    This endpoint returns raw speed data per corner, averaged across laps.
+
+    Returns:
+        200 with ``{"corners": [{corner_id, name, entry_speed, apex_speed, exit_speed}]}``
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT corner_id,
+                      AVG(entry_speed_mps) as avg_entry_speed_mps,
+                      AVG(apex_speed_mps)  as avg_apex_speed_mps,
+                      AVG(exit_speed_mps)  as avg_exit_speed_mps
+               FROM corner_metrics
+               WHERE session_id = :sid
+               GROUP BY corner_id
+               ORDER BY corner_id""",
+            {"sid": session_id},
+        ).fetchall()
+    except Exception:
+        rows = []
+
+    corners = []
+    for r in rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        corners.append({
+            "corner_id": d["corner_id"],
+            "name": f"C{d['corner_id']}",
+            "entry_speed": round((d.get("avg_entry_speed_mps") or 0) * 3.6, 1),
+            "apex_speed": round((d.get("avg_apex_speed_mps") or 0) * 3.6, 1),
+            "exit_speed": round((d.get("avg_exit_speed_mps") or 0) * 3.6, 1),
+        })
+
+    return api_response({"corners": corners})
+
+
+# ---------------------------------------------------------------------------
+# MISSING-004: GET /sessions/<id>/corner-replay — corner animation frames
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/corner-replay", methods=["GET"])
+@rate_limit(tier="read")
+def v1_corner_replay(session_id: str):
+    """Return frame data for corner replay animation.
+
+    Currently returns an empty frames list. When the corner replay
+    rendering pipeline is implemented, this will return per-frame
+    GPS + telemetry data for animating corner traversals.
+
+    Returns:
+        200 with ``{"frames": []}``
+    """
+    return api_response({"frames": []})
+
+
+# ---------------------------------------------------------------------------
+# MISSING-005: GET /setup/status — onboarding setup checklist
+# ---------------------------------------------------------------------------
+
+@bp.route("/setup/status", methods=["GET"])
+@rate_limit(tier="read")
+def v1_setup_status():
+    """Return onboarding setup status.
+
+    Computes step completion from counts of sessions, tracks, and drivers.
+
+    Returns:
+        200 with ``{"steps": [{id, label, status}]}``
+    """
+    conn = get_db_connection()
+
+    _ALLOWED_TABLES = {"sessions", "tracks", "drivers"}
+
+    def _count(table: str) -> int:
+        if table not in _ALLOWED_TABLES:
+            return 0
+        try:
+            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()
+            if row is None:
+                return 0
+            return (dict(row) if not isinstance(row, dict) else row).get("cnt", 0)
+        except Exception:
+            return 0
+
+    session_count = _count("sessions")
+    track_count = _count("tracks")
+    driver_count = _count("drivers")
+
+    steps = [
+        {
+            "id": "upload_session",
+            "label": "Upload your first session",
+            "status": "complete" if session_count > 0 else "pending",
+        },
+        {
+            "id": "add_track",
+            "label": "Add a track",
+            "status": "complete" if track_count > 0 else "pending",
+        },
+        {
+            "id": "add_driver",
+            "label": "Create a driver profile",
+            "status": "complete" if driver_count > 0 else "pending",
+        },
+        {
+            "id": "analyze_session",
+            "label": "Analyze a session",
+            "status": "complete" if session_count > 0 else "pending",
+        },
+    ]
+
+    return api_response({"steps": steps})
+
+
+# ---------------------------------------------------------------------------
+# MISSING-006: GET /data-health/jobs/<job_id> — single job detail
+# ---------------------------------------------------------------------------
+
+@bp.route("/data-health/jobs/<job_id>", methods=["GET"])
+@rate_limit(tier="read")
+def v1_data_health_job_detail(job_id: str):
+    """Return detail for a single ingestion job.
+
+    Returns:
+        200 with job details.
+        404 if job not found.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT job_id, file_path, file_size, sha256_partial,
+                      status, n_rows_total, n_rows_loaded, n_chunks,
+                      error_message, elapsed_s,
+                      started_at, completed_at
+               FROM ingestion_jobs
+               WHERE job_id = :jid""",
+            {"jid": job_id},
+        ).fetchone()
+    except Exception:
+        row = None
+
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+
+    d = dict(row) if not isinstance(row, dict) else row
+    # Expose file_name only, never full file_path (security)
+    if d.get("file_path"):
+        d["file_name"] = Path(d["file_path"]).name
+        del d["file_path"]
+
+    return api_response(d)
