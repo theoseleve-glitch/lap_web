@@ -30,6 +30,7 @@ export function AdminTable<T extends Record<string, any>>({
             {columns.map((col) => (
               <th
                 key={col.key}
+                scope="col"
                 className="px-4 py-2 text-left text-xs font-medium text-steel"
               >
                 {col.label}

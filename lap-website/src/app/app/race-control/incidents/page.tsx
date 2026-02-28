@@ -11,7 +11,7 @@ export default function IncidentsPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: '', body: '', severity: 'p3' });
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['admin-incidents'],
     queryFn: () => adminApi.listIncidents(),
   });
@@ -30,6 +30,7 @@ export default function IncidentsPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-chalk">Incidents</h1>
         <button
+          type="button"
           onClick={() => setShowForm(!showForm)}
           className="rounded bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30"
         >
@@ -64,6 +65,7 @@ export default function IncidentsPage() {
           </select>
           <div>
             <button
+              type="button"
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending || !form.title}
               className="rounded bg-red-500/20 px-3 py-1 text-xs text-red-400 disabled:opacity-50"
@@ -74,8 +76,16 @@ export default function IncidentsPage() {
         </div>
       )}
 
+      {error && (
+        <div className="mb-4 rounded-lg border border-safety-red/30 bg-safety-red/10 p-3 text-safety-red text-sm font-body">
+          Failed to load incidents: {(error as Error).message}
+        </div>
+      )}
+
       {isLoading ? (
-        <p className="text-steel">Loading...</p>
+        <div className="flex items-center justify-center h-32">
+          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+        </div>
       ) : (
         <AdminTable
           columns={[
@@ -86,6 +96,7 @@ export default function IncidentsPage() {
             { key: 'resolved_at', label: 'Resolved', render: (r) => r.resolved_at ? new Date(r.resolved_at as string).toLocaleString() : '-' },
           ]}
           data={data ?? []}
+          emptyMessage="No incidents recorded"
         />
       )}
     </div>

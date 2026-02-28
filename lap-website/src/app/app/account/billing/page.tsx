@@ -55,13 +55,13 @@ function formatAmount(amount: number | null, currency: string | null): string {
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function BillingPage() {
-  const { data: sub, isLoading: subLoading } = useQuery<Subscription>({
+  const { data: sub, isLoading: subLoading, error: subError } = useQuery<Subscription>({
     queryKey: ['billing', 'subscription'],
     queryFn: () => apiFetch<Subscription>('/billing/subscription'),
     staleTime: 60_000,
   });
 
-  const { data: invoiceData, isLoading: invLoading } = useQuery<{ invoices: Invoice[]; has_more: boolean }>({
+  const { data: invoiceData, isLoading: invLoading, error: invError } = useQuery<{ invoices: Invoice[]; has_more: boolean }>({
     queryKey: ['billing', 'invoices'],
     queryFn: () => apiFetch<{ invoices: Invoice[]; has_more: boolean }>('/billing/invoices'),
     staleTime: 60_000,
@@ -83,6 +83,13 @@ export default function BillingPage() {
   return (
     <div>
       <PageHeader title="Billing" subtitle="Plan, usage, and payment management" />
+
+      {(subError || invError) && (
+        <div className="mb-4 rounded-lg border border-safety-red/30 bg-safety-red/10 p-3 text-safety-red text-sm font-body">
+          {subError && <p>Failed to load subscription: {(subError as Error).message}</p>}
+          {invError && <p>Failed to load invoices: {(invError as Error).message}</p>}
+        </div>
+      )}
 
       {/* ── Current Plan ──────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
@@ -149,6 +156,12 @@ export default function BillingPage() {
           <span className="font-telemetry text-sm text-safety-red">Cancel Subscription</span>
         </button>
       </div>
+
+      {portalMutation.isError && (
+        <div className="mb-4 rounded-lg border border-safety-red/30 bg-safety-red/10 p-3 text-safety-red text-sm font-body">
+          Failed to open billing portal: {(portalMutation.error as Error).message}
+        </div>
+      )}
 
       {/* ── Invoice History ────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6">
