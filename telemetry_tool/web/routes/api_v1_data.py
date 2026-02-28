@@ -1643,12 +1643,15 @@ def v1_dashboard_stats():
     stats = {
         "total_sessions": raw.get("total_sessions", 0) or 0,
         "total_drivers": raw.get("total_drivers", 0) or 0,
+        "total_tracks": raw.get("total_tracks", 0) or 0,
+        "total_laps": raw.get("total_laps", 0) or 0,
         "avg_score": raw.get("avg_score"),
+        "best_score": raw.get("best_score"),
         "pb_time": raw.get("overall_best_time_s"),
     }
 
     # Recent sessions — map to frontend SessionRow shape
-    sessions = get_sessions(conn, limit=5, offset=0)
+    sessions = get_sessions(conn, limit=10, offset=0)
     stats["recent_sessions"] = [
         {
             "id": s.get("session_id", ""),
