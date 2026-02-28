@@ -52,6 +52,20 @@ interface SessionDetail {
   condition: string | null;
   kart_name: string | null;
   condition_phases?: ConditionPhase[];
+  data_health?: {
+    gps_quality: number | null;
+    gps_coverage_pct: number | null;
+    sampling_rate_hz: number | null;
+    total_points: number | null;
+    dropped_points: number | null;
+    sensor_channels: string[] | null;
+  } | null;
+  weather?: {
+    temperature_c: number | null;
+    humidity_pct: number | null;
+    wind_speed_ms: number | null;
+    conditions: string | null;
+  } | null;
 }
 
 interface LapRow {
@@ -1061,20 +1075,99 @@ export default function SessionDetailPage() {
         {/* ─────────── Tab 4: Analytics ─────────── */}
         {activeTab === 'Analytics' && (
           <div className="space-y-8">
-            {/* Style Section 2x2 */}
+            {/* Data Quality & Conditions Panel */}
+            {(session.data_health || session.weather) && (
+              <section>
+                <SectionHeader title="Session Context" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {session.data_health && (
+                    <div className="bg-concrete rounded-lg border border-steel/10 p-4">
+                      <h4 className="text-steel font-telemetry text-xs uppercase tracking-wider mb-3">Data Quality</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {session.data_health.gps_quality != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">GPS Quality</span>
+                            <span className={`font-telemetry text-sm ${session.data_health.gps_quality > 0.8 ? 'text-acid-green' : session.data_health.gps_quality > 0.5 ? 'text-amber-400' : 'text-safety-red'}`}>
+                              {(session.data_health.gps_quality * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        )}
+                        {session.data_health.sampling_rate_hz != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Sample Rate</span>
+                            <span className="text-chalk font-telemetry text-sm">{session.data_health.sampling_rate_hz} Hz</span>
+                          </div>
+                        )}
+                        {session.data_health.total_points != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Data Points</span>
+                            <span className="text-chalk font-telemetry text-sm">{session.data_health.total_points.toLocaleString()}</span>
+                          </div>
+                        )}
+                        {session.data_health.gps_coverage_pct != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">GPS Coverage</span>
+                            <span className="text-chalk font-telemetry text-sm">{(session.data_health.gps_coverage_pct * 100).toFixed(0)}%</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {session.weather && (
+                    <div className="bg-concrete rounded-lg border border-steel/10 p-4">
+                      <h4 className="text-steel font-telemetry text-xs uppercase tracking-wider mb-3">Weather</h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        {session.weather.conditions && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Conditions</span>
+                            <span className="text-chalk font-telemetry text-sm capitalize">{session.weather.conditions}</span>
+                          </div>
+                        )}
+                        {session.weather.temperature_c != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Temperature</span>
+                            <span className="text-chalk font-telemetry text-sm">{session.weather.temperature_c}°C</span>
+                          </div>
+                        )}
+                        {session.weather.humidity_pct != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Humidity</span>
+                            <span className="text-chalk font-telemetry text-sm">{session.weather.humidity_pct}%</span>
+                          </div>
+                        )}
+                        {session.weather.wind_speed_ms != null && (
+                          <div>
+                            <span className="text-steel/60 text-[10px] font-telemetry block">Wind</span>
+                            <span className="text-chalk font-telemetry text-sm">{(session.weather.wind_speed_ms * 3.6).toFixed(0)} km/h</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
+            {/* Driving Style — braking, cornering, consistency fingerprint */}
             <section>
-              <SectionHeader title="Style" />
+              <SectionHeader title="Driving Style" />
+              <p className="text-steel/60 text-xs font-telemetry mb-3 -mt-2">
+                Driver fingerprint, braking patterns, corner technique, and lap consistency
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Fingerprint sessionId={id} />
-                <ConsistencyHeatmap sessionId={id} />
+                <DrivingStyle sessionId={id} />
                 <BrakeScatter sessionId={id} />
                 <CornerMastery sessionId={id} />
               </div>
             </section>
 
-            {/* Physics Section 2x2 */}
+            {/* Vehicle Physics — energy, fatigue, speed envelope, throttle */}
             <section>
-              <SectionHeader title="Physics" />
+              <SectionHeader title="Vehicle Physics" />
+              <p className="text-steel/60 text-xs font-telemetry mb-3 -mt-2">
+                Energy balance, fatigue patterns, speed profile, and throttle application
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <EnergyBalance sessionId={id} />
                 <FatigueChart sessionId={id} />
@@ -1083,13 +1176,19 @@ export default function SessionDetailPage() {
               </div>
             </section>
 
-            {/* Advanced Section */}
+            {/* Conditions & Trends — weather impact, progression, consistency heatmap */}
             <section>
-              <SectionHeader title="Advanced" />
+              <SectionHeader title="Conditions & Trends" />
+              <p className="text-steel/60 text-xs font-telemetry mb-3 -mt-2">
+                Session progression, weather impact, tyre behavior, and workload analysis
+              </p>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <WorkloadChart sessionId={id} />
                 <TrendChart sessionId={id} />
+                <ConsistencyHeatmap sessionId={id} />
+                <WorkloadChart sessionId={id} />
                 <WeatherChart sessionId={id} />
+                <TyreChart sessionId={id} />
+                <StintChart sessionId={id} />
               </div>
             </section>
           </div>
