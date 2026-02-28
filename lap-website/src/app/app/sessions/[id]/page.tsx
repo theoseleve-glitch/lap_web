@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
+import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, InlineEdit } from '@/components/app';
 import {
   SpeedTrace,
@@ -345,6 +346,28 @@ export default function SessionDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
+
+  /* ── Chart-Map Hover Sync ── */
+  const hoverIndex = useChartHoverStore((s) => s.hoverIndex);
+  const hoverSource = useChartHoverStore((s) => s.source);
+  const setHover = useChartHoverStore((s) => s.setHover);
+  const clearHover = useChartHoverStore((s) => s.clearHover);
+
+  const handleSpeedTraceHover = useCallback(
+    (index: number | null) => {
+      if (index == null) clearHover();
+      else setHover(index, 'speed-trace');
+    },
+    [setHover, clearHover],
+  );
+
+  const handleTrackMapHover = useCallback(
+    (index: number | null) => {
+      if (index == null) clearHover();
+      else setHover(index, 'track-map');
+    },
+    [setHover, clearHover],
+  );
 
   const handleDelete = useCallback(async () => {
     setIsDeleting(true);
@@ -931,9 +954,17 @@ export default function SessionDetailPage() {
             <section>
               <SectionHeader title="Session Overview" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <SpeedTrace sessionId={id} />
+                <SpeedTrace
+                  sessionId={id}
+                  onHoverIndexChange={handleSpeedTraceHover}
+                  externalHoverIndex={hoverSource === 'track-map' ? hoverIndex : undefined}
+                />
                 <GGDiagram sessionId={id} />
-                <TrackMap sessionId={id} />
+                <TrackMap
+                  sessionId={id}
+                  onHoverIndexChange={handleTrackMapHover}
+                  externalHoverIndex={hoverSource === 'speed-trace' ? hoverIndex : undefined}
+                />
                 <DrivingStyle sessionId={id} />
               </div>
             </section>

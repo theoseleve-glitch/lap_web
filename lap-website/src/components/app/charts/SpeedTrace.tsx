@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { api } from '@/lib/api-client';
 import { ChartPanel } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
@@ -15,15 +15,25 @@ interface SpeedTraceData {
 interface Props {
   sessionId: string;
   height?: string;
+  /** Callback fired when hover index changes (for cross-chart sync) */
+  onHoverIndexChange?: (index: number | null) => void;
+  /** External hover index set by another chart (for cross-chart sync) */
+  externalHoverIndex?: number | null;
 }
 
 const PAD = { top: 12, right: 15, bottom: 28, left: 50 };
 
-export function SpeedTrace({ sessionId, height = 'h-56' }: Props) {
+export function SpeedTrace({ sessionId, height = 'h-56', onHoverIndexChange, externalHoverIndex }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ['session', sessionId, 'speed-trace'],
     queryFn: () => api.get<SpeedTraceData>(`/sessions/${sessionId}/speed-trace`),
   });
+
+  // Keep callback ref stable to avoid re-creating draw on every render
+  const onHoverIndexChangeRef = useRef(onHoverIndexChange);
+  onHoverIndexChangeRef.current = onHoverIndexChange;
+  const externalHoverIndexRef = useRef(externalHoverIndex);
+  externalHoverIndexRef.current = externalHoverIndex;
 
   const range = useMemo(() => {
     if (!data || data.distances.length === 0) return null;
@@ -103,23 +113,47 @@ export function SpeedTrace({ sessionId, height = 'h-56' }: Props) {
       ctx.fillStyle = grad;
       ctx.fill();
 
-      // Hover: draw highlighted point
+      // Resolve hover index: local mouse hover takes priority, then external
+      let activeIdx: number | null = null;
       if (hover && hover.nx >= 0 && hover.nx <= 1) {
-        const idx = Math.round(hover.nx * (distances.length - 1));
-        if (idx >= 0 && idx < distances.length) {
-          const hx = toX(distances[idx]);
-          const hy = toY(speeds[idx]);
+        activeIdx = Math.round(hover.nx * (distances.length - 1));
+        // Publish hover index to other charts
+        if (onHoverIndexChangeRef.current) {
+          onHoverIndexChangeRef.current(activeIdx);
+        }
+      } else if (externalHoverIndexRef.current != null) {
+        activeIdx = externalHoverIndexRef.current;
+      }
 
-          // Dot
+      // Draw highlighted point (from local or external hover)
+      if (activeIdx != null && activeIdx >= 0 && activeIdx < distances.length) {
+        const hx = toX(distances[activeIdx]);
+        const hy = toY(speeds[activeIdx]);
+
+        // Vertical crosshair for external hover
+        if (!hover && externalHoverIndexRef.current != null) {
+          ctx.save();
+          ctx.strokeStyle = 'rgba(255, 212, 0, 0.4)';
+          ctx.lineWidth = 1;
+          ctx.setLineDash([4, 3]);
           ctx.beginPath();
-          ctx.arc(hx, hy, 4, 0, Math.PI * 2);
-          ctx.fillStyle = '#B6FF2E';
-          ctx.fill();
-          ctx.strokeStyle = '#161A20';
-          ctx.lineWidth = 1.5;
+          ctx.moveTo(hx, PAD.top);
+          ctx.lineTo(hx, h - PAD.bottom);
           ctx.stroke();
+          ctx.restore();
+        }
 
-          // Horizontal guide line to Y axis
+        // Dot
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4, 0, Math.PI * 2);
+        ctx.fillStyle = (!hover && externalHoverIndexRef.current != null) ? '#FFD400' : '#B6FF2E';
+        ctx.fill();
+        ctx.strokeStyle = '#161A20';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Horizontal guide line to Y axis (only for local hover)
+        if (hover) {
           ctx.save();
           ctx.strokeStyle = 'rgba(182, 255, 46, 0.2)';
           ctx.lineWidth = 1;
@@ -154,11 +188,20 @@ export function SpeedTrace({ sessionId, height = 'h-56' }: Props) {
 
   const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
     draw,
-    deps: [data, range],
+    deps: [data, range, externalHoverIndex],
     padding: PAD,
     getTooltipData,
     crosshair: true,
   });
+
+  // Clear hover when mouse leaves this chart
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onHoverIndexChange) return;
+    const handleLeave = () => onHoverIndexChange(null);
+    canvas.addEventListener('mouseleave', handleLeave);
+    return () => canvas.removeEventListener('mouseleave', handleLeave);
+  }, [canvasRef, onHoverIndexChange]);
 
   if (isLoading)
     return (

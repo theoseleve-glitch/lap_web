@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect, useRef } from 'react';
 import { api } from '@/lib/api-client';
 import { ChartPanel } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
@@ -16,6 +16,10 @@ interface GpsTraceData {
 interface Props {
   sessionId: string;
   height?: string;
+  /** Callback fired when hover index changes (for cross-chart sync) */
+  onHoverIndexChange?: (index: number | null) => void;
+  /** External hover index set by another chart (for cross-chart sync) */
+  externalHoverIndex?: number | null;
 }
 
 const PAD = { top: 15, right: 15, bottom: 20, left: 15 };
@@ -27,11 +31,17 @@ function lerpColor(t: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-export function TrackMap({ sessionId, height = 'h-56' }: Props) {
+export function TrackMap({ sessionId, height = 'h-56', onHoverIndexChange, externalHoverIndex }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ['session', sessionId, 'gps-trace'],
     queryFn: () => api.get<GpsTraceData>(`/sessions/${sessionId}/gps-trace`),
   });
+
+  // Keep callback ref stable to avoid re-creating draw on every render
+  const onHoverIndexChangeRef = useRef(onHoverIndexChange);
+  onHoverIndexChangeRef.current = onHoverIndexChange;
+  const externalHoverIndexRef = useRef(externalHoverIndex);
+  externalHoverIndexRef.current = externalHoverIndex;
 
   const geo = useMemo(() => {
     if (!data || data.lat.length < 2) return null;
@@ -90,32 +100,61 @@ export function TrackMap({ sessionId, height = 'h-56' }: Props) {
       ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      // Hover: find nearest point and show position
+      // Resolve hover: local mouse hover takes priority, then external index
+      let highlightIdx: number | null = null;
+
       if (hover) {
-        let minDist = Infinity;
+        // Find nearest point from local mouse position
+        let bestDist = Infinity;
         let nearestIdx = -1;
         for (let i = 0; i < lat.length; i += 2) {
           const px = toX(lon[i]);
           const py = toY(lat[i]);
           const d = (hover.x - px) ** 2 + (hover.y - py) ** 2;
-          if (d < minDist) {
-            minDist = d;
+          if (d < bestDist) {
+            bestDist = d;
             nearestIdx = i;
           }
         }
-        if (nearestIdx >= 0 && minDist < 900) {
-          const px = toX(lon[nearestIdx]);
-          const py = toY(lat[nearestIdx]);
-
-          // Highlight circle
-          ctx.beginPath();
-          ctx.arc(px, py, 6, 0, Math.PI * 2);
-          ctx.fillStyle = '#FFD400';
-          ctx.fill();
-          ctx.strokeStyle = '#161A20';
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
+        if (nearestIdx >= 0 && bestDist < 900) {
+          highlightIdx = nearestIdx;
+          // Publish hover index to other charts
+          if (onHoverIndexChangeRef.current) {
+            onHoverIndexChangeRef.current(nearestIdx);
+          }
         }
+      } else if (externalHoverIndexRef.current != null) {
+        // Use external hover index (from SpeedTrace)
+        // The speed-trace data length may differ from GPS trace — clamp the index
+        const extIdx = externalHoverIndexRef.current;
+        if (extIdx >= 0 && extIdx < lat.length) {
+          highlightIdx = extIdx;
+        } else if (extIdx >= lat.length) {
+          highlightIdx = lat.length - 1;
+        }
+      }
+
+      // Draw highlight circle at the resolved index
+      if (highlightIdx != null && highlightIdx >= 0 && highlightIdx < lat.length) {
+        const px = toX(lon[highlightIdx]);
+        const py = toY(lat[highlightIdx]);
+
+        // Glow ring for external hover
+        if (!hover && externalHoverIndexRef.current != null) {
+          ctx.beginPath();
+          ctx.arc(px, py, 10, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255, 212, 0, 0.15)';
+          ctx.fill();
+        }
+
+        // Highlight circle
+        ctx.beginPath();
+        ctx.arc(px, py, 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#FFD400';
+        ctx.fill();
+        ctx.strokeStyle = '#161A20';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
       }
 
       // Speed legend gradient bar
@@ -173,10 +212,19 @@ export function TrackMap({ sessionId, height = 'h-56' }: Props) {
 
   const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
     draw,
-    deps: [data, geo],
+    deps: [data, geo, externalHoverIndex],
     padding: PAD,
     getTooltipData,
   });
+
+  // Clear hover when mouse leaves this chart
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !onHoverIndexChange) return;
+    const handleLeave = () => onHoverIndexChange(null);
+    canvas.addEventListener('mouseleave', handleLeave);
+    return () => canvas.removeEventListener('mouseleave', handleLeave);
+  }, [canvasRef, onHoverIndexChange]);
 
   if (isLoading)
     return (
