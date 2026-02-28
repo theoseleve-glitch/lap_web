@@ -28,6 +28,9 @@ import {
   WeatherChart,
   TrendChart,
   StintChart,
+  PitWindowChart,
+  RivalChart,
+  ComparisonMatrix,
 } from '@/components/app/charts';
 import { CornerReplay } from '@/components/app/corner-replay';
 import { FocusMode } from '@/components/app/focus-mode';
@@ -1069,6 +1072,15 @@ export default function SessionDetailPage() {
               <SectionHeader title="Pace Trend" />
               <TrendChart sessionId={id} />
             </section>
+
+            {/* Race Strategy — pit window and rival gap */}
+            <section>
+              <SectionHeader title="Race Strategy" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <PitWindowChart sessionId={id} />
+                <RivalChart sessionId={id} />
+              </div>
+            </section>
           </div>
         )}
 
@@ -1190,6 +1202,12 @@ export default function SessionDetailPage() {
                 <TyreChart sessionId={id} />
                 <StintChart sessionId={id} />
               </div>
+            </section>
+
+            {/* Multi-Metric Comparison */}
+            <section>
+              <SectionHeader title="Multi-Metric Comparison" />
+              <ComparisonMatrix sessionId={id} />
             </section>
           </div>
         )}
