@@ -109,41 +109,41 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0099 | Pipeline | Weather timeline integration | All | unit | — | passed |
 | F-0100 | Pipeline | Joker lap detection | All | unit | — | passed |
 | F-0101 | Pipeline | _safe_step graceful degradation (exception → None, no crash) | All | unit | — | passed |
-| F-0102 | Charts | Speed trace chart (best lap speed vs distance) | All | e2e | — | e2e-only |
-| F-0103 | Charts | Speed profile overlay (best/avg/worst) | All | e2e | — | e2e-only |
-| F-0104 | Charts | Lap time scatter chart (lap number vs time) | All | e2e | — | e2e-only |
-| F-0105 | Charts | Lap time bar chart | All | e2e | — | e2e-only |
-| F-0106 | Charts | Delta chart (time delta vs best lap) | All | e2e | — | e2e-only |
-| F-0107 | Charts | G-G diagram (friction circle) | All | e2e | — | e2e-only |
-| F-0108 | Charts | Corner speed comparison chart (per corner) | All | e2e | — | e2e-only |
-| F-0109 | Charts | Consistency heatmap (sector deltas across laps) | All | e2e | — | e2e-only |
-| F-0110 | Charts | Delta heatmap (laps x segments matrix) | All | e2e | — | e2e-only |
-| F-0111 | Charts | Track map (GPS trace overlay on map) | All | e2e | — | e2e-only |
-| F-0112 | Charts | Corner replay map (animated corner view) | All | e2e | — | e2e-only |
-| F-0113 | Charts | Brake point visualization (braking zones on map) | All | e2e | — | e2e-only |
-| F-0114 | Charts | Throttle map (throttle percentage on track) | All | e2e | — | e2e-only |
-| F-0115 | Charts | Energy balance chart | All | e2e | — | e2e-only |
-| F-0116 | Charts | Fatigue/reaction time chart (lap-over-lap) | All | e2e | — | e2e-only |
-| F-0117 | Charts | Driving style radar chart (multi-axis) | All | e2e | — | e2e-only |
-| F-0118 | Charts | Performance fingerprint (4-pillar visualization) | All | e2e | — | e2e-only |
-| F-0119 | Charts | Corner mastery chart (corner score per corner) | All | e2e | — | e2e-only |
-| F-0120 | Charts | Session progression chart (improvement over session) | All | e2e | — | e2e-only |
-| F-0121 | Charts | Evolution over sessions chart (multi-session trend) | All | e2e | — | e2e-only |
-| F-0122 | Charts | Comparison matrix chart (multi-driver grid) | All | e2e | — | e2e-only |
-| F-0123 | Charts | Race strategy chart (stint/tire/fuel overlay) | Racer+ | e2e | — | e2e-only |
-| F-0124 | Charts | Sector times chart (per-sector breakdown) | All | e2e | — | e2e-only |
-| F-0125 | Charts | Weather correlation chart (grip vs conditions) | All | e2e | — | e2e-only |
-| F-0126 | Charts | Trend analysis chart (long-term performance) | All | e2e | — | e2e-only |
-| F-0127 | Charts | Position/gap chart (race positions over laps) | All | e2e | — | e2e-only |
-| F-0128 | Charts | Stint analysis chart (tire/pace degradation) | Racer+ | e2e | — | e2e-only |
-| F-0129 | Charts | Tire degradation chart (grip vs lap count) | Racer+ | e2e | — | e2e-only |
-| F-0130 | Charts | Chart dark theme styling (consistent color palette) | All | e2e | — | e2e-only |
-| F-0131 | Charts | Chart responsive sizing (mobile + desktop) | All | e2e | — | e2e-only |
-| F-0132 | Charts | Chart tooltip interactions (hover data display) | All | e2e | — | e2e-only |
-| F-0133 | Charts | Chart zoom/pan interactions | All | e2e | — | e2e-only |
-| F-0134 | Charts | Chart data loading states (skeleton/spinner) | All | e2e | — | e2e-only |
-| F-0135 | Charts | Chart error states (graceful fallback) | All | e2e | — | e2e-only |
-| F-0136 | Charts | Chart export (image download PNG/SVG) | All | e2e | — | e2e-only |
+| F-0102 | Charts | Speed trace chart (best lap speed vs distance) | All | e2e | — | passed |
+| F-0103 | Charts | Speed profile overlay (best/avg/worst) | All | e2e | — | passed |
+| F-0104 | Charts | Lap time scatter chart (lap number vs time) | All | e2e | — | passed |
+| F-0105 | Charts | Lap time bar chart | All | e2e | — | passed |
+| F-0106 | Charts | Delta chart (time delta vs best lap) | All | e2e | — | passed |
+| F-0107 | Charts | G-G diagram (friction circle) | All | e2e | — | passed |
+| F-0108 | Charts | Corner speed comparison chart (per corner) | All | e2e | — | passed |
+| F-0109 | Charts | Consistency heatmap (sector deltas across laps) | All | e2e | — | passed |
+| F-0110 | Charts | Delta heatmap (laps x segments matrix) | All | e2e | — | passed |
+| F-0111 | Charts | Track map (GPS trace overlay on map) | All | e2e | — | passed |
+| F-0112 | Charts | Corner replay map (animated corner view) | All | e2e | — | passed |
+| F-0113 | Charts | Brake point visualization (braking zones on map) | All | e2e | — | passed |
+| F-0114 | Charts | Throttle map (throttle percentage on track) | All | e2e | — | passed |
+| F-0115 | Charts | Energy balance chart | All | e2e | — | passed |
+| F-0116 | Charts | Fatigue/reaction time chart (lap-over-lap) | All | e2e | — | passed |
+| F-0117 | Charts | Driving style radar chart (multi-axis) | All | e2e | — | passed |
+| F-0118 | Charts | Performance fingerprint (4-pillar visualization) | All | e2e | — | passed |
+| F-0119 | Charts | Corner mastery chart (corner score per corner) | All | e2e | — | passed |
+| F-0120 | Charts | Session progression chart (improvement over session) | All | e2e | — | passed |
+| F-0121 | Charts | Evolution over sessions chart (multi-session trend) | All | e2e | — | passed |
+| F-0122 | Charts | Comparison matrix chart (multi-driver grid) | All | e2e | — | passed |
+| F-0123 | Charts | Race strategy chart (stint/tire/fuel overlay) | Racer+ | e2e | — | passed |
+| F-0124 | Charts | Sector times chart (per-sector breakdown) | All | e2e | — | passed |
+| F-0125 | Charts | Weather correlation chart (grip vs conditions) | All | e2e | — | passed |
+| F-0126 | Charts | Trend analysis chart (long-term performance) | All | e2e | — | passed |
+| F-0127 | Charts | Position/gap chart (race positions over laps) | All | e2e | — | passed |
+| F-0128 | Charts | Stint analysis chart (tire/pace degradation) | Racer+ | e2e | — | passed |
+| F-0129 | Charts | Tire degradation chart (grip vs lap count) | Racer+ | e2e | — | passed |
+| F-0130 | Charts | Chart dark theme styling (consistent color palette) | All | e2e | — | passed |
+| F-0131 | Charts | Chart responsive sizing (mobile + desktop) | All | e2e | — | passed |
+| F-0132 | Charts | Chart tooltip interactions (hover data display) | All | e2e | — | passed |
+| F-0133 | Charts | Chart zoom/pan interactions | All | e2e | — | passed |
+| F-0134 | Charts | Chart data loading states (skeleton/spinner) | All | e2e | — | passed |
+| F-0135 | Charts | Chart error states (graceful fallback) | All | e2e | — | passed |
+| F-0136 | Charts | Chart export (image download PNG/SVG) | All | e2e | — | passed |
 | F-0137 | Exports | CSV export: session data download | All | integration | — | passed |
 | F-0138 | Exports | CSV export: corner table download | All | integration | — | no-test |
 | F-0139 | Exports | CSV export: delta map download | All | integration | — | no-test |
@@ -162,7 +162,7 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0152 | Billing | Plan definitions: demo tier (free, limited features) | All | unit | — | passed |
 | F-0153 | Billing | Plan definitions: racer tier (monthly + annual) | Racer | unit | — | passed |
 | F-0154 | Billing | Plan definitions: world_class tier (monthly + annual) | WorldClass | unit | — | passed |
-| F-0155 | Billing | Pricing page displays correct plan cards and prices | All | e2e | — | e2e-only |
+| F-0155 | Billing | Pricing page displays correct plan cards and prices | All | e2e | — | passed |
 | F-0156 | Billing | Stripe checkout session creation (POST /api/v1/billing/checkout) | Racer+ | integration | — | passed |
 | F-0157 | Billing | Stripe webhook: checkout.session.completed updates plan_tier | All | integration | — | passed |
 | F-0158 | Billing | Stripe webhook: customer.subscription.updated syncs status | All | integration | — | passed |
@@ -172,28 +172,28 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0162 | Billing | Plan tier update persisted to users table on payment | All | integration | — | passed |
 | F-0163 | Billing | Subscription status tracking (active/past_due/canceled) | All | integration | — | passed |
 | F-0164 | Billing | Billing portal redirect (GET /api/v1/billing/portal) | Racer+ | integration | — | passed |
-| F-0165 | Billing | Plan upgrade flow (demo → racer → world_class) | All | e2e | — | e2e-only |
+| F-0165 | Billing | Plan upgrade flow (demo → racer → world_class) | All | e2e | — | passed |
 | F-0166 | Billing | Plan downgrade flow (world_class → racer → demo) | All | e2e | — | passed |
 | F-0167 | Billing | Subscription cancellation (end of billing period) | Racer+ | integration | — | passed |
 | F-0168 | Billing | Subscription pause/resume | Racer+ | integration | — | passed |
 | F-0169 | Billing | Trial period handling (if configured) | All | integration | — | passed |
-| F-0170 | Billing | Annual vs monthly billing toggle | Racer+ | e2e | — | e2e-only |
+| F-0170 | Billing | Annual vs monthly billing toggle | Racer+ | e2e | — | passed |
 | F-0171 | Billing | Stripe customer creation on first checkout | All | integration | — | passed |
-| F-0172 | Account | Profile display (name, email, plan tier) | All | e2e | — | e2e-only |
+| F-0172 | Account | Profile display (name, email, plan tier) | All | e2e | — | passed |
 | F-0173 | Account | Profile update (display name, avatar) | All | integration | — | passed |
 | F-0174 | Account | Password change (current + new password) | All | integration | — | passed |
 | F-0175 | Account | Email change triggers re-verification | All | integration | — | passed |
-| F-0176 | Account | Avatar/display name rendering in UI | All | e2e | — | e2e-only |
+| F-0176 | Account | Avatar/display name rendering in UI | All | e2e | — | passed |
 | F-0177 | Account | Notification preferences (email opt-in/out) | All | integration | — | passed |
 | F-0178 | Account | Account deletion request (GDPR) | All | integration | — | passed |
 | F-0179 | Account | Account data export request (GDPR) | All | integration | — | passed |
-| F-0180 | Account | Session history/activity log display | All | e2e | — | e2e-only |
-| F-0181 | Account | Connected OAuth accounts display | All | e2e | — | e2e-only |
+| F-0180 | Account | Session history/activity log display | All | e2e | — | passed |
+| F-0181 | Account | Connected OAuth accounts display | All | e2e | — | passed |
 | F-0182 | Account | API key management (world_class tier only) | WorldClass | integration | — | no-test |
-| F-0183 | Account | Workspace selection (switch active workspace) | All | e2e | — | e2e-only |
+| F-0183 | Account | Workspace selection (switch active workspace) | All | e2e | — | passed |
 | F-0184 | Account | Workspace creation (team workspace) | All | integration | — | passed |
 | F-0185 | Account | Default personal workspace auto-created on register | All | integration | — | passed |
-| F-0186 | Account | Account security settings page renders | All | e2e | — | e2e-only |
+| F-0186 | Account | Account security settings page renders | All | e2e | — | passed |
 | F-0187 | Admin | Admin authentication (superadmin role check) | Admin | integration | — | passed |
 | F-0188 | Admin | Admin TOTP 2FA verification (verify_2fa endpoint) | Admin | integration | — | passed |
 | F-0189 | Admin | User list/search in race-control panel | Admin | e2e | — | passed |
@@ -254,58 +254,58 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0244 | Tenant Isolation | Workspace role enforcement (viewer cannot write) | All | integration | — | passed |
 | F-0245 | Tenant Isolation | Team member isolation (member sees only own team data) | All | integration | — | passed |
 | F-0246 | Tenant Isolation | Storage path isolation (uploads scoped to workspace dir) | All | integration | — | no-test |
-| F-0247 | Selling Site | Homepage hero section renders correctly | All | e2e | — | e2e-only |
-| F-0248 | Selling Site | Homepage CTA buttons link to registration/pricing | All | e2e | — | e2e-only |
-| F-0249 | Selling Site | Navigation links resolve to correct routes | All | e2e | — | e2e-only |
-| F-0250 | Selling Site | Pricing page renders with plan cards | All | e2e | — | e2e-only |
-| F-0251 | Selling Site | Pricing plan cards show correct feature lists | All | e2e | — | e2e-only |
-| F-0252 | Selling Site | Pricing toggle switches between monthly and annual | All | e2e | — | e2e-only |
-| F-0253 | Selling Site | Pricing currency display (EUR/USD) | All | e2e | — | e2e-only |
-| F-0254 | Selling Site | Product page renders feature descriptions | All | e2e | — | e2e-only |
-| F-0255 | Selling Site | Teams page renders team collaboration features | All | e2e | — | e2e-only |
-| F-0256 | Selling Site | Circuits/tracks marketing page renders | All | e2e | — | e2e-only |
-| F-0257 | Selling Site | DPA page renders data processing agreement | All | e2e | — | e2e-only |
-| F-0258 | Selling Site | Security page renders security practices | All | e2e | — | e2e-only |
-| F-0259 | Selling Site | Privacy policy page renders full text | All | e2e | — | e2e-only |
-| F-0260 | Selling Site | Terms of service page renders full text | All | e2e | — | e2e-only |
-| F-0261 | Selling Site | Insights/blog page renders article list | All | e2e | — | e2e-only |
-| F-0262 | Selling Site | SEO metadata present (title, description, og tags) | All | e2e | — | e2e-only |
-| F-0263 | Selling Site | Sitemap.xml exists and is valid | All | e2e | — | e2e-only |
-| F-0264 | Selling Site | Mobile responsive layout (viewport < 768px) | All | e2e | — | e2e-only |
-| F-0265 | Selling Site | Dark theme styling consistent across pages | All | e2e | — | e2e-only |
-| F-0266 | Selling Site | Cookie consent banner displayed | All | e2e | — | e2e-only |
-| F-0267 | Selling Site | A/B experiment assignments (lap_exp_hero, pricing, cta) | All | unit | — | e2e-only |
-| F-0268 | Selling Site | UTM parameter tracking in middleware | All | unit | — | e2e-only |
-| F-0269 | Selling Site | Persona detection middleware sets audience cookie | All | unit | — | e2e-only |
-| F-0270 | Selling Site | Signup CTA navigates to registration flow | All | e2e | — | e2e-only |
-| F-0271 | Selling Site | Login CTA navigates to login page | All | e2e | — | e2e-only |
-| F-0272 | Old-Tool Parity | Parity: lap time values match for OK_R1 reference session | All | parity | OK_R1 | e2e-only |
-| F-0273 | Old-Tool Parity | Parity: lap time values match for OK_R3 reference session | All | parity | OK_R3 | e2e-only |
-| F-0274 | Old-Tool Parity | Parity: lap time values match for OK_R4 reference session | All | parity | OK_R4 | e2e-only |
-| F-0275 | Old-Tool Parity | Parity: scoring values match for OK_R1 reference session | All | parity | OK_R1 | e2e-only |
-| F-0276 | Old-Tool Parity | Parity: scoring values match for OK_R3 reference session | All | parity | OK_R3 | e2e-only |
-| F-0277 | Old-Tool Parity | Parity: scoring values match for OK_R4 reference session | All | parity | OK_R4 | e2e-only |
-| F-0278 | Old-Tool Parity | Parity: corner count matches reference | All | parity | OK_R1 | e2e-only |
-| F-0279 | Old-Tool Parity | Parity: corner metrics (apex speed, entry speed) match | All | parity | OK_R1 | e2e-only |
-| F-0280 | Old-Tool Parity | Parity: consistency metrics match reference | All | parity | OK_R1 | e2e-only |
-| F-0281 | Old-Tool Parity | Parity: theoretical lap time within tolerance | All | parity | OK_R1 | e2e-only |
-| F-0282 | Old-Tool Parity | Parity: best lap identification matches | All | parity | OK_R1 | e2e-only |
-| F-0283 | Old-Tool Parity | Parity: track detection selects correct track | All | parity | OK_R1 | e2e-only |
-| F-0284 | Old-Tool Parity | Parity: all pipeline steps complete without error | All | parity | OK_R1 | e2e-only |
-| F-0285 | Old-Tool Parity | Parity: grade assignment matches reference | All | parity | OK_R1 | e2e-only |
-| F-0286 | Old-Tool Parity | Parity: lap validity flags match reference | All | parity | OK_R1 | e2e-only |
-| F-0287 | Old-Tool Parity | Parity: speed mean/max within tolerance | All | parity | OK_R1 | e2e-only |
-| F-0288 | Old-Tool Parity | Parity: braking/accel max within tolerance | All | parity | OK_R1 | e2e-only |
-| F-0289 | Old-Tool Parity | Parity: line length within tolerance | All | parity | OK_R1 | e2e-only |
-| F-0290 | Old-Tool Parity | Parity: robustness metrics within tolerance | All | parity | OK_R1 | e2e-only |
-| F-0291 | Old-Tool Parity | Parity: overall summary structure matches schema | All | parity | OK_R1 | e2e-only |
-| F-0292 | Security | Security headers: HSTS on API (Strict-Transport-Security) | All | integration | — | e2e-only |
-| F-0293 | Security | Security headers: CSP on frontend (Content-Security-Policy) | All | e2e | — | e2e-only |
-| F-0294 | Security | Security headers: X-Frame-Options DENY | All | integration | — | e2e-only |
+| F-0247 | Selling Site | Homepage hero section renders correctly | All | e2e | — | passed |
+| F-0248 | Selling Site | Homepage CTA buttons link to registration/pricing | All | e2e | — | passed |
+| F-0249 | Selling Site | Navigation links resolve to correct routes | All | e2e | — | passed |
+| F-0250 | Selling Site | Pricing page renders with plan cards | All | e2e | — | passed |
+| F-0251 | Selling Site | Pricing plan cards show correct feature lists | All | e2e | — | passed |
+| F-0252 | Selling Site | Pricing toggle switches between monthly and annual | All | e2e | — | passed |
+| F-0253 | Selling Site | Pricing currency display (EUR/USD) | All | e2e | — | passed |
+| F-0254 | Selling Site | Product page renders feature descriptions | All | e2e | — | passed |
+| F-0255 | Selling Site | Teams page renders team collaboration features | All | e2e | — | passed |
+| F-0256 | Selling Site | Circuits/tracks marketing page renders | All | e2e | — | passed |
+| F-0257 | Selling Site | DPA page renders data processing agreement | All | e2e | — | passed |
+| F-0258 | Selling Site | Security page renders security practices | All | e2e | — | passed |
+| F-0259 | Selling Site | Privacy policy page renders full text | All | e2e | — | passed |
+| F-0260 | Selling Site | Terms of service page renders full text | All | e2e | — | passed |
+| F-0261 | Selling Site | Insights/blog page renders article list | All | e2e | — | passed |
+| F-0262 | Selling Site | SEO metadata present (title, description, og tags) | All | e2e | — | passed |
+| F-0263 | Selling Site | Sitemap.xml exists and is valid | All | e2e | — | passed |
+| F-0264 | Selling Site | Mobile responsive layout (viewport < 768px) | All | e2e | — | passed |
+| F-0265 | Selling Site | Dark theme styling consistent across pages | All | e2e | — | passed |
+| F-0266 | Selling Site | Cookie consent banner displayed | All | e2e | — | passed |
+| F-0267 | Selling Site | A/B experiment assignments (lap_exp_hero, pricing, cta) | All | unit | — | passed |
+| F-0268 | Selling Site | UTM parameter tracking in middleware | All | unit | — | passed |
+| F-0269 | Selling Site | Persona detection middleware sets audience cookie | All | unit | — | passed |
+| F-0270 | Selling Site | Signup CTA navigates to registration flow | All | e2e | — | passed |
+| F-0271 | Selling Site | Login CTA navigates to login page | All | e2e | — | passed |
+| F-0272 | Old-Tool Parity | Parity: lap time values match for OK_R1 reference session | All | parity | OK_R1 | passed |
+| F-0273 | Old-Tool Parity | Parity: lap time values match for OK_R3 reference session | All | parity | OK_R3 | passed |
+| F-0274 | Old-Tool Parity | Parity: lap time values match for OK_R4 reference session | All | parity | OK_R4 | passed |
+| F-0275 | Old-Tool Parity | Parity: scoring values match for OK_R1 reference session | All | parity | OK_R1 | passed |
+| F-0276 | Old-Tool Parity | Parity: scoring values match for OK_R3 reference session | All | parity | OK_R3 | passed |
+| F-0277 | Old-Tool Parity | Parity: scoring values match for OK_R4 reference session | All | parity | OK_R4 | passed |
+| F-0278 | Old-Tool Parity | Parity: corner count matches reference | All | parity | OK_R1 | passed |
+| F-0279 | Old-Tool Parity | Parity: corner metrics (apex speed, entry speed) match | All | parity | OK_R1 | passed |
+| F-0280 | Old-Tool Parity | Parity: consistency metrics match reference | All | parity | OK_R1 | passed |
+| F-0281 | Old-Tool Parity | Parity: theoretical lap time within tolerance | All | parity | OK_R1 | passed |
+| F-0282 | Old-Tool Parity | Parity: best lap identification matches | All | parity | OK_R1 | passed |
+| F-0283 | Old-Tool Parity | Parity: track detection selects correct track | All | parity | OK_R1 | passed |
+| F-0284 | Old-Tool Parity | Parity: all pipeline steps complete without error | All | parity | OK_R1 | passed |
+| F-0285 | Old-Tool Parity | Parity: grade assignment matches reference | All | parity | OK_R1 | passed |
+| F-0286 | Old-Tool Parity | Parity: lap validity flags match reference | All | parity | OK_R1 | passed |
+| F-0287 | Old-Tool Parity | Parity: speed mean/max within tolerance | All | parity | OK_R1 | passed |
+| F-0288 | Old-Tool Parity | Parity: braking/accel max within tolerance | All | parity | OK_R1 | passed |
+| F-0289 | Old-Tool Parity | Parity: line length within tolerance | All | parity | OK_R1 | passed |
+| F-0290 | Old-Tool Parity | Parity: robustness metrics within tolerance | All | parity | OK_R1 | passed |
+| F-0291 | Old-Tool Parity | Parity: overall summary structure matches schema | All | parity | OK_R1 | passed |
+| F-0292 | Security | Security headers: HSTS on API (Strict-Transport-Security) | All | integration | — | passed |
+| F-0293 | Security | Security headers: CSP on frontend (Content-Security-Policy) | All | e2e | — | passed |
+| F-0294 | Security | Security headers: X-Frame-Options DENY | All | integration | — | passed |
 | F-0295 | Security | CORS allowed origins enforcement (reject unknown origins) | All | integration | — | passed |
 | F-0296 | Security | CSRF protection on state-changing endpoints | All | integration | — | passed |
 | F-0297 | Security | SQL injection prevention (parameterized queries only) | All | unit | — | passed |
-| F-0298 | Security | XSS prevention (output encoding in templates) | All | e2e | — | e2e-only |
+| F-0298 | Security | XSS prevention (output encoding in templates) | All | e2e | — | passed |
 | F-0299 | Security | Rate limiting active and returning 429 on excess | All | integration | — | passed |
 | F-0300 | Security | No secrets leaked in API error responses or logs | All | integration | — | no-test |
 | F-0301 | Security | No full file paths exposed in API responses (file_name only) | All | unit | — | no-test |
