@@ -56,6 +56,7 @@ const initialState = {
     cornerBank: 0,
     streakIntensity: 0,
     ribbonProgress: 0,
+    lightSweepAngle: 0,
   },
 
   // ── Asset state ────────────────────────────
@@ -173,6 +174,8 @@ export const useKernelStore = create<KernelStore>()((set) => ({
     set((state) => ({ background: { ...state.background, streakIntensity: Math.max(0, Math.min(1, intensity)) } })),
   setRibbonProgress: (progress) =>
     set((state) => ({ background: { ...state.background, ribbonProgress: Math.max(0, Math.min(1, progress)) } })),
+  setLightSweepAngle: (angle) =>
+    set((state) => ({ background: { ...state.background, lightSweepAngle: angle } })),
 
   // ── Asset actions ─────────────────────────
   setAssetLoaded: (id, loaded) =>

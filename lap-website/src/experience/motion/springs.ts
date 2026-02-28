@@ -61,4 +61,19 @@ export const background = {
 
   // New: Streak DRS modulation
   streakDrsThresholdReduction: 0.4, // spawn threshold × (1 - this) during DRS
+
+  // Studio light sweep
+  lightSweepSpeed: 0.3,             // radians/second base rate
+
+  // Pointer distortion (postprocessing)
+  pointerDistortionRadius: 0.15,    // normalized viewport units
+  pointerDistortionStrength: 0.003, // max pixel displacement (barrel)
+
+  // Metallic event flash durations (ms)
+  metallicFlashDuration: {
+    sector: 600,
+    drs: 900,
+    finish: 400,
+    guidance: 250,
+  },
 } as const;

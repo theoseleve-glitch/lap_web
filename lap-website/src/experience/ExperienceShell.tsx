@@ -20,6 +20,7 @@ import { SiteFooter } from '@/components/site/SiteFooter';
 import { GsapProvider } from '@/components/providers/GsapProvider';
 import { PerformanceProvider } from '@/lib/performance-context';
 import { EXPERIENCE_V2 } from '@/lib/feature-flags';
+import { BackgroundCanvas } from './background/BackgroundCanvas';
 
 function ExperienceContent({ children }: { children: ReactNode }) {
   const webglAvailable = useKernelStore((s) => s.webglAvailable);
@@ -35,6 +36,9 @@ function ExperienceContent({ children }: { children: ReactNode }) {
       {EXPERIENCE_V2 && <DrsLabel />}
       {EXPERIENCE_V2 && <SectorGateSweep />}
       {EXPERIENCE_V2 && <FinishLine />}
+
+      {/* WebGL background layer — behind all content, driven by scroll */}
+      {webglAvailable && <BackgroundCanvas />}
 
       {/* DOM content */}
       <div className="relative z-10">

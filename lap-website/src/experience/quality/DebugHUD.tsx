@@ -66,6 +66,12 @@ export function DebugHUD() {
       <div>WebGL: {state.webglAvailable ? 'yes' : 'no'}</div>
       <div>ReducedMotion: {state.reducedMotion ? 'yes' : 'no'}</div>
       <div>Preloader: {state.preloaderComplete ? 'done' : `${(state.loadProgress * 100).toFixed(0)}%`}</div>
+      <div className="text-acid-green mt-1 mb-0.5">BACKGROUND</div>
+      <div>Ribbon: {state.background.ribbonProgress.toFixed(3)}</div>
+      <div>Yaw: {state.background.cornerYaw.toFixed(2)}</div>
+      <div>Bank: {state.background.cornerBank.toFixed(2)}</div>
+      <div>Streaks: {state.background.streakIntensity.toFixed(3)}</div>
+      <div>Sweep: {state.background.lightSweepAngle.toFixed(2)}</div>
     </div>
   );
 }
