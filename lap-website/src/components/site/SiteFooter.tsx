@@ -38,6 +38,8 @@ export function SiteFooter() {
                 <a
                   key={social.label}
                   href={social.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="border border-steel/30 px-2 py-1 text-xs text-steel hover:text-chalk hover:border-chalk"
                 >
                   {social.label}

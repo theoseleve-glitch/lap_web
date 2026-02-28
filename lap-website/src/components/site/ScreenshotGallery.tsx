@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 interface ScreenshotItem {
   title: string;
@@ -16,6 +16,22 @@ interface ScreenshotGalleryProps {
 export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green)' }: ScreenshotGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+
+  // Focus trap + Escape handler for lightbox
+  useEffect(() => {
+    if (!lightboxOpen) return;
+
+    closeRef.current?.focus();
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeLightbox();
+    };
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [lightboxOpen, closeLightbox]);
 
   if (items.length === 0) return null;
   const active = items[activeIndex];
@@ -27,6 +43,7 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
         type="button"
         className="relative w-full border border-steel/20 bg-concrete/30 overflow-hidden cursor-zoom-in"
         onClick={() => setLightboxOpen(true)}
+        aria-label={`View ${active.title} in lightbox`}
       >
         <img
           src={active.src}
@@ -40,11 +57,14 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
       </button>
 
       {/* Thumbnail strip */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
+      <div className="flex gap-2 overflow-x-auto pb-2" role="tablist" aria-label="Screenshot gallery">
         {items.map((item, i) => (
           <button
             key={item.title}
             type="button"
+            role="tab"
+            aria-selected={i === activeIndex}
+            aria-label={item.title}
             className={`flex-shrink-0 border-2 transition-colors ${
               i === activeIndex ? 'border-current' : 'border-steel/20 hover:border-steel/50'
             }`}
@@ -53,7 +73,7 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
           >
             <img
               src={item.src}
-              alt={item.title}
+              alt=""
               className="w-24 h-16 md:w-32 md:h-20 object-cover"
             />
           </button>
@@ -64,15 +84,17 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
       {lightboxOpen && (
         <div
           className="fixed inset-0 z-[999] bg-asphalt/95 flex items-center justify-center p-4"
-          onClick={() => setLightboxOpen(false)}
+          onClick={closeLightbox}
           role="dialog"
           aria-modal="true"
+          aria-label={`${active.title} — full size`}
         >
           <button
+            ref={closeRef}
             type="button"
             className="absolute top-4 right-4 text-steel hover:text-chalk text-2xl"
-            onClick={() => setLightboxOpen(false)}
-            aria-label="Close"
+            onClick={closeLightbox}
+            aria-label="Close lightbox"
           >
             &times;
           </button>
