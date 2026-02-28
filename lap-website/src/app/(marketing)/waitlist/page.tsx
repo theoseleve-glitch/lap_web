@@ -3,6 +3,11 @@ import { LeadForm } from '@/components/forms/LeadForm';
 import { PageShell } from '@/components/site/PageShell';
 import { StatusPill } from '@/components/site/StatusPill';
 
+export const metadata = {
+  title: 'Waitlist | LAP',
+  description: 'Join the waitlist for upcoming LAP features including sim telemetry and multisource import.',
+};
+
 export default function WaitlistPage() {
   return (
     <PageShell

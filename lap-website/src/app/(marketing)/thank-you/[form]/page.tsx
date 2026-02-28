@@ -3,6 +3,11 @@ import { notFound } from 'next/navigation';
 import { PageShell } from '@/components/site/PageShell';
 import { ThankYouTracker } from '@/components/site/ThankYouTracker';
 
+export const metadata = {
+  title: 'Thank You | LAP',
+  description: 'Your submission has been received.',
+};
+
 const FORM_LABELS: Record<string, string> = {
   contact: 'Contact',
   demo: 'Demo',

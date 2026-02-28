@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
 
+export const metadata = {
+  title: 'Customer Results | LAP',
+  description:
+    'Measured outcomes from kart academies, junior teams, and endurance operations using LAP telemetry analysis.',
+};
+
 const caseStudies = [
   {
     category: 'Kart Racing Academy',

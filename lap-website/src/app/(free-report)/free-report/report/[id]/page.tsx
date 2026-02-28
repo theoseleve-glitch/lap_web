@@ -253,7 +253,7 @@ export default function FreeReportPage() {
           href="/pricing"
           className="inline-block px-8 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider rounded hover:brightness-110 transition-all"
         >
-          Upgrade to Performance — €8.99/mo
+          Upgrade to Racer — from €5.75/mo
         </a>
       </div>
     </div>

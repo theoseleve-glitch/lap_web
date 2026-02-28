@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PageShell } from '@/components/site/PageShell';
@@ -5,6 +6,15 @@ import { insightEntries } from '@/data/insights-cms';
 
 export function generateStaticParams() {
   return insightEntries.map((entry) => ({ slug: entry.slug }));
+}
+
+export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
+  const article = insightEntries.find((item) => item.slug === params.slug);
+  if (!article) return { title: 'Insight Not Found | LAP' };
+  return {
+    title: `${article.title} | LAP`,
+    description: article.summary,
+  };
 }
 
 export default function InsightDetailPage({ params }: { params: { slug: string } }) {
