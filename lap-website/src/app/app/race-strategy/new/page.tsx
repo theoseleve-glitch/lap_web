@@ -267,11 +267,11 @@ export default function NewRacePage() {
                   <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
                   <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={e => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
                   <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={e => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
-                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry">
+                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors">
                     {d.showConstraints ? '▼' : '▶'} Rules
                   </button>
                   {drivers.length > 1 && (
-                    <button type="button" onClick={() => removeDriver(i)} aria-label={`Remove driver ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm">✕</button>
+                    <button type="button" onClick={() => removeDriver(i)} aria-label={`Remove driver ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">✕</button>
                   )}
                 </div>
                 {d.showConstraints && (
@@ -339,7 +339,7 @@ export default function NewRacePage() {
                     <span className="text-steel">:</span>
                     <input aria-label={`Window ${i + 1} end seconds`} type="number" className={`${inputCls} w-16`} value={w.end_ss} onChange={e => updateWindow(i, 'end_ss', e.target.value)} min="0" max="59" />
                   </div>
-                  <button type="button" onClick={() => removeWindow(i)} aria-label={`Remove window ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm">✕</button>
+                  <button type="button" onClick={() => removeWindow(i)} aria-label={`Remove window ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">✕</button>
                 </div>
               ))}
             </div>

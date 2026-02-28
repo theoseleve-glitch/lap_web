@@ -130,7 +130,8 @@ export default function SupportPage() {
                   id={`${fieldId}-issue`}
                   value={issueType}
                   onChange={(e) => setIssueType(e.target.value)}
-                  className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                  disabled={submitTicket.isPending}
+                  className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {ISSUE_TYPES.map((t) => (
                     <option key={t.value} value={t.value}>
@@ -150,7 +151,8 @@ export default function SupportPage() {
                   placeholder="Describe your issue..."
                   rows={5}
                   maxLength={5000}
-                  className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm resize-none focus:border-acid-green/40 focus:outline-none"
+                  disabled={submitTicket.isPending}
+                  className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm resize-none focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 <p className="text-steel text-[10px] font-body mt-1 text-right">
                   {description.length}/5000
@@ -163,7 +165,8 @@ export default function SupportPage() {
                   type="checkbox"
                   checked={includeDiagnostics}
                   onChange={(e) => setIncludeDiagnostics(e.target.checked)}
-                  className="w-4 h-4 rounded accent-acid-green"
+                  disabled={submitTicket.isPending}
+                  className="w-4 h-4 rounded accent-acid-green disabled:opacity-60"
                 />
                 <span className="text-steel text-xs font-body">
                   Include browser diagnostics (browser, OS, screen size)

@@ -932,14 +932,14 @@ export default function SessionDetailPage() {
                   )}
                   <button
                     onClick={() => setSelectedCorner(Math.max(1, selectedCorner - 1))}
-                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm"
+                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm transition-colors"
                   >
                     &larr;
                   </button>
                   <span className="text-chalk font-telemetry text-sm w-6 text-center">{selectedCorner}</span>
                   <button
                     onClick={() => setSelectedCorner(selectedCorner + 1)}
-                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm"
+                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm transition-colors"
                   >
                     &rarr;
                   </button>

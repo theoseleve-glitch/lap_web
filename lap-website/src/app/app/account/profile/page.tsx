@@ -209,7 +209,8 @@ export default function ProfilePage() {
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your name"
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                disabled={profileMutation.isPending}
+                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
 
@@ -223,7 +224,8 @@ export default function ProfilePage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="flex-1 bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                  disabled={profileMutation.isPending}
+                  className="flex-1 bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 />
                 {profile?.email_verified && (
                   <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-telemetry bg-acid-green/20 text-acid-green">
@@ -247,7 +249,8 @@ export default function ProfilePage() {
                 value={avatarUrl}
                 onChange={(e) => setAvatarUrl(e.target.value)}
                 placeholder="https://example.com/avatar.jpg"
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                disabled={profileMutation.isPending}
+                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <p className="text-steel text-[10px] font-body mt-1">
                 Paste a URL to an image. No file upload supported.
@@ -291,7 +294,8 @@ export default function ProfilePage() {
                 id={`${fieldId}-lang`}
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                disabled={prefsMutation.isPending}
+                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {LANGUAGES.map((lang) => (
                   <option key={lang.value} value={lang.value}>
@@ -308,7 +312,8 @@ export default function ProfilePage() {
                 id={`${fieldId}-tz`}
                 value={timezone}
                 onChange={(e) => setTimezone(e.target.value)}
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                disabled={prefsMutation.isPending}
+                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {TIMEZONES.map((tz) => (
                   <option key={tz.value} value={tz.value}>
@@ -329,7 +334,8 @@ export default function ProfilePage() {
                     value="metric"
                     checked={units === 'metric'}
                     onChange={() => setUnits('metric')}
-                    className="w-4 h-4 accent-acid-green"
+                    disabled={prefsMutation.isPending}
+                    className="w-4 h-4 accent-acid-green disabled:opacity-60"
                   />
                   <span className="text-chalk text-sm font-body">Metric (km/h, kg)</span>
                 </label>
@@ -340,7 +346,8 @@ export default function ProfilePage() {
                     value="imperial"
                     checked={units === 'imperial'}
                     onChange={() => setUnits('imperial')}
-                    className="w-4 h-4 accent-acid-green"
+                    disabled={prefsMutation.isPending}
+                    className="w-4 h-4 accent-acid-green disabled:opacity-60"
                   />
                   <span className="text-chalk text-sm font-body">Imperial (mph, lbs)</span>
                 </label>

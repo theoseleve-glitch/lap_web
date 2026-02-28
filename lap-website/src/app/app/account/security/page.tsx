@@ -245,7 +245,8 @@ export default function SecurityPage() {
               autoComplete="current-password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
-              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+              disabled={changePasswordMutation.isPending}
+              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
           <div>
@@ -256,7 +257,8 @@ export default function SecurityPage() {
               autoComplete="new-password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+              disabled={changePasswordMutation.isPending}
+              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
           </div>
           <div>
@@ -267,7 +269,8 @@ export default function SecurityPage() {
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+              disabled={changePasswordMutation.isPending}
+              className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
             {confirmPassword && !passwordsMatch && (
               <p className="text-safety-red text-xs font-telemetry mt-1">Passwords do not match</p>
@@ -342,7 +345,8 @@ export default function SecurityPage() {
                       autoComplete="current-password"
                       value={regenPassword}
                       onChange={(e) => setRegenPassword(e.target.value)}
-                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                      disabled={regenBackupMutation.isPending}
+                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                   <div>
@@ -355,7 +359,8 @@ export default function SecurityPage() {
                       value={regenCode}
                       onChange={(e) => setRegenCode(e.target.value.replace(/\D/g, ''))}
                       placeholder="000000"
-                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                      disabled={regenBackupMutation.isPending}
+                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                   {regenBackupMutation.isError && (
@@ -398,7 +403,8 @@ export default function SecurityPage() {
                       autoComplete="current-password"
                       value={disablePassword}
                       onChange={(e) => setDisablePassword(e.target.value)}
-                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                      disabled={disableTotpMutation.isPending}
+                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                   <div>
@@ -411,7 +417,8 @@ export default function SecurityPage() {
                       value={disableCode}
                       onChange={(e) => setDisableCode(e.target.value.replace(/\D/g, ''))}
                       placeholder="000000"
-                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
+                      disabled={disableTotpMutation.isPending}
+                      className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                     />
                   </div>
                   {disableTotpMutation.isError && (
@@ -521,7 +528,8 @@ export default function SecurityPage() {
                 onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
                 placeholder="000000"
                 autoFocus
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none tracking-[0.3em] text-center text-lg"
+                disabled={confirmTotpMutation.isPending}
+                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none tracking-[0.3em] text-center text-lg disabled:opacity-60 disabled:cursor-not-allowed"
               />
             </div>
             {confirmTotpMutation.isError && (

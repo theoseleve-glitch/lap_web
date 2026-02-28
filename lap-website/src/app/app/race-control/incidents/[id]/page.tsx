@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { StatusBadge } from '@/components/admin/StatusBadge';
 
 export default function IncidentDetailPage() {
   const { id } = useParams<{ id: string }>();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ status: '', body: '', severity: '' });
@@ -36,9 +36,9 @@ export default function IncidentDetailPage() {
 
   return (
     <div>
-      <button type="button" onClick={() => router.back()} className="mb-4 text-xs text-steel hover:text-chalk">
+      <Link href="/app/race-control/incidents" className="mb-4 inline-block text-xs text-steel hover:text-chalk transition-colors">
         &larr; Back to Incidents
-      </button>
+      </Link>
 
       <div className="mb-6 rounded-lg border border-white/10 bg-concrete p-4">
         <div className="mb-3 flex items-center gap-3">
@@ -68,7 +68,7 @@ export default function IncidentDetailPage() {
             });
             setEditing(true);
           }}
-          className="rounded bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30"
+          className="rounded bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30 transition-colors"
         >
           Edit Incident
         </button>
@@ -77,7 +77,8 @@ export default function IncidentDetailPage() {
           <select
             value={form.status}
             onChange={(e) => setForm({ ...form, status: e.target.value })}
-            className="mb-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk"
+            disabled={updateMutation.isPending}
+            className="mb-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <option value="open">Open</option>
             <option value="investigating">Investigating</option>
@@ -87,7 +88,8 @@ export default function IncidentDetailPage() {
           <select
             value={form.severity}
             onChange={(e) => setForm({ ...form, severity: e.target.value })}
-            className="mb-2 ml-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk"
+            disabled={updateMutation.isPending}
+            className="mb-2 ml-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <option value="p1">P1 - Critical</option>
             <option value="p2">P2 - High</option>
@@ -97,7 +99,8 @@ export default function IncidentDetailPage() {
           <textarea
             value={form.body}
             onChange={(e) => setForm({ ...form, body: e.target.value })}
-            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk"
+            disabled={updateMutation.isPending}
+            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk disabled:opacity-60 disabled:cursor-not-allowed"
             rows={4}
           />
           <div className="flex gap-2">
@@ -110,7 +113,7 @@ export default function IncidentDetailPage() {
             </button>
             <button
               onClick={() => setEditing(false)}
-              className="rounded px-3 py-1 text-xs text-steel hover:text-chalk"
+              className="rounded px-3 py-1 text-xs text-steel hover:text-chalk transition-colors"
             >
               Cancel
             </button>

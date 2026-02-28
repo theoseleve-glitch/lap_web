@@ -76,7 +76,7 @@ export default function AnnotationsPage() {
               <button
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-chalk text-xs"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-chalk text-xs transition-colors"
               >
                 ✕
               </button>

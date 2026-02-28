@@ -258,7 +258,7 @@ export default function EditRacePage() {
         <div className={sectionCls}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-monument text-lg text-chalk">Drivers</h2>
-            <button type="button" onClick={addDriver} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10">+ Add Driver</button>
+            <button type="button" onClick={addDriver} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10 transition-colors">+ Add Driver</button>
           </div>
           <p className="text-steel font-body text-sm mb-3">Enter at least one driver name to build the strategy.</p>
           <div className="space-y-3">
@@ -269,8 +269,8 @@ export default function EditRacePage() {
                   <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={e => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
                   <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={e => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
                   <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={e => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
-                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry">{d.showConstraints ? '▼' : '▶'} Rules</button>
-                  {drivers.length > 1 && <button type="button" aria-label={`Remove driver ${i + 1}`} onClick={() => removeDriver(i)} className="text-safety-red hover:text-safety-red/80 text-sm">✕</button>}
+                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors">{d.showConstraints ? '▼' : '▶'} Rules</button>
+                  {drivers.length > 1 && <button type="button" aria-label={`Remove driver ${i + 1}`} onClick={() => removeDriver(i)} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">✕</button>}
                 </div>
                 {d.showConstraints && (
                   <div className="grid grid-cols-5 gap-2 mt-2 pl-11">
@@ -304,7 +304,7 @@ export default function EditRacePage() {
         <div className={sectionCls}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-monument text-lg text-chalk">Pit Windows</h2>
-            <button type="button" onClick={addWindow} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10">+ Add Window</button>
+            <button type="button" onClick={addWindow} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10 transition-colors">+ Add Window</button>
           </div>
           {windows.length === 0 ? (
             <p className="text-steel font-body text-sm">No pit windows configured.</p>
@@ -319,7 +319,7 @@ export default function EditRacePage() {
                   <div className="flex items-center gap-1"><input aria-label={`Window ${i + 1} start minutes`} type="number" className={`${inputCls} w-16`} value={w.start_mm} onChange={e => updateWindow(i, 'start_mm', e.target.value)} /><span className="text-steel">:</span><input aria-label={`Window ${i + 1} start seconds`} type="number" className={`${inputCls} w-16`} value={w.start_ss} onChange={e => updateWindow(i, 'start_ss', e.target.value)} /></div>
                   <span className="text-steel">→</span>
                   <div className="flex items-center gap-1"><input aria-label={`Window ${i + 1} end minutes`} type="number" className={`${inputCls} w-16`} value={w.end_mm} onChange={e => updateWindow(i, 'end_mm', e.target.value)} /><span className="text-steel">:</span><input aria-label={`Window ${i + 1} end seconds`} type="number" className={`${inputCls} w-16`} value={w.end_ss} onChange={e => updateWindow(i, 'end_ss', e.target.value)} /></div>
-                  <button type="button" aria-label={`Remove window ${i + 1}`} onClick={() => removeWindow(i)} className="text-safety-red text-sm">✕</button>
+                  <button type="button" aria-label={`Remove window ${i + 1}`} onClick={() => removeWindow(i)} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">✕</button>
                 </div>
               ))}
             </div>
@@ -351,10 +351,10 @@ export default function EditRacePage() {
         </div>
 
         <div className="flex items-center gap-4 mt-6">
-          <button type="submit" disabled={mutation.isPending} className="px-6 py-3 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 disabled:opacity-50">
+          <button type="submit" disabled={mutation.isPending} className="px-6 py-3 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 disabled:opacity-50 transition-colors">
             {mutation.isPending ? 'Saving...' : 'Save Changes'}
           </button>
-          <button type="button" onClick={() => router.back()} className="px-6 py-3 border border-steel/30 text-steel font-telemetry text-sm tracking-wider uppercase hover:text-chalk hover:border-chalk/30">Cancel</button>
+          <button type="button" onClick={() => router.back()} className="px-6 py-3 border border-steel/30 text-steel font-telemetry text-sm tracking-wider uppercase hover:text-chalk hover:border-chalk/30 transition-colors">Cancel</button>
         </div>
       </form>
     </div>

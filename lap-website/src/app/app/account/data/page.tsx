@@ -287,7 +287,8 @@ export default function DataPrivacyPage() {
                     .filter((n) => !isNaN(n));
                   setSelectedSessions(ids);
                 }}
-                className="bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm flex-1 focus:border-acid-green/40 focus:outline-none"
+                disabled={deleteStep1.isPending}
+                className="bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm flex-1 focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <button
                 onClick={() => deleteStep1.mutate(selectedSessions)}
@@ -333,7 +334,8 @@ export default function DataPrivacyPage() {
               placeholder="Enter your password to confirm"
               value={deletePassword}
               onChange={(e) => setDeletePassword(e.target.value)}
-              className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm mb-3 focus:border-safety-red/40 focus:outline-none"
+              disabled={deleteAccountMutation.isPending}
+              className="w-full bg-concrete border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm mb-3 focus:border-safety-red/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             />
             <div className="flex gap-3">
               <button

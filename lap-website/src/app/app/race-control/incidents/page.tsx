@@ -32,7 +32,7 @@ export default function IncidentsPage() {
         <button
           type="button"
           onClick={() => setShowForm(!showForm)}
-          className="rounded bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30"
+          className="rounded bg-red-500/20 px-3 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30 transition-colors"
         >
           {showForm ? 'Cancel' : 'New Incident'}
         </button>
@@ -44,19 +44,22 @@ export default function IncidentsPage() {
             placeholder="Title"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
-            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30"
+            disabled={createMutation.isPending}
+            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed"
           />
           <textarea
             placeholder="Description..."
             value={form.body}
             onChange={(e) => setForm({ ...form, body: e.target.value })}
-            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30"
+            disabled={createMutation.isPending}
+            className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed"
             rows={3}
           />
           <select
             value={form.severity}
             onChange={(e) => setForm({ ...form, severity: e.target.value })}
-            className="mb-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk"
+            disabled={createMutation.isPending}
+            className="mb-2 rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <option value="p1">P1 - Critical</option>
             <option value="p2">P2 - High</option>
