@@ -597,6 +597,83 @@ def v1_files():
 
 
 # ---------------------------------------------------------------------------
+# 14b. POST /files/upload — upload a CSV file
+# ---------------------------------------------------------------------------
+
+@bp.route("/files/upload", methods=["POST"])
+@rate_limit(tier="write")
+def v1_files_upload():
+    """Upload a CSV file to data/raw/.
+
+    Accepts multipart/form-data with a ``file`` field.
+    Validates: .csv extension, no double extensions, no binary content,
+    decodable as UTF-8 or Latin-1, valid CSV structure (>=2 columns).
+
+    Returns:
+        200 with ``{"filename": "...", "size_bytes": ..., "size_human": "..."}``
+    """
+    import csv
+    import io
+
+    from werkzeug.utils import secure_filename
+
+    if "file" not in request.files:
+        return api_error(ErrorCode.VALIDATION_ERROR, "No file provided", status=400)
+
+    f = request.files["file"]
+    if not f.filename:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+
+    # Double-extension rejection (e.g. "data.csv.exe")
+    basename = f.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    dot_parts = basename.split(".")
+    if len(dot_parts) > 2:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+    if not basename.lower().endswith(".csv"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+
+    # Content validation
+    sample = f.read(8192)
+    f.seek(0)
+
+    if b"\x00" in sample:
+        return api_error(ErrorCode.VALIDATION_ERROR, "File appears to be binary, not CSV", status=400)
+
+    try:
+        text_sample = sample.decode("utf-8")
+    except UnicodeDecodeError:
+        try:
+            text_sample = sample.decode("latin-1")
+        except UnicodeDecodeError:
+            return api_error(ErrorCode.VALIDATION_ERROR, "File is not valid text", status=400)
+
+    first_line = text_sample.split("\n", 1)[0].strip()
+    if first_line:
+        reader = csv.reader(io.StringIO(first_line))
+        try:
+            headers = next(reader)
+            if len(headers) < 2:
+                return api_error(ErrorCode.VALIDATION_ERROR, "CSV must have at least 2 columns", status=400)
+        except (csv.Error, StopIteration):
+            return api_error(ErrorCode.VALIDATION_ERROR, "File does not appear to be valid CSV", status=400)
+
+    safe_name = secure_filename(f.filename) or "upload.csv"
+    if not safe_name.lower().endswith(".csv"):
+        safe_name += ".csv"
+    raw_dir = Path(current_app.config.get("DATA_RAW_DIR", "data/raw"))
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    dest = raw_dir / safe_name
+    f.save(str(dest))
+
+    stat = dest.stat()
+    return api_response({
+        "filename": safe_name,
+        "size_bytes": stat.st_size,
+        "size_human": _human_size(stat.st_size),
+    })
+
+
+# ---------------------------------------------------------------------------
 # 15. DELETE /sessions/<id> — delete a session
 # ---------------------------------------------------------------------------
 
@@ -1702,6 +1779,53 @@ def v1_karts_list():
 
 
 # ---------------------------------------------------------------------------
+# 40b. POST /karts — create a new kart
+# ---------------------------------------------------------------------------
+
+@bp.route("/karts", methods=["POST"])
+@rate_limit(tier="write")
+def v1_create_kart():
+    """Create a new kart.
+
+    Accepts JSON with: name (required), number, chassis/manufacturer,
+    model, engine, power_hp, weight_kg/kart_weight_kg, notes.
+
+    Returns:
+        200 with ``{"id": ...}``
+    """
+    from web.models import create_kart
+
+    conn = get_db_connection()
+    body = request.get_json(silent=True) or {}
+
+    name = (body.get("name") or "").strip()
+    if not name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Name is required", status=400)
+
+    def _flt(key):
+        v = body.get(key)
+        if v is None:
+            return None
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            return None
+
+    kart_id = create_kart(
+        conn,
+        kart_name=name,
+        manufacturer=(body.get("chassis") or body.get("manufacturer") or "").strip() or None,
+        model=(body.get("model") or "").strip() or None,
+        engine=(body.get("engine") or "").strip() or None,
+        power_hp=_flt("power_hp"),
+        kart_weight_kg=_flt("weight_kg") or _flt("kart_weight_kg"),
+        notes=(body.get("notes") or "").strip() or None,
+    )
+    conn.commit()
+    return api_response({"id": kart_id})
+
+
+# ---------------------------------------------------------------------------
 # 41. GET /karts/<id> — kart detail
 # ---------------------------------------------------------------------------
 
@@ -1719,11 +1843,18 @@ def v1_kart_detail(kart_id: int):
     if kart is None:
         return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
 
-    # Add session count
-    count_row = conn.execute(
-        "SELECT COUNT(*) as session_count FROM sessions WHERE kart_id = :kid",
-        {"kid": kart_id},
-    ).fetchone()
+    # Add session count (PG uses kart_sessions junction table)
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        count_row = conn.execute(
+            "SELECT COUNT(*) as session_count FROM kart_sessions WHERE kart_id = :kid",
+            {"kid": kart_id},
+        ).fetchone()
+    else:
+        count_row = conn.execute(
+            "SELECT COUNT(*) as session_count FROM sessions WHERE kart_id = :kid",
+            {"kid": kart_id},
+        ).fetchone()
     kart["session_count"] = count_row["session_count"] if count_row else 0
 
     return api_response(kart)
@@ -1935,3 +2066,838 @@ def v1_data_health_jobs():
         jobs = []
 
     return api_response({"jobs": jobs})
+
+
+# ---------------------------------------------------------------------------
+# Predefined karts & tracks — fully-configured presets from CSV catalogue
+# ---------------------------------------------------------------------------
+
+def _project_root() -> Path:
+    """Return the project root (parent of telemetry_tool/).
+
+    __file__ = .../telemetry_tool/web/routes/api_v1_data.py
+    → .parent (routes) → .parent (web) → .parent (telemetry_tool) → .parent (project root)
+    """
+    return Path(__file__).resolve().parent.parent.parent.parent
+
+
+@bp.route("/predefined-karts", methods=["GET"])
+@rate_limit(tier="read")
+def v1_predefined_karts():
+    """Return fully-configured predefined karts grouped by segment.
+
+    Only entries where *every* CSV column is filled (no blanks, no "NA")
+    are included.  Returns ``{"segments": {"RENTAL": [...], "OWNER": [...]}, "count": N}``.
+    """
+    import csv as csv_mod
+
+    csv_path = _project_root() / "predefined_kart_list.csv"
+    if not csv_path.exists():
+        return api_response({"segments": {}, "count": 0})
+
+    segments: dict = {}
+    count = 0
+    with open(csv_path, "r", encoding="utf-8") as fh:
+        reader = csv_mod.DictReader(fh)
+        headers = reader.fieldnames or []
+        for row in reader:
+            if not row.get("model", "").strip():
+                continue
+            # Skip incomplete entries (blank or "NA")
+            if not all(row.get(h, "").strip() and row.get(h, "").strip() != "NA"
+                       for h in headers):
+                continue
+            seg = row.get("segment", "OTHER").strip()
+            entry = {
+                "segment": seg,
+                "manufacturer": row.get("manufacturer", "").strip(),
+                "model": row.get("model", "").strip(),
+                "model_year": int(row.get("model_year_start", "0") or "0"),
+                "use": row.get("use_or_championship", "").strip(),
+                "engine": row.get("engine", "").strip(),
+                "power_hp": float(row.get("power_hp", "0") or "0"),
+                "engine_type": row.get("engine_type", "").strip(),
+                "weight_kg": float(row.get("kart_weight_kg_no_driver", "0") or "0"),
+                "top_speed_kmh": float(row.get("top_speed_kmh", "0") or "0"),
+                "zero_to_100_s": float(row.get("zero_to_100_kmh_s", "0") or "0"),
+                "power_to_weight": float(row.get("power_to_weight_hp_per_kg", "0") or "0"),
+                "braking_g": float(row.get("braking_g_est", "0") or "0"),
+                "lateral_g": float(row.get("lateral_g_est", "0") or "0"),
+            }
+            segments.setdefault(seg, []).append(entry)
+            count += 1
+
+    return api_response({"segments": segments, "count": count})
+
+
+@bp.route("/predefined-tracks", methods=["GET"])
+@rate_limit(tier="read")
+def v1_predefined_tracks():
+    """Return fully-configured predefined tracks grouped by country.
+
+    Only entries where *every* CSV column is non-empty are included.
+    Returns ``{"countries": {"France": [...], ...}, "count": N}``.
+    """
+    import csv as csv_mod
+
+    csv_path = _project_root() / "predefined_track_list.csv"
+    if not csv_path.exists():
+        return api_response({"countries": {}, "count": 0})
+
+    countries: dict = {}
+    count = 0
+    with open(csv_path, "r", encoding="utf-8") as fh:
+        reader = csv_mod.DictReader(fh)
+        headers = reader.fieldnames or []
+        for row in reader:
+            if not row.get("Track", "").strip():
+                continue
+            # Skip incomplete entries (any blank column)
+            if not all(row.get(h, "").strip() for h in headers):
+                continue
+            country = row.get("Country", "Other").strip()
+            length_raw = row.get("LayoutLength_m", "").strip()
+            entry = {
+                "country": country,
+                "track": row.get("Track", "").strip(),
+                "city": row.get("City", "").strip(),
+                "region": row.get("Region", "").strip(),
+                "layout": row.get("LayoutName", "").strip(),
+                "length_m": int(length_raw) if length_raw.isdigit() else None,
+                "direction": row.get("Direction", "").strip(),
+                "rental": row.get("RentalAvailable", "").strip(),
+                "owner": row.get("OwnerAvailable", "").strip(),
+                "outdoor": row.get("Outdoor", "").strip() == "Yes",
+            }
+            countries.setdefault(country, []).append(entry)
+            count += 1
+
+    return api_response({"countries": countries, "count": count})
+
+
+# ---------------------------------------------------------------------------
+# Exports — data export generation and listing
+# ---------------------------------------------------------------------------
+
+@bp.route("/exports", methods=["GET"])
+@rate_limit(tier="read")
+def v1_exports_list():
+    """List data exports for the current user/workspace."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT export_id AS id, export_name AS name, format, "
+            "size_bytes AS size, status, created_at, download_url "
+            "FROM data_exports "
+            "ORDER BY created_at DESC LIMIT 50"
+        ).fetchall()
+        exports = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    except Exception:
+        # Table may not exist yet — return empty list
+        exports = []
+    return api_response({"exports": exports})
+
+
+@bp.route("/exports/generate", methods=["POST"])
+@rate_limit(tier="write")
+def v1_exports_generate():
+    """Generate a new data export.
+
+    Accepts JSON with ``type`` (sessions/laps/drivers/tracks/scores)
+    and ``format`` (csv/json/pdf/parquet).
+    """
+    body = request.get_json(silent=True) or {}
+    export_type = body.get("type", "sessions")
+    export_format = body.get("format", "csv")
+
+    conn = get_db_connection()
+
+    # Build export inline (synchronous for now — Celery task later)
+    try:
+        if export_type == "sessions":
+            rows = conn.execute(
+                "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+                "s.session_type, s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
+                "FROM sessions s "
+                "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+                "LEFT JOIN tracks t ON s.track_id = t.track_id "
+                "ORDER BY s.session_date DESC"
+            ).fetchall()
+        elif export_type == "laps":
+            rows = conn.execute(
+                "SELECT l.lap_number, l.lap_time_s, l.is_valid, l.is_best, "
+                "d.driver_name, t.track_name, s.session_date "
+                "FROM laps l JOIN sessions s ON l.session_id = s.session_id "
+                "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+                "LEFT JOIN tracks t ON s.track_id = t.track_id "
+                "ORDER BY s.session_date DESC, l.lap_number"
+            ).fetchall()
+        elif export_type == "drivers":
+            rows = conn.execute(
+                "SELECT driver_id, driver_name FROM drivers ORDER BY driver_name"
+            ).fetchall()
+        elif export_type == "tracks":
+            rows = conn.execute(
+                "SELECT track_id, track_name, lap_length_m FROM tracks ORDER BY track_name"
+            ).fetchall()
+        elif export_type == "scores":
+            rows = conn.execute(
+                "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+                "sd.pace_score, sd.consistency_score, sd.execution_score, "
+                "sd.robustness_score, s.total_score, s.grade "
+                "FROM sessions s "
+                "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+                "LEFT JOIN tracks t ON s.track_id = t.track_id "
+                "LEFT JOIN score_details sd ON s.session_id = sd.session_id "
+                "ORDER BY s.session_date DESC"
+            ).fetchall()
+        else:
+            return api_error(ErrorCode.VALIDATION_ERROR, f"Unknown type: {export_type}", status=400)
+
+        data_rows = [dict(r) if not isinstance(r, dict) else r for r in rows]
+        row_count = len(data_rows)
+
+        if export_format == "json":
+            import json as json_mod
+            content = json_mod.dumps(data_rows, default=str)
+            ext = "json"
+        else:
+            # CSV fallback
+            import csv as csv_mod
+            import io
+            if data_rows:
+                output = io.StringIO()
+                writer = csv_mod.DictWriter(output, fieldnames=data_rows[0].keys())
+                writer.writeheader()
+                writer.writerows(data_rows)
+                content = output.getvalue()
+            else:
+                content = ""
+            ext = "csv"
+
+        name = f"{export_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}"
+        size = len(content.encode("utf-8"))
+
+        return api_response({
+            "export": {
+                "id": 0,
+                "name": name,
+                "format": ext,
+                "size": size,
+                "status": "ready",
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "row_count": row_count,
+                "content": content,
+            }
+        })
+    except Exception as exc:
+        logger.warning("Export generation failed: %s", exc, exc_info=True)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Export generation failed", status=500)
+
+
+# ---------------------------------------------------------------------------
+# Dev Plans (Coaching Plans) — v1 wrappers over legacy development_plan module
+# ---------------------------------------------------------------------------
+
+@bp.route("/dev-plans", methods=["GET"])
+@rate_limit(tier="read")
+def v1_dev_plans_list():
+    """List all development plans across all drivers."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT dp.plan_id AS id, dp.plan_name AS title, dp.level, "
+            "dp.status, dp.completion_pct AS progress_pct, "
+            "dp.driver_id, d.driver_name, dp.created_at, dp.updated_at "
+            "FROM development_plans dp "
+            "LEFT JOIN drivers d ON dp.driver_id = d.driver_id "
+            "ORDER BY dp.updated_at DESC"
+        ).fetchall()
+        plans = []
+        for r in rows:
+            p = dict(r) if not isinstance(r, dict) else r
+            # Map legacy status values to frontend expectations
+            status = p.get("status", "draft")
+            if status == "active":
+                status = "in_progress"
+            plans.append({
+                "id": p.get("id"),
+                "title": p.get("title") or "Untitled Plan",
+                "status": status,
+                "priority": "medium",
+                "progress_pct": p.get("progress_pct", 0),
+                "driver_name": p.get("driver_name"),
+                "updated_at": str(p.get("updated_at") or ""),
+            })
+    except Exception:
+        plans = []
+    return api_response({"plans": plans})
+
+
+@bp.route("/dev-plans/<int:plan_id>", methods=["GET"])
+@rate_limit(tier="read")
+def v1_dev_plan_detail(plan_id: int):
+    """Return detail for a specific development plan."""
+    conn = get_db_connection()
+    try:
+        from development_plan import get_plan
+        plan = get_plan(conn, plan_id)
+        if plan is None:
+            return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+
+        # Flatten weeks/drills into a task list for the frontend
+        tasks = []
+        weeks = plan.get("weeks") or []
+        if isinstance(weeks, str):
+            import json as json_mod
+            try:
+                weeks = json_mod.loads(weeks)
+            except Exception:
+                weeks = []
+
+        for wi, week in enumerate(weeks):
+            drills = week.get("drills", [])
+            for di, drill in enumerate(drills):
+                tasks.append({
+                    "id": f"w{wi}d{di}",
+                    "title": drill.get("name", f"Week {wi+1} Drill {di+1}"),
+                    "status": "completed" if drill.get("completed") else "pending",
+                    "notes": drill.get("coaching_notes", ""),
+                    "week": wi + 1,
+                })
+
+        result = {
+            "id": plan.get("plan_id"),
+            "title": plan.get("plan_name", "Untitled Plan"),
+            "description": plan.get("description", ""),
+            "status": plan.get("status", "draft"),
+            "progress_pct": plan.get("completion_pct", 0),
+            "tasks": tasks,
+            "created_at": str(plan.get("created_at") or ""),
+            "updated_at": str(plan.get("updated_at") or ""),
+        }
+        return api_response(result)
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    except Exception as exc:
+        logger.warning("Dev plan detail failed: %s", exc, exc_info=True)
+        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+
+
+# ---------------------------------------------------------------------------
+# Session Visualization — data for the visualization tool
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/visualize", methods=["GET"])
+@rate_limit(tier="read")
+def v1_session_visualize(session_id: str):
+    """Return GPS, speed-trace, and GG data for all laps in a session.
+
+    Used by the visualization tool (canvas-based GPS map, speed trace,
+    GG diagram).
+    """
+    conn = get_db_connection()
+    session = get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    laps_data = []
+    laps = get_laps_for_session(conn, session_id)
+    for lap in laps:
+        lap_num = lap.get("lap_number")
+        if lap_num is None:
+            continue
+
+        # GPS trace
+        gps_rows = conn.execute(
+            "SELECT latitude, longitude, speed_ms "
+            "FROM gps_traces WHERE session_id = :sid AND lap_number = :ln "
+            "ORDER BY timestamp_ms",
+            {"sid": session_id, "ln": lap_num},
+        ).fetchall()
+        gps = [
+            {"lat": r["latitude"], "lng": r["longitude"],
+             "speed": r.get("speed_ms", 0)}
+            for r in (dict(row) if not isinstance(row, dict) else row for row in gps_rows)
+            if r.get("latitude") and r.get("longitude")
+        ]
+
+        # GG data from corner_metrics or derived
+        gg_rows = conn.execute(
+            "SELECT lateral_g, longitudinal_g "
+            "FROM corner_metrics WHERE session_id = :sid AND lap_number = :ln",
+            {"sid": session_id, "ln": lap_num},
+        ).fetchall()
+        gg = [
+            {"lat_g": r.get("lateral_g", 0), "lon_g": r.get("longitudinal_g", 0)}
+            for r in (dict(row) if not isinstance(row, dict) else row for row in gg_rows)
+        ]
+
+        laps_data.append({
+            "lap_number": lap_num,
+            "lap_time_s": lap.get("lap_time_s"),
+            "is_best": lap.get("is_best", False),
+            "gps": gps,
+            "gg": gg,
+            "speed_trace": [],  # Populated from gps if needed
+        })
+
+    return api_response({"laps": laps_data})
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions — simple session list (used by compare session picker)
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions", methods=["GET"])
+@rate_limit(tier="read")
+def v1_sessions_list():
+    """Return a simple list of sessions for pickers/dropdowns."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+        "s.session_type, s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "ORDER BY s.session_date DESC LIMIT 200"
+    ).fetchall()
+    sessions = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"sessions": sessions, "total": len(sessions)})
+
+
+# ---------------------------------------------------------------------------
+# GET /compare/sessions — compare two sessions side by side
+# ---------------------------------------------------------------------------
+
+@bp.route("/compare/sessions", methods=["GET"])
+@rate_limit(tier="read")
+def v1_compare_sessions():
+    """Compare two sessions by ID."""
+    session_a = request.args.get("a", "")
+    session_b = request.args.get("b", "")
+    if not session_a or not session_b:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Both a and b session IDs required", status=400)
+
+    conn = get_db_connection()
+
+    def _load_session(sid):
+        row = conn.execute(
+            "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+            "s.session_type, s.n_laps, s.best_lap_time_s, s.mean_lap_time_s, "
+            "s.total_score, s.grade "
+            "FROM sessions s "
+            "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+            "LEFT JOIN tracks t ON s.track_id = t.track_id "
+            "WHERE s.session_id = :sid",
+            {"sid": sid},
+        ).fetchone()
+        if not row:
+            return None
+        sess = dict(row) if not isinstance(row, dict) else row
+        # Lap times
+        laps = conn.execute(
+            "SELECT lap_number, lap_time_s, is_valid "
+            "FROM laps WHERE session_id = :sid ORDER BY lap_number",
+            {"sid": sid},
+        ).fetchall()
+        sess["laps"] = [dict(l) if not isinstance(l, dict) else l for l in laps]
+        # Score details
+        sd = conn.execute(
+            "SELECT pace_score, consistency_score, execution_score, robustness_score "
+            "FROM score_details WHERE session_id = :sid",
+            {"sid": sid},
+        ).fetchone()
+        if sd:
+            sess["scores"] = dict(sd) if not isinstance(sd, dict) else sd
+        return sess
+
+    a = _load_session(session_a)
+    b = _load_session(session_b)
+    if not a:
+        return api_error(ErrorCode.NOT_FOUND, f"Session {session_a} not found", status=404)
+    if not b:
+        return api_error(ErrorCode.NOT_FOUND, f"Session {session_b} not found", status=404)
+
+    return api_response({"session_a": a, "session_b": b})
+
+
+# ---------------------------------------------------------------------------
+# GET /compare/drivers — compare two drivers side by side
+# ---------------------------------------------------------------------------
+
+@bp.route("/compare/drivers", methods=["GET"])
+@rate_limit(tier="read")
+def v1_compare_drivers():
+    """Compare two drivers by ID."""
+    driver_a = request.args.get("a", "")
+    driver_b = request.args.get("b", "")
+    if not driver_a or not driver_b:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Both a and b driver IDs required", status=400)
+
+    conn = get_db_connection()
+
+    def _load_driver_stats(did):
+        d = conn.execute(
+            "SELECT driver_id, driver_name FROM drivers WHERE driver_id = :did",
+            {"did": did},
+        ).fetchone()
+        if not d:
+            return None
+        driver = dict(d) if not isinstance(d, dict) else d
+        stats = conn.execute(
+            "SELECT COUNT(*) as total_sessions, "
+            "AVG(s.total_score) as avg_score, "
+            "MIN(s.best_lap_time_s) as fastest_lap, "
+            "AVG(s.best_lap_time_s) as avg_best_lap "
+            "FROM sessions s WHERE s.driver_id = :did",
+            {"did": did},
+        ).fetchone()
+        if stats:
+            st = dict(stats) if not isinstance(stats, dict) else stats
+            driver.update({k: (round(v, 3) if isinstance(v, float) else v) for k, v in st.items()})
+        # Recent scores
+        recent = conn.execute(
+            "SELECT s.session_date, s.total_score, s.grade, t.track_name "
+            "FROM sessions s LEFT JOIN tracks t ON s.track_id = t.track_id "
+            "WHERE s.driver_id = :did AND s.total_score IS NOT NULL "
+            "ORDER BY s.session_date DESC LIMIT 10",
+            {"did": did},
+        ).fetchall()
+        driver["recent"] = [dict(r) if not isinstance(r, dict) else r for r in recent]
+        return driver
+
+    a = _load_driver_stats(driver_a)
+    b = _load_driver_stats(driver_b)
+    if not a:
+        return api_error(ErrorCode.NOT_FOUND, f"Driver {driver_a} not found", status=404)
+    if not b:
+        return api_error(ErrorCode.NOT_FOUND, f"Driver {driver_b} not found", status=404)
+
+    return api_response({"driver_a": a, "driver_b": b})
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/trends — score and lap time trends over time
+# ---------------------------------------------------------------------------
+
+@bp.route("/analytics/trends", methods=["GET"])
+@rate_limit(tier="read")
+def v1_analytics_trends():
+    """Return score and lap time trends over time."""
+    from_date = request.args.get("from", "")
+    to_date = request.args.get("to", "")
+    conn = get_db_connection()
+
+    sql = (
+        "SELECT s.session_date, s.total_score, s.best_lap_time_s, "
+        "s.grade, d.driver_name, t.track_name "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.total_score IS NOT NULL "
+    )
+    params: dict = {}
+    if from_date:
+        sql += "AND s.session_date >= :from_date "
+        params["from_date"] = from_date
+    if to_date:
+        sql += "AND s.session_date <= :to_date "
+        params["to_date"] = to_date
+    sql += "ORDER BY s.session_date ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+    points = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"trends": points})
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/weather — weather correlation with performance
+# ---------------------------------------------------------------------------
+
+@bp.route("/analytics/weather", methods=["GET"])
+@rate_limit(tier="read")
+def v1_analytics_weather():
+    """Return weather-performance correlation data."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT s.session_id, s.session_date, s.best_lap_time_s, s.total_score, "
+        "s.track_state, sw.air_temp_c, sw.track_temp_c, sw.humidity_pct, "
+        "sw.wind_speed_mps, sw.pressure_hpa, t.track_name "
+        "FROM sessions s "
+        "LEFT JOIN session_weather sw ON s.session_id = sw.session_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.total_score IS NOT NULL "
+        "ORDER BY s.session_date DESC LIMIT 100"
+    ).fetchall()
+    data = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"weather_data": data})
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/meteo — meteo correlation analysis
+# ---------------------------------------------------------------------------
+
+@bp.route("/analytics/meteo", methods=["GET"])
+@rate_limit(tier="read")
+def v1_analytics_meteo():
+    """Return meteorological correlation analysis data."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT s.session_id, s.session_date, s.best_lap_time_s, s.total_score, "
+        "s.track_state, sw.air_temp_c, sw.track_temp_c, sw.humidity_pct, "
+        "sw.pressure_hpa, sw.wind_speed_mps, t.track_name, d.driver_name "
+        "FROM sessions s "
+        "LEFT JOIN session_weather sw ON s.session_id = sw.session_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "WHERE s.total_score IS NOT NULL "
+        "ORDER BY s.session_date DESC LIMIT 200"
+    ).fetchall()
+    data = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    # Group by track_state for summary
+    by_condition: dict = {}
+    for row in data:
+        state = row.get("track_state") or "unknown"
+        by_condition.setdefault(state, []).append(row)
+
+    summary = []
+    for state, sessions in by_condition.items():
+        scores = [s["total_score"] for s in sessions if s.get("total_score")]
+        times = [s["best_lap_time_s"] for s in sessions if s.get("best_lap_time_s")]
+        summary.append({
+            "condition": state,
+            "count": len(sessions),
+            "avg_score": round(sum(scores) / len(scores), 1) if scores else None,
+            "avg_best_lap": round(sum(times) / len(times), 3) if times else None,
+        })
+
+    return api_response({"sessions": data, "summary": summary})
+
+
+# ---------------------------------------------------------------------------
+# GET /analytics/predict-pace — pace prediction for a track
+# ---------------------------------------------------------------------------
+
+@bp.route("/analytics/predict-pace", methods=["GET"])
+@rate_limit(tier="read")
+def v1_analytics_predict_pace():
+    """Predict pace for a track based on historical data."""
+    track_id = request.args.get("track_id", "")
+    if not track_id:
+        return api_error(ErrorCode.VALIDATION_ERROR, "track_id required", status=400)
+
+    conn = get_db_connection()
+    # Get historical lap times for this track
+    rows = conn.execute(
+        "SELECT s.best_lap_time_s, s.total_score, s.session_date, s.track_state, "
+        "d.driver_name "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "WHERE s.track_id = :tid AND s.best_lap_time_s IS NOT NULL "
+        "ORDER BY s.session_date DESC",
+        {"tid": track_id},
+    ).fetchall()
+    history = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    if not history:
+        return api_response({
+            "track_id": track_id,
+            "predicted_lap_s": None,
+            "confidence": 0,
+            "history": [],
+            "message": "No historical data available for prediction",
+        })
+
+    times = [h["best_lap_time_s"] for h in history if h.get("best_lap_time_s")]
+    avg_time = sum(times) / len(times) if times else None
+    best_time = min(times) if times else None
+
+    return api_response({
+        "track_id": track_id,
+        "predicted_lap_s": round(avg_time, 3) if avg_time else None,
+        "best_historical_s": round(best_time, 3) if best_time else None,
+        "confidence": min(len(times) * 10, 100),
+        "sample_size": len(times),
+        "history": history[:20],
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET /drivers/<id>/progression — driver progression over time
+# ---------------------------------------------------------------------------
+
+@bp.route("/drivers/<int:driver_id>/progression", methods=["GET"])
+@rate_limit(tier="read")
+def v1_driver_progression(driver_id: int):
+    """Return driver progression metrics over time."""
+    track_id = request.args.get("track_id")
+    conn = get_db_connection()
+
+    # Verify driver exists
+    d = conn.execute(
+        "SELECT driver_id, driver_name FROM drivers WHERE driver_id = :did",
+        {"did": driver_id},
+    ).fetchone()
+    if not d:
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+
+    sql = (
+        "SELECT dp.session_date, dp.pace_delta_s, dp.consistency_cv_pct, "
+        "dp.total_score, dp.n_laps, t.track_name, t.track_id "
+        "FROM driver_progression dp "
+        "LEFT JOIN tracks t ON dp.track_id = t.track_id "
+        "WHERE dp.driver_id = :did "
+    )
+    params: dict = {"did": driver_id}
+    if track_id:
+        sql += "AND dp.track_id = :tid "
+        params["tid"] = track_id
+    sql += "ORDER BY dp.session_date ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+    points = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    # Also return session-based progression if driver_progression table is empty
+    if not points:
+        sess_rows = conn.execute(
+            "SELECT s.session_date, s.best_lap_time_s, s.total_score, "
+            "s.n_laps, s.grade, t.track_name, t.track_id "
+            "FROM sessions s "
+            "LEFT JOIN tracks t ON s.track_id = t.track_id "
+            "WHERE s.driver_id = :did "
+            + ("AND s.track_id = :tid " if track_id else "")
+            + "ORDER BY s.session_date ASC",
+            params,
+        ).fetchall()
+        points = [dict(r) if not isinstance(r, dict) else r for r in sess_rows]
+
+    return api_response({"driver_id": driver_id, "progression": points})
+
+
+# ---------------------------------------------------------------------------
+# GET /drivers/<id>/tracks — list tracks a driver has driven at
+# ---------------------------------------------------------------------------
+
+@bp.route("/drivers/<int:driver_id>/tracks", methods=["GET"])
+@rate_limit(tier="read")
+def v1_driver_tracks(driver_id: int):
+    """Return tracks this driver has session data for."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT DISTINCT t.track_id, t.track_name, COUNT(s.session_id) as session_count "
+        "FROM sessions s "
+        "JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.driver_id = :did "
+        "GROUP BY t.track_id, t.track_name "
+        "ORDER BY t.track_name",
+        {"did": driver_id},
+    ).fetchall()
+    tracks = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"tracks": tracks})
+
+
+# ---------------------------------------------------------------------------
+# GET /karts/<id>/sessions — sessions linked to a kart
+# ---------------------------------------------------------------------------
+
+@bp.route("/karts/<int:kart_id>/sessions", methods=["GET"])
+@rate_limit(tier="read")
+def v1_kart_sessions(kart_id: int):
+    """Return sessions linked to a kart via kart_sessions junction table."""
+    conn = get_db_connection()
+
+    # Verify kart exists
+    k = conn.execute(
+        "SELECT kart_id, kart_name FROM karts WHERE kart_id = :kid",
+        {"kid": kart_id},
+    ).fetchone()
+    if not k:
+        return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
+
+    rows = conn.execute(
+        "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+        "s.session_type, s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
+        "FROM kart_sessions ks "
+        "JOIN sessions s ON ks.session_id = s.session_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE ks.kart_id = :kid "
+        "ORDER BY s.session_date DESC",
+        {"kid": kart_id},
+    ).fetchall()
+    sessions = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"sessions": sessions})
+
+
+# ---------------------------------------------------------------------------
+# POST /weekends — create a new weekend
+# ---------------------------------------------------------------------------
+
+@bp.route("/weekends", methods=["POST"])
+@rate_limit(tier="write")
+def v1_create_weekend():
+    """Create a new race weekend."""
+    body = request.get_json(silent=True) or {}
+    name = (body.get("name") or "").strip()
+    if not name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Name is required", status=400)
+
+    track_id = body.get("track_id")
+    start_date = body.get("start_date")
+    end_date = body.get("end_date")
+    notes = (body.get("notes") or "").strip() or None
+
+    conn = get_db_connection()
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        row = conn.execute(
+            "INSERT INTO weekends (name, track_id, start_date, end_date, notes) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING weekend_id",
+            (name, track_id, start_date, end_date, notes),
+        ).fetchone()
+        weekend_id = row["weekend_id"] if row else 0
+    else:
+        cur = conn.execute(
+            "INSERT INTO weekends (name, track_id, start_date, end_date, notes) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, track_id, start_date, end_date, notes),
+        )
+        weekend_id = cur.lastrowid
+    conn.commit()
+    return api_response({"weekend_id": weekend_id}, status=201)
+
+
+# ---------------------------------------------------------------------------
+# GET /weekends/<id>/sessions — sessions in a weekend
+# ---------------------------------------------------------------------------
+
+@bp.route("/weekends/<int:weekend_id>/sessions", methods=["GET"])
+@rate_limit(tier="read")
+def v1_weekend_sessions(weekend_id: int):
+    """Return sessions linked to a weekend."""
+    conn = get_db_connection()
+
+    # Verify weekend exists
+    w = conn.execute(
+        "SELECT weekend_id, name FROM weekends WHERE weekend_id = :wid",
+        {"wid": weekend_id},
+    ).fetchone()
+    if not w:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+
+    rows = conn.execute(
+        "SELECT s.session_id, d.driver_name, t.track_name, s.session_date, "
+        "s.session_type, s.n_laps, s.best_lap_time_s, s.total_score, s.grade, "
+        "ws.session_order "
+        "FROM weekend_sessions ws "
+        "JOIN sessions s ON ws.session_id = s.session_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE ws.weekend_id = :wid "
+        "ORDER BY ws.session_order, s.session_date",
+        {"wid": weekend_id},
+    ).fetchall()
+    sessions = [dict(r) if not isinstance(r, dict) else r for r in rows]
+    return api_response({"sessions": sessions})

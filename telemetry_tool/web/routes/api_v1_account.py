@@ -57,6 +57,19 @@ def get_pg_connection():
     return _get_pg()
 
 
+# ---- SQLAlchemy text() fallback ----
+# Production Docker doesn't install sqlalchemy.  PgConnectionWrapper
+# already handles plain SQL strings with :param style, so ``text`` can
+# simply be ``str`` as a no-op passthrough.
+try:
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings as _sa_text  # noqa: F401
+except ImportError:
+    _sa_text = None  # marker only — local imports use the fallback below
+
+
 # ---- Celery task import (graceful fallback) ----
 try:
     from tasks.gdpr_tasks import export_user_data
@@ -77,7 +90,10 @@ def create_export():
     Returns:
         202 with ``{"export_id": "..."}``
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -118,7 +134,10 @@ def export_status(export_id: str):
         200 with export status data.
         404 if export not found.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -153,7 +172,10 @@ def export_download(export_id: str):
         200 with file download if completed.
         404 if export not completed or not found.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -202,7 +224,10 @@ def delete_account():
         200 with ``{"deleted": true}``
         409 if account is already deleted.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -255,7 +280,10 @@ def cancel_deletion():
         200 with ``{"restored": true}``
         409 if account is not in deleted state.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -288,6 +316,48 @@ def cancel_deletion():
 
 
 # ---------------------------------------------------------------------------
+# GET /profile — read current profile
+# ---------------------------------------------------------------------------
+
+@bp.route("/profile", methods=["GET"])
+@rate_limit(tier="read")
+def get_profile():
+    """Return the current user's profile."""
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str
+
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    conn = get_pg_connection()
+    row = conn.execute(
+        text("SELECT display_name, email, avatar_url, preferences FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    data = dict(row) if not isinstance(row, dict) else row
+    prefs = data.get("preferences")
+    if isinstance(prefs, str):
+        try:
+            prefs = json.loads(prefs)
+        except (json.JSONDecodeError, TypeError):
+            prefs = {}
+
+    return api_response({
+        "display_name": data.get("display_name"),
+        "email": data.get("email"),
+        "avatar_url": data.get("avatar_url"),
+        "preferences": prefs or {},
+    })
+
+
+# ---------------------------------------------------------------------------
 # PATCH /profile — update display_name and/or email
 # ---------------------------------------------------------------------------
 
@@ -303,7 +373,10 @@ def update_profile():
         200 with updated profile data.
         400 if body is empty or invalid.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -365,9 +438,15 @@ def update_profile():
         params["avatar_url"] = avatar_url if avatar_url else None
 
     if preferences is not None:
-        # JSONB merge: existing || new (new keys overwrite, existing preserved)
-        set_clauses.append("preferences = COALESCE(preferences, '{}'::jsonb) || :prefs::jsonb")
-        params["prefs"] = json.dumps(preferences)
+        # Text column: read current, merge in Python, write back as text
+        cur_prefs_raw = current.get("preferences")
+        try:
+            cur_prefs = json.loads(cur_prefs_raw) if cur_prefs_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            cur_prefs = {}
+        cur_prefs.update(preferences)
+        set_clauses.append("preferences = :prefs")
+        params["prefs"] = json.dumps(cur_prefs)
 
     if set_clauses:
         sql = f"UPDATE users SET {', '.join(set_clauses)} WHERE id = :uid"
@@ -464,7 +543,10 @@ def change_password_route():
 @rate_limit(tier="read")
 def list_sessions():
     """List active sessions (from refresh_tokens table)."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -524,7 +606,10 @@ def list_sessions():
 @rate_limit(tier="write")
 def revoke_session(token_id: int):
     """Revoke a specific session by its refresh token ID."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -556,7 +641,10 @@ def revoke_session(token_id: int):
 @rate_limit(tier="write")
 def revoke_all_sessions():
     """Revoke all sessions except the current one (logout everywhere)."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.service import hash_refresh_token
 
     user_id = getattr(g, "current_user_id", None)
@@ -603,7 +691,10 @@ def setup_2fa():
     Stores the secret on the user row but does NOT enable 2FA yet --
     the caller must confirm with a valid TOTP code via ``/2fa/confirm``.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.totp import generate_totp_secret, generate_totp_uri, generate_qr_data_uri
 
     user_id = getattr(g, "current_user_id", None)
@@ -658,7 +749,10 @@ def confirm_2fa():
 
     The caller must have called ``/2fa/setup`` first to generate a secret.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
 
     user_id = getattr(g, "current_user_id", None)
@@ -727,7 +821,10 @@ def confirm_2fa():
 @rate_limit(tier="auth")
 def disable_2fa():
     """Disable 2FA.  Requires current password + valid TOTP *or* backup code."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.service import verify_password, _log_audit
     from auth.totp import verify_totp, verify_backup_code
 
@@ -811,7 +908,10 @@ def regenerate_backup_codes():
 
     Returns the new plaintext backup codes (shown once).
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.service import verify_password
     from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
 
@@ -874,7 +974,10 @@ _VALID_PREFERENCE_KEYS = {
 @rate_limit(tier="read")
 def get_preferences():
     """Return current user preferences."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -900,7 +1003,10 @@ def get_preferences():
 @rate_limit(tier="write")
 def update_preferences():
     """Partial merge into user preferences JSONB column."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -921,27 +1027,31 @@ def update_preferences():
 
     conn = get_pg_connection()
 
-    # JSONB merge: existing || new (new keys overwrite, existing keys preserved)
-    conn.execute(
-        text(
-            "UPDATE users SET preferences = COALESCE(preferences, '{}'::jsonb) || :patch::jsonb "
-            "WHERE id = :uid"
-        ),
-        {"patch": json.dumps(body), "uid": user_id},
-    )
-    conn.commit()
-
-    # Return merged preferences
+    # Read current preferences (text column, not JSONB)
     row = conn.execute(
         text("SELECT preferences FROM users WHERE id = :uid"),
         {"uid": user_id},
     ).fetchone()
 
-    prefs = dict(row)["preferences"] if not isinstance(row, dict) else row["preferences"]
-    if isinstance(prefs, str):
-        prefs = json.loads(prefs)
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
 
-    return api_response(prefs or {})
+    current_raw = row["preferences"] if isinstance(row, dict) else dict(row)["preferences"]
+    try:
+        current = json.loads(current_raw) if current_raw else {}
+    except (json.JSONDecodeError, TypeError):
+        current = {}
+
+    # Merge: new keys overwrite, existing keys preserved
+    current.update(body)
+
+    conn.execute(
+        text("UPDATE users SET preferences = :prefs WHERE id = :uid"),
+        {"prefs": json.dumps(current), "uid": user_id},
+    )
+    conn.commit()
+
+    return api_response(current)
 
 
 # ---------------------------------------------------------------------------
@@ -952,7 +1062,10 @@ def update_preferences():
 @rate_limit(tier="read")
 def list_connections():
     """List linked OAuth providers."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -992,7 +1105,10 @@ def unlink_connection(provider: str):
     Safety check: must have password set OR another OAuth provider linked
     to prevent orphaned accounts.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1055,7 +1171,10 @@ def unlink_connection(provider: str):
 @rate_limit(tier="read")
 def login_activity():
     """Return paginated login activity from audit_log."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1101,7 +1220,10 @@ def login_activity():
 @rate_limit(tier="read")
 def data_summary():
     """Return summary of user's stored data: sessions, storage, retention, exports."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.entitlements import get_user_entitlements
 
     user_id = getattr(g, "current_user_id", None)
@@ -1111,42 +1233,39 @@ def data_summary():
     workspace_id = getattr(g, "workspace_id", None)
     conn = get_pg_connection()
 
-    # Session count + oldest session + total storage
+    # Session count + oldest session (RLS auto-filters by workspace_id)
     stats = conn.execute(
         text(
             "SELECT COUNT(*) AS cnt, "
-            "MIN(created_at) AS oldest, "
-            "COALESCE(SUM(file_size_bytes), 0) AS total_bytes "
-            "FROM sessions WHERE user_id = :uid"
+            "MIN(created_at) AS oldest "
+            "FROM sessions"
         ),
-        {"uid": user_id},
     ).fetchone()
 
     stats_d = dict(stats) if not isinstance(stats, dict) else stats
     sessions_count = stats_d.get("cnt", 0)
-    total_bytes = stats_d.get("total_bytes", 0)
     oldest = stats_d.get("oldest")
-    total_storage_mb = round(total_bytes / (1024 * 1024), 1)
+    total_storage_mb = 0  # file_size_bytes not tracked in current schema
 
     # Get retention info from entitlements
     ents = get_user_entitlements(conn, user_id, workspace_id)
     retention_days = ents.get("telemetry_retention_days", 90)
     plan_tier = ents.get("plan_tier", "demo")
 
-    # Find sessions expiring within 14 days
+    # Find sessions expiring within 14 days (RLS auto-filters by workspace)
     expiring_sessions = []
     if retention_days and retention_days > 0:
         cutoff_soon = (datetime.now(timezone.utc) + timedelta(days=14)).isoformat()
         cutoff_expire = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
         rows = conn.execute(
             text(
-                "SELECT id, file_name, created_at "
-                "FROM sessions WHERE user_id = :uid "
-                "AND created_at < :cutoff_soon "
+                "SELECT session_id, csv_filename, created_at "
+                "FROM sessions "
+                "WHERE created_at < :cutoff_soon "
                 "AND created_at >= :cutoff_expire "
                 "ORDER BY created_at ASC LIMIT 20"
             ),
-            {"uid": user_id, "cutoff_soon": cutoff_soon, "cutoff_expire": cutoff_expire},
+            {"cutoff_soon": cutoff_soon, "cutoff_expire": cutoff_expire},
         ).fetchall()
 
         for row in rows:
@@ -1154,26 +1273,31 @@ def data_summary():
             created = r["created_at"]
             if isinstance(created, str):
                 created = datetime.fromisoformat(created)
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
             expires_at = created + timedelta(days=retention_days)
             days_remaining = max(0, (expires_at - datetime.now(timezone.utc)).days)
             if days_remaining <= 14:
                 expiring_sessions.append({
-                    "id": r["id"],
-                    "name": r.get("file_name", f"Session {r['id']}"),
+                    "id": r["session_id"],
+                    "name": r.get("csv_filename", f"Session {r['session_id']}"),
                     "expires_at": expires_at.date().isoformat(),
                     "days_remaining": days_remaining,
                 })
 
     # Recent exports
     exports = []
-    export_rows = conn.execute(
-        text(
-            "SELECT id, status, created_at, completed_at "
-            "FROM data_exports WHERE user_id = :uid "
-            "ORDER BY created_at DESC LIMIT 5"
-        ),
-        {"uid": user_id},
-    ).fetchall()
+    try:
+        export_rows = conn.execute(
+            text(
+                "SELECT id, status, created_at, completed_at "
+                "FROM data_exports WHERE user_id = :uid "
+                "ORDER BY created_at DESC LIMIT 5"
+            ),
+            {"uid": user_id},
+        ).fetchall()
+    except Exception:
+        export_rows = []  # data_exports table may not have user_id
 
     for row in export_rows:
         r = dict(row) if not isinstance(row, dict) else row
@@ -1270,7 +1394,10 @@ def delete_sessions():
     Step 1 (no confirmation_token): returns confirmation_token + sessions info.
     Step 2 (with confirmation_token): actually deletes sessions.
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1295,13 +1422,13 @@ def delete_sessions():
                 status=400,
             )
 
-        # Delete sessions owned by user
+        # Delete sessions (RLS ensures workspace isolation)
         deleted = conn.execute(
             text(
-                "DELETE FROM sessions WHERE id = ANY(:ids) AND user_id = :uid "
-                "RETURNING id"
+                "DELETE FROM sessions WHERE session_id = ANY(:ids) "
+                "RETURNING session_id AS id"
             ),
-            {"ids": verified_ids, "uid": user_id},
+            {"ids": [str(i) for i in verified_ids]},
         ).fetchall()
 
         conn.commit()
@@ -1321,21 +1448,21 @@ def delete_sessions():
     if len(session_ids) > 100:
         return api_error(ErrorCode.VALIDATION_ERROR, "Maximum 100 sessions per delete", status=400)
 
-    # Verify sessions exist and belong to user
+    # Verify sessions exist (RLS ensures workspace isolation)
     rows = conn.execute(
         text(
-            "SELECT id, file_name, created_at "
-            "FROM sessions WHERE id = ANY(:ids) AND user_id = :uid"
+            "SELECT session_id, csv_filename, created_at "
+            "FROM sessions WHERE session_id = ANY(:ids)"
         ),
-        {"ids": session_ids, "uid": user_id},
+        {"ids": [str(i) for i in session_ids]},
     ).fetchall()
 
     valid_sessions = []
     for row in rows:
         r = dict(row) if not isinstance(row, dict) else row
         valid_sessions.append({
-            "id": r["id"],
-            "name": r.get("file_name", f"Session {r['id']}"),
+            "id": r["session_id"],
+            "name": r.get("csv_filename", f"Session {r['session_id']}"),
             "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         })
 
@@ -1360,7 +1487,10 @@ def delete_sessions():
 @rate_limit(tier="read")
 def retention_schedule():
     """Return full schedule of upcoming automatic data deletions."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
     from auth.entitlements import get_user_entitlements
 
     user_id = getattr(g, "current_user_id", None)
@@ -1381,14 +1511,14 @@ def retention_schedule():
         })
 
     # Find all sessions that will expire within the retention window
+    # (RLS auto-filters by workspace_id)
     now = datetime.now(timezone.utc)
     rows = conn.execute(
         text(
-            "SELECT id, file_name, created_at "
-            "FROM sessions WHERE user_id = :uid "
+            "SELECT session_id, csv_filename, created_at "
+            "FROM sessions "
             "ORDER BY created_at ASC"
         ),
-        {"uid": user_id},
     ).fetchall()
 
     # Group by deletion date
@@ -1411,8 +1541,8 @@ def retention_schedule():
         if date_key not in deletions_by_date:
             deletions_by_date[date_key] = []
         deletions_by_date[date_key].append({
-            "id": r["id"],
-            "name": r.get("file_name", f"Session {r['id']}"),
+            "id": r["session_id"],
+            "name": r.get("csv_filename", f"Session {r['session_id']}"),
         })
         has_expiring = True
 
@@ -1444,7 +1574,10 @@ def retention_schedule():
 @rate_limit(tier="write")
 def accept_terms():
     """Record that the user accepted the current terms version."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1474,7 +1607,10 @@ def accept_terms():
 @rate_limit(tier="read")
 def terms_status():
     """Check if the user's terms acceptance is current."""
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1522,7 +1658,10 @@ def get_entitlements():
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
     conn = get_pg_connection()
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     row = conn.execute(
         text("SELECT plan_tier FROM users WHERE id = :uid"),
@@ -1566,7 +1705,10 @@ def get_usage():
         return api_error(ErrorCode.FORBIDDEN, "No workspace context", status=403)
 
     conn = get_pg_connection()
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     row = conn.execute(
         text("SELECT plan_tier FROM users WHERE id = :uid"),
@@ -1598,7 +1740,10 @@ def get_retention():
         200 with ``{plan, raw_retention_days, report_retention, sessions}``
     """
     from auth.entitlements import get_plan_entitlements
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1682,7 +1827,10 @@ def list_oauth_connections():
     Returns:
         200 with list of ``{provider, provider_user_id, created_at}``
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1727,7 +1875,10 @@ def unlink_oauth_connection(provider: str):
         400 with LAST_AUTH_METHOD if this is the only login method
         404 if connection not found
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1800,7 +1951,10 @@ def create_support_ticket():
         description: str (required, min 10 chars)
         session_id: int (optional)
     """
-    from sqlalchemy import text
+    try:
+        from sqlalchemy import text
+    except ImportError:
+        text = str  # PgConnectionWrapper handles plain strings
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:

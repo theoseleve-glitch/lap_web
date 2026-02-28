@@ -4,6 +4,7 @@ import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { getAccessToken } from '@/lib/auth-store';
 import { PageHeader } from '@/components/app';
 
 type Step = 1 | 2 | 3;
@@ -132,7 +133,13 @@ export default function AnalyzePage() {
   useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/status/${jobId}`);
+      const pollHeaders: Record<string, string> = {};
+      const pollToken = getAccessToken();
+      if (pollToken) pollHeaders['Authorization'] = `Bearer ${pollToken}`;
+      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/status/${jobId}`, {
+        headers: pollHeaders,
+        credentials: 'include',
+      });
       return res.json() as Promise<AnalysisJob>;
     },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
@@ -149,11 +156,19 @@ export default function AnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
+      const headers: Record<string, string> = {};
+      const token = getAccessToken();
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const result = await fetch(`${BACKEND_URL}/api/v1/files/upload`, {
         method: 'POST',
         body: formData,
+        headers,
+        credentials: 'include',
       });
-      if (!result.ok) throw new Error('Upload failed');
+      if (!result.ok) {
+        const err = await result.json().catch(() => null);
+        throw new Error(err?.error?.message || 'Upload failed');
+      }
       const data = await result.json();
       setSelectedFile(data.data?.filename ?? file.name);
       setUploadedFile(file);
@@ -188,7 +203,15 @@ export default function AnalyzePage() {
       if (trackId) form.append('track_id', trackId);
       if (kartId) form.append('kart_id', kartId);
       form.append('session_type', sessionType);
-      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/start`, { method: 'POST', body: form });
+      const ingestHeaders: Record<string, string> = {};
+      const tok = getAccessToken();
+      if (tok) ingestHeaders['Authorization'] = `Bearer ${tok}`;
+      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/start`, {
+        method: 'POST',
+        body: form,
+        headers: ingestHeaders,
+        credentials: 'include',
+      });
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || 'Failed');
       setJobId(result.job_id);

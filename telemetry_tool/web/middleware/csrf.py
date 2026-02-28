@@ -31,6 +31,15 @@ def csrf_middleware():
     if request.path in _EXEMPT_PATHS:
         return
 
+    # Bearer tokens are CSRF-immune: they are set manually by JS and
+    # cannot be attached automatically by a cross-site attacker's page.
+    # Skip CSRF check when a Bearer token is present (cross-domain setup:
+    # frontend on www.lap-coach.racing cannot read csrf_token cookie set
+    # by api.lap-coach.racing).
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        return
+
     cookie_token = request.cookies.get(_CSRF_COOKIE)
     header_token = request.headers.get(_CSRF_HEADER)
 

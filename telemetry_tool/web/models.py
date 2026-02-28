@@ -1717,13 +1717,24 @@ def create_kart(
             power_hp = power_hp if power_hp is not None else ref["power_hp"]
             kart_weight_kg = kart_weight_kg if kart_weight_kg is not None else ref["kart_weight_kg"]
 
-    cur = conn.execute(
-        "INSERT INTO karts (kart_name, predefined_kart_id, manufacturer, model, "
-        "engine, power_hp, kart_weight_kg, notes) VALUES (?,?,?,?,?,?,?,?)",
-        (kart_name, predefined_kart_id, manufacturer, model, engine,
-         power_hp, kart_weight_kg, notes),
-    )
-    return cur.lastrowid
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        row = conn.execute(
+            "INSERT INTO karts (kart_name, predefined_kart_id, manufacturer, model, "
+            "engine, power_hp, kart_weight_kg, notes) VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "RETURNING kart_id",
+            (kart_name, predefined_kart_id, manufacturer, model, engine,
+             power_hp, kart_weight_kg, notes),
+        ).fetchone()
+        return row["kart_id"] if row else 0
+    else:
+        cur = conn.execute(
+            "INSERT INTO karts (kart_name, predefined_kart_id, manufacturer, model, "
+            "engine, power_hp, kart_weight_kg, notes) VALUES (?,?,?,?,?,?,?,?)",
+            (kart_name, predefined_kart_id, manufacturer, model, engine,
+             power_hp, kart_weight_kg, notes),
+        )
+        return cur.lastrowid
 
 
 def get_kart_by_id(conn: sqlite3.Connection, kart_id: int) -> Optional[dict]:
@@ -1731,12 +1742,25 @@ def get_kart_by_id(conn: sqlite3.Connection, kart_id: int) -> Optional[dict]:
     return dict(row) if row else None
 
 
-def get_all_karts(conn: sqlite3.Connection) -> list[dict]:
-    rows = conn.execute(
-        "SELECT k.*, COUNT(s.session_id) as session_count "
-        "FROM karts k LEFT JOIN sessions s ON k.kart_id = s.kart_id "
-        "GROUP BY k.kart_id ORDER BY k.kart_name",
-    ).fetchall()
+def get_all_karts(conn) -> list[dict]:
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        # PG uses kart_sessions junction table; explicit GROUP BY columns
+        rows = conn.execute(
+            "SELECT k.kart_id, k.kart_name, k.predefined_kart_id, k.manufacturer, "
+            "k.model, k.engine, k.power_hp, k.kart_weight_kg, k.notes, k.created_at, "
+            "COUNT(ks.session_id) as session_count "
+            "FROM karts k LEFT JOIN kart_sessions ks ON k.kart_id = ks.kart_id "
+            "GROUP BY k.kart_id, k.kart_name, k.predefined_kart_id, k.manufacturer, "
+            "k.model, k.engine, k.power_hp, k.kart_weight_kg, k.notes, k.created_at "
+            "ORDER BY k.kart_name",
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT k.*, COUNT(s.session_id) as session_count "
+            "FROM karts k LEFT JOIN sessions s ON k.kart_id = s.kart_id "
+            "GROUP BY k.kart_id ORDER BY k.kart_name",
+        ).fetchall()
     return [dict(r) for r in rows]
 
 

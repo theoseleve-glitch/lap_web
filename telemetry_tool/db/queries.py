@@ -270,7 +270,7 @@ SELECT w.*, t.track_name,
 FROM weekends w
 LEFT JOIN tracks t ON w.track_id = t.track_id
 LEFT JOIN weekend_sessions ws ON w.weekend_id = ws.weekend_id
-GROUP BY w.weekend_id
+GROUP BY w.weekend_id, t.track_id, t.track_name
 ORDER BY w.start_date DESC;
 """
 

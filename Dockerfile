@@ -27,6 +27,7 @@ RUN adduser --system --no-create-home --group app \
 
 COPY --chown=app:app telemetry_tool/ telemetry_tool/
 COPY --chown=app:app kart_envelope/ kart_envelope/
+COPY --chown=app:app predefined_kart_list.csv predefined_track_list.csv ./
 
 ENV PYTHONPATH=/app \
     PYTHONUNBUFFERED=1
