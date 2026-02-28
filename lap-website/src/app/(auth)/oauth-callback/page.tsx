@@ -4,9 +4,11 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { setAccessToken } from '@/lib/auth-store';
 import { silentRefresh } from '@/lib/auth';
+import { useTranslation } from '@/i18n';
 
 export default function OAuthCallbackPage() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -33,7 +35,7 @@ export default function OAuthCallbackPage() {
   return (
     <div className="flex flex-col items-center gap-4">
       <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-      <p className="text-steel font-body">Completing sign in...</p>
+      <p className="text-steel font-body">{t('auth.oauthCallback.completing')}</p>
     </div>
   );
 }

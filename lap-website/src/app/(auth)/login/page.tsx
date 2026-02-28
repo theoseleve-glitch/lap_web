@@ -54,12 +54,12 @@ function LoginForm() {
     return (
       <div>
         <h1 className="font-monument text-2xl text-chalk mb-2 text-center">
-          Two-Factor Authentication
+          {t('auth.login.2fa.title')}
         </h1>
         <p className="text-steel font-body text-sm text-center mb-6">
           {useBackupCode
-            ? 'Enter one of your backup codes to continue.'
-            : 'Enter the 6-digit code from your authenticator app.'}
+            ? t('auth.login.2fa.backupPrompt')
+            : t('auth.login.2fa.totpPrompt')}
         </p>
 
         {displayError && (
@@ -71,9 +71,9 @@ function LoginForm() {
         <form onSubmit={handle2faSubmit}>
           <FormField
             ref={codeInputRef}
-            label={useBackupCode ? 'Backup Code' : 'Authentication Code'}
+            label={useBackupCode ? t('auth.login.2fa.backupLabel') : t('auth.login.2fa.totpLabel')}
             type="text"
-            placeholder={useBackupCode ? 'Enter backup code' : '000000'}
+            placeholder={useBackupCode ? t('auth.login.2fa.backupPlaceholder') : t('auth.login.2fa.totpPlaceholder')}
             value={totpCode}
             onChange={(e) => setTotpCode(e.target.value)}
             required
@@ -89,7 +89,7 @@ function LoginForm() {
             className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
               rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? 'Verifying...' : 'Verify'}
+            {loading ? t('auth.login.2fa.verifying') : t('auth.login.2fa.verify')}
           </button>
         </form>
 
@@ -102,7 +102,7 @@ function LoginForm() {
             }}
             className="text-pit-orange hover:underline font-body text-sm"
           >
-            {useBackupCode ? 'Use authenticator app instead' : 'Use a backup code instead'}
+            {useBackupCode ? t('auth.login.2fa.useApp') : t('auth.login.2fa.useBackup')}
           </button>
         </div>
 
@@ -112,7 +112,7 @@ function LoginForm() {
             onClick={handleBackToLogin}
             className="text-steel hover:text-chalk font-body text-sm transition-colors"
           >
-            Back to login
+            {t('auth.login.2fa.backToLogin')}
           </button>
         </div>
       </div>
@@ -155,7 +155,7 @@ function LoginForm() {
             href="/forgot-password"
             className="text-pit-orange hover:underline font-body text-sm"
           >
-            Forgot password?
+            {t('auth.login.forgotPassword')}
           </Link>
         </div>
 

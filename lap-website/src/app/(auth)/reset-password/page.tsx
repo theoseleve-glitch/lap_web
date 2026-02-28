@@ -5,10 +5,12 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { FormField } from '@/components/app/FormField';
 import { resetPassword } from '@/lib/auth';
+import { useTranslation } from '@/i18n';
 
 function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const { t } = useTranslation();
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -19,15 +21,15 @@ function ResetPasswordForm() {
   if (!token) {
     return (
       <div className="text-center">
-        <h1 className="font-monument text-2xl text-chalk mb-4">Invalid Link</h1>
+        <h1 className="font-monument text-2xl text-chalk mb-4">{t('auth.resetPassword.invalidTitle')}</h1>
         <p className="text-safety-red font-body text-sm mb-6">
-          This password reset link is invalid or missing a token.
+          {t('auth.resetPassword.invalidMessage')}
         </p>
         <Link
           href="/forgot-password"
           className="text-pit-orange hover:underline font-body text-sm"
         >
-          Request a new reset link
+          {t('auth.resetPassword.requestNew')}
         </Link>
       </div>
     );
@@ -38,11 +40,11 @@ function ResetPasswordForm() {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match.');
+      setError(t('auth.resetPassword.mismatch'));
       return;
     }
     if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+      setError(t('auth.resetPassword.tooShort'));
       return;
     }
 
@@ -52,14 +54,13 @@ function ResetPasswordForm() {
       setSuccess(true);
     } catch (err) {
       if (err instanceof Error) {
-        // Provide a user-friendly message for expired tokens
         if (err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('invalid')) {
-          setError('This reset link has expired or is invalid. Please request a new one.');
+          setError(t('auth.resetPassword.expiredLink'));
         } else {
           setError(err.message);
         }
       } else {
-        setError('Something went wrong. Please try again.');
+        setError(t('auth.resetPassword.fallbackError'));
       }
     } finally {
       setLoading(false);
@@ -69,16 +70,16 @@ function ResetPasswordForm() {
   if (success) {
     return (
       <div className="text-center">
-        <h1 className="font-monument text-2xl text-chalk mb-4">Password Reset</h1>
+        <h1 className="font-monument text-2xl text-chalk mb-4">{t('auth.resetPassword.successTitle')}</h1>
         <p className="text-acid-green font-body text-sm mb-6">
-          Your password has been reset successfully.
+          {t('auth.resetPassword.successMessage')}
         </p>
         <Link
           href="/login"
           className="inline-block py-2 px-6 bg-pit-orange text-asphalt font-monument text-lg rounded
             hover:brightness-110 transition-all"
         >
-          Sign In
+          {t('auth.resetPassword.signIn')}
         </Link>
       </div>
     );
@@ -86,9 +87,9 @@ function ResetPasswordForm() {
 
   return (
     <div>
-      <h1 className="font-monument text-2xl text-chalk mb-2 text-center">Reset Password</h1>
+      <h1 className="font-monument text-2xl text-chalk mb-2 text-center">{t('auth.resetPassword.title')}</h1>
       <p className="text-steel font-body text-sm text-center mb-6">
-        Enter your new password below.
+        {t('auth.resetPassword.description')}
       </p>
 
       {error && (
@@ -99,9 +100,9 @@ function ResetPasswordForm() {
 
       <form onSubmit={handleSubmit}>
         <FormField
-          label="New Password"
+          label={t('auth.resetPassword.newPassword')}
           type="password"
-          placeholder="At least 8 characters"
+          placeholder={t('auth.resetPassword.newPasswordPlaceholder')}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
@@ -109,9 +110,9 @@ function ResetPasswordForm() {
           minLength={8}
         />
         <FormField
-          label="Confirm Password"
+          label={t('auth.resetPassword.confirmPassword')}
           type="password"
-          placeholder="Re-enter your password"
+          placeholder={t('auth.resetPassword.confirmPlaceholder')}
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
@@ -124,13 +125,13 @@ function ResetPasswordForm() {
           className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
             rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Resetting...' : 'Reset Password'}
+          {loading ? t('auth.resetPassword.submitting') : t('auth.resetPassword.submit')}
         </button>
       </form>
 
       <div className="mt-6 text-center">
         <Link href="/login" className="text-pit-orange hover:underline font-body text-sm">
-          Back to login
+          {t('auth.resetPassword.backToLogin')}
         </Link>
       </div>
     </div>
@@ -138,12 +139,14 @@ function ResetPasswordForm() {
 }
 
 export default function ResetPasswordPage() {
+  const { t } = useTranslation();
+
   return (
     <Suspense
       fallback={
         <div className="text-center">
-          <h1 className="font-monument text-2xl text-chalk mb-4">Reset Password</h1>
-          <p className="text-steel font-body">Loading...</p>
+          <h1 className="font-monument text-2xl text-chalk mb-4">{t('auth.resetPassword.title')}</h1>
+          <p className="text-steel font-body">{t('auth.resetPassword.loading')}</p>
         </div>
       }
     >
