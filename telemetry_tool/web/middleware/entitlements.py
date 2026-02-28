@@ -36,13 +36,24 @@ _FEATURE_GATES: list[tuple[str, str, str]] = [
     # Visualization — Racer+
     ("GET", "/visualize/", "visualization"),
 
-    # Race Strategy — all mutation endpoints
-    ("POST", "/race-strategy/import", "race_strategy"),
-    ("POST", "/race-strategy/new", "race_strategy"),
-    ("POST", "/race-strategy/", "race_strategy"),  # catches /<id>/update, /optimize, etc.
+    # Race Strategy — all mutation endpoints (both URL schemes)
+    ("POST", "/race-strategy/", "race_strategy"),
+    ("POST", "/api/v1/race-strategy/", "race_strategy"),
+    ("PUT", "/api/v1/race-strategy/", "race_strategy"),
+    ("DELETE", "/api/v1/race-strategy/", "race_strategy"),
 
     # API Data Access — World-Class only
     ("GET", "/api/v1/data/", "api_access"),
+
+    # Exports — Racer+
+    ("POST", "/api/data/export/", "exports"),
+    ("POST", "/api/v1/exports/", "exports"),
+
+    # Simulations — Racer+
+    ("POST", "/api/data/simulate-race", "race_strategy"),
+    ("POST", "/api/data/what-if", "race_strategy"),
+    ("POST", "/api/data/weight-simulation", "race_strategy"),
+    ("POST", "/api/data/weight-scenarios", "race_strategy"),
 ]
 
 # ── Route → Quota mapping ────────────────────────────────────────────
@@ -52,9 +63,11 @@ _QUOTA_GATES: list[tuple[str, str, str, int]] = [
     # Analysis / report generation
     ("POST", "/analyze/api/start", "reports", 1),
     ("POST", "/analyze/sync", "reports", 1),
+    ("POST", "/api/v1/batch-reanalyze", "reports", 1),
 
-    # Batch reanalysis
-    ("POST", "/api/v1/batch-reanalyze", "reports", 1),  # each session in batch costs 1
+    # Uploads
+    ("POST", "/api/data/files/upload", "uploads", 1),
+    ("POST", "/api/v1/ingest/start", "uploads", 1),
 ]
 
 # ── Paths explicitly excluded from gating ────────────────────────────
@@ -145,6 +158,8 @@ _USAGE_EVENTS: list[tuple[str, str, str]] = [
     ("POST", "/race-strategy/import", "race_config_created"),
     ("POST", "/race-strategy/new", "race_config_created"),
     ("POST", "/api/v1/sessions/", "csv_uploaded"),  # if upload route exists
+    ("POST", "/api/data/files/upload", "csv_uploaded"),
+    ("POST", "/api/v1/ingest/start", "csv_uploaded"),
 ]
 
 
@@ -153,6 +168,8 @@ _ATOMIC_QUOTA_ROUTES: set[tuple[str, str]] = {
     ("POST", "/analyze/api/start"),
     ("POST", "/analyze/sync"),
     ("POST", "/api/v1/batch-reanalyze"),
+    ("POST", "/api/data/files/upload"),
+    ("POST", "/api/v1/ingest/start"),
 }
 
 

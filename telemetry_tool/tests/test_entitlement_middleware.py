@@ -117,6 +117,130 @@ class TestFeatureGating:
                     assert status == 403
 
 
+class TestExpandedFeatureGates:
+    """Tests for newly added feature gates (race-strategy v1, exports, simulations)."""
+
+    def test_race_strategy_v1_post_gated(self, app):
+        """POST to /api/v1/race-strategy/123 should be feature-gated by race_strategy."""
+        @app.route("/api/v1/race-strategy/123", methods=["POST"])
+        def race_strategy_v1_post():
+            return {"ok": True}
+
+        with app.test_request_context("/api/v1/race-strategy/123", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "race_strategy requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "demo"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+    def test_race_strategy_v1_put_gated(self, app):
+        """PUT to /api/v1/race-strategy/123 should be feature-gated."""
+        @app.route("/api/v1/race-strategy/123", methods=["PUT"])
+        def race_strategy_v1_put():
+            return {"ok": True}
+
+        with app.test_request_context("/api/v1/race-strategy/123", method="PUT"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "race_strategy requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "demo"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+    def test_race_strategy_v1_delete_gated(self, app):
+        """DELETE to /api/v1/race-strategy/123 should be feature-gated."""
+        @app.route("/api/v1/race-strategy/123", methods=["DELETE"])
+        def race_strategy_v1_delete():
+            return {"ok": True}
+
+        with app.test_request_context("/api/v1/race-strategy/123", method="DELETE"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "race_strategy requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "demo"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+    def test_export_route_gated(self, app):
+        """POST to /api/data/export/session/1 should be feature-gated by exports."""
+        @app.route("/api/data/export/session/1", methods=["POST"])
+        def export_session():
+            return {"ok": True}
+
+        with app.test_request_context("/api/data/export/session/1", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "exports requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "demo"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+    def test_simulation_route_gated(self, app):
+        """POST to /api/data/simulate-race should be feature-gated by race_strategy."""
+        @app.route("/api/data/simulate-race", methods=["POST"])
+        def simulate_race():
+            return {"ok": True}
+
+        with app.test_request_context("/api/data/simulate-race", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"reason": "race_strategy requires racer",
+                   "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER",
+                   "current_tier": "demo"}
+            with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 403
+                    assert data["error"]["code"] == "PLAN_REQUIRED"
+
+
 class TestQuotaGating:
     def test_analysis_blocked_when_quota_exceeded(self, app):
         with app.test_request_context("/analyze/api/start", method="POST"):
@@ -176,6 +300,48 @@ class TestQuotaGating:
 
                         # Request should pass through
                         assert result is None
+
+    def test_upload_quota_gated(self, app):
+        """POST to /api/data/files/upload should be quota-gated by uploads."""
+        @app.route("/api/data/files/upload", methods=["POST"])
+        def upload_file():
+            return {"ok": True}
+
+        with app.test_request_context("/api/data/files/upload", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"remaining": 0, "limit": 5, "used": 5, "resets_at": "2026-04-01"}
+            with patch("auth.entitlements.check_and_record_quota", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 429
+                    assert data["error"]["code"] == "QUOTA_EXCEEDED"
+
+    def test_ingest_quota_gated(self, app):
+        """POST to /api/v1/ingest/start should be quota-gated by uploads."""
+        @app.route("/api/v1/ingest/start", methods=["POST"])
+        def ingest_start():
+            return {"ok": True}
+
+        with app.test_request_context("/api/v1/ingest/start", method="POST"):
+            g.current_user_id = 1
+            g.workspace_id = 1
+
+            ctx = {"remaining": 0, "limit": 10, "used": 10, "resets_at": "2026-04-01"}
+            with patch("auth.entitlements.check_and_record_quota", return_value=(False, ctx)):
+                with patch("auth.entitlements._get_conn"):
+                    from web.middleware.entitlements import entitlement_middleware
+                    result = entitlement_middleware()
+                    assert result is not None
+                    resp, status = result
+                    data = resp.get_json()
+                    assert status == 429
+                    assert data["error"]["code"] == "QUOTA_EXCEEDED"
 
 
 class TestExemptPaths:
