@@ -45,6 +45,7 @@ from web.models import (
     get_track_records,
     get_weekend_by_id,
     get_weekend_sessions,
+    update_session_field,
 )
 
 logger = logging.getLogger(__name__)
@@ -790,6 +791,111 @@ def v1_delete_session(session_id: str):
         return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
 
 
+# ---------------------------------------------------------------------------
+# 15b. PATCH /sessions/<id> — update editable session metadata
+# ---------------------------------------------------------------------------
+
+# Mapping from API field names to DB column names.
+_PATCH_FIELD_MAP = {
+    "driver_name": "driver_name",   # resolved to driver_id below
+    "track_name": "track_name",     # resolved to track_id below
+    "session_type": "session_type",
+    "condition": "track_state",
+    "notes": "notes",
+}
+
+
+@bp.route("/sessions/<session_id>", methods=["PATCH"])
+@rate_limit(tier="write")
+def v1_patch_session(session_id: str):
+    """Update editable metadata fields on a session.
+
+    Accepts JSON body with optional keys: ``driver_name``, ``track_name``,
+    ``session_type``, ``condition``, ``notes``.
+
+    Returns:
+        200 with updated session detail.
+        400 if body is empty or contains unknown fields.
+        404 if session not found.
+    """
+    conn = get_db_connection()
+
+    # Verify session exists
+    session = get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+    if not body:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Request body must be a non-empty JSON object",
+            status=400,
+        )
+
+    # Filter to known fields only
+    unknown = set(body.keys()) - set(_PATCH_FIELD_MAP.keys())
+    if unknown:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"Unknown fields: {', '.join(sorted(unknown))}",
+            status=400,
+        )
+
+    try:
+        for api_field, value in body.items():
+            if api_field == "driver_name":
+                # Resolve driver_name → driver_id (upsert driver)
+                driver_name = (value or "").strip()
+                if not driver_name:
+                    continue
+                conn.execute(
+                    "INSERT INTO drivers (driver_name) VALUES (:name) "
+                    "ON CONFLICT(driver_name) DO NOTHING",
+                    {"name": driver_name},
+                )
+                row = conn.execute(
+                    "SELECT driver_id FROM drivers WHERE driver_name = :name",
+                    {"name": driver_name},
+                ).fetchone()
+                if row:
+                    update_session_field(conn, session_id, "driver_id", row["driver_id"] if isinstance(row, dict) else row[0])
+            elif api_field == "track_name":
+                # Resolve track_name → track_id (look up existing track)
+                track_name = (value or "").strip()
+                if not track_name:
+                    continue
+                row = conn.execute(
+                    "SELECT track_id FROM tracks WHERE track_name = :name",
+                    {"name": track_name},
+                ).fetchone()
+                if row:
+                    update_session_field(conn, session_id, "track_id", row["track_id"] if isinstance(row, dict) else row[0])
+                # If track not found, silently skip (user can only assign existing tracks)
+            else:
+                db_col = _PATCH_FIELD_MAP[api_field]
+                update_session_field(conn, session_id, db_col, value)
+
+        conn.commit()
+
+        # Return updated session
+        updated = get_session_by_id(conn, session_id)
+        result = {
+            "id": updated.get("session_id"),
+            "date": updated.get("session_date"),
+            "track_name": updated.get("track_name"),
+            "driver_name": updated.get("driver_name"),
+            "session_type": updated.get("session_type"),
+            "condition": updated.get("track_state"),
+            "notes": updated.get("notes"),
+        }
+        return api_response(result)
+
+    except Exception as exc:
+        logger.error("Failed to patch session %s: %s", session_id, exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+
+
 # ===================================================================
 # Batch 2: Session Analysis Endpoints (16–30)
 # ===================================================================
@@ -1455,6 +1561,7 @@ def v1_session_details(session_id: str):
         "track_state": session.get("track_state"),
         "condition": session.get("track_state"),
         "kart_name": session.get("kart_name"),
+        "notes": session.get("notes"),
         # Score sub-categories
         "pace_score": scores.get("pace_score") if scores else None,
         "pace_max": scores.get("pace_max") if scores else None,

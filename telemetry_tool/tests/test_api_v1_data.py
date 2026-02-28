@@ -1184,3 +1184,182 @@ class TestV1DataHealthJobDetail:
         assert "file_name" in data
         assert data["file_name"] == "my_session.csv"
         assert "file_path" not in data
+
+
+# ---------------------------------------------------------------------------
+# PATCH /sessions/<id> — inline edit session metadata
+# ---------------------------------------------------------------------------
+
+class TestV1PatchSession:
+    """Tests for PATCH /api/v1/sessions/<session_id>."""
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.get_session_by_id", return_value=None)
+    def test_404_when_session_missing(self, mock_sess, mock_db, client):
+        """Returns 404 when session does not exist."""
+        mock_db.return_value = _mock_conn()
+        resp = client.patch(
+            "/api/v1/sessions/missing",
+            data=json.dumps({"notes": "hello"}),
+            content_type="application/json",
+        )
+        assert resp.status_code == 404
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_400_when_body_empty(self, mock_db, client):
+        """Returns 400 when body is empty or missing."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        # Need to pass the session-exists check
+        with patch("web.routes.api_v1_data.get_session_by_id", return_value={"session_id": "s1"}):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 400
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_400_on_unknown_fields(self, mock_db, client):
+        """Returns 400 if body contains unknown fields."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        with patch("web.routes.api_v1_data.get_session_by_id", return_value={"session_id": "s1"}):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({"unknown_field": "x"}),
+                content_type="application/json",
+            )
+        body = resp.get_json()
+        assert resp.status_code == 400
+        assert "unknown_field" in body.get("error", {}).get("message", "").lower()
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.update_session_field")
+    def test_patch_notes(self, mock_update, mock_db, client):
+        """PATCH with notes field calls update_session_field and returns updated session."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        updated_session = {
+            "session_id": "s1",
+            "session_date": "2026-02-28",
+            "track_name": "Monza",
+            "driver_name": "Max",
+            "session_type": "practice",
+            "track_state": "dry",
+            "notes": "Good session",
+        }
+        with patch("web.routes.api_v1_data.get_session_by_id", side_effect=[
+            {"session_id": "s1"},   # first call: existence check
+            updated_session,         # second call: return updated
+        ]):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({"notes": "Good session"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["notes"] == "Good session"
+        mock_update.assert_called_once_with(conn, "s1", "notes", "Good session")
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.update_session_field")
+    def test_patch_session_type(self, mock_update, mock_db, client):
+        """PATCH with session_type updates the correct DB column."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        updated = {
+            "session_id": "s1", "session_date": "2026-02-28",
+            "track_name": "Monza", "driver_name": "Max",
+            "session_type": "qualifying", "track_state": "dry", "notes": None,
+        }
+        with patch("web.routes.api_v1_data.get_session_by_id", side_effect=[
+            {"session_id": "s1"}, updated,
+        ]):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({"session_type": "qualifying"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        mock_update.assert_called_once_with(conn, "s1", "session_type", "qualifying")
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.update_session_field")
+    def test_patch_condition(self, mock_update, mock_db, client):
+        """PATCH with condition maps to track_state DB column."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        updated = {
+            "session_id": "s1", "session_date": "2026-02-28",
+            "track_name": "Monza", "driver_name": "Max",
+            "session_type": "practice", "track_state": "wet", "notes": None,
+        }
+        with patch("web.routes.api_v1_data.get_session_by_id", side_effect=[
+            {"session_id": "s1"}, updated,
+        ]):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({"condition": "wet"}),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["condition"] == "wet"
+        mock_update.assert_called_once_with(conn, "s1", "track_state", "wet")
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    def test_patch_driver_name_resolves_to_driver_id(self, mock_db, client):
+        """PATCH with driver_name upserts driver and updates driver_id."""
+        conn = _mock_conn()
+        # Make execute().fetchone() return driver_id=7
+        conn.execute.return_value.fetchone.return_value = {"driver_id": 7}
+        mock_db.return_value = conn
+        updated = {
+            "session_id": "s1", "session_date": "2026-02-28",
+            "track_name": "Monza", "driver_name": "New Driver",
+            "session_type": "practice", "track_state": "dry", "notes": None,
+        }
+        with patch("web.routes.api_v1_data.get_session_by_id", side_effect=[
+            {"session_id": "s1"}, updated,
+        ]):
+            with patch("web.routes.api_v1_data.update_session_field") as mock_update:
+                resp = client.patch(
+                    "/api/v1/sessions/s1",
+                    data=json.dumps({"driver_name": "New Driver"}),
+                    content_type="application/json",
+                )
+        assert resp.status_code == 200
+        # Should have called update_session_field with driver_id
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+        assert call_args[0][2] == "driver_id"  # field_name
+        assert call_args[0][3] == 7  # value = driver_id
+
+    @patch("web.routes.api_v1_data.get_db_connection")
+    @patch("web.routes.api_v1_data.update_session_field")
+    def test_patch_multiple_fields(self, mock_update, mock_db, client):
+        """PATCH with multiple fields updates all of them."""
+        conn = _mock_conn()
+        mock_db.return_value = conn
+        updated = {
+            "session_id": "s1", "session_date": "2026-02-28",
+            "track_name": "Monza", "driver_name": "Max",
+            "session_type": "race", "track_state": "wet", "notes": "Rain race",
+        }
+        with patch("web.routes.api_v1_data.get_session_by_id", side_effect=[
+            {"session_id": "s1"}, updated,
+        ]):
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data=json.dumps({
+                    "session_type": "race",
+                    "condition": "wet",
+                    "notes": "Rain race",
+                }),
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        assert mock_update.call_count == 3

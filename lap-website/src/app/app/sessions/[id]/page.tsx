@@ -5,7 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, InlineEdit } from '@/components/app';
 import {
   SpeedTrace,
   GGDiagram,
@@ -54,6 +54,7 @@ interface SessionDetail {
   session_type: string | null;
   condition: string | null;
   kart_name: string | null;
+  notes: string | null;
   condition_phases?: ConditionPhase[];
   data_health?: {
     gps_quality: number | null;
@@ -419,6 +420,20 @@ export default function SessionDetailPage() {
     enabled: activeTab === 'Performance',
   });
 
+  /* ── Inline Edit ── */
+
+  /**
+   * Save handler for inline-editable session metadata fields.
+   * `apiField` must be one of: driver_name, track_name, session_type, condition, notes.
+   */
+  const handleFieldSave = useCallback(
+    async (apiField: string, newValue: string) => {
+      await api.patch(`/sessions/${id}`, { [apiField]: newValue });
+      refetch();
+    },
+    [id, refetch],
+  );
+
   /* ── Derived Values ── */
 
   const laps = lapsData?.laps ?? [];
@@ -707,17 +722,45 @@ export default function SessionDetailPage() {
         }
       />
 
-      {/* ── Metadata Cards Row 1 ── */}
+      {/* ── Metadata Cards Row 1 (editable fields) ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-3">
         <StatCard label="Date" value={session.date} />
-        <StatCard label="Driver" value={session.driver_name || '--'} />
-        <StatCard label="Track" value={session.track_name} />
-        <StatCard label="Type" value={session.session_type || 'Practice'} />
-        <StatCard label="Condition" value={session.condition || 'Dry'} />
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+          <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Driver</p>
+          <InlineEdit
+            value={session.driver_name || ''}
+            onSave={(v) => handleFieldSave('driver_name', v)}
+            placeholder="Add driver"
+          />
+        </div>
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+          <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Track</p>
+          <InlineEdit
+            value={session.track_name || ''}
+            onSave={(v) => handleFieldSave('track_name', v)}
+            placeholder="Add track"
+          />
+        </div>
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+          <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Type</p>
+          <InlineEdit
+            value={session.session_type || ''}
+            onSave={(v) => handleFieldSave('session_type', v)}
+            placeholder="Practice"
+          />
+        </div>
+        <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+          <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Condition</p>
+          <InlineEdit
+            value={session.condition || ''}
+            onSave={(v) => handleFieldSave('condition', v)}
+            placeholder="Dry"
+          />
+        </div>
       </div>
 
       {/* ── Metadata Cards Row 2 ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 mb-3">
         <StatCard label="Laps" value={session.laps} />
         <StatCard
           label="Best Lap"
@@ -736,6 +779,17 @@ export default function SessionDetailPage() {
           trend={session.score != null && session.score >= 75 ? 'up' : 'neutral'}
         />
         <StatCard label="Kart" value={session.kart_name || '--'} />
+      </div>
+
+      {/* ── Notes (editable) ── */}
+      <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">
+        <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Notes</p>
+        <InlineEdit
+          value={session.notes || ''}
+          onSave={(v) => handleFieldSave('notes', v)}
+          placeholder="Add session notes..."
+          multiline
+        />
       </div>
 
       {/* ── Tab Bar + Focus Mode Button ── */}
