@@ -280,7 +280,22 @@ def v1_fingerprint(session_id: str):
             mx = sd.get(max_key, default_max) or default_max
             if score is not None:
                 metrics.append({"name": label, "value": round(score, 1), "max": mx})
-    return api_response({"metrics": metrics})
+
+    # Include strengths/weaknesses from score_details
+    strengths = sd.get("strengths", []) if sd else []
+    weaknesses = sd.get("weaknesses", []) if sd else []
+
+    # Adaptation score (optional)
+    adaptation = None
+    if sd and sd.get("adaptation_score") is not None:
+        adaptation = round(sd["adaptation_score"], 2)
+
+    return api_response({
+        "metrics": metrics,
+        "strengths": strengths,
+        "weaknesses": weaknesses,
+        "adaptation_score": adaptation,
+    })
 
 
 # ---------------------------------------------------------------------------

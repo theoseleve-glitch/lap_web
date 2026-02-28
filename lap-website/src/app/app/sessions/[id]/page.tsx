@@ -69,6 +69,34 @@ interface CoachingMetric {
   max: number;
 }
 
+interface FingerprintData {
+  metrics: CoachingMetric[];
+  strengths: string[];
+  weaknesses: string[];
+  adaptation_score: number | null;
+}
+
+interface Badge {
+  badge_type: string;
+  badge_name: string;
+  badge_level: string;
+  metadata?: Record<string, unknown>;
+  earned_at: string;
+}
+
+interface SessionTag {
+  tag: string;
+  confidence: number;
+  source: string;
+  created_at: string;
+}
+
+interface BadgesData {
+  session_id: string;
+  badges: Badge[];
+  tags: SessionTag[];
+}
+
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
 function formatTime(s: number | null): string {
@@ -95,22 +123,78 @@ function gradeColor(grade: string | null): string {
   return 'bg-safety-red/20 text-safety-red';
 }
 
+/* ─── Score Category Descriptions ─────────────────────────────────────── */
+
+const SCORE_DESCRIPTIONS: Record<string, string> = {
+  Pace: 'How close to theoretical best lap time',
+  Consistency: 'Lap-to-lap time variation and repeatability',
+  Execution: 'Corner precision, brake and throttle technique',
+  Robustness: 'Performance under changing conditions and fatigue',
+};
+
 /* ─── Score Bar Component ─────────────────────────────────────────────── */
 
-function ScoreBar({ label, value, max = 25 }: { label: string; value: number | null; max?: number }) {
+function ScoreBar({ label, value, max, description }: {
+  label: string;
+  value: number | null;
+  max: number;
+  description?: string;
+}) {
   const pct = value != null ? (value / max) * 100 : 0;
-  const color = pct >= 75 ? 'bg-acid-green' : pct >= 50 ? 'bg-amber-400' : 'bg-safety-red';
+  const tier =
+    pct >= 80 ? 'excellent' : pct >= 60 ? 'good' : pct >= 40 ? 'average' : 'poor';
+  const barColor = {
+    excellent: 'bg-acid-green',
+    good: 'bg-emerald-400',
+    average: 'bg-amber-400',
+    poor: 'bg-safety-red',
+  }[tier];
+  const tierLabel = {
+    excellent: 'text-acid-green',
+    good: 'text-emerald-400',
+    average: 'text-amber-400',
+    poor: 'text-safety-red',
+  }[tier];
+
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-steel text-sm w-28 font-body">{label}</span>
-      <div className="flex-1 h-3 bg-carbon rounded-full overflow-hidden">
-        <div className={`h-full ${color} rounded-full transition-all`} style={{ width: `${pct}%` }} />
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-chalk text-sm font-body font-medium">{label}</span>
+          {description && (
+            <span className="text-steel/60 text-[10px] font-telemetry hidden sm:inline">
+              {description}
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-telemetry ${tierLabel}`}>
+            {pct.toFixed(0)}%
+          </span>
+          <span className="text-chalk font-telemetry text-sm w-16 text-right">
+            {value?.toFixed(1) ?? '--'}/{max}
+          </span>
+        </div>
       </div>
-      <span className="text-chalk font-telemetry text-sm w-14 text-right">
-        {value?.toFixed(1) ?? '--'}/{max}
-      </span>
+      <div className="h-2.5 bg-carbon rounded-full overflow-hidden">
+        <div
+          className={`h-full ${barColor} rounded-full transition-all duration-500`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
     </div>
   );
+}
+
+/* ─── Badge Level Colors ─────────────────────────────────────────────── */
+
+function badgeLevelColor(level: string): string {
+  switch (level.toLowerCase()) {
+    case 'gold': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    case 'silver': return 'bg-gray-400/20 text-gray-300 border-gray-400/30';
+    case 'bronze': return 'bg-orange-600/20 text-orange-400 border-orange-600/30';
+    default: return 'bg-steel/20 text-steel border-steel/30';
+  }
 }
 
 /* ─── Section Header ──────────────────────────────────────────────────── */
@@ -148,7 +232,12 @@ export default function SessionDetailPage() {
 
   const { data: coachingData } = useQuery({
     queryKey: ['session', id, 'fingerprint'],
-    queryFn: () => api.get<{ metrics: CoachingMetric[] }>(`/sessions/${id}/fingerprint`),
+    queryFn: () => api.get<FingerprintData>(`/sessions/${id}/fingerprint`),
+  });
+
+  const { data: badgesData } = useQuery({
+    queryKey: ['session', id, 'badges'],
+    queryFn: () => api.get<BadgesData>(`/sessions/${id}/badges`),
   });
 
   /* ── Derived Values ── */
@@ -359,23 +448,99 @@ export default function SessionDetailPage() {
         {/* ─────────── Tab 1: Overview ─────────── */}
         {activeTab === 'Overview' && (
           <div className="space-y-8">
-            {/* Score Breakdown */}
+            {/* Score Breakdown — uses fingerprint API max values */}
             <section>
               <SectionHeader title="Score Breakdown" />
-              <div className="bg-carbon-light rounded-lg border border-steel/10 p-5 space-y-3">
-                <ScoreBar label="Pace" value={session.pace_score} />
-                <ScoreBar label="Consistency" value={session.consistency_score} />
-                <ScoreBar label="Execution" value={session.execution_score} />
-                <ScoreBar label="Robustness" value={session.robustness_score} />
-                <div className="pt-2 border-t border-steel/10 flex items-center justify-between">
-                  <span className="text-steel text-sm font-body">Total</span>
-                  <span className="font-monument text-xl text-acid-green">
-                    {session.score?.toFixed(1) ?? '--'}
-                    <span className="text-steel text-sm font-telemetry">/100</span>
-                  </span>
+              <div className="bg-concrete rounded-lg border border-steel/10 p-5 space-y-4">
+                {(coachingData?.metrics ?? []).length > 0 ? (
+                  coachingData!.metrics.map((m) => (
+                    <ScoreBar
+                      key={m.name}
+                      label={m.name}
+                      value={m.value}
+                      max={m.max}
+                      description={SCORE_DESCRIPTIONS[m.name]}
+                    />
+                  ))
+                ) : (
+                  <>
+                    <ScoreBar label="Pace" value={session.pace_score} max={25} description={SCORE_DESCRIPTIONS.Pace} />
+                    <ScoreBar label="Consistency" value={session.consistency_score} max={25} description={SCORE_DESCRIPTIONS.Consistency} />
+                    <ScoreBar label="Execution" value={session.execution_score} max={20} description={SCORE_DESCRIPTIONS.Execution} />
+                    <ScoreBar label="Robustness" value={session.robustness_score} max={15} description={SCORE_DESCRIPTIONS.Robustness} />
+                  </>
+                )}
+                <div className="pt-3 border-t border-steel/10 flex items-center justify-between">
+                  <span className="text-steel text-sm font-body">Total Score</span>
+                  <div className="flex items-center gap-2">
+                    {session.grade && (
+                      <span className={`px-2 py-0.5 rounded text-xs font-monument ${gradeColor(session.grade)}`}>
+                        {session.grade}
+                      </span>
+                    )}
+                    <span className="font-monument text-xl text-acid-green">
+                      {session.score?.toFixed(1) ?? '--'}
+                      <span className="text-steel text-sm font-telemetry">/100</span>
+                    </span>
+                  </div>
                 </div>
+
+                {/* Adaptation Score */}
+                {coachingData?.adaptation_score != null && (
+                  <div className="flex items-center justify-between pt-2 border-t border-steel/10">
+                    <span className="text-steel text-xs font-body">Session Adaptation</span>
+                    <span className={`font-telemetry text-sm ${
+                      coachingData.adaptation_score > 0.5 ? 'text-acid-green' : 'text-amber-400'
+                    }`}>
+                      {(coachingData.adaptation_score * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                )}
               </div>
             </section>
+
+            {/* Strengths & Weaknesses */}
+            {((coachingData?.strengths?.length ?? 0) > 0 || (coachingData?.weaknesses?.length ?? 0) > 0) && (
+              <section>
+                <SectionHeader title="Strengths & Areas to Improve" />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Strengths */}
+                  {(coachingData?.strengths?.length ?? 0) > 0 && (
+                    <div className="bg-concrete rounded-lg border border-acid-green/20 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-acid-green" />
+                        <h4 className="text-acid-green font-telemetry text-xs uppercase tracking-wider">Strengths</h4>
+                      </div>
+                      <ul className="space-y-2">
+                        {coachingData!.strengths.map((s, i) => (
+                          <li key={i} className="text-chalk text-sm font-body flex items-start gap-2">
+                            <span className="text-acid-green mt-1 shrink-0">+</span>
+                            {s}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {/* Weaknesses */}
+                  {(coachingData?.weaknesses?.length ?? 0) > 0 && (
+                    <div className="bg-concrete rounded-lg border border-amber-400/20 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                        <h4 className="text-amber-400 font-telemetry text-xs uppercase tracking-wider">Areas to Improve</h4>
+                      </div>
+                      <ul className="space-y-2">
+                        {coachingData!.weaknesses.map((w, i) => (
+                          <li key={i} className="text-chalk text-sm font-body flex items-start gap-2">
+                            <span className="text-amber-400 mt-1 shrink-0">!</span>
+                            {w}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
 
             {/* Charts 2x2 */}
             <section>
@@ -399,36 +564,87 @@ export default function SessionDetailPage() {
               <section>
                 <SectionHeader title="Next Session Actions" />
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-                  {coachingData!.metrics.slice(0, 6).map((metric) => {
-                    const pct = metric.max > 0 ? (metric.value / metric.max) * 100 : 0;
-                    const needsWork = pct < 60;
-                    return (
-                      <div
-                        key={metric.name}
-                        className={`bg-carbon-light rounded-lg border p-4 ${
-                          needsWork ? 'border-amber-400/30' : 'border-steel/10'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-body text-chalk text-sm">{metric.name}</span>
-                          <span className="font-telemetry text-xs text-steel">
-                            {metric.value.toFixed(1)}/{metric.max}
-                          </span>
-                        </div>
-                        <div className="h-2 bg-carbon rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${pct >= 75 ? 'bg-acid-green' : pct >= 50 ? 'bg-amber-400' : 'bg-safety-red'}`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                        {needsWork && (
-                          <p className="text-amber-400/80 text-xs font-body mt-2">
-                            Focus area for next session
+                  {coachingData!.metrics
+                    .filter((m) => m.max > 0 && (m.value / m.max) < 0.75)
+                    .sort((a, b) => (a.value / a.max) - (b.value / b.max))
+                    .slice(0, 6)
+                    .map((metric, idx) => {
+                      const pct = (metric.value / metric.max) * 100;
+                      const priority = pct < 40 ? 'P1' : pct < 60 ? 'P2' : 'P3';
+                      const priorityColor = priority === 'P1'
+                        ? 'bg-safety-red/20 text-safety-red border-safety-red/30'
+                        : priority === 'P2'
+                          ? 'bg-amber-400/20 text-amber-400 border-amber-400/30'
+                          : 'bg-steel/20 text-steel border-steel/30';
+                      return (
+                        <div
+                          key={metric.name}
+                          className="bg-concrete rounded-lg border border-steel/10 p-4"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <span className="font-monument text-lg text-steel/40">{idx + 1}</span>
+                              <span className="font-body text-chalk text-sm">{metric.name}</span>
+                            </div>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-telemetry font-bold border ${priorityColor}`}>
+                              {priority}
+                            </span>
+                          </div>
+                          <div className="h-2 bg-carbon rounded-full overflow-hidden mb-2">
+                            <div
+                              className={`h-full rounded-full ${pct >= 60 ? 'bg-emerald-400' : pct >= 40 ? 'bg-amber-400' : 'bg-safety-red'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <p className="text-steel text-xs font-body">
+                            {pct < 40 ? 'Critical focus area' : pct < 60 ? 'Needs improvement' : 'Fine-tuning opportunity'}
                           </p>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    })}
+                </div>
+              </section>
+            )}
+
+            {/* Achievements & Badges */}
+            {badgesData && (badgesData.badges.length > 0 || badgesData.tags.length > 0) && (
+              <section>
+                <SectionHeader title="Achievements & Rating" />
+                <div className="space-y-4">
+                  {/* Badge Cards */}
+                  {badgesData.badges.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {badgesData.badges.map((badge, i) => (
+                        <div
+                          key={i}
+                          className={`rounded-lg border p-3 text-center ${badgeLevelColor(badge.badge_level)}`}
+                        >
+                          <div className="text-lg mb-1">
+                            {badge.badge_level === 'gold' ? '🥇' : badge.badge_level === 'silver' ? '🥈' : '🥉'}
+                          </div>
+                          <p className="font-body text-xs font-medium">{badge.badge_name}</p>
+                          <p className="font-telemetry text-[10px] opacity-70 mt-1">
+                            {badge.badge_level.toUpperCase()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Session Tags */}
+                  {badgesData.tags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {badgesData.tags.map((tag, i) => (
+                        <span
+                          key={i}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-concrete rounded-md border border-steel/20 text-xs font-telemetry text-chalk"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-acid-green" />
+                          {tag.tag.replace(/_/g, ' ')}
+                          <span className="text-steel/60">{(tag.confidence * 100).toFixed(0)}%</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </section>
             )}
