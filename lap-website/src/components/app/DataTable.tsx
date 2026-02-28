@@ -68,14 +68,38 @@ export function DataTable<T extends Record<string, any>>({
               {columns.map((col) => (
                 <th
                   key={col.key}
+                  scope="col"
                   className={`text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider ${
                     col.sortable ? 'cursor-pointer hover:text-chalk select-none' : ''
                   } ${col.className ?? ''}`}
                   onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                  onKeyDown={
+                    col.sortable
+                      ? (e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            handleSort(col.key);
+                          }
+                        }
+                      : undefined
+                  }
+                  tabIndex={col.sortable ? 0 : undefined}
+                  role={col.sortable ? 'button' : undefined}
+                  aria-sort={
+                    col.sortable && sortKey === col.key
+                      ? sortDir === 'asc'
+                        ? 'ascending'
+                        : 'descending'
+                      : col.sortable
+                        ? 'none'
+                        : undefined
+                  }
                 >
                   {col.header}
                   {col.sortable && sortKey === col.key && (
-                    <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    <span className="ml-1" aria-hidden="true">
+                      {sortDir === 'asc' ? '↑' : '↓'}
+                    </span>
                   )}
                 </th>
               ))}
@@ -91,6 +115,18 @@ export function DataTable<T extends Record<string, any>>({
                     : ''
                 } ${rowClassName ? rowClassName(row) : ''}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? 'button' : undefined}
               >
                 {columns.map((col) => (
                   <td

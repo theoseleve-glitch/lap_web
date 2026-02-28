@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, type ReactNode } from 'react';
+import { useState, useRef, useCallback, useId, type ReactNode } from 'react';
 
 interface TooltipProps {
   content: string;
@@ -17,6 +17,7 @@ export function Tooltip({
 }: TooltipProps) {
   const [visible, setVisible] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>();
+  const tooltipId = useId();
 
   const show = useCallback(() => {
     timeoutRef.current = setTimeout(() => setVisible(true), 300);
@@ -36,11 +37,15 @@ export function Tooltip({
       className={`relative inline-block ${className}`}
       onMouseEnter={show}
       onMouseLeave={hide}
+      onFocus={show}
+      onBlur={hide}
       onTouchStart={toggle}
+      aria-describedby={visible ? tooltipId : undefined}
     >
       {children}
       {visible && (
         <span
+          id={tooltipId}
           className={`
             absolute left-1/2 -translate-x-1/2 ${positionClass}
             bg-asphalt text-chalk border border-steel
@@ -52,6 +57,7 @@ export function Tooltip({
         >
           {content}
           <span
+            aria-hidden="true"
             className={`
               absolute left-1/2 -translate-x-1/2
               w-0 h-0

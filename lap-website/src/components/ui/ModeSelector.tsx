@@ -14,6 +14,7 @@ export function ModeSelector({ value, onChange, className = '' }: ModeSelectorPr
       className={`inline-flex items-center gap-4 ${className}`}
       role="switch"
       aria-checked={isB2B}
+      aria-label="Toggle between driver and circuit mode"
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
