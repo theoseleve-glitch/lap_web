@@ -149,7 +149,10 @@ def create_app(config: Config | None = None) -> Flask:
     # CORS — allow Next.js frontend origin
     from flask_cors import CORS
     origins = [o.strip() for o in cfg.CORS_ALLOWED_ORIGINS.split(",")]
-    CORS(app, origins=origins, supports_credentials=True)
+    CORS(app, origins=origins, supports_credentials=True,
+         allow_headers=["Authorization", "Content-Type", "X-Workspace-Id",
+                        "Idempotency-Key", "X-CSRF-Token", "X-Request-Id"],
+         expose_headers=["X-Request-Id", "Retry-After"])
 
     # Redis client for rate limiting + caching.
     # The rate_limit module's get_redis() reads from app.extensions["redis"].
