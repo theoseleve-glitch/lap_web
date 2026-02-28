@@ -24,11 +24,20 @@ python tools/cycle_runner.py --cycle 1 --feature F-0001
 
 ## Test Accounts
 
-| Email | Tier | Password |
-|-------|------|----------|
-| theos.elive@gmail.com | demo | claudetest |
-| theo.stipapro@gmail.com | racer | claudetest |
-| fsae.ecn@gmail.com | world_class | claudetest |
+Credentials are loaded from environment variables (never hardcode):
+
+```bash
+export E2E_DEMO_EMAIL="..."
+export E2E_RACER_EMAIL="..."
+export E2E_WC_EMAIL="..."
+export E2E_TEST_PASSWORD="..."
+```
+
+| Env Var | Tier |
+|---------|------|
+| `E2E_DEMO_EMAIL` | demo |
+| `E2E_RACER_EMAIL` | racer |
+| `E2E_WC_EMAIL` | world_class |
 
 ## Parity Tolerances
 

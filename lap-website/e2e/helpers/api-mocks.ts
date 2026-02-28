@@ -4,10 +4,11 @@ import { Page } from '@playwright/test';
  * Mock /auth/me to simulate a logged-in user at a specific tier.
  */
 export async function mockAuthMe(page: Page, tier: 'demo' | 'racer' | 'world_class') {
+  // Mock user data — IDs are synthetic, emails from env or placeholders.
   const users = {
-    demo: { id: 32, email: 'theos.elive@gmail.com', display_name: 'Demo User', plan_tier: 'demo' },
-    racer: { id: 31, email: 'theo.stipapro@gmail.com', display_name: 'Racer User', plan_tier: 'racer' },
-    world_class: { id: 59, email: 'fsae.ecn@gmail.com', display_name: 'World Class User', plan_tier: 'world_class' },
+    demo: { id: 1, email: process.env.E2E_DEMO_EMAIL || 'demo@test.local', display_name: 'Demo User', plan_tier: 'demo' },
+    racer: { id: 2, email: process.env.E2E_RACER_EMAIL || 'racer@test.local', display_name: 'Racer User', plan_tier: 'racer' },
+    world_class: { id: 3, email: process.env.E2E_WC_EMAIL || 'wc@test.local', display_name: 'World Class User', plan_tier: 'world_class' },
   };
 
   await page.route('**/api/v1/auth/me', async (route) => {

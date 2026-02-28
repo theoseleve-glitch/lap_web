@@ -8,20 +8,22 @@ export interface TestUser {
   tier: 'demo' | 'racer' | 'world_class';
 }
 
+// Credentials loaded from environment variables — never hardcode in source.
+// Set E2E_DEMO_EMAIL, E2E_RACER_EMAIL, E2E_WC_EMAIL, E2E_TEST_PASSWORD.
 export const TEST_USERS: Record<string, TestUser> = {
   demo: {
-    email: 'theos.elive@gmail.com',
-    password: 'claudetest',
+    email: process.env.E2E_DEMO_EMAIL || '',
+    password: process.env.E2E_TEST_PASSWORD || '',
     tier: 'demo',
   },
   racer: {
-    email: 'theo.stipapro@gmail.com',
-    password: 'claudetest',
+    email: process.env.E2E_RACER_EMAIL || '',
+    password: process.env.E2E_TEST_PASSWORD || '',
     tier: 'racer',
   },
   world_class: {
-    email: 'fsae.ecn@gmail.com',
-    password: 'claudetest',
+    email: process.env.E2E_WC_EMAIL || '',
+    password: process.env.E2E_TEST_PASSWORD || '',
     tier: 'world_class',
   },
 };

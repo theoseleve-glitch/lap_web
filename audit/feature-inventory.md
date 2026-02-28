@@ -3,7 +3,7 @@
 Comprehensive testable feature inventory for the Lap Coach Racing telemetry SaaS platform.
 Generated as part of the E2E certification harness (Task 12).
 
-**Total items:** 300
+**Total items:** 306
 **Status:** All items start as `pending`.
 
 | ID | Area | Feature | Tier | Test Method | Parity Ref | Status |
