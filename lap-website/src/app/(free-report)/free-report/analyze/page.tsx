@@ -3,7 +3,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-// api-client no longer used here — direct fetch to backend
 import { FormField } from '@/components/app';
 import Link from 'next/link';
 import { useTranslation } from '@/i18n';

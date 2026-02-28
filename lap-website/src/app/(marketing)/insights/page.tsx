@@ -24,9 +24,9 @@ export default function InsightsPage() {
 
   return (
     <PageShell
-      eyebrow="Insights CMS"
-      title="Tagged Insight Library"
-      description="CMS-ready insight entries with searchable intent tags and internal product mapping."
+      eyebrow="Learn"
+      title="Telemetry Insights"
+      description="Practical motorsport analysis articles covering corners, consistency, strategy, and coaching."
     >
       <section className="mb-6 grid md:grid-cols-[2fr_3fr] gap-3">
         <input
@@ -62,7 +62,6 @@ export default function InsightsPage() {
         {filtered.map((article) => (
           <article key={article.slug} className="border border-steel/20 p-4 bg-concrete/30">
             <h2 className="font-monument text-[var(--text-h3)] mb-2">{article.title}</h2>
-            <p className="text-steel text-sm mb-2">Keyword intent: {article.intent}</p>
             <p className="text-steel text-sm mb-3">{article.summary}</p>
             <div className="flex flex-wrap gap-2 mb-3">
               {article.tags.map((tag) => (
