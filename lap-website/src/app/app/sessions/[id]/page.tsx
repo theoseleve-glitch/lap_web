@@ -121,6 +121,15 @@ interface TheoreticalData {
   corner_coaching?: unknown[];
 }
 
+interface StintEntry {
+  stint_number: number;
+  start_lap: number;
+  end_lap: number;
+  avg_time: number;
+  best_time: number;
+  laps_count: number;
+}
+
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
 function formatTime(s: number | null): string {
@@ -274,6 +283,12 @@ export default function SessionDetailPage() {
     queryKey: ['session', id, 'theoretical'],
     queryFn: () => api.get<TheoreticalData>(`/sessions/${id}/theoretical`),
     enabled: activeTab === 'Corners & Coaching',
+  });
+
+  const { data: stintData } = useQuery({
+    queryKey: ['session', id, 'stints'],
+    queryFn: () => api.get<{ stints: StintEntry[] }>(`/sessions/${id}/stints`),
+    enabled: activeTab === 'Performance',
   });
 
   /* ── Derived Values ── */
@@ -853,16 +868,115 @@ export default function SessionDetailPage() {
               </div>
             </section>
 
-            {/* Stint Chart (full width) */}
+            {/* Stint Analysis — Cards + Chart */}
             <section>
               <SectionHeader title="Stint Analysis" />
+              {/* Stint Cards */}
+              {(stintData?.stints ?? []).length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 mb-4">
+                  {stintData!.stints.map((stint) => {
+                    const cv = stint.avg_time > 0 && stint.laps_count > 1
+                      ? ((stint.avg_time - stint.best_time) / stint.avg_time * 100)
+                      : 0;
+                    // Fade: compare first and last stint to detect tyre deg
+                    const stints = stintData!.stints;
+                    const isLast = stint.stint_number === stints[stints.length - 1].stint_number;
+                    const fade = isLast && stints.length > 1
+                      ? ((stint.avg_time - stints[0].avg_time) / stints[0].avg_time * 100)
+                      : null;
+                    return (
+                      <div
+                        key={stint.stint_number}
+                        className="bg-concrete rounded-lg border border-steel/10 p-3"
+                      >
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="font-telemetry text-xs text-steel">Stint {stint.stint_number}</span>
+                          <span className="font-telemetry text-[10px] text-steel/60">
+                            L{stint.start_lap}-{stint.end_lap}
+                          </span>
+                        </div>
+                        <p className="font-telemetry text-sm text-acid-green font-bold mb-1">
+                          {formatTime(stint.best_time)}
+                        </p>
+                        <div className="space-y-1 text-[10px] font-telemetry">
+                          <div className="flex justify-between">
+                            <span className="text-steel">Mean</span>
+                            <span className="text-chalk">{formatTime(stint.avg_time)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-steel">CV%</span>
+                            <span className={cv < 1 ? 'text-acid-green' : cv < 3 ? 'text-amber-400' : 'text-safety-red'}>
+                              {cv.toFixed(1)}%
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-steel">Laps</span>
+                            <span className="text-chalk">{stint.laps_count}</span>
+                          </div>
+                          {fade != null && (
+                            <div className="flex justify-between pt-1 border-t border-steel/10">
+                              <span className="text-steel">Fade</span>
+                              <span className={fade < 1 ? 'text-acid-green' : fade < 3 ? 'text-amber-400' : 'text-safety-red'}>
+                                +{fade.toFixed(1)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Stint Pace Chart */}
               <StintChart sessionId={id} />
+
+              {/* Tyre Cliff Detection */}
+              {(stintData?.stints ?? []).length >= 2 && (() => {
+                const s = stintData!.stints;
+                const lastStint = s[s.length - 1];
+                const firstStint = s[0];
+                const fadeRate = ((lastStint.avg_time - firstStint.avg_time) / firstStint.avg_time) * 100;
+                if (fadeRate <= 0.5) return null;
+                const severity = fadeRate > 5 ? 'critical' : fadeRate > 2 ? 'moderate' : 'mild';
+                const severityColor = {
+                  critical: 'border-safety-red/30 bg-safety-red/5',
+                  moderate: 'border-amber-400/30 bg-amber-400/5',
+                  mild: 'border-steel/20 bg-steel/5',
+                }[severity];
+                return (
+                  <div className={`mt-4 rounded-lg border p-4 ${severityColor}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className={`w-2 h-2 rounded-full ${
+                        severity === 'critical' ? 'bg-safety-red' : severity === 'moderate' ? 'bg-amber-400' : 'bg-steel'
+                      }`} />
+                      <h4 className="font-telemetry text-xs uppercase tracking-wider text-chalk">
+                        Tyre Cliff Detection — {severity.toUpperCase()}
+                      </h4>
+                    </div>
+                    <p className="text-chalk text-sm font-body">
+                      {severity === 'critical'
+                        ? `Significant pace fade of +${fadeRate.toFixed(1)}% from stint 1 to stint ${s.length}. Tyre degradation is severely affecting lap times. Consider shorter stints or different tyre management strategy.`
+                        : severity === 'moderate'
+                          ? `Moderate pace fade of +${fadeRate.toFixed(1)}% detected. Tyre performance is declining but manageable. Focus on smoother inputs to preserve rubber.`
+                          : `Mild pace fade of +${fadeRate.toFixed(1)}% — tyre management is acceptable. Minor adjustments could extend tyre life further.`
+                      }
+                    </p>
+                  </div>
+                );
+              })()}
             </section>
 
             {/* Tyre Chart (full width) */}
             <section>
               <SectionHeader title="Tyre Degradation" />
               <TyreChart sessionId={id} />
+            </section>
+
+            {/* Trend Analysis */}
+            <section>
+              <SectionHeader title="Pace Trend" />
+              <TrendChart sessionId={id} />
             </section>
           </div>
         )}
