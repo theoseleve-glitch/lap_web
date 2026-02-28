@@ -4,6 +4,7 @@
  */
 
 import { getAccessToken } from './auth-store';
+import { parseEnvelopeOrThrow } from './http-envelope';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const API_BASE = `${BACKEND_URL}/api/v1`;
@@ -18,13 +19,6 @@ export class ApiError extends Error {
     super(message);
     this.name = 'ApiError';
   }
-}
-
-interface ApiEnvelope<T> {
-  ok: boolean;
-  data: T;
-  error?: { code: string; message: string; details?: Array<{ field?: string; message: string }> };
-  meta: { request_id: string };
 }
 
 /**
@@ -59,18 +53,7 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     credentials: 'include',
   });
 
-  const body: ApiEnvelope<T> = await res.json();
-
-  if (!body.ok) {
-    throw new ApiError(
-      body.error?.code ?? 'UNKNOWN',
-      body.error?.message ?? 'Request failed',
-      res.status,
-      body.error?.details,
-    );
-  }
-
-  return body.data;
+  return parseEnvelopeOrThrow<T>(res);
 }
 
 /** Convenience wrappers */

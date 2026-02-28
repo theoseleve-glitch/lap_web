@@ -1,5 +1,5 @@
-import { ApiError } from './api-client';
 import { setAccessToken } from './auth-store';
+import { parseEnvelopeOrThrow } from './http-envelope';
 
 const AUTH_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/auth`;
 
@@ -29,16 +29,7 @@ async function authFetch<T>(path: string, body?: unknown): Promise<T> {
     credentials: 'include',
     body: body ? JSON.stringify(body) : undefined,
   });
-  const envelope = await res.json();
-  if (!envelope.ok) {
-    throw new ApiError(
-      envelope.error?.code ?? 'UNKNOWN',
-      envelope.error?.message ?? 'Request failed',
-      res.status,
-      envelope.error?.details,
-    );
-  }
-  return envelope.data;
+  return parseEnvelopeOrThrow<T>(res);
 }
 
 export interface TwoFaRequired {
