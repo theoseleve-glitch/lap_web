@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -36,29 +37,92 @@ from web.models import (
 logger = logging.getLogger(__name__)
 bp = Blueprint("analysis", __name__, url_prefix="/analyze")
 
-# ── Background job registry ────────────────────────────────────────────
-# In-memory dict: job_id → {status, stage, progress, error, session_id, ...}
-_jobs: dict[str, dict] = {}
-_jobs_lock = threading.Lock()
-_MAX_JOBS = 100  # Evict oldest jobs when this limit is exceeded
+# ── Redis-backed job registry ──────────────────────────────────────────
+# Jobs are stored as Redis hashes: analysis:job:{job_id}
+# TTL: 2 hours (auto-eviction replaces _evict_old_jobs)
+# Joker threading.Events stay in-memory (per-worker, same process).
+
+_JOB_KEY_PREFIX = "analysis:job:"
+_JOB_TTL = 7200  # 2 hours
+
+# Joker events are per-process (threading.Event can't be shared via Redis).
+# Only the worker that started the pipeline thread can block on these.
+_joker_events: dict[str, threading.Event] = {}
+_joker_lock = threading.Lock()
 
 
-def _evict_old_jobs() -> None:
-    """Remove completed jobs when the registry exceeds _MAX_JOBS.
+def _get_redis():
+    """Get the shared Redis client from Flask app extensions."""
+    try:
+        return current_app.extensions.get("redis")
+    except RuntimeError:
+        # Outside request context (e.g. background thread with app_context)
+        return None
 
-    Must be called while holding _jobs_lock.
-    """
-    if len(_jobs) <= _MAX_JOBS:
+
+def _job_key(job_id: str) -> str:
+    return f"{_JOB_KEY_PREFIX}{job_id}"
+
+
+def _create_job(job_id: str, data: dict) -> None:
+    """Create a new job in Redis."""
+    r = _get_redis()
+    if r is None:
         return
-    # Sort completed jobs by their 'created' timestamp and remove the oldest
-    completed = [
-        (jid, j) for jid, j in _jobs.items()
-        if j.get("status") in ("done", "error")
-    ]
-    completed.sort(key=lambda x: x[1].get("created", 0))
-    to_remove = len(_jobs) - _MAX_JOBS
-    for jid, _ in completed[:to_remove]:
-        del _jobs[jid]
+    key = _job_key(job_id)
+    # Serialize complex values to JSON strings
+    flat = {}
+    for k, v in data.items():
+        if v is None:
+            flat[k] = ""
+        elif isinstance(v, (dict, list)):
+            flat[k] = json.dumps(v)
+        elif isinstance(v, bool):
+            flat[k] = "1" if v else "0"
+        elif isinstance(v, (int, float)):
+            flat[k] = str(v)
+        else:
+            flat[k] = str(v)
+    r.hset(key, mapping=flat)
+    r.expire(key, _JOB_TTL)
+
+
+def _get_job(job_id: str) -> dict | None:
+    """Retrieve a job from Redis. Returns None if not found."""
+    r = _get_redis()
+    if r is None:
+        return None
+    key = _job_key(job_id)
+    raw = r.hgetall(key)
+    if not raw:
+        return None
+    # Deserialize values
+    result = {}
+    for k, v in raw.items():
+        if v == "":
+            result[k] = None
+        elif k in ("progress",):
+            try:
+                result[k] = int(v)
+            except (ValueError, TypeError):
+                result[k] = 0
+        elif k in ("started_at", "created"):
+            try:
+                result[k] = float(v)
+            except (ValueError, TypeError):
+                result[k] = 0.0
+        elif k in ("corners_ready", "joker_ready", "joker_confirmed",
+                    "joker_timed_out", "_layout_delivered", "_joker_delivered",
+                    "corners_submitted"):
+            result[k] = v == "1"
+        elif k in ("track_layout", "joker_candidates", "selected_corners"):
+            try:
+                result[k] = json.loads(v)
+            except (json.JSONDecodeError, TypeError):
+                result[k] = None
+        else:
+            result[k] = v
+    return result
 
 _STAGE_MAP = {
     "01_ingest":              {"label": "Loading CSV",              "pct": 5},
@@ -86,10 +150,30 @@ _STAGE_MAP = {
 
 
 def _update_job(job_id: str, **kwargs):
-    """Thread-safe update of a job's state."""
-    with _jobs_lock:
-        if job_id in _jobs:
-            _jobs[job_id].update(kwargs)
+    """Update job fields in Redis."""
+    r = _get_redis()
+    if r is None:
+        return
+    key = _job_key(job_id)
+    if not r.exists(key):
+        return
+    flat = {}
+    for k, v in kwargs.items():
+        # Skip non-serializable objects (threading.Event, etc.)
+        if k == "joker_event":
+            continue
+        if v is None:
+            flat[k] = ""
+        elif isinstance(v, (dict, list)):
+            flat[k] = json.dumps(v)
+        elif isinstance(v, bool):
+            flat[k] = "1" if v else "0"
+        elif isinstance(v, (int, float)):
+            flat[k] = str(v)
+        else:
+            flat[k] = str(v)
+    if flat:
+        r.hset(key, mapping=flat)
 
 
 def _pipeline_progress_hook(job_id: str):
@@ -135,7 +219,8 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
             # Joker callback: called by pipeline after joker detection.
             # BLOCKS the pipeline thread until the user confirms/rejects.
             joker_event = threading.Event()
-            _update_job(job_id, joker_event=joker_event)
+            with _joker_lock:
+                _joker_events[job_id] = joker_event
 
             def _on_joker_ready(joker_result):
                 from dataclasses import asdict
@@ -160,11 +245,14 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                     _update_job(job_id, joker_timed_out=True)
                     return None  # Pipeline continues without joker lap.
 
-                # Read the user's decision from the job dict.
-                with _jobs_lock:
-                    confirmed_lap = _jobs.get(job_id, {}).get(
-                        "joker_confirmed_lap",
-                    )
+                # Read the user's decision from Redis.
+                job_data = _get_job(job_id) or {}
+                confirmed_lap = job_data.get("joker_confirmed_lap")
+                if confirmed_lap is not None:
+                    try:
+                        confirmed_lap = int(confirmed_lap)
+                    except (ValueError, TypeError):
+                        confirmed_lap = None
                 return confirmed_lap  # int or None (if rejected)
 
             p._safe_step = patched_safe_step
@@ -254,10 +342,14 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
             )
 
             # If corners were submitted while pipeline was running, persist now
-            with _jobs_lock:
-                _sel = _jobs.get(job_id, {}).get("selected_corners")
+            _job_data = _get_job(job_id) or {}
+            _sel = _job_data.get("selected_corners")
             if _sel and _track_id:
                 _persist_key_corners(_track_id, _sel)
+
+            # Clean up joker event
+            with _joker_lock:
+                _joker_events.pop(job_id, None)
 
         except Exception as exc:
             logger.exception("Background analysis failed: %s", exc)
@@ -267,6 +359,8 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                 stage="Failed",
                 error=str(exc),
             )
+            with _joker_lock:
+                _joker_events.pop(job_id, None)
 
 
 def _list_csv_files() -> list[str]:
@@ -384,17 +478,15 @@ def _analyze_start_impl():
 
     # Create job and start background thread.
     job_id = uuid.uuid4().hex[:12]
-    with _jobs_lock:
-        _evict_old_jobs()
-        _jobs[job_id] = {
-            "status": "queued",
-            "stage": "Queued",
-            "progress": 0,
-            "error": None,
-            "session_id": None,
-            "started_at": time.time(),
-            "created": time.time(),
-        }
+    _create_job(job_id, {
+        "status": "queued",
+        "stage": "Queued",
+        "progress": 0,
+        "error": None,
+        "session_id": None,
+        "started_at": time.time(),
+        "created": time.time(),
+    })
 
     app = current_app._get_current_object()
     t = threading.Thread(
@@ -414,17 +506,39 @@ def analyze_start_api():
 
 
 def _analyze_status_impl(job_id: str):
-    """Poll analysis progress. Returns JSON with status/stage/progress/session_id."""
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    """Poll analysis progress. Returns JSON with status/stage/progress/session_id.
+
+    Translates internal status values to match the Next.js frontend expectations:
+    - queued → pending, running → processing, done → complete, error → failed
+    """
+    job = _get_job(job_id)
     if job is None:
         return jsonify({"error": "Unknown job ID"}), 404
 
-    elapsed = int(time.time() - job.get("started_at", time.time()))
+    # Status translation: backend → frontend
+    _STATUS_MAP = {
+        "queued": "pending",
+        "running": "processing",
+        "done": "complete",
+        "error": "failed",
+    }
+    raw_status = job.get("status", "pending")
+    frontend_status = _STATUS_MAP.get(raw_status, raw_status)
+
+    started_at = job.get("started_at", 0.0)
+    if isinstance(started_at, str):
+        try:
+            started_at = float(started_at)
+        except (ValueError, TypeError):
+            started_at = 0.0
+    elapsed = int(time.time() - started_at) if started_at else 0
+
     resp = {
-        "status": job["status"],
-        "stage": job["stage"],
-        "progress": job["progress"],
+        "job_id": job_id,
+        "status": frontend_status,
+        "stage": job.get("stage", ""),
+        "message": job.get("stage", ""),  # frontend reads "message"
+        "progress": job.get("progress", 0),
         "error": job.get("error"),
         "session_id": job.get("session_id"),
         "elapsed": elapsed,
@@ -437,18 +551,15 @@ def _analyze_status_impl(job_id: str):
     # Include track layout only once (first time corners_ready is polled)
     if job.get("corners_ready") and job.get("track_layout"):
         resp["track_layout"] = job["track_layout"]
-        # Clear layout from memory after first delivery to save RAM
-        with _jobs_lock:
-            if job_id in _jobs:
-                _jobs[job_id]["_layout_delivered"] = True
-                _jobs[job_id]["track_layout"] = None
+        # Mark as delivered in Redis
+        _update_job(job_id, _layout_delivered=True, track_layout=None)
     elif job.get("corners_ready") and job.get("_layout_delivered"):
         resp["track_layout"] = None  # already delivered
 
     # Include joker candidates only once (same deliver-once pattern)
     if job.get("joker_ready") and job.get("joker_candidates") and not job.get("_joker_delivered"):
         resp["joker_candidates"] = job["joker_candidates"]
-        job["_joker_delivered"] = True
+        _update_job(job_id, _joker_delivered=True)
     elif job.get("joker_ready") and job.get("_joker_delivered"):
         resp["joker_candidates"] = None  # already delivered
 
@@ -471,8 +582,7 @@ def submit_corners_api(job_id: str):
       - ``{"corners": [1, 2, 3]}``  (legacy: plain corner_id ints)
       - ``{"corners": [{"corner_id": 1, "lat": ..., "lon": ..., "dist_m": ..., "label": "T1"}, ...]}``
     """
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if job is None:
         return jsonify({"error": "Unknown job ID"}), 404
 
@@ -490,7 +600,7 @@ def submit_corners_api(job_id: str):
         else:
             normalized.append({"corner_id": int(item)})
 
-    # Store in job dict so we can persist once session_id is known.
+    # Store in Redis so we can persist once session_id is known.
     _update_job(job_id, selected_corners=normalized, corners_submitted=True)
 
     # If the analysis is already done and session_id is available, persist now.
@@ -550,8 +660,7 @@ def confirm_joker_api(job_id: str):
     Expects JSON: ``{"action": "confirm", "lap_number": int}``
     or ``{"action": "reject"}``.
     """
-    with _jobs_lock:
-        job = _jobs.get(job_id)
+    job = _get_job(job_id)
     if job is None:
         return jsonify({"error": "Unknown job ID"}), 404
 
@@ -585,8 +694,9 @@ def confirm_joker_api(job_id: str):
     else:
         return jsonify({"error": "action must be 'confirm' or 'reject'."}), 400
 
-    # Unblock the pipeline thread.
-    joker_event = job.get("joker_event")
+    # Unblock the pipeline thread (only works if this worker started the job).
+    with _joker_lock:
+        joker_event = _joker_events.get(job_id)
     if joker_event is not None:
         joker_event.set()
 

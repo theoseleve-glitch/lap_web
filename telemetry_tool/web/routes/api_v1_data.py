@@ -617,26 +617,44 @@ def v1_files_upload():
 
     from werkzeug.utils import secure_filename
 
+    # Diagnostic logging (print to guarantee Gunicorn stdout)
+    ct = request.content_type or "none"
+    cl = request.content_length
+    has_auth = bool(request.headers.get("Authorization"))
+    file_keys = list(request.files.keys()) if request.files else []
+    print(f"[UPLOAD] content_type={ct} content_length={cl} has_auth={has_auth} file_keys={file_keys}", flush=True)
+
     if "file" not in request.files:
+        form_keys = list(request.form.keys())
+        print(f"[UPLOAD REJECTED] no 'file' field. form_keys={form_keys}", flush=True)
         return api_error(ErrorCode.VALIDATION_ERROR, "No file provided", status=400)
 
     f = request.files["file"]
     if not f.filename:
-        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+        print("[UPLOAD REJECTED] empty filename", flush=True)
+        return api_error(ErrorCode.VALIDATION_ERROR, "Empty filename", status=400)
 
-    # Double-extension rejection (e.g. "data.csv.exe")
+    # Extension validation: must end with .csv, reject dangerous double
+    # extensions like "data.csv.exe" but allow dots in names (dates, etc.)
     basename = f.filename.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    dot_parts = basename.split(".")
-    if len(dot_parts) > 2:
-        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+    print(f"[UPLOAD] basename={basename!r}", flush=True)
     if not basename.lower().endswith(".csv"):
-        return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
+        print(f"[UPLOAD REJECTED] not .csv: {basename!r}", flush=True)
+        return api_error(ErrorCode.VALIDATION_ERROR, f"Only .csv files allowed (got: {basename})", status=400)
+    # Block executable double-extensions after .csv (e.g. "file.csv.exe")
+    _DANGEROUS_EXTS = {".exe", ".bat", ".cmd", ".sh", ".ps1", ".msi", ".dll", ".scr", ".com", ".js", ".vbs", ".php"}
+    name_without_csv = basename[:-4]  # strip trailing .csv
+    if "." in name_without_csv:
+        trailing_ext = name_without_csv.rsplit(".", 1)[-1].lower()
+        if f".{trailing_ext}" in _DANGEROUS_EXTS:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Only .csv files allowed", status=400)
 
     # Content validation
     sample = f.read(8192)
     f.seek(0)
 
     if b"\x00" in sample:
+        print(f"[UPLOAD REJECTED] binary content detected in {basename!r}", flush=True)
         return api_error(ErrorCode.VALIDATION_ERROR, "File appears to be binary, not CSV", status=400)
 
     try:
@@ -645,17 +663,42 @@ def v1_files_upload():
         try:
             text_sample = sample.decode("latin-1")
         except UnicodeDecodeError:
+            print(f"[UPLOAD REJECTED] undecodable text in {basename!r}", flush=True)
             return api_error(ErrorCode.VALIDATION_ERROR, "File is not valid text", status=400)
 
-    first_line = text_sample.split("\n", 1)[0].strip()
-    if first_line:
-        reader = csv.reader(io.StringIO(first_line))
+    # Find the real header line — skip comment/metadata lines
+    # (RaceChrono Pro puts "This file is created using..." on line 1)
+    lines = text_sample.split("\n")
+    header_line = None
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # A real CSV header has at least one delimiter
+        for delim in [",", ";", "\t", "|"]:
+            if delim in stripped:
+                header_line = stripped
+                break
+        if header_line:
+            break
+
+    if header_line:
+        try:
+            dialect = csv.Sniffer().sniff(header_line, delimiters=",;\t|")
+        except csv.Error:
+            dialect = None
+        reader = csv.reader(io.StringIO(header_line), dialect or csv.excel)
         try:
             headers = next(reader)
+            print(f"[UPLOAD] {basename!r}: detected {len(headers)} columns, delimiter={getattr(dialect, 'delimiter', ',').__repr__()}", flush=True)
             if len(headers) < 2:
-                return api_error(ErrorCode.VALIDATION_ERROR, "CSV must have at least 2 columns", status=400)
+                print(f"[UPLOAD REJECTED] <2 columns: {headers!r}", flush=True)
+                return api_error(ErrorCode.VALIDATION_ERROR, f"CSV must have at least 2 columns (found {len(headers)})", status=400)
         except (csv.Error, StopIteration):
+            print(f"[UPLOAD REJECTED] CSV parse error: {header_line[:100]!r}", flush=True)
             return api_error(ErrorCode.VALIDATION_ERROR, "File does not appear to be valid CSV", status=400)
+    else:
+        print(f"[UPLOAD] {basename!r}: no delimited line found in sample, allowing anyway", flush=True)
 
     safe_name = secure_filename(f.filename) or "upload.csv"
     if not safe_name.lower().endswith(".csv"):
