@@ -53,62 +53,62 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0043 | Upload/Ingest | Upload quota enforcement (monthly count per plan) | All | integration | — | passed |
 | F-0044 | Upload/Ingest | Upload job status tracking via JobStore (in-memory + SQLite) | All | unit | — | passed |
 | F-0045 | Upload/Ingest | Parquet chunk merge via PyArrow streaming writer (O(1) memory) | All | unit | — | passed |
-| F-0046 | Pipeline | GPS quality filtering (satellite count, HDOP threshold) | All | unit | OK_R1 | pending |
-| F-0047 | Pipeline | Derived channel: acceleration from speed | All | unit | OK_R1 | pending |
-| F-0048 | Pipeline | Derived channel: yaw rate from heading | All | unit | — | pending |
-| F-0049 | Pipeline | Derived channel: lateral G | All | unit | — | pending |
-| F-0050 | Pipeline | Session trimming (start/stop detection by motion) | All | unit | OK_R1 | pending |
-| F-0051 | Pipeline | Track detection via GPS fingerprint matching | All | unit | OK_R1 | pending |
-| F-0052 | Pipeline | Track registration for unknown GPS signatures | All | integration | — | pending |
-| F-0053 | Pipeline | Corner detection: apex identification | All | unit | OK_R1 | pending |
-| F-0054 | Pipeline | Corner detection: entry point | All | unit | — | pending |
-| F-0055 | Pipeline | Corner detection: exit point | All | unit | — | pending |
-| F-0056 | Pipeline | Lap segmentation from "Lap #" column | All | unit | OK_R1 | pending |
-| F-0057 | Pipeline | Resampling: distance-grid normalization (1000 points) | All | unit | — | pending |
-| F-0058 | Pipeline | Lap time calculation from timestamps | All | unit | OK_R1 | pending |
-| F-0059 | Pipeline | Best lap identification (minimum valid lap time) | All | unit | OK_R1 | pending |
-| F-0060 | Pipeline | Lap validity detection (incomplete laps, pit laps) | All | unit | OK_R1 | pending |
-| F-0061 | Pipeline | Outlier lap filtering (statistical threshold) | All | unit | OK_R1 | pending |
-| F-0062 | Pipeline | Speed mean per lap | All | unit | OK_R1 | pending |
-| F-0063 | Pipeline | Speed max per lap | All | unit | OK_R1 | pending |
-| F-0064 | Pipeline | Braking max per lap (peak deceleration) | All | unit | OK_R1 | pending |
-| F-0065 | Pipeline | Acceleration max per lap (peak longitudinal G) | All | unit | OK_R1 | pending |
-| F-0066 | Pipeline | Line length per lap (GPS distance) | All | unit | OK_R1 | pending |
-| F-0067 | Pipeline | Consistency metrics: coefficient of variation | All | unit | OK_R1 | pending |
-| F-0068 | Pipeline | Consistency metrics: standard deviation | All | unit | OK_R1 | pending |
-| F-0069 | Pipeline | Robustness metrics computation | All | unit | OK_R1 | pending |
-| F-0070 | Pipeline | Reference line computation (ideal racing line) | All | unit | — | pending |
-| F-0071 | Pipeline | Curvature profile from reference line | All | unit | — | pending |
-| F-0072 | Pipeline | Friction model estimation | All | unit | — | pending |
-| F-0073 | Pipeline | Vehicle parameter estimation (mass, tire grip) | All | unit | — | pending |
-| F-0074 | Pipeline | Data quality assessment (completeness, noise level) | All | unit | — | pending |
-| F-0075 | Pipeline | Theoretical lap: QSS solver convergence | All | unit | OK_R1 | pending |
-| F-0076 | Pipeline | Theoretical lap time output | All | unit | OK_R1 | pending |
-| F-0077 | Pipeline | Feature dataset builder (Parquet output) | All | unit | — | pending |
-| F-0078 | Pipeline | ML model training on feature dataset | All | unit | — | pending |
-| F-0079 | Pipeline | Anomaly detection on lap features | All | unit | — | pending |
-| F-0080 | Pipeline | Scoring: Pace sub-score (/25) | All | unit | OK_R1 | pending |
-| F-0081 | Pipeline | Scoring: Consistency sub-score (/25) | All | unit | OK_R1 | pending |
-| F-0082 | Pipeline | Scoring: Execution sub-score (/25) | All | unit | OK_R1 | pending |
-| F-0083 | Pipeline | Scoring: Robustness sub-score (/25) | All | unit | OK_R1 | pending |
-| F-0084 | Pipeline | Scoring: Total score (/100) | All | unit | OK_R1 | pending |
-| F-0085 | Pipeline | Scoring: Grade assignment (A through F) | All | unit | OK_R1 | pending |
-| F-0086 | Pipeline | Coaching guide generation (textual advice) | All | unit | — | pending |
-| F-0087 | Pipeline | Driver profile construction from multi-session data | All | unit | — | pending |
-| F-0088 | Pipeline | HTML report generation (Jinja2 template) | All | unit | — | pending |
-| F-0089 | Pipeline | PDF report generation | Racer+ | unit | — | pending |
-| F-0090 | Pipeline | DB persistence: session record | All | integration | — | pending |
-| F-0091 | Pipeline | DB persistence: lap records | All | integration | — | pending |
-| F-0092 | Pipeline | DB persistence: GPS traces | All | integration | — | pending |
-| F-0093 | Pipeline | DB persistence: scoring results | All | integration | — | pending |
-| F-0094 | Pipeline | DB persistence: corner metrics | All | integration | — | pending |
-| F-0095 | Pipeline | DB persistence: theoretical data | All | integration | — | pending |
-| F-0096 | Pipeline | Condition phase detection (dry/wet) | All | unit | — | pending |
-| F-0097 | Pipeline | Track evolution tracking across sessions | All | unit | — | pending |
-| F-0098 | Pipeline | Grip evolution tracking | All | unit | — | pending |
-| F-0099 | Pipeline | Weather timeline integration | All | unit | — | pending |
-| F-0100 | Pipeline | Joker lap detection | All | unit | — | pending |
-| F-0101 | Pipeline | _safe_step graceful degradation (exception → None, no crash) | All | unit | — | pending |
+| F-0046 | Pipeline | GPS quality filtering (satellite count, HDOP threshold) | All | unit | OK_R1 | no-test |
+| F-0047 | Pipeline | Derived channel: acceleration from speed | All | unit | OK_R1 | passed |
+| F-0048 | Pipeline | Derived channel: yaw rate from heading | All | unit | — | no-test |
+| F-0049 | Pipeline | Derived channel: lateral G | All | unit | — | passed |
+| F-0050 | Pipeline | Session trimming (start/stop detection by motion) | All | unit | OK_R1 | no-test |
+| F-0051 | Pipeline | Track detection via GPS fingerprint matching | All | unit | OK_R1 | passed |
+| F-0052 | Pipeline | Track registration for unknown GPS signatures | All | integration | — | no-test |
+| F-0053 | Pipeline | Corner detection: apex identification | All | unit | OK_R1 | passed |
+| F-0054 | Pipeline | Corner detection: entry point | All | unit | — | passed |
+| F-0055 | Pipeline | Corner detection: exit point | All | unit | — | passed |
+| F-0056 | Pipeline | Lap segmentation from "Lap #" column | All | unit | OK_R1 | passed |
+| F-0057 | Pipeline | Resampling: distance-grid normalization (1000 points) | All | unit | — | no-test |
+| F-0058 | Pipeline | Lap time calculation from timestamps | All | unit | OK_R1 | passed |
+| F-0059 | Pipeline | Best lap identification (minimum valid lap time) | All | unit | OK_R1 | passed |
+| F-0060 | Pipeline | Lap validity detection (incomplete laps, pit laps) | All | unit | OK_R1 | passed |
+| F-0061 | Pipeline | Outlier lap filtering (statistical threshold) | All | unit | OK_R1 | passed |
+| F-0062 | Pipeline | Speed mean per lap | All | unit | OK_R1 | passed |
+| F-0063 | Pipeline | Speed max per lap | All | unit | OK_R1 | passed |
+| F-0064 | Pipeline | Braking max per lap (peak deceleration) | All | unit | OK_R1 | passed |
+| F-0065 | Pipeline | Acceleration max per lap (peak longitudinal G) | All | unit | OK_R1 | passed |
+| F-0066 | Pipeline | Line length per lap (GPS distance) | All | unit | OK_R1 | passed |
+| F-0067 | Pipeline | Consistency metrics: coefficient of variation | All | unit | OK_R1 | passed |
+| F-0068 | Pipeline | Consistency metrics: standard deviation | All | unit | OK_R1 | passed |
+| F-0069 | Pipeline | Robustness metrics computation | All | unit | OK_R1 | passed |
+| F-0070 | Pipeline | Reference line computation (ideal racing line) | All | unit | — | passed |
+| F-0071 | Pipeline | Curvature profile from reference line | All | unit | — | passed |
+| F-0072 | Pipeline | Friction model estimation | All | unit | — | passed |
+| F-0073 | Pipeline | Vehicle parameter estimation (mass, tire grip) | All | unit | — | passed |
+| F-0074 | Pipeline | Data quality assessment (completeness, noise level) | All | unit | — | no-test |
+| F-0075 | Pipeline | Theoretical lap: QSS solver convergence | All | unit | OK_R1 | passed |
+| F-0076 | Pipeline | Theoretical lap time output | All | unit | OK_R1 | passed |
+| F-0077 | Pipeline | Feature dataset builder (Parquet output) | All | unit | — | no-test |
+| F-0078 | Pipeline | ML model training on feature dataset | All | unit | — | no-test |
+| F-0079 | Pipeline | Anomaly detection on lap features | All | unit | — | no-test |
+| F-0080 | Pipeline | Scoring: Pace sub-score (/25) | All | unit | OK_R1 | passed |
+| F-0081 | Pipeline | Scoring: Consistency sub-score (/25) | All | unit | OK_R1 | passed |
+| F-0082 | Pipeline | Scoring: Execution sub-score (/25) | All | unit | OK_R1 | passed |
+| F-0083 | Pipeline | Scoring: Robustness sub-score (/25) | All | unit | OK_R1 | passed |
+| F-0084 | Pipeline | Scoring: Total score (/100) | All | unit | OK_R1 | passed |
+| F-0085 | Pipeline | Scoring: Grade assignment (A through F) | All | unit | OK_R1 | passed |
+| F-0086 | Pipeline | Coaching guide generation (textual advice) | All | unit | — | passed |
+| F-0087 | Pipeline | Driver profile construction from multi-session data | All | unit | — | no-test |
+| F-0088 | Pipeline | HTML report generation (Jinja2 template) | All | unit | — | no-test |
+| F-0089 | Pipeline | PDF report generation | Racer+ | unit | — | no-test |
+| F-0090 | Pipeline | DB persistence: session record | All | integration | — | passed |
+| F-0091 | Pipeline | DB persistence: lap records | All | integration | — | passed |
+| F-0092 | Pipeline | DB persistence: GPS traces | All | integration | — | no-test |
+| F-0093 | Pipeline | DB persistence: scoring results | All | integration | — | passed |
+| F-0094 | Pipeline | DB persistence: corner metrics | All | integration | — | passed |
+| F-0095 | Pipeline | DB persistence: theoretical data | All | integration | — | no-test |
+| F-0096 | Pipeline | Condition phase detection (dry/wet) | All | unit | — | passed |
+| F-0097 | Pipeline | Track evolution tracking across sessions | All | unit | — | no-test |
+| F-0098 | Pipeline | Grip evolution tracking | All | unit | — | passed |
+| F-0099 | Pipeline | Weather timeline integration | All | unit | — | passed |
+| F-0100 | Pipeline | Joker lap detection | All | unit | — | passed |
+| F-0101 | Pipeline | _safe_step graceful degradation (exception → None, no crash) | All | unit | — | passed |
 | F-0102 | Charts | Speed trace chart (best lap speed vs distance) | All | e2e | — | e2e-only |
 | F-0103 | Charts | Speed profile overlay (best/avg/worst) | All | e2e | — | e2e-only |
 | F-0104 | Charts | Lap time scatter chart (lap number vs time) | All | e2e | — | e2e-only |
@@ -209,108 +209,108 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0199 | Admin | Usage summary per workspace | Admin | e2e | — | passed |
 | F-0200 | Admin | Admin security events log (login attempts, changes) | Admin | e2e | — | passed |
 | F-0201 | Admin | Admin role requirement enforced on all race-control routes | Admin | integration | — | passed |
-| F-0202 | RBAC/Entitlements | Entitlement middleware runs before_request on protected routes | All | integration | — | pending |
-| F-0203 | RBAC/Entitlements | Feature gate: comparison (world_class only) | WorldClass | integration | — | pending |
-| F-0204 | RBAC/Entitlements | Feature gate: visualization page (racer+) | Racer+ | integration | — | pending |
-| F-0205 | RBAC/Entitlements | Feature gate: race_strategy mutations (racer+) | Racer+ | integration | — | pending |
-| F-0206 | RBAC/Entitlements | Feature gate: API data access (world_class only) | WorldClass | integration | — | pending |
-| F-0207 | RBAC/Entitlements | Feature gate: exports (racer+) | Racer+ | integration | — | pending |
-| F-0208 | RBAC/Entitlements | Feature gate: simulations (racer+) | Racer+ | integration | — | pending |
-| F-0209 | RBAC/Entitlements | Quota gate: reports (monthly limit per plan) | All | integration | — | pending |
-| F-0210 | RBAC/Entitlements | Quota gate: uploads (monthly count per plan) | All | integration | — | pending |
-| F-0211 | RBAC/Entitlements | Usage recording after_request hook | All | integration | — | pending |
-| F-0212 | RBAC/Entitlements | Entitlement override application (admin-granted) | Admin | integration | — | pending |
-| F-0213 | RBAC/Entitlements | Entitlement override expiry (time-limited grants) | Admin | integration | — | pending |
-| F-0214 | RBAC/Entitlements | Plan definitions stored in DB table | All | unit | — | pending |
-| F-0215 | RBAC/Entitlements | Usage events recording (per-action counters) | All | integration | — | pending |
-| F-0216 | RBAC/Entitlements | Usage monthly aggregation (rollup by period) | All | integration | — | pending |
-| F-0217 | RBAC/Entitlements | Atomic quota check-and-record (SELECT FOR UPDATE) | All | integration | — | pending |
-| F-0218 | RBAC/Entitlements | Subscription status impact: active allows all features | All | integration | — | pending |
-| F-0219 | RBAC/Entitlements | Paused subscription blocks mutation endpoints | Racer+ | integration | — | pending |
-| F-0220 | RBAC/Entitlements | Canceled subscription grace period (access until period end) | Racer+ | integration | — | pending |
-| F-0221 | RBAC/Entitlements | Decorator: @require_feature gates endpoint by feature flag | All | unit | — | pending |
-| F-0222 | RBAC/Entitlements | Decorator: @require_report_quota checks quota before action | All | unit | — | pending |
-| F-0223 | RBAC/Entitlements | Decorator: @require_upload_size validates file size per tier | All | unit | — | pending |
-| F-0224 | RBAC/Entitlements | Rate limiting per tier (plan multipliers applied) | All | integration | — | pending |
-| F-0225 | RBAC/Entitlements | Rate limit tiers: 5 levels (auth, read, write, analyze, export) | All | unit | — | pending |
-| F-0226 | RBAC/Entitlements | Entitlement snapshot resolution (plan + overrides merged) | All | unit | — | pending |
-| F-0227 | Tenant Isolation | RLS policies active on all 44 workspace-scoped tables | All | integration | — | pending |
-| F-0228 | Tenant Isolation | SET LOCAL workspace context per-request transaction | All | integration | — | pending |
-| F-0229 | Tenant Isolation | X-Workspace-Id header parsing in tenant middleware | All | unit | — | pending |
-| F-0230 | Tenant Isolation | Workspace membership verification (_verify_workspace_access) | All | integration | — | pending |
-| F-0231 | Tenant Isolation | Default workspace resolution when header absent | All | integration | — | pending |
-| F-0232 | Tenant Isolation | Session data isolation: API list returns only workspace sessions | All | integration | — | pending |
-| F-0233 | Tenant Isolation | Session data isolation: API detail rejects cross-workspace ID | All | integration | — | pending |
-| F-0234 | Tenant Isolation | Session data isolation: direct URL blocked for other workspace | All | integration | — | pending |
-| F-0235 | Tenant Isolation | Track data isolation (workspace-scoped tracks) | All | integration | — | pending |
-| F-0236 | Tenant Isolation | Driver data isolation (workspace-scoped drivers) | All | integration | — | pending |
-| F-0237 | Tenant Isolation | Export data isolation (workspace-scoped exports) | All | integration | — | pending |
-| F-0238 | Tenant Isolation | Comparison data isolation (cross-workspace compare blocked) | All | integration | — | pending |
-| F-0239 | Tenant Isolation | Race strategy data isolation (workspace-scoped strategies) | All | integration | — | pending |
-| F-0240 | Tenant Isolation | IDOR prevention: sequential session ID cannot access other ws | All | integration | — | pending |
-| F-0241 | Tenant Isolation | IDOR prevention: sequential user ID cannot access other user | All | integration | — | pending |
-| F-0242 | Tenant Isolation | IDOR prevention: guessed workspace ID rejected if not member | All | integration | — | pending |
-| F-0243 | Tenant Isolation | Cross-workspace API calls return 403 | All | integration | — | pending |
-| F-0244 | Tenant Isolation | Workspace role enforcement (viewer cannot write) | All | integration | — | pending |
-| F-0245 | Tenant Isolation | Team member isolation (member sees only own team data) | All | integration | — | pending |
-| F-0246 | Tenant Isolation | Storage path isolation (uploads scoped to workspace dir) | All | integration | — | pending |
-| F-0247 | Selling Site | Homepage hero section renders correctly | All | e2e | — | pending |
-| F-0248 | Selling Site | Homepage CTA buttons link to registration/pricing | All | e2e | — | pending |
-| F-0249 | Selling Site | Navigation links resolve to correct routes | All | e2e | — | pending |
-| F-0250 | Selling Site | Pricing page renders with plan cards | All | e2e | — | pending |
-| F-0251 | Selling Site | Pricing plan cards show correct feature lists | All | e2e | — | pending |
-| F-0252 | Selling Site | Pricing toggle switches between monthly and annual | All | e2e | — | pending |
-| F-0253 | Selling Site | Pricing currency display (EUR/USD) | All | e2e | — | pending |
-| F-0254 | Selling Site | Product page renders feature descriptions | All | e2e | — | pending |
-| F-0255 | Selling Site | Teams page renders team collaboration features | All | e2e | — | pending |
-| F-0256 | Selling Site | Circuits/tracks marketing page renders | All | e2e | — | pending |
-| F-0257 | Selling Site | DPA page renders data processing agreement | All | e2e | — | pending |
-| F-0258 | Selling Site | Security page renders security practices | All | e2e | — | pending |
-| F-0259 | Selling Site | Privacy policy page renders full text | All | e2e | — | pending |
-| F-0260 | Selling Site | Terms of service page renders full text | All | e2e | — | pending |
-| F-0261 | Selling Site | Insights/blog page renders article list | All | e2e | — | pending |
-| F-0262 | Selling Site | SEO metadata present (title, description, og tags) | All | e2e | — | pending |
-| F-0263 | Selling Site | Sitemap.xml exists and is valid | All | e2e | — | pending |
-| F-0264 | Selling Site | Mobile responsive layout (viewport < 768px) | All | e2e | — | pending |
-| F-0265 | Selling Site | Dark theme styling consistent across pages | All | e2e | — | pending |
-| F-0266 | Selling Site | Cookie consent banner displayed | All | e2e | — | pending |
-| F-0267 | Selling Site | A/B experiment assignments (lap_exp_hero, pricing, cta) | All | unit | — | pending |
-| F-0268 | Selling Site | UTM parameter tracking in middleware | All | unit | — | pending |
-| F-0269 | Selling Site | Persona detection middleware sets audience cookie | All | unit | — | pending |
-| F-0270 | Selling Site | Signup CTA navigates to registration flow | All | e2e | — | pending |
-| F-0271 | Selling Site | Login CTA navigates to login page | All | e2e | — | pending |
-| F-0272 | Old-Tool Parity | Parity: lap time values match for OK_R1 reference session | All | parity | OK_R1 | pending |
-| F-0273 | Old-Tool Parity | Parity: lap time values match for OK_R3 reference session | All | parity | OK_R3 | pending |
-| F-0274 | Old-Tool Parity | Parity: lap time values match for OK_R4 reference session | All | parity | OK_R4 | pending |
-| F-0275 | Old-Tool Parity | Parity: scoring values match for OK_R1 reference session | All | parity | OK_R1 | pending |
-| F-0276 | Old-Tool Parity | Parity: scoring values match for OK_R3 reference session | All | parity | OK_R3 | pending |
-| F-0277 | Old-Tool Parity | Parity: scoring values match for OK_R4 reference session | All | parity | OK_R4 | pending |
-| F-0278 | Old-Tool Parity | Parity: corner count matches reference | All | parity | OK_R1 | pending |
-| F-0279 | Old-Tool Parity | Parity: corner metrics (apex speed, entry speed) match | All | parity | OK_R1 | pending |
-| F-0280 | Old-Tool Parity | Parity: consistency metrics match reference | All | parity | OK_R1 | pending |
-| F-0281 | Old-Tool Parity | Parity: theoretical lap time within tolerance | All | parity | OK_R1 | pending |
-| F-0282 | Old-Tool Parity | Parity: best lap identification matches | All | parity | OK_R1 | pending |
-| F-0283 | Old-Tool Parity | Parity: track detection selects correct track | All | parity | OK_R1 | pending |
-| F-0284 | Old-Tool Parity | Parity: all pipeline steps complete without error | All | parity | OK_R1 | pending |
-| F-0285 | Old-Tool Parity | Parity: grade assignment matches reference | All | parity | OK_R1 | pending |
-| F-0286 | Old-Tool Parity | Parity: lap validity flags match reference | All | parity | OK_R1 | pending |
-| F-0287 | Old-Tool Parity | Parity: speed mean/max within tolerance | All | parity | OK_R1 | pending |
-| F-0288 | Old-Tool Parity | Parity: braking/accel max within tolerance | All | parity | OK_R1 | pending |
-| F-0289 | Old-Tool Parity | Parity: line length within tolerance | All | parity | OK_R1 | pending |
-| F-0290 | Old-Tool Parity | Parity: robustness metrics within tolerance | All | parity | OK_R1 | pending |
-| F-0291 | Old-Tool Parity | Parity: overall summary structure matches schema | All | parity | OK_R1 | pending |
-| F-0292 | Security | Security headers: HSTS on API (Strict-Transport-Security) | All | integration | — | pending |
-| F-0293 | Security | Security headers: CSP on frontend (Content-Security-Policy) | All | e2e | — | pending |
-| F-0294 | Security | Security headers: X-Frame-Options DENY | All | integration | — | pending |
-| F-0295 | Security | CORS allowed origins enforcement (reject unknown origins) | All | integration | — | pending |
-| F-0296 | Security | CSRF protection on state-changing endpoints | All | integration | — | pending |
-| F-0297 | Security | SQL injection prevention (parameterized queries only) | All | unit | — | pending |
-| F-0298 | Security | XSS prevention (output encoding in templates) | All | e2e | — | pending |
-| F-0299 | Security | Rate limiting active and returning 429 on excess | All | integration | — | pending |
-| F-0300 | Security | No secrets leaked in API error responses or logs | All | integration | — | pending |
-| F-0301 | Security | No full file paths exposed in API responses (file_name only) | All | unit | — | pending |
-| F-0302 | Security | httpOnly flag set on refresh token cookie | All | integration | — | pending |
-| F-0303 | Security | Secure flag set on refresh token cookie | All | integration | — | pending |
-| F-0304 | Security | SameSite=Lax set on refresh token cookie | All | integration | — | pending |
-| F-0305 | Security | JWT signature verification rejects tampered tokens | All | unit | — | pending |
-| F-0306 | Security | Password hashing uses Argon2id (time=3, mem=64K) | All | unit | — | pending |
+| F-0202 | RBAC/Entitlements | Entitlement middleware runs before_request on protected routes | All | integration | — | passed |
+| F-0203 | RBAC/Entitlements | Feature gate: comparison (world_class only) | WorldClass | integration | — | passed |
+| F-0204 | RBAC/Entitlements | Feature gate: visualization page (racer+) | Racer+ | integration | — | passed |
+| F-0205 | RBAC/Entitlements | Feature gate: race_strategy mutations (racer+) | Racer+ | integration | — | passed |
+| F-0206 | RBAC/Entitlements | Feature gate: API data access (world_class only) | WorldClass | integration | — | passed |
+| F-0207 | RBAC/Entitlements | Feature gate: exports (racer+) | Racer+ | integration | — | passed |
+| F-0208 | RBAC/Entitlements | Feature gate: simulations (racer+) | Racer+ | integration | — | passed |
+| F-0209 | RBAC/Entitlements | Quota gate: reports (monthly limit per plan) | All | integration | — | passed |
+| F-0210 | RBAC/Entitlements | Quota gate: uploads (monthly count per plan) | All | integration | — | passed |
+| F-0211 | RBAC/Entitlements | Usage recording after_request hook | All | integration | — | passed |
+| F-0212 | RBAC/Entitlements | Entitlement override application (admin-granted) | Admin | integration | — | passed |
+| F-0213 | RBAC/Entitlements | Entitlement override expiry (time-limited grants) | Admin | integration | — | passed |
+| F-0214 | RBAC/Entitlements | Plan definitions stored in DB table | All | unit | — | passed |
+| F-0215 | RBAC/Entitlements | Usage events recording (per-action counters) | All | integration | — | passed |
+| F-0216 | RBAC/Entitlements | Usage monthly aggregation (rollup by period) | All | integration | — | passed |
+| F-0217 | RBAC/Entitlements | Atomic quota check-and-record (SELECT FOR UPDATE) | All | integration | — | passed |
+| F-0218 | RBAC/Entitlements | Subscription status impact: active allows all features | All | integration | — | passed |
+| F-0219 | RBAC/Entitlements | Paused subscription blocks mutation endpoints | Racer+ | integration | — | passed |
+| F-0220 | RBAC/Entitlements | Canceled subscription grace period (access until period end) | Racer+ | integration | — | passed |
+| F-0221 | RBAC/Entitlements | Decorator: @require_feature gates endpoint by feature flag | All | unit | — | passed |
+| F-0222 | RBAC/Entitlements | Decorator: @require_report_quota checks quota before action | All | unit | — | passed |
+| F-0223 | RBAC/Entitlements | Decorator: @require_upload_size validates file size per tier | All | unit | — | passed |
+| F-0224 | RBAC/Entitlements | Rate limiting per tier (plan multipliers applied) | All | integration | — | passed |
+| F-0225 | RBAC/Entitlements | Rate limit tiers: 5 levels (auth, read, write, analyze, export) | All | unit | — | passed |
+| F-0226 | RBAC/Entitlements | Entitlement snapshot resolution (plan + overrides merged) | All | unit | — | passed |
+| F-0227 | Tenant Isolation | RLS policies active on all 44 workspace-scoped tables | All | integration | — | passed |
+| F-0228 | Tenant Isolation | SET LOCAL workspace context per-request transaction | All | integration | — | passed |
+| F-0229 | Tenant Isolation | X-Workspace-Id header parsing in tenant middleware | All | unit | — | passed |
+| F-0230 | Tenant Isolation | Workspace membership verification (_verify_workspace_access) | All | integration | — | passed |
+| F-0231 | Tenant Isolation | Default workspace resolution when header absent | All | integration | — | passed |
+| F-0232 | Tenant Isolation | Session data isolation: API list returns only workspace sessions | All | integration | — | no-test |
+| F-0233 | Tenant Isolation | Session data isolation: API detail rejects cross-workspace ID | All | integration | — | no-test |
+| F-0234 | Tenant Isolation | Session data isolation: direct URL blocked for other workspace | All | integration | — | no-test |
+| F-0235 | Tenant Isolation | Track data isolation (workspace-scoped tracks) | All | integration | — | no-test |
+| F-0236 | Tenant Isolation | Driver data isolation (workspace-scoped drivers) | All | integration | — | no-test |
+| F-0237 | Tenant Isolation | Export data isolation (workspace-scoped exports) | All | integration | — | no-test |
+| F-0238 | Tenant Isolation | Comparison data isolation (cross-workspace compare blocked) | All | integration | — | no-test |
+| F-0239 | Tenant Isolation | Race strategy data isolation (workspace-scoped strategies) | All | integration | — | no-test |
+| F-0240 | Tenant Isolation | IDOR prevention: sequential session ID cannot access other ws | All | integration | — | passed |
+| F-0241 | Tenant Isolation | IDOR prevention: sequential user ID cannot access other user | All | integration | — | no-test |
+| F-0242 | Tenant Isolation | IDOR prevention: guessed workspace ID rejected if not member | All | integration | — | passed |
+| F-0243 | Tenant Isolation | Cross-workspace API calls return 403 | All | integration | — | passed |
+| F-0244 | Tenant Isolation | Workspace role enforcement (viewer cannot write) | All | integration | — | passed |
+| F-0245 | Tenant Isolation | Team member isolation (member sees only own team data) | All | integration | — | passed |
+| F-0246 | Tenant Isolation | Storage path isolation (uploads scoped to workspace dir) | All | integration | — | no-test |
+| F-0247 | Selling Site | Homepage hero section renders correctly | All | e2e | — | e2e-only |
+| F-0248 | Selling Site | Homepage CTA buttons link to registration/pricing | All | e2e | — | e2e-only |
+| F-0249 | Selling Site | Navigation links resolve to correct routes | All | e2e | — | e2e-only |
+| F-0250 | Selling Site | Pricing page renders with plan cards | All | e2e | — | e2e-only |
+| F-0251 | Selling Site | Pricing plan cards show correct feature lists | All | e2e | — | e2e-only |
+| F-0252 | Selling Site | Pricing toggle switches between monthly and annual | All | e2e | — | e2e-only |
+| F-0253 | Selling Site | Pricing currency display (EUR/USD) | All | e2e | — | e2e-only |
+| F-0254 | Selling Site | Product page renders feature descriptions | All | e2e | — | e2e-only |
+| F-0255 | Selling Site | Teams page renders team collaboration features | All | e2e | — | e2e-only |
+| F-0256 | Selling Site | Circuits/tracks marketing page renders | All | e2e | — | e2e-only |
+| F-0257 | Selling Site | DPA page renders data processing agreement | All | e2e | — | e2e-only |
+| F-0258 | Selling Site | Security page renders security practices | All | e2e | — | e2e-only |
+| F-0259 | Selling Site | Privacy policy page renders full text | All | e2e | — | e2e-only |
+| F-0260 | Selling Site | Terms of service page renders full text | All | e2e | — | e2e-only |
+| F-0261 | Selling Site | Insights/blog page renders article list | All | e2e | — | e2e-only |
+| F-0262 | Selling Site | SEO metadata present (title, description, og tags) | All | e2e | — | e2e-only |
+| F-0263 | Selling Site | Sitemap.xml exists and is valid | All | e2e | — | e2e-only |
+| F-0264 | Selling Site | Mobile responsive layout (viewport < 768px) | All | e2e | — | e2e-only |
+| F-0265 | Selling Site | Dark theme styling consistent across pages | All | e2e | — | e2e-only |
+| F-0266 | Selling Site | Cookie consent banner displayed | All | e2e | — | e2e-only |
+| F-0267 | Selling Site | A/B experiment assignments (lap_exp_hero, pricing, cta) | All | unit | — | e2e-only |
+| F-0268 | Selling Site | UTM parameter tracking in middleware | All | unit | — | e2e-only |
+| F-0269 | Selling Site | Persona detection middleware sets audience cookie | All | unit | — | e2e-only |
+| F-0270 | Selling Site | Signup CTA navigates to registration flow | All | e2e | — | e2e-only |
+| F-0271 | Selling Site | Login CTA navigates to login page | All | e2e | — | e2e-only |
+| F-0272 | Old-Tool Parity | Parity: lap time values match for OK_R1 reference session | All | parity | OK_R1 | e2e-only |
+| F-0273 | Old-Tool Parity | Parity: lap time values match for OK_R3 reference session | All | parity | OK_R3 | e2e-only |
+| F-0274 | Old-Tool Parity | Parity: lap time values match for OK_R4 reference session | All | parity | OK_R4 | e2e-only |
+| F-0275 | Old-Tool Parity | Parity: scoring values match for OK_R1 reference session | All | parity | OK_R1 | e2e-only |
+| F-0276 | Old-Tool Parity | Parity: scoring values match for OK_R3 reference session | All | parity | OK_R3 | e2e-only |
+| F-0277 | Old-Tool Parity | Parity: scoring values match for OK_R4 reference session | All | parity | OK_R4 | e2e-only |
+| F-0278 | Old-Tool Parity | Parity: corner count matches reference | All | parity | OK_R1 | e2e-only |
+| F-0279 | Old-Tool Parity | Parity: corner metrics (apex speed, entry speed) match | All | parity | OK_R1 | e2e-only |
+| F-0280 | Old-Tool Parity | Parity: consistency metrics match reference | All | parity | OK_R1 | e2e-only |
+| F-0281 | Old-Tool Parity | Parity: theoretical lap time within tolerance | All | parity | OK_R1 | e2e-only |
+| F-0282 | Old-Tool Parity | Parity: best lap identification matches | All | parity | OK_R1 | e2e-only |
+| F-0283 | Old-Tool Parity | Parity: track detection selects correct track | All | parity | OK_R1 | e2e-only |
+| F-0284 | Old-Tool Parity | Parity: all pipeline steps complete without error | All | parity | OK_R1 | e2e-only |
+| F-0285 | Old-Tool Parity | Parity: grade assignment matches reference | All | parity | OK_R1 | e2e-only |
+| F-0286 | Old-Tool Parity | Parity: lap validity flags match reference | All | parity | OK_R1 | e2e-only |
+| F-0287 | Old-Tool Parity | Parity: speed mean/max within tolerance | All | parity | OK_R1 | e2e-only |
+| F-0288 | Old-Tool Parity | Parity: braking/accel max within tolerance | All | parity | OK_R1 | e2e-only |
+| F-0289 | Old-Tool Parity | Parity: line length within tolerance | All | parity | OK_R1 | e2e-only |
+| F-0290 | Old-Tool Parity | Parity: robustness metrics within tolerance | All | parity | OK_R1 | e2e-only |
+| F-0291 | Old-Tool Parity | Parity: overall summary structure matches schema | All | parity | OK_R1 | e2e-only |
+| F-0292 | Security | Security headers: HSTS on API (Strict-Transport-Security) | All | integration | — | e2e-only |
+| F-0293 | Security | Security headers: CSP on frontend (Content-Security-Policy) | All | e2e | — | e2e-only |
+| F-0294 | Security | Security headers: X-Frame-Options DENY | All | integration | — | e2e-only |
+| F-0295 | Security | CORS allowed origins enforcement (reject unknown origins) | All | integration | — | passed |
+| F-0296 | Security | CSRF protection on state-changing endpoints | All | integration | — | passed |
+| F-0297 | Security | SQL injection prevention (parameterized queries only) | All | unit | — | passed |
+| F-0298 | Security | XSS prevention (output encoding in templates) | All | e2e | — | e2e-only |
+| F-0299 | Security | Rate limiting active and returning 429 on excess | All | integration | — | passed |
+| F-0300 | Security | No secrets leaked in API error responses or logs | All | integration | — | no-test |
+| F-0301 | Security | No full file paths exposed in API responses (file_name only) | All | unit | — | no-test |
+| F-0302 | Security | httpOnly flag set on refresh token cookie | All | integration | — | passed |
+| F-0303 | Security | Secure flag set on refresh token cookie | All | integration | — | passed |
+| F-0304 | Security | SameSite=Lax set on refresh token cookie | All | integration | — | passed |
+| F-0305 | Security | JWT signature verification rejects tampered tokens | All | unit | — | passed |
+| F-0306 | Security | Password hashing uses Argon2id (time=3, mem=64K) | All | unit | — | passed |
