@@ -16,6 +16,7 @@ interface DataTableProps<T> {
   keyField: string;
   onRowClick?: (row: T) => void;
   emptyMessage?: string;
+  rowClassName?: (row: T) => string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -25,6 +26,7 @@ export function DataTable<T extends Record<string, any>>({
   keyField,
   onRowClick,
   emptyMessage = 'No data available',
+  rowClassName,
 }: DataTableProps<T>) {
   const [sortKey, setSortKey] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -87,7 +89,7 @@ export function DataTable<T extends Record<string, any>>({
                   onRowClick
                     ? 'cursor-pointer hover:bg-asphalt/50 transition-colors'
                     : ''
-                }`}
+                } ${rowClassName ? rowClassName(row) : ''}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {columns.map((col) => (

@@ -51,6 +51,7 @@ interface SessionDetail {
   session_type: string | null;
   condition: string | null;
   kart_name: string | null;
+  condition_phases?: ConditionPhase[];
 }
 
 interface LapRow {
@@ -60,7 +61,19 @@ interface LapRow {
   speed_max: number | null;
   max_braking: number | null;
   max_accel: number | null;
+  line_length: number | null;
   valid: boolean;
+  is_best: boolean;
+  phase_id: number | null;
+}
+
+interface ConditionPhase {
+  phase_id: number;
+  lap_start: number;
+  lap_end: number;
+  label: string;
+  confidence: number | null;
+  median_pace_s: number | null;
 }
 
 interface CoachingMetric {
@@ -313,6 +326,17 @@ export default function SessionDetailPage() {
     const avgSecond = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
     return avgFirst - avgSecond; // positive = improving (faster)
   }, [validTimes]);
+  const bestVsMeanGap = useMemo(() => {
+    if (bestTime == null || meanTime == null || bestTime === 0) return null;
+    return ((meanTime - bestTime) / bestTime) * 100;
+  }, [bestTime, meanTime]);
+  const top25Avg = useMemo(() => {
+    if (validTimes.length < 4) return null;
+    const sorted = [...validTimes].sort((a, b) => a - b);
+    const q = sorted.slice(0, Math.ceil(sorted.length / 4));
+    return q.reduce((a, b) => a + b, 0) / q.length;
+  }, [validTimes]);
+  const validLapCount = useMemo(() => laps.filter((l) => l.valid).length, [laps]);
 
   const hasCoaching = (coachingData?.metrics?.length ?? 0) > 0;
 
@@ -338,67 +362,120 @@ export default function SessionDetailPage() {
       header: 'Lap',
       sortable: true,
       className: 'font-telemetry w-16',
+      render: (row: LapRow) => (
+        <span className="flex items-center gap-2">
+          <span className={row.is_best ? 'text-acid-green font-bold' : !row.valid ? 'text-steel/50' : 'text-chalk'}>
+            {row.lap_number}
+          </span>
+          {row.is_best && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-telemetry bg-acid-green/20 text-acid-green border border-acid-green/30">
+              BEST
+            </span>
+          )}
+          {!row.valid && (
+            <span className="px-1.5 py-0.5 rounded text-[9px] font-telemetry bg-safety-red/20 text-safety-red border border-safety-red/30">
+              INV
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       key: 'time',
       header: 'Time',
       sortable: true,
       className: 'font-telemetry',
+      render: (row: LapRow) => (
+        <span className={row.is_best ? 'text-acid-green font-semibold' : !row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {formatTime(row.time)}
+        </span>
+      ),
+    },
+    {
+      key: 'delta',
+      header: 'Delta',
+      sortable: false,
+      className: 'font-telemetry',
       render: (row: LapRow) => {
-        const isBest = row.valid && row.time === bestTime;
+        if (!row.valid || bestTime == null) return <span className="text-steel/40">--</span>;
+        const delta = row.time - bestTime;
+        if (delta === 0) return <span className="text-acid-green font-semibold">±0.000</span>;
         return (
-          <span className={isBest ? 'text-acid-green font-semibold' : 'text-chalk'}>
-            {formatTime(row.time)}
-            {isBest && <span className="ml-2 text-xs text-acid-green/70">BEST</span>}
+          <span className={delta < 0.5 ? 'text-emerald-400' : delta < 1.5 ? 'text-amber-400' : 'text-safety-red'}>
+            +{delta.toFixed(3)}
           </span>
         );
       },
     },
     {
       key: 'speed_avg',
-      header: 'Avg Speed',
+      header: 'Avg km/h',
       sortable: true,
       className: 'font-telemetry',
       render: (row: LapRow) => (
-        <span>{row.speed_avg != null ? `${row.speed_avg.toFixed(1)} km/h` : '--'}</span>
+        <span className={!row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {row.speed_avg != null ? row.speed_avg.toFixed(1) : '--'}
+        </span>
       ),
     },
     {
       key: 'speed_max',
-      header: 'Max Speed',
+      header: 'Max km/h',
       sortable: true,
       className: 'font-telemetry',
       render: (row: LapRow) => (
-        <span>{row.speed_max != null ? `${row.speed_max.toFixed(1)} km/h` : '--'}</span>
+        <span className={!row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {row.speed_max != null ? row.speed_max.toFixed(1) : '--'}
+        </span>
       ),
     },
     {
       key: 'max_braking',
-      header: 'Max Brake (G)',
+      header: 'Brake G',
       sortable: true,
       className: 'font-telemetry',
       render: (row: LapRow) => (
-        <span>{row.max_braking != null ? row.max_braking.toFixed(2) : '--'}</span>
+        <span className={!row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {row.max_braking != null ? (row.max_braking / 9.81).toFixed(2) : '--'}
+        </span>
       ),
     },
     {
       key: 'max_accel',
-      header: 'Max Accel (G)',
+      header: 'Accel G',
       sortable: true,
       className: 'font-telemetry',
       render: (row: LapRow) => (
-        <span>{row.max_accel != null ? row.max_accel.toFixed(2) : '--'}</span>
+        <span className={!row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {row.max_accel != null ? (row.max_accel / 9.81).toFixed(2) : '--'}
+        </span>
       ),
     },
     {
-      key: 'valid',
-      header: 'Valid',
-      className: 'font-telemetry w-16',
+      key: 'line_length',
+      header: 'Line (m)',
+      sortable: true,
+      className: 'font-telemetry',
       render: (row: LapRow) => (
-        <span className={row.valid ? 'text-acid-green' : 'text-safety-red'}>
-          {row.valid ? 'Y' : 'N'}
+        <span className={!row.valid ? 'text-steel/50' : 'text-chalk'}>
+          {row.line_length != null ? Math.round(row.line_length) : '--'}
         </span>
       ),
+    },
+    {
+      key: 'phase_id',
+      header: 'Phase',
+      className: 'font-telemetry w-16',
+      render: (row: LapRow) => {
+        if (row.phase_id == null) return <span className="text-steel/40">--</span>;
+        const phase = session.condition_phases?.find((p) => p.phase_id === row.phase_id);
+        const phaseLabel = phase?.label ?? `P${row.phase_id}`;
+        const phaseColor = phaseLabel.toLowerCase().includes('dry') ? 'text-emerald-400'
+          : phaseLabel.toLowerCase().includes('wet') ? 'text-blue-400'
+          : phaseLabel.toLowerCase().includes('damp') ? 'text-amber-400'
+          : 'text-purple-400';
+        return <span className={`text-xs ${phaseColor}`}>{phaseLabel}</span>;
+      },
     },
   ];
 
@@ -1021,12 +1098,12 @@ export default function SessionDetailPage() {
         {/* ─────────── Tab 5: Lap Data ─────────── */}
         {activeTab === 'Lap Data' && (
           <div className="space-y-8">
-            {/* Lap Stats Row */}
+            {/* 8-Stat KPI Row — matches old tool */}
             <section>
               <SectionHeader title="Lap Statistics" />
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-                <StatCard label="Best" value={formatTime(bestTime)} trend="up" />
-                <StatCard label="Mean" value={formatTime(meanTime)} trend="neutral" />
+              <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-8 gap-3">
+                <StatCard label="Best Lap" value={formatTime(bestTime)} trend="up" />
+                <StatCard label="Mean Lap" value={formatTime(meanTime)} trend="neutral" />
                 <StatCard
                   label="Std Dev"
                   value={lapStdDev != null ? `${lapStdDev.toFixed(3)}s` : '--'}
@@ -1036,13 +1113,18 @@ export default function SessionDetailPage() {
                   value={consistencyPct != null ? `${consistencyPct.toFixed(1)}%` : '--'}
                   trend={
                     consistencyPct != null
-                      ? consistencyPct >= 95
-                        ? 'up'
-                        : consistencyPct >= 90
-                          ? 'neutral'
-                          : 'down'
+                      ? consistencyPct >= 95 ? 'up' : consistencyPct >= 90 ? 'neutral' : 'down'
                       : 'neutral'
                   }
+                />
+                <StatCard
+                  label="Best→Mean"
+                  value={bestVsMeanGap != null ? `${bestVsMeanGap.toFixed(2)}%` : '--'}
+                  trend={bestVsMeanGap != null ? (bestVsMeanGap < 2 ? 'up' : bestVsMeanGap < 5 ? 'neutral' : 'down') : 'neutral'}
+                />
+                <StatCard
+                  label="Top 25%"
+                  value={formatTime(top25Avg ?? null)}
                 />
                 <StatCard
                   label="Improvement"
@@ -1053,28 +1135,86 @@ export default function SessionDetailPage() {
                   }
                   trend={
                     improvementTrend != null
-                      ? improvementTrend > 0
-                        ? 'up'
-                        : improvementTrend < 0
-                          ? 'down'
-                          : 'neutral'
+                      ? improvementTrend > 0 ? 'up' : improvementTrend < 0 ? 'down' : 'neutral'
                       : 'neutral'
                   }
+                />
+                <StatCard
+                  label="Valid Laps"
+                  value={`${validLapCount}/${laps.length}`}
+                  trend={validLapCount === laps.length ? 'up' : 'neutral'}
                 />
               </div>
             </section>
 
-            {/* Lap Times Bar Chart */}
+            {/* Lap Charts — Bar + Distribution side by side */}
             <section>
               <SectionHeader title="Lap Times" />
-              <LapProgress sessionId={id} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <LapProgress sessionId={id} />
+                <LapDistribution sessionId={id} />
+              </div>
             </section>
+
+            {/* Condition Phases */}
+            {(session.condition_phases?.length ?? 0) > 0 && (
+              <section>
+                <SectionHeader title="Track Condition Phases" />
+                <div className="flex flex-wrap gap-3">
+                  {session.condition_phases!.map((phase) => {
+                    const labelLower = phase.label.toLowerCase();
+                    const borderColor = labelLower.includes('dry') ? 'border-t-emerald-400'
+                      : labelLower.includes('wet') ? 'border-t-blue-400'
+                      : labelLower.includes('damp') ? 'border-t-amber-400'
+                      : 'border-t-purple-400';
+                    const textColor = labelLower.includes('dry') ? 'text-emerald-400'
+                      : labelLower.includes('wet') ? 'text-blue-400'
+                      : labelLower.includes('damp') ? 'text-amber-400'
+                      : 'text-purple-400';
+                    return (
+                      <div
+                        key={phase.phase_id}
+                        className={`bg-concrete/60 backdrop-blur rounded-lg border border-steel/10 ${borderColor} border-t-2 p-4 min-w-[160px] hover:-translate-y-0.5 transition-transform`}
+                      >
+                        <div className={`font-telemetry text-sm font-semibold ${textColor} mb-1`}>
+                          {phase.label}
+                        </div>
+                        <div className="text-steel text-xs font-telemetry mb-2">
+                          Laps {phase.lap_start}–{phase.lap_end}
+                        </div>
+                        {phase.median_pace_s != null && (
+                          <div className="text-chalk text-sm font-telemetry">
+                            Median: {formatTime(phase.median_pace_s)}
+                          </div>
+                        )}
+                        {phase.confidence != null && (
+                          <div className="text-steel/60 text-[10px] font-telemetry mt-1">
+                            {(phase.confidence * 100).toFixed(0)}% confidence
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
             {/* Full Data Table */}
             <section>
               <SectionHeader title="All Laps" />
               {laps.length > 0 ? (
-                <DataTable columns={lapColumns} data={laps} keyField="lap_number" />
+                <DataTable
+                  columns={lapColumns}
+                  data={laps}
+                  keyField="lap_number"
+                  rowClassName={(row: LapRow) =>
+                    row.is_best
+                      ? 'bg-acid-green/5 hover:bg-acid-green/10'
+                      : !row.valid
+                        ? 'opacity-50'
+                        : ''
+                  }
+                />
               ) : (
                 <div className="bg-carbon-light rounded-lg border border-steel/10 p-8 text-center">
                   <p className="text-steel font-body">No lap data available for this session.</p>
