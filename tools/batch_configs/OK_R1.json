@@ -1,0 +1,7 @@
+{
+  "session_type": "race",
+  "track_state": "dry",
+  "drivers": [
+    {"name": "Driver_1", "lap_range": null}
+  ]
+}
