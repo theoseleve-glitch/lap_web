@@ -37,6 +37,38 @@ from tasks.concurrency import (
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Entitlement guard
+# ---------------------------------------------------------------------------
+
+
+def _verify_task_entitlements(user_id: int, workspace_id: int) -> bool:
+    """Lightweight entitlement check for Celery workers.
+
+    Returns True if the user's current plan allows report generation.
+    Fails open if the check itself errors (don't break pipeline on
+    transient DB issues).
+    """
+    try:
+        from auth.entitlements import get_plan_entitlements, get_user_plan_tier
+
+        conn = _get_pg_connection()
+        tier = get_user_plan_tier(conn, user_id)
+        plan = get_plan_entitlements(tier)
+        if plan.get("reports_per_month") == 0:
+            logger.warning(
+                "Worker entitlement check failed: user=%s tier=%s",
+                user_id,
+                tier,
+            )
+            return False
+        return True
+    except Exception:
+        logger.warning("Worker entitlement check error (failing open)", exc_info=True)
+        return True  # Fail open — don't break pipeline on DB transient errors
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -194,6 +226,20 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
 
     if ctx is None:
         raise FatalError(f"PipelineContext not found for job {job_id}")
+
+    # Verify user's plan still allows report generation
+    if (
+        hasattr(ctx, "user_id")
+        and ctx.user_id
+        and not _verify_task_entitlements(ctx.user_id, ctx.workspace_id)
+    ):
+        _update_job_progress(
+            job_id=job_id,
+            status="failed",
+            error_message="Plan does not allow report generation",
+            error_class="entitlement",
+        )
+        return None
 
     _update_job_progress(job_id=job_id, status="running", stage_name="ingest", stage_index=0, stage_total=15)
 
