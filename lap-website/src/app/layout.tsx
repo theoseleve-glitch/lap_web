@@ -13,6 +13,22 @@ export const metadata: Metadata = {
   metadataBase: siteUrl,
   title: { default: 'LAP — Find Time.', template: '%s | LAP' },
   description: 'Motorsport telemetry analysis for kart and car drivers.',
+  openGraph: {
+    type: 'website',
+    siteName: 'LAP',
+    title: 'LAP — Find Time.',
+    description: 'Motorsport telemetry analysis for kart and car drivers.',
+    locale: 'en_US',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'LAP — Find Time.',
+    description: 'Motorsport telemetry analysis for kart and car drivers.',
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 const jsonLd = {
@@ -25,9 +41,9 @@ const jsonLd = {
       operatingSystem: 'Web',
       description: 'Motorsport telemetry analysis platform for kart and car drivers',
       offers: [
-        { '@type': 'Offer', name: 'Starter', price: '0', priceCurrency: 'EUR' },
-        { '@type': 'Offer', name: 'Performance', price: '69', priceCurrency: 'EUR', billingPeriod: 'P1Y' },
-        { '@type': 'Offer', name: 'Pro Racer', price: '109', priceCurrency: 'EUR', billingPeriod: 'P1Y' },
+        { '@type': 'Offer', name: 'Demo', price: '0', priceCurrency: 'EUR' },
+        { '@type': 'Offer', name: 'Racer', price: '69', priceCurrency: 'EUR', billingPeriod: 'P1Y' },
+        { '@type': 'Offer', name: 'World-Class', price: '109', priceCurrency: 'EUR', billingPeriod: 'P1Y' },
       ],
     },
     {
