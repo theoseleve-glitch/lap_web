@@ -6,7 +6,7 @@ export function SkeletonBox({ className = '' }: { className?: string }) {
 
 export function SkeletonStatCards({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" role="status" aria-label="Loading statistics">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="bg-concrete rounded-lg border border-steel/20 p-4">
           <SkeletonBox className="h-3 w-20 mb-2" />
@@ -22,7 +22,7 @@ export function SkeletonCardGrid({ count = 6, cols = 3 }: { count?: number; cols
     ? 'grid grid-cols-1 md:grid-cols-2 gap-4'
     : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4';
   return (
-    <div className={gridClass}>
+    <div className={gridClass} role="status" aria-label="Loading content">
       {Array.from({ length: count }, (_, i) => (
         <div key={i} className="bg-concrete rounded-lg border border-steel/20 p-5">
           <SkeletonBox className="h-5 w-3/4 mb-2" />
@@ -40,7 +40,7 @@ export function SkeletonCardGrid({ count = 6, cols = 3 }: { count?: number; cols
 
 export function SkeletonTableRows({ rows = 5, cols = 6 }: { rows?: number; cols?: number }) {
   return (
-    <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+    <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden" role="status" aria-label="Loading table">
       {/* Header */}
       <div className="flex gap-4 px-4 py-3 border-b border-steel/10">
         {Array.from({ length: cols }, (_, i) => (

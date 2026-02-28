@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
@@ -280,6 +280,20 @@ export default function SessionDetailPage() {
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [focusOpen, setFocusOpen] = useState(false);
   const [selectedCorner, setSelectedCorner] = useState(1);
+  const tablistRef = useRef<HTMLDivElement>(null);
+
+  const handleTabKeyDown = useCallback((e: React.KeyboardEvent, currentIndex: number) => {
+    let nextIndex = currentIndex;
+    if (e.key === 'ArrowRight') nextIndex = (currentIndex + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = tabs.length - 1;
+    else return;
+    e.preventDefault();
+    setActiveTab(tabs[nextIndex]);
+    const buttons = tablistRef.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]');
+    buttons?.[nextIndex]?.focus();
+  }, []);
 
   /* ── Data Fetching ── */
 
@@ -610,16 +624,18 @@ export default function SessionDetailPage() {
 
       {/* ── Tab Bar + Focus Mode Button ── */}
       <div className="flex items-center justify-between border-b border-steel/20 mb-6">
-        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Session sections">
-          {tabs.map((tab) => (
+        <div ref={tablistRef} className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Session sections">
+          {tabs.map((tab, index) => (
             <button
               key={tab}
               role="tab"
               aria-selected={activeTab === tab}
               aria-controls={`tabpanel-${tab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
               id={`tab-${tab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+              tabIndex={activeTab === tab ? 0 : -1}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2.5 font-telemetry text-sm whitespace-nowrap transition-colors ${
+              onKeyDown={(e) => handleTabKeyDown(e, index)}
+              className={`px-4 py-2.5 font-telemetry text-sm whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acid-green/50 focus-visible:rounded ${
                 activeTab === tab
                   ? 'text-acid-green border-b-2 border-acid-green'
                   : 'text-steel hover:text-chalk'
@@ -963,10 +979,13 @@ export default function SessionDetailPage() {
                           return (
                             <tr
                               key={c.corner_id}
-                              className={`border-b border-steel/5 hover:bg-steel/5 transition-colors cursor-pointer ${
+                              tabIndex={0}
+                              role="button"
+                              className={`border-b border-steel/5 hover:bg-steel/5 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acid-green/50 focus-visible:ring-inset ${
                                 selectedCorner === c.corner_id ? 'bg-acid-green/5' : ''
                               }`}
                               onClick={() => setSelectedCorner(c.corner_id)}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedCorner(c.corner_id); } }}
                             >
                               <td className="px-4 py-2.5 font-telemetry text-chalk">T{c.corner_id}</td>
                               <td className="px-4 py-2.5 font-telemetry text-chalk text-right">{toKmh(c.avg_entry_speed_mps)} km/h</td>

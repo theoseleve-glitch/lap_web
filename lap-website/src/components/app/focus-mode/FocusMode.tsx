@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { ToolDock, useToolDock, type ToolId } from './ToolDock';
 import {
   SpeedTrace,
@@ -136,6 +136,8 @@ function PanelGrid({ tools, sessionId }: { tools: ToolId[]; sessionId: string })
 export function FocusMode({ sessionId, isOpen, onClose }: FocusModeProps) {
   const { activeTools, toggle, reset, toggleByShortcut } = useToolDock('speed-trace');
   const [dockVisible, setDockVisible] = useState(true);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
@@ -174,12 +176,51 @@ export function FocusMode({ sessionId, isOpen, onClose }: FocusModeProps) {
     };
   }, [isOpen, handleKeyDown]);
 
+  // Focus trap: move focus into dialog on open, restore on close
+  useEffect(() => {
+    if (isOpen) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      // Focus the close button after a tick (DOM needs to render)
+      requestAnimationFrame(() => {
+        const closeBtn = dialogRef.current?.querySelector<HTMLButtonElement>('[aria-label="Close focus mode"]');
+        closeBtn?.focus();
+      });
+    } else if (previousFocusRef.current) {
+      previousFocusRef.current.focus();
+      previousFocusRef.current = null;
+    }
+  }, [isOpen]);
+
+  // Tab trap: keep focus inside dialog
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleTabTrap = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab' || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleTabTrap);
+    return () => document.removeEventListener('keydown', handleTabTrap);
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   const activeToolList = Array.from(activeTools);
 
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 flex"
       role="dialog"
       aria-modal="true"
