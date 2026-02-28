@@ -97,6 +97,30 @@ interface BadgesData {
   tags: SessionTag[];
 }
 
+interface CornerCoachingEntry {
+  corner_id: number;
+  coaching_hint: string | null;
+  avg_entry_speed_mps: number | null;
+  avg_apex_speed_mps: number | null;
+  avg_exit_speed_mps: number | null;
+  avg_time_loss_ms: number | null;
+  best_practice?: {
+    best_entry_mps: number;
+    best_apex_mps: number;
+    best_exit_mps: number;
+    best_brake_m: number;
+    best_time_s: number;
+  };
+}
+
+interface TheoreticalData {
+  theoretical_time_s: number | null;
+  actual_best_time_s: number | null;
+  gap_pct: number | null;
+  simulation_method: string | null;
+  corner_coaching?: unknown[];
+}
+
 /* ─── Helpers ─────────────────────────────────────────────────────────── */
 
 function formatTime(s: number | null): string {
@@ -238,6 +262,18 @@ export default function SessionDetailPage() {
   const { data: badgesData } = useQuery({
     queryKey: ['session', id, 'badges'],
     queryFn: () => api.get<BadgesData>(`/sessions/${id}/badges`),
+  });
+
+  const { data: cornerCoachingData } = useQuery({
+    queryKey: ['session', id, 'corner-coaching'],
+    queryFn: () => api.get<{ coaching: CornerCoachingEntry[] }>(`/sessions/${id}/corner-coaching`),
+    enabled: activeTab === 'Corners & Coaching',
+  });
+
+  const { data: theoreticalData } = useQuery({
+    queryKey: ['session', id, 'theoretical'],
+    queryFn: () => api.get<TheoreticalData>(`/sessions/${id}/theoretical`),
+    enabled: activeTab === 'Corners & Coaching',
   });
 
   /* ── Derived Values ── */
@@ -654,30 +690,151 @@ export default function SessionDetailPage() {
         {/* ─────────── Tab 2: Corners & Coaching ─────────── */}
         {activeTab === 'Corners & Coaching' && (
           <div className="space-y-8">
+            {/* Theoretical Lap */}
+            {theoreticalData && theoreticalData.theoretical_time_s != null && (
+              <section>
+                <SectionHeader title="Theoretical Lap" />
+                <div className="bg-concrete rounded-lg border border-steel/10 p-5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div>
+                      <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Theoretical</p>
+                      <p className="text-acid-green font-telemetry text-lg font-bold">
+                        {formatTime(theoreticalData.theoretical_time_s)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Actual Best</p>
+                      <p className="text-chalk font-telemetry text-lg">
+                        {formatTime(theoreticalData.actual_best_time_s)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Gap</p>
+                      <p className={`font-telemetry text-lg ${
+                        (theoreticalData.gap_pct ?? 0) < 2 ? 'text-acid-green' :
+                        (theoreticalData.gap_pct ?? 0) < 5 ? 'text-amber-400' : 'text-safety-red'
+                      }`}>
+                        {theoreticalData.gap_pct != null ? `+${theoreticalData.gap_pct.toFixed(2)}%` : '--'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">Method</p>
+                      <span className="inline-block px-2 py-0.5 rounded bg-steel/10 text-chalk font-telemetry text-xs">
+                        {theoreticalData.simulation_method || 'Best sectors'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Corner Replay (full width) */}
             <section>
               <div className="flex items-center justify-between mb-4 mt-2">
                 <h3 className="font-body text-chalk text-lg font-semibold">Corner Replay</h3>
                 <div className="flex items-center gap-2">
-                  <label className="text-steel font-telemetry text-xs">Corner:</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={selectedCorner}
-                    onChange={(e) => setSelectedCorner(Math.max(1, parseInt(e.target.value) || 1))}
-                    className="w-16 bg-carbon border border-steel/20 rounded px-2 py-1 text-chalk font-telemetry text-sm focus:border-acid-green focus:outline-none"
-                  />
+                  {/* Corner navigation pills */}
+                  {(cornerCoachingData?.coaching ?? []).length > 0 && (
+                    <div className="flex gap-1 mr-3">
+                      {cornerCoachingData!.coaching.slice(0, 10).map((c) => (
+                        <button
+                          key={c.corner_id}
+                          onClick={() => setSelectedCorner(c.corner_id)}
+                          className={`w-7 h-7 rounded text-xs font-telemetry transition-colors ${
+                            selectedCorner === c.corner_id
+                              ? 'bg-acid-green text-carbon font-bold'
+                              : 'bg-steel/10 text-steel hover:text-chalk'
+                          }`}
+                        >
+                          {c.corner_id}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setSelectedCorner(Math.max(1, selectedCorner - 1))}
+                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm"
+                  >
+                    &larr;
+                  </button>
+                  <span className="text-chalk font-telemetry text-sm w-6 text-center">{selectedCorner}</span>
+                  <button
+                    onClick={() => setSelectedCorner(selectedCorner + 1)}
+                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm"
+                  >
+                    &rarr;
+                  </button>
                 </div>
               </div>
-              <div className="bg-carbon-light rounded-lg border border-steel/10 p-4 min-h-[400px]">
+              <div className="bg-concrete rounded-lg border border-steel/10 p-4 min-h-[300px]">
                 <CornerReplay sessionId={id} cornerId={selectedCorner} />
               </div>
             </section>
+
+            {/* Corner Coaching Table */}
+            {(cornerCoachingData?.coaching ?? []).length > 0 && (
+              <section>
+                <SectionHeader title="Corner Coaching" />
+                <div className="bg-concrete rounded-lg border border-steel/10 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-steel/10">
+                          <th className="px-4 py-3 text-left text-steel font-telemetry text-xs uppercase tracking-wider">Corner</th>
+                          <th className="px-4 py-3 text-right text-steel font-telemetry text-xs uppercase tracking-wider">Avg Entry</th>
+                          <th className="px-4 py-3 text-right text-steel font-telemetry text-xs uppercase tracking-wider">Avg Apex</th>
+                          <th className="px-4 py-3 text-right text-steel font-telemetry text-xs uppercase tracking-wider">Avg Exit</th>
+                          <th className="px-4 py-3 text-right text-steel font-telemetry text-xs uppercase tracking-wider">Time Loss</th>
+                          <th className="px-4 py-3 text-left text-steel font-telemetry text-xs uppercase tracking-wider">Coaching Hint</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {cornerCoachingData!.coaching.map((c) => {
+                          const toKmh = (mps: number | null) => mps != null ? (mps * 3.6).toFixed(1) : '--';
+                          const timeLoss = c.avg_time_loss_ms != null ? c.avg_time_loss_ms.toFixed(0) : '--';
+                          const lossColor = c.avg_time_loss_ms != null
+                            ? c.avg_time_loss_ms < 50 ? 'text-acid-green'
+                            : c.avg_time_loss_ms < 150 ? 'text-amber-400'
+                            : 'text-safety-red'
+                            : 'text-steel';
+                          return (
+                            <tr
+                              key={c.corner_id}
+                              className={`border-b border-steel/5 hover:bg-steel/5 transition-colors cursor-pointer ${
+                                selectedCorner === c.corner_id ? 'bg-acid-green/5' : ''
+                              }`}
+                              onClick={() => setSelectedCorner(c.corner_id)}
+                            >
+                              <td className="px-4 py-2.5 font-telemetry text-chalk">T{c.corner_id}</td>
+                              <td className="px-4 py-2.5 font-telemetry text-chalk text-right">{toKmh(c.avg_entry_speed_mps)} km/h</td>
+                              <td className="px-4 py-2.5 font-telemetry text-chalk text-right">{toKmh(c.avg_apex_speed_mps)} km/h</td>
+                              <td className="px-4 py-2.5 font-telemetry text-chalk text-right">{toKmh(c.avg_exit_speed_mps)} km/h</td>
+                              <td className={`px-4 py-2.5 font-telemetry text-right ${lossColor}`}>{timeLoss} ms</td>
+                              <td className="px-4 py-2.5 font-body text-steel text-xs max-w-[200px] truncate">
+                                {c.coaching_hint || '--'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            )}
 
             {/* Corner Mastery Chart */}
             <section>
               <SectionHeader title="Corner Mastery" />
               <CornerMastery sessionId={id} />
+            </section>
+
+            {/* Brake Precision + Consistency (hidden on corners tab of old tool) */}
+            <section>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <BrakeScatter sessionId={id} />
+                <ConsistencyHeatmap sessionId={id} />
+              </div>
             </section>
           </div>
         )}
