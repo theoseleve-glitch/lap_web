@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard } from '@/components/app';
+import { PageHeader, StatCard, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 
 interface Task {
   id: number;
@@ -41,17 +41,26 @@ const taskStatusColors: Record<string, string> = {
 export default function DevPlanDetailPage() {
   const { id } = useParams<{ id: string }>();
 
-  const { data: plan, isLoading } = useQuery({
+  const { data: plan, isLoading, error } = useQuery({
     queryKey: ['dev-plan', id],
     queryFn: () => api.get<DevPlanDetail>(`/dev-plans/${id}`),
   });
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-48 mb-2" />
+          <SkeletonBox className="h-3 w-32" />
+        </div>
+        <SkeletonStatCards count={4} />
+        <SkeletonBox className="h-32 w-full mt-6 rounded-lg" />
       </div>
     );
+  }
+
+  if (error) {
+    return <QueryError message="Couldn't load plan details." onRetry={() => window.location.reload()} />;
   }
 
   if (!plan) {

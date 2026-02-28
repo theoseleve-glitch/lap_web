@@ -144,7 +144,7 @@ function stepNumber(index: number, status: SetupStep['status']): string {
 }
 
 export default function SetupTrackerPage() {
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error } = useQuery({
     queryKey: ['setup', 'status'],
     queryFn: () => api.get<SetupStatusResponse>('/setup/status'),
     enabled: true,
@@ -197,6 +197,15 @@ export default function SetupTrackerPage() {
       {isLoading && (
         <div className="flex items-center justify-center h-24 mb-6">
           <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Error banner */}
+      {error && !isLoading && (
+        <div className="bg-safety-red/10 border border-safety-red/30 rounded-lg p-3 mb-6">
+          <p className="text-safety-red font-telemetry text-xs">
+            Couldn&apos;t load your progress — showing default steps. Refresh to try again.
+          </p>
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable, QueryError } from '@/components/app';
+import { PageHeader, DataTable, QueryError, SkeletonTableRows, SkeletonBox } from '@/components/app';
 
 interface AnnotationRow {
   id: number;
@@ -86,8 +86,9 @@ export default function AnnotationsPage() {
       />
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+        <div>
+          <SkeletonBox className="h-3 w-32 mb-3" />
+          <SkeletonTableRows rows={5} cols={5} />
         </div>
       ) : error ? (
         <QueryError message="Couldn't load annotations." onRetry={() => refetch()} />

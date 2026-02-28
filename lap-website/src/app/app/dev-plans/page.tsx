@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable } from '@/components/app';
+import { PageHeader, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 interface DevPlanRow {
   id: number;
@@ -31,7 +31,7 @@ const priorityColors: Record<string, string> = {
 
 export default function DevPlansPage() {
   const router = useRouter();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['dev-plans'],
     queryFn: () => api.get<{ plans: DevPlanRow[] }>('/dev-plans'),
   });
@@ -43,9 +43,9 @@ export default function DevPlansPage() {
       <PageHeader title="Development Plans" subtitle={`${plans.length} plan${plans.length !== 1 ? 's' : ''}`} />
 
       {isLoading ? (
-        <div className="flex items-center justify-center h-48">
-          <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        </div>
+        <SkeletonTableRows rows={5} cols={5} />
+      ) : error ? (
+        <QueryError message="Couldn't load development plans." onRetry={() => refetch()} />
       ) : (
         <DataTable
           columns={[

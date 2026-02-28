@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
+import { PageHeader, StatCard, ChartPanel, DataTable, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
 import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
@@ -283,10 +283,19 @@ export default function DriverProgressionPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-48 mb-2" />
+          <SkeletonBox className="h-3 w-24" />
+        </div>
+        <SkeletonStatCards count={3} />
+        <SkeletonBox className="h-64 w-full mt-6 rounded-lg" />
       </div>
     );
+  }
+
+  if (error) {
+    return <QueryError message="Couldn't load progression data." onRetry={() => window.location.reload()} />;
   }
 
   if (!data) {
@@ -367,7 +376,7 @@ export default function DriverProgressionPage() {
           title="Score & Lap Time Progression"
           subtitle="Dual-axis: score (green line) and lap time (orange dots)"
           loading={isLoading}
-          error={error?.message ?? null}
+          error={null}
         >
           <ProgressionChart entries={progression} />
         </ChartPanel>

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard } from '@/components/app';
+import { PageHeader, StatCard, SkeletonStatCards, SkeletonBox } from '@/components/app';
 
 interface JobDetail {
   id: string;
@@ -55,8 +55,13 @@ export default function DataHealthDetailPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <div>
+        <div className="mb-4">
+          <SkeletonBox className="h-6 w-48 mb-2" />
+          <SkeletonBox className="h-3 w-32" />
+        </div>
+        <SkeletonStatCards count={4} />
+        <SkeletonBox className="h-48 w-full mt-6 rounded-lg" />
       </div>
     );
   }
