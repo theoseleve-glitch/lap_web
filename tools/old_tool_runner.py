@@ -16,8 +16,10 @@ from typing import Any, Optional
 # Path setup — ensure project root and telemetry_tool are importable
 # ---------------------------------------------------------------------------
 ROOT = Path(__file__).resolve().parent.parent
+TOOLS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "telemetry_tool"))
+sys.path.insert(0, str(TOOLS_DIR))
 
 from normalize import normalize_dict  # noqa: E402
 
@@ -231,12 +233,9 @@ def main() -> None:
     if args.all:
         for name in DEFAULT_CONFIGS:
             config_path = str(BATCH_CONFIG_DIR / f"{name}.json")
-            csv_path = args.csv
-            if csv_path is None:
-                print(f"[SKIP] {name}: --csv is required even with --all")
-                continue
+            csv_path = str(ROOT / "data" / "raw" / f"{name}.csv")
             output_path = str(
-                ROOT / "tools" / "baselines" / f"{name}_baseline.json"
+                ROOT / "audit" / "baselines" / "old_tool" / f"{name}.json"
             )
             print(f"[RUN] {name}: {csv_path} -> {output_path}")
             try:

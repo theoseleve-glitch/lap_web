@@ -1,0 +1,143 @@
+{
+  "consistency_metrics": {
+    "best_s": 70.462,
+    "best_to_mean_s": 1.833,
+    "best_to_median_s": 0.943,
+    "cv_pct": 3.2682,
+    "mean_s": 72.295,
+    "median_s": 71.405,
+    "n_laps": 9,
+    "std_s": 2.363,
+    "worst_s": 77.946
+  },
+  "corner_count": 6,
+  "corners": [
+    {
+      "corner_id": 1,
+      "direction": "L",
+      "s_apex": 79.44,
+      "s_end": 96.29,
+      "s_start": 54.16
+    },
+    {
+      "corner_id": 2,
+      "direction": "L",
+      "s_apex": 223.88,
+      "s_end": 237.12,
+      "s_start": 192.59
+    },
+    {
+      "corner_id": 3,
+      "direction": "R",
+      "s_apex": 499.52,
+      "s_end": 516.37,
+      "s_start": 491.09
+    },
+    {
+      "corner_id": 4,
+      "direction": "L",
+      "s_apex": 580.16,
+      "s_end": 597.02,
+      "s_start": 552.48
+    },
+    {
+      "corner_id": 5,
+      "direction": "L",
+      "s_apex": 689.7,
+      "s_end": 737.84,
+      "s_start": 682.48
+    },
+    {
+      "corner_id": 6,
+      "direction": "R",
+      "s_apex": 928.02,
+      "s_end": 988.21,
+      "s_start": 896.73
+    }
+  ],
+  "delta_segments_count": 160,
+  "lap_metrics_count": 10,
+  "lap_times": [
+    77.946,
+    73.628,
+    72.355,
+    72.411,
+    71.11,
+    71.405,
+    70.467,
+    70.869,
+    70.462,
+    71.033
+  ],
+  "robustness_metrics": {
+    "early_mean_s": 75.787,
+    "early_yaw_var": 3631.0126,
+    "late_mean_s": 70.6655,
+    "late_yaw_var": 4258.1795
+  },
+  "scores": {
+    "consistency": null,
+    "execution": null,
+    "grade": "A",
+    "pace": null,
+    "robustness": null,
+    "total_score": 78.4429
+  },
+  "segment_losses_count": 9,
+  "steps_failed": [
+    "08e_weather_timeline"
+  ],
+  "steps_ok": [
+    "01_ingest",
+    "02_filter",
+    "03_derived_channels",
+    "04_trim_session",
+    "05_detect_track",
+    "06_segment_laps",
+    "07_normalise",
+    "06b_detect_corners",
+    "08_compute_metrics",
+    "08b_consistency",
+    "08c_robustness",
+    "08d_condition_tracking",
+    "08d2_track_evolution",
+    "08d3_tyre_degradation",
+    "08e_invalid_laps",
+    "08e2_best_n_laps",
+    "08f_incomplete_laps",
+    "08g_anomalous_laps",
+    "09a_reference_line",
+    "08h_line_deviations",
+    "08j_joker_detection",
+    "09_compute_deltas",
+    "09b_curvature_profile",
+    "09c_friction_model",
+    "09d_vehicle_model",
+    "09d2_kart_traction_fix",
+    "09e_data_quality",
+    "10_theoretical",
+    "10b_theoretical_metrics",
+    "10c_corner_analysis",
+    "10d_per_lap_corners",
+    "11_build_features",
+    "13_score_session",
+    "14a_driver_profile",
+    "14a2_driving_style",
+    "13b_coaching_guide",
+    "15_persist_db"
+  ],
+  "theoretical_metrics": {
+    "accel_max_mps2": 2.4554,
+    "best_s": 75.9938,
+    "braking_max_mps2": 4.5684,
+    "confidence": 0.71,
+    "cornering_limited_fraction": 1.0,
+    "simulation_method": "kart_envelope_qss",
+    "speed_mean_mps": 16.127
+  },
+  "track_id": "1c0a7be0-5c06-426d-b437-608e8edd8cda",
+  "track_match": {
+    "length_m": null,
+    "name": null
+  }
+}
