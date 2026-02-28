@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
@@ -273,14 +273,92 @@ function SectionHeader({ title }: { title: string }) {
 const tabs = ['Overview', 'Corners & Coaching', 'Performance', 'Analytics', 'Lap Data'] as const;
 type Tab = (typeof tabs)[number];
 
+/* ─── Confirm Delete Dialog ───────────────────────────────────────────── */
+
+function ConfirmDeleteDialog({
+  isOpen,
+  isDeleting,
+  onConfirm,
+  onCancel,
+}: {
+  isOpen: boolean;
+  isDeleting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  if (!isOpen) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="delete-dialog-title"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-concrete border border-steel/20 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3
+          id="delete-dialog-title"
+          className="font-monument text-xl text-chalk mb-2"
+        >
+          Delete Session
+        </h3>
+        <p className="text-steel font-body text-sm mb-6">
+          Are you sure you want to delete this session? This action cannot be undone.
+          All laps, scores, and analysis data will be permanently removed.
+        </p>
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={isDeleting}
+            className="px-4 py-2 rounded-lg font-body text-sm text-steel hover:text-chalk bg-carbon hover:bg-carbon/80 border border-steel/20 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={isDeleting}
+            className="px-4 py-2 rounded-lg font-body text-sm text-white bg-red-600 hover:bg-red-700 border border-red-500/30 transition-colors disabled:opacity-50"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete Session'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Page Component ──────────────────────────────────────────────────── */
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const [focusOpen, setFocusOpen] = useState(false);
   const [selectedCorner, setSelectedCorner] = useState(1);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
+
+  const handleDelete = useCallback(async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.delete(`/sessions/${id}`);
+      router.push('/app/sessions');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to delete session';
+      setDeleteError(message);
+      setShowDeleteDialog(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [id, router]);
 
   const handleTabKeyDown = useCallback((e: React.KeyboardEvent, currentIndex: number) => {
     let nextIndex = currentIndex;
@@ -576,18 +654,56 @@ export default function SessionDetailPage() {
         </Link>
       </nav>
 
-      {/* ── Header: Track Name + Grade Badge ── */}
+      {/* ── Delete Confirmation Dialog ── */}
+      <ConfirmDeleteDialog
+        isOpen={showDeleteDialog}
+        isDeleting={isDeleting}
+        onConfirm={handleDelete}
+        onCancel={() => setShowDeleteDialog(false)}
+      />
+
+      {/* ── Delete Error Alert ── */}
+      {deleteError && (
+        <div
+          role="alert"
+          className="mb-4 px-4 py-3 rounded-lg bg-red-600/10 border border-red-500/30 text-red-400 font-body text-sm flex items-center justify-between"
+        >
+          <span>{deleteError}</span>
+          <button
+            type="button"
+            onClick={() => setDeleteError(null)}
+            className="text-red-400 hover:text-red-300 ml-3"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* ── Header: Track Name + Grade Badge + Delete ── */}
       <PageHeader
         title={session.track_name}
         subtitle={session.date}
         actions={
-          session.grade ? (
-            <span
-              className={`inline-flex items-center px-3 py-1 rounded-md font-monument text-lg ${gradeColor(session.grade)}`}
+          <>
+            {session.grade && (
+              <span
+                className={`inline-flex items-center px-3 py-1 rounded-md font-monument text-lg ${gradeColor(session.grade)}`}
+              >
+                {session.grade}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowDeleteDialog(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-body text-sm text-red-400 hover:text-white bg-red-600/10 hover:bg-red-600 border border-red-500/30 transition-colors"
+              aria-label="Delete session"
             >
-              {session.grade}
-            </span>
-          ) : undefined
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+              </svg>
+              Delete
+            </button>
+          </>
         }
       />
 
