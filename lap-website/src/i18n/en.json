@@ -345,6 +345,8 @@
   "auth.register.passwordMismatch": "Passwords do not match",
   "auth.register.passwordTooShort": "Password must be at least 8 characters",
 
+  "auth.guard.restoring": "Restoring session...",
+
   "demo.eyebrow": "Demo",
   "demo.title": "Pick the Right Demo Path",
   "demo.description": "B2C drivers start with a free account and one report. B2B teams book guided demos with our sales and onboarding team.",

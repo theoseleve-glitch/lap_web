@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { silentRefresh, type AuthUser } from '@/lib/auth';
 import { getAccessToken } from '@/lib/auth-store';
+import { useTranslation } from '@/i18n';
 
 /**
  * Wraps authenticated pages. On mount, attempts to restore the session
@@ -14,6 +15,7 @@ import { getAccessToken } from '@/lib/auth-store';
 export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const { t } = useTranslation();
   const [state, setState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
 
   useEffect(() => {
@@ -38,7 +40,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       <div className="flex min-h-screen items-center justify-center bg-asphalt">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-steel/30 border-t-acid-green" />
-          <p className="font-body text-sm text-steel">Restoring session...</p>
+          <p className="font-body text-sm text-steel">{t('auth.guard.restoring')}</p>
         </div>
       </div>
     );

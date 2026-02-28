@@ -345,6 +345,8 @@
   "auth.register.passwordMismatch": "Les mots de passe ne correspondent pas",
   "auth.register.passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
 
+  "auth.guard.restoring": "Restauration de la session...",
+
   "demo.eyebrow": "Démo",
   "demo.title": "Choisissez votre parcours démo",
   "demo.description": "Les pilotes B2C commencent avec un compte gratuit et un rapport. Les équipes B2B réservent des démos guidées avec notre équipe commerciale.",

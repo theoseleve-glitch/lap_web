@@ -51,6 +51,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen">
+      {/* Skip to content — visible on focus for keyboard users */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-acid-green focus:text-carbon focus:font-telemetry focus:text-sm focus:rounded"
+      >
+        Skip to content
+      </a>
+
       {/* Sidebar */}
       <aside className="w-60 bg-concrete border-r border-steel/20 flex flex-col shrink-0">
         <div className="p-4 border-b border-steel/20">
@@ -58,9 +66,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             LAP
           </Link>
         </div>
-        <nav className="flex-1 py-2 overflow-y-auto">
+        <nav aria-label="Main navigation" className="flex-1 py-2 overflow-y-auto">
           {navGroups.map((group) => (
-            <div key={group.label}>
+            <div key={group.label} role="group" aria-label={group.label}>
               <p className="px-4 py-2 font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/60">{group.label}</p>
               {group.items.map((item) => {
                 const isActive = pathname.startsWith(item.href);
@@ -68,13 +76,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                       isActive
                         ? 'text-acid-green bg-asphalt/50 border-r-2 border-acid-green'
                         : 'text-steel hover:text-chalk hover:bg-asphalt/30'
                     }`}
                   >
-                    <span className="w-5 text-center font-telemetry">{item.icon}</span>
+                    <span className="w-5 text-center font-telemetry" aria-hidden="true">{item.icon}</span>
                     <span className="font-body">{item.label}</span>
                   </Link>
                 );
@@ -85,13 +94,14 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="border-t border-steel/10 py-2">
           <Link
             href="/app/account"
+            aria-current={pathname.startsWith('/app/account') ? 'page' : undefined}
             className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
               pathname.startsWith('/app/account')
                 ? 'text-acid-green bg-asphalt/50 border-r-2 border-acid-green'
                 : 'text-steel hover:text-chalk hover:bg-asphalt/30'
             }`}
           >
-            <span className="w-5 text-center font-telemetry">{'\u25C9'}</span>
+            <span className="w-5 text-center font-telemetry" aria-hidden="true">{'\u25C9'}</span>
             <span className="font-body">Account</span>
           </Link>
         </div>
@@ -108,7 +118,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* Main content */}
       <QueryProvider>
         <AuthGuard>
-          <main className="flex-1 overflow-y-auto bg-asphalt">
+          <main id="main-content" className="flex-1 overflow-y-auto bg-asphalt">
             <div className="max-w-7xl mx-auto px-6 py-6">
               {children}
             </div>

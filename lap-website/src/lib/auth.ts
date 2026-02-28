@@ -122,17 +122,3 @@ export async function refreshToken(): Promise<{ access_token: string }> {
   return result;
 }
 
-/**
- * @deprecated Use silentRefresh() instead. Kept for migration period only.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function storeTokens(accessToken: string, refreshToken: string) {
-  setAccessToken(accessToken);
-}
-
-/**
- * @deprecated Use logout() instead. Kept for migration period only.
- */
-export function clearTokens() {
-  setAccessToken(null);
-}

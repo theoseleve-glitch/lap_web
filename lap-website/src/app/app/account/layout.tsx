@@ -29,7 +29,7 @@ export default function AccountLayout({ children }: { children: ReactNode }) {
           </Link>
           <h2 className="font-monument text-xl text-chalk mt-3 tracking-tight">Account</h2>
         </div>
-        <nav className="flex-1 py-1">
+        <nav aria-label="Account settings" className="flex-1 py-1">
           {accountNav.map((item) => {
             const isActive =
               pathname === item.href || pathname.startsWith(item.href + '/');
@@ -37,13 +37,14 @@ export default function AccountLayout({ children }: { children: ReactNode }) {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={isActive ? 'page' : undefined}
                 className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
                   isActive
                     ? 'text-acid-green bg-acid-green/10'
                     : 'text-steel hover:bg-chalk/5 hover:text-chalk'
                 }`}
               >
-                <span className="w-5 text-center font-telemetry">{item.icon}</span>
+                <span className="w-5 text-center font-telemetry" aria-hidden="true">{item.icon}</span>
                 <span className="font-body">{item.label}</span>
               </Link>
             );
