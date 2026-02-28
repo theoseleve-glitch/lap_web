@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
@@ -62,7 +61,7 @@ const TYPE_LABELS: Record<string, string> = {
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function VisualizeLandingPage() {
-  const router = useRouter();
+
   const [search, setSearch] = useState('');
 
   const { data, isLoading } = useQuery({
@@ -152,9 +151,9 @@ export default function VisualizeLandingPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((session) => (
-            <button
+            <Link
               key={session.session_id}
-              onClick={() => router.push(`/app/visualize/${session.session_id}`)}
+              href={`/app/visualize/${session.session_id}`}
               className={`group text-left bg-concrete rounded-lg border p-5
                 hover:border-acid-green/40 transition-all ${scoreBorderColor(session.total_score)}`}
             >
@@ -206,7 +205,7 @@ export default function VisualizeLandingPage() {
                   Visualize →
                 </span>
               </div>
-            </button>
+            </Link>
           ))}
         </div>
       )}

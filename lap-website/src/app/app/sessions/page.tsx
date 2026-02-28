@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, DataTable } from '@/components/app';
@@ -334,16 +335,16 @@ export default function SessionsPage() {
             gets a score, grade, and detailed breakdown. Upload a RaceChrono or
             RaceBox CSV to get started.
           </p>
-          <button
-            onClick={() => router.push('/app/analyze')}
+          <Link
+            href="/app/analyze"
             className="inline-flex items-center gap-2 px-6 py-3 bg-acid-green text-carbon font-monument text-sm rounded-lg hover:bg-acid-green/90 transition-colors"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
               <line x1="8" y1="2" x2="8" y2="14" />
               <line x1="2" y1="8" x2="14" y2="8" />
             </svg>
             New Analysis
-          </button>
+          </Link>
         </div>
       ) : (
         <>

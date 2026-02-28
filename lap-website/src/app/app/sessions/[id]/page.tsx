@@ -561,10 +561,14 @@ export default function SessionDetailPage() {
 
       {/* ── Tab Bar + Focus Mode Button ── */}
       <div className="flex items-center justify-between border-b border-steel/20 mb-6">
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex gap-1 overflow-x-auto" role="tablist" aria-label="Session sections">
           {tabs.map((tab) => (
             <button
               key={tab}
+              role="tab"
+              aria-selected={activeTab === tab}
+              aria-controls={`tabpanel-${tab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
+              id={`tab-${tab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}
               onClick={() => setActiveTab(tab)}
               className={`px-4 py-2.5 font-telemetry text-sm whitespace-nowrap transition-colors ${
                 activeTab === tab
@@ -577,10 +581,11 @@ export default function SessionDetailPage() {
           ))}
         </div>
         <button
+          type="button"
           onClick={() => setFocusOpen(true)}
           className="flex items-center gap-2 px-3 py-1.5 mb-1 rounded-lg border border-steel/20 text-steel hover:text-acid-green hover:border-acid-green/40 transition-colors font-telemetry text-sm whitespace-nowrap"
         >
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="shrink-0" aria-hidden="true" focusable="false">
             <rect x="1" y="1" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" />
             <rect x="5" y="5" width="6" height="6" rx="1" fill="currentColor" />
           </svg>
@@ -589,7 +594,7 @@ export default function SessionDetailPage() {
       </div>
 
       {/* ── Tab Content ── */}
-      <div className="min-h-[400px]">
+      <div className="min-h-[400px]" role="tabpanel" aria-labelledby={`tab-${activeTab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`} id={`tabpanel-${activeTab.toLowerCase().replace(/[^a-z0-9]/g, '-')}`}>
         {/* ─────────── Tab 1: Overview ─────────── */}
         {activeTab === 'Overview' && (
           <div className="space-y-8">
