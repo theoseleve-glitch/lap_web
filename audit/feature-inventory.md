@@ -109,106 +109,106 @@ Generated as part of the E2E certification harness (Task 12).
 | F-0099 | Pipeline | Weather timeline integration | All | unit | — | pending |
 | F-0100 | Pipeline | Joker lap detection | All | unit | — | pending |
 | F-0101 | Pipeline | _safe_step graceful degradation (exception → None, no crash) | All | unit | — | pending |
-| F-0102 | Charts | Speed trace chart (best lap speed vs distance) | All | e2e | — | pending |
-| F-0103 | Charts | Speed profile overlay (best/avg/worst) | All | e2e | — | pending |
-| F-0104 | Charts | Lap time scatter chart (lap number vs time) | All | e2e | — | pending |
-| F-0105 | Charts | Lap time bar chart | All | e2e | — | pending |
-| F-0106 | Charts | Delta chart (time delta vs best lap) | All | e2e | — | pending |
-| F-0107 | Charts | G-G diagram (friction circle) | All | e2e | — | pending |
-| F-0108 | Charts | Corner speed comparison chart (per corner) | All | e2e | — | pending |
-| F-0109 | Charts | Consistency heatmap (sector deltas across laps) | All | e2e | — | pending |
-| F-0110 | Charts | Delta heatmap (laps x segments matrix) | All | e2e | — | pending |
-| F-0111 | Charts | Track map (GPS trace overlay on map) | All | e2e | — | pending |
-| F-0112 | Charts | Corner replay map (animated corner view) | All | e2e | — | pending |
-| F-0113 | Charts | Brake point visualization (braking zones on map) | All | e2e | — | pending |
-| F-0114 | Charts | Throttle map (throttle percentage on track) | All | e2e | — | pending |
-| F-0115 | Charts | Energy balance chart | All | e2e | — | pending |
-| F-0116 | Charts | Fatigue/reaction time chart (lap-over-lap) | All | e2e | — | pending |
-| F-0117 | Charts | Driving style radar chart (multi-axis) | All | e2e | — | pending |
-| F-0118 | Charts | Performance fingerprint (4-pillar visualization) | All | e2e | — | pending |
-| F-0119 | Charts | Corner mastery chart (corner score per corner) | All | e2e | — | pending |
-| F-0120 | Charts | Session progression chart (improvement over session) | All | e2e | — | pending |
-| F-0121 | Charts | Evolution over sessions chart (multi-session trend) | All | e2e | — | pending |
-| F-0122 | Charts | Comparison matrix chart (multi-driver grid) | All | e2e | — | pending |
-| F-0123 | Charts | Race strategy chart (stint/tire/fuel overlay) | Racer+ | e2e | — | pending |
-| F-0124 | Charts | Sector times chart (per-sector breakdown) | All | e2e | — | pending |
-| F-0125 | Charts | Weather correlation chart (grip vs conditions) | All | e2e | — | pending |
-| F-0126 | Charts | Trend analysis chart (long-term performance) | All | e2e | — | pending |
-| F-0127 | Charts | Position/gap chart (race positions over laps) | All | e2e | — | pending |
-| F-0128 | Charts | Stint analysis chart (tire/pace degradation) | Racer+ | e2e | — | pending |
-| F-0129 | Charts | Tire degradation chart (grip vs lap count) | Racer+ | e2e | — | pending |
-| F-0130 | Charts | Chart dark theme styling (consistent color palette) | All | e2e | — | pending |
-| F-0131 | Charts | Chart responsive sizing (mobile + desktop) | All | e2e | — | pending |
-| F-0132 | Charts | Chart tooltip interactions (hover data display) | All | e2e | — | pending |
-| F-0133 | Charts | Chart zoom/pan interactions | All | e2e | — | pending |
-| F-0134 | Charts | Chart data loading states (skeleton/spinner) | All | e2e | — | pending |
-| F-0135 | Charts | Chart error states (graceful fallback) | All | e2e | — | pending |
-| F-0136 | Charts | Chart export (image download PNG/SVG) | All | e2e | — | pending |
-| F-0137 | Exports | CSV export: session data download | All | integration | — | pending |
-| F-0138 | Exports | CSV export: corner table download | All | integration | — | pending |
-| F-0139 | Exports | CSV export: delta map download | All | integration | — | pending |
-| F-0140 | Exports | JSON export: session summary | All | integration | — | pending |
-| F-0141 | Exports | PDF report download | Racer+ | integration | — | pending |
-| F-0142 | Exports | HTML report download | All | integration | — | pending |
-| F-0143 | Exports | Bulk export: multiple sessions at once | Racer+ | integration | — | pending |
-| F-0144 | Exports | Export template management (CRUD) | Racer+ | integration | — | pending |
-| F-0145 | Exports | Export format gating per tier (CSV free, PDF racer+) | All | integration | — | pending |
-| F-0146 | Exports | Export quota enforcement (monthly limit per plan) | All | integration | — | pending |
-| F-0147 | Exports | Export job async processing via Celery | All | integration | — | pending |
-| F-0148 | Exports | Export file download link generation | All | integration | — | pending |
-| F-0149 | Exports | Export file expiry (time-limited download URL) | All | integration | — | pending |
-| F-0150 | Exports | GDPR data export (full user data package) | All | integration | — | pending |
-| F-0151 | Exports | GDPR data erasure (account + data deletion) | All | integration | — | pending |
-| F-0152 | Billing | Plan definitions: demo tier (free, limited features) | All | unit | — | pending |
-| F-0153 | Billing | Plan definitions: racer tier (monthly + annual) | Racer | unit | — | pending |
-| F-0154 | Billing | Plan definitions: world_class tier (monthly + annual) | WorldClass | unit | — | pending |
-| F-0155 | Billing | Pricing page displays correct plan cards and prices | All | e2e | — | pending |
-| F-0156 | Billing | Stripe checkout session creation (POST /api/v1/billing/checkout) | Racer+ | integration | — | pending |
-| F-0157 | Billing | Stripe webhook: checkout.session.completed updates plan_tier | All | integration | — | pending |
-| F-0158 | Billing | Stripe webhook: customer.subscription.updated syncs status | All | integration | — | pending |
-| F-0159 | Billing | Stripe webhook: customer.subscription.deleted downgrades tier | All | integration | — | pending |
-| F-0160 | Billing | Stripe webhook: invoice.payment_failed marks past_due | All | integration | — | pending |
-| F-0161 | Billing | Stripe webhook signature verification (Stripe-Signature header) | All | integration | — | pending |
-| F-0162 | Billing | Plan tier update persisted to users table on payment | All | integration | — | pending |
-| F-0163 | Billing | Subscription status tracking (active/past_due/canceled) | All | integration | — | pending |
-| F-0164 | Billing | Billing portal redirect (GET /api/v1/billing/portal) | Racer+ | integration | — | pending |
-| F-0165 | Billing | Plan upgrade flow (demo → racer → world_class) | All | e2e | — | pending |
-| F-0166 | Billing | Plan downgrade flow (world_class → racer → demo) | All | e2e | — | pending |
-| F-0167 | Billing | Subscription cancellation (end of billing period) | Racer+ | integration | — | pending |
-| F-0168 | Billing | Subscription pause/resume | Racer+ | integration | — | pending |
-| F-0169 | Billing | Trial period handling (if configured) | All | integration | — | pending |
-| F-0170 | Billing | Annual vs monthly billing toggle | Racer+ | e2e | — | pending |
-| F-0171 | Billing | Stripe customer creation on first checkout | All | integration | — | pending |
-| F-0172 | Account | Profile display (name, email, plan tier) | All | e2e | — | pending |
-| F-0173 | Account | Profile update (display name, avatar) | All | integration | — | pending |
-| F-0174 | Account | Password change (current + new password) | All | integration | — | pending |
-| F-0175 | Account | Email change triggers re-verification | All | integration | — | pending |
-| F-0176 | Account | Avatar/display name rendering in UI | All | e2e | — | pending |
-| F-0177 | Account | Notification preferences (email opt-in/out) | All | integration | — | pending |
-| F-0178 | Account | Account deletion request (GDPR) | All | integration | — | pending |
-| F-0179 | Account | Account data export request (GDPR) | All | integration | — | pending |
-| F-0180 | Account | Session history/activity log display | All | e2e | — | pending |
-| F-0181 | Account | Connected OAuth accounts display | All | e2e | — | pending |
-| F-0182 | Account | API key management (world_class tier only) | WorldClass | integration | — | pending |
-| F-0183 | Account | Workspace selection (switch active workspace) | All | e2e | — | pending |
-| F-0184 | Account | Workspace creation (team workspace) | All | integration | — | pending |
-| F-0185 | Account | Default personal workspace auto-created on register | All | integration | — | pending |
-| F-0186 | Account | Account security settings page renders | All | e2e | — | pending |
-| F-0187 | Admin | Admin authentication (superadmin role check) | Admin | integration | — | pending |
-| F-0188 | Admin | Admin TOTP 2FA verification (verify_2fa endpoint) | Admin | integration | — | pending |
-| F-0189 | Admin | User list/search in race-control panel | Admin | e2e | — | pending |
-| F-0190 | Admin | User tier override (manual plan assignment) | Admin | integration | — | pending |
-| F-0191 | Admin | Subscription reconciliation (Stripe vs DB sync) | Admin | integration | — | pending |
-| F-0192 | Admin | Webhook log viewer (recent Stripe events) | Admin | e2e | — | pending |
-| F-0193 | Admin | Revenue snapshot (MRR/ARR calculations) | Admin | e2e | — | pending |
-| F-0194 | Admin | Entitlement anomaly detection (usage vs plan mismatch) | Admin | integration | — | pending |
-| F-0195 | Admin | Audit log viewer (security events) | Admin | e2e | — | pending |
-| F-0196 | Admin | Admin bootstrap (first superadmin user creation) | Admin | integration | — | pending |
-| F-0197 | Admin | Retention queue management (churn risk users) | Admin | e2e | — | pending |
-| F-0198 | Admin | Entitlement override creation (manual feature grant) | Admin | integration | — | pending |
-| F-0199 | Admin | Usage summary per workspace | Admin | e2e | — | pending |
-| F-0200 | Admin | Admin security events log (login attempts, changes) | Admin | e2e | — | pending |
-| F-0201 | Admin | Admin role requirement enforced on all race-control routes | Admin | integration | — | pending |
+| F-0102 | Charts | Speed trace chart (best lap speed vs distance) | All | e2e | — | e2e-only |
+| F-0103 | Charts | Speed profile overlay (best/avg/worst) | All | e2e | — | e2e-only |
+| F-0104 | Charts | Lap time scatter chart (lap number vs time) | All | e2e | — | e2e-only |
+| F-0105 | Charts | Lap time bar chart | All | e2e | — | e2e-only |
+| F-0106 | Charts | Delta chart (time delta vs best lap) | All | e2e | — | e2e-only |
+| F-0107 | Charts | G-G diagram (friction circle) | All | e2e | — | e2e-only |
+| F-0108 | Charts | Corner speed comparison chart (per corner) | All | e2e | — | e2e-only |
+| F-0109 | Charts | Consistency heatmap (sector deltas across laps) | All | e2e | — | e2e-only |
+| F-0110 | Charts | Delta heatmap (laps x segments matrix) | All | e2e | — | e2e-only |
+| F-0111 | Charts | Track map (GPS trace overlay on map) | All | e2e | — | e2e-only |
+| F-0112 | Charts | Corner replay map (animated corner view) | All | e2e | — | e2e-only |
+| F-0113 | Charts | Brake point visualization (braking zones on map) | All | e2e | — | e2e-only |
+| F-0114 | Charts | Throttle map (throttle percentage on track) | All | e2e | — | e2e-only |
+| F-0115 | Charts | Energy balance chart | All | e2e | — | e2e-only |
+| F-0116 | Charts | Fatigue/reaction time chart (lap-over-lap) | All | e2e | — | e2e-only |
+| F-0117 | Charts | Driving style radar chart (multi-axis) | All | e2e | — | e2e-only |
+| F-0118 | Charts | Performance fingerprint (4-pillar visualization) | All | e2e | — | e2e-only |
+| F-0119 | Charts | Corner mastery chart (corner score per corner) | All | e2e | — | e2e-only |
+| F-0120 | Charts | Session progression chart (improvement over session) | All | e2e | — | e2e-only |
+| F-0121 | Charts | Evolution over sessions chart (multi-session trend) | All | e2e | — | e2e-only |
+| F-0122 | Charts | Comparison matrix chart (multi-driver grid) | All | e2e | — | e2e-only |
+| F-0123 | Charts | Race strategy chart (stint/tire/fuel overlay) | Racer+ | e2e | — | e2e-only |
+| F-0124 | Charts | Sector times chart (per-sector breakdown) | All | e2e | — | e2e-only |
+| F-0125 | Charts | Weather correlation chart (grip vs conditions) | All | e2e | — | e2e-only |
+| F-0126 | Charts | Trend analysis chart (long-term performance) | All | e2e | — | e2e-only |
+| F-0127 | Charts | Position/gap chart (race positions over laps) | All | e2e | — | e2e-only |
+| F-0128 | Charts | Stint analysis chart (tire/pace degradation) | Racer+ | e2e | — | e2e-only |
+| F-0129 | Charts | Tire degradation chart (grip vs lap count) | Racer+ | e2e | — | e2e-only |
+| F-0130 | Charts | Chart dark theme styling (consistent color palette) | All | e2e | — | e2e-only |
+| F-0131 | Charts | Chart responsive sizing (mobile + desktop) | All | e2e | — | e2e-only |
+| F-0132 | Charts | Chart tooltip interactions (hover data display) | All | e2e | — | e2e-only |
+| F-0133 | Charts | Chart zoom/pan interactions | All | e2e | — | e2e-only |
+| F-0134 | Charts | Chart data loading states (skeleton/spinner) | All | e2e | — | e2e-only |
+| F-0135 | Charts | Chart error states (graceful fallback) | All | e2e | — | e2e-only |
+| F-0136 | Charts | Chart export (image download PNG/SVG) | All | e2e | — | e2e-only |
+| F-0137 | Exports | CSV export: session data download | All | integration | — | passed |
+| F-0138 | Exports | CSV export: corner table download | All | integration | — | no-test |
+| F-0139 | Exports | CSV export: delta map download | All | integration | — | no-test |
+| F-0140 | Exports | JSON export: session summary | All | integration | — | passed |
+| F-0141 | Exports | PDF report download | Racer+ | integration | — | passed |
+| F-0142 | Exports | HTML report download | All | integration | — | no-test |
+| F-0143 | Exports | Bulk export: multiple sessions at once | Racer+ | integration | — | passed |
+| F-0144 | Exports | Export template management (CRUD) | Racer+ | integration | — | no-test |
+| F-0145 | Exports | Export format gating per tier (CSV free, PDF racer+) | All | integration | — | passed |
+| F-0146 | Exports | Export quota enforcement (monthly limit per plan) | All | integration | — | passed |
+| F-0147 | Exports | Export job async processing via Celery | All | integration | — | passed |
+| F-0148 | Exports | Export file download link generation | All | integration | — | passed |
+| F-0149 | Exports | Export file expiry (time-limited download URL) | All | integration | — | passed |
+| F-0150 | Exports | GDPR data export (full user data package) | All | integration | — | passed |
+| F-0151 | Exports | GDPR data erasure (account + data deletion) | All | integration | — | passed |
+| F-0152 | Billing | Plan definitions: demo tier (free, limited features) | All | unit | — | passed |
+| F-0153 | Billing | Plan definitions: racer tier (monthly + annual) | Racer | unit | — | passed |
+| F-0154 | Billing | Plan definitions: world_class tier (monthly + annual) | WorldClass | unit | — | passed |
+| F-0155 | Billing | Pricing page displays correct plan cards and prices | All | e2e | — | e2e-only |
+| F-0156 | Billing | Stripe checkout session creation (POST /api/v1/billing/checkout) | Racer+ | integration | — | passed |
+| F-0157 | Billing | Stripe webhook: checkout.session.completed updates plan_tier | All | integration | — | passed |
+| F-0158 | Billing | Stripe webhook: customer.subscription.updated syncs status | All | integration | — | passed |
+| F-0159 | Billing | Stripe webhook: customer.subscription.deleted downgrades tier | All | integration | — | passed |
+| F-0160 | Billing | Stripe webhook: invoice.payment_failed marks past_due | All | integration | — | passed |
+| F-0161 | Billing | Stripe webhook signature verification (Stripe-Signature header) | All | integration | — | passed |
+| F-0162 | Billing | Plan tier update persisted to users table on payment | All | integration | — | passed |
+| F-0163 | Billing | Subscription status tracking (active/past_due/canceled) | All | integration | — | passed |
+| F-0164 | Billing | Billing portal redirect (GET /api/v1/billing/portal) | Racer+ | integration | — | passed |
+| F-0165 | Billing | Plan upgrade flow (demo → racer → world_class) | All | e2e | — | e2e-only |
+| F-0166 | Billing | Plan downgrade flow (world_class → racer → demo) | All | e2e | — | passed |
+| F-0167 | Billing | Subscription cancellation (end of billing period) | Racer+ | integration | — | passed |
+| F-0168 | Billing | Subscription pause/resume | Racer+ | integration | — | passed |
+| F-0169 | Billing | Trial period handling (if configured) | All | integration | — | passed |
+| F-0170 | Billing | Annual vs monthly billing toggle | Racer+ | e2e | — | e2e-only |
+| F-0171 | Billing | Stripe customer creation on first checkout | All | integration | — | passed |
+| F-0172 | Account | Profile display (name, email, plan tier) | All | e2e | — | e2e-only |
+| F-0173 | Account | Profile update (display name, avatar) | All | integration | — | passed |
+| F-0174 | Account | Password change (current + new password) | All | integration | — | passed |
+| F-0175 | Account | Email change triggers re-verification | All | integration | — | passed |
+| F-0176 | Account | Avatar/display name rendering in UI | All | e2e | — | e2e-only |
+| F-0177 | Account | Notification preferences (email opt-in/out) | All | integration | — | passed |
+| F-0178 | Account | Account deletion request (GDPR) | All | integration | — | passed |
+| F-0179 | Account | Account data export request (GDPR) | All | integration | — | passed |
+| F-0180 | Account | Session history/activity log display | All | e2e | — | e2e-only |
+| F-0181 | Account | Connected OAuth accounts display | All | e2e | — | e2e-only |
+| F-0182 | Account | API key management (world_class tier only) | WorldClass | integration | — | no-test |
+| F-0183 | Account | Workspace selection (switch active workspace) | All | e2e | — | e2e-only |
+| F-0184 | Account | Workspace creation (team workspace) | All | integration | — | passed |
+| F-0185 | Account | Default personal workspace auto-created on register | All | integration | — | passed |
+| F-0186 | Account | Account security settings page renders | All | e2e | — | e2e-only |
+| F-0187 | Admin | Admin authentication (superadmin role check) | Admin | integration | — | passed |
+| F-0188 | Admin | Admin TOTP 2FA verification (verify_2fa endpoint) | Admin | integration | — | passed |
+| F-0189 | Admin | User list/search in race-control panel | Admin | e2e | — | passed |
+| F-0190 | Admin | User tier override (manual plan assignment) | Admin | integration | — | passed |
+| F-0191 | Admin | Subscription reconciliation (Stripe vs DB sync) | Admin | integration | — | passed |
+| F-0192 | Admin | Webhook log viewer (recent Stripe events) | Admin | e2e | — | passed |
+| F-0193 | Admin | Revenue snapshot (MRR/ARR calculations) | Admin | e2e | — | passed |
+| F-0194 | Admin | Entitlement anomaly detection (usage vs plan mismatch) | Admin | integration | — | passed |
+| F-0195 | Admin | Audit log viewer (security events) | Admin | e2e | — | passed |
+| F-0196 | Admin | Admin bootstrap (first superadmin user creation) | Admin | integration | — | passed |
+| F-0197 | Admin | Retention queue management (churn risk users) | Admin | e2e | — | passed |
+| F-0198 | Admin | Entitlement override creation (manual feature grant) | Admin | integration | — | passed |
+| F-0199 | Admin | Usage summary per workspace | Admin | e2e | — | passed |
+| F-0200 | Admin | Admin security events log (login attempts, changes) | Admin | e2e | — | passed |
+| F-0201 | Admin | Admin role requirement enforced on all race-control routes | Admin | integration | — | passed |
 | F-0202 | RBAC/Entitlements | Entitlement middleware runs before_request on protected routes | All | integration | — | pending |
 | F-0203 | RBAC/Entitlements | Feature gate: comparison (world_class only) | WorldClass | integration | — | pending |
 | F-0204 | RBAC/Entitlements | Feature gate: visualization page (racer+) | Racer+ | integration | — | pending |
