@@ -101,37 +101,75 @@ def _translate_insert_or_ignore(sql: str) -> str:
     return sql
 
 
+
+# Mapping of table name → conflict target columns for INSERT OR REPLACE
+# translation.  These match the UNIQUE / PRIMARY KEY constraints defined
+# in the Alembic migrations (001 + 008).
+_PG_CONFLICT_TARGETS: dict[str, tuple[str, ...]] = {
+    "sessions":              ("session_id",),
+    "laps":                  ("session_id", "lap_number"),
+    "gps_traces":            ("session_id", "lap_number"),
+    "score_details":         ("session_id",),
+    "condition_phases":      ("session_id", "phase_id"),
+    "corner_metrics":        ("session_id", "lap_number", "corner_id"),
+    "theoretical_data":      ("session_id",),
+    "reference_lines":       ("session_id",),
+    "session_sectors":       ("session_id", "sector_index"),
+    "data_health":           ("session_id",),
+    "session_tags":          ("session_id", "tag"),
+    "session_weather":       ("session_id",),
+    "weekend_sessions":      ("weekend_id", "session_id"),
+    "condition_markers":     ("session_id", "lap_number"),
+    "driver_progression":    ("driver_id", "session_id"),
+    "driving_style_features": ("driver_id", "session_id"),
+    "export_templates":      ("template_name",),
+}
+
+
 def _translate_insert_or_replace(sql: str) -> str:
     """
     ``INSERT OR REPLACE INTO tbl (a, b) VALUES (:a, :b)``
     ->
     ``INSERT INTO tbl (a, b) VALUES (:a, :b)
-      ON CONFLICT DO UPDATE SET a = EXCLUDED.a, b = EXCLUDED.b``
+      ON CONFLICT (pk_col) DO UPDATE SET b = EXCLUDED.b``
 
-    PostgreSQL requires a conflict target for DO UPDATE, which cannot be
-    reliably inferred from the SQL alone.  This function logs a warning
-    and passes the query through unchanged — INSERT OR REPLACE queries
-    must be manually converted to ON CONFLICT(col) DO UPDATE syntax.
+    Uses ``_PG_CONFLICT_TARGETS`` to look up the correct conflict columns
+    for each table.  Falls back to stripping OR REPLACE (with a warning)
+    for unknown tables.
     """
     m = _INSERT_OR_REPLACE_RE.search(sql)
     if not m:
         return sql
 
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.warning(
-        "INSERT OR REPLACE requires manual conversion to "
-        "ON CONFLICT(col) DO UPDATE for PostgreSQL: %s",
-        sql[:120],
-    )
-
-    # Remove the OR REPLACE but do NOT add ON CONFLICT — caller must fix.
     table = m.group(1)
     cols_raw = m.group(2)
     vals_raw = m.group(3)
     cols = [c.strip() for c in cols_raw.split(",")]
-    col_list = ", ".join(cols)
-    result = f"INSERT INTO {table} ({col_list}) VALUES ({vals_raw})"
+
+    conflict_cols = _PG_CONFLICT_TARGETS.get(table)
+    if conflict_cols is None:
+        import logging
+        logging.getLogger(__name__).warning(
+            "INSERT OR REPLACE: no conflict target for table %r — "
+            "stripping OR REPLACE (may fail on duplicates): %s",
+            table, sql[:120],
+        )
+        col_list = ", ".join(cols)
+        result = f"INSERT INTO {table} ({col_list}) VALUES ({vals_raw})"
+    else:
+        conflict_target = ", ".join(conflict_cols)
+        conflict_set = set(conflict_cols)
+        update_cols = [c for c in cols if c not in conflict_set]
+
+        col_list = ", ".join(cols)
+        result = f"INSERT INTO {table} ({col_list}) VALUES ({vals_raw})"
+        if update_cols:
+            update_clause = ", ".join(
+                f"{c} = EXCLUDED.{c}" for c in update_cols
+            )
+            result += f"\nON CONFLICT ({conflict_target}) DO UPDATE SET {update_clause}"
+        else:
+            result += f"\nON CONFLICT ({conflict_target}) DO NOTHING"
 
     # Preserve trailing semicolon.
     tail = sql[m.end():].strip()
@@ -154,6 +192,14 @@ _SQLITE_DATETIME_NOW_RE = re.compile(
     r"\bdatetime\(\s*'now'\s*\)", re.IGNORECASE
 )
 
+# Boolean literal comparison: SQLite uses 1/0, PG uses true/false.
+# Matches column_name = 1 or column_name = 0 for known boolean columns.
+_BOOL_COLUMNS = {"is_valid", "is_best", "is_joker", "is_active", "is_deleted",
+                 "email_verified", "two_factor_enabled", "setup_complete"}
+_BOOL_COMPARE_RE = re.compile(
+    r"\b(" + "|".join(re.escape(c) for c in _BOOL_COLUMNS) + r")\s*=\s*([01])\b"
+)
+
 
 def _translate_sqlite_functions(sql: str) -> str:
     """Convert SQLite functions to PostgreSQL equivalents.
@@ -161,6 +207,19 @@ def _translate_sqlite_functions(sql: str) -> str:
     ``datetime('now')`` -> ``NOW()``
     """
     return _SQLITE_DATETIME_NOW_RE.sub("NOW()", sql)
+
+
+def _translate_boolean_literals(sql: str) -> str:
+    """Convert ``is_valid = 1`` -> ``is_valid = true``, ``= 0`` -> ``= false``.
+
+    SQLite stores booleans as integers 0/1; PostgreSQL boolean columns
+    reject integer comparison.
+    """
+    def _bool_repl(m: re.Match) -> str:
+        col = m.group(1)
+        val = "true" if m.group(2) == "1" else "false"
+        return f"{col} = {val}"
+    return _BOOL_COMPARE_RE.sub(_bool_repl, sql)
 
 
 def translate_params(sql: str) -> str:
@@ -178,6 +237,7 @@ def translate_params(sql: str) -> str:
     sql = _translate_insert_or_ignore(sql)
     sql = _translate_insert_or_replace(sql)
     sql = _translate_sqlite_functions(sql)
+    sql = _translate_boolean_literals(sql)
     sql = _translate_named_params(sql)
     sql = _translate_positional_params(sql)
     return sql

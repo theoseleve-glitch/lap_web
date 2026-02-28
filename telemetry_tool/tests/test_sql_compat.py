@@ -99,7 +99,7 @@ def test_insert_or_ignore():
 # ------------------------------------------------------------------
 
 def test_insert_or_replace():
-    """INSERT OR REPLACE strips OR REPLACE, warns (requires manual conversion)."""
+    """INSERT OR REPLACE generates ON CONFLICT ... DO UPDATE for known tables."""
     sql = (
         "INSERT OR REPLACE INTO laps "
         "(session_id, lap_number, lap_time_s) "
@@ -108,7 +108,21 @@ def test_insert_or_replace():
     result = translate_params(sql)
     assert "INSERT INTO" in result
     assert "OR REPLACE" not in result
-    # No ON CONFLICT generated — requires manual conversion with conflict target
+    # ON CONFLICT generated from _PG_CONFLICT_TARGETS mapping
+    assert "ON CONFLICT (session_id, lap_number)" in result
+    assert "DO UPDATE SET lap_time_s = EXCLUDED.lap_time_s" in result
+
+
+def test_insert_or_replace_unknown_table():
+    """INSERT OR REPLACE for unknown tables strips OR REPLACE without ON CONFLICT."""
+    sql = (
+        "INSERT OR REPLACE INTO unknown_table "
+        "(id, name) "
+        "VALUES (:id, :name);"
+    )
+    result = translate_params(sql)
+    assert "INSERT INTO" in result
+    assert "OR REPLACE" not in result
     assert "ON CONFLICT" not in result
 
 
@@ -187,6 +201,44 @@ def test_multiple_statements():
     result = translate_params(sql)
     assert result.count("%(sid)s") == 2
 
+
+# ------------------------------------------------------------------
+# 10. Boolean literal translation
+# ------------------------------------------------------------------
+
+def test_boolean_literal_1_to_true():
+    """is_valid = 1 -> is_valid = true (PG booleans don't accept integers)."""
+    sql = "SELECT * FROM laps WHERE session_id = :sid AND is_valid = 1 ORDER BY lap_number"
+    result = translate_params(sql)
+    assert "is_valid = true" in result
+    assert "is_valid = 1" not in result
+
+
+def test_boolean_literal_0_to_false():
+    """is_valid = 0 -> is_valid = false."""
+    sql = "SELECT * FROM laps WHERE is_valid = 0"
+    result = translate_params(sql)
+    assert "is_valid = false" in result
+
+
+def test_boolean_literal_is_best():
+    """is_best = 1 -> is_best = true."""
+    sql = "SELECT * FROM laps WHERE is_best = 1"
+    result = translate_params(sql)
+    assert "is_best = true" in result
+
+
+def test_boolean_passthrough_sqlite(monkeypatch):
+    """When USE_PG=0, boolean literals pass through unchanged."""
+    monkeypatch.setenv("USE_PG", "0")
+    sql = "SELECT * FROM laps WHERE is_valid = 1"
+    result = translate_params(sql)
+    assert "is_valid = 1" in result
+
+
+# ------------------------------------------------------------------
+# 11. Real codebase queries
+# ------------------------------------------------------------------
 
 def test_real_query_from_codebase():
     """Translate a real query from queries.py (INSERT_SESSION)."""

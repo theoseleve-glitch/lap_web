@@ -56,8 +56,21 @@ def _np_to_json(arr) -> str:
 
 # ── drivers ──────────────────────────────────────────────────────
 def upsert_driver(conn: sqlite3.Connection, driver_name: str) -> int:
-    """Insert driver if not exists; return driver_id."""
-    conn.execute(Q.UPSERT_DRIVER, {"driver_name": driver_name})
+    """Insert driver if not exists; return driver_id.
+
+    On PostgreSQL the unique constraint is workspace-scoped
+    ``(workspace_id, driver_name)`` so we use a PG-specific query.
+    On SQLite the constraint is just ``(driver_name)``.
+    """
+    import os
+    if os.environ.get("USE_PG", "0") == "1":
+        conn.execute(
+            "INSERT INTO drivers (driver_name) VALUES (:driver_name) "
+            "ON CONFLICT (workspace_id, driver_name) DO NOTHING",
+            {"driver_name": driver_name},
+        )
+    else:
+        conn.execute(Q.UPSERT_DRIVER, {"driver_name": driver_name})
     row = conn.execute(
         Q.SELECT_DRIVER_BY_NAME, {"driver_name": driver_name}
     ).fetchone()
@@ -492,22 +505,22 @@ def insert_laps(
         # Pass 1: Distance anomalies (in/out/pit/cut/short laps)
         # Pass 2: Time anomalies (crashes, incidents)
         # Endurance: relabel anomalies near stint boundaries as "Pitted lap"
-        is_valid = 1
+        is_valid = True
         invalid_reason = None
-        is_joker = 0
+        is_joker = False
 
         if joker_lap_number is not None and lap_num == joker_lap_number:
-            is_joker = 1
-            is_valid = 0
+            is_joker = True
+            is_valid = False
             invalid_reason = "Joker lap"
         elif lap_num in all_dist_flagged:
-            is_valid = 0
+            is_valid = False
             if stint_boundary_laps and _near_stint_boundary(lap_num):
                 invalid_reason = "Pitted lap"
             else:
                 invalid_reason = dist_labels[lap_num]
         elif lap_num in anomalous_time:
-            is_valid = 0
+            is_valid = False
             if stint_boundary_laps and _near_stint_boundary(lap_num):
                 invalid_reason = "Pitted lap"
             else:
@@ -523,7 +536,7 @@ def insert_laps(
             "accel_max_mps2":   _safe_float(lm.get("accel_max_mps2")),
             "line_length_m":    _safe_float(lm.get("line_length_m")),
             "is_valid":         is_valid,
-            "is_best":          1 if lap_num == best_key else 0,
+            "is_best":          lap_num == best_key,
             "phase_id":         lap_to_phase.get(lap_num),
             "invalid_reason":   invalid_reason,
             "is_joker":         is_joker,
@@ -641,6 +654,19 @@ def insert_gps_traces(
     return count
 
 
+def _parse_json_or_list(val):
+    """Parse a JSON string or return a native list as-is.
+
+    PostgreSQL JSONB columns are returned as Python lists by psycopg2,
+    while SQLite stores them as text requiring ``json.loads()``.
+    """
+    if val is None:
+        return []
+    if isinstance(val, (list, dict)):
+        return val
+    return json.loads(val)
+
+
 def get_gps_trace(
     conn: sqlite3.Connection,
     session_id: str,
@@ -653,15 +679,15 @@ def get_gps_trace(
     if row is None:
         return None
     result = {
-        "latitudes":  json.loads(row["latitudes_json"]),
-        "longitudes": json.loads(row["longitudes_json"]),
-        "distances":  json.loads(row["distances_json"]),
-        "speeds":     json.loads(row["speeds_json"]),
+        "latitudes":  _parse_json_or_list(row["latitudes_json"]),
+        "longitudes": _parse_json_or_list(row["longitudes_json"]),
+        "distances":  _parse_json_or_list(row["distances_json"]),
+        "speeds":     _parse_json_or_list(row["speeds_json"]),
     }
     if row["accel_lat_json"]:
-        result["accel_lat"] = json.loads(row["accel_lat_json"])
+        result["accel_lat"] = _parse_json_or_list(row["accel_lat_json"])
     if row["accel_long_json"]:
-        result["accel_long"] = json.loads(row["accel_long_json"])
+        result["accel_long"] = _parse_json_or_list(row["accel_long_json"])
     return result
 
 
@@ -1305,10 +1331,10 @@ def get_reference_line(
     if not row:
         return None
     return {
-        "latitudes":  json.loads(row["latitudes_json"]),
-        "longitudes": json.loads(row["longitudes_json"]),
-        "distances":  json.loads(row["distances_json"]),
-        "speeds":     json.loads(row["speeds_json"]) if row["speeds_json"] else None,
+        "latitudes":  _parse_json_or_list(row["latitudes_json"]),
+        "longitudes": _parse_json_or_list(row["longitudes_json"]),
+        "distances":  _parse_json_or_list(row["distances_json"]),
+        "speeds":     _parse_json_or_list(row["speeds_json"]),
     }
 
 

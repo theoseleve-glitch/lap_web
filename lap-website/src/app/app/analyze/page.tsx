@@ -130,7 +130,7 @@ export default function AnalyzePage() {
   });
 
   // Poll job status in step 3 (Flask serves at /api/v1/ingest/status/:id)
-  useQuery({
+  const { data: polledJob } = useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
       const pollHeaders: Record<string, string> = {};
@@ -144,11 +144,12 @@ export default function AnalyzePage() {
     },
     enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
     refetchInterval: 2000,
-    select: (data) => {
-      setJobStatus(data);
-      return data;
-    },
   });
+
+  // Sync polled data to state (outside select to avoid infinite re-render)
+  useEffect(() => {
+    if (polledJob) setJobStatus(polledJob);
+  }, [polledJob]);
 
   const handleUpload = useCallback(async (file: File) => {
     setUploading(true);

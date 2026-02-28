@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, DataTable } from '@/components/app';
 import { Sparkline } from '@/components/app/charts';
@@ -14,6 +15,7 @@ interface SessionRow {
   laps: number;
   best_time: number | null;
   score: number | null;
+  grade: string | null;
 }
 
 interface DashboardStats {
@@ -106,6 +108,17 @@ export default function DashboardPage() {
         </span>
       ),
     },
+    {
+      key: 'grade',
+      header: 'Grade',
+      className: 'font-monument w-16',
+      render: (row: SessionRow) => {
+        if (!row.grade) return <span className="text-steel">--</span>;
+        const g = row.grade.toUpperCase();
+        const c = g.startsWith('A') ? 'text-acid-green' : g.startsWith('B') ? 'text-emerald-400' : g.startsWith('C') ? 'text-amber-400' : 'text-safety-red';
+        return <span className={c}>{row.grade}</span>;
+      },
+    },
   ];
 
   return (
@@ -155,6 +168,22 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-3 mb-6">
+        <Link
+          href="/app/analyze"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-acid-green text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-acid-green/90 transition-colors"
+        >
+          + New Analysis
+        </Link>
+        <Link
+          href="/app/sessions"
+          className="inline-flex items-center gap-2 px-4 py-2.5 border border-steel/20 text-steel font-telemetry text-sm rounded-lg hover:text-chalk hover:border-steel/40 transition-colors"
+        >
+          View All Sessions
+        </Link>
       </div>
 
       {/* Recent sessions table */}

@@ -14,6 +14,7 @@ from flask import (
     Blueprint,
     current_app,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -186,7 +187,8 @@ def _pipeline_progress_hook(job_id: str):
     return hook
 
 
-def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
+def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app,
+                     workspace_id: int | None = None):
     """Run the full pipeline in a background thread."""
     with app.app_context():
         try:
@@ -281,6 +283,12 @@ def _run_analysis_bg(job_id: str, csv_path: str, meta: dict, app):
                 _update_job(job_id, stage="Saving to database...", progress=95)
                 try:
                     conn = get_db_connection()
+                    # Set workspace context so RLS + column defaults work.
+                    if workspace_id and os.environ.get("USE_PG", "0") == "1":
+                        conn.execute(
+                            "SET LOCAL app.current_workspace_id = %s",
+                            (str(workspace_id),),
+                        )
                     driver_name = meta.get("driver_name", "Driver_1")
                     driver_id = upsert_driver(conn, driver_name)
 
@@ -495,9 +503,13 @@ def _analyze_start_impl():
     })
 
     app = current_app._get_current_object()
+    # Capture workspace_id from request context (set by tenant middleware)
+    # so the background thread can set RLS context on its own connection.
+    ws_id = getattr(g, "workspace_id", None)
     t = threading.Thread(
         target=_run_analysis_bg,
         args=(job_id, str(csv_path), meta, app),
+        kwargs={"workspace_id": ws_id},
         daemon=True,
     )
     t.start()
