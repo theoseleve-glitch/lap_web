@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PageHeader } from '@/components/app';
@@ -49,6 +49,7 @@ function collectDiagnostics(): Record<string, unknown> {
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function SupportPage() {
+  const fieldId = useId();
   const { entitlements } = useEntitlements();
   const [issueType, setIssueType] = useState('general');
   const [description, setDescription] = useState('');
@@ -124,8 +125,9 @@ export default function SupportPage() {
             >
               {/* Issue type */}
               <div>
-                <label className="block text-steel text-xs font-telemetry mb-1">Issue Type</label>
+                <label htmlFor={`${fieldId}-issue`} className="block text-steel text-xs font-telemetry mb-1">Issue Type</label>
                 <select
+                  id={`${fieldId}-issue`}
                   value={issueType}
                   onChange={(e) => setIssueType(e.target.value)}
                   className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none"
@@ -140,8 +142,9 @@ export default function SupportPage() {
 
               {/* Description */}
               <div>
-                <label className="block text-steel text-xs font-telemetry mb-1">Description</label>
+                <label htmlFor={`${fieldId}-desc`} className="block text-steel text-xs font-telemetry mb-1">Description</label>
                 <textarea
+                  id={`${fieldId}-desc`}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   placeholder="Describe your issue..."

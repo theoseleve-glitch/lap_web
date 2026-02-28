@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
@@ -25,6 +25,7 @@ interface WeekendCreated {
 
 export default function NewWeekendPage() {
   const router = useRouter();
+  const fieldId = useId();
   const [form, setForm] = useState({
     name: '',
     track_id: '',
@@ -103,10 +104,11 @@ export default function NewWeekendPage() {
         />
 
         <div className="mb-4">
-          <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+          <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
             Track
           </label>
           <select
+            id={`${fieldId}-track`}
             className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
               focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 transition-colors"
             value={form.track_id}
@@ -138,10 +140,11 @@ export default function NewWeekendPage() {
         />
 
         <div className="mb-4">
-          <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
+          <label htmlFor={`${fieldId}-notes`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">
             Notes
           </label>
           <textarea
+            id={`${fieldId}-notes`}
             className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
               placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
               transition-colors resize-none"

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { MetricCard } from '@/components/admin/MetricCard';
 import { ActionButton } from '@/components/admin/ActionButton';
 
 export default function EmailPage() {
+  const fieldId = useId();
   const [resendUserId, setResendUserId] = useState('');
 
   const { data: stats } = useQuery({
@@ -35,8 +36,9 @@ export default function EmailPage() {
         <h2 className="mb-2 text-sm font-semibold text-steel">Resend Verification Email</h2>
         <div className="flex items-end gap-3">
           <div>
-            <label className="text-xs text-steel">User ID</label>
+            <label htmlFor={`${fieldId}-uid`} className="text-xs text-steel">User ID</label>
             <input
+              id={`${fieldId}-uid`}
               type="number"
               value={resendUserId}
               onChange={(e) => setResendUserId(e.target.value)}

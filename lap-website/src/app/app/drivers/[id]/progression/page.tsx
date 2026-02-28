@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useId } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
 import { ChartTooltip } from '@/components/app/ChartTooltip';
@@ -255,6 +255,7 @@ function ProgressionChart({ entries }: { entries: ProgressionEntry[] }) {
 /* ------------------------------------------------------------------ */
 
 export default function DriverProgressionPage() {
+  const fieldId = useId();
   const { id } = useParams<{ id: string }>();
   const [trackId, setTrackId] = useState('');
 
@@ -298,10 +299,11 @@ export default function DriverProgressionPage() {
         subtitle="Progression"
         actions={
           <div>
-            <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
+            <label htmlFor={`${fieldId}-track`} className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
               Track
             </label>
             <select
+              id={`${fieldId}-track`}
               value={trackId}
               onChange={(e) => setTrackId(e.target.value)}
               className="bg-asphalt border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
