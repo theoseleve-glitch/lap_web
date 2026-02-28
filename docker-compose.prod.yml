@@ -35,7 +35,7 @@ services:
       - internal
 
   pgbouncer:
-    image: edoburu/pgbouncer:1.22.0
+    image: edoburu/pgbouncer:latest
     environment:
       DATABASE_URL: postgresql://telemetry:${PG_PASSWORD}@postgres:5432/telemetry
       POOL_MODE: transaction
