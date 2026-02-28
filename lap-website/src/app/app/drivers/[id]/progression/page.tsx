@@ -2,9 +2,11 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
-import { useRef, useEffect, useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
+import { ChartTooltip } from '@/components/app/ChartTooltip';
+import { useInteractiveCanvas, type HoverPoint, type TooltipData } from '@/hooks/useInteractiveCanvas';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -50,164 +52,202 @@ function gradeColor(grade: string): string {
   return 'text-safety-red';
 }
 
+function gradeHex(grade: string): string {
+  if (grade.startsWith('A')) return '#B6FF2E';
+  if (grade.startsWith('B')) return '#FFD400';
+  if (grade.startsWith('C')) return '#FF6A00';
+  return '#FF2A2A';
+}
+
 /* ------------------------------------------------------------------ */
-/*  Canvas draw                                                        */
+/*  Progression Chart (interactive)                                    */
 /* ------------------------------------------------------------------ */
 
-const STEEL = 'rgba(138,143,152,1)';
-const STEEL_20 = 'rgba(138,143,152,0.2)';
-const ACID_GREEN = '#B6FF2E';
-const ACID_GREEN_10 = 'rgba(182,255,46,0.10)';
-const PIT_ORANGE = '#FF6A00';
+const PAD = { top: 16, right: 60, bottom: 48, left: 56 };
 
-function drawProgressionChart(
-  ctx: CanvasRenderingContext2D,
-  w: number,
-  h: number,
-  entries: ProgressionEntry[],
-) {
-  ctx.clearRect(0, 0, w, h);
+function ProgressionChart({ entries }: { entries: ProgressionEntry[] }) {
+  const draw = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number, hover: HoverPoint | null) => {
+      ctx.clearRect(0, 0, w, h);
+      if (entries.length === 0) {
+        ctx.fillStyle = '#8A8F98';
+        ctx.font = '12px "IBM Plex Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('No progression data', w / 2, h / 2);
+        return;
+      }
 
-  if (entries.length === 0) {
-    ctx.fillStyle = STEEL;
-    ctx.font = '12px "IBM Plex Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('No progression data', w / 2, h / 2);
-    return;
-  }
+      const chartW = w - PAD.left - PAD.right;
+      const chartH = h - PAD.top - PAD.bottom;
+      const maxScore = 100;
 
-  /* Padding */
-  const padL = 56;
-  const padR = 60;
-  const padT = 16;
-  const padB = 48;
-  const chartW = w - padL - padR;
-  const chartH = h - padT - padB;
+      const times = entries.map((e) => e.best_time);
+      const minT = Math.min(...times);
+      const maxT = Math.max(...times);
+      const rangeT = maxT - minT || 1;
 
-  /* Score range: always 0-100 */
-  const minScore = 0;
-  const maxScore = 100;
+      const xOf = (i: number) =>
+        entries.length === 1
+          ? PAD.left + chartW / 2
+          : PAD.left + (i / (entries.length - 1)) * chartW;
+      const yScore = (s: number) => PAD.top + ((maxScore - s) / maxScore) * chartH;
+      const yTime = (t: number) => PAD.top + ((t - minT) / rangeT) * chartH;
 
-  /* Lap time range */
-  const times = entries.map((e) => e.best_time);
-  const minT = Math.min(...times);
-  const maxT = Math.max(...times);
-  const rangeT = maxT - minT || 1;
+      // Compute hovered index
+      let hovIdx = -1;
+      if (hover) {
+        hovIdx = Math.max(0, Math.min(entries.length - 1, Math.round(hover.nx * (entries.length - 1))));
+      }
 
-  /* X-axis: evenly spaced by index */
-  const xOf = (i: number) =>
-    entries.length === 1
-      ? padL + chartW / 2
-      : padL + (i / (entries.length - 1)) * chartW;
+      // Horizontal grid
+      ctx.strokeStyle = 'rgba(138,143,152,0.2)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= 5; i++) {
+        const y = PAD.top + (i / 5) * chartH;
+        ctx.beginPath();
+        ctx.moveTo(PAD.left, y);
+        ctx.lineTo(PAD.left + chartW, y);
+        ctx.stroke();
+      }
 
-  const yScore = (s: number) =>
-    padT + ((maxScore - s) / (maxScore - minScore)) * chartH;
+      // Left Y-axis labels (Score)
+      ctx.font = '11px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#8A8F98';
+      for (let i = 0; i <= 5; i++) {
+        const y = PAD.top + (i / 5) * chartH;
+        ctx.fillText((maxScore - (i / 5) * maxScore).toFixed(0), PAD.left - 8, y);
+      }
+      ctx.save();
+      ctx.translate(14, PAD.top + chartH / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#8A8F98';
+      ctx.font = '11px "IBM Plex Mono", monospace';
+      ctx.fillText('Score', 0, 0);
+      ctx.restore();
 
-  const yTime = (t: number) =>
-    padT + ((t - minT) / rangeT) * chartH;
+      // Right Y-axis labels (Lap Time)
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#FF6A00';
+      for (let i = 0; i <= 5; i++) {
+        const y = PAD.top + (i / 5) * chartH;
+        ctx.fillText(formatTime(minT + (i / 5) * rangeT), PAD.left + chartW + 8, y);
+      }
+      ctx.save();
+      ctx.translate(w - 6, PAD.top + chartH / 2);
+      ctx.rotate(Math.PI / 2);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#FF6A00';
+      ctx.font = '11px "IBM Plex Mono", monospace';
+      ctx.fillText('Lap Time', 0, 0);
+      ctx.restore();
 
-  /* Horizontal grid */
-  const gridRows = 5;
-  ctx.strokeStyle = STEEL_20;
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= gridRows; i++) {
-    const y = padT + (i / gridRows) * chartH;
-    ctx.beginPath();
-    ctx.moveTo(padL, y);
-    ctx.lineTo(padL + chartW, y);
-    ctx.stroke();
-  }
+      // X-axis labels
+      const maxXLabels = Math.min(entries.length, 10);
+      const step = Math.max(1, Math.floor(entries.length / maxXLabels));
+      ctx.font = '10px "IBM Plex Mono", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#8A8F98';
+      for (let i = 0; i < entries.length; i += step) {
+        ctx.fillText(entries[i].date, xOf(i), PAD.top + chartH + 8);
+      }
 
-  /* Left Y-axis labels (Score) */
-  ctx.font = '11px "IBM Plex Mono", monospace';
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = STEEL;
-  for (let i = 0; i <= gridRows; i++) {
-    const y = padT + (i / gridRows) * chartH;
-    const val = maxScore - (i / gridRows) * (maxScore - minScore);
-    ctx.fillText(val.toFixed(0), padL - 8, y);
-  }
-  /* Left axis title */
-  ctx.save();
-  ctx.translate(14, padT + chartH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = STEEL;
-  ctx.font = '11px "IBM Plex Mono", monospace';
-  ctx.fillText('Score', 0, 0);
-  ctx.restore();
+      // Score area fill
+      if (entries.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(xOf(0), yScore(entries[0].score));
+        for (let i = 1; i < entries.length; i++) ctx.lineTo(xOf(i), yScore(entries[i].score));
+        ctx.lineTo(xOf(entries.length - 1), PAD.top + chartH);
+        ctx.lineTo(xOf(0), PAD.top + chartH);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(182,255,46,0.10)';
+        ctx.fill();
+      }
 
-  /* Right Y-axis labels (Lap Time) */
-  ctx.textAlign = 'left';
-  ctx.fillStyle = PIT_ORANGE;
-  for (let i = 0; i <= gridRows; i++) {
-    const y = padT + (i / gridRows) * chartH;
-    const val = minT + (i / gridRows) * rangeT;
-    ctx.fillText(formatTime(val), padL + chartW + 8, y);
-  }
-  /* Right axis title */
-  ctx.save();
-  ctx.translate(w - 6, padT + chartH / 2);
-  ctx.rotate(Math.PI / 2);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillStyle = PIT_ORANGE;
-  ctx.font = '11px "IBM Plex Mono", monospace';
-  ctx.fillText('Lap Time', 0, 0);
-  ctx.restore();
+      // Score line
+      ctx.beginPath();
+      ctx.moveTo(xOf(0), yScore(entries[0].score));
+      for (let i = 1; i < entries.length; i++) ctx.lineTo(xOf(i), yScore(entries[i].score));
+      ctx.strokeStyle = '#B6FF2E';
+      ctx.lineWidth = 2;
+      ctx.stroke();
 
-  /* X-axis labels */
-  const maxXLabels = Math.min(entries.length, 10);
-  const step = Math.max(1, Math.floor(entries.length / maxXLabels));
-  ctx.font = '10px "IBM Plex Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = STEEL;
-  for (let i = 0; i < entries.length; i += step) {
-    ctx.fillText(entries[i].date, xOf(i), padT + chartH + 8);
-  }
+      // Score dots
+      for (let i = 0; i < entries.length; i++) {
+        ctx.beginPath();
+        ctx.arc(xOf(i), yScore(entries[i].score), 3, 0, Math.PI * 2);
+        ctx.fillStyle = '#B6FF2E';
+        ctx.fill();
+      }
 
-  /* Score area fill */
-  if (entries.length > 1) {
-    ctx.beginPath();
-    ctx.moveTo(xOf(0), yScore(entries[0].score));
-    for (let i = 1; i < entries.length; i++) {
-      ctx.lineTo(xOf(i), yScore(entries[i].score));
-    }
-    ctx.lineTo(xOf(entries.length - 1), padT + chartH);
-    ctx.lineTo(xOf(0), padT + chartH);
-    ctx.closePath();
-    ctx.fillStyle = ACID_GREEN_10;
-    ctx.fill();
-  }
+      // Lap time dots
+      for (let i = 0; i < entries.length; i++) {
+        ctx.beginPath();
+        ctx.arc(xOf(i), yTime(entries[i].best_time), 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#FF6A00';
+        ctx.fill();
+      }
 
-  /* Score line */
-  ctx.beginPath();
-  ctx.moveTo(xOf(0), yScore(entries[0].score));
-  for (let i = 1; i < entries.length; i++) {
-    ctx.lineTo(xOf(i), yScore(entries[i].score));
-  }
-  ctx.strokeStyle = ACID_GREEN;
-  ctx.lineWidth = 2;
-  ctx.stroke();
+      // Hover highlights
+      if (hovIdx >= 0) {
+        const x = xOf(hovIdx);
 
-  /* Score dots (small, on the line) */
-  for (let i = 0; i < entries.length; i++) {
-    ctx.beginPath();
-    ctx.arc(xOf(i), yScore(entries[i].score), 3, 0, Math.PI * 2);
-    ctx.fillStyle = ACID_GREEN;
-    ctx.fill();
-  }
+        // Score hover dot (enlarged)
+        ctx.beginPath();
+        ctx.arc(x, yScore(entries[hovIdx].score), 6, 0, Math.PI * 2);
+        ctx.fillStyle = '#B6FF2E';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-  /* Lap time dots */
-  for (let i = 0; i < entries.length; i++) {
-    ctx.beginPath();
-    ctx.arc(xOf(i), yTime(entries[i].best_time), 5, 0, Math.PI * 2);
-    ctx.fillStyle = PIT_ORANGE;
-    ctx.fill();
-  }
+        // Time hover dot (enlarged)
+        ctx.beginPath();
+        ctx.arc(x, yTime(entries[hovIdx].best_time), 7, 0, Math.PI * 2);
+        ctx.fillStyle = '#FF6A00';
+        ctx.fill();
+        ctx.strokeStyle = '#F3F0E8';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    },
+    [entries],
+  );
+
+  const getTooltipData = useCallback(
+    (hover: HoverPoint): TooltipData | null => {
+      if (entries.length === 0) return null;
+      const idx = Math.max(0, Math.min(entries.length - 1, Math.round(hover.nx * (entries.length - 1))));
+      const e = entries[idx];
+      return {
+        header: `${e.date} — ${e.track_name}`,
+        lines: [
+          { label: 'Score', value: e.score.toFixed(1), color: '#B6FF2E' },
+          { label: 'Lap Time', value: formatTime(e.best_time), color: '#FF6A00' },
+          { label: 'Grade', value: e.grade, color: gradeHex(e.grade) },
+        ],
+      };
+    },
+    [entries],
+  );
+
+  const { canvasRef, containerRef, tooltip } = useInteractiveCanvas({
+    draw,
+    deps: [entries],
+    padding: PAD,
+    getTooltipData,
+    crosshair: true,
+  });
+
+  return (
+    <div ref={containerRef} className="relative">
+      <canvas ref={canvasRef} className="w-full" style={{ height: 320 }} />
+      <ChartTooltip tooltip={tooltip} />
+    </div>
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -216,7 +256,6 @@ function drawProgressionChart(
 
 export default function DriverProgressionPage() {
   const { id } = useParams<{ id: string }>();
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [trackId, setTrackId] = useState('');
 
   const queryPath = trackId
@@ -239,30 +278,6 @@ export default function DriverProgressionPage() {
     if (trackId || trackOptions.length === 0) return;
     setTrackId(String(trackOptions[0].id));
   }, [trackId, trackOptions]);
-
-  const draw = useCallback(() => {
-    if (!data || !canvasRef.current) return;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    canvas.width = rect.width * dpr;
-    canvas.height = rect.height * dpr;
-    ctx.scale(dpr, dpr);
-    drawProgressionChart(ctx, rect.width, rect.height, data.progression);
-  }, [data]);
-
-  useEffect(() => {
-    draw();
-  }, [draw]);
-
-  /* Redraw on window resize */
-  useEffect(() => {
-    const onResize = () => draw();
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [draw]);
 
   if (isLoading) {
     return (
@@ -333,11 +348,7 @@ export default function DriverProgressionPage() {
           loading={isLoading}
           error={error?.message ?? null}
         >
-          <canvas
-            ref={canvasRef}
-            className="w-full"
-            style={{ height: 320 }}
-          />
+          <ProgressionChart entries={progression} />
         </ChartPanel>
       </div>
 
