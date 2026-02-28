@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getStripePriceId, getStripeSecretKey, isB2BPlan } from '@/lib/stripe-billing';
-import { getSiteUrl } from '@/lib/site-url';
+import { getValidatedSiteOrigin } from '@/lib/site-origin';
+
+const SUCCESS_PATH = '/thank-you/book';
+const CANCEL_PATH = '/pricing';
 
 interface CheckoutBody {
   plan: string;
@@ -38,15 +41,16 @@ export async function POST(request: Request) {
 
   const stripeKey = getStripeSecretKey();
   const stripePriceId = getStripePriceId(body.plan, body.billingCycle);
-  const origin = request.headers.get('origin') ?? getSiteUrl();
-  const successUrl = `${origin}/thank-you/book`;
-  const cancelUrl = `${origin}/pricing?checkout=cancelled`;
+  const siteOrigin = getValidatedSiteOrigin();
+  const successUrl = new URL(SUCCESS_PATH, siteOrigin);
+  const cancelUrl = new URL(CANCEL_PATH, siteOrigin);
+  cancelUrl.searchParams.set('checkout', 'cancelled');
 
   if (stripeKey && stripePriceId) {
     const params = new URLSearchParams();
     params.set('mode', 'subscription');
-    params.set('success_url', successUrl);
-    params.set('cancel_url', cancelUrl);
+    params.set('success_url', successUrl.toString());
+    params.set('cancel_url', cancelUrl.toString());
     params.set('line_items[0][price]', stripePriceId);
     params.set('line_items[0][quantity]', '1');
     params.set('allow_promotion_codes', 'true');
