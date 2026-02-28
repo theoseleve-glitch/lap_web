@@ -1,7 +1,9 @@
-import { setAccessToken } from './auth-store';
+import { setAccessToken, getAccessToken, setWorkspaceId } from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
 
-const AUTH_BASE = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'}/auth`;
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const AUTH_BASE = `${BACKEND_URL}/auth`;
+const API_BASE = `${BACKEND_URL}/api/v1`;
 
 export interface AuthUser {
   id: number;
@@ -32,6 +34,36 @@ async function authFetch<T>(path: string, body?: unknown): Promise<T> {
   return parseEnvelopeOrThrow<T>(res);
 }
 
+/**
+ * Fetch the user's current (default) workspace from the backend and store
+ * the ID so it is sent as X-Workspace-Id on every subsequent API call.
+ *
+ * Uses a direct fetch (not apiFetch) to avoid circular dependency with the
+ * 401-retry logic in api-client.ts.  Failures are silently ignored — the
+ * backend tenant middleware will fall back to the user's default workspace.
+ */
+async function resolveWorkspace(): Promise<void> {
+  try {
+    const token = getAccessToken();
+    if (!token) return;
+    const res = await fetch(`${API_BASE}/workspaces/current`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: 'include',
+    });
+    if (!res.ok) return;
+    const envelope = await res.json();
+    const wsId = envelope?.data?.workspace_id;
+    if (typeof wsId === 'number') {
+      setWorkspaceId(wsId);
+    }
+  } catch {
+    // Non-fatal — tenant middleware falls back to default workspace
+  }
+}
+
 export interface TwoFaRequired {
   requires_2fa: true;
   temp_token: string;
@@ -44,6 +76,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   const result = await authFetch<LoginResult>('/login', { email, password });
   if ('access_token' in result) {
     setAccessToken(result.access_token);
+    await resolveWorkspace();
   }
   return result;
 }
@@ -59,6 +92,7 @@ export async function verify2fa(
     : { temp_token: tempToken, totp_code: code };
   const result = await authFetch<LoginResponse>('/2fa/verify', body);
   setAccessToken(result.access_token);
+  await resolveWorkspace();
   return result;
 }
 
@@ -89,6 +123,7 @@ export async function register(
     display_name: displayName,
   });
   setAccessToken(result.access_token);
+  await resolveWorkspace();
   return result;
 }
 
@@ -99,6 +134,7 @@ export async function verifyEmail(token: string): Promise<{ verified: boolean }>
 export async function logout(): Promise<void> {
   await authFetch('/logout');
   setAccessToken(null);
+  setWorkspaceId(null);
 }
 
 /**
@@ -109,9 +145,11 @@ export async function silentRefresh(): Promise<AuthUser | null> {
   try {
     const result = await authFetch<LoginResponse>('/refresh');
     setAccessToken(result.access_token);
+    await resolveWorkspace();
     return result.user;
   } catch {
     setAccessToken(null);
+    setWorkspaceId(null);
     return null;
   }
 }

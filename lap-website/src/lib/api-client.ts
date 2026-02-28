@@ -7,7 +7,7 @@
  * httpOnly cookie and then replay the original request.
  */
 
-import { getAccessToken } from './auth-store';
+import { getAccessToken, getWorkspaceId } from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
 
 export const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -53,6 +53,12 @@ function buildHeaders(): Record<string, string> {
     const token = getAccessToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Attach active workspace for RLS tenant isolation
+    const wsId = getWorkspaceId();
+    if (wsId !== null) {
+      headers['X-Workspace-Id'] = String(wsId);
     }
 
     // Attach CSRF token from cookie (double-submit pattern)
