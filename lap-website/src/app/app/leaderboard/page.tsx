@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, DataTable } from '@/components/app';
 
@@ -166,15 +167,15 @@ export default function LeaderboardPage() {
             <div className="grid grid-cols-3 gap-4 mb-8">
               {/* 2nd place (left) */}
               {podium.length >= 2 ? (
-                <PodiumCard entry={podium[1]} onClick={() => router.push(`/app/sessions/${podium[1].session_id}`)} />
+                <PodiumCard entry={podium[1]} href={`/app/sessions/${podium[1].session_id}`} />
               ) : <div />}
 
               {/* 1st place (center, taller) */}
-              <PodiumCard entry={podium[0]} isFirst onClick={() => router.push(`/app/sessions/${podium[0].session_id}`)} />
+              <PodiumCard entry={podium[0]} isFirst href={`/app/sessions/${podium[0].session_id}`} />
 
               {/* 3rd place (right) */}
               {podium.length >= 3 ? (
-                <PodiumCard entry={podium[2]} onClick={() => router.push(`/app/sessions/${podium[2].session_id}`)} />
+                <PodiumCard entry={podium[2]} href={`/app/sessions/${podium[2].session_id}`} />
               ) : <div />}
             </div>
           )}
@@ -273,11 +274,11 @@ export default function LeaderboardPage() {
 function PodiumCard({
   entry,
   isFirst = false,
-  onClick,
+  href,
 }: {
   entry: LeaderboardRow;
   isFirst?: boolean;
-  onClick: () => void;
+  href: string;
 }) {
   const medals = ['🥇', '🥈', '🥉'];
   const borderColors = [
@@ -287,12 +288,12 @@ function PodiumCard({
   ];
 
   return (
-    <button
-      onClick={onClick}
+    <Link
+      href={href}
       className={`group bg-concrete rounded-lg border ${borderColors[entry.rank - 1]} p-5 text-center transition-all
         hover:border-acid-green/40 ${isFirst ? 'md:-mt-4 md:pb-8' : ''}`}
     >
-      <span className="text-3xl">{medals[entry.rank - 1]}</span>
+      <span className="text-3xl" aria-hidden="true">{medals[entry.rank - 1]}</span>
       <p className="font-monument text-2xl text-chalk mt-2 group-hover:text-acid-green transition-colors">
         {fmtTime(entry.best_time)}
       </p>
@@ -311,6 +312,6 @@ function PodiumCard({
         )}
       </div>
       <p className="text-steel/40 font-telemetry text-[10px] mt-2">{entry.date}</p>
-    </button>
+    </Link>
   );
 }

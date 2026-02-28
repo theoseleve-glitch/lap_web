@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard } from '@/components/app';
@@ -46,7 +46,7 @@ const STYLE_COLORS: Record<string, string> = {
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function DriversPage() {
-  const router = useRouter();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'score'>('sessions');
 
@@ -145,9 +145,9 @@ export default function DriversPage() {
           {filtered.map((driver) => {
             const tier = scoreColor(driver.mean_score);
             return (
-              <button
+              <Link
                 key={driver.driver_id}
-                onClick={() => router.push(`/app/drivers/${driver.driver_id}`)}
+                href={`/app/drivers/${driver.driver_id}`}
                 className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                   hover:border-acid-green/40 transition-all"
               >
@@ -209,7 +209,7 @@ export default function DriversPage() {
                     View profile →
                   </span>
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>

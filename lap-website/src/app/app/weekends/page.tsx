@@ -1,7 +1,6 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
@@ -51,7 +50,7 @@ function isPast(end: string | null, start: string): boolean {
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function WeekendsPage() {
-  const router = useRouter();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'date' | 'name' | 'sessions'>('date');
 
@@ -172,9 +171,9 @@ export default function WeekendsPage() {
             const days = daysSpan(weekend.start_date, weekend.end_date);
 
             return (
-              <button
+              <Link
                 key={weekend.id}
-                onClick={() => router.push(`/app/weekends/${weekend.id}`)}
+                href={`/app/weekends/${weekend.id}`}
                 className={`group text-left bg-concrete rounded-lg border p-5
                   hover:border-acid-green/40 transition-all ${
                     upcoming
@@ -245,7 +244,7 @@ export default function WeekendsPage() {
                     View weekend →
                   </span>
                 </div>
-              </button>
+              </Link>
             );
           })}
         </div>

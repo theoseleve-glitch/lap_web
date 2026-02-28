@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, ChartPanel, DataTable } from '@/components/app';
@@ -340,14 +341,14 @@ export default function DriverDetailPage() {
           ) : (
             <div className="space-y-2">
               {driverTracks.map((t) => (
-                <button
+                <Link
                   key={t.track_id}
-                  onClick={() => router.push(`/app/tracks/${t.track_id}`)}
+                  href={`/app/tracks/${t.track_id}`}
                   className="w-full flex items-center justify-between py-1.5 px-2 rounded hover:bg-asphalt/50 transition-colors"
                 >
                   <span className="text-chalk font-body text-sm">{t.track_name}</span>
                   <span className="text-steel font-telemetry text-xs">{t.session_count} sessions</span>
-                </button>
+                </Link>
               ))}
             </div>
           )}

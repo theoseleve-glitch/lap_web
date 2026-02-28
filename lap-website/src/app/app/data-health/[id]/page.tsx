@@ -1,7 +1,8 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard } from '@/components/app';
 
@@ -40,7 +41,7 @@ function formatDuration(s: number | null): string {
 
 export default function DataHealthDetailPage() {
   const params = useParams();
-  const router = useRouter();
+
   const id = params.id as string;
 
   const { data: job, isLoading, error } = useQuery({
@@ -64,12 +65,12 @@ export default function DataHealthDetailPage() {
     return (
       <div className="text-center py-16">
         <p className="text-steel font-body">Job not found.</p>
-        <button
-          onClick={() => router.push('/app/data-health')}
-          className="mt-4 text-acid-green font-telemetry text-sm hover:underline"
+        <Link
+          href="/app/data-health"
+          className="mt-4 inline-block text-acid-green font-telemetry text-sm hover:underline"
         >
           ← Back to Data Health
-        </button>
+        </Link>
       </div>
     );
   }
@@ -82,19 +83,19 @@ export default function DataHealthDetailPage() {
         actions={
           <div className="flex items-center gap-3">
             {job.session_id && (
-              <button
-                onClick={() => router.push(`/app/sessions/${job.session_id}`)}
+              <Link
+                href={`/app/sessions/${job.session_id}`}
                 className="px-4 py-2 bg-acid-green/10 text-acid-green border border-acid-green/30 font-telemetry text-sm rounded hover:bg-acid-green/20 transition-colors"
               >
                 View Session →
-              </button>
+              </Link>
             )}
-            <button
-              onClick={() => router.push('/app/data-health')}
+            <Link
+              href="/app/data-health"
               className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
             >
               ← Back
-            </button>
+            </Link>
           </div>
         }
       />

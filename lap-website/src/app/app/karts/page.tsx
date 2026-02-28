@@ -1,7 +1,6 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
@@ -52,7 +51,7 @@ function engineBadgeClass(engine: string | null | undefined): string {
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function KartsPage() {
-  const router = useRouter();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'power'>('sessions');
 
@@ -175,9 +174,9 @@ export default function KartsPage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((kart) => (
-            <button
+            <Link
               key={kart.kart_id}
-              onClick={() => router.push(`/app/karts/${kart.kart_id}`)}
+              href={`/app/karts/${kart.kart_id}`}
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all"
             >
@@ -252,7 +251,7 @@ export default function KartsPage() {
                   View kart →
                 </span>
               </div>
-            </button>
+            </Link>
           ))}
         </div>
       )}

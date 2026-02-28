@@ -1,7 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard } from '@/components/app';
@@ -37,7 +37,7 @@ function fmtLength(m: number | null): string {
 /* ── Page ───────────────────────────────────────────────── */
 
 export default function TracksPage() {
-  const router = useRouter();
+
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'record'>('sessions');
 
@@ -142,10 +142,9 @@ export default function TracksPage() {
         /* ── Track Cards Grid ────────────────────────────── */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((track) => (
-            <button
-              type="button"
+            <Link
               key={track.track_id}
-              onClick={() => router.push(`/app/tracks/${track.track_id}`)}
+              href={`/app/tracks/${track.track_id}`}
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all"
             >
@@ -191,7 +190,7 @@ export default function TracksPage() {
                   View details →
                 </span>
               </div>
-            </button>
+            </Link>
           ))}
         </div>
       )}
