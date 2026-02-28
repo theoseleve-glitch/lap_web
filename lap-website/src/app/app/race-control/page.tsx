@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { MetricCard } from '@/components/admin/MetricCard';
-import { StatusBadge } from '@/components/admin/StatusBadge';
+
 
 export default function RaceControlDashboard() {
   const { data, isLoading } = useQuery({

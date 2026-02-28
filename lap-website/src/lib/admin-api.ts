@@ -124,6 +124,7 @@ export interface Incident {
   id: number;
   admin_user_id: number;
   title: string;
+  body?: string;
   severity: string;
   status: string;
   created_at: string;
@@ -216,8 +217,8 @@ export const adminApi = {
   },
 
   // Infra
-  storage: () => api.get<{ db_size_bytes: number }>('/admin/infra/storage'),
+  storage: () => api.get<{ db_size_bytes: number; table_count?: number }>('/admin/infra/storage'),
   maintenanceStatus: () => api.get<{ enabled: boolean; message?: string }>('/admin/infra/maintenance'),
-  toggleMaintenance: (enabled: boolean, message: string) =>
-    api.post('/admin/infra/maintenance', { enabled, message }),
+  toggleMaintenance: (enabled: boolean, message: string, reason?: string) =>
+    api.post('/admin/infra/maintenance', { enabled, message, reason }),
 };

@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { adminApi } from '@/lib/admin-api';
 import { MetricCard } from '@/components/admin/MetricCard';
@@ -72,7 +72,7 @@ export default function UserDetailPage() {
       <div>
         <h2 className="mb-2 text-sm font-semibold text-steel">Recent Activity</h2>
         <div className="space-y-1">
-          {(timeline ?? []).slice(0, 20).map((event: Record<string, unknown>, i: number) => (
+          {((timeline ?? []) as Record<string, unknown>[]).slice(0, 20).map((event, i) => (
             <div key={i} className="flex items-center gap-3 rounded border border-white/5 px-3 py-1.5 text-xs">
               <span className="text-steel">{String(event.created_at ?? '').slice(0, 19)}</span>
               <StatusBadge status={String(event.event_type ?? 'unknown')} />

@@ -1,13 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { MetricCard } from '@/components/admin/MetricCard';
 import { ActionButton } from '@/components/admin/ActionButton';
 
 export default function EmailPage() {
-  const queryClient = useQueryClient();
   const [resendUserId, setResendUserId] = useState('');
 
   const { data: stats } = useQuery({

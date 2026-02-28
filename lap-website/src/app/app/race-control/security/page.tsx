@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { AdminTable } from '@/components/admin/AdminTable';
 import { StatusBadge } from '@/components/admin/StatusBadge';
-import { MetricCard } from '@/components/admin/MetricCard';
 
 export default function SecurityEventsPage() {
   const [typeFilter, setTypeFilter] = useState('');

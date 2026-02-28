@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '@/lib/admin-api';
 import { MetricCard } from '@/components/admin/MetricCard';
@@ -11,18 +10,18 @@ export default function InfraPage() {
 
   const { data: storage } = useQuery({
     queryKey: ['admin-infra-storage'],
-    queryFn: adminApi.infraStorage,
+    queryFn: adminApi.storage,
   });
 
   const { data: maintenance } = useQuery({
     queryKey: ['admin-infra-maintenance'],
-    queryFn: adminApi.infraMaintenance,
+    queryFn: adminApi.maintenanceStatus,
     refetchInterval: 15000,
   });
 
   const toggleMutation = useMutation({
     mutationFn: (params: { enabled: boolean; message: string; reason: string }) =>
-      adminApi.setMaintenance(params.enabled, params.message, params.reason),
+      adminApi.toggleMaintenance(params.enabled, params.message, params.reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin-infra-maintenance'] });
     },
