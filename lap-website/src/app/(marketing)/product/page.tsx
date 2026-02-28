@@ -12,14 +12,14 @@ export default function ProductPage() {
   const engineerScreenshots = [
     { title: 'Score Overview', description: 'Pace, Consistency, Execution, Robustness — each scored /25.', src: '/images/screenshots/score-overview.png' },
     { title: 'Corner Replay', description: 'Entry, apex, and exit traces to spot where the lap was won or lost.', src: '/images/screenshots/corner-replay.png' },
-    { title: 'Session Intelligence', description: 'Overview, Corners, Timeline, Analytics, and Lap Data tabs.', src: '/images/screenshots/score-overview.png' },
-    { title: 'Comparison Suite', description: 'Session-vs-session and driver-vs-driver overlays.', src: '/images/screenshots/corner-replay.png' },
+    { title: 'Session Intelligence', description: 'Overview, Corners, Timeline, Analytics, and Lap Data tabs.', src: '/images/screenshots/session-detail.png' },
+    { title: 'Comparison Suite', description: 'Session-vs-session and driver-vs-driver overlays.', src: '/images/screenshots/comparison-suite.png' },
   ];
 
   const strategistScreenshots = [
     { title: 'Race Strategy Dashboard', description: 'Live operational board for stint calls and pit-window decisions.', src: '/images/screenshots/dashboard-hero.png' },
-    { title: 'Live Monitoring', description: 'Real-time pace deltas and stint progress.', src: '/images/screenshots/lap-table.png' },
-    { title: 'Pit Stop Planning', description: 'Plan pit windows based on fuel, tire, and driver rotation.', src: '/images/screenshots/dashboard-hero.png' },
+    { title: 'Live Monitoring', description: 'Real-time pace deltas and stint progress.', src: '/images/screenshots/live-monitoring.png' },
+    { title: 'Pit Stop Planning', description: 'Plan pit windows based on fuel, tire, and driver rotation.', src: '/images/screenshots/pit-planning.png' },
     { title: 'Lap Analysis Table', description: 'Detailed lap-by-lap data with sector splits.', src: '/images/screenshots/lap-table.png' },
   ];
 
