@@ -443,6 +443,30 @@ class TestRefreshEndpoint:
         source = inspect.getsource(auth_middleware)
         assert "/auth/refresh" in source
 
+    def test_refresh_has_rate_limit_decorator(self):
+        """The /auth/refresh endpoint must have @rate_limit(tier='auth')."""
+        from web.routes.auth import refresh
+        # When @rate_limit wraps a function, functools.wraps preserves the
+        # original name but the wrapper closure lives in rate_limit's module.
+        # We inspect the source code of the route module directly.
+        import inspect
+        from web.routes import auth as auth_module
+        source = inspect.getsource(auth_module)
+        # Find the refresh function definition and verify rate_limit precedes it
+        lines = source.splitlines()
+        for i, line in enumerate(lines):
+            if "def refresh():" in line:
+                # Check that @rate_limit appears in the lines just before
+                preceding = "\n".join(lines[max(0, i - 3):i])
+                assert "@rate_limit(" in preceding, (
+                    "@rate_limit decorator missing from /auth/refresh endpoint"
+                )
+                assert 'tier="auth"' in preceding or "tier='auth'" in preceding, (
+                    "@rate_limit on /auth/refresh should use tier='auth'"
+                )
+                return
+        pytest.fail("Could not find 'def refresh():' in auth routes module")
+
 
 # ---------------------------------------------------------------------------
 # _get_conn guard test (no PG required)

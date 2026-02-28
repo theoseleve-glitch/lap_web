@@ -295,6 +295,7 @@ def logout():
 
 
 @bp.route("/refresh", methods=["POST"])
+@rate_limit(tier="auth")
 def refresh():
     """Exchange a valid refresh token for a new access + refresh token pair.
 
