@@ -109,11 +109,18 @@ def setup_logging(app: Flask) -> None:
     web_logger = logging.getLogger("web")
     web_logger.addFilter(request_filter)
 
+    # Attach to telemetry_tool.* namespace — route modules use
+    # logging.getLogger(__name__) which resolves to e.g.
+    # "telemetry_tool.web.routes.sessions_v2".  Without a handler on
+    # this namespace, exception logs from routes are silently dropped.
+    tt_logger = logging.getLogger("telemetry_tool")
+    tt_logger.addFilter(request_filter)
+
     log_format = os.environ.get("TELEMETRY_LOG_FORMAT", "").lower()
 
     if log_format == "json":
         json_formatter = JsonFormatter()
-        for target in (logger, web_logger):
+        for target in (logger, web_logger, tt_logger):
             for handler in target.handlers:
                 handler.setFormatter(json_formatter)
             if not target.handlers:
@@ -127,7 +134,7 @@ def setup_logging(app: Flask) -> None:
             "[%(request_id)s] %(name)s: %(message)s"
         )
         formatter = logging.Formatter(human_format)
-        for target in (logger, web_logger):
+        for target in (logger, web_logger, tt_logger):
             if target.handlers:
                 for handler in target.handlers:
                     handler.setFormatter(formatter)

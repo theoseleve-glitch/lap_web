@@ -240,8 +240,17 @@ export function useVanillaChart(options: UseVanillaChartOptions): UseVanillaChar
       patchFetchHelper(apiBase);
 
       // 3. Set up TELEMETRY globals
+      // Decode sessionId to ensure vanilla JS modules (which call
+      // encodeURIComponent) don't double-encode special characters
+      // like '+' (%2B) that may arrive pre-encoded from Next.js URL params.
+      let rawSessionId = sessionId;
+      try {
+        rawSessionId = decodeURIComponent(sessionId);
+      } catch {
+        // sessionId contains an invalid percent sequence — use as-is
+      }
       window.TELEMETRY = {
-        sessionId,
+        sessionId: rawSessionId,
         gpsLaps,
         bestLap,
       };
