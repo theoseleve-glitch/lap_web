@@ -6,14 +6,14 @@ in the SQLite schema (db/schema.py) but was never added to
 PostgreSQL via migration.
 
 Revision ID: 025
-Revises: 024
+Revises: 022
 Create Date: 2026-03-01
 """
 from alembic import op
 import sqlalchemy as sa
 
 revision = "025"
-down_revision = "024"
+down_revision = "022"
 branch_labels = None
 depends_on = None
 
