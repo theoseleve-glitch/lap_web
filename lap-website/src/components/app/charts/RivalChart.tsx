@@ -33,7 +33,8 @@ export function RivalChart({ sessionId }: Props) {
       const { laps, gap } = data;
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
-      const maxGap = Math.max(...gap.map(Math.abs), 0.1);
+      const cleanGap = gap.filter(Number.isFinite).map(Math.abs);
+      const maxGap = cleanGap.length > 0 ? Math.max(...cleanGap, 0.1) : 0.1;
       const cy = PAD.top + plotH / 2;
 
       // Grid
@@ -64,7 +65,7 @@ export function RivalChart({ sessionId }: Props) {
       ctx.fillText('0.0s', PAD.left - 5, cy + 4);
 
       const toX = (i: number) => PAD.left + (i / (laps.length - 1 || 1)) * plotW;
-      const toY = (g: number) => cy - (g / maxGap) * (plotH / 2);
+      const toY = (g: number) => { const safe = Number.isFinite(g) ? g : 0; const v = cy - (safe / maxGap) * (plotH / 2); return Number.isFinite(v) ? v : cy; };
 
       // Gradient fill
       ctx.beginPath();

@@ -36,11 +36,13 @@ export function TrendChart({ sessionId }: Props) {
 
       const minDist = distances[0], maxDist = distances[distances.length - 1];
       const dR = maxDist - minDist || 1;
-      const maxPace = Math.max(...pace_delta.map(Math.abs), 0.1);
-      const maxConsist = Math.max(...consistency_index, 0.01);
+      const cleanPace = pace_delta.filter(Number.isFinite).map(Math.abs);
+      const cleanConsist = consistency_index.filter(Number.isFinite);
+      const maxPace = cleanPace.length > 0 ? Math.max(...cleanPace, 0.1) : 0.1;
+      const maxConsist = cleanConsist.length > 0 ? Math.max(...cleanConsist, 0.01) : 0.01;
       const cy = PAD.top + plotH / 2;
 
-      const toX = (d: number) => PAD.left + ((d - minDist) / dR) * plotW;
+      const toX = (d: number) => { const v = PAD.left + ((d - minDist) / dR) * plotW; return Number.isFinite(v) ? v : PAD.left; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';
@@ -53,13 +55,24 @@ export function TrendChart({ sessionId }: Props) {
         ctx.stroke();
       }
 
+      const safePaceY = (v: number) => {
+        const safe = Number.isFinite(v) ? v : 0;
+        const y = cy - (safe / maxPace) * (plotH / 2);
+        return Number.isFinite(y) ? y : cy;
+      };
+      const safeConsistY = (v: number) => {
+        const safe = Number.isFinite(v) ? v : 0;
+        const y = PAD.top + plotH - (safe / maxConsist) * plotH;
+        return Number.isFinite(y) ? y : PAD.top;
+      };
+
       // Pace delta line (centered on zero)
       ctx.beginPath();
       ctx.strokeStyle = '#B6FF2E';
       ctx.lineWidth = 1.5;
       for (let i = 0; i < distances.length; i++) {
         const x = toX(distances[i]);
-        const y = cy - (pace_delta[i] / maxPace) * (plotH / 2);
+        const y = safePaceY(pace_delta[i]);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -72,7 +85,7 @@ export function TrendChart({ sessionId }: Props) {
       ctx.setLineDash([4, 3]);
       for (let i = 0; i < distances.length; i++) {
         const x = toX(distances[i]);
-        const y = PAD.top + plotH - (consistency_index[i] / maxConsist) * plotH;
+        const y = safeConsistY(consistency_index[i]);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -98,7 +111,7 @@ export function TrendChart({ sessionId }: Props) {
         const x = toX(distances[idx]);
         // Pace dot
         ctx.beginPath();
-        ctx.arc(x, cy - (pace_delta[idx] / maxPace) * (plotH / 2), 4, 0, Math.PI * 2);
+        ctx.arc(x, safePaceY(pace_delta[idx]), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#B6FF2E';
         ctx.fill();
         ctx.strokeStyle = '#F3F0E8';
@@ -106,7 +119,7 @@ export function TrendChart({ sessionId }: Props) {
         ctx.stroke();
         // Consistency dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - (consistency_index[idx] / maxConsist) * plotH, 4, 0, Math.PI * 2);
+        ctx.arc(x, safeConsistY(consistency_index[idx]), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#FFD400';
         ctx.fill();
         ctx.strokeStyle = '#F3F0E8';

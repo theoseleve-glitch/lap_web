@@ -42,12 +42,13 @@ export function PitWindowChart({ sessionId }: Props) {
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
 
-      const maxTime = Math.max(...cumulative_time, 1);
+      const cleanTime = cumulative_time.filter(Number.isFinite);
+      const maxTime = cleanTime.length > 0 ? Math.max(...cleanTime, 1) : 1;
       const minLap = laps[0], maxLap = laps[laps.length - 1];
       const lapR = maxLap - minLap || 1;
 
-      const toX = (lap: number) => PAD.left + ((lap - minLap) / lapR) * plotW;
-      const toY = (t: number) => PAD.top + plotH - (t / maxTime) * plotH;
+      const toX = (lap: number) => { const v = PAD.left + ((lap - minLap) / lapR) * plotW; return Number.isFinite(v) ? v : PAD.left; };
+      const toY = (t: number) => { const v = PAD.top + plotH - ((Number.isFinite(t) ? t : 0) / maxTime) * plotH; return Number.isFinite(v) ? v : PAD.top; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';

@@ -152,8 +152,8 @@ export function useInteractiveCanvas({
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
       const pad = paddingRef.current;
-      const plotW = rect.width - pad.left - pad.right;
-      const plotH = rect.height - pad.top - pad.bottom;
+      const plotW = Math.max(rect.width - pad.left - pad.right, 1);
+      const plotH = Math.max(rect.height - pad.top - pad.bottom, 1);
       const nx = Math.max(0, Math.min(1, (x - pad.left) / plotW));
       const ny = Math.max(0, Math.min(1, (y - pad.top) / plotH));
 

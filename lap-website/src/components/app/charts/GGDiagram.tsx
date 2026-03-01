@@ -44,14 +44,15 @@ export function GGDiagram({ sessionId, height = 'h-56' }: Props) {
       const plotH = h - PAD.top - PAD.bottom;
       const cx = PAD.left + plotW / 2;
       const cy = PAD.top + plotH / 2;
-      const halfR = Math.min(plotW, plotH) / 2;
+      const halfR = Math.max(1, Math.min(plotW, plotH) / 2);
+      const safeMaxG = Math.max(maxG, 0.1);
 
       // Circle guides
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.12)';
       ctx.lineWidth = 0.5;
-      const nRings = Math.ceil(maxG / 0.5);
+      const nRings = Math.ceil(safeMaxG / 0.5);
       for (let i = 1; i <= nRings; i++) {
-        const r = (i * 0.5 / maxG) * halfR;
+        const r = (i * 0.5 / safeMaxG) * halfR;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
         ctx.stroke();
@@ -86,8 +87,8 @@ export function GGDiagram({ sessionId, height = 'h-56' }: Props) {
 
       // Scatter points
       for (let i = 0; i < lat_g.length; i++) {
-        const x = cx + (lat_g[i] / maxG) * halfR;
-        const y = cy - (lon_g[i] / maxG) * halfR;
+        const x = cx + (lat_g[i] / safeMaxG) * halfR;
+        const y = cy - (lon_g[i] / safeMaxG) * halfR;
         ctx.beginPath();
         ctx.arc(x, y, 1.5, 0, Math.PI * 2);
         ctx.fillStyle = lon_g[i] > 0 ? '#B6FF2E66' : '#FF2A2A66';
@@ -99,8 +100,8 @@ export function GGDiagram({ sessionId, height = 'h-56' }: Props) {
         let minDist = Infinity;
         let nearestIdx = -1;
         for (let i = 0; i < lat_g.length; i++) {
-          const px = cx + (lat_g[i] / maxG) * halfR;
-          const py = cy - (lon_g[i] / maxG) * halfR;
+          const px = cx + (lat_g[i] / safeMaxG) * halfR;
+          const py = cy - (lon_g[i] / safeMaxG) * halfR;
           const d = (hover.x - px) ** 2 + (hover.y - py) ** 2;
           if (d < minDist) {
             minDist = d;
@@ -108,8 +109,8 @@ export function GGDiagram({ sessionId, height = 'h-56' }: Props) {
           }
         }
         if (nearestIdx >= 0 && minDist < 400) {
-          const px = cx + (lat_g[nearestIdx] / maxG) * halfR;
-          const py = cy - (lon_g[nearestIdx] / maxG) * halfR;
+          const px = cx + (lat_g[nearestIdx] / safeMaxG) * halfR;
+          const py = cy - (lon_g[nearestIdx] / safeMaxG) * halfR;
           ctx.beginPath();
           ctx.arc(px, py, 5, 0, Math.PI * 2);
           ctx.fillStyle = lon_g[nearestIdx] > 0 ? '#B6FF2E' : '#FF2A2A';
@@ -135,14 +136,14 @@ export function GGDiagram({ sessionId, height = 'h-56' }: Props) {
       if (!data || !stats || data.lat_g.length === 0) return null;
 
       const { lat_g, lon_g } = data;
-      const { maxG } = stats;
+      const safeMaxG = Math.max(stats.maxG, 0.1);
       // Find nearest point
       let minDist = Infinity;
       let nearestIdx = -1;
       // We need canvas dimensions — approximate from hover coordinates
       for (let i = 0; i < lat_g.length; i += 3) { // sample every 3rd point for performance
-        const dist = Math.abs(hover.nx - 0.5 - (lat_g[i] / maxG) * 0.5) ** 2 +
-                     Math.abs(hover.ny - 0.5 + (lon_g[i] / maxG) * 0.5) ** 2;
+        const dist = Math.abs(hover.nx - 0.5 - (lat_g[i] / safeMaxG) * 0.5) ** 2 +
+                     Math.abs(hover.ny - 0.5 + (lon_g[i] / safeMaxG) * 0.5) ** 2;
         if (dist < minDist) {
           minDist = dist;
           nearestIdx = i;

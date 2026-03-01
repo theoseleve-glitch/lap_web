@@ -36,12 +36,13 @@ export function EnergyBalance({ sessionId }: Props) {
 
       const minDist = distances[0], maxDist = distances[distances.length - 1];
       const dR = maxDist - minDist || 1;
-      const allE = [...kinetic_energy, ...braking_energy];
-      const maxE = Math.max(...allE, 0.001), minE = Math.min(...allE, 0);
+      const allE = [...kinetic_energy, ...braking_energy].filter(Number.isFinite);
+      const maxE = allE.length > 0 ? Math.max(...allE, 0.001) : 0.001;
+      const minE = allE.length > 0 ? Math.min(...allE, 0) : 0;
       const eR = maxE - minE || 1;
 
-      const toX = (d: number) => PAD.left + ((d - minDist) / dR) * plotW;
-      const toY = (e: number) => PAD.top + plotH - ((e - minE) / eR) * plotH;
+      const toX = (d: number) => { const v = PAD.left + ((d - minDist) / dR) * plotW; return Number.isFinite(v) ? v : PAD.left; };
+      const toY = (e: number) => { const v = PAD.top + plotH - ((e - minE) / eR) * plotH; return Number.isFinite(v) ? v : PAD.top; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';

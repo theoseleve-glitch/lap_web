@@ -43,11 +43,12 @@ export function TyreChart({ sessionId }: Props) {
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
 
-      const allVals = TYRES.flatMap((t) => data[t.key] as number[]);
-      const maxVal = Math.max(...allVals, 1);
+      const allVals = TYRES.flatMap((t) => data[t.key] as number[]).filter(Number.isFinite);
+      let maxVal = 1;
+      for (let i = 0; i < allVals.length; i++) { if (allVals[i] > maxVal) maxVal = allVals[i]; }
 
       const toX = (i: number) => PAD.left + (i / (laps.length - 1 || 1)) * plotW;
-      const toY = (v: number) => PAD.top + plotH - (v / maxVal) * plotH;
+      const toY = (v: number) => { const r = PAD.top + plotH - ((Number.isFinite(v) ? v : 0) / maxVal) * plotH; return Number.isFinite(r) ? r : PAD.top; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';

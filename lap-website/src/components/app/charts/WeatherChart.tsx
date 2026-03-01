@@ -37,11 +37,14 @@ export function WeatherChart({ sessionId }: Props) {
 
       const minT = timestamps[0], maxT = timestamps[timestamps.length - 1];
       const tR = maxT - minT || 1;
-      const maxTemp = Math.max(...temperature, 1), minTemp = Math.min(...temperature, 0);
+      const cleanTemp = temperature.filter(Number.isFinite);
+      const cleanWind = wind_speed.filter(Number.isFinite);
+      const maxTemp = cleanTemp.length > 0 ? Math.max(...cleanTemp, 1) : 1;
+      const minTemp = cleanTemp.length > 0 ? Math.min(...cleanTemp, 0) : 0;
       const tempR = maxTemp - minTemp || 1;
-      const maxWind = Math.max(...wind_speed, 1);
+      const maxWind = cleanWind.length > 0 ? Math.max(...cleanWind, 1) : 1;
 
-      const toX = (t: number) => PAD.left + ((t - minT) / tR) * plotW;
+      const toX = (t: number) => { const v = PAD.left + ((t - minT) / tR) * plotW; return Number.isFinite(v) ? v : PAD.left; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';
@@ -62,13 +65,24 @@ export function WeatherChart({ sessionId }: Props) {
         ctx.fillText(`${(maxTemp - (i / 4) * tempR).toFixed(0)}C`, PAD.left - 5, PAD.top + (i / 4) * plotH + 3);
       }
 
+      const safeY = (raw: number, min: number, range: number) => {
+        const v = Number.isFinite(raw) ? raw : min;
+        const y = PAD.top + plotH - ((v - min) / range) * plotH;
+        return Number.isFinite(y) ? y : PAD.top;
+      };
+      const safeYRatio = (raw: number, maxVal: number) => {
+        const v = Number.isFinite(raw) ? raw : 0;
+        const y = PAD.top + plotH - (v / Math.max(maxVal, 0.001)) * plotH;
+        return Number.isFinite(y) ? y : PAD.top;
+      };
+
       // Temperature line
       ctx.beginPath();
       ctx.strokeStyle = '#FF6A00';
       ctx.lineWidth = 2;
       for (let i = 0; i < timestamps.length; i++) {
         const x = toX(timestamps[i]);
-        const y = PAD.top + plotH - ((temperature[i] - minTemp) / tempR) * plotH;
+        const y = safeY(temperature[i], minTemp, tempR);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -81,7 +95,7 @@ export function WeatherChart({ sessionId }: Props) {
       ctx.setLineDash([3, 3]);
       for (let i = 0; i < timestamps.length; i++) {
         const x = toX(timestamps[i]);
-        const y = PAD.top + plotH - (humidity[i] / 100) * plotH;
+        const y = safeYRatio(humidity[i], 100);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -94,7 +108,7 @@ export function WeatherChart({ sessionId }: Props) {
       ctx.lineWidth = 1;
       for (let i = 0; i < timestamps.length; i++) {
         const x = toX(timestamps[i]);
-        const y = PAD.top + plotH - (wind_speed[i] / maxWind) * plotH;
+        const y = safeYRatio(wind_speed[i], maxWind);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -111,7 +125,7 @@ export function WeatherChart({ sessionId }: Props) {
         const x = toX(timestamps[idx]);
         // Temp dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - ((temperature[idx] - minTemp) / tempR) * plotH, 4, 0, Math.PI * 2);
+        ctx.arc(x, safeY(temperature[idx], minTemp, tempR), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#FF6A00';
         ctx.fill();
         ctx.strokeStyle = '#F3F0E8';
@@ -119,12 +133,12 @@ export function WeatherChart({ sessionId }: Props) {
         ctx.stroke();
         // Humidity dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - (humidity[idx] / 100) * plotH, 3, 0, Math.PI * 2);
+        ctx.arc(x, safeYRatio(humidity[idx], 100), 3, 0, Math.PI * 2);
         ctx.fillStyle = '#B6FF2E';
         ctx.fill();
         // Wind dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - (wind_speed[idx] / maxWind) * plotH, 3, 0, Math.PI * 2);
+        ctx.arc(x, safeYRatio(wind_speed[idx], maxWind), 3, 0, Math.PI * 2);
         ctx.fillStyle = '#FFD400';
         ctx.fill();
       }

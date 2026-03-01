@@ -20,7 +20,8 @@ interface Props {
 const PAD = { top: 30, right: 10, bottom: 10, left: 80 };
 
 function cellColor(val: number, min: number, max: number): string {
-  const t = (val - min) / (max - min || 1);
+  const safeVal = Number.isFinite(val) ? val : min;
+  const t = (safeVal - min) / (max - min || 1);
   if (t >= 0.7) return 'rgba(182, 255, 46, 0.5)';
   if (t >= 0.4) return 'rgba(255, 212, 0, 0.4)';
   return 'rgba(255, 106, 0, 0.3)';
@@ -40,8 +41,8 @@ export function ComparisonMatrix({ sessionId }: Props) {
       const { metrics, laps, values } = data;
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
-      const cellW = plotW / laps.length;
-      const cellH = plotH / metrics.length;
+      const cellW = plotW / Math.max(laps.length, 1);
+      const cellH = plotH / Math.max(metrics.length, 1);
 
       // Compute hovered cell
       let hovRow = -1, hovCol = -1;
@@ -63,7 +64,9 @@ export function ComparisonMatrix({ sessionId }: Props) {
       // Rows
       for (let m = 0; m < metrics.length; m++) {
         const row = values[m] ?? [];
-        const min = Math.min(...row), max = Math.max(...row);
+        const cleanRow = row.filter(Number.isFinite);
+        const min = cleanRow.length > 0 ? Math.min(...cleanRow) : 0;
+        const max = cleanRow.length > 0 ? Math.max(...cleanRow) : 1;
 
         // Row label
         ctx.fillStyle = hovRow === m ? '#F3F0E8' : '#8A8F98';
@@ -109,8 +112,9 @@ export function ComparisonMatrix({ sessionId }: Props) {
       if (col < 0 || col >= laps.length || row < 0 || row >= metrics.length) return null;
       const val = values[row]?.[col];
       if (val == null) return null;
-      const rowVals = values[row] ?? [];
-      const min = Math.min(...rowVals), max = Math.max(...rowVals);
+      const rowVals = (values[row] ?? []).filter(Number.isFinite);
+      const min = rowVals.length > 0 ? Math.min(...rowVals) : 0;
+      const max = rowVals.length > 0 ? Math.max(...rowVals) : 1;
       const pct = ((val - min) / (max - min || 1) * 100).toFixed(0);
       return {
         header: `${metrics[row]} — Lap ${laps[col]}`,

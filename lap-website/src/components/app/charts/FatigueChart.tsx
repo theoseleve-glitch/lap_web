@@ -33,8 +33,10 @@ export function FatigueChart({ sessionId }: Props) {
       const { laps, fatigue_index, reaction_time } = data;
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
-      const maxF = Math.max(...fatigue_index, 0.1);
-      const maxR = Math.max(...reaction_time, 0.1);
+      const cleanF = fatigue_index.filter(Number.isFinite);
+      const cleanR = reaction_time.filter(Number.isFinite);
+      const maxF = cleanF.length > 0 ? Math.max(...cleanF, 0.1) : 0.1;
+      const maxR = cleanR.length > 0 ? Math.max(...cleanR, 0.1) : 0.1;
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';
@@ -64,12 +66,17 @@ export function FatigueChart({ sessionId }: Props) {
 
       const toX = (idx: number) => PAD.left + (idx / (laps.length - 1 || 1)) * plotW;
 
+      const safeY = (val: number, maxVal: number) => {
+        const v = PAD.top + plotH - ((Number.isFinite(val) ? val : 0) / maxVal) * plotH;
+        return Number.isFinite(v) ? v : PAD.top;
+      };
+
       // Fatigue line
       ctx.beginPath();
       ctx.strokeStyle = '#FFD400';
       ctx.lineWidth = 2;
       for (let i = 0; i < laps.length; i++) {
-        const x = toX(i), y = PAD.top + plotH - (fatigue_index[i] / maxF) * plotH;
+        const x = toX(i), y = safeY(fatigue_index[i], maxF);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -81,7 +88,7 @@ export function FatigueChart({ sessionId }: Props) {
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 3]);
       for (let i = 0; i < laps.length; i++) {
-        const x = toX(i), y = PAD.top + plotH - (reaction_time[i] / maxR) * plotH;
+        const x = toX(i), y = safeY(reaction_time[i], maxR);
         if (i === 0) ctx.moveTo(x, y);
         else ctx.lineTo(x, y);
       }
@@ -95,7 +102,7 @@ export function FatigueChart({ sessionId }: Props) {
         const x = toX(idx);
         // Fatigue dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - (fatigue_index[idx] / maxF) * plotH, 4, 0, Math.PI * 2);
+        ctx.arc(x, safeY(fatigue_index[idx], maxF), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#FFD400';
         ctx.fill();
         ctx.strokeStyle = '#F3F0E8';
@@ -103,7 +110,7 @@ export function FatigueChart({ sessionId }: Props) {
         ctx.stroke();
         // Reaction dot
         ctx.beginPath();
-        ctx.arc(x, PAD.top + plotH - (reaction_time[idx] / maxR) * plotH, 4, 0, Math.PI * 2);
+        ctx.arc(x, safeY(reaction_time[idx], maxR), 4, 0, Math.PI * 2);
         ctx.fillStyle = '#FF6A00';
         ctx.fill();
         ctx.strokeStyle = '#F3F0E8';

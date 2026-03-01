@@ -42,12 +42,13 @@ export function WorkloadChart({ sessionId }: Props) {
       const plotW = w - PAD.left - PAD.right;
       const plotH = h - PAD.top - PAD.bottom;
 
-      const maxVal = Math.max(...total, 0.01);
+      const cleanTotal = total.filter(Number.isFinite);
+      const maxVal = cleanTotal.length > 0 ? Math.max(...cleanTotal, 0.01) : 0.01;
       const minT = timestamps[0], maxT = timestamps[timestamps.length - 1];
       const tR = maxT - minT || 1;
 
-      const toX = (t: number) => PAD.left + ((t - minT) / tR) * plotW;
-      const toY = (v: number) => PAD.top + plotH - (v / maxVal) * plotH;
+      const toX = (t: number) => { const v = PAD.left + ((t - minT) / tR) * plotW; return Number.isFinite(v) ? v : PAD.left; };
+      const toY = (v: number) => { const r = PAD.top + plotH - ((Number.isFinite(v) ? v : 0) / maxVal) * plotH; return Number.isFinite(r) ? r : PAD.top; };
 
       // Grid
       ctx.strokeStyle = 'rgba(138, 143, 152, 0.15)';

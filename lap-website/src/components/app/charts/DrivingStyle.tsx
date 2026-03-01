@@ -33,14 +33,15 @@ export function DrivingStyle({ sessionId }: Props) {
 
       const { labels, values } = data;
       const cx = w / 2, cy = h / 2;
-      const radius = Math.min(cx, cy) - 30;
+      const radius = Math.max(1, Math.min(cx, cy) - 30);
       const n = labels.length;
-      const angleStep = (Math.PI * 2) / n;
+      const angleStep = (Math.PI * 2) / Math.max(n, 1);
 
       // Store vertex positions for tooltip
       const verts: typeof verticesRef.current = [];
       for (let i = 0; i < n; i++) {
-        const val = Math.max(0, Math.min(1, values[i]));
+        const rawVal = values[i];
+        const val = Math.max(0, Math.min(1, Number.isFinite(rawVal) ? rawVal : 0));
         const angle = i * angleStep - Math.PI / 2;
         verts.push({
           x: cx + Math.cos(angle) * val * radius,
