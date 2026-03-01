@@ -203,8 +203,18 @@ def list_sessions():
     sessions = models.get_sessions(conn, limit=limit, offset=offset)
     total = models.count_sessions(conn)
 
+    # Strip internal fields from each session
+    clean = []
+    for s in sessions:
+        s = dict(s)
+        s.pop("source_path", None)
+        s.pop("html_report_path", None)
+        if s.get("csv_filename"):
+            s["csv_filename"] = Path(s["csv_filename"]).name
+        clean.append(s)
+
     return api_response({
-        "sessions": sessions,
+        "sessions": clean,
         "total": total,
         "limit": limit,
         "offset": offset,
@@ -224,7 +234,14 @@ def get_session(session_id: str):
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
-    return api_response(session)
+    # Strip internal fields -- never expose server paths
+    result = dict(session)
+    result.pop("source_path", None)
+    result.pop("html_report_path", None)
+    # Ensure csv_filename is just the filename, not a path
+    if result.get("csv_filename"):
+        result["csv_filename"] = Path(result["csv_filename"]).name
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -625,7 +642,7 @@ def get_report(session_id: str):
 
 
 # Fields the PATCH endpoint accepts directly.
-_UPDATABLE_FIELDS = {"session_type", "track_state", "notes"}
+_UPDATABLE_FIELDS = {"session_type", "track_state", "notes", "display_name", "track_id"}
 
 
 @bp.route("/sessions/<session_id>", methods=["PATCH"])
@@ -668,14 +685,18 @@ def update_session(session_id: str):
         return api_error(
             ErrorCode.VALIDATION_ERROR,
             "No updatable fields provided. "
-            "Allowed: session_type, track_state, driver_name, notes",
+            "Allowed: session_type, track_state, driver_name, notes, display_name, track_id",
             status=400,
         )
 
     conn.commit()
 
-    # Re-fetch and return the updated session.
-    updated = models.get_session_by_id(conn, session_id)
+    # Re-fetch and return the updated session (strip internal fields).
+    updated = dict(models.get_session_by_id(conn, session_id))
+    updated.pop("source_path", None)
+    updated.pop("html_report_path", None)
+    if updated.get("csv_filename"):
+        updated["csv_filename"] = Path(updated["csv_filename"]).name
     return api_response(updated)
 
 
@@ -695,8 +716,11 @@ def get_theoretical(session_id: str):
 
     theo = models.get_theoretical_data(conn, session_id)
     if theo is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No theoretical data for this session", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_theoretical_data",
+            "message": "Theoretical lap not computed for this session",
+        })
 
     return api_response({
         "theoretical_time_s": theo.get("theoretical_time_s"),
@@ -728,8 +752,11 @@ def get_reference_line(session_id: str):
 
     ref = models.get_reference_line(conn, session_id)
     if ref is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No reference line for this session", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_reference_line",
+            "message": "Reference line not computed for this session",
+        })
 
     return api_response(ref)
 
@@ -750,12 +777,17 @@ def get_best_lap_gps(session_id: str):
 
     lap_num = _resolve_lap_number(conn, session_id)
     if lap_num is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "available": False, "reason_code": "no_laps",
+            "message": "No laps available for this session",
+        })
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         f"No GPS trace for best lap {lap_num}", status=404)
+        return api_response({
+            "available": False, "reason_code": "no_gps_trace",
+            "message": f"No GPS trace for best lap {lap_num}",
+        })
 
     return api_response({
         "latitudes": trace.get("latitudes", []),
@@ -931,8 +963,10 @@ def get_delta(session_id: str):
     trace_b = models.get_gps_trace(conn, session_id, lap_b)
 
     if trace_a is None or trace_b is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "GPS trace not found for one or both laps", status=404)
+        return api_response({
+            "available": False, "reason_code": "no_gps_trace",
+            "message": "GPS trace not found for one or both laps",
+        })
 
     # Compute cumulative time from distance and speed for each lap
     def _cumulative_time(distances, speeds):
@@ -953,9 +987,10 @@ def get_delta(session_id: str):
     spd_b = trace_b.get("speeds", [])
 
     if not dist_a or not spd_a or not dist_b or not spd_b:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "Insufficient trace data for delta computation",
-                         status=404)
+        return api_response({
+            "available": False, "reason_code": "insufficient_trace_data",
+            "message": "Insufficient trace data for delta computation",
+        })
 
     time_a = _cumulative_time(dist_a, spd_a)
     time_b = _cumulative_time(dist_b, spd_b)
@@ -964,8 +999,10 @@ def get_delta(session_id: str):
     import numpy as np
     max_dist = min(dist_a[-1] if dist_a else 0, dist_b[-1] if dist_b else 0)
     if max_dist <= 0:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No valid distance range for delta", status=404)
+        return api_response({
+            "available": False, "reason_code": "no_valid_distance",
+            "message": "No valid distance range for delta",
+        })
 
     common_dist = np.linspace(0, max_dist, min(500, len(dist_a)))
     interp_a = np.interp(common_dist, dist_a, time_a)
@@ -996,8 +1033,11 @@ def get_fingerprint(session_id: str):
 
     scores = models.get_score_details(conn, session_id)
     if scores is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No score data for fingerprint", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_score_data",
+            "message": "No score data for fingerprint",
+        })
 
     # Normalize each score to percentage of its max
     def _pct(val, mx):
@@ -1056,13 +1096,19 @@ def get_driving_style(session_id: str):
 
     driver_id = session.get("driver_id")
     if not driver_id:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No driver linked to this session", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_driver_linked",
+            "message": "No driver linked to this session",
+        })
 
     style = models.get_driving_style(conn, driver_id, session_id)
     if style is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No driving style data for this session", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_driving_style",
+            "message": "Driving style not computed for this session",
+        })
 
     # Build features list for frontend
     feature_keys = [
@@ -1109,8 +1155,11 @@ def get_lap_distribution(session_id: str):
     ]
 
     if not valid_times:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No valid lap times for distribution", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_valid_lap_times",
+            "message": "No valid lap times for distribution",
+        })
 
     import numpy as np
     arr = np.array(valid_times)
@@ -1152,8 +1201,11 @@ def get_lap_progress(session_id: str):
     ]
 
     if not valid:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No valid lap times for progress", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_valid_lap_times",
+            "message": "No valid lap times for progress",
+        })
 
     import numpy as np
     lap_numbers = [lp["lap_number"] for lp in valid]
@@ -1200,12 +1252,19 @@ def get_speed_profile(session_id: str):
     # Get best lap GPS trace
     lap_num = _resolve_lap_number(conn, session_id)
     if lap_num is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_laps",
+            "message": "No laps available",
+        })
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
-        return api_error(ErrorCode.NOT_FOUND,
-                         f"No trace for lap {lap_num}", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_gps_trace",
+            "message": f"No trace for lap {lap_num}",
+        })
 
     distances = trace.get("distances", [])
     # Convert m/s to km/h for frontend
@@ -1310,8 +1369,11 @@ def get_stint_analysis(session_id: str):
             "robustness_metrics": analysis["robustness_metrics"],
         })
 
-    return api_error(ErrorCode.NOT_FOUND,
-                     "No stint analysis for this session", status=404)
+    return api_response({
+        "available": False, "reason_code": "no_stint_analysis",
+        "message": "No stint analysis for this session",
+        "stints": [],
+    })
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1378,7 +1440,11 @@ def get_track_map(session_id: str):
 
     best_lap = _resolve_lap_number(conn, session_id)
     if best_lap is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_laps",
+            "message": "No laps available",
+        })
 
     lap_mode = request.args.get("lap", "best")
 
@@ -1401,7 +1467,11 @@ def get_track_map(session_id: str):
             }
 
     if not laps_data:
-        return api_error(ErrorCode.NOT_FOUND, "No GPS data available", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_gps_data",
+            "message": "No GPS data available for any laps",
+        })
 
     # Build corners with GPS coords
     corners = []

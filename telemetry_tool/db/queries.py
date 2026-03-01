@@ -15,13 +15,15 @@ INSERT OR REPLACE INTO sessions (
     session_type, track_state, session_date,
     n_laps, best_lap_time_s, mean_lap_time_s,
     total_score, grade, weather_json, notes,
-    html_report_path, simulation_method, joker_lap_number
+    html_report_path, simulation_method, joker_lap_number,
+    display_name, source_filename, source_path
 ) VALUES (
     :session_id, :csv_filename, :driver_id, :track_id,
     :session_type, :track_state, :session_date,
     :n_laps, :best_lap_time_s, :mean_lap_time_s,
     :total_score, :grade, :weather_json, :notes,
-    :html_report_path, :simulation_method, :joker_lap_number
+    :html_report_path, :simulation_method, :joker_lap_number,
+    :display_name, :source_filename, :source_path
 );
 """
 

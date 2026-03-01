@@ -420,6 +420,43 @@ def create_app(config: Config | None = None) -> Flask:
             response.cache_control.public = True
         return response
 
+    # Guard: ensure /api/* never returns HTML to JSON consumers.
+    @app.after_request
+    def _guard_api_json_contract(response):
+        if not request.path.startswith("/api/"):
+            return response
+        # Exempt file-download responses (report endpoint).
+        if "attachment" in (response.headers.get("Content-Disposition") or ""):
+            return response
+        ct = response.content_type or ""
+        if "text/html" in ct:
+            from .api_utils import api_error as _err
+            err_resp = _err(
+                "API_HTML_RESPONSE",
+                "Endpoint returned HTML instead of JSON",
+                status=500,
+            )
+            if isinstance(err_resp, tuple):
+                return err_resp[0]
+            return err_resp
+        # Also catch responses where body starts with HTML even if content_type not set.
+        if response.content_length and response.content_length < 10000:
+            try:
+                data = response.get_data(as_text=True)[:50]
+                if data.lstrip().startswith(("<!DOCTYPE", "<html", "<HTML")):
+                    from .api_utils import api_error as _err
+                    err_resp = _err(
+                        "API_HTML_RESPONSE",
+                        "Endpoint returned HTML instead of JSON",
+                        status=500,
+                    )
+                    if isinstance(err_resp, tuple):
+                        return err_resp[0]
+                    return err_resp
+            except Exception:
+                pass
+        return response
+
     # Debug endpoint to check template loading (only in debug mode)
     if app.debug:
         @app.route("/_debug/template-info")

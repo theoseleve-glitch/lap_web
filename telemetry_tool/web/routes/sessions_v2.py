@@ -260,6 +260,8 @@ def upload_session():
             "session_type": request.form.get("session_type", "practice"),
             "track_state": request.form.get("track_state", "dry"),
             "driver_name": request.form.get("driver_name", "Unknown"),
+            "source_filename": safe_name,
+            "display_name": Path(safe_name).stem,
         }
 
         exclude_laps = _parse_exclude_laps(request.form.get("exclude_laps"))
@@ -276,6 +278,13 @@ def upload_session():
             enable_report=False,  # No HTML/PDF in API mode
             lap_range=lap_range,
         )
+
+        # Extract telemetry start time for session_date derivation
+        _ctx = summary.get("session_context")
+        if _ctx and hasattr(_ctx, "start_time") and _ctx.start_time:
+            summary["telemetry_start_time"] = str(_ctx.start_time)
+        elif summary.get("session_meta", {}).get("start_time"):
+            summary["telemetry_start_time"] = str(summary["session_meta"]["start_time"])
 
         # ── 5. Persist to database ────────────────────────────────
         conn = get_db_connection()

@@ -1460,7 +1460,7 @@ class TestTheoreticalEndpoint:
 
         assert resp.status_code == 404
 
-    def test_404_no_theoretical_data(self, client):
+    def test_structured_unavailability_no_theoretical_data(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1469,7 +1469,11 @@ class TestTheoreticalEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/theoretical")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_theoretical_data"
 
 
 class TestReferenceLineEndpoint:
@@ -1704,7 +1708,7 @@ class TestDeltaEndpoint:
 
         assert resp.status_code == 400
 
-    def test_404_missing_trace(self, client):
+    def test_structured_unavailability_missing_trace(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1713,7 +1717,11 @@ class TestDeltaEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/delta?lap_a=1&lap_b=99")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_gps_trace"
 
 
 class TestFingerprintEndpoint:
@@ -1734,7 +1742,7 @@ class TestFingerprintEndpoint:
         assert len(body["data"]["dimensions"]) == 6
         assert len(body["data"]["values"]) == 6
 
-    def test_404_no_scores(self, client):
+    def test_structured_unavailability_no_scores(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1743,7 +1751,11 @@ class TestFingerprintEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/fingerprint")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_score_data"
 
 
 class TestDrivingStyleEndpoint:
@@ -1763,7 +1775,7 @@ class TestDrivingStyleEndpoint:
         assert body["data"]["style_label"] == "Smooth Precision"
         assert len(body["data"]["features"]) > 0
 
-    def test_404_no_driver(self, client):
+    def test_structured_unavailability_no_driver(self, client):
         session = _sample_session()
         session["driver_id"] = None
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
@@ -1773,7 +1785,11 @@ class TestDrivingStyleEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/driving-style")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_driver_linked"
 
 
 class TestLapDistributionEndpoint:
@@ -1794,7 +1810,7 @@ class TestLapDistributionEndpoint:
         assert "counts" in body["data"]
         assert body["data"]["n_valid"] == 3
 
-    def test_404_no_valid_laps(self, client):
+    def test_structured_unavailability_no_valid_laps(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1803,7 +1819,11 @@ class TestLapDistributionEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/lap-distribution")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_valid_lap_times"
 
 
 class TestLapProgressEndpoint:
@@ -1938,7 +1958,7 @@ class TestStintAnalysisEndpoint:
         assert body["ok"] is True
         assert "robustness_metrics" in body["data"]
 
-    def test_404_no_data(self, client):
+    def test_structured_unavailability_no_data(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1948,7 +1968,11 @@ class TestStintAnalysisEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/stint-analysis")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "no_stint_analysis"
 
 
 class TestSectorTimesEndpoint:

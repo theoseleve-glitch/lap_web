@@ -72,6 +72,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     simulation_method TEXT,
     joker_lap_number  INTEGER,
     analysis_json     TEXT,
+    display_name      TEXT,
+    source_filename   TEXT,
+    source_path       TEXT,
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 """

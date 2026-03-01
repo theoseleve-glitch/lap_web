@@ -11,6 +11,7 @@ import json
 import logging
 import math
 import sqlite3
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -345,14 +346,21 @@ def upsert_session(
 
     theo_metrics = summary.get("theoretical_metrics") or {}
 
+    # Derive session_date: prefer telemetry start time > meta date > session_id prefix
+    _telemetry_start = summary.get("telemetry_start_time")
+    if _telemetry_start and isinstance(_telemetry_start, str) and len(_telemetry_start) >= 10:
+        _session_date = _telemetry_start[:10]
+    else:
+        _session_date = meta.get("session_date") or meta.get("date") or session_id[:10]
+
     conn.execute(Q.INSERT_SESSION, {
         "session_id":        session_id,
-        "csv_filename":      str(summary.get("csv_path", "")),
+        "csv_filename":      Path(str(summary.get("csv_path", ""))).name,
         "driver_id":         driver_id,
         "track_id":          summary.get("track_id"),
         "session_type":      meta.get("session_type", "practice"),
         "track_state":       meta.get("track_state", "dry"),
-        "session_date":      meta.get("session_date") or meta.get("date") or session_id[:10],
+        "session_date":      _session_date,
         "n_laps":            n_laps,
         "best_lap_time_s":   _safe_float(best_s),
         "mean_lap_time_s":   _safe_float(mean_s),
@@ -363,6 +371,9 @@ def upsert_session(
         "html_report_path":  html_path,
         "simulation_method": theo_metrics.get("simulation_method"),
         "joker_lap_number":  _joker_lap,
+        "display_name":      meta.get("display_name") or Path(str(summary.get("csv_path", ""))).stem,
+        "source_filename":   meta.get("source_filename") or Path(str(summary.get("csv_path", ""))).name,
+        "source_path":       str(summary.get("csv_path", "")),
     })
     return session_id
 
@@ -398,6 +409,7 @@ def update_session_field(
     allowed = {
         "session_date", "driver_id", "track_id",
         "session_type", "track_state", "notes",
+        "display_name",
     }
     if field_name not in allowed:
         raise ValueError(f"Field {field_name!r} not editable on sessions.")

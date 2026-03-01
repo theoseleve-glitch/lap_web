@@ -4,7 +4,8 @@ When AUTH_REQUIRED is True (production SaaS), legacy routes that bypass
 multi-tenant middleware are blocked with 404. These routes are only used
 by the desktop/CLI Jinja2 frontend, not the Next.js production UI.
 """
-from flask import request, jsonify
+from flask import request
+from web.api_utils import api_error, ErrorCode
 
 
 # Routes used ONLY by the legacy Jinja2 frontend.
@@ -39,4 +40,4 @@ def init_legacy_guard(app):
     def _block_legacy_routes():
         path = request.path
         if any(path.startswith(prefix) for prefix in _LEGACY_PREFIXES):
-            return jsonify({"ok": False, "error": "Not found"}), 404
+            return api_error(ErrorCode.NOT_FOUND, "Not found", status=404)
