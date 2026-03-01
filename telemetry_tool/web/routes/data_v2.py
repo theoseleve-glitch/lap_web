@@ -8,21 +8,25 @@ the Next.js frontend needs to display session details, charts,
 scores, and coaching information.
 
 Endpoints:
-    GET    /api/v1/sessions                       - List sessions
-    GET    /api/v1/sessions/<id>                   - Session detail
-    GET    /api/v1/sessions/<id>/laps              - Lap list
-    GET    /api/v1/sessions/<id>/speed-trace       - Speed vs distance
-    GET    /api/v1/sessions/<id>/gps-trace         - GPS coordinates
-    GET    /api/v1/sessions/<id>/gg-data           - GG diagram data
-    GET    /api/v1/sessions/<id>/scores            - Score breakdown
-    GET    /api/v1/sessions/<id>/corners           - Corner coaching
-    DELETE /api/v1/sessions/<id>                   - Delete session
+    GET    /api/v1/sessions                        - List sessions
+    GET    /api/v1/sessions/<id>                    - Session detail
+    GET    /api/v1/sessions/<id>/laps               - Lap list
+    GET    /api/v1/sessions/<id>/speed-trace        - Speed vs distance
+    GET    /api/v1/sessions/<id>/gps-trace          - GPS coordinates
+    GET    /api/v1/sessions/<id>/gg-data            - GG diagram data
+    GET    /api/v1/sessions/<id>/scores             - Score breakdown
+    GET    /api/v1/sessions/<id>/corners            - Corner coaching
+    DELETE /api/v1/sessions/<id>                    - Delete session
+    GET    /api/v1/compare/sessions?a=X&b=Y         - Session comparison
+    GET    /api/v1/sessions/<id>/report?format=html  - Report download
+    PATCH  /api/v1/sessions/<id>                    - Update session fields
 """
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from flask import Blueprint, request
+from flask import Blueprint, request, send_file
 
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
@@ -368,3 +372,171 @@ def delete_session(session_id: str):
 
     logger.info("Deleted session %s and related data", session_id)
     return api_response({"deleted": session_id})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 10. GET /api/v1/compare/sessions?a=X&b=Y — Session comparison
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/compare/sessions", methods=["GET"])
+def compare_sessions():
+    """Return two sessions side-by-side with scores and laps.
+
+    Query params:
+        a (str, required) — first session ID
+        b (str, required) — second session ID
+    """
+    session_a_id = request.args.get("a")
+    session_b_id = request.args.get("b")
+
+    if not session_a_id or not session_b_id:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Both 'a' and 'b' query parameters are required",
+            status=400,
+        )
+
+    conn = get_db_connection()
+
+    session_a = models.get_session_by_id(conn, session_a_id)
+    if session_a is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"Session {session_a_id} not found",
+            status=404,
+        )
+
+    session_b = models.get_session_by_id(conn, session_b_id)
+    if session_b is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"Session {session_b_id} not found",
+            status=404,
+        )
+
+    scores_a = models.get_score_details(conn, session_a_id)
+    scores_b = models.get_score_details(conn, session_b_id)
+    laps_a = models.get_laps_for_session(conn, session_a_id)
+    laps_b = models.get_laps_for_session(conn, session_b_id)
+
+    return api_response({
+        "session_a": {
+            "session": session_a,
+            "scores": scores_a,
+            "laps": laps_a,
+        },
+        "session_b": {
+            "session": session_b,
+            "scores": scores_b,
+            "laps": laps_b,
+        },
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 11. GET /api/v1/sessions/<id>/report?format=html — Report download
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/report", methods=["GET"])
+def get_report(session_id: str):
+    """Download a pre-generated HTML report for a session.
+
+    Query params:
+        format (str) — currently only 'html' is supported
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    fmt = request.args.get("format", "html")
+    if fmt != "html":
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            f"Unsupported report format: {fmt!r}. Only 'html' is supported.",
+            status=400,
+        )
+
+    report_path = session.get("html_report_path")
+    if not report_path:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Report not available",
+            status=404,
+        )
+
+    path = Path(report_path)
+    if not path.is_file():
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Report not available",
+            status=404,
+        )
+
+    return send_file(
+        path,
+        mimetype="text/html",
+        as_attachment=True,
+        download_name=f"report_{session_id}.html",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 12. PATCH /api/v1/sessions/<id> — Update session fields
+# ══════════════════════════════════════════════════════════════════
+
+
+# Fields the PATCH endpoint accepts directly.
+_UPDATABLE_FIELDS = {"session_type", "track_state", "notes"}
+
+
+@bp.route("/sessions/<session_id>", methods=["PATCH"])
+def update_session(session_id: str):
+    """Update editable fields on a session.
+
+    Accepts JSON body with any of: session_type, track_state,
+    driver_name, notes.  Unknown fields are silently ignored.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True)
+    if not body or not isinstance(body, dict):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Request body must be a JSON object",
+            status=400,
+        )
+
+    updated_count = 0
+
+    # Handle driver_name specially — upsert driver, then update driver_id.
+    driver_name = body.get("driver_name")
+    if driver_name and isinstance(driver_name, str):
+        driver_id = models.upsert_driver(conn, driver_name)
+        models.update_session_field(conn, session_id, "driver_id", driver_id)
+        updated_count += 1
+
+    # Handle the straightforward fields.
+    for field in _UPDATABLE_FIELDS:
+        if field in body:
+            models.update_session_field(conn, session_id, field, body[field])
+            updated_count += 1
+
+    if updated_count == 0:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "No updatable fields provided. "
+            "Allowed: session_type, track_state, driver_name, notes",
+            status=400,
+        )
+
+    conn.commit()
+
+    # Re-fetch and return the updated session.
+    updated = models.get_session_by_id(conn, session_id)
+    return api_response(updated)
