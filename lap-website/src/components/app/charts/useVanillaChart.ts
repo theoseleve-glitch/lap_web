@@ -60,6 +60,12 @@ declare global {
     SpeedTraceZoom?: Record<string, unknown>;
     GGExplorer?: Record<string, unknown>;
     Toast?: { error: (title: string, msg: string) => void };
+    ModuleShim?: {
+      reinit: (moduleName: string | string[]) => void;
+      fireDOMContentLoaded: () => void;
+      rewriteApiPath: (url: string) => string;
+      patchFetchHelperPaths: () => void;
+    };
   }
 }
 
@@ -69,6 +75,7 @@ const INFRA_SCRIPTS = [
   '/js/lifecycle_helpers.js',
   '/js/theme.js',
   '/js/fetch_helper.js',
+  '/js/module-shim.js',
 ];
 
 /** Track which scripts have been loaded globally (across all instances). */
@@ -159,6 +166,13 @@ function patchFetchHelper(apiBase: string): void {
     } as typeof originalLoad & { _patched: boolean };
     patchedLoad._patched = true;
     window.FetchHelper.load = patchedLoad;
+  }
+
+  // Re-apply path rewriting (module-shim.js) on top of the base URL patch.
+  // The shim converts /api/session/... to /api/v1/sessions/... which is the
+  // new SaaS backend route structure.
+  if (window.ModuleShim) {
+    window.ModuleShim.patchFetchHelperPaths();
   }
 }
 
