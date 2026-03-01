@@ -347,6 +347,7 @@
 
     /* ── G-G scatter ───────────────────────────── */
     function _drawGG() {
+        if (!_state.allGGData || !_ggCtx) return;
         var w = _ggW(), h = _ggH();
         var ctx = _ggCtx;
         var pW = _ggPW(), pH = _ggPH();
@@ -422,7 +423,7 @@
         }
 
         /* Highlight selected point */
-        if (_state.selectedIdx !== null && _state.mode !== 'all') {
+        if (_state.selectedIdx !== null && _state.mode !== 'all' && _state.perLap) {
             var lapGGData = _state.perLap[String(_state.primaryLap)];
             if (lapGGData) {
                 var si = _state.selectedIdx;
@@ -810,7 +811,7 @@
         if (mode === 'all') {
             count = _state.allGGData ? _state.allGGData.accel_lat.length : 0;
         } else {
-            var ld = _state.perLap[String(_state.primaryLap)];
+            var ld = _state.perLap ? _state.perLap[String(_state.primaryLap)] : null;
             count = ld ? ld.accel_lat.length : 0;
         }
         _statsEl.textContent = count + ' pts | Max: ' + _state.frictionR.toFixed(2) + 'G';
@@ -926,6 +927,7 @@
                 aLong = _state.allGGData.accel_long;
             } else {
                 var lk = String(_state.primaryLap);
+                if (!_state.perLap) { _hideTooltip(); return; }
                 var ld = _state.perLap[lk];
                 if (!ld) { _hideTooltip(); return; }
                 aLat = ld.accel_lat;
@@ -1002,6 +1004,7 @@
 
         var gx = _pixelToGX(mx), gy = _pixelToGY(my);
         var lapKey = String(_state.primaryLap);
+        if (!_state.perLap) return;
         var lapGG = _state.perLap[lapKey];
         if (!lapGG) return;
 

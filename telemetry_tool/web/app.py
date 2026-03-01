@@ -154,6 +154,15 @@ def create_app(config: Config | None = None) -> Flask:
                         "Idempotency-Key", "X-CSRF-Token", "X-Request-Id"],
          expose_headers=["X-Request-Id", "Retry-After"])
 
+    # Ensure OPTIONS preflight returns 200 even for non-existent routes.
+    # Browsers require 2xx on preflight; flask_cors adds CORS headers
+    # via after_request but Flask returns 404 for unknown routes.
+    @app.before_request
+    def _handle_preflight():
+        from flask import request as req
+        if req.method == "OPTIONS":
+            return "", 200
+
     # Redis client for rate limiting + caching.
     # The rate_limit module's get_redis() reads from app.extensions["redis"].
     redis_url = cfg.REDIS_URL
