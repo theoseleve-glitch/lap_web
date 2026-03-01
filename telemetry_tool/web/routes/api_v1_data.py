@@ -1115,36 +1115,41 @@ def v1_corner_coaching(session_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     # Get distinct corners with coaching hints from best lap metrics
-    rows = conn.execute(
-        """SELECT corner_id, coaching_hint,
-                  AVG(entry_speed_mps) as avg_entry_speed_mps,
-                  AVG(apex_speed_mps)  as avg_apex_speed_mps,
-                  AVG(exit_speed_mps)  as avg_exit_speed_mps,
-                  AVG(time_loss_ms)    as avg_time_loss_ms
-           FROM corner_metrics
-           WHERE session_id = :sid
-           GROUP BY corner_id
-           ORDER BY corner_id""",
-        {"sid": session_id},
-    ).fetchall()
+    try:
+        rows = conn.execute(
+            """SELECT corner_id, coaching_hint,
+                      AVG(entry_speed_mps) as avg_entry_speed_mps,
+                      AVG(apex_speed_mps)  as avg_apex_speed_mps,
+                      AVG(exit_speed_mps)  as avg_exit_speed_mps,
+                      AVG(time_loss_ms)    as avg_time_loss_ms
+               FROM corner_metrics
+               WHERE session_id = :sid
+               GROUP BY corner_id
+               ORDER BY corner_id""",
+            {"sid": session_id},
+        ).fetchall()
+    except Exception:
+        rows = []
 
     coaching = []
+    session_dict = dict(session) if not isinstance(session, dict) else session
+    track_id = session_dict.get("track_id")
     for r in rows:
-        entry = dict(r)
+        entry = dict(r) if not isinstance(r, dict) else dict(r)
         # FIX-005: Try to fetch best practice — table may not exist
-        if session.get("track_id"):
+        if track_id:
             try:
                 bp_row = conn.execute(
                     """SELECT best_entry_mps, best_apex_mps, best_exit_mps,
                               best_brake_m, best_time_s
                        FROM corner_best_practices
                        WHERE track_id = :tid AND corner_id = :cid""",
-                    {"tid": session["track_id"], "cid": r["corner_id"]},
+                    {"tid": track_id, "cid": entry.get("corner_id")},
                 ).fetchone()
             except Exception:
                 bp_row = None
             if bp_row:
-                entry["best_practice"] = dict(bp_row)
+                entry["best_practice"] = dict(bp_row) if not isinstance(bp_row, dict) else dict(bp_row)
         coaching.append(entry)
 
     return api_response({"session_id": session_id, "coaching": coaching})
@@ -3651,16 +3656,156 @@ def v1_corners(session_id: str):
 @bp.route("/sessions/<session_id>/corner-replay", methods=["GET"])
 @rate_limit(tier="read")
 def v1_corner_replay(session_id: str):
-    """Return frame data for corner replay animation.
-
-    Currently returns an empty frames list. When the corner replay
-    rendering pipeline is implemented, this will return per-frame
-    GPS + telemetry data for animating corner traversals.
+    """Return frame data for corner replay animation (no corner ID).
 
     Returns:
         200 with ``{"frames": []}``
     """
     return api_response({"frames": []})
+
+
+# ---------------------------------------------------------------------------
+# MISSING-004b: GET /sessions/<id>/corners/<corner_id>/replay
+# ---------------------------------------------------------------------------
+
+@bp.route("/sessions/<session_id>/corners/<int:corner_id>/replay", methods=["GET"])
+@rate_limit(tier="read")
+def v1_corner_replay_by_id(session_id: str, corner_id: int):
+    """Return frame-by-frame telemetry for replaying a specific corner.
+
+    Extracts GPS traces and telemetry channels around the corner boundary
+    (using corner_metrics brake_point as start, next corner as end).
+
+    Returns:
+        200 with corner replay data including frames, gps_path, etc.
+    """
+    conn = get_db_connection()
+
+    # Find best lap for this session
+    laps = get_laps_for_session(conn, session_id)
+    if not laps:
+        return api_response({
+            "corner_id": corner_id,
+            "corner_name": f"C{corner_id}",
+            "frames": [],
+            "gps_path": [],
+            "total_time": 0,
+        })
+
+    best_lap = None
+    best_time = None
+    for lap in laps:
+        lt = lap.get("lap_time_s")
+        if lt is not None and (best_time is None or lt < best_time):
+            best_time = lt
+            best_lap = lap.get("lap_number")
+    if best_lap is None:
+        best_lap = laps[0].get("lap_number", 1)
+
+    # Get GPS trace for best lap
+    gps = get_gps_trace(conn, session_id, best_lap)
+    if not gps or not gps.get("distances"):
+        return api_response({
+            "corner_id": corner_id,
+            "corner_name": f"C{corner_id}",
+            "frames": [],
+            "gps_path": [],
+            "total_time": 0,
+        })
+
+    # Get corner metrics to find corner boundaries
+    try:
+        cm_rows = conn.execute(
+            """SELECT corner_id, brake_point_m
+               FROM corner_metrics
+               WHERE session_id = :sid AND lap_number = :ln
+               ORDER BY corner_id""",
+            {"sid": session_id, "ln": best_lap},
+        ).fetchall()
+    except Exception:
+        cm_rows = []
+
+    # Find this corner's brake point and next corner's brake point
+    corner_start_m = None
+    corner_end_m = None
+    for i, row in enumerate(cm_rows):
+        r = dict(row) if not isinstance(row, dict) else row
+        if r.get("corner_id") == corner_id:
+            corner_start_m = r.get("brake_point_m", 0)
+            if i + 1 < len(cm_rows):
+                next_r = dict(cm_rows[i + 1]) if not isinstance(cm_rows[i + 1], dict) else cm_rows[i + 1]
+                corner_end_m = next_r.get("brake_point_m")
+            break
+
+    if corner_start_m is None:
+        # Corner not found — return empty
+        return api_response({
+            "corner_id": corner_id,
+            "corner_name": f"C{corner_id}",
+            "frames": [],
+            "gps_path": [],
+            "total_time": 0,
+        })
+
+    distances = gps.get("distances", [])
+    speeds = gps.get("speeds", [])
+    lats = gps.get("latitudes", [])
+    lons = gps.get("longitudes", [])
+    accel_lat = gps.get("accel_lat", [])
+    accel_long = gps.get("accel_long", [])
+
+    # Default end: corner_start + 150m (or next corner)
+    if corner_end_m is None:
+        corner_end_m = corner_start_m + 150
+
+    # Add 20m buffer before and after
+    buf_start = max(0, corner_start_m - 20)
+    buf_end = corner_end_m + 20
+
+    # Extract frames within the corner boundary
+    frames = []
+    gps_path = []
+    n = len(distances)
+    for i in range(n):
+        d = distances[i] if i < len(distances) else 0
+        if d < buf_start:
+            continue
+        if d > buf_end:
+            break
+        speed = speeds[i] if i < len(speeds) else 0
+        lat = lats[i] if i < len(lats) else 0
+        lon = lons[i] if i < len(lons) else 0
+        g_lat = accel_lat[i] if i < len(accel_lat) else 0
+        g_lon = accel_long[i] if i < len(accel_long) else 0
+
+        frames.append({
+            "speed": round(float(speed) * 3.6, 1) if speed else 0,
+            "throttle": 0,   # Not available from GPS-only data
+            "brake": 0,
+            "steeringAngle": 0,
+            "gLat": round(float(g_lat), 3) if g_lat else 0,
+            "gLon": round(float(g_lon), 3) if g_lon else 0,
+        })
+        gps_path.append({
+            "lat": float(lat) if lat else 0,
+            "lng": float(lon) if lon else 0,
+        })
+
+    # Estimate total time from distance and speed
+    total_time = 0
+    if len(frames) >= 2 and frames[0].get("speed", 0) > 0:
+        dist_span = buf_end - buf_start
+        avg_speed_ms = sum(f["speed"] for f in frames) / len(frames) / 3.6
+        if avg_speed_ms > 0:
+            total_time = round(dist_span / avg_speed_ms, 3)
+
+    return api_response({
+        "corner_id": corner_id,
+        "corner_name": f"C{corner_id}",
+        "frames": frames,
+        "gps_path": gps_path,
+        "total_time": total_time,
+    })
 
 
 # ---------------------------------------------------------------------------
