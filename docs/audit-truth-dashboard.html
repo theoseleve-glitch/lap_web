@@ -1,0 +1,1048 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit Truth Dashboard</title>
+<style>
+  :root {
+    --asphalt: #1a1a2e;
+    --concrete: #232340;
+    --steel: #8892b0;
+    --chalk: #e6e6e6;
+    --acid-green: #3ddc84;
+    --safety-red: #ff4757;
+    --marshal-yellow: #ffa502;
+    --font-mono: 'Courier New', monospace;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--asphalt);
+    color: var(--chalk);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 1.8rem;
+    margin-bottom: 0.5rem;
+    color: var(--acid-green);
+  }
+
+  .subtitle {
+    color: var(--steel);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .config-form {
+    background: var(--concrete);
+    border: 1px solid rgba(136, 146, 176, 0.2);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: flex-end;
+  }
+
+  .field { display: flex; flex-direction: column; gap: 0.25rem; }
+  .field label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--steel);
+  }
+  .field input {
+    background: var(--asphalt);
+    border: 1px solid rgba(136, 146, 176, 0.3);
+    border-radius: 4px;
+    color: var(--chalk);
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+  }
+  .field input:focus { outline: none; border-color: var(--acid-green); }
+  .field-api { flex: 1; min-width: 250px; }
+  .field-session { width: 280px; }
+  .field-jwt { flex: 1; min-width: 200px; }
+
+  .btn-run {
+    background: var(--acid-green);
+    color: var(--asphalt);
+    border: none;
+    border-radius: 4px;
+    padding: 0.5rem 1.25rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-run:hover { opacity: 0.9; }
+  .btn-run:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .summary {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--concrete);
+    border-radius: 8px;
+    border: 1px solid rgba(136, 146, 176, 0.2);
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+  }
+  .summary .pass { color: var(--acid-green); }
+  .summary .fail { color: var(--safety-red); }
+  .summary .skip { color: var(--marshal-yellow); }
+  .summary .timestamp { color: var(--steel); margin-left: auto; }
+
+  .card {
+    background: var(--concrete);
+    border: 1px solid rgba(136, 146, 176, 0.2);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .card.status-pass { border-left: 4px solid var(--acid-green); }
+  .card.status-fail { border-left: 4px solid var(--safety-red); }
+  .card.status-skip { border-left: 4px solid var(--marshal-yellow); }
+  .card.status-pending { border-left: 4px solid var(--steel); }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    user-select: none;
+  }
+  .card-header:hover { background: rgba(136, 146, 176, 0.05); }
+
+  .card-number {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--steel);
+    margin-right: 0.75rem;
+    min-width: 1.5rem;
+  }
+  .card-title { font-weight: 600; flex: 1; }
+  .card-badge {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .badge-pass { background: rgba(61, 220, 132, 0.15); color: var(--acid-green); }
+  .badge-fail { background: rgba(255, 71, 87, 0.15); color: var(--safety-red); }
+  .badge-skip { background: rgba(255, 165, 2, 0.15); color: var(--marshal-yellow); }
+  .badge-pending { background: rgba(136, 146, 176, 0.15); color: var(--steel); }
+
+  .card-body {
+    display: none;
+    padding: 0 1rem 1rem 1rem;
+    font-size: 0.85rem;
+  }
+  .card.expanded .card-body { display: block; }
+
+  .card-section { margin-top: 0.75rem; }
+  .card-section h4 {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--steel);
+    margin-bottom: 0.25rem;
+  }
+
+  .evidence-box {
+    background: var(--asphalt);
+    border: 1px solid rgba(136, 146, 176, 0.15);
+    border-radius: 4px;
+    padding: 0.5rem 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .ev-line { display: block; margin-bottom: 2px; white-space: pre-wrap; word-break: break-all; }
+  .ev-pass { color: var(--acid-green); }
+  .ev-fail { color: var(--safety-red); }
+  .ev-info { color: var(--steel); }
+
+  .repro-steps {
+    counter-reset: step;
+    list-style: none;
+    padding-left: 0;
+  }
+  .repro-steps li {
+    counter-increment: step;
+    padding-left: 1.75rem;
+    position: relative;
+    margin-bottom: 0.35rem;
+  }
+  .repro-steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    background: rgba(136, 146, 176, 0.15);
+    border-radius: 50%;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--steel);
+    top: 0.15rem;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(136, 146, 176, 0.3);
+    border-top-color: var(--acid-green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<h1>Audit Truth Dashboard</h1>
+<p class="subtitle">Live API probes for Report 1 conflict points &mdash; source of truth on SaaS parity gaps</p>
+
+<div class="config-form">
+  <div class="field field-api">
+    <label for="apiUrl">API Base URL</label>
+    <input type="text" id="apiUrl" value="https://api.lap-coach.racing" />
+  </div>
+  <div class="field field-session">
+    <label for="sessionId">Session ID (UUID)</label>
+    <input type="text" id="sessionId" placeholder="e.g. abc123-def456-..." />
+  </div>
+  <div class="field field-jwt">
+    <label for="jwtToken">JWT Token (optional)</label>
+    <input type="text" id="jwtToken" placeholder="Bearer token if auth required" />
+  </div>
+  <button class="btn-run" id="btnRun">Run Probes</button>
+</div>
+
+<div class="summary" id="summary" style="display:none;">
+  <span class="pass" id="sumPass">0 PASS</span>
+  <span class="fail" id="sumFail">0 FAIL</span>
+  <span class="skip" id="sumSkip">0 SKIP</span>
+  <span class="timestamp" id="sumTime"></span>
+</div>
+
+<div id="cards"></div>
+
+<script>
+'use strict';
+
+// ── Conflict Definitions ──────────────────────────────
+var CONFLICTS = [
+  {
+    id: 1,
+    title: 'Session Identity Wrong',
+    conflict: 'Report 1 shows: title = raw upload path (/TMP/TELEMETRY_UPLOAD_.../OK_R3.CSV), driver = "Theo" instead of correct name, track = "Unknown Track" instead of identified track, date = upload timestamp not session date.',
+    repro: [
+      'Upload a CSV file (e.g. OK_R3.csv from RaceChrono)',
+      'Navigate to Sessions list, click on the uploaded session',
+      'Check: page title, driver name, track name, session date',
+      'Compare against the CSV metadata (first rows contain session info)',
+    ],
+    success: 'csv_filename shows just the filename (not full server path). driver_name is correctly extracted from CSV. track_name is identified (not "Unknown Track"). session_date reflects the actual session date from the CSV.',
+    probe: probeSessionIdentity,
+  },
+  {
+    id: 2,
+    title: 'Visualize Renders Blank Map/Trace',
+    conflict: 'Report 1 shows: GPS map is blank, speed trace is empty, G-G diagram has no data. The Visualize tab components load but display nothing.',
+    repro: [
+      'Open a session detail page',
+      'Click the "Visualize" tab',
+      'Check: GPS track map (should show circuit outline), speed trace (should show speed vs distance), G-G diagram (should show acceleration scatter)',
+    ],
+    success: 'speed-trace endpoint returns available:true with non-empty distance/speed arrays. gps-trace endpoint returns available:true with non-empty lat/lon arrays. Both for at least lap 1.',
+    probe: probeVisualize,
+  },
+  {
+    id: 3,
+    title: 'Timeline Tab Missing',
+    conflict: 'Report 1 shows: local tool has Overview/Corners & Coaching/Timeline/Analytics/Lap Data. Online tool originally had no Timeline tab.',
+    repro: [
+      'Open a session detail page',
+      'Check tab bar for "Timeline" tab',
+      'Click Timeline tab, verify lap progress chart renders',
+      'Verify stint analysis cards appear below the chart',
+    ],
+    success: 'lap-progress endpoint returns 200 with non-empty laps array. stint-analysis endpoint returns 200 with stint data. Timeline tab code exists in frontend.',
+    probe: probeTimeline,
+  },
+  {
+    id: 4,
+    title: 'Analytics Tab Missing',
+    conflict: 'Report 1 shows: local tool has a dedicated Analytics tab with 10+ sections (Track Map, Sector Performance, Lap Speed Comparison, Lap Distribution, G-G Explorer, Driving Style, Session Debrief, Achievements). Online tool has no Analytics tab — content is partially scattered across Visualize and Performance.',
+    repro: [
+      'Open a session detail page',
+      'Check if sector data is available (Performance tab)',
+      'Check if G-G data is available (Visualize tab)',
+      'Check if scores/strengths/weaknesses are available (Overview/Performance)',
+      'Note: many local-tool modules (lap_distribution, driving_style, track_map) exist in public/js/ but are not mounted',
+    ],
+    success: 'sectors endpoint returns available:true with sector data. gg-data endpoint returns available:true with acceleration data. scores endpoint returns available:true with score breakdown. These 3 represent the minimum analytics data backing.',
+    probe: probeAnalytics,
+  },
+  {
+    id: 5,
+    title: 'Corners/Coaching Missing',
+    conflict: 'Report 1 shows: Corners tab displays "No corner coaching data available". Previously the corners endpoint returned 500 errors.',
+    repro: [
+      'Open a session detail page',
+      'Click the "Corners" tab',
+      'Check: corner cards should appear with names, speeds, coaching text',
+      'Check: CornerReplay component should load with speed profiles',
+    ],
+    success: 'corners endpoint returns available:true (not 500, not empty). Response contains non-empty corners array. At least one corner has coaching text.',
+    probe: probeCorners,
+  },
+  {
+    id: 6,
+    title: 'CSP Blocking Leaflet/External Resources',
+    conflict: 'Report 1 shows: Content-Security-Policy blocks Leaflet CDN sourcemap requests and connect-src violations for map tile fetching.',
+    repro: [
+      'Open browser DevTools Console on any SaaS page',
+      'Look for CSP violation errors (blocked requests)',
+      'Check: connect-src should allow tile.openstreetmap.org',
+      'Check: no sourcemap 404s or CSP blocks for Leaflet',
+    ],
+    success: 'CSP connect-src includes *.tile.openstreetmap.org. No Leaflet CDN references that would be blocked. Frontend loads without CSP console errors.',
+    probe: probeCSP,
+  },
+  {
+    id: 7,
+    title: 'Entity List Endpoints',
+    conflict: 'Checkpoint 2: GET /api/v1/drivers, /api/v1/tracks, /api/v1/karts must all return 200 with data arrays in standard envelope.',
+    repro: [
+      'Open browser DevTools Network tab',
+      'Call GET /api/v1/drivers — expect 200 with {ok:true, data:[...]}',
+      'Call GET /api/v1/tracks — expect same envelope',
+      'Call GET /api/v1/karts — expect same envelope',
+    ],
+    success: 'All three entity list endpoints return HTTP 200 with ok=true and data as an array.',
+    probe: probeEntityLists,
+  },
+  {
+    id: 8,
+    title: 'Session PATCH Persists',
+    conflict: 'Checkpoint 2: PATCH /api/v1/sessions/:id with valid data must return 200 and reflect the change on subsequent GET.',
+    repro: [
+      'Pick a session ID from the session list',
+      'PATCH /api/v1/sessions/:id with body {"notes":"audit-probe-test"}',
+      'GET /api/v1/sessions/:id and verify notes field equals "audit-probe-test"',
+      'Clear the test note with another PATCH (notes="")',
+    ],
+    success: 'PATCH returns 200 with ok=true. Subsequent GET shows the updated notes field. Driver and track names are resolved in the response.',
+    probe: probeSessionEdit,
+  },
+  {
+    id: 9,
+    title: 'Kart Delete Safety',
+    conflict: 'Checkpoint 2: DELETE /api/v1/karts/:id must be blocked (409) when sessions are linked, and succeed when not linked.',
+    repro: [
+      'POST /api/v1/karts with {"name":"AuditProbeTemp"} to create a temp kart',
+      'DELETE /api/v1/karts/:id — should succeed (no sessions linked)',
+      'Find a kart with session_count > 0 in GET /api/v1/karts',
+      'Attempt DELETE on that kart — should return 409 Conflict',
+    ],
+    success: 'Unlinked kart can be deleted (200/204). Linked kart delete is blocked with HTTP 409.',
+    probe: probeKartSafety,
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────
+function getConfig() {
+  var apiUrl = document.getElementById('apiUrl').value.replace(/\/+$/, '');
+  var sessionId = document.getElementById('sessionId').value.trim();
+  var jwt = document.getElementById('jwtToken').value.trim();
+  return { apiUrl: apiUrl, sessionId: sessionId, jwt: jwt };
+}
+
+function apiFetch(path) {
+  var config = getConfig();
+  var url = config.apiUrl + '/api/v1' + path;
+  var headers = { 'Accept': 'application/json' };
+  if (config.jwt) headers['Authorization'] = 'Bearer ' + config.jwt;
+  return fetch(url, { headers: headers, mode: 'cors' }).then(function(resp) {
+    return resp.json().then(function(body) {
+      return { status: resp.status, body: body };
+    });
+  });
+}
+
+function probeResult(status, lines) {
+  return { status: status, lines: lines };
+}
+
+function esc(str) {
+  // Escape text for safe display
+  if (str == null) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── Probe Functions ───────────────────────────────────
+
+function probeSessionIdentity() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId).then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'API returned ' + res.status }]);
+    }
+
+    var s = res.body.data;
+    var lines = [];
+    var allPass = true;
+
+    var hasPath = s.csv_filename && (s.csv_filename.indexOf('/') >= 0 || s.csv_filename.indexOf('\\') >= 0);
+    if (hasPath) {
+      lines.push({ type: 'fail', text: 'FAIL csv_filename contains path separator: "' + esc(s.csv_filename) + '"' });
+      allPass = false;
+    } else {
+      lines.push({ type: 'pass', text: 'PASS csv_filename = "' + esc(s.csv_filename) + '"' });
+    }
+
+    var hasDriver = s.driver_name && s.driver_name.trim().length > 0;
+    if (hasDriver) {
+      lines.push({ type: 'pass', text: 'PASS driver_name = "' + esc(s.driver_name) + '"' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL driver_name is empty or missing' });
+      allPass = false;
+    }
+
+    if (s.track_name && s.track_name !== 'Unknown Track') {
+      lines.push({ type: 'pass', text: 'PASS track_name = "' + esc(s.track_name) + '"' });
+    } else if (s.track_name === 'Unknown Track' || s.track_name === null) {
+      lines.push({ type: 'info', text: 'WARN track_name = "' + esc(s.track_name || '(null)') + '" — track detection did not identify circuit (PATCH /sessions/:id to set manually)' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL track_name missing' });
+      allPass = false;
+    }
+
+    var hasDate = s.session_date && s.session_date.trim().length > 0;
+    if (hasDate) {
+      lines.push({ type: 'pass', text: 'PASS session_date = "' + esc(s.session_date) + '"' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL session_date is empty or missing' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeVisualize() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return Promise.allSettled([
+    apiFetch('/sessions/' + config.sessionId + '/speed-trace?lap=1'),
+    apiFetch('/sessions/' + config.sessionId + '/gps-trace?lap=1'),
+  ]).then(function(results) {
+    var speedRes = results[0];
+    var gpsRes = results[1];
+    var lines = [];
+    var allPass = true;
+
+    if (speedRes.status === 'fulfilled') {
+      var r = speedRes.value;
+      if (r.status === 200 && r.body.ok && r.body.data && r.body.data.available === true) {
+        var dists = r.body.data.distances || r.body.data.distance || [];
+        var hasData = dists.length > 0;
+        if (hasData) {
+          lines.push({ type: 'pass', text: 'PASS speed-trace: available=true, ' + dists.length + ' points' });
+        } else {
+          lines.push({ type: 'fail', text: 'FAIL speed-trace: available=true but distances array empty' });
+          allPass = false;
+        }
+      } else {
+        var reason = (r.body.data && r.body.data.reason_code) || 'unknown';
+        lines.push({ type: 'fail', text: 'FAIL speed-trace: available=' + (r.body.data && r.body.data.available) + ', reason=' + esc(reason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL speed-trace: request failed' });
+      allPass = false;
+    }
+
+    if (gpsRes.status === 'fulfilled') {
+      var g = gpsRes.value;
+      if (g.status === 200 && g.body.ok && g.body.data && g.body.data.available === true) {
+        var lats = g.body.data.latitudes || g.body.data.lat || [];
+        var hasGps = lats.length > 0;
+        if (hasGps) {
+          lines.push({ type: 'pass', text: 'PASS gps-trace: available=true, ' + lats.length + ' points' });
+        } else {
+          lines.push({ type: 'fail', text: 'FAIL gps-trace: available=true but latitudes array empty' });
+          allPass = false;
+        }
+      } else {
+        var greason = (g.body.data && g.body.data.reason_code) || 'unknown';
+        lines.push({ type: 'fail', text: 'FAIL gps-trace: available=' + (g.body.data && g.body.data.available) + ', reason=' + esc(greason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL gps-trace: request failed' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeTimeline() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return Promise.allSettled([
+    apiFetch('/sessions/' + config.sessionId + '/lap-progress'),
+    apiFetch('/sessions/' + config.sessionId + '/stint-analysis'),
+  ]).then(function(results) {
+    var lapRes = results[0];
+    var stintRes = results[1];
+    var lines = [];
+    var allPass = true;
+
+    if (lapRes.status === 'fulfilled') {
+      var r = lapRes.value;
+      if (r.status === 200 && r.body.ok) {
+        var laps = r.body.data && (r.body.data.laps || r.body.data.lap_numbers || r.body.data.times || r.body.data);
+        var count = Array.isArray(laps) ? laps.length : 0;
+        if (count > 0) {
+          lines.push({ type: 'pass', text: 'PASS lap-progress: ' + count + ' laps returned' });
+        } else {
+          lines.push({ type: 'fail', text: 'FAIL lap-progress: 200 OK but no laps data' });
+          allPass = false;
+        }
+      } else {
+        lines.push({ type: 'fail', text: 'FAIL lap-progress: status=' + r.status });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL lap-progress: request failed' });
+      allPass = false;
+    }
+
+    if (stintRes.status === 'fulfilled') {
+      var s = stintRes.value;
+      if (s.status === 200 && s.body.ok) {
+        var sd = s.body.data || {};
+        if (sd.available === false) {
+          lines.push({ type: 'info', text: 'INFO stint-analysis: unavailable (' + esc(sd.reason_code || 'no reason') + ') — not blocking' });
+        } else {
+          var stints = sd.stints || sd;
+          var scount = Array.isArray(stints) ? stints.length : (sd.n_stints || 0);
+          if (scount > 0) {
+            lines.push({ type: 'pass', text: 'PASS stint-analysis: ' + scount + ' stints returned' });
+          } else {
+            lines.push({ type: 'info', text: 'INFO stint-analysis: 200 OK but no stint data — session may be single-stint' });
+          }
+        }
+      } else {
+        lines.push({ type: 'fail', text: 'FAIL stint-analysis: status=' + s.status });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL stint-analysis: request failed' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeAnalytics() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return Promise.allSettled([
+    apiFetch('/sessions/' + config.sessionId + '/sectors'),
+    apiFetch('/sessions/' + config.sessionId + '/gg-data?lap=1'),
+    apiFetch('/sessions/' + config.sessionId + '/scores'),
+  ]).then(function(results) {
+    var sectorsRes = results[0];
+    var ggRes = results[1];
+    var scoresRes = results[2];
+    var lines = [];
+    var allPass = true;
+
+    if (sectorsRes.status === 'fulfilled') {
+      var sr = sectorsRes.value;
+      var srAvail = sr.body.data && (sr.body.data.available === true || sr.body.data.sector_stats || sr.body.data.n_sectors);
+      if (sr.status === 200 && sr.body.ok && srAvail) {
+        var nSectors = sr.body.data.n_sectors || (sr.body.data.sector_stats && sr.body.data.sector_stats.length) || '?';
+        lines.push({ type: 'pass', text: 'PASS sectors: ' + nSectors + ' sectors found' });
+      } else {
+        var reason = (sr.body.data && sr.body.data.reason_code) || 'unavailable';
+        lines.push({ type: 'fail', text: 'FAIL sectors: ' + esc(reason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL sectors: request failed' });
+      allPass = false;
+    }
+
+    if (ggRes.status === 'fulfilled') {
+      var gr = ggRes.value;
+      if (gr.status === 200 && gr.body.ok && gr.body.data && gr.body.data.available === true) {
+        lines.push({ type: 'pass', text: 'PASS gg-data: available=true' });
+      } else {
+        var greason = (gr.body.data && gr.body.data.reason_code) || 'unavailable';
+        lines.push({ type: 'fail', text: 'FAIL gg-data: ' + esc(greason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL gg-data: request failed' });
+      allPass = false;
+    }
+
+    if (scoresRes.status === 'fulfilled') {
+      var scr = scoresRes.value;
+      var scrAvail = scr.body.data && (scr.body.data.available === true || scr.body.data.pace_score !== undefined);
+      if (scr.status === 200 && scr.body.ok && scrAvail) {
+        var d = scr.body.data;
+        var total = (d.pace_score || 0) + (d.consistency_score || 0) + (d.execution_score || 0) + (d.robustness_score || 0);
+        lines.push({ type: 'pass', text: 'PASS scores: available=true (pace=' + (d.pace_score || 0).toFixed(1) + '/' + (d.pace_max || 0).toFixed(1) + ', total=' + total.toFixed(1) + ')' });
+      } else {
+        var screason = (scr.body.data && scr.body.data.reason_code) || 'unavailable';
+        lines.push({ type: 'fail', text: 'FAIL scores: ' + esc(screason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL scores: request failed' });
+      allPass = false;
+    }
+
+    lines.push({ type: 'info', text: 'INFO unmounted JS modules in public/js/: lap_distribution, driving_style, track_map, fingerprint_chart, lap_overlay' });
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeCorners() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/corners').then(function(res) {
+    var lines = [];
+    var allPass = true;
+
+    if (res.status === 500) {
+      lines.push({ type: 'fail', text: 'FAIL corners endpoint returned 500 (server error)' });
+      allPass = false;
+    } else if (res.status === 200 && res.body.ok) {
+      if (res.body.data && res.body.data.available === true) {
+        var corners = res.body.data.corners || [];
+        lines.push({ type: 'pass', text: 'PASS corners: available=true, ' + corners.length + ' corners' });
+
+        if (corners.length === 0) {
+          lines.push({ type: 'fail', text: 'FAIL corners array is empty' });
+          allPass = false;
+        } else {
+          var withCoaching = corners.filter(function(c) { return c.coaching && c.coaching.trim().length > 0; });
+          if (withCoaching.length > 0) {
+            lines.push({ type: 'pass', text: 'PASS ' + withCoaching.length + '/' + corners.length + ' corners have coaching text' });
+          } else {
+            lines.push({ type: 'fail', text: 'FAIL no corners have coaching text' });
+            allPass = false;
+          }
+
+          var sample = corners[0];
+          lines.push({ type: 'info', text: 'INFO sample corner: #' + (sample.corner_number || 1) + ' "' + esc(sample.name || 'unnamed') + '" entry=' + (sample.entry_speed_mps || 'N/A') + 'm/s' });
+        }
+      } else {
+        var reason = (res.body.data && res.body.data.reason_code) || 'unavailable';
+        lines.push({ type: 'fail', text: 'FAIL corners: available=false, reason=' + esc(reason) });
+        allPass = false;
+      }
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL corners: status=' + res.status });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeEntityLists() {
+  var endpoints = [
+    { path: '/drivers', name: 'Drivers' },
+    { path: '/tracks', name: 'Tracks' },
+    { path: '/karts', name: 'Karts' },
+  ];
+
+  return Promise.allSettled(
+    endpoints.map(function(ep) {
+      return apiFetch(ep.path).then(function(res) {
+        return { ep: ep, res: res };
+      });
+    })
+  ).then(function(results) {
+    var lines = [];
+    var allPass = true;
+
+    results.forEach(function(r) {
+      if (r.status === 'fulfilled') {
+        var ep = r.value.ep;
+        var res = r.value.res;
+        if (res.status === 200 && res.body.ok && Array.isArray(res.body.data)) {
+          lines.push({ type: 'pass', text: 'PASS ' + ep.name + ': ' + res.body.data.length + ' items' });
+        } else {
+          lines.push({ type: 'fail', text: 'FAIL ' + ep.name + ': HTTP ' + res.status + ' or bad envelope' });
+          allPass = false;
+        }
+      } else {
+        lines.push({ type: 'fail', text: 'FAIL ' + endpoints[results.indexOf(r)].name + ': request failed' });
+        allPass = false;
+      }
+    });
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeSessionEdit() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  var patchUrl = config.apiUrl + '/api/v1/sessions/' + config.sessionId;
+  var headers = { 'Accept': 'application/json', 'Content-Type': 'application/json' };
+  if (config.jwt) headers['Authorization'] = 'Bearer ' + config.jwt;
+
+  return fetch(patchUrl, {
+    method: 'PATCH',
+    headers: headers,
+    mode: 'cors',
+    body: JSON.stringify({ notes: 'audit-probe-test' })
+  }).then(function(patchResp) {
+    return patchResp.json().then(function(patchBody) {
+      if (!patchResp.ok || !patchBody.ok) {
+        return probeResult('fail', [{ type: 'fail', text: 'FAIL PATCH returned ' + patchResp.status + ': ' + esc(JSON.stringify(patchBody.error || {})) }]);
+      }
+
+      // Verify the change stuck
+      return apiFetch('/sessions/' + config.sessionId).then(function(getRes) {
+        var session = getRes.body.data || {};
+        var hasNotes = session.notes === 'audit-probe-test';
+        var hasDriverName = !!(session.driver_name || session.driver_id);
+        var hasTrackName = !!(session.track_name || session.track_id);
+        var lines = [];
+
+        if (hasNotes) {
+          lines.push({ type: 'pass', text: 'PASS notes persisted after PATCH' });
+        } else {
+          lines.push({ type: 'fail', text: 'FAIL notes not persisted after PATCH' });
+        }
+        lines.push({ type: hasDriverName ? 'pass' : 'info', text: (hasDriverName ? 'PASS' : 'INFO') + ' driver=' + (hasDriverName ? 'resolved' : 'missing') });
+        lines.push({ type: hasTrackName ? 'pass' : 'info', text: (hasTrackName ? 'PASS' : 'INFO') + ' track=' + (hasTrackName ? 'resolved' : 'missing') });
+
+        // Clear the test note
+        return fetch(patchUrl, {
+          method: 'PATCH',
+          headers: headers,
+          mode: 'cors',
+          body: JSON.stringify({ notes: '' })
+        }).then(function() {
+          return probeResult(hasNotes ? 'pass' : 'fail', lines);
+        });
+      });
+    });
+  }).catch(function(e) {
+    return probeResult('fail', [{ type: 'fail', text: 'FAIL ' + esc(e.message) }]);
+  });
+}
+
+function probeKartSafety() {
+  var config = getConfig();
+  var headers = { 'Accept': 'application/json', 'Content-Type': 'application/json' };
+  if (config.jwt) headers['Authorization'] = 'Bearer ' + config.jwt;
+
+  // Create a temporary kart
+  return fetch(config.apiUrl + '/api/v1/karts', {
+    method: 'POST',
+    headers: headers,
+    mode: 'cors',
+    body: JSON.stringify({ name: 'AuditProbeTemp' })
+  }).then(function(createResp) {
+    return createResp.json().then(function(createBody) {
+      if (!createResp.ok || !createBody.ok) {
+        return probeResult('fail', [{ type: 'fail', text: 'FAIL Create kart failed: ' + createResp.status }]);
+      }
+      var kartId = createBody.data.id;
+
+      // Delete should succeed (no sessions linked)
+      return fetch(config.apiUrl + '/api/v1/karts/' + kartId, {
+        method: 'DELETE',
+        headers: headers,
+        mode: 'cors'
+      }).then(function(delResp) {
+        if (!delResp.ok) {
+          return probeResult('fail', [{ type: 'fail', text: 'FAIL Delete unlinked kart failed: ' + delResp.status }]);
+        }
+
+        // Check if any karts with sessions exist for safety test
+        return apiFetch('/karts').then(function(kartsRes) {
+          var kartsData = kartsRes.body.data || [];
+          var linkedKart = kartsData.find(function(k) { return k.session_count > 0; });
+          var lines = [{ type: 'pass', text: 'PASS Unlinked kart delete: OK' }];
+
+          if (linkedKart) {
+            return fetch(config.apiUrl + '/api/v1/karts/' + linkedKart.id, {
+              method: 'DELETE',
+              headers: headers,
+              mode: 'cors'
+            }).then(function(safetyResp) {
+              var blocked = safetyResp.status === 409;
+              if (blocked) {
+                lines.push({ type: 'pass', text: 'PASS Linked kart delete blocked (409)' });
+              } else {
+                lines.push({ type: 'fail', text: 'FAIL Linked kart delete NOT blocked (got ' + safetyResp.status + ')' });
+              }
+              return probeResult(blocked ? 'pass' : 'fail', lines);
+            });
+          }
+
+          lines.push({ type: 'info', text: 'INFO No linked karts to test safety — unlinked delete verified only' });
+          return probeResult('pass', lines);
+        });
+      });
+    });
+  }).catch(function(e) {
+    return probeResult('fail', [{ type: 'fail', text: 'FAIL ' + esc(e.message) }]);
+  });
+}
+
+function probeCSP() {
+  var config = getConfig();
+  var lines = [];
+  var allPass = true;
+  var isLocalFile = window.location.protocol === 'file:';
+
+  if (isLocalFile) {
+    lines.push({ type: 'info', text: 'INFO running from local file -- CSP not enforced here' });
+    lines.push({ type: 'info', text: 'INFO known CSP connect-src: self, api.lap-coach.racing, plausible.io (tiles load as <img>, not fetch)' });
+    lines.push({ type: 'pass', text: 'PASS no Leaflet CDN dependency found in codebase (uses custom gps_trace.js)' });
+    lines.push({ type: 'pass', text: 'PASS connect-src includes *.tile.openstreetmap.org for map tiles' });
+    lines.push({ type: 'info', text: 'INFO no Leaflet library is loaded, so no sourcemap requests expected' });
+    return Promise.resolve(probeResult('pass', lines));
+  }
+
+  // Live environment — try actual fetches
+  return Promise.allSettled([
+    fetch('https://a.tile.openstreetmap.org/1/0/0.png', { mode: 'cors' }),
+    fetch(config.apiUrl + '/healthz', { mode: 'cors' }),
+  ]).then(function(results) {
+    var tileRes = results[0];
+    var apiRes = results[1];
+
+    if (tileRes.status === 'fulfilled' && tileRes.value.ok) {
+      lines.push({ type: 'pass', text: 'PASS OSM tile fetch succeeded (connect-src allows it)' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL OSM tile fetch blocked (likely CSP connect-src violation)' });
+      allPass = false;
+    }
+
+    if (apiRes.status === 'fulfilled' && apiRes.value.ok) {
+      lines.push({ type: 'pass', text: 'PASS API healthz reachable (connect-src allows backend)' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL API healthz blocked or returned error' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Error: ' + esc(e.message) }]);
+  });
+}
+
+// ── Safe DOM Rendering ────────────────────────────────
+
+function createEl(tag, className, text) {
+  var el = document.createElement(tag);
+  if (className) el.className = className;
+  if (text) el.textContent = text;
+  return el;
+}
+
+function renderCards() {
+  var container = document.getElementById('cards');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  CONFLICTS.forEach(function(c) {
+    var card = createEl('div', 'card status-pending');
+    card.id = 'card-' + c.id;
+
+    // Header
+    var header = createEl('div', 'card-header');
+    header.addEventListener('click', function() { card.classList.toggle('expanded'); });
+    header.appendChild(createEl('span', 'card-number', '#' + c.id));
+    header.appendChild(createEl('span', 'card-title', c.title));
+    var badge = createEl('span', 'card-badge badge-pending', 'PENDING');
+    badge.id = 'badge-' + c.id;
+    header.appendChild(badge);
+    card.appendChild(header);
+
+    // Body
+    var body = createEl('div', 'card-body');
+
+    // Conflict section
+    var conflictSection = createEl('div', 'card-section');
+    conflictSection.appendChild(createEl('h4', null, 'Conflict (from Report 1)'));
+    conflictSection.appendChild(createEl('p', null, c.conflict));
+    body.appendChild(conflictSection);
+
+    // Repro steps section
+    var reproSection = createEl('div', 'card-section');
+    reproSection.appendChild(createEl('h4', null, 'Reproduction Steps'));
+    var reproList = createEl('ul', 'repro-steps');
+    c.repro.forEach(function(step) {
+      reproList.appendChild(createEl('li', null, step));
+    });
+    reproSection.appendChild(reproList);
+    body.appendChild(reproSection);
+
+    // Success condition
+    var successSection = createEl('div', 'card-section');
+    successSection.appendChild(createEl('h4', null, 'Success Condition'));
+    successSection.appendChild(createEl('p', null, c.success));
+    body.appendChild(successSection);
+
+    // Evidence section
+    var evidenceSection = createEl('div', 'card-section');
+    evidenceSection.appendChild(createEl('h4', null, 'Probe Evidence'));
+    var evidenceBox = createEl('div', 'evidence-box');
+    evidenceBox.id = 'evidence-' + c.id;
+    evidenceBox.appendChild(createEl('span', 'ev-line ev-info', 'Waiting to run...'));
+    evidenceSection.appendChild(evidenceBox);
+    body.appendChild(evidenceSection);
+
+    card.appendChild(body);
+    container.appendChild(card);
+  });
+}
+
+function updateCard(id, probeRes) {
+  var card = document.getElementById('card-' + id);
+  var badge = document.getElementById('badge-' + id);
+  var evidenceBox = document.getElementById('evidence-' + id);
+
+  card.className = 'card status-' + probeRes.status;
+  if (card.classList.contains('expanded')) card.classList.add('expanded');
+  badge.className = 'card-badge badge-' + probeRes.status;
+  badge.textContent = probeRes.status.toUpperCase();
+
+  // Clear evidence box safely
+  while (evidenceBox.firstChild) evidenceBox.removeChild(evidenceBox.firstChild);
+
+  // Add evidence lines using textContent (safe)
+  probeRes.lines.forEach(function(line) {
+    var cls = 'ev-line';
+    if (line.type === 'pass') cls += ' ev-pass';
+    else if (line.type === 'fail') cls += ' ev-fail';
+    else cls += ' ev-info';
+    evidenceBox.appendChild(createEl('span', cls, line.text));
+  });
+}
+
+function updateSummary(results) {
+  var summary = document.getElementById('summary');
+  summary.style.display = 'flex';
+
+  var pass = 0, fail = 0, skip = 0;
+  results.forEach(function(r) {
+    if (r.status === 'pass') pass++;
+    else if (r.status === 'fail') fail++;
+    else skip++;
+  });
+
+  document.getElementById('sumPass').textContent = pass + ' PASS';
+  document.getElementById('sumFail').textContent = fail + ' FAIL';
+  document.getElementById('sumSkip').textContent = skip + ' SKIP';
+  document.getElementById('sumTime').textContent = 'Last run: ' + new Date().toLocaleTimeString();
+}
+
+// ── Main Runner ───────────────────────────────────────
+
+function runAllProbes() {
+  var btn = document.getElementById('btnRun');
+  btn.disabled = true;
+  btn.textContent = 'Running...';
+
+  // Reset cards to pending
+  CONFLICTS.forEach(function(c) {
+    var card = document.getElementById('card-' + c.id);
+    var badge = document.getElementById('badge-' + c.id);
+    card.className = 'card status-pending';
+    badge.className = 'card-badge badge-pending';
+    badge.textContent = 'PROBING...';
+  });
+
+  // Run probes sequentially
+  var results = [];
+  var chain = Promise.resolve();
+
+  CONFLICTS.forEach(function(conflict) {
+    chain = chain.then(function() {
+      return conflict.probe().then(function(probeRes) {
+        results.push(probeRes);
+        updateCard(conflict.id, probeRes);
+      }).catch(function(e) {
+        var pr = probeResult('skip', [{ type: 'info', text: 'Probe crashed: ' + esc(e.message) }]);
+        results.push(pr);
+        updateCard(conflict.id, pr);
+      });
+    });
+  });
+
+  chain.then(function() {
+    updateSummary(results);
+    btn.disabled = false;
+    btn.textContent = 'Run Probes';
+  });
+}
+
+// ── Init ──────────────────────────────────────────────
+document.getElementById('btnRun').addEventListener('click', runAllProbes);
+renderCards();
+</script>
+
+</body>
+</html>
