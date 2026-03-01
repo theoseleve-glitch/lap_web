@@ -46,7 +46,12 @@ def _safe_api(f):
         try:
             return f(*args, **kwargs)
         except Exception:
-            logger.exception("Unhandled error in %s", f.__name__)
+            from flask import g
+            req_id = getattr(g, "request_id", "?")
+            logger.exception(
+                "Unhandled error in %s [%s %s] request_id=%s",
+                f.__name__, request.method, request.path, req_id,
+            )
             return api_error(ErrorCode.INTERNAL_ERROR,
                              "Internal server error", status=500)
     return wrapper
@@ -1570,6 +1575,8 @@ def get_dev_plan(plan_id: int):
         return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
 
     d = dict(row)
-    d["weeks"] = json.loads(d.pop("weeks_json", "[]") or "[]")
-    d["progress"] = json.loads(d.pop("progress_json", "{}") or "{}")
+    weeks_raw = d.pop("weeks_json", "[]") or "[]"
+    progress_raw = d.pop("progress_json", "{}") or "{}"
+    d["weeks"] = weeks_raw if isinstance(weeks_raw, (list, dict)) else json.loads(weeks_raw)
+    d["progress"] = progress_raw if isinstance(progress_raw, (list, dict)) else json.loads(progress_raw)
     return api_response(d)
