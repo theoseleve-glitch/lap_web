@@ -3979,6 +3979,94 @@ def v1_corner_replay(session_id: str):
 
 
 # ---------------------------------------------------------------------------
+# Key corners CRUD — GET/PUT /tracks/<track_id>/key-corners
+# ---------------------------------------------------------------------------
+
+
+def _get_key_corners(conn, track_id: str) -> list:
+    """Fetch key corners for a track, sorted by dist_m."""
+    try:
+        rows = conn.execute(
+            "SELECT corner_id, label, lat, lon, dist_m "
+            "FROM track_key_corners WHERE track_id = :tid ORDER BY dist_m",
+            {"tid": track_id},
+        ).fetchall()
+    except Exception:
+        return []
+    result = []
+    for r in rows:
+        row = dict(r) if not isinstance(r, dict) else r
+        result.append({
+            "corner_id": row["corner_id"],
+            "label": row.get("label"),
+            "lat": row.get("lat"),
+            "lon": row.get("lon"),
+            "dist_m": row.get("dist_m"),
+        })
+    return result
+
+
+def _validate_key_corners(corners: list) -> tuple:
+    """Validate corner count. Returns (valid: bool, error: str | None)."""
+    if len(corners) < 3 or len(corners) > 8:
+        return False, "Must select between 3 and 8 corners"
+    return True, None
+
+
+def _upsert_key_corners(conn, track_id: str, corners: list) -> None:
+    """Non-destructive upsert: insert or replace corners for a track."""
+    for c in corners:
+        conn.execute(
+            "INSERT OR REPLACE INTO track_key_corners "
+            "(track_id, corner_id, label, lat, lon, dist_m) "
+            "VALUES (:tid, :cid, :label, :lat, :lon, :dist_m)",
+            {
+                "tid": track_id,
+                "cid": c["corner_id"],
+                "label": c.get("label", f"C{c['corner_id']}"),
+                "lat": c.get("lat"),
+                "lon": c.get("lon"),
+                "dist_m": c.get("dist_m"),
+            },
+        )
+    conn.commit()
+
+
+@bp.route("/tracks/<track_id>/key-corners", methods=["GET"])
+@rate_limit(tier="read")
+def v1_get_key_corners(track_id: str):
+    """Return key corners for a track."""
+    conn = get_db_connection()
+    track = get_track_by_id(conn, track_id)
+    if track is None:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    corners = _get_key_corners(conn, track_id)
+    return api_response({"corners": corners})
+
+
+@bp.route("/tracks/<track_id>/key-corners", methods=["PUT"])
+@rate_limit(tier="write")
+def v1_put_key_corners(track_id: str):
+    """Create or update key corners for a track (3-8 corners)."""
+    conn = get_db_connection()
+    track = get_track_by_id(conn, track_id)
+    if track is None:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+
+    data = request.get_json(silent=True)
+    if not data or "corners" not in data:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Missing corners array", status=422)
+
+    corners = data["corners"]
+    valid, error = _validate_key_corners(corners)
+    if not valid:
+        return api_error(ErrorCode.VALIDATION_ERROR, error, status=422)
+
+    _upsert_key_corners(conn, track_id, corners)
+    return api_response({"corners": _get_key_corners(conn, track_id)})
+
+
+# ---------------------------------------------------------------------------
 # MISSING-004b: GET /sessions/<id>/corners/<corner_id>/replay
 # ---------------------------------------------------------------------------
 

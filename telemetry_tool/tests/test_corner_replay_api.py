@@ -18,7 +18,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from web.routes.api_v1_data import _build_corner_replay_response, _has_variance
+from web.routes.api_v1_data import (
+    _build_corner_replay_response,
+    _get_key_corners,
+    _has_variance,
+    _upsert_key_corners,
+    _validate_key_corners,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -412,4 +418,94 @@ class TestBuildCornerReplayResponse:
                 assert "exit_speed_mps" in m
                 assert "time_loss_ms" in m
                 assert "coaching_hint" in m
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Tests for key corners CRUD helpers
+# ---------------------------------------------------------------------------
+
+
+class TestKeyCornersCRUD:
+    def test_get_returns_corners_for_track(self):
+        """Seeded track returns 2 corners when seeded with n_corners=2."""
+        conn = _make_conn()
+        _seed_full_session(conn, n_corners=2)
+        corners = _get_key_corners(conn, "t1")
+        assert len(corners) == 2
+        assert corners[0]["corner_id"] == 1
+        assert corners[1]["corner_id"] == 2
+        assert corners[0]["label"] == "Turn 1"
+        conn.close()
+
+    def test_get_returns_empty_for_track_without_corners(self):
+        """Track with no corners returns []."""
+        conn = _make_conn()
+        _seed_full_session(conn, include_key_corners=False)
+        corners = _get_key_corners(conn, "t1")
+        assert corners == []
+        conn.close()
+
+    def test_put_creates_corners(self):
+        """Inserting 3 corners works."""
+        conn = _make_conn()
+        _seed_full_session(conn, include_key_corners=False)
+        new_corners = [
+            {"corner_id": 1, "label": "T1", "lat": 45.0, "lon": 7.0, "dist_m": 100.0},
+            {"corner_id": 2, "label": "T2", "lat": 45.1, "lon": 7.1, "dist_m": 300.0},
+            {"corner_id": 3, "label": "T3", "lat": 45.2, "lon": 7.2, "dist_m": 500.0},
+        ]
+        _upsert_key_corners(conn, "t1", new_corners)
+        corners = _get_key_corners(conn, "t1")
+        assert len(corners) == 3
+        assert corners[0]["label"] == "T1"
+        assert corners[1]["label"] == "T2"
+        assert corners[2]["label"] == "T3"
+        conn.close()
+
+    def test_put_rejects_fewer_than_3_corners(self):
+        """2 corners returns (False, 'Must select between 3 and 8 corners')."""
+        two_corners = [
+            {"corner_id": 1, "label": "T1"},
+            {"corner_id": 2, "label": "T2"},
+        ]
+        valid, error = _validate_key_corners(two_corners)
+        assert valid is False
+        assert error == "Must select between 3 and 8 corners"
+
+    def test_put_rejects_more_than_8_corners(self):
+        """9 corners returns (False, ...)."""
+        nine_corners = [{"corner_id": i, "label": f"T{i}"} for i in range(1, 10)]
+        valid, error = _validate_key_corners(nine_corners)
+        assert valid is False
+        assert error == "Must select between 3 and 8 corners"
+
+    def test_put_non_destructive_upsert(self):
+        """Updating label preserves lat/lon/dist_m."""
+        conn = _make_conn()
+        _seed_full_session(conn, include_key_corners=False)
+
+        # Insert initial corners
+        initial = [
+            {"corner_id": 1, "label": "Old1", "lat": 45.0, "lon": 7.0, "dist_m": 100.0},
+            {"corner_id": 2, "label": "Old2", "lat": 45.1, "lon": 7.1, "dist_m": 300.0},
+            {"corner_id": 3, "label": "Old3", "lat": 45.2, "lon": 7.2, "dist_m": 500.0},
+        ]
+        _upsert_key_corners(conn, "t1", initial)
+
+        # Upsert corner 1 with new label but same lat/lon/dist_m
+        update = [
+            {"corner_id": 1, "label": "NewLabel", "lat": 45.0, "lon": 7.0, "dist_m": 100.0},
+            {"corner_id": 2, "label": "Old2", "lat": 45.1, "lon": 7.1, "dist_m": 300.0},
+            {"corner_id": 3, "label": "Old3", "lat": 45.2, "lon": 7.2, "dist_m": 500.0},
+        ]
+        _upsert_key_corners(conn, "t1", update)
+
+        corners = _get_key_corners(conn, "t1")
+        assert len(corners) == 3
+        c1 = corners[0]
+        assert c1["label"] == "NewLabel"
+        assert c1["lat"] == 45.0
+        assert c1["lon"] == 7.0
+        assert c1["dist_m"] == 100.0
         conn.close()
