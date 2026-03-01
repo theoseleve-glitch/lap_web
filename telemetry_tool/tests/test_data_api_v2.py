@@ -971,3 +971,353 @@ class TestUpdateSession:
             )
 
         assert resp.status_code == 400
+
+
+# ══════════════════════════════════════════════════════════════════
+# CONTRACT TESTS — Verify exact response shapes the frontend expects
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestSpeedTraceContract:
+    """Speed trace response must match:
+    {ok: true, data: {lap_number: int, distances: list, speeds: list}}
+    """
+
+    def test_speed_trace_contract(self, client):
+        """Verify speed trace response has the exact keys and types."""
+        trace = _sample_gps_trace()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_gps_trace.return_value = trace
+
+            resp = client.get("/api/v1/sessions/s1/speed-trace?lap=1")
+
+        body = resp.get_json()
+
+        # Envelope shape
+        assert "ok" in body
+        assert body["ok"] is True
+        assert "data" in body
+        assert "meta" in body
+
+        # Data shape
+        data = body["data"]
+        assert "lap_number" in data, "Contract: must have lap_number"
+        assert "distances" in data, "Contract: must have distances"
+        assert "speeds" in data, "Contract: must have speeds"
+
+        # Types
+        assert isinstance(data["lap_number"], int)
+        assert isinstance(data["distances"], list)
+        assert isinstance(data["speeds"], list)
+
+        # No extra unexpected keys (only these three)
+        expected_keys = {"lap_number", "distances", "speeds"}
+        assert set(data.keys()) == expected_keys, \
+            f"Speed trace data keys should be {expected_keys}, got {set(data.keys())}"
+
+
+class TestGpsTraceContract:
+    """GPS trace response must match:
+    {ok: true, data: {lap_number: int, lat: list, lon: list, distances: list, speeds: list}}
+    """
+
+    def test_gps_trace_contract(self, client):
+        """Verify GPS trace response has the exact keys and types."""
+        trace = _sample_gps_trace()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_gps_trace.return_value = trace
+
+            resp = client.get("/api/v1/sessions/s1/gps-trace?lap=1")
+
+        body = resp.get_json()
+
+        # Envelope shape
+        assert body["ok"] is True
+        assert "data" in body
+
+        # Data shape
+        data = body["data"]
+        assert "lap_number" in data, "Contract: must have lap_number"
+        assert "lat" in data, "Contract: must have lat"
+        assert "lon" in data, "Contract: must have lon"
+        assert "distances" in data, "Contract: must have distances"
+        assert "speeds" in data, "Contract: must have speeds"
+
+        # Types
+        assert isinstance(data["lap_number"], int)
+        assert isinstance(data["lat"], list)
+        assert isinstance(data["lon"], list)
+        assert isinstance(data["distances"], list)
+        assert isinstance(data["speeds"], list)
+
+        # Verify array lengths match
+        assert len(data["lat"]) == len(data["lon"]) == len(data["distances"]) == len(data["speeds"]), \
+            "All arrays in GPS trace should have equal length"
+
+        # No extra unexpected keys
+        expected_keys = {"lap_number", "lat", "lon", "distances", "speeds"}
+        assert set(data.keys()) == expected_keys, \
+            f"GPS trace data keys should be {expected_keys}, got {set(data.keys())}"
+
+
+class TestGGDataContract:
+    """GG data response must match:
+    {ok: true, data: {lap_number: int, lat_g: list, lon_g: list}}
+    """
+
+    def test_gg_data_contract(self, client):
+        """Verify GG data response has the exact keys and types."""
+        trace = _sample_gps_trace()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_gps_trace.return_value = trace
+
+            resp = client.get("/api/v1/sessions/s1/gg-data?lap=1")
+
+        body = resp.get_json()
+
+        # Envelope shape
+        assert body["ok"] is True
+        assert "data" in body
+
+        # Data shape
+        data = body["data"]
+        assert "lap_number" in data, "Contract: must have lap_number"
+        assert "lat_g" in data, "Contract: must have lat_g"
+        assert "lon_g" in data, "Contract: must have lon_g"
+
+        # Types
+        assert isinstance(data["lap_number"], int)
+        assert isinstance(data["lat_g"], list)
+        assert isinstance(data["lon_g"], list)
+
+        # Verify array lengths match
+        assert len(data["lat_g"]) == len(data["lon_g"]), \
+            "lat_g and lon_g arrays should have equal length"
+
+        # No extra unexpected keys
+        expected_keys = {"lap_number", "lat_g", "lon_g"}
+        assert set(data.keys()) == expected_keys, \
+            f"GG data keys should be {expected_keys}, got {set(data.keys())}"
+
+
+class TestSessionsListContract:
+    """Sessions list response must match:
+    {ok: true, data: {sessions: list, total: int, ...}, meta: {total: int}}
+    """
+
+    def test_sessions_list_contract(self, client):
+        """Verify sessions list response has the exact structure."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_sessions.return_value = _sample_sessions()
+            mock_models.count_sessions.return_value = 2
+
+            resp = client.get("/api/v1/sessions")
+
+        body = resp.get_json()
+
+        # Envelope shape
+        assert body["ok"] is True
+        assert "data" in body
+        assert "meta" in body
+
+        # Data shape
+        data = body["data"]
+        assert "sessions" in data, "Contract: must have sessions"
+        assert "total" in data, "Contract: must have total"
+
+        # Types
+        assert isinstance(data["sessions"], list)
+        assert isinstance(data["total"], int)
+
+        # Each session has required keys
+        if len(data["sessions"]) > 0:
+            session = data["sessions"][0]
+            required_keys = {"session_id", "total_score", "grade"}
+            for key in required_keys:
+                assert key in session, \
+                    f"Contract: each session must have '{key}'"
+
+    def test_sessions_list_empty_contract(self, client):
+        """Empty sessions list still has the correct shape."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_sessions.return_value = []
+            mock_models.count_sessions.return_value = 0
+
+            resp = client.get("/api/v1/sessions")
+
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["sessions"] == []
+        assert body["data"]["total"] == 0
+
+
+class TestCompareSessionsContract:
+    """Compare response must match:
+    {ok: true, data: {
+        session_a: {session: dict, scores: dict|null, laps: list},
+        session_b: {session: dict, scores: dict|null, laps: list}
+    }}
+    """
+
+    def test_compare_contract(self, client):
+        """Verify compare response has the exact structure."""
+        sessions = _sample_sessions()
+        laps_a = _sample_laps()
+        laps_b = [
+            {"session_id": "s2", "lap_number": 1, "lap_time_s": 59.0, "is_valid": 1, "is_best": 1},
+        ]
+        score_a = _sample_score_details()
+        score_b = {
+            "session_id": "s2",
+            "pace_score": 22,
+            "pace_max": 25,
+            "consistency_score": 20,
+            "consistency_max": 25,
+            "execution_score": 22,
+            "execution_max": 25,
+            "robustness_score": 21,
+            "robustness_max": 25,
+        }
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                sessions[0] if sid == "s1" else sessions[1] if sid == "s2" else None
+            )
+            mock_models.get_score_details.side_effect = lambda conn, sid: (
+                score_a if sid == "s1" else score_b if sid == "s2" else None
+            )
+            mock_models.get_laps_for_session.side_effect = lambda conn, sid: (
+                laps_a if sid == "s1" else laps_b if sid == "s2" else []
+            )
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        body = resp.get_json()
+
+        # Envelope shape
+        assert body["ok"] is True
+        assert "data" in body
+
+        data = body["data"]
+
+        # Top-level keys
+        assert "session_a" in data, "Contract: must have session_a"
+        assert "session_b" in data, "Contract: must have session_b"
+
+        # session_a shape
+        sa = data["session_a"]
+        assert "session" in sa, "Contract: session_a must have session"
+        assert "scores" in sa, "Contract: session_a must have scores"
+        assert "laps" in sa, "Contract: session_a must have laps"
+
+        # session_b shape
+        sb = data["session_b"]
+        assert "session" in sb, "Contract: session_b must have session"
+        assert "scores" in sb, "Contract: session_b must have scores"
+        assert "laps" in sb, "Contract: session_b must have laps"
+
+        # Types
+        assert isinstance(sa["session"], dict)
+        assert isinstance(sa["scores"], dict)
+        assert isinstance(sa["laps"], list)
+        assert isinstance(sb["session"], dict)
+        assert isinstance(sb["scores"], dict)
+        assert isinstance(sb["laps"], list)
+
+        # Session objects have session_id
+        assert "session_id" in sa["session"]
+        assert "session_id" in sb["session"]
+
+        # Scores have required sub-score keys
+        for side_label, side in [("session_a", sa), ("session_b", sb)]:
+            scores = side["scores"]
+            if scores is not None:
+                assert "pace_score" in scores, \
+                    f"Contract: {side_label}.scores must have pace_score"
+                assert "pace_max" in scores, \
+                    f"Contract: {side_label}.scores must have pace_max"
+
+    def test_compare_null_scores_contract(self, client):
+        """Compare response with null scores still has correct shape."""
+        sessions = _sample_sessions()
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                sessions[0] if sid == "s1" else sessions[1] if sid == "s2" else None
+            )
+            mock_models.get_score_details.return_value = None
+            mock_models.get_laps_for_session.return_value = []
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        body = resp.get_json()
+        assert body["ok"] is True
+        data = body["data"]
+
+        # With null scores, the structure should still be present
+        assert "session_a" in data
+        assert "session_b" in data
+        assert data["session_a"]["scores"] is None
+        assert data["session_b"]["scores"] is None
+        assert isinstance(data["session_a"]["laps"], list)
+        assert isinstance(data["session_b"]["laps"], list)
+
+
+class TestErrorEnvelopeContract:
+    """Error responses must match:
+    {ok: false, error: {code: str, message: str}, meta: {...}}
+    """
+
+    def test_404_error_contract(self, client):
+        """Verify 404 error responses have the correct envelope."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = None
+
+            resp = client.get("/api/v1/sessions/nonexistent")
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+
+        # Envelope shape
+        assert "ok" in body
+        assert body["ok"] is False
+        assert "error" in body
+        assert "meta" in body
+
+        # Error shape
+        error = body["error"]
+        assert "code" in error, "Contract: error must have code"
+        assert "message" in error, "Contract: error must have message"
+        assert isinstance(error["code"], str)
+        assert isinstance(error["message"], str)
+
+    def test_400_error_contract(self, client):
+        """Verify 400 error responses have the correct envelope."""
+        resp = client.get("/api/v1/compare/sessions")  # Missing a and b
+
+        assert resp.status_code == 400
+        body = resp.get_json()
+
+        assert body["ok"] is False
+        assert "error" in body
+        assert "code" in body["error"]
+        assert "message" in body["error"]
