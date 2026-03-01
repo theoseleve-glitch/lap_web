@@ -46,7 +46,7 @@ export default function FreeReportPage() {
 
   const { data: session, isLoading } = useQuery({
     queryKey: ['session', id],
-    queryFn: () => api.get<SessionDetail>(`/sessions/${id}/details`),
+    queryFn: () => api.get<SessionDetail>(`/sessions/${id}`),
   });
 
   const { data: lapsData } = useQuery({

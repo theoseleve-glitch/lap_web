@@ -66,7 +66,7 @@ export default function VisualizeLandingPage() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions', 'recent'],
-    queryFn: () => api.get<{ sessions: SessionRow[] }>('/sessions/recent?limit=50'),
+    queryFn: () => api.get<{ sessions: SessionRow[] }>('/sessions?limit=50&offset=0'),
   });
 
   const sessions = data?.sessions ?? [];

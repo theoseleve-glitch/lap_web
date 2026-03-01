@@ -91,7 +91,7 @@ export default function FreeReportAnalyzePage() {
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const result = await fetch(`${BACKEND_URL}/api/files/upload`, {
+      const result = await fetch(`${BACKEND_URL}/api/v1/sessions/upload`, {
         method: 'POST',
         body: formData,
       });

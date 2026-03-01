@@ -36,15 +36,28 @@
      *       /api/session/{id}/gg/{lap}  -> /api/v1/sessions/{id}/gg/{lap}
      */
     function rewriteApiPath(url) {
-        // Match /api/session/{anything} but NOT /api/v1/
+        // Stage 1: /api/session/ → /api/v1/sessions/
         if (url.indexOf('/api/session/') === 0) {
-            return url.replace('/api/session/', '/api/v1/sessions/');
+            url = url.replace('/api/session/', '/api/v1/sessions/');
+        } else {
+            var idx = url.indexOf('/api/session/');
+            if (idx > 0) {
+                url = url.substring(0, idx) + url.substring(idx).replace('/api/session/', '/api/v1/sessions/');
+            }
         }
-        // Also handle URLs that already have the base URL prepended
-        var idx = url.indexOf('/api/session/');
-        if (idx > 0) {
-            return url.substring(0, idx) + url.substring(idx).replace('/api/session/', '/api/v1/sessions/');
-        }
+
+        // Stage 2: Rewrite sub-paths to match v1 backend endpoints.
+        // /sessions/{id}/gps/{lap} → /sessions/{id}/gps-trace?lap={lap}
+        url = url.replace(/(\/sessions\/[^/]+)\/gps\/(\d+)/, '$1/gps-trace?lap=$2');
+        // /sessions/{id}/gg/{lap} → /sessions/{id}/gg-data?lap={lap}
+        url = url.replace(/(\/sessions\/[^/]+)\/gg\/(\d+)/, '$1/gg-data?lap=$2');
+        // /sessions/{id}/gg (no lap) → /sessions/{id}/gg-data
+        url = url.replace(/(\/sessions\/[^/]+)\/gg(\?|$)/, '$1/gg-data$2');
+        // /sessions/{id}/gg_data → /sessions/{id}/gg-data
+        url = url.replace(/(\/sessions\/[^/]+)\/gg_data/, '$1/gg-data');
+        // /sessions/{id}/lap_times → /sessions/{id}/laps
+        url = url.replace(/(\/sessions\/[^/]+)\/lap_times/, '$1/laps');
+
         return url;
     }
 
