@@ -1,35 +1,72 @@
 'use client';
 
+import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import { BACKEND_URL } from '@/lib/api-client';
+
 interface FocusModeProps {
   sessionId: string;
   isOpen: boolean;
   onClose: () => void;
+  gpsLaps: number[];
+  bestLap: number | null;
 }
 
-/**
- * Focus Mode — being rebuilt.
- * Previously rendered a multi-panel chart dashboard overlay.
- */
-export function FocusMode({ isOpen, onClose }: FocusModeProps) {
+export function FocusMode({ sessionId, isOpen, onClose, gpsLaps, bestLap }: FocusModeProps) {
   if (!isOpen) return null;
+
+  const apiBase = BACKEND_URL;
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-asphalt/95"
+      className="fixed inset-0 z-50 bg-asphalt/98 overflow-auto"
       role="dialog"
       aria-modal="true"
       aria-label="Focus Mode"
     >
-      <div className="text-center">
-        <h2 className="text-xl font-bold text-zinc-100 mb-2">Focus Mode</h2>
-        <p className="text-zinc-400 mb-4">Being rebuilt with new chart system.</p>
+      {/* Header */}
+      <div className="flex items-center justify-between p-4 border-b border-steel/10">
+        <h2 className="text-lg font-monument text-chalk">Focus Mode</h2>
         <button
           onClick={onClose}
-          className="px-4 py-2 bg-zinc-700 text-zinc-100 rounded hover:bg-zinc-600 transition-colors"
+          className="px-3 py-1.5 bg-concrete border border-steel/20 rounded text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
           aria-label="Close focus mode"
         >
-          Close
+          Exit Focus
         </button>
+      </div>
+
+      {/* Chart grid */}
+      <div className="p-4 grid grid-cols-1 lg:grid-cols-2 gap-4" style={{ height: 'calc(100vh - 60px)' }}>
+        <div className="bg-concrete rounded-xl border border-steel/10 p-4 overflow-hidden">
+          <h3 className="text-xs font-monument text-steel mb-2">GPS Track Map</h3>
+          <GpsTrace
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </div>
+        <div className="bg-concrete rounded-xl border border-steel/10 p-4 overflow-hidden">
+          <h3 className="text-xs font-monument text-steel mb-2">Speed Trace</h3>
+          <SpeedTraceZoom
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </div>
+        <div className="lg:col-span-2 bg-concrete rounded-xl border border-steel/10 p-4 overflow-hidden">
+          <h3 className="text-xs font-monument text-steel mb-2">G-G Diagram</h3>
+          <GGExplorer
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </div>
       </div>
     </div>
   );

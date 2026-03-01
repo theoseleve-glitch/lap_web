@@ -6,10 +6,8 @@
     <title>{% block title %}Telemetry Dashboard{% endblock %}</title>
     <meta name="description" content="Motorsport telemetry analysis dashboard — lap times, GPS traces, driving style, corner analysis, and performance scoring.">
 
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossorigin="" />
+    <!-- Leaflet CSS (self-hosted, no CDN) -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}" />
 
     <!-- App CSS (tokens must load first so variables resolve) -->
     <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
@@ -199,10 +197,8 @@
         <span>Telemetry Analysis Platform</span>
     </footer>
 
-    <!-- Leaflet JS -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-            integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
-            crossorigin=""></script>
+    <!-- Leaflet JS (self-hosted, no CDN) -->
+    <script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
 
     <!-- Lifecycle helpers (tracked listeners/timers/rAF for cleanup) -->
     <script src="{{ url_for('static', filename='js/lifecycle_helpers.js') }}"></script>

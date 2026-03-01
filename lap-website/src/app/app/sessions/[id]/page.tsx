@@ -6,6 +6,10 @@ import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
 import { SectorPanel, CornerReplay } from '@/components/shared/charts';
+import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
+import { SessionDebrief } from '@/components/app/SessionDebrief';
+import { AchievementsBadges } from '@/components/app/AchievementsBadges';
+import { FocusMode } from '@/components/app/focus-mode/FocusMode';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -35,6 +39,14 @@ interface LapData {
   invalid_reason: string | null;
 }
 
+interface BadgeData {
+  id: string;
+  label: string;
+  tier: 'bronze' | 'silver' | 'gold';
+  category: string;
+  criteria: string;
+}
+
 interface ScoreData {
   pace_score: number | null;
   pace_max: number | null;
@@ -47,6 +59,7 @@ interface ScoreData {
   adaptation_score: number | null;
   strengths: string[];
   weaknesses: string[];
+  badges?: BadgeData[];
 }
 
 interface CornerData {
@@ -146,6 +159,7 @@ export default function SessionDetailPage() {
   const [corners, setCorners] = useState<CornerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [focusOpen, setFocusOpen] = useState(false);
 
   // Fetch all data on mount
   useEffect(() => {
@@ -281,6 +295,15 @@ export default function SessionDetailPage() {
           >
             Download Report
           </a>
+
+          {/* Focus Mode */}
+          <button
+            onClick={() => setFocusOpen(true)}
+            className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
+            aria-label="Open focus mode"
+          >
+            Focus Mode
+          </button>
         </div>
       </div>
 
@@ -315,6 +338,14 @@ export default function SessionDetailPage() {
         <AnalyticsTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
       )}
       {activeTab === 'laps' && <LapDataTab laps={laps} />}
+
+      <FocusMode
+        sessionId={sessionId}
+        isOpen={focusOpen}
+        onClose={() => setFocusOpen(false)}
+        gpsLaps={gpsLaps}
+        bestLap={bestLap}
+      />
     </div>
   );
 }
@@ -519,16 +550,17 @@ function OverviewTab({
         )}
       </div>
 
-      {/* Full-width sections below — wired by Tasks 5-7 */}
-      <div className="lg:col-span-3 space-y-6" data-session={sessionId}>
-        {corners.length > 0 && (
-          <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-            <h3 className="text-sm font-monument text-chalk mb-2">Top Corners</h3>
-            <p className="text-steel text-xs font-body">
-              {corners.length} corner{corners.length !== 1 ? 's' : ''} analyzed
-            </p>
-          </div>
-        )}
+      {/* Full-width sections below the 2-column layout */}
+      <div className="lg:col-span-3 space-y-6">
+        <DrivingStyleSection sessionId={sessionId} />
+        <SessionDebrief
+          totalScore={session.total_score}
+          grade={session.grade}
+          scores={scores}
+          laps={laps}
+          corners={corners}
+        />
+        <AchievementsBadges badges={scores?.badges} />
       </div>
     </div>
   );
