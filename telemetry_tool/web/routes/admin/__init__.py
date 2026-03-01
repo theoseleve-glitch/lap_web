@@ -33,9 +33,12 @@ from .entitlements import bp as entitlements_bp  # noqa: E402
 from .email import bp as email_bp  # noqa: E402
 from .security import bp as security_bp  # noqa: E402
 from .infra import bp as infra_bp  # noqa: E402
+from .training import bp as training_bp  # noqa: E402
+from .monitoring import bp as monitoring_bp  # noqa: E402
 
 for _sub_bp in [health_bp, users_bp, jobs_bp, billing_admin_bp,
-                entitlements_bp, email_bp, security_bp, infra_bp]:
+                entitlements_bp, email_bp, security_bp, infra_bp,
+                training_bp, monitoring_bp]:
     admin_bp.register_blueprint(_sub_bp)
 
 # Re-export endpoint functions for backward compat with tests/imports
