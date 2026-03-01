@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { CornerReplayMap } from './CornerReplayMap';
 import { CornerReplayCockpit, type CockpitFrame } from './CornerReplayCockpit';
 import { CornerReplayControls } from './CornerReplayControls';
+import type { CornerReplayTrace, CornerReplayCorner, ReplayWindow } from '@/types/corner-replay';
 
 type PlaybackSpeed = 0.5 | 1 | 2;
 type ViewMode = 'split' | 'cockpit' | 'map';
@@ -18,9 +19,9 @@ interface GpsPoint {
 interface ReplayFrame {
   time: number;
   speed: number;
-  throttle: number;
-  brake: number;
-  steeringAngle: number;
+  throttle?: number;
+  brake?: number;
+  steeringAngle?: number;
   gLat: number;
   gLon: number;
   lat: number;
@@ -43,9 +44,6 @@ interface CornerReplayProps {
 /** Fallback data when API has no data or is still loading */
 const EMPTY_FRAME: CockpitFrame = {
   speed: 0,
-  throttle: 0,
-  brake: 0,
-  steeringAngle: 0,
   gLat: 0,
   gLon: 0,
 };
@@ -78,14 +76,63 @@ export function CornerReplay({ sessionId, cornerId }: CornerReplayProps) {
   const timePerFrame = totalFrames > 1 ? totalTime / (totalFrames - 1) : 0;
   const currentTime = currentFrame * timePerFrame;
 
+  // Detect which optional channels are present in the data
+  const hasPedalData = frames.some(
+    (f) => f.throttle != null || f.brake != null,
+  );
+  const hasSteeringData = frames.some((f) => f.steeringAngle != null);
+
+  // Bridge: convert old single-corner data shape into new CornerReplayMap props
+  const mapTraces = useMemo((): Record<string, CornerReplayTrace> => {
+    if (frames.length === 0) return {} as Record<string, CornerReplayTrace>;
+    const trace: CornerReplayTrace = {
+      lat: frames.map((f) => f.lat),
+      lon: frames.map((f) => f.lon),
+      dist_m: frames.map((_, i) => i), // synthetic distance
+      speed_mps: frames.map((f) => f.speed),
+      accel_lat: frames.map((f) => f.gLat),
+      accel_lon: frames.map((f) => f.gLon),
+    };
+    if (hasPedalData) {
+      trace.throttle = frames.map((f) => f.throttle ?? 0);
+      trace.brake = frames.map((f) => f.brake ?? 0);
+    }
+    if (hasSteeringData) {
+      trace.steering = frames.map((f) => f.steeringAngle ?? 0);
+    }
+    return { '1': trace };
+  }, [frames, hasPedalData, hasSteeringData]);
+
+  const mapCorners = useMemo<CornerReplayCorner[]>(() => {
+    if (!data || gpsPath.length === 0) return [];
+    const mid = Math.floor(gpsPath.length / 2);
+    return [{
+      corner_id: String(cornerId),
+      label: data.corner_name ?? `C${cornerId}`,
+      lat: gpsPath[mid]?.lat ?? 0,
+      lon: gpsPath[mid]?.lon ?? 0,
+      dist_m: mid,
+    }];
+  }, [data, cornerId, gpsPath]);
+
+  const mapReplayWindow = useMemo<ReplayWindow | null>(() => {
+    if (totalFrames === 0) return null;
+    return {
+      lap_number: 1,
+      start_idx: 0,
+      end_idx: totalFrames - 1,
+      estimated_duration_s: totalTime,
+    };
+  }, [totalFrames, totalTime]);
+
   // Current cockpit frame
   const cockpitFrame: CockpitFrame =
     totalFrames > 0
       ? {
           speed: frames[currentFrame]?.speed ?? 0,
-          throttle: frames[currentFrame]?.throttle ?? 0,
-          brake: frames[currentFrame]?.brake ?? 0,
-          steeringAngle: frames[currentFrame]?.steeringAngle ?? 0,
+          throttle: frames[currentFrame]?.throttle,
+          brake: frames[currentFrame]?.brake,
+          steeringAngle: frames[currentFrame]?.steeringAngle,
           gLat: frames[currentFrame]?.gLat ?? 0,
           gLon: frames[currentFrame]?.gLon ?? 0,
         }
@@ -212,26 +259,36 @@ export function CornerReplay({ sessionId, cornerId }: CornerReplayProps) {
         {viewMode === 'split' && (
           <div className="grid grid-cols-2 gap-3 h-full">
             <CornerReplayMap
-              gpsPath={gpsPath}
-              currentFrame={currentFrame}
-              totalFrames={totalFrames}
+              mode="review"
+              traces={mapTraces}
+              corners={mapCorners}
+              cornerIndex={0}
+              lapA={1}
+              lapB={1}
+              frame={currentFrame}
+              replayWindow={mapReplayWindow}
             />
-            <CornerReplayCockpit frame={cockpitFrame} />
+            <CornerReplayCockpit frame={cockpitFrame} hasPedalData={hasPedalData} hasSteeringData={hasSteeringData} />
           </div>
         )}
 
         {viewMode === 'cockpit' && (
           <div className="h-full">
-            <CornerReplayCockpit frame={cockpitFrame} />
+            <CornerReplayCockpit frame={cockpitFrame} hasPedalData={hasPedalData} hasSteeringData={hasSteeringData} />
           </div>
         )}
 
         {viewMode === 'map' && (
           <div className="h-full">
             <CornerReplayMap
-              gpsPath={gpsPath}
-              currentFrame={currentFrame}
-              totalFrames={totalFrames}
+              mode="review"
+              traces={mapTraces}
+              corners={mapCorners}
+              cornerIndex={0}
+              lapA={1}
+              lapB={1}
+              frame={currentFrame}
+              replayWindow={mapReplayWindow}
             />
           </div>
         )}
