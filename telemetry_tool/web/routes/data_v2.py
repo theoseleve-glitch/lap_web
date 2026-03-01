@@ -373,19 +373,15 @@ def get_gg_data(session_id: str):
             status=404,
         )
 
-    lat_g = trace.get("accel_lat")
-    lon_g = trace.get("accel_long")
-    if not lat_g or not lon_g:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            f"No acceleration data for lap {lap_num}",
-            status=404,
-        )
+    lat_g = trace.get("accel_lat") or []
+    lon_g = trace.get("accel_long") or []
+    has_accel = bool(lat_g and lon_g)
 
     return api_response({
-        "accel_lat": lat_g,
-        "accel_long": lon_g,
+        "accel_lat": lat_g if has_accel else [],
+        "accel_long": lon_g if has_accel else [],
         "lap_number": lap_num,
+        "available": has_accel,
     })
 
 

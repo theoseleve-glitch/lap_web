@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import { SectorPanel } from '@/components/shared/charts';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -313,7 +314,7 @@ export default function SessionDetailPage() {
       )}
       {activeTab === 'corners' && <CornersTab corners={corners} />}
       {activeTab === 'performance' && (
-        <PerformanceTab session={session} scores={scores} />
+        <PerformanceTab session={session} scores={scores} sessionId={sessionId} />
       )}
       {activeTab === 'laps' && <LapDataTab laps={laps} />}
     </div>
@@ -673,9 +674,11 @@ function CornersTab({ corners }: { corners: CornerData[] }) {
 function PerformanceTab({
   session,
   scores,
+  sessionId,
 }: {
   session: SessionData;
   scores: ScoreData | null;
+  sessionId: string;
 }) {
   if (!scores) {
     return (
@@ -812,6 +815,11 @@ function PerformanceTab({
           )}
         </div>
       )}
+
+      {/* Sector Analysis */}
+      <div className="mt-6">
+        <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
+      </div>
     </div>
   );
 }

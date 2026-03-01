@@ -421,7 +421,7 @@ class TestGGData:
         assert body["data"]["lap_number"] == 1
 
     def test_gg_data_missing_accel(self, client):
-        """Returns 404 when GPS trace has no acceleration data."""
+        """Returns 200 with empty arrays and available=false when no accel data."""
         trace = {
             "latitudes": [45.0],
             "longitudes": [7.0],
@@ -437,7 +437,11 @@ class TestGGData:
 
             resp = client.get("/api/v1/sessions/s1/gg-data?lap=1")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["accel_lat"] == []
+        assert data["accel_long"] == []
+        assert data["available"] is False
 
     def test_gg_data_no_trace(self, client):
         """Returns 404 when no GPS trace for that lap."""
@@ -1114,8 +1118,12 @@ class TestGGDataContract:
         assert len(data["accel_lat"]) == len(data["accel_long"]), \
             "accel_lat and accel_long arrays should have equal length"
 
+        # Availability flag
+        assert "available" in data, "Contract: must have available flag"
+        assert isinstance(data["available"], bool)
+
         # No extra unexpected keys
-        expected_keys = {"lap_number", "accel_lat", "accel_long"}
+        expected_keys = {"lap_number", "accel_lat", "accel_long", "available"}
         assert set(data.keys()) == expected_keys, \
             f"GG data keys should be {expected_keys}, got {set(data.keys())}"
 
