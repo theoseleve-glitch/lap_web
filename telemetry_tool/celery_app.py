@@ -51,6 +51,7 @@ def make_celery(app=None) -> Celery:
             "tasks.archival_tasks",
             "tasks.usage_tasks",
             "tasks.retention_tasks",
+            "tasks.training_tasks",
         ],
     )
     celery.conf.update(
@@ -62,6 +63,7 @@ def make_celery(app=None) -> Celery:
         result_expires=86400,  # 24 hours
         task_routes={
             "tasks.pipeline_tasks.*": {"queue": "pipeline"},
+            "tasks.training_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
         },
         task_default_queue="default",
@@ -116,6 +118,11 @@ def make_celery(app=None) -> Celery:
                 "task": "admin.metrics_collector.collect_system_metrics_task",
                 "schedule": 60,  # Every minute
                 "options": {"queue": "default"},
+            },
+            "weekly-retrain-and-reprocess": {
+                "task": "tasks.training_tasks.weekly_retrain_and_reprocess",
+                "schedule": crontab(hour=0, minute=0, day_of_week=0),  # Sunday midnight UTC
+                "options": {"queue": "pipeline"},
             },
         },
     )
