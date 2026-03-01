@@ -308,8 +308,8 @@ def get_gps_trace(session_id: str):
         )
 
     return api_response({
-        "lat": trace.get("latitudes", []),
-        "lon": trace.get("longitudes", []),
+        "latitudes": trace.get("latitudes", []),
+        "longitudes": trace.get("longitudes", []),
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
@@ -356,8 +356,8 @@ def get_gg_data(session_id: str):
         )
 
     return api_response({
-        "lat_g": lat_g,
-        "lon_g": lon_g,
+        "accel_lat": lat_g,
+        "accel_long": lon_g,
         "lap_number": lap_num,
     })
 
@@ -729,8 +729,8 @@ def get_best_lap_gps(session_id: str):
                          f"No GPS trace for best lap {lap_num}", status=404)
 
     return api_response({
-        "lat": trace.get("latitudes", []),
-        "lon": trace.get("longitudes", []),
+        "latitudes": trace.get("latitudes", []),
+        "longitudes": trace.get("longitudes", []),
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
@@ -742,16 +742,30 @@ def get_best_lap_gps(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
+def _closest_index(distances, target):
+    """Binary search for closest distance index."""
+    if not distances:
+        return 0
+    lo, hi = 0, len(distances) - 1
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if distances[mid] < target:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
 @bp.route("/sessions/<session_id>/corner-positions", methods=["GET"])
 @_safe_api
 def get_corner_positions(session_id: str):
-    """Return corner GPS positions from theoretical data or corner_metrics."""
+    """Return corner GPS positions with brake point data."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    # Try corner coaching from theoretical data (has positions)
+    # Build corners from theoretical data
     theo = models.get_theoretical_data(conn, session_id)
     corners = []
     if theo and theo.get("corner_coaching"):
@@ -767,6 +781,9 @@ def get_corner_positions(session_id: str):
                     "s_apex": cc.get("s_apex") or cc.get("distance_apex"),
                     "direction": cc.get("direction"),
                     "label": cc.get("label") or cc.get("name"),
+                    "lat": cc.get("lat"),
+                    "lon": cc.get("lon"),
+                    "brake_point_m": None,
                 })
 
     if not corners:
@@ -775,16 +792,39 @@ def get_corner_positions(session_id: str):
         for row in summary:
             corners.append({
                 "corner_id": row["corner_id"],
-                "s_start": None,
-                "s_end": None,
-                "s_apex": None,
-                "direction": None,
-                "label": None,
+                "s_start": None, "s_end": None, "s_apex": None,
+                "direction": None, "label": None,
+                "lat": None, "lon": None,
+                "brake_point_m": row.get("avg_brake_point_m"),
             })
 
     if not corners:
         return api_error(ErrorCode.NOT_FOUND,
                          "No corner position data for this session", status=404)
+
+    # Enrich with GPS coordinates from best lap trace
+    best_lap = _resolve_lap_number(conn, session_id)
+    best_gps = models.get_gps_trace(conn, session_id, best_lap) if best_lap else None
+
+    if best_gps:
+        dists = best_gps.get("distances", [])
+        lats = best_gps.get("latitudes", [])
+        lons = best_gps.get("longitudes", [])
+        if dists and lats and lons:
+            for corner in corners:
+                apex_d = corner.get("s_apex")
+                if apex_d is not None and corner.get("lat") is None:
+                    idx = _closest_index(dists, apex_d)
+                    if idx < len(lats):
+                        corner["lat"] = lats[idx]
+                        corner["lon"] = lons[idx]
+
+    # Merge brake_point_m from corner_metrics summary
+    cm_summary = models.get_corner_metrics_summary(conn, session_id)
+    bp_map = {row["corner_id"]: row.get("avg_brake_point_m") for row in cm_summary}
+    for corner in corners:
+        if corner.get("brake_point_m") is None:
+            corner["brake_point_m"] = bp_map.get(corner["corner_id"])
 
     return api_response({"corners": corners})
 

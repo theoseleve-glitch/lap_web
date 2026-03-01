@@ -376,8 +376,8 @@ class TestGpsTrace:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert body["data"]["lat"] == [45.0, 45.001, 45.002]
-        assert body["data"]["lon"] == [7.0, 7.001, 7.002]
+        assert body["data"]["latitudes"] == [45.0, 45.001, 45.002]
+        assert body["data"]["longitudes"] == [7.0, 7.001, 7.002]
         assert body["data"]["distances"] == [0.0, 50.0, 100.0]
         assert body["data"]["speeds"] == [10.0, 15.0, 12.0]
         assert body["data"]["lap_number"] == 1
@@ -416,8 +416,8 @@ class TestGGData:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert body["data"]["lat_g"] == [0.1, -0.2, 0.05]
-        assert body["data"]["lon_g"] == [0.5, 0.3, -0.4]
+        assert body["data"]["accel_lat"] == [0.1, -0.2, 0.05]
+        assert body["data"]["accel_long"] == [0.5, 0.3, -0.4]
         assert body["data"]["lap_number"] == 1
 
     def test_gg_data_missing_accel(self, client):
@@ -1026,7 +1026,7 @@ class TestSpeedTraceContract:
 
 class TestGpsTraceContract:
     """GPS trace response must match:
-    {ok: true, data: {lap_number: int, lat: list, lon: list, distances: list, speeds: list}}
+    {ok: true, data: {lap_number: int, latitudes: list, longitudes: list, distances: list, speeds: list}}
     """
 
     def test_gps_trace_contract(self, client):
@@ -1049,31 +1049,31 @@ class TestGpsTraceContract:
         # Data shape
         data = body["data"]
         assert "lap_number" in data, "Contract: must have lap_number"
-        assert "lat" in data, "Contract: must have lat"
-        assert "lon" in data, "Contract: must have lon"
+        assert "latitudes" in data, "Contract: must have latitudes"
+        assert "longitudes" in data, "Contract: must have longitudes"
         assert "distances" in data, "Contract: must have distances"
         assert "speeds" in data, "Contract: must have speeds"
 
         # Types
         assert isinstance(data["lap_number"], int)
-        assert isinstance(data["lat"], list)
-        assert isinstance(data["lon"], list)
+        assert isinstance(data["latitudes"], list)
+        assert isinstance(data["longitudes"], list)
         assert isinstance(data["distances"], list)
         assert isinstance(data["speeds"], list)
 
         # Verify array lengths match
-        assert len(data["lat"]) == len(data["lon"]) == len(data["distances"]) == len(data["speeds"]), \
+        assert len(data["latitudes"]) == len(data["longitudes"]) == len(data["distances"]) == len(data["speeds"]), \
             "All arrays in GPS trace should have equal length"
 
         # No extra unexpected keys
-        expected_keys = {"lap_number", "lat", "lon", "distances", "speeds"}
+        expected_keys = {"lap_number", "latitudes", "longitudes", "distances", "speeds"}
         assert set(data.keys()) == expected_keys, \
             f"GPS trace data keys should be {expected_keys}, got {set(data.keys())}"
 
 
 class TestGGDataContract:
     """GG data response must match:
-    {ok: true, data: {lap_number: int, lat_g: list, lon_g: list}}
+    {ok: true, data: {lap_number: int, accel_lat: list, accel_long: list}}
     """
 
     def test_gg_data_contract(self, client):
@@ -1096,20 +1096,20 @@ class TestGGDataContract:
         # Data shape
         data = body["data"]
         assert "lap_number" in data, "Contract: must have lap_number"
-        assert "lat_g" in data, "Contract: must have lat_g"
-        assert "lon_g" in data, "Contract: must have lon_g"
+        assert "accel_lat" in data, "Contract: must have accel_lat"
+        assert "accel_long" in data, "Contract: must have accel_long"
 
         # Types
         assert isinstance(data["lap_number"], int)
-        assert isinstance(data["lat_g"], list)
-        assert isinstance(data["lon_g"], list)
+        assert isinstance(data["accel_lat"], list)
+        assert isinstance(data["accel_long"], list)
 
         # Verify array lengths match
-        assert len(data["lat_g"]) == len(data["lon_g"]), \
-            "lat_g and lon_g arrays should have equal length"
+        assert len(data["accel_lat"]) == len(data["accel_long"]), \
+            "accel_lat and accel_long arrays should have equal length"
 
         # No extra unexpected keys
-        expected_keys = {"lap_number", "lat_g", "lon_g"}
+        expected_keys = {"lap_number", "accel_lat", "accel_long"}
         assert set(data.keys()) == expected_keys, \
             f"GG data keys should be {expected_keys}, got {set(data.keys())}"
 
@@ -1503,6 +1503,8 @@ class TestCornerPositionsEndpoint:
             mock_db.return_value = MagicMock()
             mm.get_session_by_id.return_value = _sample_session()
             mm.get_theoretical_data.return_value = _sample_theoretical_data()
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
             mm.get_corner_metrics_summary.return_value = []
 
             resp = client.get("/api/v1/sessions/s1/corner-positions")
@@ -1518,6 +1520,8 @@ class TestCornerPositionsEndpoint:
             mock_db.return_value = MagicMock()
             mm.get_session_by_id.return_value = _sample_session()
             mm.get_theoretical_data.return_value = None
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
             mm.get_corner_metrics_summary.return_value = _sample_corner_summary()
 
             resp = client.get("/api/v1/sessions/s1/corner-positions")
@@ -1532,11 +1536,72 @@ class TestCornerPositionsEndpoint:
             mock_db.return_value = MagicMock()
             mm.get_session_by_id.return_value = _sample_session()
             mm.get_theoretical_data.return_value = None
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
             mm.get_corner_metrics_summary.return_value = []
 
             resp = client.get("/api/v1/sessions/s1/corner-positions")
 
         assert resp.status_code == 404
+
+    def test_corners_have_lat_lon_from_gps(self, client):
+        """Corner positions include lat/lon interpolated from best lap GPS trace."""
+        theo = _sample_theoretical_data()
+        # Add distance fields to coaching entries
+        theo["corner_coaching"] = [
+            {"corner_id": 1, "advice": "Brake later", "s_apex": 50.0,
+             "s_start": 30.0, "s_end": 70.0, "direction": "left"},
+            {"corner_id": 2, "advice": "Earlier throttle", "s_apex": 100.0,
+             "s_start": 80.0, "s_end": 120.0, "direction": "right"},
+        ]
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = theo
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
+            mm.get_corner_metrics_summary.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/corner-positions")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        corners = body["data"]["corners"]
+        assert len(corners) == 2
+        for c in corners:
+            assert "lat" in c
+            assert "lon" in c
+            assert c["lat"] is not None
+            assert c["lon"] is not None
+
+    def test_corners_have_brake_point_m(self, client):
+        """Corner positions include brake_point_m from corner_metrics summary."""
+        theo = _sample_theoretical_data()
+        theo["corner_coaching"] = [
+            {"corner_id": 1, "s_apex": 50.0},
+        ]
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = theo
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
+            mm.get_corner_metrics_summary.return_value = [
+                {"corner_id": 1, "avg_brake_point_m": 45.5,
+                 "min_brake_point_m": 44.0, "max_brake_point_m": 47.0,
+                 "n_laps": 3, "avg_entry_speed": 20.0,
+                 "avg_apex_speed": 15.0, "avg_exit_speed": 18.0,
+                 "avg_grip": 0.9, "avg_time_loss_ms": 50.0,
+                 "total_time_loss_ms": 150.0},
+            ]
+
+            resp = client.get("/api/v1/sessions/s1/corner-positions")
+
+        body = resp.get_json()
+        c1 = body["data"]["corners"][0]
+        assert c1["brake_point_m"] == 45.5
 
 
 class TestCornerMetricsEndpoint:
