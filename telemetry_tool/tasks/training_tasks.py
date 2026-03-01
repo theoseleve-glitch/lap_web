@@ -32,6 +32,9 @@ _MIN_SESSIONS_PER_GROUP = 3
 _REPROCESS_PAUSE_S = 5
 _REPROCESS_BATCH_SIZE = 10
 
+# Redis config key
+_CONFIG_REDIS_KEY = "lap:training:config"
+
 # Paths (Docker volume mounts)
 _DATA_RAW_DIR = Path("/data/uploads")
 _MODELS_DIR = Path("/data/models/kart_envelope")
@@ -41,6 +44,38 @@ _BUNDLES_DIR = _MODELS_DIR / "bundles"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _get_redis_config():
+    """Get a Redis client for config reading."""
+    try:
+        import redis
+        from web.config import Config
+
+        return redis.Redis.from_url(
+            Config.REDIS_URL, socket_timeout=2, decode_responses=True,
+        )
+    except Exception:
+        return None
+
+
+def _load_training_config() -> dict:
+    """Load training config from Redis, fallback to hardcoded defaults."""
+    defaults = {
+        "min_sessions_per_group": _MIN_SESSIONS_PER_GROUP,
+        "reprocess_batch_size": _REPROCESS_BATCH_SIZE,
+        "reprocess_pause_s": _REPROCESS_PAUSE_S,
+    }
+    r = _get_redis_config()
+    if r:
+        try:
+            overrides = r.hgetall(_CONFIG_REDIS_KEY)
+            for key, val in overrides.items():
+                if key in defaults:
+                    defaults[key] = int(val)
+        except Exception:
+            pass
+    return defaults
 
 
 def _get_pg_connection():
@@ -76,21 +111,23 @@ def _gather_training_groups(conn) -> list[dict]:
     ]
 
 
-def _train_track_envelopes(groups: list[dict]) -> dict:
-    """Tier 1: Train a CapabilityEnvelope per track group (>= 3 sessions)."""
+def _train_track_envelopes(
+    groups: list[dict], min_sessions: int = _MIN_SESSIONS_PER_GROUP,
+) -> dict:
+    """Tier 1: Train a CapabilityEnvelope per track group (>= min_sessions)."""
     results: dict[str, Any] = {"trained": 0, "skipped": 0, "errors": []}
 
     for group in groups:
         track_id = group["track_id"]
         sessions = group["sessions"]
 
-        if len(sessions) < _MIN_SESSIONS_PER_GROUP:
+        if len(sessions) < min_sessions:
             results["skipped"] += 1
             logger.info(
                 "Skipping track %s: only %d sessions (need %d)",
                 track_id,
                 len(sessions),
-                _MIN_SESSIONS_PER_GROUP,
+                min_sessions,
             )
             continue
 
@@ -110,7 +147,7 @@ def _train_track_envelopes(groups: list[dict]) -> dict:
                 )
                 session_files.append((csv_path, meta))
 
-            if len(session_files) < _MIN_SESSIONS_PER_GROUP:
+            if len(session_files) < min_sessions:
                 results["skipped"] += 1
                 continue
 
@@ -164,7 +201,12 @@ def _train_global_model() -> dict:
         return {"status": "failed", "error": str(exc)}
 
 
-def _reprocess_sessions(sessions: list[dict], data_dir: str = "/data/uploads") -> dict:
+def _reprocess_sessions(
+    sessions: list[dict],
+    data_dir: str = "/data/uploads",
+    batch_size: int = _REPROCESS_BATCH_SIZE,
+    pause_s: int = _REPROCESS_PAUSE_S,
+) -> dict:
     """Tier 3: Re-run pipeline on each session with updated models."""
     from pipeline import run_full_analysis
     from tasks.pipeline_tasks import _store_theoretical_data
@@ -208,8 +250,8 @@ def _reprocess_sessions(sessions: list[dict], data_dir: str = "/data/uploads") -
             )
 
         # Throttle to avoid overloading
-        if (i + 1) % _REPROCESS_BATCH_SIZE == 0:
-            time.sleep(_REPROCESS_PAUSE_S)
+        if (i + 1) % batch_size == 0:
+            time.sleep(pause_s)
 
     return results
 
@@ -231,8 +273,10 @@ def weekly_retrain_and_reprocess() -> dict:
     Scheduled via Celery Beat every Sunday at 00:00 UTC.
     """
     start = time.time()
+    config = _load_training_config()
     audit: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "config": config,
         "tiers": {},
     }
 
@@ -241,7 +285,9 @@ def weekly_retrain_and_reprocess() -> dict:
     # Tier 1: Track-specific envelopes
     logger.info("=== Tier 1: Training track-specific envelopes ===")
     groups = _gather_training_groups(conn)
-    tier1 = _train_track_envelopes(groups)
+    tier1 = _train_track_envelopes(
+        groups, min_sessions=config["min_sessions_per_group"],
+    )
     audit["tiers"]["envelopes"] = tier1
 
     # Tier 2: Global model bundle
@@ -254,7 +300,12 @@ def weekly_retrain_and_reprocess() -> dict:
     all_sessions = []
     for group in groups:
         all_sessions.extend(group["sessions"])
-    tier3 = _reprocess_sessions(all_sessions, data_dir=str(_DATA_RAW_DIR))
+    tier3 = _reprocess_sessions(
+        all_sessions,
+        data_dir=str(_DATA_RAW_DIR),
+        batch_size=config["reprocess_batch_size"],
+        pause_s=config["reprocess_pause_s"],
+    )
     audit["tiers"]["reprocess"] = tier3
 
     elapsed = round(time.time() - start, 1)

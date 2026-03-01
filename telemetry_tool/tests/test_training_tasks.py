@@ -25,6 +25,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from tasks.training_tasks import (
     _MIN_SESSIONS_PER_GROUP,
     _gather_training_groups,
+    _load_training_config,
     _reprocess_sessions,
     _train_track_envelopes,
 )
@@ -357,3 +358,55 @@ class TestWeeklyRetrainAndReprocess:
             with open(manifests[0]) as fh:
                 saved = json.load(fh)
             assert saved["started_at"] == audit["started_at"]
+
+
+# ---------------------------------------------------------------------------
+# _load_training_config
+# ---------------------------------------------------------------------------
+
+
+class TestTrainingConfigRead:
+    def test_reads_config_from_redis(self):
+        """Training task reads overrides from Redis config hash."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {
+            "min_sessions_per_group": "5",
+            "reprocess_pause_s": "30",
+        }
+
+        with patch("tasks.training_tasks._get_redis_config", return_value=mock_redis):
+            config = _load_training_config()
+            assert config["min_sessions_per_group"] == 5
+            assert config["reprocess_pause_s"] == 30
+            # Non-overridden key keeps default
+            assert config["reprocess_batch_size"] == 10
+
+    def test_falls_back_to_defaults_when_redis_unavailable(self):
+        """Training task uses defaults if Redis is unavailable."""
+        with patch("tasks.training_tasks._get_redis_config", return_value=None):
+            config = _load_training_config()
+            assert config["min_sessions_per_group"] == 3
+            assert config["reprocess_pause_s"] == 5
+            assert config["reprocess_batch_size"] == 10
+
+    def test_falls_back_to_defaults_on_redis_error(self):
+        """Training task uses defaults if Redis raises an exception."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.side_effect = ConnectionError("connection refused")
+
+        with patch("tasks.training_tasks._get_redis_config", return_value=mock_redis):
+            config = _load_training_config()
+            assert config["min_sessions_per_group"] == 3
+
+    def test_ignores_unknown_redis_keys(self):
+        """Unknown keys in Redis hash are ignored."""
+        mock_redis = MagicMock()
+        mock_redis.hgetall.return_value = {
+            "min_sessions_per_group": "7",
+            "unknown_key": "999",
+        }
+
+        with patch("tasks.training_tasks._get_redis_config", return_value=mock_redis):
+            config = _load_training_config()
+            assert config["min_sessions_per_group"] == 7
+            assert "unknown_key" not in config
