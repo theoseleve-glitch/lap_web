@@ -13,6 +13,7 @@ runs in the request thread and blocks until complete.
 from __future__ import annotations
 
 import logging
+import math
 import shutil
 import tempfile
 from pathlib import Path
@@ -23,9 +24,15 @@ from pipeline import run_full_analysis
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
 from web.models import (
+    insert_condition_phases,
+    insert_corner_metrics,
+    insert_driving_style_features,
+    insert_driver_progression,
     insert_gps_traces,
     insert_laps,
+    insert_reference_line,
     insert_score_details,
+    insert_theoretical_data,
     upsert_driver,
     upsert_session,
     upsert_track,
@@ -60,6 +67,60 @@ def _parse_exclude_laps(raw: str | None) -> list[int] | None:
         return [int(x.strip()) for x in raw.split(",") if x.strip()]
     except (ValueError, TypeError):
         return None
+
+
+def _persist_driver_progression(conn, driver_id, session_id, summary,
+                                driving_style):
+    """Compute and persist a driver progression snapshot."""
+    import numpy as np
+
+    lap_times = summary.get("lap_times") or []
+    valid_lt = [t for t in lap_times
+                if t and isinstance(t, (int, float))
+                and math.isfinite(t) and t > 0]
+    n_laps = len(valid_lt)
+    best_s = min(valid_lt) if valid_lt else None
+    mean_s = sum(valid_lt) / n_laps if n_laps > 0 else None
+
+    # Pace delta: best - theoretical (positive = slower)
+    pace_delta = None
+    theo_metrics = summary.get("theoretical_metrics") or {}
+    if best_s and theo_metrics:
+        theo_t = theo_metrics.get("theoretical_time_s")
+        if theo_t and isinstance(theo_t, (int, float)):
+            pace_delta = best_s - theo_t
+
+    # Consistency: CV% of valid lap times
+    cv_pct = None
+    if n_laps >= 3 and mean_s:
+        std = float(np.std(valid_lt))
+        cv_pct = (std / mean_s * 100.0)
+
+    # Style indices from driving_style
+    aggression = None
+    smoothness = None
+    if driving_style:
+        feat = driving_style.get("features", {})
+        aggression = feat.get("turn_in_aggressiveness")
+        smoothness = feat.get("smoothness_composite")
+
+    total_score = None
+    score_result = summary.get("score_result")
+    if score_result:
+        total_score = score_result.get("total_score")
+
+    prog_data = {
+        "session_date": session_id[:10],
+        "track_id":     summary.get("track_id"),
+        "pace_delta_s": pace_delta,
+        "consistency_cv_pct": cv_pct,
+        "aggression_index":   aggression,
+        "smoothness_index":   smoothness,
+        "total_score":        total_score,
+        "n_laps":             n_laps,
+    }
+    insert_driver_progression(conn, driver_id, session_id, prog_data)
+    logger.info("Persisted driver progression for session %s", session_id)
 
 
 @bp.route("/sessions/upload", methods=["POST"])
@@ -185,6 +246,55 @@ def upload_session():
         insert_laps(conn, session_id, summary)
         insert_score_details(conn, session_id, summary)
         insert_gps_traces(conn, session_id, summary)
+
+        # ── Persist analysis outputs (defensive — each independent) ──
+        try:
+            insert_condition_phases(conn, session_id, summary)
+        except Exception as e:
+            logger.warning("Condition phases persist skipped: %s", e)
+
+        try:
+            insert_theoretical_data(conn, session_id, summary)
+            logger.info("Persisted theoretical data for session %s", session_id)
+        except Exception as e:
+            logger.warning("Theoretical data persist failed: %s", e,
+                           exc_info=True)
+
+        try:
+            insert_reference_line(conn, session_id, summary)
+            logger.info("Persisted reference line for session %s", session_id)
+        except Exception as e:
+            logger.warning("Reference line persist failed: %s", e,
+                           exc_info=True)
+
+        try:
+            cm_count = insert_corner_metrics(conn, session_id, summary)
+            if cm_count > 0:
+                logger.info("Persisted %d corner metrics for session %s",
+                            cm_count, session_id)
+        except Exception as e:
+            logger.warning("Corner metrics persist skipped: %s", e)
+
+        # Driving style features
+        driving_style = summary.get("driving_style")
+        if driving_style:
+            try:
+                insert_driving_style_features(
+                    conn, driver_id, session_id, driving_style,
+                )
+                logger.info("Persisted driving style: %s",
+                            driving_style.get("style_label"))
+            except Exception as e:
+                logger.warning("Driving style persist skipped: %s", e)
+
+        # Driver progression snapshot
+        try:
+            _persist_driver_progression(
+                conn, driver_id, session_id, summary, driving_style,
+            )
+        except Exception as e:
+            logger.warning("Driver progression persist skipped: %s", e)
+
         conn.commit()
 
         logger.info(
