@@ -87,7 +87,7 @@ export function BrakeScatter({ sessionId, height = 'h-56' }: Props) {
       for (let i = 0; i < distances.length; i++) {
         const x = PAD.left + ((distances[i] - minDist) / distRange) * plotW;
         const y = PAD.top + plotH - ((speeds[i] - minSpeed) / speedRange) * plotH;
-        const r = 2 + (pressures[i] / maxPressure) * 5;
+        const r = Math.max(0.5, 2 + (pressures[i] / maxPressure) * 5);
 
         const isHovered = i === nearestIdx;
         ctx.beginPath();
