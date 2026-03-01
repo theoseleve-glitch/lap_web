@@ -30,8 +30,8 @@
      * Also: /api/session/{id}/lap_times  -> /api/v1/sessions/{id}/lap_times
      *       /api/session/{id}/reference_line  -> /api/v1/sessions/{id}/reference_line
      *       /api/session/{id}/best_lap_gps  -> /api/v1/sessions/{id}/best_lap_gps
-     *       /api/session/{id}/corner-positions  -> /api/v1/sessions/{id}/corner-positions
-     *       /api/session/{id}/corner-metrics  -> /api/v1/sessions/{id}/corner-metrics
+     *       /api/session/{id}/corner-positions  -> /api/v1/sessions/{id}/corner-positions  (dedicated endpoint)
+     *       /api/session/{id}/corner-metrics  -> /api/v1/sessions/{id}/corner-metrics  (dedicated endpoint)
      *       /api/session/{id}/gg  -> /api/v1/sessions/{id}/gg
      *       /api/session/{id}/gg/{lap}  -> /api/v1/sessions/{id}/gg/{lap}
      */
@@ -57,10 +57,8 @@
         url = url.replace(/(\/sessions\/[^/]+)\/gg_data/, '$1/gg-data');
         // /sessions/{id}/lap_times → /sessions/{id}/laps
         url = url.replace(/(\/sessions\/[^/]+)\/lap_times/, '$1/laps');
-        // /sessions/{id}/corner-positions → /sessions/{id}/corners
-        url = url.replace(/(\/sessions\/[^/]+)\/corner-positions/, '$1/corners');
-        // /sessions/{id}/corner-metrics → /sessions/{id}/corners
-        url = url.replace(/(\/sessions\/[^/]+)\/corner-metrics/, '$1/corners');
+        // corner-positions and corner-metrics now have dedicated endpoints
+        // (previously incorrectly mapped to /corners)
 
         return url;
     }

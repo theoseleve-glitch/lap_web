@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     html_report_path  TEXT,
     simulation_method TEXT,
     joker_lap_number  INTEGER,
+    analysis_json     TEXT,
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 """

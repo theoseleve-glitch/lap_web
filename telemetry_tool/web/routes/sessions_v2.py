@@ -24,6 +24,7 @@ from pipeline import run_full_analysis
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
 from web.models import (
+    insert_analysis_json,
     insert_condition_phases,
     insert_corner_metrics,
     insert_driving_style_features,
@@ -32,6 +33,7 @@ from web.models import (
     insert_laps,
     insert_reference_line,
     insert_score_details,
+    insert_stint_analysis,
     insert_theoretical_data,
     upsert_driver,
     upsert_session,
@@ -121,6 +123,77 @@ def _persist_driver_progression(conn, driver_id, session_id, summary,
     }
     insert_driver_progression(conn, driver_id, session_id, prog_data)
     logger.info("Persisted driver progression for session %s", session_id)
+
+
+def _compute_sector_analysis(summary: dict) -> dict | None:
+    """Extract valid lap times from summary and run sector analysis."""
+    try:
+        from sector_analysis import analyze_sector_performance
+    except ImportError:
+        return None
+
+    lap_times = summary.get("lap_times") or []
+    valid = [t for t in lap_times
+             if t and isinstance(t, (int, float)) and math.isfinite(t) and t > 0]
+    if len(valid) < 3:
+        return None
+
+    result = analyze_sector_performance(valid)
+    return result.to_dict()
+
+
+def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
+    """Build and persist the supplementary analysis_json blob."""
+    blob: dict = {}
+
+    # Sector analysis (computed fresh from lap times)
+    sector = _compute_sector_analysis(summary)
+    if sector:
+        blob["sector_analysis"] = sector
+
+    # Consistency metrics (from score_result)
+    score_result = summary.get("score_result") or {}
+    details = score_result.get("details") or {}
+    if details.get("consistency"):
+        cons = details["consistency"]
+        blob["consistency_metrics"] = {
+            "cv_pct": cons.get("cv_pct"),
+            "std_dev_s": cons.get("std_dev_s"),
+            "best_to_median_delta_s": cons.get("best_to_median_delta_s"),
+        }
+
+    # Robustness metrics
+    if details.get("robustness"):
+        rob = details["robustness"]
+        blob["robustness_metrics"] = {
+            "early_mean_s": rob.get("early_mean_s"),
+            "late_mean_s": rob.get("late_mean_s"),
+        }
+
+    # Data quality summary
+    dq = summary.get("data_quality")
+    if dq and isinstance(dq, dict):
+        blob["data_quality_summary"] = dq
+
+    # Track evolution / grip evolution
+    te = summary.get("track_evolution")
+    if te and isinstance(te, dict):
+        blob["track_evolution"] = te
+
+    # Coaching guide / summary
+    coaching = summary.get("coaching_guide") or summary.get("coaching_summary")
+    if coaching and isinstance(coaching, str):
+        blob["coaching_summary"] = coaching
+
+    # Corner performances (aggregated from corner_metrics in pipeline)
+    cp = summary.get("corner_performances")
+    if cp and isinstance(cp, list):
+        blob["corner_performances"] = cp
+
+    if blob:
+        insert_analysis_json(conn, session_id, blob)
+        logger.info("Persisted analysis_json (%d keys) for session %s",
+                     len(blob), session_id)
 
 
 @bp.route("/sessions/upload", methods=["POST"])
@@ -294,6 +367,18 @@ def upload_session():
             )
         except Exception as e:
             logger.warning("Driver progression persist skipped: %s", e)
+
+        # Stint analysis (from pipeline summary)
+        try:
+            insert_stint_analysis(conn, session_id, summary)
+        except Exception as e:
+            logger.warning("Stint analysis persist skipped: %s", e)
+
+        # ── Supplementary analysis blob (analysis_json) ──
+        try:
+            _persist_analysis_json(conn, session_id, summary)
+        except Exception as e:
+            logger.warning("analysis_json persist skipped: %s", e)
 
         conn.commit()
 

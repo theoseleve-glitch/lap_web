@@ -1326,3 +1326,614 @@ class TestErrorEnvelopeContract:
         assert "error" in body
         assert "code" in body["error"]
         assert "message" in body["error"]
+
+
+# ══════════════════════════════════════════════════════════════════
+# NEW ENDPOINTS — Tests for 15 added endpoints (Phase 2)
+# ══════════════════════════════════════════════════════════════════
+
+
+def _sample_corner_metrics():
+    return [
+        {"session_id": "s1", "lap_number": 1, "corner_id": 1,
+         "brake_point_m": 50.0, "brake_intensity": 0.8,
+         "entry_speed_mps": 20.0, "apex_speed_mps": 15.0,
+         "exit_speed_mps": 18.0, "throttle_onset_m": 55.0,
+         "exit_accel_mps2": 3.0, "grip_utilization": 0.9,
+         "time_loss_ms": 50.0, "coaching_hint": "Brake later"},
+        {"session_id": "s1", "lap_number": 1, "corner_id": 2,
+         "brake_point_m": 120.0, "brake_intensity": 0.7,
+         "entry_speed_mps": 22.0, "apex_speed_mps": 16.0,
+         "exit_speed_mps": 19.0, "throttle_onset_m": 125.0,
+         "exit_accel_mps2": 2.5, "grip_utilization": 0.85,
+         "time_loss_ms": 30.0, "coaching_hint": "Earlier throttle"},
+        {"session_id": "s1", "lap_number": 2, "corner_id": 1,
+         "brake_point_m": 51.0, "brake_intensity": 0.8,
+         "entry_speed_mps": 20.5, "apex_speed_mps": 15.2,
+         "exit_speed_mps": 18.5, "throttle_onset_m": 56.0,
+         "exit_accel_mps2": 3.1, "grip_utilization": 0.91,
+         "time_loss_ms": 45.0, "coaching_hint": "Good"},
+    ]
+
+
+def _sample_corner_summary():
+    return [
+        {"corner_id": 1, "n_laps": 2, "avg_brake_point_m": 50.5,
+         "min_brake_point_m": 50.0, "max_brake_point_m": 51.0,
+         "avg_entry_speed": 20.25, "avg_apex_speed": 15.1,
+         "avg_exit_speed": 18.25, "avg_grip": 0.905,
+         "avg_time_loss_ms": 47.5, "total_time_loss_ms": 95.0},
+        {"corner_id": 2, "n_laps": 1, "avg_brake_point_m": 120.0,
+         "min_brake_point_m": 120.0, "max_brake_point_m": 120.0,
+         "avg_entry_speed": 22.0, "avg_apex_speed": 16.0,
+         "avg_exit_speed": 19.0, "avg_grip": 0.85,
+         "avg_time_loss_ms": 30.0, "total_time_loss_ms": 30.0},
+    ]
+
+
+def _sample_driving_style():
+    return {
+        "driver_id": 1, "session_id": "s1",
+        "trail_braking_depth": 0.6, "brake_point_consistency": 0.85,
+        "brake_pressure_buildup_rate": 0.7, "apex_speed_ratio": 0.92,
+        "turn_in_aggressiveness": 0.65, "throttle_onset_delay_m": 2.5,
+        "exit_acceleration_efficiency": 0.88, "line_variation_index": 0.15,
+        "early_vs_late_stint_pace": 0.02, "smoothness_composite": 0.78,
+        "style_label": "Smooth Precision", "style_confidence": 0.85,
+        "strengths_json": '["Consistent braking"]',
+        "strengths": ["Consistent braking"],
+        "weaknesses_json": '["Late throttle"]',
+        "weaknesses": ["Late throttle"],
+    }
+
+
+def _sample_analysis_json():
+    return {
+        "sector_analysis": {
+            "n_sectors": 3, "n_laps": 5,
+            "ideal_lap_time_s": 59.5, "actual_best_lap_time_s": 60.0,
+            "ideal_gap_s": 0.5, "weakest_sector": 1, "strongest_sector": 0,
+            "sector_stats": [], "sector_timings": [], "coaching": "Focus on sector 2",
+        },
+        "robustness_metrics": {"early_mean_s": 61.2, "late_mean_s": 61.8},
+        "consistency_metrics": {"cv_pct": 1.2, "std_dev_s": 0.7},
+    }
+
+
+def _sample_reference_line():
+    return {
+        "latitudes": [45.0, 45.001, 45.002, 45.003],
+        "longitudes": [7.0, 7.001, 7.002, 7.003],
+        "distances": [0.0, 50.0, 100.0, 150.0],
+        "speeds": [10.0, 15.0, 12.0, 14.0],
+    }
+
+
+class TestTheoreticalEndpoint:
+
+    def test_returns_theoretical_data(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = _sample_theoretical_data()
+
+            resp = client.get("/api/v1/sessions/s1/theoretical")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["theoretical_time_s"] == 58.0
+        assert "speeds" in body["data"]
+        assert "distances" in body["data"]
+
+    def test_404_no_session(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = None
+
+            resp = client.get("/api/v1/sessions/FAKE/theoretical")
+
+        assert resp.status_code == 404
+
+    def test_404_no_theoretical_data(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = None
+
+            resp = client.get("/api/v1/sessions/s1/theoretical")
+
+        assert resp.status_code == 404
+
+
+class TestReferenceLineEndpoint:
+
+    def test_returns_reference_line(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_reference_line.return_value = _sample_reference_line()
+
+            resp = client.get("/api/v1/sessions/s1/reference_line")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "latitudes" in body["data"]
+        assert "longitudes" in body["data"]
+
+    def test_404_no_session(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = None
+
+            resp = client.get("/api/v1/sessions/FAKE/reference_line")
+
+        assert resp.status_code == 404
+
+
+class TestBestLapGpsEndpoint:
+
+    def test_returns_best_lap_gps(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
+
+            resp = client.get("/api/v1/sessions/s1/best_lap_gps")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["lap_number"] == 3  # is_best lap
+
+
+class TestCornerPositionsEndpoint:
+
+    def test_returns_from_theoretical(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = _sample_theoretical_data()
+            mm.get_corner_metrics_summary.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/corner-positions")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["corners"]) == 2
+
+    def test_falls_back_to_corner_metrics(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = None
+            mm.get_corner_metrics_summary.return_value = _sample_corner_summary()
+
+            resp = client.get("/api/v1/sessions/s1/corner-positions")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert len(body["data"]["corners"]) == 2
+
+    def test_404_no_data(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_theoretical_data.return_value = None
+            mm.get_corner_metrics_summary.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/corner-positions")
+
+        assert resp.status_code == 404
+
+
+class TestCornerMetricsEndpoint:
+
+    def test_returns_metrics(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_corner_metrics_for_session.return_value = _sample_corner_metrics()
+
+            resp = client.get("/api/v1/sessions/s1/corner-metrics")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["corners"]) == 3
+
+    def test_404_no_metrics(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_corner_metrics_for_session.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/corner-metrics")
+
+        assert resp.status_code == 404
+
+
+class TestCornerMetricsSummaryEndpoint:
+
+    def test_returns_summary(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_corner_metrics_summary.return_value = _sample_corner_summary()
+
+            resp = client.get("/api/v1/sessions/s1/corner-metrics/summary")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["corners"]) == 2
+
+
+class TestDeltaEndpoint:
+
+    def test_computes_delta(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_gps_trace.side_effect = [_sample_gps_trace(), _sample_gps_trace()]
+
+            resp = client.get("/api/v1/sessions/s1/delta?lap_a=1&lap_b=2")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "distances" in body["data"]
+        assert "delta_s" in body["data"]
+        assert body["data"]["lap_a"] == 1
+        assert body["data"]["lap_b"] == 2
+
+    def test_400_missing_params(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+
+            resp = client.get("/api/v1/sessions/s1/delta")
+
+        assert resp.status_code == 400
+
+    def test_404_missing_trace(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_gps_trace.return_value = None
+
+            resp = client.get("/api/v1/sessions/s1/delta?lap_a=1&lap_b=99")
+
+        assert resp.status_code == 404
+
+
+class TestFingerprintEndpoint:
+
+    def test_returns_fingerprint(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_score_details.return_value = _sample_score_details()
+            mm.get_driving_style.return_value = _sample_driving_style()
+
+            resp = client.get("/api/v1/sessions/s1/fingerprint")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["dimensions"]) == 6
+        assert len(body["data"]["values"]) == 6
+
+    def test_404_no_scores(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_score_details.return_value = None
+
+            resp = client.get("/api/v1/sessions/s1/fingerprint")
+
+        assert resp.status_code == 404
+
+
+class TestDrivingStyleEndpoint:
+
+    def test_returns_style(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_driving_style.return_value = _sample_driving_style()
+
+            resp = client.get("/api/v1/sessions/s1/driving-style")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["style_label"] == "Smooth Precision"
+        assert len(body["data"]["features"]) > 0
+
+    def test_404_no_driver(self, client):
+        session = _sample_session()
+        session["driver_id"] = None
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = session
+
+            resp = client.get("/api/v1/sessions/s1/driving-style")
+
+        assert resp.status_code == 404
+
+
+class TestLapDistributionEndpoint:
+
+    def test_returns_distribution(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = _sample_laps()
+
+            resp = client.get("/api/v1/sessions/s1/lap-distribution")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "bins" in body["data"]
+        assert "counts" in body["data"]
+        assert body["data"]["n_valid"] == 3
+
+    def test_404_no_valid_laps(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/lap-distribution")
+
+        assert resp.status_code == 404
+
+
+class TestLapProgressEndpoint:
+
+    def test_returns_progress(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = _sample_laps()
+
+            resp = client.get("/api/v1/sessions/s1/lap-progress")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "lap_numbers" in body["data"]
+        assert "times" in body["data"]
+        assert "rolling_avg" in body["data"]
+        assert "trend_slope" in body["data"]
+        assert isinstance(body["data"]["is_improving"], bool)
+
+    def test_improving_trend(self, client):
+        """Laps with decreasing times should show is_improving=True."""
+        improving_laps = [
+            {"session_id": "s1", "lap_number": 1, "lap_time_s": 63.0, "is_valid": 1, "is_best": 0},
+            {"session_id": "s1", "lap_number": 2, "lap_time_s": 62.0, "is_valid": 1, "is_best": 0},
+            {"session_id": "s1", "lap_number": 3, "lap_time_s": 61.0, "is_valid": 1, "is_best": 1},
+        ]
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = improving_laps
+
+            resp = client.get("/api/v1/sessions/s1/lap-progress")
+
+        body = resp.get_json()
+        assert body["data"]["is_improving"] is True
+        assert body["data"]["trend_slope"] < 0
+
+
+class TestSpeedProfileEndpoint:
+
+    def test_returns_profile(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_laps_for_session.return_value = _sample_laps()
+            mm.get_gps_trace.return_value = _sample_gps_trace()
+            mm.get_theoretical_data.return_value = _sample_theoretical_data()
+
+            resp = client.get("/api/v1/sessions/s1/speed-profile")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "actual_speeds_kmh" in body["data"]
+        assert "distances" in body["data"]
+
+
+class TestBrakePrecisionEndpoint:
+
+    def test_returns_brake_precision(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_corner_metrics_for_session.return_value = _sample_corner_metrics()
+
+            resp = client.get("/api/v1/sessions/s1/brake-precision")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["corners"]) == 2  # 2 unique corner_ids
+        c1 = body["data"]["corners"][0]
+        assert "mean_m" in c1
+        assert "std_m" in c1
+        assert "cv_pct" in c1
+
+    def test_404_no_metrics(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_corner_metrics_for_session.return_value = []
+
+            resp = client.get("/api/v1/sessions/s1/brake-precision")
+
+        assert resp.status_code == 404
+
+
+class TestStintAnalysisEndpoint:
+
+    def test_returns_stints(self, client):
+        stints = [
+            {"stint_number": 1, "lap_start": 1, "lap_end": 5,
+             "lap_count": 5, "best_time_s": 60.0, "mean_time_s": 61.0},
+            {"stint_number": 2, "lap_start": 6, "lap_end": 10,
+             "lap_count": 5, "best_time_s": 60.5, "mean_time_s": 61.5},
+        ]
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_stint_analysis.return_value = stints
+
+            resp = client.get("/api/v1/sessions/s1/stint-analysis")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert len(body["data"]["stints"]) == 2
+
+    def test_falls_back_to_analysis_json(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_stint_analysis.return_value = []
+            mm.get_analysis_json.return_value = _sample_analysis_json()
+
+            resp = client.get("/api/v1/sessions/s1/stint-analysis")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "robustness_metrics" in body["data"]
+
+    def test_404_no_data(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_stint_analysis.return_value = []
+            mm.get_analysis_json.return_value = None
+
+            resp = client.get("/api/v1/sessions/s1/stint-analysis")
+
+        assert resp.status_code == 404
+
+
+class TestSectorTimesEndpoint:
+
+    def test_returns_from_analysis_json(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_analysis_json.return_value = _sample_analysis_json()
+
+            resp = client.get("/api/v1/sessions/s1/sector_times")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["n_sectors"] == 3
+
+    def test_computes_on_fly_when_no_analysis_json(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_analysis_json.return_value = None
+            mm.get_laps_for_session.return_value = _sample_laps()
+
+            resp = client.get("/api/v1/sessions/s1/sector_times")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert "n_sectors" in body["data"]
+
+    def test_404_insufficient_laps(self, client):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = _sample_session()
+            mm.get_analysis_json.return_value = None
+            mm.get_laps_for_session.return_value = [
+                {"session_id": "s1", "lap_number": 1, "lap_time_s": 62.1,
+                 "is_valid": 1, "is_best": 1},
+            ]
+
+            resp = client.get("/api/v1/sessions/s1/sector_times")
+
+        assert resp.status_code == 404
+
+
+class TestNewEndpoints404ForMissingSession:
+    """All new endpoints should return 404 for non-existent sessions."""
+
+    NEW_PATHS = [
+        "/api/v1/sessions/FAKE/theoretical",
+        "/api/v1/sessions/FAKE/reference_line",
+        "/api/v1/sessions/FAKE/best_lap_gps",
+        "/api/v1/sessions/FAKE/corner-positions",
+        "/api/v1/sessions/FAKE/corner-metrics",
+        "/api/v1/sessions/FAKE/corner-metrics/summary",
+        "/api/v1/sessions/FAKE/delta?lap_a=1&lap_b=2",
+        "/api/v1/sessions/FAKE/fingerprint",
+        "/api/v1/sessions/FAKE/driving-style",
+        "/api/v1/sessions/FAKE/lap-distribution",
+        "/api/v1/sessions/FAKE/lap-progress",
+        "/api/v1/sessions/FAKE/speed-profile",
+        "/api/v1/sessions/FAKE/brake-precision",
+        "/api/v1/sessions/FAKE/stint-analysis",
+        "/api/v1/sessions/FAKE/sector_times",
+    ]
+
+    @pytest.mark.parametrize("path", NEW_PATHS)
+    def test_404_for_missing_session(self, client, path):
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mm:
+            mock_db.return_value = MagicMock()
+            mm.get_session_by_id.return_value = None
+
+            resp = client.get(path)
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False

@@ -1985,6 +1985,78 @@ def reorder_weekend_sessions(
 
 # ── track creation from predefined ────────────────────────────
 
+# ── analysis_json (supplementary analysis blob) ────────────────
+
+def get_analysis_json(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> Optional[dict]:
+    """Read and parse the analysis_json blob from the sessions table."""
+    try:
+        row = conn.execute(
+            "SELECT analysis_json FROM sessions WHERE session_id = :sid",
+            {"sid": session_id},
+        ).fetchone()
+    except Exception:
+        return None
+    if not row or not row["analysis_json"]:
+        return None
+    try:
+        return json.loads(row["analysis_json"])
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def insert_analysis_json(
+    conn: sqlite3.Connection,
+    session_id: str,
+    analysis: dict,
+) -> None:
+    """Persist the supplementary analysis blob to sessions.analysis_json."""
+    blob = json.dumps(analysis, default=str)
+    conn.execute(
+        "UPDATE sessions SET analysis_json = :blob WHERE session_id = :sid",
+        {"blob": blob, "sid": session_id},
+    )
+
+
+# ── corner_metrics (read helpers for API) ──────────────────────
+
+def get_corner_metrics_for_session(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> list[dict]:
+    """All corner metrics rows for a session, ordered by lap then corner."""
+    rows = conn.execute(
+        Q.SELECT_CORNER_METRICS_FOR_SESSION, {"session_id": session_id}
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_corner_metrics_for_lap(
+    conn: sqlite3.Connection,
+    session_id: str,
+    lap_number: int,
+) -> list[dict]:
+    """Corner metrics for a single lap."""
+    rows = conn.execute(
+        Q.SELECT_CORNER_METRICS_FOR_LAP,
+        {"session_id": session_id, "lap_number": lap_number},
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_corner_metrics_summary(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> list[dict]:
+    """Per-corner aggregates (avg entry/apex/exit speed, avg time loss, etc.)."""
+    rows = conn.execute(
+        Q.SELECT_CORNER_METRICS_SUMMARY, {"session_id": session_id}
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def create_track_from_predefined(
     conn: sqlite3.Connection, predefined_track_id: int, custom_name: str | None = None,
 ) -> str:

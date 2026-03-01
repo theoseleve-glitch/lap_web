@@ -490,6 +490,19 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (26, "Phase 26 schema — stripe_events for webhook idempotency"),
     )
 
+    # Phase 27 migration: add analysis_json to sessions (idempotent).
+    try:
+        cur.execute("ALTER TABLE sessions ADD COLUMN analysis_json TEXT;")
+        logger.debug("Added column sessions.analysis_json.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (27, "Phase 27 schema — analysis_json on sessions for supplementary analysis data"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)
