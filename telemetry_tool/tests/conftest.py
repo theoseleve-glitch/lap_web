@@ -74,6 +74,136 @@ def seeded_db(test_db):
         "consistency_max, execution_score, execution_max, robustness_score, robustness_max) "
         "VALUES ('s2', 23, 25, 22, 25, 20, 25, 20, 25)"
     )
+    # ------------------------------------------------------------------
+    # GPS traces for s1 (3 laps on a simulated oval)
+    # ------------------------------------------------------------------
+    n_points = 100
+    lap_length = 1000.0
+    for lap_num in [1, 2, 3]:
+        distances = [i * lap_length / n_points for i in range(n_points)]
+        speeds = [20.0 + 5.0 * math.sin(2 * math.pi * d / lap_length) for d in distances]
+        latitudes = [45.0 + 0.001 * math.cos(2 * math.pi * d / lap_length) for d in distances]
+        longitudes = [7.0 + 0.002 * math.sin(2 * math.pi * d / lap_length) for d in distances]
+        # Synthetic acceleration data for GG diagram
+        accel_lat = [1.5 * math.sin(4 * math.pi * d / lap_length) for d in distances]
+        accel_long = [0.8 * math.cos(4 * math.pi * d / lap_length) for d in distances]
+        # Column names use _json suffix per schema.py
+        conn.execute(
+            "INSERT INTO gps_traces (session_id, lap_number, "
+            "latitudes_json, longitudes_json, distances_json, speeds_json, "
+            "accel_lat_json, accel_long_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "s1", lap_num,
+                json.dumps(latitudes), json.dumps(longitudes),
+                json.dumps(distances), json.dumps(speeds),
+                json.dumps(accel_lat), json.dumps(accel_long),
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # Theoretical data with corner coaching for s1
+    # ------------------------------------------------------------------
+    corner_coaching = [
+        {"corner_id": 1, "corner_name": "T1", "s_start": 100.0,
+         "s_end": 200.0, "s_apex": 150.0, "direction": "left"},
+        {"corner_id": 2, "corner_name": "T2", "s_start": 400.0,
+         "s_end": 500.0, "s_apex": 450.0, "direction": "right"},
+        {"corner_id": 3, "corner_name": "T3", "s_start": 700.0,
+         "s_end": 800.0, "s_apex": 750.0, "direction": "left"},
+    ]
+    theoretical_speeds = [
+        22.0 + 3.0 * math.sin(2 * math.pi * d / lap_length)
+        for d in distances
+    ]
+    conn.execute(
+        "INSERT INTO theoretical_data (session_id, theoretical_time_s, "
+        "actual_best_time_s, gap_pct, simulation_method, "
+        "speed_profile_json, distance_json, corner_coaching_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "s1", 58.0, 60.0, 3.33, "envelope",
+            json.dumps(theoretical_speeds), json.dumps(distances),
+            json.dumps(corner_coaching),
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Corner metrics (per-lap per-corner) for s1
+    # ------------------------------------------------------------------
+    for lap_num in [1, 2, 3]:
+        for corner in corner_coaching:
+            cid = corner["corner_id"]
+            conn.execute(
+                "INSERT INTO corner_metrics (session_id, lap_number, corner_id, "
+                "entry_speed_mps, apex_speed_mps, exit_speed_mps, brake_point_m, "
+                "time_loss_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "s1", lap_num, cid,
+                    25.0 - cid * 2, 18.0 - cid, 22.0 - cid,
+                    corner["s_start"] - 10.0,
+                    50 + cid * 20 + lap_num * 5,
+                ),
+            )
+
+    # ------------------------------------------------------------------
+    # Reference line for s1
+    # ------------------------------------------------------------------
+    conn.execute(
+        "INSERT INTO reference_lines (session_id, "
+        "latitudes_json, longitudes_json, distances_json, speeds_json) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            "s1",
+            json.dumps(latitudes), json.dumps(longitudes),
+            json.dumps(distances), json.dumps(theoretical_speeds),
+        ),
+    )
+
+    # ------------------------------------------------------------------
+    # Analysis JSON (sector analysis, consistency metrics) for s1
+    # ------------------------------------------------------------------
+    analysis_blob = {
+        "consistency_metrics": {
+            "cv_pct": 0.43, "std_dev_s": 0.195,
+            "best_to_median_delta_s": 0.015,
+        },
+        "robustness_metrics": {"early_mean_s": 60.5, "late_mean_s": 61.0},
+        "sector_analysis": {
+            "n_sectors": 3,
+            "ideal_lap_time_s": 58.234,
+            "sector_stats": [
+                {"sector": 1, "best_s": 14.2, "mean_s": 14.5, "std_s": 0.3},
+                {"sector": 2, "best_s": 15.1, "mean_s": 15.3, "std_s": 0.2},
+                {"sector": 3, "best_s": 13.8, "mean_s": 14.0, "std_s": 0.2},
+            ],
+        },
+        "data_quality_summary": {
+            "overall_confidence": 0.88, "gps_quality": 0.92,
+        },
+    }
+    conn.execute(
+        "UPDATE sessions SET analysis_json = ? WHERE session_id = 's1'",
+        (json.dumps(analysis_blob),),
+    )
+
+    # ------------------------------------------------------------------
+    # Driving style features for s1
+    # ------------------------------------------------------------------
+    conn.execute(
+        "INSERT INTO driving_style_features (driver_id, session_id, "
+        "trail_braking_depth, brake_point_consistency, "
+        "style_label, style_confidence, "
+        "strengths_json, weaknesses_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            1, "s1", 0.7, 0.85,
+            "smooth", 0.82,
+            json.dumps(["consistent braking", "smooth inputs"]),
+            json.dumps(["late throttle application"]),
+        ),
+    )
+
     conn.commit()
     return conn
 
