@@ -2226,6 +2226,9 @@ class TestNewEndpoints404ForMissingSession:
         "/api/v1/sessions/FAKE/brake-precision",
         "/api/v1/sessions/FAKE/stint-analysis",
         "/api/v1/sessions/FAKE/sector_times",
+        "/api/v1/sessions/FAKE/track-map",
+        "/api/v1/sessions/FAKE/sectors",
+        "/api/v1/sessions/FAKE/compare?sessionKeyB=OTHER",
     ]
 
     @pytest.mark.parametrize("path", NEW_PATHS)
