@@ -230,7 +230,7 @@ def v1_theoretical(session_id: str):
     """
     conn = get_db_connection()
     session = conn.execute(
-        "SELECT id FROM sessions WHERE id = :sid", {"sid": session_id}
+        "SELECT session_id FROM sessions WHERE session_id = :sid", {"sid": session_id}
     ).fetchone()
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
