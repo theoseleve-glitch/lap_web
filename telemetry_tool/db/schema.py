@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     display_name      TEXT,
     source_filename   TEXT,
     source_path       TEXT,
+    kart_id           INTEGER REFERENCES karts(kart_id),
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 """

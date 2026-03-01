@@ -409,12 +409,12 @@ def update_session_field(
     allowed = {
         "session_date", "driver_id", "track_id",
         "session_type", "track_state", "notes",
-        "display_name",
+        "display_name", "kart_id",
     }
     if field_name not in allowed:
         raise ValueError(f"Field {field_name!r} not editable on sessions.")
-    # driver_id should be int; track_id stays as text.
-    if field_name == "driver_id" and value is not None:
+    # driver_id / kart_id should be int; track_id stays as text.
+    if field_name in ("driver_id", "kart_id") and value is not None:
         value = int(value)
     sql = f"UPDATE sessions SET {field_name} = :value WHERE session_id = :session_id"
     conn.execute(sql, {"session_id": session_id, "value": value or None})
