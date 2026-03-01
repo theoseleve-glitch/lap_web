@@ -1102,8 +1102,8 @@ def get_driving_style(
     if not row:
         return None
     d = dict(row)
-    d["strengths"] = json.loads(d.get("strengths_json") or "[]")
-    d["weaknesses"] = json.loads(d.get("weaknesses_json") or "[]")
+    d["strengths"] = _parse_json_or_list(d.get("strengths_json") or "[]")
+    d["weaknesses"] = _parse_json_or_list(d.get("weaknesses_json") or "[]")
     return d
 
 
@@ -1117,8 +1117,8 @@ def get_driver_style_history(
     result = []
     for r in rows:
         d = dict(r)
-        d["strengths"] = json.loads(d.get("strengths_json") or "[]")
-        d["weaknesses"] = json.loads(d.get("weaknesses_json") or "[]")
+        d["strengths"] = _parse_json_or_list(d.get("strengths_json") or "[]")
+        d["weaknesses"] = _parse_json_or_list(d.get("weaknesses_json") or "[]")
         result.append(d)
     return result
 
@@ -1265,18 +1265,19 @@ def get_theoretical_data(
         return None
     d = dict(row)
     # Parse JSON fields for API consumption.
+    # Use _parse_json_or_list to handle both SQLite TEXT and PG JSONB.
     if d.get("speed_profile_json"):
-        d["speeds"] = json.loads(d["speed_profile_json"])
+        d["speeds"] = _parse_json_or_list(d["speed_profile_json"])
     if d.get("distance_json"):
-        d["distances"] = json.loads(d["distance_json"])
+        d["distances"] = _parse_json_or_list(d["distance_json"])
     if d.get("metrics_json"):
-        d["metrics"] = json.loads(d["metrics_json"])
+        d["metrics"] = _parse_json_or_list(d["metrics_json"])
     if d.get("corner_coaching_json"):
-        d["corner_coaching"] = json.loads(d["corner_coaching_json"])
+        d["corner_coaching"] = _parse_json_or_list(d["corner_coaching_json"])
     if d.get("delta_map_json"):
-        d["delta_map_summary"] = json.loads(d["delta_map_json"])
+        d["delta_map_summary"] = _parse_json_or_list(d["delta_map_json"])
     if d.get("session_scalars_json"):
-        d["session_scalars"] = json.loads(d["session_scalars_json"])
+        d["session_scalars"] = _parse_json_or_list(d["session_scalars_json"])
     return d
 
 

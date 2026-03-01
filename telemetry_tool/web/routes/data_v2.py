@@ -428,22 +428,12 @@ def get_corners(session_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     theo = models.get_theoretical_data(conn, session_id)
-    if theo is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "No theoretical data for this session",
-            status=404,
-        )
+    corners = theo.get("corner_coaching") if theo else None
 
-    corners = theo.get("corner_coaching")
-    if not corners:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "No corner coaching data for this session",
-            status=404,
-        )
-
-    return api_response({"corners": corners})
+    return api_response({
+        "corners": corners or [],
+        "available": bool(corners),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -866,11 +856,11 @@ def get_corner_metrics(session_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     metrics = models.get_corner_metrics_for_session(conn, session_id)
-    if not metrics:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No corner metrics for this session", status=404)
 
-    return api_response({"corners": metrics})
+    return api_response({
+        "corners": metrics or [],
+        "available": bool(metrics),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -888,11 +878,11 @@ def get_corner_metrics_summary(session_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     summary = models.get_corner_metrics_summary(conn, session_id)
-    if not summary:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No corner metrics for this session", status=404)
 
-    return api_response({"corners": summary})
+    return api_response({
+        "corners": summary or [],
+        "available": bool(summary),
+    })
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1248,8 +1238,7 @@ def get_brake_precision(session_id: str):
 
     metrics = models.get_corner_metrics_for_session(conn, session_id)
     if not metrics:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No corner metrics for brake precision", status=404)
+        return api_response({"corners": [], "available": False})
 
     # Group by corner_id, collect brake points
     from collections import defaultdict

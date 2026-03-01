@@ -537,10 +537,13 @@ class TestCorners:
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["corners"] == []
+        assert data["available"] is False
 
     def test_corners_no_coaching_in_data(self, client):
-        """Returns 404 when theoretical data has no corner_coaching."""
+        """Returns empty corners when theoretical data has no corner_coaching."""
         theo = _sample_theoretical_data()
         theo["corner_coaching"] = None
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
@@ -551,7 +554,10 @@ class TestCorners:
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["corners"] == []
+        assert data["available"] is False
 
     def test_corners_session_not_found(self, client):
         """Returns 404 when session does not exist."""
@@ -1629,7 +1635,10 @@ class TestCornerMetricsEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/corner-metrics")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["corners"] == []
+        assert data["available"] is False
 
 
 class TestCornerMetricsSummaryEndpoint:
@@ -1860,7 +1869,7 @@ class TestBrakePrecisionEndpoint:
         assert "std_m" in c1
         assert "cv_pct" in c1
 
-    def test_404_no_metrics(self, client):
+    def test_empty_no_metrics(self, client):
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mm:
             mock_db.return_value = MagicMock()
@@ -1869,7 +1878,10 @@ class TestBrakePrecisionEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/brake-precision")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["corners"] == []
+        assert data["available"] is False
 
 
 class TestStintAnalysisEndpoint:
