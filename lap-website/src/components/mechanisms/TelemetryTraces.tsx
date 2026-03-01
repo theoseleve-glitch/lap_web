@@ -1,7 +1,5 @@
 'use client';
 
-import { TelemetryTracesCanvas } from './TelemetryTracesCanvas';
-
 interface TelemetryTracesProps {
   progress?: number;
   hoveredTrace?: string | null;
@@ -11,25 +9,22 @@ interface TelemetryTracesProps {
 }
 
 export function TelemetryTraces({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   progress = 1,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   hoveredTrace = null,
   onTraceHover,
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   useWebGL = false,
   className = '',
 }: TelemetryTracesProps) {
-  // Always use Canvas 2D for now — R3F tubes can be wired in Task 16
-  // when progressive enhancement is added
-
   return (
     <div
       className={`relative ${className}`}
       onMouseLeave={() => onTraceHover?.(null)}
     >
-      <TelemetryTracesCanvas
-        progress={progress}
-        hoveredTrace={hoveredTrace}
-      />
+      {/* Canvas telemetry traces removed — being rebuilt */}
+      <div className="w-full h-full bg-concrete/50 rounded" />
 
       {/* Invisible hover zones for trace selection */}
       <div className="absolute inset-0 flex flex-col">
