@@ -17,6 +17,7 @@
 'use client';
 
 import { useEffect, useRef, useMemo } from 'react';
+import 'leaflet/dist/leaflet.css';
 import { useVanillaChart } from './useVanillaChart';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 
@@ -28,7 +29,7 @@ interface GpsTraceProps {
   bestLap?: number | null;
 }
 
-/** Load Leaflet CSS + JS from CDN (only once). */
+/** Load Leaflet via npm dynamic import (only once). */
 let leafletLoaded = false;
 let leafletPromise: Promise<void> | null = null;
 
@@ -36,33 +37,17 @@ function ensureLeaflet(): Promise<void> {
   if (leafletLoaded) return Promise.resolve();
   if (leafletPromise) return leafletPromise;
 
-  leafletPromise = new Promise<void>((resolve, reject) => {
-    // CSS
-    if (!document.querySelector('link[href*="leaflet"]')) {
-      const link = document.createElement('link');
-      link.rel = 'stylesheet';
-      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
-      link.crossOrigin = '';
-      document.head.appendChild(link);
-    }
+  leafletPromise = (async () => {
+    // Dynamic import of Leaflet JS (CSS imported statically at top)
+    const L = (await import('leaflet')).default;
 
-    // JS
-    if ('L' in window) {
-      leafletLoaded = true;
-      resolve();
-      return;
-    }
+    // Fix default marker icon paths (broken when bundled via npm)
+    L.Icon.Default.imagePath = '/images/leaflet/';
 
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.crossOrigin = '';
-    script.onload = () => {
-      leafletLoaded = true;
-      resolve();
-    };
-    script.onerror = () => reject(new Error('Failed to load Leaflet'));
-    document.head.appendChild(script);
-  });
+    // Expose as global for gps_trace.js vanilla module
+    (window as unknown as Record<string, unknown>).L = L;
+    leafletLoaded = true;
+  })();
 
   return leafletPromise;
 }

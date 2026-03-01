@@ -60,11 +60,8 @@ def auth_middleware():
         log_security_event("auth_denied",
                            ip_address=request.remote_addr,
                            details={"path": request.path, "reason": "missing_token"})
-        return jsonify({
-            "ok": False,
-            "error": {"code": "UNAUTHORIZED", "message": "Authentication required"},
-            "meta": {},
-        }), 401
+        from web.api_utils import api_error, ErrorCode
+        return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
 
     from auth.service import decode_access_token, AuthError
     secret = current_app.config["JWT_SECRET"]
@@ -79,11 +76,8 @@ def auth_middleware():
         log_security_event(event_type,
                            ip_address=request.remote_addr,
                            details={"path": request.path, "error_code": e.code})
-        return jsonify({
-            "ok": False,
-            "error": {"code": e.code, "message": str(e)},
-            "meta": {},
-        }), 401
+        from web.api_utils import api_error
+        return api_error(e.code, str(e), status=401)
 
     # Check account suspension (after successful JWT decode)
     if g.current_user_id is not None:
@@ -95,11 +89,8 @@ def auth_middleware():
                 {"uid": g.current_user_id},
             ).fetchone()
             if row is not None:
-                return jsonify({
-                    "ok": False,
-                    "error": {"code": "ACCOUNT_SUSPENDED", "message": "Account suspended"},
-                    "meta": {},
-                }), 403
+                from web.api_utils import api_error, ErrorCode
+                return api_error(ErrorCode.FORBIDDEN, "Account suspended", status=403)
         except Exception:
             pass  # Fail open — don't block if DB check fails
 
@@ -116,7 +107,7 @@ def require_auth(f):
 
         if not hasattr(g, "current_user_id") or g.current_user_id is None:
             from web.api_utils import api_error, ErrorCode
-            return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=401)
+            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
         return f(*args, **kwargs)
     return decorated
 

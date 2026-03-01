@@ -17,7 +17,6 @@ const navGroups: NavGroup[] = [
       { href: '/app/sessions', label: 'Sessions', icon: '◎' },
       { href: '/app/analyze', label: 'Analyze', icon: '▲' },
       { href: '/app/compare', label: 'Compare', icon: '⟺' },
-      { href: '/app/dev-plans', label: 'Coaching Plans', icon: '☰' },
       { href: '/app/visualize', label: 'Visualization', icon: '◆' },
     ],
   },

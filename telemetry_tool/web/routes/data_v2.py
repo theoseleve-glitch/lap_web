@@ -25,6 +25,7 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from functools import wraps
 from pathlib import Path
 
 from flask import Blueprint, request, send_file
@@ -34,6 +35,19 @@ from web.db import get_db_connection
 from web import models
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_api(f):
+    """Catch unhandled exceptions in API routes — log + return structured error."""
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception:
+            logger.exception("Unhandled error in %s", f.__name__)
+            return api_error(ErrorCode.INTERNAL_ERROR,
+                             "Internal server error", status=500)
+    return wrapper
 
 bp = Blueprint("data_v2", __name__, url_prefix="/api/v1")
 
@@ -99,6 +113,7 @@ _ALLOWED_DELETE_TABLES = frozenset(_DELETE_RELATED_TABLES)
 
 
 @bp.route("/dashboard/stats", methods=["GET"])
+@_safe_api
 def dashboard_stats():
     """Return aggregate dashboard statistics.
 
@@ -156,6 +171,7 @@ def dashboard_stats():
 
 
 @bp.route("/sessions", methods=["GET"])
+@_safe_api
 def list_sessions():
     """List sessions with pagination.
 
@@ -194,6 +210,7 @@ def list_sessions():
 
 
 @bp.route("/sessions/<session_id>", methods=["GET"])
+@_safe_api
 def get_session(session_id: str):
     """Return a single session by ID."""
     conn = get_db_connection()
@@ -209,6 +226,7 @@ def get_session(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/laps", methods=["GET"])
+@_safe_api
 def get_laps(session_id: str):
     """Return all laps for a session."""
     conn = get_db_connection()
@@ -226,6 +244,7 @@ def get_laps(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/speed-trace", methods=["GET"])
+@_safe_api
 def get_speed_trace(session_id: str):
     """Return speed vs distance arrays for a lap.
 
@@ -262,6 +281,7 @@ def get_speed_trace(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/gps-trace", methods=["GET"])
+@_safe_api
 def get_gps_trace(session_id: str):
     """Return GPS coordinates and speed arrays for a lap.
 
@@ -300,6 +320,7 @@ def get_gps_trace(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/gg-data", methods=["GET"])
+@_safe_api
 def get_gg_data(session_id: str):
     """Return lateral and longitudinal acceleration arrays for GG diagram.
 
@@ -345,6 +366,7 @@ def get_gg_data(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/scores", methods=["GET"])
+@_safe_api
 def get_scores(session_id: str):
     """Return score breakdown for a session."""
     conn = get_db_connection()
@@ -369,6 +391,7 @@ def get_scores(session_id: str):
 
 
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
+@_safe_api
 def get_corners(session_id: str):
     """Return corner coaching data for a session.
 
@@ -405,6 +428,7 @@ def get_corners(session_id: str):
 
 
 @bp.route("/sessions/<session_id>", methods=["DELETE"])
+@_safe_api
 def delete_session(session_id: str):
     """Delete a session and all related data."""
     conn = get_db_connection()
@@ -442,6 +466,7 @@ def delete_session(session_id: str):
 
 
 @bp.route("/compare/sessions", methods=["GET"])
+@_safe_api
 def compare_sessions():
     """Return two sessions side-by-side with scores and laps.
 
@@ -502,6 +527,7 @@ def compare_sessions():
 
 
 @bp.route("/sessions/<session_id>/report", methods=["GET"])
+@_safe_api
 def get_report(session_id: str):
     """Download a pre-generated HTML report for a session.
 
@@ -572,6 +598,7 @@ _UPDATABLE_FIELDS = {"session_type", "track_state", "notes"}
 
 
 @bp.route("/sessions/<session_id>", methods=["PATCH"])
+@_safe_api
 def update_session(session_id: str):
     """Update editable fields on a session.
 

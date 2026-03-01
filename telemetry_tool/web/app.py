@@ -375,22 +375,41 @@ def create_app(config: Config | None = None) -> Flask:
     app.wsgi_app = _DecodePathMiddleware(app.wsgi_app)
 
     # Error handlers — return JSON for API routes, HTML for browser pages.
+    # All API paths use api_error() so responses include meta.request_id.
+    from .api_utils import api_error as _api_error, ErrorCode as _EC
+
     @app.errorhandler(404)
     def page_not_found(e):
         if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "error": {"code": "NOT_FOUND", "message": "Resource not found"}}), 404
+            return _api_error(_EC.NOT_FOUND, "Resource not found", status=404)
         return render_template("404.html"), 404
+
+    @app.errorhandler(405)
+    def method_not_allowed(e):
+        if request.path.startswith("/api/"):
+            return _api_error(_EC.VALIDATION_ERROR, "Method not allowed", status=405)
+        return render_template("404.html"), 405
 
     @app.errorhandler(413)
     def request_entity_too_large(e):
         if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "File too large. Maximum upload size is 12 GB."}}), 413
+            return _api_error(_EC.FILE_TOO_LARGE,
+                              "File too large. Maximum upload size is 12 GB.",
+                              status=413)
         return render_template("500.html"), 413
 
     @app.errorhandler(500)
     def internal_error(e):
+        logger.exception("Unhandled 500 error on %s %s", request.method, request.path)
         if request.path.startswith("/api/"):
-            return jsonify({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": "Internal server error"}}), 500
+            return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
+        return render_template("500.html"), 500
+
+    @app.errorhandler(Exception)
+    def unhandled_exception(e):
+        logger.exception("Unhandled exception on %s %s", request.method, request.path)
+        if request.path.startswith("/api/"):
+            return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
         return render_template("500.html"), 500
 
     # Cache static assets (CSS, JS, images) for 1 day.

@@ -31,25 +31,18 @@ def tenant_middleware():
         return  # Auth middleware will handle the 401
 
     # Check for explicit workspace header
+    from web.api_utils import api_error, ErrorCode
     ws_header = request.headers.get("X-Workspace-Id")
     if ws_header:
         try:
             workspace_id = int(ws_header)
         except (ValueError, TypeError):
-            return jsonify({
-                "ok": False,
-                "error": {"code": "VALIDATION_ERROR",
-                          "message": "Invalid X-Workspace-Id header"},
-                "meta": {},
-            }), 400
+            return api_error(ErrorCode.VALIDATION_ERROR,
+                             "Invalid X-Workspace-Id header", status=400)
 
         if not _verify_workspace_access(user_id, workspace_id):
-            return jsonify({
-                "ok": False,
-                "error": {"code": "FORBIDDEN",
-                          "message": "No access to this workspace"},
-                "meta": {},
-            }), 403
+            return api_error(ErrorCode.FORBIDDEN,
+                             "No access to this workspace", status=403)
 
         g.workspace_id = workspace_id
     else:
@@ -58,12 +51,9 @@ def tenant_middleware():
         conn = get_pg_connection()
         default_ws = get_default_workspace_id(conn, user_id)
         if default_ws is None:
-            return jsonify({
-                "ok": False,
-                "error": {"code": "NOT_FOUND",
-                          "message": "No default workspace. Create one first."},
-                "meta": {},
-            }), 404
+            return api_error(ErrorCode.NOT_FOUND,
+                             "No default workspace. Create one first.",
+                             status=404)
         g.workspace_id = default_ws
 
     _set_rls_context(g.workspace_id)
@@ -73,11 +63,8 @@ def tenant_middleware():
     conn = get_pg_connection()
     g.workspace_role = _resolve_workspace_role(conn, user_id, g.workspace_id)
     if g.workspace_role is None:
-        return jsonify({
-            "ok": False,
-            "error": {"code": "FORBIDDEN", "message": "No role in this workspace"},
-            "meta": {},
-        }), 403
+        return api_error(ErrorCode.FORBIDDEN,
+                         "No role in this workspace", status=403)
 
     # Resolve plan tier (used by rate limiter and feature gating)
     try:
