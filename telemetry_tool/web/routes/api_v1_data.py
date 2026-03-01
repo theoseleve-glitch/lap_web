@@ -741,12 +741,73 @@ def v1_files_upload():
     dest = raw_dir / safe_name
     f.save(str(dest))
 
+    # ── Dispatch Celery pipeline chain for analysis ──────────────
+    job_id = None
+    pipeline_dispatched = False
+    try:
+        import uuid
+
+        import redis as _redis
+
+        from pipeline_context import PipelineContext
+        from tasks.pipeline_tasks import build_pipeline_chain
+        from web.config import Config
+
+        job_id = str(uuid.uuid4())
+        redis_client = _redis.Redis.from_url(Config.REDIS_URL)
+        workspace_id = str(getattr(g, "workspace_id", None) or "default")
+        session_id = safe_name.rsplit(".", 1)[0]  # filename without .csv
+
+        # Create session row in DB (pipeline needs it)
+        try:
+            conn = get_db_connection()
+            conn.execute(
+                "INSERT OR IGNORE INTO sessions "
+                "(session_id, csv_filename, driver_id, session_date) "
+                "VALUES (?, ?, 1, date('now'))",
+                (session_id, safe_name),
+            )
+            conn.commit()
+        except Exception:
+            logger.warning(
+                "Failed to create session row for %s (non-fatal)",
+                session_id,
+                exc_info=True,
+            )
+
+        PipelineContext.create(
+            redis_client=redis_client,
+            job_id=job_id,
+            workspace_id=workspace_id,
+            session_id=session_id,
+            file_path=str(dest),
+        )
+
+        pipeline_chain = build_pipeline_chain(job_id)
+        pipeline_chain.apply_async()
+        pipeline_dispatched = True
+        logger.info(
+            "Pipeline chain dispatched: job_id=%s session=%s",
+            job_id,
+            session_id,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to dispatch pipeline chain for %s (non-fatal)",
+            safe_name,
+            exc_info=True,
+        )
+
     stat = dest.stat()
-    return api_response({
+    response_data = {
         "filename": safe_name,
         "size_bytes": stat.st_size,
         "size_human": _human_size(stat.st_size),
-    })
+    }
+    if pipeline_dispatched:
+        response_data["job_id"] = job_id
+        response_data["pipeline_status"] = "dispatched"
+    return api_response(response_data)
 
 
 # ---------------------------------------------------------------------------
