@@ -5,7 +5,21 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonTableRows, SkeletonBox } from '@/components/app';
-import { Sparkline } from '@/components/app/charts';
+
+/** Inline Sparkline — lightweight SVG replacement for deleted chart component */
+function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
+  if (data.length < 2) return null;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const w = 200;
+  const points = data.map((v, i) => `${(i / (data.length - 1)) * w},${height - ((v - min) / range) * (height - 4) - 2}`).join(' ');
+  return (
+    <svg viewBox={`0 0 ${w} ${height}`} className="w-full" style={{ height }} preserveAspectRatio="none">
+      <polyline fill="none" stroke={color} strokeWidth="2" points={points} />
+    </svg>
+  );
+}
 
 interface SessionRow {
   id: string;

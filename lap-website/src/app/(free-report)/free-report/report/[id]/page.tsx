@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { StatCard, DataTable, LockedSection, UpgradeBanner } from '@/components/app';
-import { SpeedTrace, TrackMap, GGDiagram, DrivingStyle } from '@/components/app/charts';
 import { CornerReplay } from '@/components/app/corner-replay';
 
 interface SessionDetail {
@@ -141,21 +140,25 @@ export default function FreeReportPage() {
         <StatCard label="Robustness" value={session.robustness_score?.toFixed(1) ?? '--'} unit="/25" />
       </div>
 
-      {/* FREE: Track Map + Speed Trace */}
+      {/* FREE: Track Map + Speed Trace — charts being rebuilt */}
       <div className="mb-6">
         <h2 className="font-monument text-lg text-chalk tracking-tight mb-4">ANALYSIS</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <TrackMap sessionId={id} />
-          <SpeedTrace sessionId={id} />
+          <div className="bg-concrete rounded-lg border border-steel/20 h-48 flex items-center justify-center">
+            <span className="text-steel font-telemetry text-xs">Track Map — being rebuilt</span>
+          </div>
+          <div className="bg-concrete rounded-lg border border-steel/20 h-48 flex items-center justify-center">
+            <span className="text-steel font-telemetry text-xs">Speed Trace — being rebuilt</span>
+          </div>
         </div>
       </div>
 
       {/* LOCKED: Full Overview */}
       <div className="mb-6">
         <LockedSection title="Full Overview" description="GG diagram, driving style analysis, and more">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <GGDiagram sessionId={id} />
-            <DrivingStyle sessionId={id} />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 h-48">
+            <div className="bg-asphalt rounded-lg border border-steel/10 p-4" />
+            <div className="bg-asphalt rounded-lg border border-steel/10 p-4" />
           </div>
         </LockedSection>
       </div>
