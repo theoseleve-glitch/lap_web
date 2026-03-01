@@ -62,14 +62,13 @@ interface CornerData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'visualize' | 'corners' | 'performance' | 'timeline' | 'laps';
+type Tab = 'overview' | 'corners' | 'timeline' | 'analytics' | 'laps';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
-  { key: 'visualize', label: 'Visualize' },
-  { key: 'corners', label: 'Corners' },
-  { key: 'performance', label: 'Performance' },
+  { key: 'corners', label: 'Corners & Coaching' },
   { key: 'timeline', label: 'Timeline' },
+  { key: 'analytics', label: 'Analytics' },
   { key: 'laps', label: 'Lap Data' },
 ];
 
@@ -121,7 +120,7 @@ function ScoreBar({
       <div className="flex justify-between text-sm mb-1">
         <span className="text-chalk font-body">{label}</span>
         <span className="text-steel font-telemetry">
-          {score != null ? score.toFixed(1) : '--'} / {max}
+          {score != null ? Math.round(score) : '--'} / {Math.round(max)}
         </span>
       </div>
       <div className="w-full h-2.5 bg-asphalt rounded-full overflow-hidden">
@@ -308,16 +307,13 @@ export default function SessionDetailPage() {
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} />
-      )}
-      {activeTab === 'visualize' && (
-        <VisualizeTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
+        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} />
       )}
       {activeTab === 'corners' && <CornersTab corners={corners} sessionId={sessionId} />}
-      {activeTab === 'performance' && (
-        <PerformanceTab session={session} scores={scores} sessionId={sessionId} />
-      )}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
+      {activeTab === 'analytics' && (
+        <AnalyticsTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
+      )}
       {activeTab === 'laps' && <LapDataTab laps={laps} />}
     </div>
   );
@@ -332,11 +328,15 @@ function OverviewTab({
   scores,
   laps,
   bestLap,
+  sessionId,
+  corners,
 }: {
   session: SessionData;
   scores: ScoreData | null;
   laps: LapData[];
   bestLap: number | null;
+  sessionId: string;
+  corners: CornerData[];
 }) {
   const bestLapData = laps.find((l) => l.is_best === 1);
 
@@ -345,14 +345,15 @@ function OverviewTab({
       {/* Left column: Score breakdown */}
       <div className="lg:col-span-2">
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-          <h2 className="text-lg font-monument text-chalk mb-4">Score Breakdown</h2>
+          <h2 className="text-lg font-monument text-chalk mb-1">Score Breakdown</h2>
+          <p className="text-steel text-xs font-body mb-4">How your score is built</p>
           {scores ? (
             <div>
               {/* Total score */}
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-steel/10">
                 <div className="text-4xl font-monument text-chalk">
                   {session.total_score != null
-                    ? session.total_score.toFixed(1)
+                    ? Math.round(session.total_score)
                     : '--'}
                 </div>
                 <div className="text-steel font-body text-sm">/ 100</div>
@@ -436,6 +437,35 @@ function OverviewTab({
                   )}
                 </div>
               )}
+
+              {/* Performance Metrics Grid */}
+              <div className="mt-6 pt-4 border-t border-steel/10">
+                <h3 className="text-sm font-monument text-chalk mb-3">Performance Metrics</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Total', value: session.total_score, max: 100, color: 'text-chalk' },
+                    { label: 'Pace', value: scores.pace_score, max: scores.pace_max ?? 25, color: 'text-acid-green' },
+                    { label: 'Consistency', value: scores.consistency_score, max: scores.consistency_max ?? 25, color: 'text-cyan-400' },
+                    { label: 'Execution', value: scores.execution_score, max: scores.execution_max ?? 20, color: 'text-racing-purple' },
+                    { label: 'Robustness', value: scores.robustness_score, max: scores.robustness_max ?? 15, color: 'text-pit-orange' },
+                    { label: 'Adaptation', value: scores.adaptation_score, max: 15, color: 'text-marshal-yellow' },
+                  ].map((m) => (
+                    <div key={m.label} className="bg-asphalt rounded-lg p-3">
+                      <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
+                      <span className={`text-xl font-monument ${m.color}`}>
+                        {m.value != null ? Math.round(m.value) : '--'}
+                      </span>
+                      <span className="text-steel text-xs font-body ml-1">/ {Math.round(m.max)}</span>
+                    </div>
+                  ))}
+                  <div className="bg-asphalt rounded-lg p-3">
+                    <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">Grade</p>
+                    <span className={`text-xl font-monument ${gradeColorClass(session.grade).split(' ')[0]}`}>
+                      {session.grade || '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : (
             <p className="text-steel font-body text-sm">
@@ -488,6 +518,18 @@ function OverviewTab({
           </div>
         )}
       </div>
+
+      {/* Full-width sections below — wired by Tasks 5-7 */}
+      <div className="lg:col-span-3 space-y-6" data-session={sessionId}>
+        {corners.length > 0 && (
+          <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+            <h3 className="text-sm font-monument text-chalk mb-2">Top Corners</h3>
+            <p className="text-steel text-xs font-body">
+              {corners.length} corner{corners.length !== 1 ? 's' : ''} analyzed
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -516,10 +558,10 @@ function MetaRow({
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 2. Visualize Tab
+// 2. Analytics Tab (formerly Visualize)
 // ══════════════════════════════════════════════════════════════════
 
-function VisualizeTab({
+function AnalyticsTab({
   sessionId,
   gpsLaps,
   bestLap,
@@ -531,48 +573,53 @@ function VisualizeTab({
   const apiBase = BACKEND_URL;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left: GPS Map (tall) */}
-      <div className="lg:col-span-1 lg:row-span-2">
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">GPS Track Map</h3>
-          <GpsTrace
-            sessionId={sessionId}
-            apiBase={apiBase}
-            gpsLaps={gpsLaps}
-            bestLap={bestLap}
-            className="w-full"
-          />
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left: GPS Map (tall) */}
+        <div className="lg:col-span-1 lg:row-span-2">
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h3 className="text-sm font-monument text-chalk mb-3">GPS Track Map</h3>
+            <GpsTrace
+              sessionId={sessionId}
+              apiBase={apiBase}
+              gpsLaps={gpsLaps}
+              bestLap={bestLap}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        {/* Top-right: Speed Trace */}
+        <div className="lg:col-span-2">
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h3 className="text-sm font-monument text-chalk mb-3">Speed Trace</h3>
+            <SpeedTraceZoom
+              sessionId={sessionId}
+              apiBase={apiBase}
+              gpsLaps={gpsLaps}
+              bestLap={bestLap}
+              className="w-full"
+            />
+          </div>
+        </div>
+
+        {/* Bottom-right: GG Diagram */}
+        <div className="lg:col-span-2">
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h3 className="text-sm font-monument text-chalk mb-3">G-G Diagram</h3>
+            <GGExplorer
+              sessionId={sessionId}
+              apiBase={apiBase}
+              gpsLaps={gpsLaps}
+              bestLap={bestLap}
+              className="w-full"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Top-right: Speed Trace */}
-      <div className="lg:col-span-2">
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">Speed Trace</h3>
-          <SpeedTraceZoom
-            sessionId={sessionId}
-            apiBase={apiBase}
-            gpsLaps={gpsLaps}
-            bestLap={bestLap}
-            className="w-full"
-          />
-        </div>
-      </div>
-
-      {/* Bottom-right: GG Diagram */}
-      <div className="lg:col-span-2">
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">G-G Diagram</h3>
-          <GGExplorer
-            sessionId={sessionId}
-            apiBase={apiBase}
-            gpsLaps={gpsLaps}
-            bestLap={bestLap}
-            className="w-full"
-          />
-        </div>
-      </div>
+      {/* Sector Analysis (moved from Performance tab) */}
+      <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
     </div>
   );
 }
@@ -679,164 +726,7 @@ function CornersTab({ corners, sessionId }: { corners: CornerData[]; sessionId: 
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 4. Performance Tab
-// ══════════════════════════════════════════════════════════════════
-
-function PerformanceTab({
-  session,
-  scores,
-  sessionId,
-}: {
-  session: SessionData;
-  scores: ScoreData | null;
-  sessionId: string;
-}) {
-  if (!scores) {
-    return (
-      <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
-        <p className="text-steel font-body">
-          No performance data available for this session.
-        </p>
-      </div>
-    );
-  }
-
-  const metrics: {
-    label: string;
-    value: string;
-    sub: string;
-    color: string;
-  }[] = [
-    {
-      label: 'Total Score',
-      value:
-        session.total_score != null
-          ? session.total_score.toFixed(1)
-          : '--',
-      sub: '/ 100',
-      color: 'text-chalk',
-    },
-    {
-      label: 'Grade',
-      value: session.grade || '--',
-      sub: '',
-      color: gradeColorClass(session.grade).split(' ')[0],
-    },
-    {
-      label: 'Pace',
-      value:
-        scores.pace_score != null ? scores.pace_score.toFixed(1) : '--',
-      sub: `/ ${scores.pace_max ?? 25}`,
-      color: 'text-acid-green',
-    },
-    {
-      label: 'Consistency',
-      value:
-        scores.consistency_score != null
-          ? scores.consistency_score.toFixed(1)
-          : '--',
-      sub: `/ ${scores.consistency_max ?? 25}`,
-      color: 'text-cyan-400',
-    },
-    {
-      label: 'Execution',
-      value:
-        scores.execution_score != null
-          ? scores.execution_score.toFixed(1)
-          : '--',
-      sub: `/ ${scores.execution_max ?? 20}`,
-      color: 'text-racing-purple',
-    },
-    {
-      label: 'Robustness',
-      value:
-        scores.robustness_score != null
-          ? scores.robustness_score.toFixed(1)
-          : '--',
-      sub: `/ ${scores.robustness_max ?? 15}`,
-      color: 'text-pit-orange',
-    },
-    {
-      label: 'Adaptation',
-      value:
-        scores.adaptation_score != null
-          ? scores.adaptation_score.toFixed(1)
-          : '--',
-      sub: '/ 15',
-      color: 'text-marshal-yellow',
-    },
-  ];
-
-  return (
-    <div>
-      <h2 className="text-lg font-monument text-chalk mb-4">Performance Metrics</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-        {metrics.map((m) => (
-          <div
-            key={m.label}
-            className="bg-concrete rounded-xl border border-steel/10 p-5"
-          >
-            <p className="text-steel text-xs font-body uppercase tracking-wider mb-2">
-              {m.label}
-            </p>
-            <div className="flex items-baseline gap-1.5">
-              <span className={`text-3xl font-monument ${m.color}`}>
-                {m.value}
-              </span>
-              {m.sub && (
-                <span className="text-steel text-sm font-body">{m.sub}</span>
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Strengths and weaknesses */}
-      {(scores.strengths?.length > 0 || scores.weaknesses?.length > 0) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          {scores.strengths?.length > 0 && (
-            <div className="bg-concrete rounded-xl border border-green-500/20 p-6">
-              <h3 className="text-sm font-monument text-green-400 mb-3">
-                Strengths
-              </h3>
-              <ul className="space-y-2">
-                {scores.strengths.map((s, i) => (
-                  <li key={i} className="text-sm text-chalk/80 font-body flex gap-2">
-                    <span className="text-green-400 shrink-0">+</span>
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {scores.weaknesses?.length > 0 && (
-            <div className="bg-concrete rounded-xl border border-red-500/20 p-6">
-              <h3 className="text-sm font-monument text-red-400 mb-3">
-                Areas to Improve
-              </h3>
-              <ul className="space-y-2">
-                {scores.weaknesses.map((w, i) => (
-                  <li key={i} className="text-sm text-chalk/80 font-body flex gap-2">
-                    <span className="text-red-400 shrink-0">-</span>
-                    {w}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Sector Analysis */}
-      <div className="mt-6">
-        <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════
-// 5. Lap Data Tab
+// 4. Lap Data Tab
 // ══════════════════════════════════════════════════════════════════
 
 function LapDataTab({ laps }: { laps: LapData[] }) {
