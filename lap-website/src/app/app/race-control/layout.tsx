@@ -47,6 +47,13 @@ const navGroups = [
       { href: '/app/race-control/infra', label: 'Servers & Storage', icon: '\u25B2' },
     ],
   },
+  {
+    label: 'MONITORING',
+    items: [
+      { href: '/app/race-control/monitoring/training', label: 'Training', icon: '\u2699' },
+      { href: '/app/race-control/monitoring/resources', label: 'User Resources', icon: '\u25A4' },
+    ],
+  },
 ];
 
 export default function RaceControlLayout({ children }: { children: ReactNode }) {

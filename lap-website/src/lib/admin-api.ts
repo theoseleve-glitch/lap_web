@@ -131,6 +131,66 @@ export interface Incident {
   resolved_at?: string;
 }
 
+export interface TrainingStatus {
+  status: 'never_run' | 'completed' | 'error';
+  last_run: {
+    started_at: string;
+    completed_at: string;
+    elapsed_s: number;
+    tiers: {
+      envelopes: { trained: number; skipped: number; errors: unknown[] };
+      global_model: { status: string; error?: string };
+      reprocess: { succeeded: number; failed: number; errors: unknown[] };
+    };
+  } | null;
+  runs_available: number;
+  error?: string;
+}
+
+export interface TrainingHistoryEntry {
+  file: string;
+  started_at?: string;
+  completed_at?: string;
+  elapsed_s?: number;
+  envelopes_trained?: number;
+  sessions_reprocessed?: number;
+  sessions_failed?: number;
+  error?: string;
+}
+
+export interface TrainingConfig {
+  schedule_day_of_week: number;
+  schedule_hour: number;
+  schedule_minute: number;
+  min_sessions_per_group: number;
+  reprocess_batch_size: number;
+  reprocess_pause_s: number;
+}
+
+export interface UserResource {
+  user_id: number;
+  email: string;
+  display_name: string | null;
+  session_count: number;
+  total_storage_bytes: number;
+  total_compute_seconds: number;
+  last_upload: string | null;
+}
+
+export interface ResourceTotals {
+  total_users: number;
+  total_sessions: number;
+  total_storage_bytes: number;
+  total_compute_seconds: number;
+}
+
+export interface DailyUsage {
+  day: string;
+  uploads: number;
+  storage_bytes: number;
+  compute_seconds: number;
+}
+
 /* ── API ──────────────────────────────────── */
 
 export const adminApi = {
@@ -221,4 +281,23 @@ export const adminApi = {
   maintenanceStatus: () => api.get<{ enabled: boolean; message?: string }>('/admin/infra/maintenance'),
   toggleMaintenance: (enabled: boolean, message: string, reason?: string) =>
     api.post('/admin/infra/maintenance', { enabled, message, reason }),
+
+  // Training
+  trainingStatus: () => api.get<TrainingStatus>('/admin/training/status'),
+  trainingHistory: (limit = 20) => api.get<TrainingHistoryEntry[]>(`/admin/training/history?limit=${limit}`),
+  triggerTraining: (reason: string) => api.post<{ task_id: string }>('/admin/training/trigger', { reason }),
+  trainingConfig: () => api.get<TrainingConfig>('/admin/training/config'),
+  updateTrainingConfig: (config: Partial<TrainingConfig>) =>
+    api.put<TrainingConfig>('/admin/training/config', config),
+
+  // Monitoring
+  monitoringTotals: () => api.get<ResourceTotals>('/admin/monitoring/totals'),
+  userResources: (params?: { sort?: string; limit?: number }) => {
+    const qs = new URLSearchParams();
+    if (params?.sort) qs.set('sort', params.sort);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    return api.get<UserResource[]>(`/admin/monitoring/users?${qs}`);
+  },
+  userTimeseries: (userId: number, days = 30) =>
+    api.get<DailyUsage[]>(`/admin/monitoring/users/${userId}/timeseries?days=${days}`),
 };
