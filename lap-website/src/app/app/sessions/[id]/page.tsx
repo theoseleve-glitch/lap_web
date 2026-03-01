@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
@@ -62,13 +62,14 @@ interface CornerData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'visualize' | 'corners' | 'performance' | 'laps';
+type Tab = 'overview' | 'visualize' | 'corners' | 'performance' | 'timeline' | 'laps';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'visualize', label: 'Visualize' },
   { key: 'corners', label: 'Corners' },
   { key: 'performance', label: 'Performance' },
+  { key: 'timeline', label: 'Timeline' },
   { key: 'laps', label: 'Lap Data' },
 ];
 
@@ -316,6 +317,7 @@ export default function SessionDetailPage() {
       {activeTab === 'performance' && (
         <PerformanceTab session={session} scores={scores} sessionId={sessionId} />
       )}
+      {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'laps' && <LapDataTab laps={laps} />}
     </div>
   );
@@ -926,6 +928,308 @@ function LapDataTab({ laps }: { laps: LapData[] }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// 6. Timeline Tab
+// ══════════════════════════════════════════════════════════════════
+
+interface LapProgressData {
+  lap_numbers: number[];
+  times: number[];
+  rolling_avg: number[];
+  trend_slope: number;
+  is_improving: boolean;
+}
+
+interface StintData {
+  stints: {
+    stint_number: number;
+    lap_start: number;
+    lap_end: number;
+    n_laps: number;
+    best_time: number | null;
+    mean_time: number | null;
+    pace_drop_pct: number | null;
+  }[];
+}
+
+function TimelineTab({ sessionId }: { sessionId: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [progress, setProgress] = useState<LapProgressData | null>(null);
+  const [stints, setStints] = useState<StintData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+
+    Promise.allSettled([
+      api.get<LapProgressData>(`/sessions/${sessionId}/lap-progress`),
+      api.get<StintData>(`/sessions/${sessionId}/stint-analysis`),
+    ]).then(([progressResult, stintsResult]) => {
+      if (cancelled) return;
+      if (progressResult.status === 'fulfilled') setProgress(progressResult.value);
+      if (stintsResult.status === 'fulfilled') setStints(stintsResult.value);
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  // Draw lap progress chart
+  useEffect(() => {
+    if (!progress || !canvasRef.current) return;
+    const { lap_numbers, times, rolling_avg, is_improving, trend_slope } = progress;
+    if (times.length === 0) return;
+
+    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    const W = rect.width;
+    const H = rect.height;
+
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = { top: 25, right: 15, bottom: 35, left: 55 };
+    const cW = W - pad.left - pad.right;
+    const cH = H - pad.top - pad.bottom;
+
+    const minTime = Math.min(...times) * 0.995;
+    const maxTime = Math.max(...times) * 1.005;
+    const bestTime = Math.min(...times);
+    const n = times.length;
+    const barWidth = Math.max(4, Math.min(30, (cW / n) * 0.7));
+    const gap = (cW - barWidth * n) / (n + 1);
+
+    const xBar = (i: number) => pad.left + gap + i * (barWidth + gap);
+    const yScale = (t: number) => pad.top + cH - ((t - minTime) / (maxTime - minTime)) * cH;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    const nGridY = 4;
+    for (let i = 0; i <= nGridY; i++) {
+      const y = pad.top + (i / nGridY) * cH;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(W - pad.right, y);
+      ctx.stroke();
+    }
+
+    // Best lap reference line
+    ctx.strokeStyle = 'rgba(61,220,132,0.3)';
+    ctx.setLineDash([4, 4]);
+    const bestY = yScale(bestTime);
+    ctx.beginPath();
+    ctx.moveTo(pad.left, bestY);
+    ctx.lineTo(W - pad.right, bestY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Y-axis labels
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= nGridY; i++) {
+      const val = maxTime - (i / nGridY) * (maxTime - minTime);
+      const y = pad.top + (i / nGridY) * cH;
+      ctx.fillText(formatLapTime(val), pad.left - 5, y + 3);
+    }
+
+    // Bars
+    for (let i = 0; i < n; i++) {
+      const x = xBar(i);
+      const y = yScale(times[i]);
+      const barH = pad.top + cH - y;
+      const isBest = times[i] === bestTime;
+
+      ctx.fillStyle = isBest ? '#3ddc84' : 'rgba(255,255,255,0.25)';
+      ctx.fillRect(x, y, barWidth, barH);
+
+      // Lap number label
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(lap_numbers[i]), x + barWidth / 2, H - pad.bottom + 14);
+    }
+
+    // Rolling average line
+    ctx.strokeStyle = '#ff8c00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < n; i++) {
+      const x = xBar(i) + barWidth / 2;
+      const y = yScale(rolling_avg[i]);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Trend line
+    if (n >= 2) {
+      ctx.strokeStyle = is_improving
+        ? 'rgba(61,220,132,0.5)'
+        : 'rgba(239,68,68,0.5)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([6, 4]);
+      const trendStart = times[0];
+      const trendEnd = trendStart + trend_slope * (n - 1);
+      ctx.beginPath();
+      ctx.moveTo(xBar(0) + barWidth / 2, yScale(trendStart));
+      ctx.lineTo(xBar(n - 1) + barWidth / 2, yScale(trendEnd));
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Legend
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    const legendY = 14;
+    // Rolling avg
+    ctx.fillStyle = '#ff8c00';
+    ctx.fillRect(pad.left, legendY - 4, 12, 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Rolling Avg', pad.left + 16, legendY);
+    // Trend
+    const trendX = pad.left + 95;
+    ctx.fillStyle = is_improving ? 'rgba(61,220,132,0.7)' : 'rgba(239,68,68,0.7)';
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(trendX, legendY - 3);
+    ctx.lineTo(trendX + 12, legendY - 3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText(
+      `Trend (${is_improving ? 'improving' : 'degrading'})`,
+      trendX + 16,
+      legendY,
+    );
+    // Best lap
+    const bestX = trendX + 140;
+    ctx.fillStyle = 'rgba(61,220,132,0.3)';
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(bestX, legendY - 3);
+    ctx.lineTo(bestX + 12, legendY - 3);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Best Lap', bestX + 16, legendY);
+  }, [progress]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="w-6 h-6 border-2 border-acid-green border-t-transparent rounded-full animate-spin mr-3" />
+        <span className="text-steel font-body text-sm">Loading timeline...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Lap Progress Chart */}
+      {progress ? (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-monument text-chalk">Lap Progress</h2>
+            <div className="flex items-center gap-2 text-xs font-body">
+              {progress.is_improving ? (
+                <span className="text-green-400 flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                    <path fillRule="evenodd" d="M8 14a.75.75 0 0 1-.75-.75V4.56L4.03 7.78a.75.75 0 0 1-1.06-1.06l4.5-4.5a.75.75 0 0 1 1.06 0l4.5 4.5a.75.75 0 0 1-1.06 1.06L8.75 4.56v8.69A.75.75 0 0 1 8 14Z" clipRule="evenodd" />
+                  </svg>
+                  Improving
+                </span>
+              ) : (
+                <span className="text-red-400 flex items-center gap-1">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3 h-3">
+                    <path fillRule="evenodd" d="M8 2a.75.75 0 0 1 .75.75v8.69l3.22-3.22a.75.75 0 1 1 1.06 1.06l-4.5 4.5a.75.75 0 0 1-1.06 0l-4.5-4.5a.75.75 0 0 1 1.06-1.06l3.22 3.22V2.75A.75.75 0 0 1 8 2Z" clipRule="evenodd" />
+                  </svg>
+                  Degrading
+                </span>
+              )}
+              <span className="text-steel">
+                ({Math.abs(progress.trend_slope * 1000).toFixed(1)} ms/lap)
+              </span>
+            </div>
+          </div>
+          <div className="rounded-lg overflow-hidden bg-asphalt">
+            <canvas
+              ref={canvasRef}
+              style={{ width: '100%', height: '250px', display: 'block' }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
+          <p className="text-steel font-body text-sm">No lap progress data available.</p>
+        </div>
+      )}
+
+      {/* Stint Analysis */}
+      {stints && stints.stints.length > 0 && (
+        <div>
+          <h2 className="text-lg font-monument text-chalk mb-4">Stint Analysis</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {stints.stints.map((stint) => (
+              <div
+                key={stint.stint_number}
+                className="bg-concrete rounded-xl border border-steel/10 p-5"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-monument text-chalk">
+                    Stint {stint.stint_number}
+                  </h3>
+                  <span className="text-xs font-telemetry text-steel">
+                    Laps {stint.lap_start}–{stint.lap_end}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-steel font-body block">Best</span>
+                    <span className="text-acid-green font-telemetry text-sm">
+                      {formatLapTime(stint.best_time)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-steel font-body block">Mean</span>
+                    <span className="text-chalk font-telemetry text-sm">
+                      {formatLapTime(stint.mean_time)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-steel font-body block">Laps</span>
+                    <span className="text-chalk font-telemetry text-sm">{stint.n_laps}</span>
+                  </div>
+                  <div>
+                    <span className="text-steel font-body block">Pace Drop</span>
+                    <span
+                      className={`font-telemetry text-sm ${
+                        stint.pace_drop_pct != null && stint.pace_drop_pct > 1
+                          ? 'text-safety-red'
+                          : 'text-green-400'
+                      }`}
+                    >
+                      {stint.pace_drop_pct != null
+                        ? `${stint.pace_drop_pct.toFixed(1)}%`
+                        : '--'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
