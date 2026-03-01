@@ -1,24 +1,22 @@
-import type { CornerReplayData } from '@/types/corner-replay';
+import type { CornerReplayData, CornerReplayTrace } from '@/types/corner-replay';
 
-function generateTrace(n: number, withPedals: boolean) {
-  const lat = Array.from({ length: n }, (_, i) => 45.0 + i * 0.0001);
-  const lon = Array.from({ length: n }, (_, i) => 9.0 + i * 0.0001);
-  const dist_m = Array.from({ length: n }, (_, i) => i * 5);
-  const speed_mps = Array.from({ length: n }, (_, i) => 15 + (i % 20) * 0.5);
-  const accel_lat = Array.from({ length: n }, (_, i) => 0.1 * (i % 10 - 5));
-  const accel_lon = Array.from({ length: n }, (_, i) => 0.05 * (i % 8 - 4));
-
-  const trace: Record<string, number[]> = {
-    lat, lon, dist_m, speed_mps, accel_lat, accel_lon,
+function generateTrace(n: number, withPedals: boolean): CornerReplayTrace {
+  const base: CornerReplayTrace = {
+    lat: Array.from({ length: n }, (_, i) => 45.0 + i * 0.0001),
+    lon: Array.from({ length: n }, (_, i) => 9.0 + i * 0.0001),
+    dist_m: Array.from({ length: n }, (_, i) => i * 5),
+    speed_mps: Array.from({ length: n }, (_, i) => 15 + (i % 20) * 0.5),
+    accel_lat: Array.from({ length: n }, (_, i) => 0.1 * (i % 10 - 5)),
+    accel_lon: Array.from({ length: n }, (_, i) => 0.05 * (i % 8 - 4)),
   };
 
   if (withPedals) {
-    trace.brake = Array.from({ length: n }, (_, i) => (i % 30 < 10 ? 0.8 : 0));
-    trace.throttle = Array.from({ length: n }, (_, i) => (i % 30 >= 15 ? 0.9 : 0.1));
-    trace.steering = Array.from({ length: n }, (_, i) => Math.sin(i / 10) * 45);
+    base.brake = Array.from({ length: n }, (_, i) => (i % 30 < 10 ? 0.8 : 0));
+    base.throttle = Array.from({ length: n }, (_, i) => (i % 30 >= 15 ? 0.9 : 0.1));
+    base.steering = Array.from({ length: n }, (_, i) => Math.sin(i / 10) * 45);
   }
 
-  return trace;
+  return base;
 }
 
 export const mockCornerReplayResponse: CornerReplayData = {
@@ -36,8 +34,8 @@ export const mockCornerReplayResponse: CornerReplayData = {
     { lap_number: 2, lap_time_s: 60.5 },
   ],
   traces: {
-    '1': generateTrace(200, true) as any,
-    '2': generateTrace(200, true) as any,
+    '1': generateTrace(200, true),
+    '2': generateTrace(200, true),
   },
   replay_windows: {
     '1': [
@@ -74,8 +72,8 @@ export const mockCornerReplayNoPedals: CornerReplayData = {
   has_pedal_data: false,
   has_steering_data: false,
   traces: {
-    '1': generateTrace(200, false) as any,
-    '2': generateTrace(200, false) as any,
+    '1': generateTrace(200, false),
+    '2': generateTrace(200, false),
   },
 };
 

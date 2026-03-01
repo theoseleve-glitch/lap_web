@@ -1,6 +1,4 @@
-import type { ReplayState, ReplayAction, PlaybackSpeed } from '@/types/corner-replay';
-
-const SPEEDS: PlaybackSpeed[] = [0.25, 0.5, 1, 2];
+import type { ReplayState, ReplayAction } from '@/types/corner-replay';
 
 export const initialReplayState: ReplayState = {
   mode: 'review',

@@ -170,7 +170,7 @@ export function CornerReplay({ sessionId }: CornerReplayProps) {
 
   // Error states
   if (error) {
-    const errMsg = (error as any)?.message ?? String(error);
+    const errMsg = (error as Error)?.message ?? String(error);
     // Check for specific error codes
     if (errMsg.includes('key corners') || errMsg.includes('409')) {
       return (
