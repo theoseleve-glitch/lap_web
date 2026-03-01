@@ -222,25 +222,16 @@ def create_app(config: Config | None = None) -> Flask:
     _blueprint_imports = [
         ('.routes.health',             'bp', 'health_bp'),
         ('.routes.dashboard',          'bp', 'dashboard_bp'),
-        ('.routes.sessions',           'bp', 'sessions_bp'),
         ('.routes.tracks',             'bp', 'tracks_bp'),
-        ('.routes.analysis',           'bp', 'analysis_bp'),
-        ('.routes.api_data',           'bp', 'api_bp'),
         ('.routes.weekends',           'bp', 'weekends_bp'),
         ('.routes.drivers',            'bp', 'drivers_bp'),
-        ('.routes.comparisons',        'bp', 'comparisons_bp'),
         ('.routes.leaderboard',        'bp', 'leaderboard_bp'),
-        ('.routes.visualize',          'bp', 'visualize_bp'),
-        # ('.routes.data_health',      'bp', 'data_health_bp'),   # Removed per audit
         ('.routes.analytics',          'bp', 'analytics_bp'),
         ('.routes.predictions',        'bp', 'predictions_bp'),
         ('.routes.annotations_routes', 'bp', 'annotations_bp'),
-        # ('.routes.dashboards',       'bp', 'dashboards_bp'),   # Removed per audit
         ('.routes.dev_plans',          'bp', 'dev_plans_bp'),
-        # ('.routes.exports',          'bp', 'exports_bp'),      # Removed per audit
         ('.routes.karts',              'bp', 'karts_bp'),
         ('.routes.ingest',             'bp', 'ingest_bp'),        # Streaming ingest SSE (INGEST_V2)
-        ('.routes.api_v1_ingest',      'bp', 'api_v1_ingest_bp'),
         ('.routes.race_strategy_v2',   'bp', 'race_strategy_v2_bp'),
     ]
 
@@ -299,19 +290,15 @@ def create_app(config: Config | None = None) -> Flask:
             logger.debug("Initialized Celery with Flask app context")
             # Register Celery pipeline blueprints
             from .routes.jobs import bp as jobs_bp
-            from .routes.batch import bp as batch_bp
             from .routes.versioning import bp as versioning_bp
             app.register_blueprint(jobs_bp)
-            app.register_blueprint(batch_bp)
             app.register_blueprint(versioning_bp)
-            logger.debug("Registered Celery pipeline blueprints (jobs, batch, versioning)")
+            logger.debug("Registered Celery pipeline blueprints (jobs, versioning)")
 
             # Phase 4 v1 endpoint blueprints
-            from .routes.api_v1_data import bp as api_v1_data_bp
             from .routes.api_v1_account import bp as api_v1_account_bp
-            app.register_blueprint(api_v1_data_bp)
             app.register_blueprint(api_v1_account_bp)
-            logger.debug("Registered Phase 4 v1 blueprints (api_v1_data, api_v1_account)")
+            logger.debug("Registered Phase 4 v1 blueprints (api_v1_account)")
 
             # Race strategy v1 API
             from .routes.api_v1_race_strategy import bp as api_v1_race_strategy_bp
