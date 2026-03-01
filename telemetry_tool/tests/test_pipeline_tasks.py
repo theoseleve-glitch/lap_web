@@ -460,3 +460,389 @@ class TestBuildPipelineChain:
         # Celery chain objects have a .tasks attribute or are Signature objects
         # At minimum, it should be callable
         assert callable(chain) or hasattr(chain, "apply_async")
+
+
+# ---------------------------------------------------------------------------
+# _build_session_meta
+# ---------------------------------------------------------------------------
+
+
+class TestBuildSessionMeta:
+    """_build_session_meta builds the session_meta dict from context."""
+
+    def test_returns_correct_keys(self):
+        from tasks.pipeline_tasks import _build_session_meta
+
+        ctx = _make_mock_ctx(session_id="sess-42")
+        meta = _build_session_meta(ctx)
+
+        assert meta["session_id"] == "sess-42"
+        assert meta["session_type"] == "practice"
+        assert meta["track_state"] == "dry"
+
+    def test_returns_dict(self):
+        from tasks.pipeline_tasks import _build_session_meta
+
+        ctx = _make_mock_ctx()
+        meta = _build_session_meta(ctx)
+        assert isinstance(meta, dict)
+
+
+# ---------------------------------------------------------------------------
+# _store_theoretical_data
+# ---------------------------------------------------------------------------
+
+
+class TestStoreTheoreticalData:
+    """_store_theoretical_data upserts theoretical results to DB."""
+
+    def test_stores_data_with_metrics(self):
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        result = {
+            "theoretical_metrics": {
+                "best_s": 58.5,
+                "simulation_method": "percentile_envelope",
+            },
+            "lap_times": [60.0, 59.5, 61.0],
+            "theoretical_lap": None,
+            "corner_coaching": None,
+            "delta_map": None,
+            "session_scalars": None,
+        }
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        conn.execute.assert_called_once()
+        call_args = conn.execute.call_args
+        sql_str = str(call_args[0][0])
+        assert "theoretical_data" in sql_str
+        assert "ON CONFLICT" in sql_str
+        params = call_args[0][1]
+        assert params["session_id"] == "sess-1"
+        assert params["theoretical_time_s"] == 58.5
+        assert params["actual_best_time_s"] == 59.5
+        assert params["simulation_method"] == "percentile_envelope"
+        # gap_pct = (59.5 - 58.5) / 58.5 * 100 = 1.71
+        assert abs(params["gap_pct"] - 1.71) < 0.01
+        conn.commit.assert_called_once()
+
+    def test_skips_when_no_theoretical_metrics(self):
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        result = {"theoretical_metrics": None}
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        conn.execute.assert_not_called()
+        conn.commit.assert_not_called()
+
+    def test_skips_when_empty_theoretical_metrics(self):
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        result = {"theoretical_metrics": {}}
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        conn.execute.assert_not_called()
+        conn.commit.assert_not_called()
+
+    def test_handles_no_lap_times(self):
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        result = {
+            "theoretical_metrics": {"best_s": 58.5},
+            "lap_times": [],
+        }
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        params = conn.execute.call_args[0][1]
+        assert params["actual_best_time_s"] is None
+        assert params["gap_pct"] is None
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    def test_gets_pg_connection_when_none_provided(self, mock_get_pg):
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        mock_get_pg.return_value = conn
+        result = {
+            "theoretical_metrics": {"best_s": 58.5},
+        }
+
+        _store_theoretical_data("sess-1", result, conn=None)
+
+        mock_get_pg.assert_called_once()
+        conn.execute.assert_called_once()
+
+    def test_serialises_corner_coaching_as_json(self):
+        import json
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        coaching = [{"corner": 1, "advice": "brake later"}]
+        result = {
+            "theoretical_metrics": {"best_s": 58.5},
+            "corner_coaching": coaching,
+        }
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        params = conn.execute.call_args[0][1]
+        assert params["corner_coaching_json"] == json.dumps(coaching)
+
+    def test_serialises_session_scalars_as_json(self):
+        import json
+        from tasks.pipeline_tasks import _store_theoretical_data
+
+        conn = _make_mock_conn()
+        scalars = {"top_speed": 45.2, "avg_accel": 3.1}
+        result = {
+            "theoretical_metrics": {"best_s": 58.5},
+            "session_scalars": scalars,
+        }
+
+        _store_theoretical_data("sess-1", result, conn=conn)
+
+        params = conn.execute.call_args[0][1]
+        assert params["session_scalars_json"] == json.dumps(scalars)
+
+
+# ---------------------------------------------------------------------------
+# _run_finalize_stages (real pipeline integration)
+# ---------------------------------------------------------------------------
+
+
+class TestRunFinalizeStages:
+    """_run_finalize_stages calls run_full_analysis and persists results."""
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_calls_run_full_analysis(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx()
+
+        _run_finalize_stages(ctx)
+
+        mock_rfa.assert_called_once()
+        call_kwargs = mock_rfa.call_args
+        assert call_kwargs.kwargs.get("csv_path") == "/data/test.csv" or call_kwargs[1].get("csv_path") == "/data/test.csv"
+        assert call_kwargs.kwargs.get("enable_report") is False or call_kwargs[1].get("enable_report") is False
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_stores_theoretical_data_when_present(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        mock_get_pg.return_value = _make_mock_conn()
+        mock_rfa.return_value = {
+            "theoretical_metrics": {"best_s": 58.5},
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx(session_id="sess-99")
+
+        _run_finalize_stages(ctx)
+
+        mock_store_theo.assert_called_once()
+        args = mock_store_theo.call_args
+        assert args[0][0] == "sess-99"  # session_id
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_does_not_store_theoretical_data_when_absent(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx()
+
+        _run_finalize_stages(ctx)
+
+        mock_store_theo.assert_not_called()
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_stores_scores_when_present(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        conn = _make_mock_conn()
+        mock_get_pg.return_value = conn
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": {"total_score": 82.5, "grade": "A"},
+        }
+        ctx = _make_mock_ctx(session_id="sess-99")
+
+        _run_finalize_stages(ctx)
+
+        # Should have called conn.execute for session score update
+        conn.execute.assert_called()
+        # Find the UPDATE sessions call
+        found_score_update = False
+        for c in conn.execute.call_args_list:
+            sql_str = str(c[0][0])
+            if "UPDATE sessions" in sql_str and "total_score" in sql_str:
+                params = c[0][1]
+                assert params["total_score"] == 82.5
+                assert params["grade"] == "A"
+                assert params["session_id"] == "sess-99"
+                found_score_update = True
+                break
+        assert found_score_update, "Expected UPDATE sessions with score data"
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_does_not_store_scores_when_absent(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        conn = _make_mock_conn()
+        mock_get_pg.return_value = conn
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx()
+
+        _run_finalize_stages(ctx)
+
+        # conn.execute should NOT be called (no theo data, no scores)
+        conn.execute.assert_not_called()
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_marks_all_finalize_stages_completed(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages, _FINALIZE_STAGES
+
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx()
+
+        _run_finalize_stages(ctx)
+
+        # Verify update_stage was called for each finalize stage with "completed"
+        completed_stages = [
+            c.args[0]
+            for c in ctx.update_stage.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "completed"
+        ]
+        for stage in _FINALIZE_STAGES:
+            assert stage in completed_stages, f"Stage {stage} not marked completed"
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_graceful_when_store_theoretical_fails(self, mock_rfa, mock_store_theo, mock_get_pg):
+        """Finalize should not raise even if storing theoretical data fails."""
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        mock_get_pg.return_value = _make_mock_conn()
+        mock_store_theo.side_effect = Exception("DB write failed")
+        mock_rfa.return_value = {
+            "theoretical_metrics": {"best_s": 58.5},
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx()
+
+        # Should NOT raise
+        _run_finalize_stages(ctx)
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_graceful_when_store_scores_fails(self, mock_rfa, mock_store_theo, mock_get_pg):
+        """Finalize should not raise even if storing scores fails."""
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        conn = _make_mock_conn()
+        conn.execute.side_effect = Exception("DB write failed")
+        mock_get_pg.return_value = conn
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": {"total_score": 82.5, "grade": "A"},
+        }
+        ctx = _make_mock_ctx()
+
+        # Should NOT raise
+        _run_finalize_stages(ctx)
+
+    @patch("tasks.pipeline_tasks._get_pg_connection")
+    @patch("tasks.pipeline_tasks._store_theoretical_data")
+    @patch("pipeline.run_full_analysis")
+    def test_passes_session_meta_from_context(self, mock_rfa, mock_store_theo, mock_get_pg):
+        from tasks.pipeline_tasks import _run_finalize_stages
+
+        mock_rfa.return_value = {
+            "theoretical_metrics": None,
+            "score_result": None,
+        }
+        ctx = _make_mock_ctx(session_id="sess-meta-test")
+
+        _run_finalize_stages(ctx)
+
+        call_kwargs = mock_rfa.call_args
+        session_meta = call_kwargs.kwargs.get("session_meta") or call_kwargs[1].get("session_meta")
+        assert session_meta is not None
+        assert session_meta["session_id"] == "sess-meta-test"
+        assert session_meta["session_type"] == "practice"
+        assert session_meta["track_state"] == "dry"
+
+
+# ---------------------------------------------------------------------------
+# _run_ingest_stages / _run_analyze_stages (pass-through)
+# ---------------------------------------------------------------------------
+
+
+class TestRunIngestStages:
+    """_run_ingest_stages marks all ingest stages as completed."""
+
+    def test_marks_all_stages_completed(self):
+        from tasks.pipeline_tasks import _run_ingest_stages, _INGEST_STAGES
+
+        ctx = _make_mock_ctx()
+        _run_ingest_stages(ctx)
+
+        completed_stages = [
+            c.args[0]
+            for c in ctx.update_stage.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "completed"
+        ]
+        for stage in _INGEST_STAGES:
+            assert stage in completed_stages
+
+
+class TestRunAnalyzeStages:
+    """_run_analyze_stages marks all analyze stages as completed."""
+
+    def test_marks_all_stages_completed(self):
+        from tasks.pipeline_tasks import _run_analyze_stages, _ANALYZE_STAGES
+
+        ctx = _make_mock_ctx()
+        _run_analyze_stages(ctx)
+
+        completed_stages = [
+            c.args[0]
+            for c in ctx.update_stage.call_args_list
+            if len(c.args) >= 2 and c.args[1] == "completed"
+        ]
+        for stage in _ANALYZE_STAGES:
+            assert stage in completed_stages

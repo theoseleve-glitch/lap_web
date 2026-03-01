@@ -168,7 +168,8 @@ def _increment_batch_counter(job_id: str, column: str, conn=None) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Stage runner placeholders (real pipeline integration comes later)
+# Stage runners — ingest/analyze are pass-through (run_full_analysis handles
+# everything in a single call during finalize); finalize calls the real pipeline.
 # ---------------------------------------------------------------------------
 
 _INGEST_STAGES = ["csv_read", "gps_filter", "derived_channels", "session_trim"]
@@ -179,8 +180,118 @@ _FINALIZE_STAGES = [
 ]
 
 
+def _build_session_meta(ctx: PipelineContext) -> dict:
+    """Build the session_meta dict expected by ``run_full_analysis()``."""
+    return {
+        "session_id": ctx.session_id,
+        "session_type": "practice",
+        "track_state": "dry",
+    }
+
+
+def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
+    """Persist theoretical lap metrics to the ``theoretical_data`` table.
+
+    Extracts theoretical_time_s, gap_pct, and serialises speed profile,
+    distances, metrics, coaching, delta_map, and scalars as JSON.
+    Uses ``INSERT ... ON CONFLICT (session_id) DO UPDATE SET ...`` to upsert.
+    """
+    import json as _json
+
+    theo_metrics = result.get("theoretical_metrics") or {}
+    if not theo_metrics:
+        return
+
+    if conn is None:
+        conn = _get_pg_connection()
+
+    theoretical_time_s = theo_metrics.get("best_s")
+
+    # Compute gap_pct: (actual_best - theoretical) / theoretical * 100
+    lap_times = result.get("lap_times") or []
+    valid_times = [t for t in lap_times if isinstance(t, (int, float)) and t > 0]
+    actual_best = min(valid_times) if valid_times else None
+    gap_pct = None
+    if theoretical_time_s and actual_best and theoretical_time_s > 0:
+        gap_pct = round((actual_best - theoretical_time_s) / theoretical_time_s * 100, 2)
+
+    # Serialise optional fields as JSON
+    speed_profile_json = None
+    distance_json = None
+    theo_lap = result.get("theoretical_lap")
+    if theo_lap is not None and hasattr(theo_lap, "columns"):
+        for c in theo_lap.columns:
+            cl = c.lower()
+            if distance_json is None and "distance" in cl:
+                distance_json = _json.dumps(theo_lap[c].tolist())
+            if speed_profile_json is None and ("v_env" in cl or "speed" in cl):
+                speed_profile_json = _json.dumps(theo_lap[c].tolist())
+
+    metrics_json = _json.dumps(theo_metrics) if theo_metrics else None
+
+    corner_coaching = result.get("corner_coaching")
+    corner_coaching_json = _json.dumps(corner_coaching) if corner_coaching else None
+
+    delta_map = result.get("delta_map")
+    delta_map_json = None
+    if delta_map is not None and hasattr(delta_map, "to_dict"):
+        try:
+            delta_map_json = _json.dumps(delta_map.head(10).to_dict(orient="records"))
+        except Exception:
+            pass
+
+    session_scalars = result.get("session_scalars")
+    session_scalars_json = _json.dumps(session_scalars) if session_scalars else None
+
+    conn.execute(
+        text(
+            "INSERT INTO theoretical_data "
+            "  (session_id, theoretical_time_s, actual_best_time_s, gap_pct,"
+            "   simulation_method, speed_profile_json, distance_json,"
+            "   metrics_json, corner_coaching_json, delta_map_json,"
+            "   session_scalars_json) "
+            "VALUES "
+            "  (:session_id, :theoretical_time_s, :actual_best_time_s, :gap_pct,"
+            "   :simulation_method, :speed_profile_json, :distance_json,"
+            "   :metrics_json, :corner_coaching_json, :delta_map_json,"
+            "   :session_scalars_json) "
+            "ON CONFLICT (session_id) DO UPDATE SET "
+            "  theoretical_time_s   = EXCLUDED.theoretical_time_s,"
+            "  actual_best_time_s   = EXCLUDED.actual_best_time_s,"
+            "  gap_pct              = EXCLUDED.gap_pct,"
+            "  simulation_method    = EXCLUDED.simulation_method,"
+            "  speed_profile_json   = EXCLUDED.speed_profile_json,"
+            "  distance_json        = EXCLUDED.distance_json,"
+            "  metrics_json         = EXCLUDED.metrics_json,"
+            "  corner_coaching_json = EXCLUDED.corner_coaching_json,"
+            "  delta_map_json       = EXCLUDED.delta_map_json,"
+            "  session_scalars_json = EXCLUDED.session_scalars_json"
+        ),
+        {
+            "session_id": session_id,
+            "theoretical_time_s": theoretical_time_s,
+            "actual_best_time_s": actual_best,
+            "gap_pct": gap_pct,
+            "simulation_method": theo_metrics.get("simulation_method"),
+            "speed_profile_json": speed_profile_json,
+            "distance_json": distance_json,
+            "metrics_json": metrics_json,
+            "corner_coaching_json": corner_coaching_json,
+            "delta_map_json": delta_map_json,
+            "session_scalars_json": session_scalars_json,
+        },
+    )
+    conn.commit()
+    logger.info("Persisted theoretical data for session %s", session_id)
+
+
 def _run_ingest_stages(ctx: PipelineContext) -> None:
-    """Placeholder: run ingest stages 1-4, updating context progress."""
+    """Pass-through: mark ingest stages 1-4 as completed.
+
+    The real CSV read and processing happens in ``_run_finalize_stages``
+    via ``run_full_analysis()`` which orchestrates the entire pipeline
+    in a single call.
+    """
     for i, stage in enumerate(_INGEST_STAGES):
         ctx.update_stage(stage, "running")
         logger.info("Job %s: stage %s (%d/%d)", ctx.job_id, stage, i + 1, len(_INGEST_STAGES))
@@ -188,7 +299,11 @@ def _run_ingest_stages(ctx: PipelineContext) -> None:
 
 
 def _run_analyze_stages(ctx: PipelineContext) -> None:
-    """Placeholder: run analyze stages 5-8, updating context progress."""
+    """Pass-through: mark analyze stages 5-8 as completed.
+
+    The real analysis happens in ``_run_finalize_stages`` via
+    ``run_full_analysis()``.
+    """
     for i, stage in enumerate(_ANALYZE_STAGES):
         ctx.update_stage(stage, "running")
         logger.info("Job %s: stage %s (%d/%d)", ctx.job_id, stage, i + 1, len(_ANALYZE_STAGES))
@@ -196,11 +311,79 @@ def _run_analyze_stages(ctx: PipelineContext) -> None:
 
 
 def _run_finalize_stages(ctx: PipelineContext) -> None:
-    """Placeholder: run finalize stages 9-15, updating context progress."""
+    """Run the full analysis pipeline and persist results.
+
+    Calls ``run_full_analysis()`` which orchestrates all 14 pipeline
+    stages in a single pass, then persists theoretical data and scores
+    to the database.
+    """
+    from pipeline import run_full_analysis
+
+    session_meta = _build_session_meta(ctx)
+
+    # Mark first finalize stage as running
+    ctx.update_stage(_FINALIZE_STAGES[0], "running")
+    logger.info("Job %s: running full analysis pipeline", ctx.job_id)
+
+    result = run_full_analysis(
+        csv_path=ctx.file_path,
+        session_meta=session_meta,
+        enable_report=False,
+    )
+
+    # Persist theoretical data if available
+    theo_metrics = result.get("theoretical_metrics")
+    if theo_metrics:
+        try:
+            conn = _get_pg_connection()
+            _store_theoretical_data(ctx.session_id, result, conn=conn)
+        except Exception:
+            logger.warning(
+                "Failed to store theoretical data for session %s",
+                ctx.session_id,
+                exc_info=True,
+            )
+
+    # Persist scores if available
+    score_result = result.get("score_result")
+    if score_result:
+        try:
+            conn = _get_pg_connection()
+            total_score = score_result.get("total_score")
+            grade = score_result.get("grade")
+            if total_score is not None or grade is not None:
+                conn.execute(
+                    text(
+                        "UPDATE sessions SET total_score = :total_score, "
+                        "grade = :grade WHERE session_id = :session_id"
+                    ),
+                    {
+                        "total_score": total_score,
+                        "grade": grade,
+                        "session_id": ctx.session_id,
+                    },
+                )
+                conn.commit()
+                logger.info(
+                    "Updated session %s with score=%.1f grade=%s",
+                    ctx.session_id,
+                    total_score or 0,
+                    grade or "n/a",
+                )
+        except Exception:
+            logger.warning(
+                "Failed to update scores for session %s",
+                ctx.session_id,
+                exc_info=True,
+            )
+
+    # Mark all finalize stages as completed
     for i, stage in enumerate(_FINALIZE_STAGES):
-        ctx.update_stage(stage, "running")
-        logger.info("Job %s: stage %s (%d/%d)", ctx.job_id, stage, i + 1, len(_FINALIZE_STAGES))
         ctx.update_stage(stage, "completed")
+        logger.info(
+            "Job %s: stage %s completed (%d/%d)",
+            ctx.job_id, stage, i + 1, len(_FINALIZE_STAGES),
+        )
 
 
 # ---------------------------------------------------------------------------
