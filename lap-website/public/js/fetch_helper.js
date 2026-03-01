@@ -28,6 +28,18 @@
     };
 
     /**
+     * Return default headers (e.g. Authorization) set by the host app.
+     * The React wrapper sets FetchHelper.getAuthHeaders to provide the
+     * current access token and workspace ID for every request.
+     */
+    function _getDefaultHeaders() {
+        if (window.FetchHelper && typeof window.FetchHelper.getAuthHeaders === 'function') {
+            return window.FetchHelper.getAuthHeaders();
+        }
+        return {};
+    }
+
+    /**
      * Show a skeleton/loading state inside container,
      * fetch url, call onSuccess(data) or show error with retry.
      */
@@ -41,6 +53,7 @@
         // Fetch with timeout
         var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
         var fetchOpts = controller ? { signal: controller.signal } : {};
+        fetchOpts.headers = _getDefaultHeaders();
         var timer = null;
 
         if (controller) {
@@ -154,6 +167,15 @@
         opts = opts || {};
         var timeout = opts.timeout || DEFAULT_OPTS.timeout;
         delete opts.timeout;
+
+        // Merge default auth headers, letting caller override.
+        var defaults = _getDefaultHeaders();
+        var merged = {};
+        var k;
+        for (k in defaults) { merged[k] = defaults[k]; }
+        var existing = opts.headers || {};
+        for (k in existing) { merged[k] = existing[k]; }
+        opts.headers = merged;
 
         var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
         if (controller) {

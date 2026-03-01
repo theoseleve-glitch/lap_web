@@ -47,6 +47,26 @@ logger = logging.getLogger(__name__)
 
 _PARQUET_COMPRESSION = "snappy"
 
+# Integer types that pandas may upcast to float64 when NaN values appear.
+_INT_TYPES = {pa.int8(), pa.int16(), pa.int32(), pa.int64(),
+              pa.uint8(), pa.uint16(), pa.uint32(), pa.uint64()}
+
+
+def _promote_schema(schema: pa.Schema) -> pa.Schema:
+    """Promote integer fields to float64 to handle cross-chunk type drift.
+
+    Pandas upcasts int columns to float64 when any chunk contains NaN,
+    which causes PyArrow schema mismatches when merging chunks.  By
+    promoting all int fields upfront, all chunks share a compatible schema.
+    """
+    fields = []
+    for f in schema:
+        if f.type in _INT_TYPES:
+            fields.append(pa.field(f.name, pa.float64(), nullable=True, metadata=f.metadata))
+        else:
+            fields.append(f)
+    return pa.schema(fields, metadata=schema.metadata)
+
 
 # ---------------------------------------------------------------------------
 # Disk space safety
@@ -342,12 +362,19 @@ class IngestCache:
         ))
 
         try:
+            unified_schema: pa.Schema | None = None
             for idx in range(n_chunks):
                 table = pq.read_table(self._chunk_path(idx))
                 if writer is None:
+                    # Build a unified schema: promote int→float for columns
+                    # that may have NaN in later chunks (pandas upcast).
+                    unified_schema = _promote_schema(table.schema)
                     writer = pq.ParquetWriter(
-                        output_path, table.schema, compression=_PARQUET_COMPRESSION,
+                        output_path, unified_schema, compression=_PARQUET_COMPRESSION,
                     )
+                # Cast table to the unified schema so all chunks match.
+                if table.schema != unified_schema:
+                    table = table.cast(unified_schema)
                 writer.write_table(table)
                 rows_merged += table.num_rows
                 del table  # Free chunk memory immediately

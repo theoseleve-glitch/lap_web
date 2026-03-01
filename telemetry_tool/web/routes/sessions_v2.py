@@ -28,6 +28,7 @@ from web.models import (
     insert_score_details,
     upsert_driver,
     upsert_session,
+    upsert_track,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,38 @@ def upload_session():
             "driver_name", "Unknown"
         )
         driver_id = upsert_driver(conn, driver_name)
+
+        # Ensure track exists before inserting session (FK constraint).
+        track_id = summary.get("track_id")
+        if track_id:
+            track_entry = None
+            # Try to get full fingerprint from tracks.json.
+            try:
+                from track_detection import load_track_database
+                for te in load_track_database():
+                    if te.get("track_id") == track_id:
+                        track_entry = te
+                        break
+            except Exception:
+                pass
+
+            if track_entry is None:
+                # Fall back to whatever the pipeline match result provides.
+                tm = summary.get("track_match")
+                track_entry = {
+                    "track_id": track_id,
+                    "track_name": (tm or {}).get("track_name", track_id),
+                    "fingerprint": {
+                        "lap_length_m": (tm or {}).get("lap_length_m", 0.0),
+                        "bbox": {},
+                        "start_lat": None,
+                        "start_lon": None,
+                        "sample_count": None,
+                        "lap_count": None,
+                    },
+                }
+            upsert_track(conn, track_entry)
+
         session_id = upsert_session(conn, summary, driver_id)
         insert_laps(conn, session_id, summary)
         insert_score_details(conn, session_id, summary)

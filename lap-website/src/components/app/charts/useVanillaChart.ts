@@ -11,6 +11,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
 
 /* ── Global type augmentation for the Old Tool's window globals ── */
 declare global {
@@ -47,6 +48,7 @@ declare global {
       load: (container: HTMLElement, url: string, onSuccess: (data: unknown) => void, opts?: Record<string, unknown>) => void;
       fetch: (url: string, opts?: RequestInit & { timeout?: number }) => Promise<unknown>;
       lazyInit: (containerId: string, initFn: () => void) => void;
+      getAuthHeaders?: () => Record<string, string>;
     };
     TELEMETRY?: {
       sessionId: string;
@@ -134,6 +136,18 @@ function ensureInfrastructure(): Promise<void> {
  */
 function patchFetchHelper(apiBase: string): void {
   if (!window.FetchHelper) return;
+
+  // Provide auth headers to fetch_helper.js for every request.
+  // This is a function so it reads the current token at call time
+  // (tokens refresh in the background).
+  (window.FetchHelper as Record<string, unknown>).getAuthHeaders = () => {
+    const headers: Record<string, string> = {};
+    const token = getAccessToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const wsId = getWorkspaceId();
+    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
+    return headers;
+  };
 
   const originalFetch = window.FetchHelper.fetch;
   // Only patch once

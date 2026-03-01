@@ -13,6 +13,7 @@ force fallback to the legacy ``io_racechrono`` reader.
 from __future__ import annotations
 
 import os
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -71,8 +72,11 @@ class IngestionConfig:
     max_memory_mb: int = 512
 
     #: Directory for Parquet chunk files and the ingestion manifest.
-    #: Resolved relative to the project data directory.
-    cache_dir: Path = field(default_factory=lambda: Path(".ingest_cache"))
+    #: Uses INGEST_CACHE_DIR env var if set, otherwise falls back to
+    #: a temp directory (avoids PermissionError in read-only containers).
+    cache_dir: Path = field(default_factory=lambda: Path(
+        os.environ.get("INGEST_CACHE_DIR", "")
+    ) if os.environ.get("INGEST_CACHE_DIR") else Path(tempfile.gettempdir()) / "ingest_cache")
 
     #: Maximum number of chunks held in memory before flushing to disk.
     max_inflight_chunks: int = 3

@@ -57,6 +57,10 @@
         url = url.replace(/(\/sessions\/[^/]+)\/gg_data/, '$1/gg-data');
         // /sessions/{id}/lap_times → /sessions/{id}/laps
         url = url.replace(/(\/sessions\/[^/]+)\/lap_times/, '$1/laps');
+        // /sessions/{id}/corner-positions → /sessions/{id}/corners
+        url = url.replace(/(\/sessions\/[^/]+)\/corner-positions/, '$1/corners');
+        // /sessions/{id}/corner-metrics → /sessions/{id}/corners
+        url = url.replace(/(\/sessions\/[^/]+)\/corner-metrics/, '$1/corners');
 
         return url;
     }
