@@ -502,6 +502,34 @@ def get_scores(session_id: str):
         })
 
     scores["available"] = True
+
+    # ── display_scores: integer-rounded values for clean UI display ──
+    display = {}
+    for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
+        raw = scores.get(f"{cat}_score")
+        mx = scores.get(f"{cat}_max")
+        display[cat] = {
+            "score": round(raw) if raw is not None else None,
+            "max": round(mx) if mx is not None else None,
+        }
+    scores["display_scores"] = display
+
+    # ── badges: earned achievement badges ──
+    try:
+        from scoring import evaluate_badges
+        sub_scores = {}
+        for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
+            sub_scores[cat] = {
+                "score": scores.get(f"{cat}_score", 0) or 0,
+                "max": scores.get(f"{cat}_max", 1) or 1,
+            }
+        total = sum(s["score"] for s in sub_scores.values())
+        badges_input = {"total_score": total, "sub_scores": sub_scores}
+        scores["badges"] = evaluate_badges(badges_input)
+    except Exception:
+        logger.warning("Badge evaluation failed for session %s", session_id, exc_info=True)
+        scores["badges"] = []
+
     return api_response(scores)
 
 
