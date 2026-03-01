@@ -39,18 +39,16 @@ interface SpeedTraceChartProps {
   apiBase?: string;
 }
 
-export function SpeedTraceChart({
-  sessionId,
-  lap,
-  data,
-  refLap,
-  markerDistance,
-  onHoverDistance,
-  className = '',
-  gpsLaps = [],
-  bestLap = null,
-  apiBase,
-}: SpeedTraceChartProps) {
+export function SpeedTraceChart(props: SpeedTraceChartProps) {
+  const {
+    sessionId,
+    data,
+    onHoverDistance,
+    className = '',
+    gpsLaps = [],
+    bestLap = null,
+    apiBase,
+  } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanedUpRef = useRef(false);
 

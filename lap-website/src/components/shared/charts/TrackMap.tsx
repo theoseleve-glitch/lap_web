@@ -66,18 +66,18 @@ function ensureLeaflet(): Promise<void> {
   return leafletPromise;
 }
 
-export function TrackMap({
-  sessionId,
-  lap,
-  data,
-  corners,
-  markerDistance,
-  onHoverDistance,
-  className = '',
-  gpsLaps = [],
-  bestLap = null,
-  apiBase,
-}: TrackMapProps) {
+export function TrackMap(props: TrackMapProps) {
+  const {
+    sessionId,
+    lap,
+    data,
+    corners,
+    onHoverDistance,
+    className = '',
+    gpsLaps = [],
+    bestLap = null,
+    apiBase,
+  } = props;
   const containerRef = useRef<HTMLDivElement>(null);
   const cleanedUpRef = useRef(false);
 
