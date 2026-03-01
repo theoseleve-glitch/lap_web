@@ -641,8 +641,146 @@ def get_report(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
-# Fields the PATCH endpoint accepts directly.
-_UPDATABLE_FIELDS = {"session_type", "track_state", "notes", "display_name", "track_id"}
+import re
+
+# Fields the PATCH endpoint accepts directly (via the for-loop).
+_UPDATABLE_FIELDS = {
+    "display_name", "session_date", "driver_id", "track_id",
+    "session_type", "track_state", "kart_id", "notes",
+}
+
+_VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test"}
+_VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed"}
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_patch_fields(conn, body: dict) -> tuple[list[dict], dict]:
+    """Validate PATCH body fields and return (errors, cleaned_body).
+
+    Returns a tuple of (errors_list, cleaned_body_dict).  ``errors`` is a
+    list of ``{"field": ..., "message": ...}`` dicts.  ``cleaned_body``
+    contains only the recognised updatable keys from ``body`` (unknown
+    keys are silently dropped).
+    """
+    errors: list[dict] = []
+    cleaned: dict = {}
+
+    for field, value in body.items():
+        if field == "driver_name":
+            # driver_name is handled separately (upsert); just pass through.
+            if value is not None and not isinstance(value, str):
+                errors.append({"field": "driver_name", "message": "Must be a string."})
+            else:
+                cleaned["driver_name"] = value
+            continue
+
+        if field not in _UPDATABLE_FIELDS:
+            continue  # silently ignore unknown fields
+
+        # -- session_type enum --
+        if field == "session_type":
+            if value not in _VALID_SESSION_TYPES:
+                errors.append({
+                    "field": "session_type",
+                    "message": f"Must be one of: {', '.join(sorted(_VALID_SESSION_TYPES))}.",
+                })
+            else:
+                cleaned[field] = value
+
+        # -- track_state enum --
+        elif field == "track_state":
+            if value not in _VALID_TRACK_STATES:
+                errors.append({
+                    "field": "track_state",
+                    "message": f"Must be one of: {', '.join(sorted(_VALID_TRACK_STATES))}.",
+                })
+            else:
+                cleaned[field] = value
+
+        # -- driver_id FK check --
+        elif field == "driver_id":
+            if value is None:
+                errors.append({"field": "driver_id", "message": "Cannot be null."})
+            else:
+                try:
+                    did = int(value)
+                except (TypeError, ValueError):
+                    errors.append({"field": "driver_id", "message": "Must be an integer."})
+                    continue
+                row = conn.execute(
+                    "SELECT 1 FROM drivers WHERE driver_id = ?", (did,)
+                ).fetchone()
+                if row is None:
+                    errors.append({"field": "driver_id", "message": f"Driver {did} not found."})
+                else:
+                    cleaned[field] = did
+
+        # -- track_id FK check --
+        elif field == "track_id":
+            if value is None:
+                cleaned[field] = None  # unlink track is OK
+            else:
+                row = conn.execute(
+                    "SELECT 1 FROM tracks WHERE track_id = ?", (str(value),)
+                ).fetchone()
+                if row is None:
+                    errors.append({"field": "track_id", "message": f"Track {value!r} not found."})
+                else:
+                    cleaned[field] = str(value)
+
+        # -- kart_id FK check --
+        elif field == "kart_id":
+            if value is None:
+                cleaned[field] = None  # unlink kart is OK
+            else:
+                try:
+                    kid = int(value)
+                except (TypeError, ValueError):
+                    errors.append({"field": "kart_id", "message": "Must be an integer."})
+                    continue
+                row = conn.execute(
+                    "SELECT 1 FROM karts WHERE kart_id = ?", (kid,)
+                ).fetchone()
+                if row is None:
+                    errors.append({"field": "kart_id", "message": f"Kart {kid} not found."})
+                else:
+                    cleaned[field] = kid
+
+        # -- session_date format --
+        elif field == "session_date":
+            if value is None or not isinstance(value, str) or not _DATE_RE.match(value):
+                errors.append({
+                    "field": "session_date",
+                    "message": "Must be a date string in YYYY-MM-DD format.",
+                })
+            else:
+                cleaned[field] = value
+
+        # -- display_name length --
+        elif field == "display_name":
+            if value is not None and not isinstance(value, str):
+                errors.append({"field": "display_name", "message": "Must be a string."})
+            elif isinstance(value, str) and len(value) > 200:
+                errors.append({
+                    "field": "display_name",
+                    "message": "Must be at most 200 characters.",
+                })
+            else:
+                cleaned[field] = value
+
+        # -- notes length --
+        elif field == "notes":
+            if value is not None and not isinstance(value, str):
+                errors.append({"field": "notes", "message": "Must be a string."})
+            elif isinstance(value, str) and len(value) > 2000:
+                errors.append({
+                    "field": "notes",
+                    "message": "Must be at most 2000 characters.",
+                })
+            else:
+                cleaned[field] = value
+
+    return errors, cleaned
 
 
 @bp.route("/sessions/<session_id>", methods=["PATCH"])
@@ -651,7 +789,9 @@ def update_session(session_id: str):
     """Update editable fields on a session.
 
     Accepts JSON body with any of: session_type, track_state,
-    driver_name, notes.  Unknown fields are silently ignored.
+    driver_name, driver_id, track_id, kart_id, session_date,
+    display_name, notes.  Unknown fields are silently ignored.
+    Validation is performed before any writes.
     """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -666,26 +806,37 @@ def update_session(session_id: str):
             status=400,
         )
 
+    # Validate all fields up front — collect all errors before writing.
+    errors, cleaned = _validate_patch_fields(conn, body)
+    if errors:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Validation failed",
+            details=errors,
+            status=400,
+        )
+
     updated_count = 0
 
     # Handle driver_name specially — upsert driver, then update driver_id.
-    driver_name = body.get("driver_name")
+    driver_name = cleaned.get("driver_name")
     if driver_name and isinstance(driver_name, str):
         driver_id = models.upsert_driver(conn, driver_name)
         models.update_session_field(conn, session_id, "driver_id", driver_id)
         updated_count += 1
 
-    # Handle the straightforward fields.
+    # Handle the validated fields.
     for field in _UPDATABLE_FIELDS:
-        if field in body:
-            models.update_session_field(conn, session_id, field, body[field])
+        if field in cleaned:
+            models.update_session_field(conn, session_id, field, cleaned[field])
             updated_count += 1
 
     if updated_count == 0:
         return api_error(
             ErrorCode.VALIDATION_ERROR,
             "No updatable fields provided. "
-            "Allowed: session_type, track_state, driver_name, notes, display_name, track_id",
+            "Allowed: session_type, track_state, driver_name, driver_id, "
+            "track_id, kart_id, session_date, display_name, notes",
             status=400,
         )
 

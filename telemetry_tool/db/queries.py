@@ -28,19 +28,21 @@ INSERT OR REPLACE INTO sessions (
 """
 
 SELECT_SESSIONS = """
-SELECT s.*, d.driver_name, t.track_name
+SELECT s.*, d.driver_name, t.track_name, k.kart_name
 FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
+LEFT JOIN karts k ON s.kart_id = k.kart_id
 ORDER BY s.session_date DESC
 LIMIT :limit OFFSET :offset;
 """
 
 SELECT_SESSION_BY_ID = """
-SELECT s.*, d.driver_name, t.track_name
+SELECT s.*, d.driver_name, t.track_name, k.kart_name
 FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
+LEFT JOIN karts k ON s.kart_id = k.kart_id
 WHERE s.session_id = :session_id;
 """
 
