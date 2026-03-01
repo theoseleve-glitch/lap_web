@@ -8,6 +8,7 @@ services:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
       - export_data:/data/exports
+      - models_data:/data/models
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,6 +84,7 @@ services:
     volumes:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
+      - models_data:/data/models
     healthcheck:
       test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
       interval: 30s
@@ -158,6 +160,7 @@ volumes:
   upload_data:
   parquet_data:
   export_data:
+  models_data:
   caddy_data:
   caddy_config:
 
