@@ -213,8 +213,9 @@ export function useVanillaChart(options: UseVanillaChartOptions): UseVanillaChar
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
 
-  // Stable reference for scripts array
+  // Stable references for dependency arrays
   const scriptsKey = scripts.join(',');
+  const gpsLapsKey = gpsLaps.join(',');
 
   const loadAll = useCallback(async () => {
     try {
@@ -245,7 +246,7 @@ export function useVanillaChart(options: UseVanillaChartOptions): UseVanillaChar
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, apiBase, scriptsKey, gpsLaps.join(','), bestLap]);
+  }, [sessionId, apiBase, scriptsKey, gpsLapsKey, bestLap]);
 
   useEffect(() => {
     mountedRef.current = true;

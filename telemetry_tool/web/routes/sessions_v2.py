@@ -175,7 +175,7 @@ def upload_session():
         logger.exception("Upload pipeline failed: %s", exc)
         return api_error(
             ErrorCode.ANALYSIS_FAILED,
-            f"Analysis pipeline failed: {exc}",
+            "Analysis pipeline failed. Please try again or contact support.",
             status=500,
         )
 

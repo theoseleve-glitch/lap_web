@@ -124,16 +124,7 @@ export function GpsTrace({
       if (cleanedUpRef.current) return;
       cleanedUpRef.current = true;
 
-      // Destroy via ModuleManager
-      if (window.ModuleManager) {
-        // Only deactivate gps_trace, not all modules
-        const modules = window.ModuleManager.getRegistered();
-        if (modules.includes('gps_trace')) {
-          window.ModuleManager.deactivateAll();
-        }
-      }
-
-      // Clean container DOM
+      // Clean container DOM (don't call deactivateAll — it destroys sibling charts)
       if (container) {
         while (container.firstChild) {
           container.removeChild(container.firstChild);

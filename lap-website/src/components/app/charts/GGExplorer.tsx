@@ -14,7 +14,6 @@
 
 import { useEffect, useRef, useId, useMemo } from 'react';
 import { useVanillaChart } from './useVanillaChart';
-import { useChartHoverStore } from '@/lib/chart-hover-store';
 
 interface GGExplorerProps {
   sessionId: string;
@@ -67,12 +66,7 @@ export function GGExplorer({
       if (cleanedUpRef.current) return;
       cleanedUpRef.current = true;
 
-      // Destroy via ModuleManager
-      if (window.ModuleManager) {
-        window.ModuleManager.deactivateAll();
-      }
-
-      // Clean container DOM
+      // Clean container DOM (don't call deactivateAll — it destroys sibling charts)
       if (container) {
         while (container.firstChild) {
           container.removeChild(container.firstChild);
@@ -80,25 +74,6 @@ export function GGExplorer({
       }
     };
   }, [ready, containerId, sessionId]);
-
-  // Bridge: GG Explorer click → Zustand hover store (for cross-chart sync)
-  // GGExplorer uses an internal mini-map, but we can bridge distance info.
-  useEffect(() => {
-    if (!ready) return;
-
-    // Subscribe to external hover → no direct integration needed for GG Explorer
-    // (it doesn't have a distance-based crosshair, it has a click-to-position)
-    // But we can still listen and highlight if the GG module ever supports it.
-
-    const unsubscribe = useChartHoverStore.subscribe(() => {
-      // GGExplorer doesn't have a updateMarkerByDistance equivalent,
-      // so we don't bridge incoming hover events to it.
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [ready]);
 
   if (error) {
     return (

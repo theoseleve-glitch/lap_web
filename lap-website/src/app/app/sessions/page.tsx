@@ -3,35 +3,31 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useMemo } from 'react';
+import { useState } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 /* ── Types ──────────────────────────────────────────────── */
 
 interface SessionRow {
-  id: string;
+  session_id: string;
   date: string;
   track_name: string;
   driver_name: string;
-  laps: number;
-  best_time: number | null;
-  mean_time: number | null;
-  score: number | null;
+  lap_count: number;
+  best_lap_time: number | null;
+  mean_lap_time: number | null;
+  total_score: number | null;
   grade: string | null;
   session_type: string | null;
   track_state: string | null;
 }
 
-interface BrowseResponse {
+interface ListResponse {
   sessions: SessionRow[];
   total: number;
-  avg_score: number | null;
-  best_lap: number | null;
-  active_drivers: number;
-  page: number;
-  per_page: number;
-  total_pages: number;
+  limit: number;
+  offset: number;
 }
 
 /* ── Helpers ────────────────────────────────────────────── */
@@ -102,68 +98,38 @@ function GradeBadge({ grade, score }: { grade: string | null; score: number | nu
   );
 }
 
-/* ── Sort Options ───────────────────────────────────────── */
-
-type SortOption = 'date' | 'score' | 'best_time';
-const SORT_OPTIONS: { value: SortOption; label: string }[] = [
-  { value: 'date', label: 'Newest First' },
-  { value: 'score', label: 'Highest Score' },
-  { value: 'best_time', label: 'Fastest Lap' },
-];
-
 /* ── Page Component ─────────────────────────────────────── */
+
+const PER_PAGE = 25;
 
 export default function SessionsPage() {
   const router = useRouter();
-  const [search, setSearch] = useState('');
-  const [driverFilter, setDriverFilter] = useState('');
-  const [trackFilter, setTrackFilter] = useState('');
-  const [sort, setSort] = useState<SortOption>('date');
   const [page, setPage] = useState(1);
-  const perPage = 25;
 
-  // Build query string from all filters
-  const queryString = useMemo(() => {
-    const params = new URLSearchParams();
-    params.set('page', String(page));
-    params.set('per_page', String(perPage));
-    params.set('sort', sort);
-    if (search) params.set('q', search);
-    if (driverFilter) params.set('driver', driverFilter);
-    if (trackFilter) params.set('track', trackFilter);
-    return params.toString();
-  }, [page, sort, search, driverFilter, trackFilter]);
+  const offset = (page - 1) * PER_PAGE;
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['sessions', 'browse', queryString],
-    queryFn: () => api.get<BrowseResponse>(`/sessions/browse?${queryString}`),
+    queryKey: ['sessions', 'list', page],
+    queryFn: () => api.get<ListResponse>(`/sessions?limit=${PER_PAGE}&offset=${offset}`),
   });
 
   const sessions = data?.sessions ?? [];
-  const totalPages = data?.total_pages ?? 1;
-
-  // Reset page when filters change
-  const updateFilter = (setter: (v: string) => void) => (value: string) => {
-    setter(value);
-    setPage(1);
-  };
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
   const columns = [
     {
       key: 'date',
       header: 'Date',
-      sortable: true,
       className: 'font-telemetry whitespace-nowrap',
     },
     {
       key: 'track_name',
       header: 'Track',
-      sortable: true,
     },
     {
       key: 'driver_name',
       header: 'Driver',
-      sortable: true,
     },
     {
       key: 'session_type',
@@ -176,54 +142,48 @@ export default function SessionsPage() {
       render: (row: SessionRow) => <ConditionBadge condition={row.track_state} />,
     },
     {
-      key: 'laps',
+      key: 'lap_count',
       header: 'Laps',
-      sortable: true,
       className: 'font-telemetry text-right',
     },
     {
-      key: 'best_time',
+      key: 'best_lap_time',
       header: 'Best Lap',
-      sortable: true,
       className: 'font-telemetry',
       render: (row: SessionRow) => (
-        <span className="text-acid-green">{formatLapTime(row.best_time)}</span>
+        <span className="text-acid-green">{formatLapTime(row.best_lap_time)}</span>
       ),
     },
     {
-      key: 'mean_time',
+      key: 'mean_lap_time',
       header: 'Mean Lap',
       className: 'font-telemetry',
       render: (row: SessionRow) => (
-        <span className="text-steel">{formatLapTime(row.mean_time)}</span>
+        <span className="text-steel">{formatLapTime(row.mean_lap_time)}</span>
       ),
     },
     {
-      key: 'score',
+      key: 'total_score',
       header: 'Score',
-      sortable: true,
       className: 'font-telemetry text-right',
       render: (row: SessionRow) => (
-        <span className={scoreColor(row.score)}>
-          {row.score != null ? row.score.toFixed(1) : '—'}
+        <span className={scoreColor(row.total_score)}>
+          {row.total_score != null ? row.total_score.toFixed(1) : '—'}
         </span>
       ),
     },
     {
       key: 'grade',
       header: 'Grade',
-      render: (row: SessionRow) => <GradeBadge grade={row.grade} score={row.score} />,
+      render: (row: SessionRow) => <GradeBadge grade={row.grade} score={row.total_score} />,
     },
   ];
-
-  /* ── Empty State ──────────────────────────────────────── */
-  const hasFilters = search || driverFilter || trackFilter;
 
   return (
     <div>
       <PageHeader
         title="Sessions"
-        subtitle={data ? `${data.total} session${data.total !== 1 ? 's' : ''}` : undefined}
+        subtitle={data ? `${total} session${total !== 1 ? 's' : ''}` : undefined}
         actions={
           <Link
             href="/app/sessions/upload"
@@ -239,106 +199,18 @@ export default function SessionsPage() {
       />
 
       {/* ── Stat Cards ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Sessions" value={data?.total ?? 0} />
-        <StatCard
-          label="Avg Score"
-          value={data?.avg_score != null ? data.avg_score.toFixed(1) : '—'}
-          unit="/100"
-        />
-        <StatCard
-          label="Best Lap"
-          value={formatLapTime(data?.best_lap ?? null)}
-        />
-        <StatCard label="Active Drivers" value={data?.active_drivers ?? 0} />
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <StatCard label="Total Sessions" value={total} />
+        <StatCard label="Page" value={`${page} / ${totalPages}`} />
+        <StatCard label="Showing" value={sessions.length} />
       </div>
-
-      {/* ── Filter Bar ──────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-6">
-        {/* Search */}
-        <input
-          type="text"
-          placeholder="Search sessions..."
-          value={search}
-          onChange={(e) => updateFilter(setSearch)(e.target.value)}
-          className="flex-1 min-w-0 bg-concrete border border-steel/30 rounded px-4 py-2.5 text-chalk font-body text-sm
-            placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
-        />
-
-        {/* Driver filter */}
-        <input
-          type="text"
-          placeholder="Filter driver..."
-          value={driverFilter}
-          onChange={(e) => updateFilter(setDriverFilter)(e.target.value)}
-          className="sm:w-44 bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-            placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
-        />
-
-        {/* Track filter */}
-        <input
-          type="text"
-          placeholder="Filter track..."
-          value={trackFilter}
-          onChange={(e) => updateFilter(setTrackFilter)(e.target.value)}
-          className="sm:w-44 bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-            placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
-        />
-
-        {/* Sort dropdown */}
-        <select
-          value={sort}
-          onChange={(e) => { setSort(e.target.value as SortOption); setPage(1); }}
-          className="sm:w-44 bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-            focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
-        >
-          {SORT_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {/* ── Active Filter Tags ──────────────────────────── */}
-      {hasFilters && (
-        <div className="flex items-center gap-2 mb-4">
-          <span className="text-steel/60 text-xs font-telemetry">Filters:</span>
-          {search && (
-            <button type="button" onClick={() => updateFilter(setSearch)('')}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-pit-orange/10 text-pit-orange text-[10px] font-telemetry uppercase hover:bg-pit-orange/20 transition-colors"
-            >
-              &quot;{search}&quot; <span className="ml-1">×</span>
-            </button>
-          )}
-          {driverFilter && (
-            <button type="button" onClick={() => updateFilter(setDriverFilter)('')}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-acid-green/10 text-acid-green text-[10px] font-telemetry uppercase hover:bg-acid-green/20 transition-colors"
-            >
-              Driver: {driverFilter} <span className="ml-1">×</span>
-            </button>
-          )}
-          {trackFilter && (
-            <button type="button" onClick={() => updateFilter(setTrackFilter)('')}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-marshal-yellow/10 text-marshal-yellow text-[10px] font-telemetry uppercase hover:bg-marshal-yellow/20 transition-colors"
-            >
-              Track: {trackFilter} <span className="ml-1">×</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => { setSearch(''); setDriverFilter(''); setTrackFilter(''); setSort('date'); setPage(1); }}
-            className="text-steel/40 text-[10px] font-telemetry uppercase hover:text-chalk transition-colors ml-2"
-          >
-            Clear all
-          </button>
-        </div>
-      )}
 
       {/* ── Table ───────────────────────────────────────── */}
       {isLoading ? (
         <SkeletonTableRows rows={8} cols={7} />
       ) : error ? (
         <QueryError message="Couldn't load sessions." onRetry={() => refetch()} />
-      ) : sessions.length === 0 && !hasFilters ? (
+      ) : sessions.length === 0 ? (
         /* Rich empty state */
         <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
           <div className="text-5xl mb-4" aria-hidden="true">🏁</div>
@@ -364,12 +236,12 @@ export default function SessionsPage() {
           <DataTable
             columns={columns}
             data={sessions}
-            keyField="id"
-            onRowClick={(row) => router.push(`/app/sessions/${row.id}`)}
-            emptyMessage={hasFilters ? 'No sessions match your filters' : 'No sessions found'}
+            keyField="session_id"
+            onRowClick={(row) => router.push(`/app/sessions/${row.session_id}`)}
+            emptyMessage="No sessions found"
             rowClassName={(row: SessionRow) => {
-              if (row.score != null && row.score >= 80) return 'border-l-2 border-l-acid-green/30';
-              if (row.score != null && row.score < 40) return 'border-l-2 border-l-safety-red/20';
+              if (row.total_score != null && row.total_score >= 80) return 'border-l-2 border-l-acid-green/30';
+              if (row.total_score != null && row.total_score < 40) return 'border-l-2 border-l-safety-red/20';
               return '';
             }}
           />
@@ -389,7 +261,6 @@ export default function SessionsPage() {
                 >
                   Previous
                 </button>
-                {/* Page number buttons — show up to 5 */}
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum: number;
                   if (totalPages <= 5) {

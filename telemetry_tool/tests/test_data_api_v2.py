@@ -739,12 +739,17 @@ class TestReportDownload:
 
     def test_report_download_success(self, client, tmp_path):
         """Returns the HTML report file when it exists."""
-        # Create a temporary HTML report file
-        report_file = tmp_path / "report.html"
+        # Create a temporary HTML report file under a results subdirectory
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        report_file = results_dir / "report.html"
         report_file.write_text("<html><body>Report</body></html>")
 
         session = _sample_session()
         session["html_report_path"] = str(report_file)
+
+        # Set RESULTS_DIR so the path traversal check allows this path
+        client.application.config["RESULTS_DIR"] = str(results_dir)
 
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:

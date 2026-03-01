@@ -89,6 +89,8 @@ _DELETE_RELATED_TABLES = [
     "stint_analysis",
 ]
 
+_ALLOWED_DELETE_TABLES = frozenset(_DELETE_RELATED_TABLES)
+
 
 # ══════════════════════════════════════════════════════════════════
 # 1. GET /api/v1/sessions — List sessions
@@ -353,7 +355,9 @@ def delete_session(session_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
     # Delete from all related tables first (foreign key order).
+    # Table names are from the hardcoded _DELETE_RELATED_TABLES constant above.
     for table in _DELETE_RELATED_TABLES:
+        assert table in _ALLOWED_DELETE_TABLES, f"Unexpected table: {table}"
         try:
             conn.execute(
                 f"DELETE FROM {table} WHERE session_id = :session_id",
@@ -467,7 +471,24 @@ def get_report(session_id: str):
             status=404,
         )
 
-    path = Path(report_path)
+    path = Path(report_path).resolve()
+
+    # Prevent path traversal: report must be under the results directory
+    # or the temp upload directory. Reject absolute paths pointing elsewhere.
+    from flask import current_app
+    allowed_dirs = [Path("results").resolve()]
+    custom_results = current_app.config.get("RESULTS_DIR")
+    if custom_results:
+        allowed_dirs.append(Path(custom_results).resolve())
+
+    if not any(str(path).startswith(str(d)) for d in allowed_dirs):
+        logger.warning("Report path traversal attempt: %s", report_path)
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Report not available",
+            status=404,
+        )
+
     if not path.is_file():
         return api_error(
             ErrorCode.NOT_FOUND,
