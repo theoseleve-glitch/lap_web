@@ -9,6 +9,7 @@ import logging
 from flask import Blueprint, request
 from web.api_utils import api_response, api_error, ErrorCode
 from db import queries as Q
+import web.models as models
 
 logger = logging.getLogger(__name__)
 
@@ -159,3 +160,122 @@ def patch_track(track_id):
         "WHERE t.track_id = ?", (track_id,)
     ).fetchone()
     return api_response(_map_track(updated))
+
+
+# ══════════════════════════════════════════════════════════════════
+# Karts
+# ══════════════════════════════════════════════════════════════════
+
+def _map_kart(row):
+    """Map DB kart row to frontend-expected field names."""
+    d = dict(row) if not isinstance(row, dict) else row
+    return {
+        "id": d["kart_id"],
+        "name": d["kart_name"],
+        "manufacturer": d.get("manufacturer"),
+        "model": d.get("model"),
+        "engine": d.get("engine"),
+        "power_hp": d.get("power_hp"),
+        "weight_kg": d.get("kart_weight_kg"),
+        "notes": d.get("notes"),
+        "created_at": d.get("created_at"),
+        "session_count": d.get("session_count", 0),
+    }
+
+
+@bp.route("/karts", methods=["GET"])
+def list_karts():
+    conn = _get_conn()
+    rows = models.get_all_karts(conn)
+    return api_response([_map_kart(r) for r in rows])
+
+
+@bp.route("/karts", methods=["POST"])
+def create_kart():
+    conn = _get_conn()
+    body = request.get_json(silent=True) or {}
+    name = body.get("name") or body.get("kart_name")
+    if not name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "name is required", status=400)
+    kart_id = models.create_kart(
+        conn,
+        kart_name=name,
+        predefined_kart_id=body.get("predefined_kart_id"),
+        manufacturer=body.get("manufacturer"),
+        model=body.get("model"),
+        engine=body.get("engine"),
+        power_hp=body.get("power_hp"),
+        kart_weight_kg=body.get("weight_kg") or body.get("kart_weight_kg"),
+        notes=body.get("notes"),
+    )
+    conn.commit()
+    kart = models.get_kart_by_id(conn, kart_id)
+    return api_response(_map_kart(kart), status=201)
+
+
+@bp.route("/karts/<int:kart_id>", methods=["GET"])
+def get_kart(kart_id):
+    conn = _get_conn()
+    kart = models.get_kart_by_id(conn, kart_id)
+    if not kart:
+        return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
+    d = dict(kart) if not isinstance(kart, dict) else kart.copy()
+    count = conn.execute(
+        "SELECT COUNT(*) AS c FROM sessions WHERE kart_id = ?", (kart_id,)
+    ).fetchone()
+    d["session_count"] = count["c"] if count else 0
+    return api_response(_map_kart(d))
+
+
+@bp.route("/karts/<int:kart_id>", methods=["PATCH"])
+def patch_kart(kart_id):
+    conn = _get_conn()
+    kart = models.get_kart_by_id(conn, kart_id)
+    if not kart:
+        return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
+    body = request.get_json(silent=True) or {}
+    update_data = {}
+    if "name" in body:
+        update_data["kart_name"] = body["name"]
+    if "kart_name" in body:
+        update_data["kart_name"] = body["kart_name"]
+    for f in ("manufacturer", "model", "engine", "power_hp", "notes"):
+        if f in body:
+            update_data[f] = body[f]
+    if "weight_kg" in body:
+        update_data["kart_weight_kg"] = body["weight_kg"]
+    if "kart_weight_kg" in body:
+        update_data["kart_weight_kg"] = body["kart_weight_kg"]
+    if not update_data:
+        return api_error(ErrorCode.VALIDATION_ERROR, "No updatable fields", status=400)
+    models.update_kart(conn, kart_id, update_data)
+    conn.commit()
+    updated = models.get_kart_by_id(conn, kart_id)
+    return api_response(_map_kart(updated))
+
+
+@bp.route("/karts/<int:kart_id>", methods=["DELETE"])
+def delete_kart(kart_id):
+    conn = _get_conn()
+    kart = models.get_kart_by_id(conn, kart_id)
+    if not kart:
+        return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
+    count = conn.execute(
+        "SELECT COUNT(*) AS c FROM sessions WHERE kart_id = ?", (kart_id,)
+    ).fetchone()
+    if count and count["c"] > 0:
+        return api_error(
+            ErrorCode.CONFLICT,
+            f"Cannot delete kart with {count['c']} linked session(s). Unlink sessions first.",
+            status=409,
+        )
+    conn.execute("DELETE FROM karts WHERE kart_id = ?", (kart_id,))
+    conn.commit()
+    return api_response({"deleted": True})
+
+
+@bp.route("/predefined-karts", methods=["GET"])
+def list_predefined_karts():
+    conn = _get_conn()
+    grouped = models.get_predefined_karts_grouped(conn)
+    return api_response(grouped)
