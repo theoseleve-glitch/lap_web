@@ -279,3 +279,227 @@ def list_predefined_karts():
     conn = _get_conn()
     grouped = models.get_predefined_karts_grouped(conn)
     return api_response(grouped)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Weekends
+# ══════════════════════════════════════════════════════════════════
+
+def _map_weekend(row):
+    """Map DB weekend row to frontend-expected field names."""
+    d = dict(row)
+    return {
+        "id": d["weekend_id"],
+        "name": d.get("name"),
+        "track_id": d.get("track_id"),
+        "track_name": d.get("track_name"),
+        "start_date": d.get("start_date"),
+        "end_date": d.get("end_date"),
+        "notes": d.get("notes"),
+        "session_count": d.get("session_count", 0),
+        "created_at": d.get("created_at"),
+    }
+
+
+@bp.route("/weekends", methods=["GET"])
+def list_weekends():
+    conn = _get_conn()
+    rows = conn.execute(Q.SELECT_ALL_WEEKENDS).fetchall()
+    return api_response([_map_weekend(r) for r in rows])
+
+
+@bp.route("/weekends", methods=["POST"])
+def create_weekend():
+    conn = _get_conn()
+    body = request.get_json(silent=True) or {}
+    name = body.get("name")
+    if not name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "name is required", status=400)
+    conn.execute(Q.INSERT_WEEKEND, {
+        "name": name,
+        "track_id": body.get("track_id"),
+        "start_date": body.get("start_date"),
+        "end_date": body.get("end_date"),
+        "notes": body.get("notes"),
+    })
+    conn.commit()
+    wid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    row = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": wid}).fetchone()
+    result = _map_weekend(row)
+    result["session_count"] = 0
+    return api_response(result, status=201)
+
+
+@bp.route("/weekends/<int:weekend_id>", methods=["GET"])
+def get_weekend(weekend_id):
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    result = _map_weekend(row)
+    sessions = conn.execute(Q.SELECT_WEEKEND_SESSIONS, {"weekend_id": weekend_id}).fetchall()
+    result["sessions"] = [dict(s) for s in sessions]
+    result["session_count"] = len(sessions)
+    return api_response(result)
+
+
+@bp.route("/weekends/<int:weekend_id>", methods=["PATCH"])
+def patch_weekend(weekend_id):
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    body = request.get_json(silent=True) or {}
+    ed = dict(existing)
+    conn.execute(Q.UPDATE_WEEKEND, {
+        "weekend_id": weekend_id,
+        "name": body.get("name", ed.get("name")),
+        "track_id": body.get("track_id", ed.get("track_id")),
+        "start_date": body.get("start_date", ed.get("start_date")),
+        "end_date": body.get("end_date", ed.get("end_date")),
+        "notes": body.get("notes", ed.get("notes")),
+    })
+    conn.commit()
+    updated = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    result = _map_weekend(updated)
+    return api_response(result)
+
+
+@bp.route("/weekends/<int:weekend_id>", methods=["DELETE"])
+def delete_weekend(weekend_id):
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    conn.execute(Q.DELETE_ALL_WEEKEND_SESSIONS, {"weekend_id": weekend_id})
+    conn.execute(Q.DELETE_WEEKEND, {"weekend_id": weekend_id})
+    conn.commit()
+    return api_response({"deleted": True})
+
+
+# ══════════════════════════════════════════════════════════════════
+# Leaderboard
+# ══════════════════════════════════════════════════════════════════
+
+@bp.route("/leaderboard", methods=["GET"])
+def leaderboard():
+    conn = _get_conn()
+    track_id = request.args.get("track_id")
+    driver_id = request.args.get("driver_id")
+    limit = request.args.get("limit", 50, type=int)
+
+    where_clauses = ["s.best_lap_time_s IS NOT NULL"]
+    params = []
+    if track_id:
+        where_clauses.append("s.track_id = ?")
+        params.append(track_id)
+    if driver_id:
+        where_clauses.append("s.driver_id = ?")
+        params.append(int(driver_id))
+
+    where_sql = " AND ".join(where_clauses)
+    params.append(limit)
+
+    rows = conn.execute(
+        f"SELECT s.session_id, s.session_date, s.best_lap_time_s, "
+        f"s.total_score, s.track_state, s.n_laps, "
+        f"d.driver_name, t.track_name, s.track_id "
+        f"FROM sessions s "
+        f"JOIN drivers d ON s.driver_id = d.driver_id "
+        f"LEFT JOIN tracks t ON s.track_id = t.track_id "
+        f"WHERE {where_sql} "
+        f"ORDER BY s.best_lap_time_s ASC "
+        f"LIMIT ?",
+        params,
+    ).fetchall()
+    return api_response([dict(r) for r in rows])
+
+
+# ══════════════════════════════════════════════════════════════════
+# Development Plans
+# ══════════════════════════════════════════════════════════════════
+
+def _map_plan(row):
+    """Map DB development_plan row to frontend-expected field names."""
+    d = dict(row)
+    return {
+        "id": d["id"],
+        "driver_id": d["driver_id"],
+        "plan_name": d.get("plan_name"),
+        "template_id": d.get("template_id"),
+        "level": d.get("level"),
+        "status": d.get("status"),
+        "created_at": d.get("created_at"),
+        "updated_at": d.get("updated_at"),
+    }
+
+
+@bp.route("/dev-plans", methods=["GET"])
+def list_dev_plans():
+    conn = _get_conn()
+    driver_id = request.args.get("driver_id", type=int)
+    if driver_id:
+        rows = conn.execute(Q.SELECT_PLANS_FOR_DRIVER, {"driver_id": driver_id}).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM development_plans ORDER BY created_at DESC"
+        ).fetchall()
+    return api_response([_map_plan(r) for r in rows])
+
+
+@bp.route("/dev-plans", methods=["POST"])
+def create_dev_plan():
+    conn = _get_conn()
+    body = request.get_json(silent=True) or {}
+    driver_id = body.get("driver_id")
+    plan_name = body.get("plan_name")
+    if not driver_id or not plan_name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "driver_id and plan_name are required", status=400)
+    conn.execute(Q.INSERT_DEVELOPMENT_PLAN, {
+        "driver_id": driver_id,
+        "plan_name": plan_name,
+        "template_id": body.get("template_id"),
+        "level": body.get("level", "intermediate"),
+        "weeks_json": body.get("weeks_json", "[]"),
+        "progress_json": body.get("progress_json"),
+    })
+    conn.commit()
+    pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": pid}).fetchone()
+    return api_response(_map_plan(row), status=201)
+
+
+@bp.route("/dev-plans/<int:plan_id>", methods=["GET"])
+def get_dev_plan(plan_id):
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    return api_response(_map_plan(row))
+
+
+@bp.route("/dev-plans/<int:plan_id>", methods=["PATCH"])
+def patch_dev_plan(plan_id):
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    body = request.get_json(silent=True) or {}
+    progress_json = body.get("progress_json")
+    if progress_json is None:
+        return api_error(ErrorCode.VALIDATION_ERROR, "progress_json is required", status=400)
+    conn.execute(Q.UPDATE_PLAN_PROGRESS, {"id": plan_id, "progress_json": progress_json})
+    conn.commit()
+    updated = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    return api_response(_map_plan(updated))
+
+
+@bp.route("/dev-plans/<int:plan_id>", methods=["DELETE"])
+def delete_dev_plan(plan_id):
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    conn.execute(Q.DELETE_DEVELOPMENT_PLAN, {"id": plan_id})
+    conn.commit()
+    return api_response({"deleted": True})
