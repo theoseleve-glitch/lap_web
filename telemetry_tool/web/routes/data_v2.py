@@ -252,6 +252,7 @@ def get_speed_trace(session_id: str):
 
     Query params:
         lap (int, optional) — lap number; defaults to best lap
+        ref (int, optional) — reference lap for overlay; interpolated to same distance axis
     """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -270,11 +271,32 @@ def get_speed_trace(session_id: str):
             status=404,
         )
 
-    return api_response({
+    result = {
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
-    })
+    }
+
+    # Optional reference lap overlay
+    ref_raw = request.args.get("ref")
+    if ref_raw is not None:
+        try:
+            ref_lap = int(ref_raw)
+        except (ValueError, TypeError):
+            ref_lap = None
+        if ref_lap is not None:
+            ref_trace = models.get_gps_trace(conn, session_id, ref_lap)
+            if ref_trace:
+                import numpy as np
+                ref_dists = ref_trace.get("distances", [])
+                ref_speeds = ref_trace.get("speeds", [])
+                if ref_dists and ref_speeds:
+                    primary_dists = trace.get("distances", [])
+                    interp = np.interp(primary_dists, ref_dists, ref_speeds)
+                    result["ref_speeds"] = interp.tolist()
+                    result["ref_lap_number"] = ref_lap
+
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1322,3 +1344,243 @@ def get_sector_times(session_id: str):
 
     return api_error(ErrorCode.NOT_FOUND,
                      "No sector analysis for this session", status=404)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 28. GET /api/v1/sessions/<id>/track-map?lap=best|all
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-map", methods=["GET"])
+@_safe_api
+def get_track_map(session_id: str):
+    """Return bundled GPS data for track map rendering.
+
+    Query params:
+        lap: "best" (default) or "all"
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    best_lap = _resolve_lap_number(conn, session_id)
+    if best_lap is None:
+        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+
+    lap_mode = request.args.get("lap", "best")
+
+    # Determine which laps to include
+    if lap_mode == "all":
+        lap_numbers = models.get_gps_lap_numbers(conn, session_id)
+    else:
+        lap_numbers = [best_lap]
+
+    # Fetch GPS data for each lap
+    laps_data = {}
+    for ln in lap_numbers:
+        trace = models.get_gps_trace(conn, session_id, ln)
+        if trace:
+            laps_data[str(ln)] = {
+                "latitudes": trace.get("latitudes", []),
+                "longitudes": trace.get("longitudes", []),
+                "distances": trace.get("distances", []),
+                "speeds": trace.get("speeds", []),
+            }
+
+    if not laps_data:
+        return api_error(ErrorCode.NOT_FOUND, "No GPS data available", status=404)
+
+    # Build corners with GPS coords
+    corners = []
+    theo = models.get_theoretical_data(conn, session_id)
+    if theo and theo.get("corner_coaching"):
+        best_gps = models.get_gps_trace(conn, session_id, best_lap)
+        dists = best_gps.get("distances", []) if best_gps else []
+        lats = best_gps.get("latitudes", []) if best_gps else []
+        lons = best_gps.get("longitudes", []) if best_gps else []
+
+        seen = set()
+        for cc in theo["corner_coaching"]:
+            cid = cc.get("corner_id") or cc.get("corner_index")
+            if cid is not None and cid not in seen:
+                seen.add(cid)
+                apex_d = cc.get("s_apex") or cc.get("distance_apex")
+                lat = cc.get("lat")
+                lon = cc.get("lon")
+                if lat is None and apex_d is not None and dists:
+                    idx = _closest_index(dists, apex_d)
+                    if idx < len(lats):
+                        lat = lats[idx]
+                        lon = lons[idx]
+                corners.append({
+                    "corner_id": cid,
+                    "lat": lat,
+                    "lon": lon,
+                    "label": cc.get("label") or cc.get("name"),
+                    "distance_m": apex_d,
+                })
+
+    return api_response({
+        "laps": laps_data,
+        "best_lap": best_lap,
+        "corners": corners,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 29. GET /api/v1/sessions/<id>/sectors (alias)
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/sectors", methods=["GET"])
+@_safe_api
+def get_sectors(session_id: str):
+    """Alias for sector_times — returns sector analysis."""
+    return get_sector_times(session_id)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 30. GET /api/v1/sessions/<id>/compare?sessionKeyB=...
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/compare", methods=["GET"])
+@_safe_api
+def get_session_compare_overlay(session_id: str):
+    """Cross-session overlay with distance-aligned speed traces."""
+    conn = get_db_connection()
+    session_a = models.get_session_by_id(conn, session_id)
+    if session_a is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    session_b_id = request.args.get("sessionKeyB")
+    if not session_b_id:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "sessionKeyB parameter is required", status=400)
+
+    session_b = models.get_session_by_id(conn, session_b_id)
+    if session_b is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         f"Session {session_b_id} not found", status=404)
+
+    # Get best lap traces for both sessions
+    best_a = _resolve_lap_number(conn, session_id)
+    best_b = _resolve_lap_number(conn, session_b_id)
+
+    if best_a is None or best_b is None:
+        return api_error(ErrorCode.NOT_FOUND, "No laps in one or both sessions",
+                         status=404)
+
+    trace_a = models.get_gps_trace(conn, session_id, best_a)
+    trace_b = models.get_gps_trace(conn, session_b_id, best_b)
+
+    if trace_a is None or trace_b is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No GPS trace for one or both sessions", status=404)
+
+    import numpy as np
+
+    dist_a = trace_a.get("distances", [])
+    spd_a = trace_a.get("speeds", [])
+    dist_b = trace_b.get("distances", [])
+    spd_b = trace_b.get("speeds", [])
+
+    if not dist_a or not spd_a or not dist_b or not spd_b:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "Insufficient trace data for comparison", status=404)
+
+    # Common distance axis (shorter lap's range, up to 500 points)
+    max_dist = min(dist_a[-1], dist_b[-1])
+    if max_dist <= 0:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No valid distance range for comparison", status=404)
+
+    n_points = min(500, min(len(dist_a), len(dist_b)))
+    common_dist = np.linspace(0, max_dist, n_points)
+    interp_a = np.interp(common_dist, dist_a, spd_a)
+    interp_b = np.interp(common_dist, dist_b, spd_b)
+
+    # Cumulative time delta
+    def _cum_time(dists, speeds):
+        t = [0.0]
+        for i in range(1, len(dists)):
+            ds = dists[i] - dists[i - 1]
+            v = speeds[i] if speeds[i] > 0 else speeds[i - 1]
+            t.append(t[-1] + (ds / v if v > 0 else 0))
+        return t
+
+    time_a = _cum_time(common_dist.tolist(), interp_a.tolist())
+    time_b = _cum_time(common_dist.tolist(), interp_b.tolist())
+    delta = [round(b - a, 4) for a, b in zip(time_a, time_b)]
+
+    return api_response({
+        "distances": common_dist.tolist(),
+        "speeds_a": interp_a.tolist(),
+        "speeds_b": interp_b.tolist(),
+        "delta_s": delta,
+        "session_a": {
+            "session_id": session_id,
+            "best_time_s": session_a.get("best_lap_time_s"),
+            "lap_number": best_a,
+        },
+        "session_b": {
+            "session_id": session_b_id,
+            "best_time_s": session_b.get("best_lap_time_s"),
+            "lap_number": best_b,
+        },
+        "gps_a": {
+            "latitudes": trace_a.get("latitudes", []),
+            "longitudes": trace_a.get("longitudes", []),
+        },
+        "gps_b": {
+            "latitudes": trace_b.get("latitudes", []),
+            "longitudes": trace_b.get("longitudes", []),
+        },
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 31. GET /api/v1/dev-plans   and   GET /api/v1/dev-plans/<id>
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/dev-plans", methods=["GET"])
+@_safe_api
+def list_dev_plans():
+    """List all development plans."""
+    conn = get_db_connection()
+    rows = conn.execute(
+        "SELECT dp.*, d.driver_name "
+        "FROM development_plans dp "
+        "LEFT JOIN drivers d ON dp.driver_id = d.driver_id "
+        "ORDER BY dp.created_at DESC"
+    ).fetchall()
+    plans = []
+    for r in rows:
+        d = dict(r)
+        d.pop("weeks_json", None)
+        d.pop("progress_json", None)
+        plans.append(d)
+    return api_response({"plans": plans})
+
+
+@bp.route("/dev-plans/<int:plan_id>", methods=["GET"])
+@_safe_api
+def get_dev_plan(plan_id: int):
+    """Return a development plan with parsed weeks and progress."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT dp.*, d.driver_name "
+        "FROM development_plans dp "
+        "LEFT JOIN drivers d ON dp.driver_id = d.driver_id "
+        "WHERE dp.id = :id",
+        {"id": plan_id},
+    ).fetchone()
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+
+    d = dict(row)
+    d["weeks"] = json.loads(d.pop("weeks_json", "[]") or "[]")
+    d["progress"] = json.loads(d.pop("progress_json", "{}") or "{}")
+    return api_response(d)
