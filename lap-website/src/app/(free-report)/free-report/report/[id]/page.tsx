@@ -168,7 +168,7 @@ export default function FreeReportPage() {
             Your biggest time loss: {worstCorner.corner_name} ({worstCorner.time_loss.toFixed(3)}s)
           </p>
           <div className="h-[400px] bg-concrete rounded-lg border border-steel/20 overflow-hidden">
-            <CornerReplay sessionId={id} cornerId={worstCorner.corner_id} />
+            <CornerReplay sessionId={id} />
           </div>
         </div>
       )}

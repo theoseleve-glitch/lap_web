@@ -1127,44 +1127,9 @@ export default function SessionDetailPage() {
 
             {/* Corner Replay (full width) */}
             <section>
-              <div className="flex items-center justify-between mb-4 mt-2">
-                <h3 className="font-body text-chalk text-lg font-semibold">Corner Replay</h3>
-                <div className="flex items-center gap-2">
-                  {/* Corner navigation pills */}
-                  {(cornerCoachingData?.coaching ?? []).length > 0 && (
-                    <div className="flex gap-1 mr-3">
-                      {cornerCoachingData!.coaching.slice(0, 10).map((c) => (
-                        <button
-                          key={c.corner_id}
-                          onClick={() => setSelectedCorner(c.corner_id)}
-                          className={`w-7 h-7 rounded text-xs font-telemetry transition-colors ${
-                            selectedCorner === c.corner_id
-                              ? 'bg-acid-green text-carbon font-bold'
-                              : 'bg-steel/10 text-steel hover:text-chalk'
-                          }`}
-                        >
-                          {c.corner_id}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <button
-                    onClick={() => setSelectedCorner(Math.max(1, selectedCorner - 1))}
-                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm transition-colors"
-                  >
-                    &larr;
-                  </button>
-                  <span className="text-chalk font-telemetry text-sm w-6 text-center">{selectedCorner}</span>
-                  <button
-                    onClick={() => setSelectedCorner(selectedCorner + 1)}
-                    className="px-2 py-1 bg-steel/10 text-steel hover:text-chalk rounded font-telemetry text-sm transition-colors"
-                  >
-                    &rarr;
-                  </button>
-                </div>
-              </div>
-              <div className="bg-concrete rounded-lg border border-steel/10 p-4 min-h-[300px]">
-                <CornerReplay sessionId={id} cornerId={selectedCorner} />
+              <h3 className="font-body text-chalk text-lg font-semibold mb-4 mt-2">Corner Replay</h3>
+              <div className="bg-concrete rounded-lg border border-steel/10 p-4 min-h-[400px]">
+                <CornerReplay sessionId={id} />
               </div>
             </section>
 
