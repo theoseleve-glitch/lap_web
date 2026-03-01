@@ -8,6 +8,7 @@ the Next.js frontend needs to display session details, charts,
 scores, and coaching information.
 
 Endpoints:
+    GET    /api/v1/dashboard/stats                  - Dashboard aggregate stats
     GET    /api/v1/sessions                        - List sessions
     GET    /api/v1/sessions/<id>                    - Session detail
     GET    /api/v1/sessions/<id>/laps               - Lap list
@@ -90,6 +91,63 @@ _DELETE_RELATED_TABLES = [
 ]
 
 _ALLOWED_DELETE_TABLES = frozenset(_DELETE_RELATED_TABLES)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 0. GET /api/v1/dashboard/stats — Dashboard aggregate stats
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/dashboard/stats", methods=["GET"])
+def dashboard_stats():
+    """Return aggregate dashboard statistics.
+
+    Returns total_sessions, total_drivers, total_tracks, total_laps,
+    pb_time, avg_score, best_score, plus recent_scores, recent_times,
+    and recent_sessions for sparkline and table display.
+    """
+    conn = get_db_connection()
+    stats = models.get_dashboard_stats(conn)
+
+    # Fetch recent sessions for sparklines and table (last 20).
+    recent = models.get_sessions(conn, limit=20, offset=0)
+
+    recent_scores = [
+        s["total_score"] for s in recent
+        if s.get("total_score") is not None
+    ]
+    recent_times = [
+        s["best_lap_time_s"] for s in recent
+        if s.get("best_lap_time_s") is not None
+    ]
+
+    # Map to frontend-expected session shape.
+    recent_sessions = [
+        {
+            "id": s.get("session_id"),
+            "date": s.get("session_date"),
+            "track_name": s.get("track_name", "Unknown"),
+            "driver_name": s.get("driver_name", "Unknown"),
+            "laps": s.get("n_laps", 0),
+            "best_time": s.get("best_lap_time_s"),
+            "score": s.get("total_score"),
+            "grade": s.get("grade"),
+        }
+        for s in recent[:10]  # Table shows 10 most recent
+    ]
+
+    return api_response({
+        "total_sessions": stats.get("total_sessions", 0),
+        "total_drivers": stats.get("total_drivers", 0),
+        "total_tracks": stats.get("total_tracks", 0),
+        "total_laps": stats.get("total_laps", 0) or 0,
+        "pb_time": stats.get("overall_best_time_s"),
+        "avg_score": stats.get("avg_score"),
+        "best_score": stats.get("best_score"),
+        "recent_scores": recent_scores,
+        "recent_times": recent_times,
+        "recent_sessions": recent_sessions,
+    })
 
 
 # ══════════════════════════════════════════════════════════════════

@@ -410,7 +410,12 @@ def update_session_field(
 
 def count_sessions(conn: sqlite3.Connection) -> int:
     row = conn.execute(Q.COUNT_SESSIONS).fetchone()
-    return row[0] if row else 0
+    if not row:
+        return 0
+    # Support both tuple-style (SQLite) and dict-style (PostgreSQL RealDictCursor)
+    if isinstance(row, dict):
+        return row.get("count", 0) or 0
+    return row[0]
 
 
 def get_dashboard_stats(conn: sqlite3.Connection) -> dict:

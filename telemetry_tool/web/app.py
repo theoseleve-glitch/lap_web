@@ -365,19 +365,23 @@ def create_app(config: Config | None = None) -> Flask:
 
     app.wsgi_app = _DecodePathMiddleware(app.wsgi_app)
 
-    # Error handlers.
+    # Error handlers — return JSON for API routes, HTML for browser pages.
     @app.errorhandler(404)
     def page_not_found(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": {"code": "NOT_FOUND", "message": "Resource not found"}}), 404
         return render_template("404.html"), 404
 
     @app.errorhandler(413)
     def request_entity_too_large(e):
         if request.path.startswith("/api/"):
-            return jsonify({"error": "File too large. Maximum upload size is 12 GB."}), 413
+            return jsonify({"ok": False, "error": {"code": "PAYLOAD_TOO_LARGE", "message": "File too large. Maximum upload size is 12 GB."}}), 413
         return render_template("500.html"), 413
 
     @app.errorhandler(500)
     def internal_error(e):
+        if request.path.startswith("/api/"):
+            return jsonify({"ok": False, "error": {"code": "INTERNAL_ERROR", "message": "Internal server error"}}), 500
         return render_template("500.html"), 500
 
     # Cache static assets (CSS, JS, images) for 1 day.
