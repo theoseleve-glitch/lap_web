@@ -1,15 +1,18 @@
-"""Tests for data-serving API endpoints (Task 1.3).
+"""Tests for data-serving API endpoints (Tasks 1.3 + 1.5).
 
 Endpoints under test:
-    GET  /api/v1/sessions           - List sessions
-    GET  /api/v1/sessions/<id>      - Session detail
-    GET  /api/v1/sessions/<id>/laps - Lap list
-    GET  /api/v1/sessions/<id>/speed-trace?lap=N - Speed vs distance
-    GET  /api/v1/sessions/<id>/gps-trace?lap=N   - GPS coordinates + speed
-    GET  /api/v1/sessions/<id>/gg-data?lap=N     - GG diagram data
-    GET  /api/v1/sessions/<id>/scores            - Score breakdown
-    GET  /api/v1/sessions/<id>/corners           - Corner coaching
-    DELETE /api/v1/sessions/<id>                 - Delete session
+    GET    /api/v1/sessions                       - List sessions
+    GET    /api/v1/sessions/<id>                   - Session detail
+    GET    /api/v1/sessions/<id>/laps              - Lap list
+    GET    /api/v1/sessions/<id>/speed-trace?lap=N - Speed vs distance
+    GET    /api/v1/sessions/<id>/gps-trace?lap=N   - GPS coordinates + speed
+    GET    /api/v1/sessions/<id>/gg-data?lap=N     - GG diagram data
+    GET    /api/v1/sessions/<id>/scores            - Score breakdown
+    GET    /api/v1/sessions/<id>/corners           - Corner coaching
+    DELETE /api/v1/sessions/<id>                   - Delete session
+    GET    /api/v1/compare/sessions?a=X&b=Y        - Session comparison
+    GET    /api/v1/sessions/<id>/report?format=html - Report download
+    PATCH  /api/v1/sessions/<id>                   - Update session fields
 
 All model functions are mocked -- no real DB interaction.
 """
@@ -599,3 +602,372 @@ class TestDeleteSession:
         assert resp.status_code == 404
         body = resp.get_json()
         assert body["ok"] is False
+
+
+# ══════════════════════════════════════════════════════════════════
+# 10. GET /api/v1/compare/sessions?a=X&b=Y — Session comparison
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestCompareSessions:
+
+    def test_compare_both_found(self, client):
+        """Returns side-by-side data when both sessions exist."""
+        sessions = _sample_sessions()  # s1 and s2
+        laps_a = _sample_laps()
+        laps_b = [
+            {"session_id": "s2", "lap_number": 1, "lap_time_s": 59.0, "is_valid": 1, "is_best": 1},
+        ]
+        score_a = _sample_score_details()
+        score_b = {
+            "session_id": "s2",
+            "pace_score": 22,
+            "pace_max": 25,
+            "consistency_score": 20,
+            "consistency_max": 25,
+            "execution_score": 22,
+            "execution_max": 25,
+            "robustness_score": 21,
+            "robustness_max": 25,
+        }
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                sessions[0] if sid == "s1" else sessions[1] if sid == "s2" else None
+            )
+            mock_models.get_score_details.side_effect = lambda conn, sid: (
+                score_a if sid == "s1" else score_b if sid == "s2" else None
+            )
+            mock_models.get_laps_for_session.side_effect = lambda conn, sid: (
+                laps_a if sid == "s1" else laps_b if sid == "s2" else []
+            )
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        data = body["data"]
+        assert "session_a" in data
+        assert "session_b" in data
+        assert data["session_a"]["session"]["session_id"] == "s1"
+        assert data["session_b"]["session"]["session_id"] == "s2"
+        assert data["session_a"]["scores"]["pace_score"] == 18
+        assert data["session_b"]["scores"]["pace_score"] == 22
+        assert len(data["session_a"]["laps"]) == 3
+        assert len(data["session_b"]["laps"]) == 1
+
+    def test_compare_missing_param_a(self, client):
+        """Returns 400 when ?a= is missing."""
+        resp = client.get("/api/v1/compare/sessions?b=s2")
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "required" in body["error"]["message"].lower()
+
+    def test_compare_missing_param_b(self, client):
+        """Returns 400 when ?b= is missing."""
+        resp = client.get("/api/v1/compare/sessions?a=s1")
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+
+    def test_compare_missing_both_params(self, client):
+        """Returns 400 when both ?a= and ?b= are missing."""
+        resp = client.get("/api/v1/compare/sessions")
+        assert resp.status_code == 400
+
+    def test_compare_session_a_not_found(self, client):
+        """Returns 404 when session A does not exist."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                None if sid == "s1" else _sample_sessions()[1]
+            )
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "s1" in body["error"]["message"]
+
+    def test_compare_session_b_not_found(self, client):
+        """Returns 404 when session B does not exist."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                _sample_sessions()[0] if sid == "s1" else None
+            )
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "s2" in body["error"]["message"]
+
+    def test_compare_no_scores_still_works(self, client):
+        """Comparison succeeds even when sessions have no scores."""
+        sessions = _sample_sessions()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.side_effect = lambda conn, sid: (
+                sessions[0] if sid == "s1" else sessions[1] if sid == "s2" else None
+            )
+            mock_models.get_score_details.return_value = None
+            mock_models.get_laps_for_session.return_value = []
+
+            resp = client.get("/api/v1/compare/sessions?a=s1&b=s2")
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["session_a"]["scores"] is None
+        assert body["data"]["session_b"]["scores"] is None
+
+
+# ══════════════════════════════════════════════════════════════════
+# 11. GET /api/v1/sessions/<id>/report?format=html — Report download
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestReportDownload:
+
+    def test_report_download_success(self, client, tmp_path):
+        """Returns the HTML report file when it exists."""
+        # Create a temporary HTML report file
+        report_file = tmp_path / "report.html"
+        report_file.write_text("<html><body>Report</body></html>")
+
+        session = _sample_session()
+        session["html_report_path"] = str(report_file)
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.get("/api/v1/sessions/s1/report?format=html")
+
+        assert resp.status_code == 200
+        assert b"<html><body>Report</body></html>" in resp.data
+
+    def test_report_download_no_path(self, client):
+        """Returns 404 when session has no html_report_path."""
+        session = _sample_session()
+        session["html_report_path"] = None
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.get("/api/v1/sessions/s1/report?format=html")
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False
+        assert "not available" in body["error"]["message"].lower()
+
+    def test_report_download_file_missing(self, client):
+        """Returns 404 when html_report_path points to a nonexistent file."""
+        session = _sample_session()
+        session["html_report_path"] = "/nonexistent/path/report.html"
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.get("/api/v1/sessions/s1/report?format=html")
+
+        assert resp.status_code == 404
+        body = resp.get_json()
+        assert body["ok"] is False
+
+    def test_report_download_session_not_found(self, client):
+        """Returns 404 when session does not exist."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = None
+
+            resp = client.get("/api/v1/sessions/nonexistent/report?format=html")
+
+        assert resp.status_code == 404
+
+    def test_report_download_unsupported_format(self, client):
+        """Returns 400 when format is not 'html'."""
+        session = _sample_session()
+        session["html_report_path"] = "/some/path/report.html"
+
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.get("/api/v1/sessions/s1/report?format=pdf")
+
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+
+
+# ══════════════════════════════════════════════════════════════════
+# 12. PATCH /api/v1/sessions/<id> — Update session fields
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestUpdateSession:
+
+    def test_update_session_type(self, client):
+        """PATCH updates session_type and returns updated session."""
+        session = _sample_session()
+        updated = {**session, "session_type": "qualifying"}
+        mock_conn = MagicMock()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = mock_conn
+            mock_models.get_session_by_id.side_effect = [session, updated]
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={"session_type": "qualifying"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["data"]["session_type"] == "qualifying"
+        mock_models.update_session_field.assert_called_once_with(
+            mock_conn, "s1", "session_type", "qualifying"
+        )
+        mock_conn.commit.assert_called_once()
+
+    def test_update_notes(self, client):
+        """PATCH updates notes field."""
+        session = _sample_session()
+        updated = {**session, "notes": "Good session"}
+        mock_conn = MagicMock()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = mock_conn
+            mock_models.get_session_by_id.side_effect = [session, updated]
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={"notes": "Good session"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        mock_models.update_session_field.assert_called_once_with(
+            mock_conn, "s1", "notes", "Good session"
+        )
+
+    def test_update_multiple_fields(self, client):
+        """PATCH updates multiple fields at once."""
+        session = _sample_session()
+        updated = {**session, "session_type": "race", "track_state": "wet"}
+        mock_conn = MagicMock()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = mock_conn
+            mock_models.get_session_by_id.side_effect = [session, updated]
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={"session_type": "race", "track_state": "wet"},
+            )
+
+        assert resp.status_code == 200
+        assert mock_models.update_session_field.call_count == 2
+
+    def test_update_driver_name(self, client):
+        """PATCH with driver_name upserts driver and updates driver_id."""
+        session = _sample_session()
+        updated = {**session, "driver_name": "NewDriver"}
+        mock_conn = MagicMock()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = mock_conn
+            mock_models.get_session_by_id.side_effect = [session, updated]
+            mock_models.upsert_driver.return_value = 42
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={"driver_name": "NewDriver"},
+            )
+
+        assert resp.status_code == 200
+        mock_models.upsert_driver.assert_called_once_with(mock_conn, "NewDriver")
+        mock_models.update_session_field.assert_called_once_with(
+            mock_conn, "s1", "driver_id", 42
+        )
+
+    def test_update_session_not_found(self, client):
+        """PATCH returns 404 when session does not exist."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = None
+
+            resp = client.patch(
+                "/api/v1/sessions/nonexistent",
+                json={"notes": "test"},
+            )
+
+        assert resp.status_code == 404
+
+    def test_update_empty_body(self, client):
+        """PATCH returns 400 when no updatable fields in body."""
+        session = _sample_session()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={},
+            )
+
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
+
+    def test_update_disallowed_field(self, client):
+        """PATCH ignores non-updatable fields and returns 400 if none are valid."""
+        session = _sample_session()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                json={"session_id": "hacked", "total_score": 100},
+            )
+
+        assert resp.status_code == 400
+
+    def test_update_no_json_body(self, client):
+        """PATCH returns 400 when body is not JSON."""
+        session = _sample_session()
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = session
+
+            resp = client.patch(
+                "/api/v1/sessions/s1",
+                data="not json",
+                content_type="text/plain",
+            )
+
+        assert resp.status_code == 400
