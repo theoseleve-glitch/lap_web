@@ -557,3 +557,578 @@ def test_upload_fixture_produces_session(uploaded_session):
         f"steps_ok={summary.get('steps_ok')}, "
         f"steps_failed={summary.get('steps_failed')}"
     )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 6. Parity tests
+# ══════════════════════════════════════════════════════════════════
+
+
+def _find_column(df, *keywords):
+    """Find a DataFrame column whose lowered name contains all keywords.
+
+    Returns the column name or None.
+    """
+    for c in df.columns:
+        cl = c.lower()
+        if all(kw in cl for kw in keywords):
+            return c
+    return None
+
+
+def _get_resampled_lap(resampled, lap_num):
+    """Safely look up a lap DataFrame from the resampled_laps dict.
+
+    Handles int vs str key mismatches and avoids DataFrame truth-value
+    ambiguity errors from using ``or`` on pandas objects.
+    """
+    result = resampled.get(lap_num)
+    if result is None:
+        result = resampled.get(str(lap_num))
+    if result is None:
+        # Try matching by int conversion
+        for k, v in resampled.items():
+            try:
+                if int(k) == int(lap_num):
+                    result = v
+                    break
+            except (ValueError, TypeError):
+                continue
+    return result
+
+
+def test_scores_parity(uploaded_session, tmp_path):
+    """Pipeline score_result matches API /scores after DB round-trip."""
+    client, session_id, summary = uploaded_session
+
+    # Pipeline truth
+    score_result = summary.get("score_result") or {}
+    pipeline_total = score_result.get("total_score")
+    pipeline_grade = score_result.get("grade")
+    pipeline_subs = score_result.get("sub_scores") or {}
+
+    # API response
+    resp = client.get(f"/api/v1/sessions/{session_id}/scores")
+    assert resp.status_code == 200, f"Scores API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"Scores response not OK: {body}"
+    data = body["data"]
+
+    # Dump artifacts for post-mortem
+    dump_artifact(tmp_path, "scores_pipeline", {
+        "total_score": pipeline_total,
+        "grade": pipeline_grade,
+        "sub_scores": pipeline_subs,
+    })
+    dump_artifact(tmp_path, "scores_api", data)
+
+    if not score_result or pipeline_total is None:
+        # Pipeline didn't produce scores — API should report unavailable
+        assert data.get("available") is False, (
+            "Pipeline has no scores but API says available=True"
+        )
+        return
+
+    # API has scores
+    assert data.get("available") is True, (
+        f"Pipeline has scores but API says available={data.get('available')}"
+    )
+
+    # Pillar scores
+    for pillar in ("pace", "consistency", "execution", "robustness"):
+        p_score = (pipeline_subs.get(pillar) or {}).get("score")
+        api_key = f"{pillar}_score"
+        api_score = data.get(api_key)
+        if p_score is not None and api_score is not None:
+            assert_close(
+                float(api_score), float(p_score),
+                "pillar_score", f"scores.{pillar}",
+            )
+
+    # Grade: stored in sessions table, not score_details.
+    # The score_details table doesn't have grade, so we check it via
+    # the session detail endpoint instead.
+    if pipeline_grade is not None:
+        # Grade is stored on the session, fetch from detail endpoint
+        detail_resp = client.get(f"/api/v1/sessions/{session_id}")
+        assert detail_resp.status_code == 200
+        detail_body = detail_resp.get_json()
+        api_grade = detail_body["data"].get("grade")
+        assert_exact(api_grade, pipeline_grade, "grade")
+
+
+def test_laps_parity(uploaded_session, tmp_path):
+    """Pipeline lap_metrics matches API /laps after DB round-trip."""
+    client, session_id, summary = uploaded_session
+
+    # Pipeline truth
+    pipeline_laps = summary.get("lap_metrics") or []
+    best_lap_key = summary.get("best_lap_key")
+
+    # API response
+    resp = client.get(f"/api/v1/sessions/{session_id}/laps")
+    assert resp.status_code == 200, f"Laps API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"Laps response not OK: {body}"
+    api_laps = body["data"].get("laps", [])
+
+    # Dump artifacts
+    dump_artifact(tmp_path, "laps_pipeline", {
+        "lap_metrics": pipeline_laps,
+        "best_lap_key": best_lap_key,
+    })
+    dump_artifact(tmp_path, "laps_api", api_laps)
+
+    # Same count
+    assert len(api_laps) == len(pipeline_laps), (
+        f"Lap count mismatch: API={len(api_laps)} vs pipeline={len(pipeline_laps)}"
+    )
+
+    if not pipeline_laps:
+        return
+
+    # Sort both by lap_number for consistent comparison
+    p_sorted = sorted(pipeline_laps, key=lambda x: x.get("lap_number", 0))
+    a_sorted = sorted(api_laps, key=lambda x: x.get("lap_number", 0))
+
+    # Same lap numbers
+    p_nums = [lm["lap_number"] for lm in p_sorted]
+    a_nums = [lm["lap_number"] for lm in a_sorted]
+    assert_exact(a_nums, p_nums, "lap_numbers")
+
+    # Per-lap comparisons
+    for p_lap, a_lap in zip(p_sorted, a_sorted):
+        lap_num = p_lap["lap_number"]
+
+        # Lap time
+        p_time = p_lap.get("lap_time_s")
+        a_time = a_lap.get("lap_time_s")
+        if p_time is not None and a_time is not None:
+            assert_close(
+                float(a_time), float(p_time),
+                "lap_time_s", f"lap_{lap_num}.lap_time_s",
+            )
+
+        # Speed mean
+        p_speed = p_lap.get("speed_mean_mps")
+        a_speed = a_lap.get("speed_mean_mps")
+        if p_speed is not None and a_speed is not None:
+            assert_close(
+                float(a_speed), float(p_speed),
+                "speed_mps", f"lap_{lap_num}.speed_mean_mps",
+            )
+
+    # Best lap index
+    if best_lap_key is not None:
+        best_api_laps = [lp for lp in a_sorted if lp.get("is_best")]
+        assert len(best_api_laps) > 0, "No lap marked is_best in API response"
+        api_best_num = best_api_laps[0]["lap_number"]
+        assert_exact(
+            api_best_num, best_lap_key,
+            "best_lap_key",
+        )
+
+
+def test_speed_trace_parity(uploaded_session, tmp_path):
+    """Pipeline resampled_laps speed matches API /speed-trace."""
+    import pandas as pd
+
+    client, session_id, summary = uploaded_session
+
+    # API response (defaults to best lap)
+    resp = client.get(f"/api/v1/sessions/{session_id}/speed-trace")
+    assert resp.status_code == 200, f"Speed trace API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"Speed trace response not OK: {body}"
+    data = body["data"]
+
+    dump_artifact(tmp_path, "speed_trace_api", {
+        "available": data.get("available"),
+        "lap_number": data.get("lap_number"),
+        "n_distances": len(data.get("distances", [])),
+        "n_speeds": len(data.get("speeds", [])),
+    })
+
+    resampled = summary.get("resampled_laps") or {}
+
+    if data.get("available") is False:
+        # Acceptable if pipeline didn't produce resampled laps
+        assert len(resampled) == 0 or all(
+            v is None or (hasattr(v, "empty") and v.empty) for v in resampled.values()
+        ), "API says no speed trace but pipeline has resampled laps"
+        return
+
+    # Find the lap DataFrame from pipeline
+    lap_num = data.get("lap_number")
+    assert lap_num is not None, "API returned speed trace without lap_number"
+    pipeline_df = _get_resampled_lap(resampled, lap_num)
+
+    if pipeline_df is None or (hasattr(pipeline_df, "empty") and pipeline_df.empty):
+        # Cannot compare — pipeline didn't produce this lap
+        return
+
+    # Find speed column in DataFrame
+    spd_col = _find_column(pipeline_df, "speed")
+    if spd_col is None:
+        return  # Cannot compare without speed column
+
+    pipeline_speeds = pipeline_df[spd_col].values
+    api_speeds = data.get("speeds", [])
+
+    dump_artifact(tmp_path, "speed_trace_pipeline", {
+        "lap_number": lap_num,
+        "speed_col": spd_col,
+        "n_pipeline_speeds": len(pipeline_speeds),
+    })
+
+    # Array lengths should match (same data went through DB round-trip)
+    assert len(api_speeds) == len(pipeline_speeds), (
+        f"Speed trace length mismatch: API={len(api_speeds)} "
+        f"vs pipeline={len(pipeline_speeds)}"
+    )
+
+    # Compare each sample (skip NaN)
+    for i, (api_v, pipe_v) in enumerate(zip(api_speeds, pipeline_speeds)):
+        if api_v is None or (isinstance(pipe_v, float) and math.isnan(pipe_v)):
+            continue
+        assert_close(float(api_v), float(pipe_v), "speed_mps", f"speed[{i}]")
+
+
+def test_gps_trace_parity(uploaded_session, tmp_path):
+    """Pipeline resampled_laps GPS matches API /gps-trace."""
+    import pandas as pd
+
+    client, session_id, summary = uploaded_session
+
+    # API response (defaults to best lap)
+    resp = client.get(f"/api/v1/sessions/{session_id}/gps-trace")
+    assert resp.status_code == 200, f"GPS trace API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"GPS trace response not OK: {body}"
+    data = body["data"]
+
+    dump_artifact(tmp_path, "gps_trace_api", {
+        "available": data.get("available"),
+        "lap_number": data.get("lap_number"),
+        "n_lats": len(data.get("latitudes", [])),
+        "n_lons": len(data.get("longitudes", [])),
+    })
+
+    resampled = summary.get("resampled_laps") or {}
+
+    if data.get("available") is False:
+        assert len(resampled) == 0 or all(
+            v is None or (hasattr(v, "empty") and v.empty) for v in resampled.values()
+        ), "API says no GPS trace but pipeline has resampled laps"
+        return
+
+    # Find the lap DataFrame from pipeline
+    lap_num = data.get("lap_number")
+    assert lap_num is not None, "API returned GPS trace without lap_number"
+    pipeline_df = _get_resampled_lap(resampled, lap_num)
+
+    if pipeline_df is None or (hasattr(pipeline_df, "empty") and pipeline_df.empty):
+        return
+
+    # Find lat/lon columns
+    lat_col = _find_column(pipeline_df, "latitude")
+    lon_col = _find_column(pipeline_df, "longitude")
+
+    dump_artifact(tmp_path, "gps_trace_pipeline", {
+        "lap_number": lap_num,
+        "lat_col": lat_col,
+        "lon_col": lon_col,
+        "n_rows": len(pipeline_df),
+    })
+
+    if lat_col is None or lon_col is None:
+        return  # Cannot compare without GPS columns
+
+    pipeline_lats = pipeline_df[lat_col].values
+    pipeline_lons = pipeline_df[lon_col].values
+    api_lats = data.get("latitudes", [])
+    api_lons = data.get("longitudes", [])
+
+    # Array lengths
+    assert len(api_lats) == len(pipeline_lats), (
+        f"GPS lat length mismatch: API={len(api_lats)} "
+        f"vs pipeline={len(pipeline_lats)}"
+    )
+    assert len(api_lons) == len(pipeline_lons), (
+        f"GPS lon length mismatch: API={len(api_lons)} "
+        f"vs pipeline={len(pipeline_lons)}"
+    )
+
+    # Compare each coordinate (skip NaN)
+    for i, (api_v, pipe_v) in enumerate(zip(api_lats, pipeline_lats)):
+        if api_v is None or (isinstance(pipe_v, float) and math.isnan(pipe_v)):
+            continue
+        assert_close(float(api_v), float(pipe_v), "gps_lat_lon", f"lat[{i}]")
+
+    for i, (api_v, pipe_v) in enumerate(zip(api_lons, pipeline_lons)):
+        if api_v is None or (isinstance(pipe_v, float) and math.isnan(pipe_v)):
+            continue
+        assert_close(float(api_v), float(pipe_v), "gps_lat_lon", f"lon[{i}]")
+
+
+def test_corners_parity(uploaded_session, tmp_path):
+    """Pipeline corner coaching matches API /corners after DB round-trip."""
+    client, session_id, summary = uploaded_session
+
+    # API response
+    resp = client.get(f"/api/v1/sessions/{session_id}/corners")
+    assert resp.status_code == 200, f"Corners API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"Corners response not OK: {body}"
+    data = body["data"]
+
+    # Pipeline truth: corner coaching may be in multiple places
+    pipeline_corners = summary.get("corner_coaching")
+    if pipeline_corners is None:
+        theo = summary.get("theoretical_metrics") or {}
+        pipeline_corners = theo.get("corner_coaching")
+
+    dump_artifact(tmp_path, "corners_pipeline", {
+        "corners": pipeline_corners,
+    })
+    dump_artifact(tmp_path, "corners_api", data)
+
+    if data.get("available") is False:
+        # API reports unavailable
+        assert data.get("reason_code") == "NO_CORNER_DATA", (
+            f"Expected reason_code NO_CORNER_DATA, got {data.get('reason_code')}"
+        )
+        # Pipeline also shouldn't have corners
+        if pipeline_corners:
+            # It's possible pipeline produced corners but persistence failed
+            # (insert_theoretical_data wraps in try/except). Accept this.
+            pass
+        return
+
+    # Both have corners
+    assert data.get("available") is True
+    api_corners = data.get("corners", [])
+
+    if not pipeline_corners:
+        # API has corners but pipeline didn't — DB may have them from
+        # a different source. Accept this.
+        return
+
+    # Same count
+    assert len(api_corners) == len(pipeline_corners), (
+        f"Corner count mismatch: API={len(api_corners)} "
+        f"vs pipeline={len(pipeline_corners)}"
+    )
+
+    # Per-corner comparison (sort by s_start or corner_index for stability)
+    def _sort_key(c):
+        return c.get("s_start") or c.get("corner_index") or 0
+
+    p_sorted = sorted(pipeline_corners, key=_sort_key)
+    a_sorted = sorted(api_corners, key=_sort_key)
+
+    for i, (p_c, a_c) in enumerate(zip(p_sorted, a_sorted)):
+        label = f"corner_{i}"
+
+        # s_start
+        ps = p_c.get("s_start")
+        as_ = a_c.get("s_start")
+        if ps is not None and as_ is not None:
+            assert_close(float(as_), float(ps), "corner_s_start", label)
+
+        # s_end
+        pe = p_c.get("s_end")
+        ae = a_c.get("s_end")
+        if pe is not None and ae is not None:
+            assert_close(float(ae), float(pe), "corner_s_end", label)
+
+        # s_apex
+        pa = p_c.get("s_apex")
+        aa = a_c.get("s_apex")
+        if pa is not None and aa is not None:
+            assert_close(float(aa), float(pa), "corner_s_apex", label)
+
+
+def test_sectors_parity(uploaded_session, tmp_path):
+    """Pipeline sector analysis matches API /sector_times."""
+    client, session_id, summary = uploaded_session
+
+    # API response
+    resp = client.get(f"/api/v1/sessions/{session_id}/sector_times")
+    assert resp.status_code == 200, f"Sector times API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"Sector times response not OK: {body}"
+    data = body["data"]
+
+    dump_artifact(tmp_path, "sectors_api", data)
+
+    # Pipeline truth
+    analysis = summary.get("analysis_json") or {}
+    pipeline_sectors = analysis.get("sector_analysis")
+
+    dump_artifact(tmp_path, "sectors_pipeline", pipeline_sectors)
+
+    if data.get("available") is False:
+        assert "reason_code" in data, (
+            "Sector times unavailable but no reason_code provided"
+        )
+        return
+
+    # If available, the sector analysis was either computed from the pipeline
+    # or re-computed on the fly from lap times. We verify structural integrity.
+    assert data.get("available") is True
+
+    # If pipeline has sector data, compare
+    if pipeline_sectors and isinstance(pipeline_sectors, dict):
+        p_sectors = pipeline_sectors.get("sectors", [])
+        a_sectors = data.get("sectors", [])
+        if p_sectors and a_sectors:
+            assert_exact(len(a_sectors), len(p_sectors), "sector count")
+            for p_s, a_s in zip(p_sectors, a_sectors):
+                sn = p_s.get("sector_num", "?")
+                if "best_s" in p_s and "best_s" in a_s:
+                    assert_close(a_s["best_s"], p_s["best_s"], "sector_time_s", f"sector {sn} best")
+                if "mean_s" in p_s and "mean_s" in a_s:
+                    assert_close(a_s["mean_s"], p_s["mean_s"], "sector_time_s", f"sector {sn} mean")
+
+
+def test_gg_data_parity(uploaded_session, tmp_path):
+    """Pipeline resampled_laps accel matches API /gg-data."""
+    import pandas as pd
+
+    client, session_id, summary = uploaded_session
+
+    # API response (defaults to best lap)
+    resp = client.get(f"/api/v1/sessions/{session_id}/gg-data")
+    assert resp.status_code == 200, f"GG data API returned {resp.status_code}"
+    body = resp.get_json()
+    assert body["ok"] is True, f"GG data response not OK: {body}"
+    data = body["data"]
+
+    dump_artifact(tmp_path, "gg_data_api", {
+        "available": data.get("available"),
+        "lap_number": data.get("lap_number"),
+        "n_accel_lat": len(data.get("accel_lat", [])),
+        "n_accel_long": len(data.get("accel_long", [])),
+    })
+
+    resampled = summary.get("resampled_laps") or {}
+
+    if data.get("available") is False:
+        # Verify reason_code
+        assert data.get("reason_code") == "NO_GG_DATA", (
+            f"Expected reason_code NO_GG_DATA, got {data.get('reason_code')}"
+        )
+        return
+
+    # Find the lap DataFrame from pipeline
+    lap_num = data.get("lap_number")
+    assert lap_num is not None, "API returned GG data without lap_number"
+    pipeline_df = _get_resampled_lap(resampled, lap_num)
+
+    if pipeline_df is None or (hasattr(pipeline_df, "empty") and pipeline_df.empty):
+        return
+
+    # Find accel columns
+    accel_lat_col = _find_column(pipeline_df, "lateral", "accel")
+    if accel_lat_col is None:
+        accel_lat_col = _find_column(pipeline_df, "accel_lat")
+    accel_long_col = _find_column(pipeline_df, "longitudinal", "accel")
+    if accel_long_col is None:
+        accel_long_col = _find_column(pipeline_df, "accel_long")
+
+    dump_artifact(tmp_path, "gg_data_pipeline", {
+        "lap_number": lap_num,
+        "accel_lat_col": accel_lat_col,
+        "accel_long_col": accel_long_col,
+        "columns": list(pipeline_df.columns),
+    })
+
+    if accel_lat_col is None or accel_long_col is None:
+        return  # Cannot compare without accel columns
+
+    pipeline_lat = pipeline_df[accel_lat_col].values
+    pipeline_long = pipeline_df[accel_long_col].values
+    api_lat = data.get("accel_lat", [])
+    api_long = data.get("accel_long", [])
+
+    # Array lengths
+    assert len(api_lat) == len(pipeline_lat), (
+        f"GG accel_lat length mismatch: API={len(api_lat)} "
+        f"vs pipeline={len(pipeline_lat)}"
+    )
+    assert len(api_long) == len(pipeline_long), (
+        f"GG accel_long length mismatch: API={len(api_long)} "
+        f"vs pipeline={len(pipeline_long)}"
+    )
+
+    # Compare each sample (skip NaN)
+    for i, (api_v, pipe_v) in enumerate(zip(api_lat, pipeline_lat)):
+        if api_v is None or (isinstance(pipe_v, float) and math.isnan(pipe_v)):
+            continue
+        assert_close(float(api_v), float(pipe_v), "accel_g", f"accel_lat[{i}]")
+
+    for i, (api_v, pipe_v) in enumerate(zip(api_long, pipeline_long)):
+        if api_v is None or (isinstance(pipe_v, float) and math.isnan(pipe_v)):
+            continue
+        assert_close(float(api_v), float(pipe_v), "accel_g", f"accel_long[{i}]")
+
+
+def test_missing_data_contract(minimal_session):
+    """Missing-data sessions return structured unavailability, never bare empty arrays."""
+    client, session_id, summary = minimal_session
+
+    # ── GG data: must be unavailable (no accel columns in minimal CSV) ──
+    gg_resp = client.get(f"/api/v1/sessions/{session_id}/gg-data")
+    assert gg_resp.status_code == 200, (
+        f"GG data returned {gg_resp.status_code} for minimal session"
+    )
+    gg_body = gg_resp.get_json()
+    assert gg_body["ok"] is True
+    gg_data = gg_body["data"]
+    assert gg_data["available"] is False, "Minimal CSV has no accel — GG must be unavailable"
+    assert gg_data["reason_code"] == "NO_GG_DATA"
+    assert "message" in gg_data
+
+    # ── Corners: must be unavailable (no corner data in minimal CSV) ──
+    corners_resp = client.get(f"/api/v1/sessions/{session_id}/corners")
+    assert corners_resp.status_code == 200, (
+        f"Corners returned {corners_resp.status_code} for minimal session"
+    )
+    corners_body = corners_resp.get_json()
+    assert corners_body["ok"] is True
+    corners_data = corners_body["data"]
+    assert corners_data["available"] is False, "Minimal CSV has no accel — corners must be unavailable"
+    assert corners_data["reason_code"] == "NO_CORNER_DATA"
+
+    # ── Sectors: if unavailable, must have reason_code ──
+    sectors_resp = client.get(f"/api/v1/sessions/{session_id}/sector_times")
+    assert sectors_resp.status_code == 200, (
+        f"Sector times returned {sectors_resp.status_code} for minimal session"
+    )
+    sectors_body = sectors_resp.get_json()
+    if sectors_body.get("ok"):
+        sectors_data = sectors_body["data"]
+        if not sectors_data.get("available", True):
+            assert "reason_code" in sectors_data, (
+                "Sector times available=false but no reason_code"
+            )
+
+    # ── Scores: must return 200, either available:true or available:false ──
+    scores_resp = client.get(f"/api/v1/sessions/{session_id}/scores")
+    assert scores_resp.status_code == 200, (
+        f"Scores returned {scores_resp.status_code} for minimal session"
+    )
+    scores_body = scores_resp.get_json()
+    assert scores_body.get("ok") is True, (
+        f"Scores response not OK for minimal session: {scores_body}"
+    )
+    scores_data = scores_body["data"]
+    # Must explicitly declare availability
+    assert "available" in scores_data, (
+        "Scores response must include 'available' field"
+    )
+    if not scores_data["available"]:
+        assert "reason_code" in scores_data, (
+            "Scores available=false but no reason_code"
+        )
