@@ -3722,18 +3722,260 @@ def v1_corners(session_id: str):
 
 
 # ---------------------------------------------------------------------------
-# MISSING-004: GET /sessions/<id>/corner-replay — corner animation frames
+# Helpers for batch corner replay
+# ---------------------------------------------------------------------------
+
+
+def _has_variance(arr: list) -> bool:
+    """Return True if the list has non-zero variance (check first 50 elements)."""
+    if not arr:
+        return False
+    sample = arr[:50]
+    first = sample[0]
+    for v in sample[1:]:
+        if v != first:
+            return True
+    return False
+
+
+def _build_corner_replay_response(conn, session_id: str):
+    """Build batch corner replay data for all corners in a session.
+
+    Returns:
+        - dict with replay data on success
+        - None if session not found
+        - "NO_KEY_CORNERS" if track has no key corners defined
+        - "INSUFFICIENT_LAPS" if fewer than 2 GPS laps available
+    """
+    # 1. Load session
+    session = get_session_by_id(conn, session_id)
+    if session is None:
+        return None
+
+    track_id = session.get("track_id")
+    if not track_id:
+        return "NO_KEY_CORNERS"
+
+    # 2. Load key corners for the track
+    try:
+        kc_rows = conn.execute(
+            """SELECT corner_id, label, lat, lon, dist_m
+               FROM track_key_corners
+               WHERE track_id = :tid
+               ORDER BY dist_m""",
+            {"tid": track_id},
+        ).fetchall()
+    except Exception:
+        kc_rows = []
+
+    if not kc_rows:
+        return "NO_KEY_CORNERS"
+
+    corners = []
+    for r in kc_rows:
+        d = dict(r) if not isinstance(r, dict) else r
+        corners.append({
+            "corner_id": d["corner_id"],
+            "label": d.get("label") or f"C{d['corner_id']}",
+            "lat": d.get("lat"),
+            "lon": d.get("lon"),
+            "dist_m": d.get("dist_m"),
+        })
+
+    # 3. Load laps
+    laps_raw = get_laps_for_session(conn, session_id)
+    laps_out = []
+    for lap in laps_raw:
+        laps_out.append({
+            "lap_number": lap.get("lap_number"),
+            "lap_time_s": lap.get("lap_time_s"),
+        })
+
+    # 4. Load GPS traces
+    lap_numbers = get_gps_lap_numbers(conn, session_id)
+    traces = {}
+    has_pedal_data = False
+    has_steering_data = False
+
+    for ln in lap_numbers:
+        gps = get_gps_trace(conn, session_id, ln)
+        if gps is None:
+            continue
+
+        trace = {
+            "lat": gps.get("latitudes", []),
+            "lon": gps.get("longitudes", []),
+            "dist_m": gps.get("distances", []),
+            "speed_mps": gps.get("speeds", []),
+            "accel_lat": gps.get("accel_lat", []),
+            "accel_lon": gps.get("accel_long", []),
+        }
+
+        # Check for optional pedal/steering channels (forward compat)
+        brake = gps.get("brake")
+        throttle = gps.get("throttle")
+        steering = gps.get("steering")
+
+        brake_ok = brake is not None and _has_variance(brake)
+        throttle_ok = throttle is not None and _has_variance(throttle)
+        steering_ok = steering is not None and _has_variance(steering)
+
+        if brake_ok:
+            trace["brake"] = brake
+        if throttle_ok:
+            trace["throttle"] = throttle
+        if steering_ok:
+            trace["steering"] = steering
+
+        if brake_ok and throttle_ok:
+            has_pedal_data = True
+        if steering_ok:
+            has_steering_data = True
+
+        traces[str(ln)] = trace
+
+    if len(traces) < 2:
+        return "INSUFFICIENT_LAPS"
+
+    # 5. Compute replay windows per corner
+    replay_windows = {}
+    for c in corners:
+        cid = c["corner_id"]
+        corner_dist = c.get("dist_m", 0) or 0
+
+        # Find brake point from corner_metrics (use first available lap)
+        brake_point_m = corner_dist  # default to corner position
+        try:
+            bp_row = conn.execute(
+                """SELECT brake_point_m
+                   FROM corner_metrics
+                   WHERE session_id = :sid AND corner_id = :cid
+                   ORDER BY lap_number LIMIT 1""",
+                {"sid": session_id, "cid": cid},
+            ).fetchone()
+            if bp_row:
+                d = dict(bp_row) if not isinstance(bp_row, dict) else bp_row
+                bp_val = d.get("brake_point_m")
+                if bp_val is not None:
+                    brake_point_m = bp_val
+        except Exception:
+            pass
+
+        # Find the trace indices around the brake point (use first trace)
+        first_trace_key = next(iter(traces))
+        dist_arr = traces[first_trace_key].get("dist_m", [])
+        speed_arr = traces[first_trace_key].get("speed_mps", [])
+        n = len(dist_arr)
+
+        # Find index closest to brake_point_m
+        center_idx = 0
+        min_diff = float("inf")
+        for i, d in enumerate(dist_arr):
+            diff = abs(d - brake_point_m)
+            if diff < min_diff:
+                min_diff = diff
+                center_idx = i
+
+        # Pad +/- 120 indices
+        start_idx = max(0, center_idx - 120)
+        end_idx = min(n - 1, center_idx + 120) if n > 0 else 0
+
+        # Estimate duration from distance / avg speed in window
+        duration_s = 0.0
+        if start_idx < end_idx and n > 0:
+            window_dist = abs(
+                dist_arr[min(end_idx, n - 1)] - dist_arr[start_idx]
+            )
+            window_speeds = speed_arr[start_idx : end_idx + 1]
+            valid_speeds = [s for s in window_speeds if s and s > 0]
+            if valid_speeds:
+                avg_speed = sum(valid_speeds) / len(valid_speeds)
+                if avg_speed > 0:
+                    duration_s = round(window_dist / avg_speed, 3)
+
+        replay_windows[str(cid)] = {
+            "start_idx": start_idx,
+            "end_idx": end_idx,
+            "center_idx": center_idx,
+            "duration_s": duration_s,
+        }
+
+    # 6. Load corner_metrics per corner per lap
+    corner_metrics_out = {}
+    for c in corners:
+        cid = c["corner_id"]
+        try:
+            cm_rows = conn.execute(
+                """SELECT lap_number, brake_point_m, entry_speed_mps,
+                          apex_speed_mps, exit_speed_mps, time_loss_ms,
+                          coaching_hint
+                   FROM corner_metrics
+                   WHERE session_id = :sid AND corner_id = :cid
+                   ORDER BY lap_number""",
+                {"sid": session_id, "cid": cid},
+            ).fetchall()
+        except Exception:
+            cm_rows = []
+
+        metrics_list = []
+        for r in cm_rows:
+            d = dict(r) if not isinstance(r, dict) else r
+            metrics_list.append({
+                "lap_number": d.get("lap_number"),
+                "brake_point_m": d.get("brake_point_m"),
+                "entry_speed_mps": d.get("entry_speed_mps"),
+                "apex_speed_mps": d.get("apex_speed_mps"),
+                "exit_speed_mps": d.get("exit_speed_mps"),
+                "time_loss_ms": d.get("time_loss_ms"),
+                "coaching_hint": d.get("coaching_hint"),
+            })
+        corner_metrics_out[str(cid)] = metrics_list
+
+    return {
+        "session_id": session_id,
+        "track_id": track_id,
+        "has_pedal_data": has_pedal_data,
+        "has_steering_data": has_steering_data,
+        "corners": corners,
+        "laps": laps_out,
+        "traces": traces,
+        "replay_windows": replay_windows,
+        "corner_metrics": corner_metrics_out,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /sessions/<id>/corner-replay — batch corner replay data
 # ---------------------------------------------------------------------------
 
 @bp.route("/sessions/<session_id>/corner-replay", methods=["GET"])
 @rate_limit(tier="read")
 def v1_corner_replay(session_id: str):
-    """Return frame data for corner replay animation (no corner ID).
+    """Return batch corner replay data for all corners in a session.
 
     Returns:
-        200 with ``{"frames": []}``
+        200 with full replay payload including traces, corners, metrics
+        404 if session not found
+        409 if no key corners defined for the track
+        422 if insufficient GPS data (need >= 2 laps)
     """
-    return api_response({"frames": []})
+    conn = get_db_connection()
+    result = _build_corner_replay_response(conn, session_id)
+    if result is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+    if result == "NO_KEY_CORNERS":
+        return api_error(
+            ErrorCode.CONFLICT,
+            "No key corners defined for this track. Run analysis with corner selection first.",
+            status=409,
+        )
+    if result == "INSUFFICIENT_LAPS":
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Insufficient GPS data: need at least 2 laps",
+            status=422,
+        )
+    return api_response(result)
 
 
 # ---------------------------------------------------------------------------

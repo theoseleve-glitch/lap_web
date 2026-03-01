@@ -1058,23 +1058,28 @@ class TestV1Corners:
 
 class TestV1CornerReplay:
     @patch("web.routes.api_v1_data.get_db_connection")
-    def test_corner_replay_returns_envelope(self, mock_db, client):
-        """GET /api/v1/sessions/<id>/corner-replay returns ok/data envelope."""
+    def test_corner_replay_returns_404_for_missing_session(self, mock_db, client):
+        """GET /api/v1/sessions/<id>/corner-replay returns 404 when session not found."""
         conn = _mock_conn()
         mock_db.return_value = conn
         resp = client.get("/api/v1/sessions/sess_001/corner-replay")
         body = resp.get_json()
-        assert resp.status_code == 200
-        assert body["ok"] is True
+        assert resp.status_code == 404
+        assert body["ok"] is False
+        assert body["error"]["code"] == "NOT_FOUND"
 
     @patch("web.routes.api_v1_data.get_db_connection")
-    def test_corner_replay_has_frames(self, mock_db, client):
-        """Response has 'frames' key with a list."""
+    @patch("web.routes.api_v1_data.get_session_by_id")
+    def test_corner_replay_returns_409_when_no_key_corners(self, mock_session, mock_db, client):
+        """GET /api/v1/sessions/<id>/corner-replay returns 409 when no key corners."""
         conn = _mock_conn()
         mock_db.return_value = conn
-        resp = client.get("/api/v1/sessions/sess_001/corner-replay")
+        mock_session.return_value = {"session_id": "s1", "track_id": "t1"}
+        resp = client.get("/api/v1/sessions/s1/corner-replay")
         body = resp.get_json()
-        assert isinstance(body["data"]["frames"], list)
+        assert resp.status_code == 409
+        assert body["ok"] is False
+        assert body["error"]["code"] == "CONFLICT"
 
 
 # ---------------------------------------------------------------------------

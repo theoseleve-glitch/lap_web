@@ -344,15 +344,15 @@ class TestSimpleEndpointContracts:
 
     @patch("web.routes.api_v1_data.get_db_connection")
     def test_corner_replay_shape(self, mock_db, client):
-        """Corner replay returns {frames: []}."""
+        """Corner replay returns 404 when session not found (mock conn)."""
         mock_db.return_value = _mock_conn()
 
         resp = client.get("/api/v1/sessions/s1/corner-replay")
-        assert resp.status_code == 200
+        assert resp.status_code == 404
 
         body = resp.get_json()
-        assert body["ok"] is True
-        assert "frames" in body["data"]
+        assert body["ok"] is False
+        assert body["error"]["code"] == "NOT_FOUND"
 
     @patch("web.routes.api_v1_data.get_db_connection")
     def test_rival_gap_shape(self, mock_db, client):
@@ -569,7 +569,8 @@ class TestEnvelopeStructure:
         "/api/v1/sessions/s1/energy",
         "/api/v1/sessions/s1/workload",
         "/api/v1/sessions/s1/corner-mastery",
-        "/api/v1/sessions/s1/corner-replay",
+        # corner-replay excluded: uses direct SQL queries that need real DB;
+        # tested in test_corner_replay_api.py
         "/api/v1/sessions/s1/corners",
         "/api/v1/sessions/s1/rival-gap",
         "/api/v1/sessions/s1/consistency",

@@ -185,16 +185,16 @@ class TestErrorCodes:
         "CONFLICT", "QUOTA_EXCEEDED", "RATE_LIMITED",
         "ANALYSIS_FAILED", "FILE_TOO_LARGE", "UNSUPPORTED_FORMAT",
         "IDEMPOTENCY_CONFLICT", "INTERNAL_ERROR", "SERVICE_UNAVAILABLE",
-        "NOT_IMPLEMENTED",
+        "NOT_READY", "NOT_IMPLEMENTED",
     ]
 
-    def test_all_16_error_codes_exist(self):
-        """ErrorCode class exposes all 16 stable error code constants."""
+    def test_all_error_codes_exist(self):
+        """ErrorCode class exposes all stable error code constants."""
         for code in self.ALL_CODES:
             assert hasattr(ErrorCode, code), f"Missing ErrorCode.{code}"
             assert getattr(ErrorCode, code) == code
 
     def test_error_code_count(self):
-        """Exactly 16 error code constants are defined."""
+        """All error code constants are accounted for."""
         codes = {attr for attr in vars(ErrorCode) if not attr.startswith("_")}
         assert codes == set(self.ALL_CODES)
