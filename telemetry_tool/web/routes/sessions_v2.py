@@ -264,6 +264,10 @@ def upload_session():
             "display_name": Path(safe_name).stem,
         }
 
+        kart_id_str = request.form.get("kart_id")
+        if kart_id_str:
+            session_meta["kart_id"] = int(kart_id_str)
+
         exclude_laps = _parse_exclude_laps(request.form.get("exclude_laps"))
         if exclude_laps:
             session_meta["exclude_laps"] = exclude_laps

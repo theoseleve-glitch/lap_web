@@ -374,6 +374,7 @@ def upsert_session(
         "display_name":      meta.get("display_name") or Path(str(summary.get("csv_path", ""))).stem,
         "source_filename":   meta.get("source_filename") or Path(str(summary.get("csv_path", ""))).name,
         "source_path":       str(summary.get("csv_path", "")),
+        "kart_id":           meta.get("kart_id"),
     })
     return session_id
 
