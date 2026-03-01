@@ -244,6 +244,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.race_strategy_v2',   'bp', 'race_strategy_v2_bp'),
         ('.routes.sessions_v2',        'bp', 'sessions_v2_bp'),    # Sync upload endpoint
         ('.routes.data_v2',            'bp', 'data_v2_bp'),        # Data-serving API endpoints
+        ('.routes.api_v1_entities',    'bp', 'api_v1_entities_bp'), # Entity CRUD (drivers, tracks)
     ]
 
     import importlib
