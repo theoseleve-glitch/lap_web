@@ -135,6 +135,20 @@ export function middleware(request: NextRequest) {
     }
   }
 
+  // Prevent Cloudflare from caching HTML pages for too long.
+  // Static assets (/_next/static/) are excluded by the matcher and have
+  // content-hashed filenames, so they can be cached indefinitely.
+  // HTML pages must revalidate on each deploy to avoid stale chunk references.
+  const isPageRequest =
+    !request.nextUrl.pathname.startsWith('/_next/') &&
+    !request.nextUrl.pathname.startsWith('/api/');
+  if (isPageRequest) {
+    response.headers.set(
+      'Cache-Control',
+      'public, s-maxage=60, stale-while-revalidate=30'
+    );
+  }
+
   return response;
 }
 
