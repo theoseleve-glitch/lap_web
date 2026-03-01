@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useId, useMemo } from 'react';
 import { useVanillaChart } from './useVanillaChart';
+import { useChartHoverStore } from '@/lib/chart-hover-store';
 
 interface GGExplorerData {
   accel_lat: number[];
@@ -80,6 +81,39 @@ export function GGExplorer({
       }
     };
   }, [shouldUseVanilla, ready, containerId, sessionId]);
+
+  // ── Hover bridge (vanilla mode) — sync with other charts ────
+  useEffect(() => {
+    if (!shouldUseVanilla || !ready) return;
+
+    // Subscribe to external hover events → highlight point on GG scatter
+    const unsubscribe = useChartHoverStore.subscribe((state) => {
+      if (state.hoverSource === 'gg-explorer') return;
+      if (state.hoverDistance !== null && window.GGExplorer) {
+        const highlightByDistance = (window.GGExplorer as Record<string, unknown>)
+          .highlightByDistance as ((d: number) => void) | undefined;
+        if (highlightByDistance) highlightByDistance(state.hoverDistance);
+      }
+    });
+
+    // Emit hover events from GG explorer → other charts
+    if (window.GGExplorer) {
+      (window.GGExplorer as Record<string, unknown>)._onHoverDistance = (distM: number) => {
+        if (distM != null && isFinite(distM)) {
+          useChartHoverStore.getState().setHover(distM, 'gg-explorer');
+        }
+      };
+    }
+
+    const ggCanvas = document.getElementById('gg-explorer-canvas');
+    const handleLeave = () => useChartHoverStore.getState().clearHover();
+    if (ggCanvas) ggCanvas.addEventListener('mouseleave', handleLeave);
+
+    return () => {
+      unsubscribe();
+      if (ggCanvas) ggCanvas.removeEventListener('mouseleave', handleLeave);
+    };
+  }, [shouldUseVanilla, ready]);
 
   // ── Error state ──────────────────────────────────────────────
   if (error && shouldUseVanilla) {
@@ -203,13 +237,23 @@ export function GGExplorer({
   // ── Data mode (pre-fetched) ──────────────────────────────────
   return (
     <div ref={containerRef} className={className}>
-      <div style={{ width: '100%', height: '300px', background: '#1a1a2e' }}>
-        {data ? (
-          <div className="text-gray-400 p-4 text-sm">
-            G-G diagram with {data.accel_lat.length} points
+      <div
+        className="flex items-center justify-center rounded-lg border border-steel/10"
+        style={{ width: '100%', height: '300px', background: '#1a1a2e' }}
+      >
+        {data && data.accel_lat.length > 0 ? (
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">G-G Diagram</p>
+            <p>{data.accel_lat.length} data points</p>
           </div>
         ) : (
-          <div className="text-gray-500 p-4">No G-G data</div>
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">No G-G Data</p>
+            <p className="text-steel/60 text-xs max-w-[280px]">
+              G-G diagrams require lateral and longitudinal acceleration columns
+              in your CSV (e.g., &quot;Acceleration X/Y&quot; or &quot;Lateral/Longitudinal G&quot;).
+            </p>
+          </div>
         )}
       </div>
     </div>

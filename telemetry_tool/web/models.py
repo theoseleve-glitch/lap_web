@@ -383,11 +383,141 @@ def get_sessions(
     conn: sqlite3.Connection,
     limit: int = 25,
     offset: int = 0,
+    filters: Optional[dict] = None,
+    sort_by: Optional[str] = None,
+    sort_dir: str = "desc",
 ) -> list[dict]:
-    rows = conn.execute(
-        Q.SELECT_SESSIONS, {"limit": limit, "offset": offset}
-    ).fetchall()
+    """List sessions with optional filtering and sorting.
+
+    Supported filter keys:
+        driver, track, session_type, track_state, search,
+        date_from, date_to, min_score, max_score
+    """
+    if not filters:
+        rows = conn.execute(
+            Q.SELECT_SESSIONS, {"limit": limit, "offset": offset}
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # Build dynamic WHERE clauses
+    clauses = []
+    params: dict = {"limit": limit, "offset": offset}
+
+    if filters.get("driver"):
+        clauses.append("d.driver_name = :f_driver")
+        params["f_driver"] = filters["driver"]
+    if filters.get("track"):
+        clauses.append("t.track_name = :f_track")
+        params["f_track"] = filters["track"]
+    if filters.get("session_type"):
+        clauses.append("s.session_type = :f_type")
+        params["f_type"] = filters["session_type"]
+    if filters.get("track_state"):
+        clauses.append("s.track_state = :f_state")
+        params["f_state"] = filters["track_state"]
+    if filters.get("date_from"):
+        clauses.append("s.session_date >= :f_date_from")
+        params["f_date_from"] = filters["date_from"]
+    if filters.get("date_to"):
+        clauses.append("s.session_date <= :f_date_to")
+        params["f_date_to"] = filters["date_to"]
+    if filters.get("min_score") is not None:
+        clauses.append("s.total_score >= :f_min_score")
+        params["f_min_score"] = filters["min_score"]
+    if filters.get("max_score") is not None:
+        clauses.append("s.total_score <= :f_max_score")
+        params["f_max_score"] = filters["max_score"]
+    if filters.get("search"):
+        clauses.append(
+            "(d.driver_name LIKE :f_search OR t.track_name LIKE :f_search "
+            "OR s.csv_filename LIKE :f_search)"
+        )
+        params["f_search"] = f"%{filters['search']}%"
+
+    where = (" AND ".join(clauses)) if clauses else "1=1"
+
+    # Validate sort column to prevent injection
+    _SORT_COLUMNS = {
+        "date": "s.session_date",
+        "track_name": "t.track_name",
+        "driver_name": "d.driver_name",
+        "session_type": "s.session_type",
+        "track_state": "s.track_state",
+        "lap_count": "s.n_laps",
+        "best_lap_time": "s.best_lap_time_s",
+        "mean_lap_time": "s.mean_lap_time_s",
+        "total_score": "s.total_score",
+        "grade": "s.grade",
+    }
+    order_col = _SORT_COLUMNS.get(sort_by, "s.session_date") if sort_by else "s.session_date"
+    order_dir = "ASC" if sort_dir == "asc" else "DESC"
+
+    sql = f"""
+        SELECT s.*, d.driver_name, t.track_name, k.kart_name
+        FROM sessions s
+        JOIN drivers d ON s.driver_id = d.driver_id
+        LEFT JOIN tracks t ON s.track_id = t.track_id
+        LEFT JOIN karts k ON s.kart_id = k.kart_id
+        WHERE {where}
+        ORDER BY {order_col} {order_dir}
+        LIMIT :limit OFFSET :offset;
+    """
+    rows = conn.execute(sql, params).fetchall()
     return [dict(r) for r in rows]
+
+
+def count_sessions_filtered(
+    conn: sqlite3.Connection,
+    filters: Optional[dict] = None,
+) -> int:
+    """Count sessions matching filters."""
+    if not filters:
+        return count_sessions(conn)
+
+    clauses = []
+    params: dict = {}
+
+    if filters.get("driver"):
+        clauses.append("d.driver_name = :f_driver")
+        params["f_driver"] = filters["driver"]
+    if filters.get("track"):
+        clauses.append("t.track_name = :f_track")
+        params["f_track"] = filters["track"]
+    if filters.get("session_type"):
+        clauses.append("s.session_type = :f_type")
+        params["f_type"] = filters["session_type"]
+    if filters.get("track_state"):
+        clauses.append("s.track_state = :f_state")
+        params["f_state"] = filters["track_state"]
+    if filters.get("date_from"):
+        clauses.append("s.session_date >= :f_date_from")
+        params["f_date_from"] = filters["date_from"]
+    if filters.get("date_to"):
+        clauses.append("s.session_date <= :f_date_to")
+        params["f_date_to"] = filters["date_to"]
+    if filters.get("min_score") is not None:
+        clauses.append("s.total_score >= :f_min_score")
+        params["f_min_score"] = filters["min_score"]
+    if filters.get("max_score") is not None:
+        clauses.append("s.total_score <= :f_max_score")
+        params["f_max_score"] = filters["max_score"]
+    if filters.get("search"):
+        clauses.append(
+            "(d.driver_name LIKE :f_search OR t.track_name LIKE :f_search "
+            "OR s.csv_filename LIKE :f_search)"
+        )
+        params["f_search"] = f"%{filters['search']}%"
+
+    where = (" AND ".join(clauses)) if clauses else "1=1"
+    sql = f"""
+        SELECT COUNT(*) FROM sessions s
+        JOIN drivers d ON s.driver_id = d.driver_id
+        LEFT JOIN tracks t ON s.track_id = t.track_id
+        LEFT JOIN karts k ON s.kart_id = k.kart_id
+        WHERE {where};
+    """
+    row = conn.execute(sql, params).fetchone()
+    return row[0] if row else 0
 
 
 def get_session_by_id(

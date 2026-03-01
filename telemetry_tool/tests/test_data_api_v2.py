@@ -176,6 +176,7 @@ class TestListSessions:
             mock_db.return_value = MagicMock()
             mock_models.get_sessions.return_value = _sample_sessions()
             mock_models.count_sessions.return_value = 2
+            mock_models.count_sessions_filtered.return_value = 2
 
             resp = client.get("/api/v1/sessions")
 
@@ -193,6 +194,7 @@ class TestListSessions:
             mock_db.return_value = MagicMock()
             mock_models.get_sessions.return_value = _sample_sessions()[:1]
             mock_models.count_sessions.return_value = 50
+            mock_models.count_sessions_filtered.return_value = 50
 
             resp = client.get("/api/v1/sessions?limit=1&offset=0")
 
@@ -207,6 +209,7 @@ class TestListSessions:
             mock_db.return_value = MagicMock()
             mock_models.get_sessions.return_value = []
             mock_models.count_sessions.return_value = 0
+            mock_models.count_sessions_filtered.return_value = 0
 
             resp = client.get("/api/v1/sessions")
 
@@ -1132,7 +1135,7 @@ class TestGGDataContract:
         assert isinstance(data["available"], bool)
 
         # No extra unexpected keys
-        expected_keys = {"lap_number", "accel_lat", "accel_long", "available"}
+        expected_keys = {"lap_number", "accel_lat", "accel_long", "distances", "available"}
         assert set(data.keys()) == expected_keys, \
             f"GG data keys should be {expected_keys}, got {set(data.keys())}"
 
@@ -1149,6 +1152,7 @@ class TestSessionsListContract:
             mock_db.return_value = MagicMock()
             mock_models.get_sessions.return_value = _sample_sessions()
             mock_models.count_sessions.return_value = 2
+            mock_models.count_sessions_filtered.return_value = 2
 
             resp = client.get("/api/v1/sessions")
 
@@ -1183,6 +1187,7 @@ class TestSessionsListContract:
             mock_db.return_value = MagicMock()
             mock_models.get_sessions.return_value = []
             mock_models.count_sessions.return_value = 0
+            mock_models.count_sessions_filtered.return_value = 0
 
             resp = client.get("/api/v1/sessions")
 

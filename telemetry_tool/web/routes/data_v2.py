@@ -154,9 +154,19 @@ def dashboard_stats():
             "best_time": s.get("best_lap_time_s"),
             "score": s.get("total_score"),
             "grade": s.get("grade"),
+            "session_type": s.get("session_type"),
+            "track_state": s.get("track_state"),
         }
         for s in recent[:10]  # Table shows 10 most recent
     ]
+
+    # Identify which session holds the personal best
+    pb_session_id = None
+    if stats.get("overall_best_time_s") is not None:
+        for s in recent:
+            if s.get("best_lap_time_s") == stats["overall_best_time_s"]:
+                pb_session_id = s.get("session_id")
+                break
 
     return api_response({
         "total_sessions": stats.get("total_sessions", 0),
@@ -164,6 +174,7 @@ def dashboard_stats():
         "total_tracks": stats.get("total_tracks", 0),
         "total_laps": stats.get("total_laps", 0) or 0,
         "pb_time": stats.get("overall_best_time_s"),
+        "pb_session_id": pb_session_id,
         "avg_score": stats.get("avg_score"),
         "best_score": stats.get("best_score"),
         "recent_scores": recent_scores,
@@ -180,11 +191,22 @@ def dashboard_stats():
 @bp.route("/sessions", methods=["GET"])
 @_safe_api
 def list_sessions():
-    """List sessions with pagination.
+    """List sessions with pagination, filtering, and sorting.
 
     Query params:
-        limit  (int, default 25)
-        offset (int, default 0)
+        limit        (int, default 25)
+        offset       (int, default 0)
+        driver       (str) — exact driver name
+        track        (str) — exact track name
+        session_type (str) — practice/qualifying/race/test/endurance
+        track_state  (str) — dry/wet/damp/mixed/greasy
+        date_from    (str) — YYYY-MM-DD
+        date_to      (str) — YYYY-MM-DD
+        min_score    (float)
+        max_score    (float)
+        search       (str) — free-text search across driver, track, filename
+        sort_by      (str) — column key
+        sort_dir     (str) — asc or desc
     """
     try:
         limit = int(request.args.get("limit", 25))
@@ -199,9 +221,32 @@ def list_sessions():
     limit = max(1, min(limit, 100))
     offset = max(0, offset)
 
+    # Build filters dict from query params
+    filters = {}
+    for key in ("driver", "track", "session_type", "track_state",
+                "date_from", "date_to", "search"):
+        val = request.args.get(key)
+        if val:
+            filters[key] = val
+    for key in ("min_score", "max_score"):
+        val = request.args.get(key)
+        if val is not None:
+            try:
+                filters[key] = float(val)
+            except (ValueError, TypeError):
+                pass
+
+    sort_by = request.args.get("sort_by")
+    sort_dir = request.args.get("sort_dir", "desc")
+
     conn = get_db_connection()
-    sessions = models.get_sessions(conn, limit=limit, offset=offset)
-    total = models.count_sessions(conn)
+    sessions = models.get_sessions(
+        conn, limit=limit, offset=offset,
+        filters=filters or None,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
+    )
+    total = models.count_sessions_filtered(conn, filters=filters or None)
 
     # Strip internal fields from each session
     clean = []
@@ -218,6 +263,25 @@ def list_sessions():
         "total": total,
         "limit": limit,
         "offset": offset,
+    })
+
+
+@bp.route("/sessions/filter-options", methods=["GET"])
+@_safe_api
+def session_filter_options():
+    """Return distinct values for filter dropdowns."""
+    conn = get_db_connection()
+    drivers = [r[0] for r in conn.execute(
+        "SELECT DISTINCT driver_name FROM drivers ORDER BY driver_name"
+    ).fetchall()]
+    tracks = [r[0] for r in conn.execute(
+        "SELECT DISTINCT track_name FROM tracks WHERE track_name IS NOT NULL ORDER BY track_name"
+    ).fetchall()]
+    return api_response({
+        "drivers": drivers,
+        "tracks": tracks,
+        "session_types": ["practice", "qualifying", "race", "test", "endurance"],
+        "track_states": ["dry", "wet", "damp", "mixed", "greasy"],
     })
 
 
@@ -394,17 +458,23 @@ def get_gg_data(session_id: str):
 
     lat_g = trace.get("accel_lat") or []
     lon_g = trace.get("accel_long") or []
+    distances = trace.get("distances") or []
     has_accel = bool(lat_g and lon_g)
 
     result = {
         "accel_lat": lat_g if has_accel else [],
         "accel_long": lon_g if has_accel else [],
+        "distances": distances if has_accel else [],
         "lap_number": lap_num,
         "available": has_accel,
     }
     if not has_accel:
         result["reason_code"] = "NO_GG_DATA"
-        result["message"] = "No accelerometer data available for this session"
+        result["message"] = (
+            "No accelerometer data available for this session. "
+            "G-G diagrams require lateral and longitudinal acceleration columns "
+            "in your CSV (e.g., 'Acceleration X/Y' or 'Lateral/Longitudinal G')."
+        )
 
     return api_response(result)
 

@@ -30,6 +30,8 @@ interface SessionRow {
   best_time: number | null;
   score: number | null;
   grade: string | null;
+  session_type: string | null;
+  track_state: string | null;
 }
 
 interface DashboardStats {
@@ -38,6 +40,7 @@ interface DashboardStats {
   total_tracks: number;
   total_laps: number;
   pb_time: number | null;
+  pb_session_id: string | null;
   avg_score: number | null;
   best_score: number | null;
   recent_scores: number[];
@@ -50,6 +53,24 @@ function formatTime(s: number | null): string {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
+}
+
+const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  practice:   { bg: 'bg-acid-green/10', text: 'text-acid-green', label: 'Practice' },
+  qualifying: { bg: 'bg-marshal-yellow/10', text: 'text-marshal-yellow', label: 'Qualifying' },
+  race:       { bg: 'bg-safety-red/10', text: 'text-safety-red', label: 'Race' },
+  test:       { bg: 'bg-blue-400/10', text: 'text-blue-400', label: 'Test' },
+  endurance:  { bg: 'bg-purple-400/10', text: 'text-purple-400', label: 'Endurance' },
+};
+
+function TypeBadge({ type }: { type: string | null }) {
+  if (!type) return <span className="text-steel/40">—</span>;
+  const style = TYPE_STYLES[type] ?? { bg: 'bg-steel/10', text: 'text-steel', label: type };
+  return (
+    <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-telemetry uppercase tracking-wider ${style.bg} ${style.text}`}>
+      {style.label}
+    </span>
+  );
 }
 
 export default function DashboardPage() {
@@ -94,6 +115,7 @@ export default function DashboardPage() {
     total_tracks: 0,
     total_laps: 0,
     pb_time: null,
+    pb_session_id: null,
     avg_score: null,
     best_score: null,
     recent_scores: [],
@@ -108,7 +130,16 @@ export default function DashboardPage() {
       key: 'date',
       header: 'Date',
       sortable: true,
-      className: 'font-telemetry',
+      className: 'font-telemetry whitespace-nowrap',
+      render: (row: SessionRow) => {
+        if (!row.date) return <span className="text-steel">--</span>;
+        try {
+          const d = new Date(row.date + 'T00:00:00');
+          return <span>{d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>;
+        } catch {
+          return <span>{row.date}</span>;
+        }
+      },
     },
     {
       key: 'track_name',
@@ -121,6 +152,12 @@ export default function DashboardPage() {
       header: 'Driver',
       sortable: true,
       className: 'font-body',
+    },
+    {
+      key: 'session_type',
+      header: 'Type',
+      sortable: true,
+      render: (row: SessionRow) => <TypeBadge type={row.session_type} />,
     },
     {
       key: 'laps',
@@ -232,11 +269,21 @@ export default function DashboardPage() {
         <StatCard label="Drivers" value={stats.total_drivers} />
         <StatCard label="Tracks" value={stats.total_tracks} />
         <StatCard label="Total Laps" value={stats.total_laps.toLocaleString()} />
-        <StatCard
-          label="Personal Best"
-          value={formatTime(stats.pb_time)}
-          trend={stats.pb_time != null ? 'up' : 'neutral'}
-        />
+        {stats.pb_session_id ? (
+          <Link href={`/app/sessions/${stats.pb_session_id}`} className="block">
+            <StatCard
+              label="Personal Best"
+              value={formatTime(stats.pb_time)}
+              trend={stats.pb_time != null ? 'up' : 'neutral'}
+            />
+          </Link>
+        ) : (
+          <StatCard
+            label="Personal Best"
+            value={formatTime(stats.pb_time)}
+            trend={stats.pb_time != null ? 'up' : 'neutral'}
+          />
+        )}
         <StatCard
           label="Best Score"
           value={stats.best_score != null ? stats.best_score.toFixed(1) : '--'}

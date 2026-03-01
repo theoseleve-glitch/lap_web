@@ -219,15 +219,24 @@ export function TrackMap(props: TrackMapProps) {
   return (
     <div ref={containerRef} className={className}>
       <div
+        className="flex items-center justify-center rounded-lg border border-steel/10"
         style={{ width: '100%', height: '400px', position: 'relative', background: '#1a1a2e' }}
       >
-        {data ? (
-          <div className="text-gray-400 p-4 text-sm">
-            Track map with {data.latitudes.length} points
-            {corners ? ` and ${corners.length} corners` : ''}
+        {data && data.latitudes.length > 0 ? (
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">Track Map</p>
+            <p>{data.latitudes.length} GPS points
+              {corners ? `, ${corners.length} corners` : ''}
+            </p>
           </div>
         ) : (
-          <div className="text-gray-500 p-4">No GPS data</div>
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">No GPS Data</p>
+            <p className="text-steel/60 text-xs max-w-[280px]">
+              No GPS trace data available for this lap. Ensure your CSV contains
+              latitude and longitude columns.
+            </p>
+          </div>
         )}
       </div>
     </div>

@@ -251,14 +251,24 @@ export function SpeedTraceChart(props: SpeedTraceChartProps) {
   // ── Data mode (pre-fetched) ──────────────────────────────────
   return (
     <div ref={containerRef} className={className}>
-      <div style={{ width: '100%', height: '250px', background: '#1a1a2e' }}>
-        {data ? (
-          <div className="text-gray-400 p-4 text-sm">
-            Speed trace with {data.distances.length} points
-            {data.ref_speeds ? ' (with reference overlay)' : ''}
+      <div
+        className="flex items-center justify-center rounded-lg border border-steel/10"
+        style={{ width: '100%', height: '250px', background: '#1a1a2e' }}
+      >
+        {data && data.distances.length > 0 ? (
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">Speed Trace</p>
+            <p>{data.distances.length} points
+              {data.ref_speeds ? ' (with reference overlay)' : ''}
+            </p>
           </div>
         ) : (
-          <div className="text-gray-500 p-4">No speed data</div>
+          <div className="text-steel p-4 text-sm text-center">
+            <p className="font-telemetry text-chalk mb-1">No Speed Data</p>
+            <p className="text-steel/60 text-xs max-w-[280px]">
+              No speed trace data available for this lap.
+            </p>
+          </div>
         )}
       </div>
     </div>
