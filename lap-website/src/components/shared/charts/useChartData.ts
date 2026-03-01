@@ -34,6 +34,10 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
   const [loading, setLoading] = useState(!preFetched && !!sessionId);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  // Store transform in a ref so it never triggers re-fetching when
+  // callers pass an inline arrow function.
+  const transformRef = useRef(transform);
+  transformRef.current = transform;
 
   useEffect(() => {
     mountedRef.current = true;
@@ -59,12 +63,12 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
 
     (async () => {
       try {
-        // apiFetch unwraps the envelope — returns data directly
         const result = await apiFetch<Record<string, unknown>>(
           `/sessions/${sessionId}/${endpoint}`,
         );
         if (cancelled || !mountedRef.current) return;
-        const transformed = transform ? transform(result) : (result as unknown as T);
+        const fn = transformRef.current;
+        const transformed = fn ? fn(result) : (result as unknown as T);
         setData(transformed);
         setLoading(false);
       } catch (err) {
@@ -78,7 +82,7 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
     })();
 
     return () => { cancelled = true; };
-  }, [preFetched, sessionId, endpoint, transform]);
+  }, [preFetched, sessionId, endpoint]);
 
   return { data, loading, error };
 }

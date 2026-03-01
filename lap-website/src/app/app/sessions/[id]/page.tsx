@@ -1158,7 +1158,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
                 </span>
               )}
               <span className="text-steel">
-                ({Math.abs(progress.trend_slope * 1000).toFixed(1)} ms/lap)
+                ({progress.trend_slope != null ? Math.abs(progress.trend_slope * 1000).toFixed(1) : '?'} ms/lap)
               </span>
             </div>
           </div>
