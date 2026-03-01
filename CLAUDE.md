@@ -8,6 +8,9 @@ Motorsport telemetry analysis SaaS — Python Flask API + Next.js frontend. Inge
 # ── Backend (Python) ──────────────────────────
 pytest telemetry_tool/tests/                       # all backend tests
 pytest telemetry_tool/tests/test_streaming_ingest.py -k "test_chunk_cache_flush"  # single test
+pytest telemetry_tool/tests/test_upload_sync.py -v                              # sync upload endpoint tests
+pytest telemetry_tool/tests/test_data_api_v2.py -v                              # data API endpoint tests
+pytest telemetry_tool/tests/test_re_port_correctness.py -v                      # pipeline correctness tests
 pytest kart_envelope/tests/                        # kart envelope tests
 python telemetry_tool/main.py --serve              # Flask dev server (localhost:5000)
 python telemetry_tool/main.py data/raw/SESSION.csv # CLI single-file processing
@@ -67,6 +70,10 @@ CSV → Normalize → Clean → Track Detection → Lap Split → Outlier Filter
 
 Both use `_safe_step()`: each step catches exceptions, logs, and returns `None` so downstream gets best partial result.
 
+### Re-Port Architecture (feat/re-port-legacy-engine)
+
+The SaaS telemetry system was re-ported from the working local desktop tool. The analysis pipeline runs **synchronously** in the request thread (no Celery for analysis). Previous SaaS-specific route files (`api_data.py`, `api_v1_data.py`, `analysis.py`, `comparisons.py`, `data_health.py`, `exports.py`, `batch.py`, `sessions.py`, `visualize.py`) were removed and replaced with two new endpoints: `sessions_v2.py` (upload) and `data_v2.py` (12 data-serving endpoints). The frontend chart components were gutted and rebuilt using vanilla JS modules from the working desktop tool, wrapped in React.
+
 ### Entry Points
 
 | Mode | Command | Code |
@@ -78,8 +85,11 @@ Both use `_safe_step()`: each step catches exceptions, logs, and returns `None` 
 
 ### Flask Backend (`telemetry_tool/web/`)
 
-- **`app.py`** — Factory with 32 blueprints, resolves paths for dev + PyInstaller
-- **`routes/`** — 32 blueprints including: `dashboard`, `sessions`, `tracks`, `analysis`, `api_data`, `api_v1_account`, `api_v1_data`, `auth`, `batch`, `billing`, `comparisons`, `data_health`, `drivers`, `exports`, `health`, `ingest`, `jobs`, `karts`, `leaderboard`, `race_strategy_v2`, `teams`, `visualize`, `weekends`, `workspaces`, etc.
+- **`app.py`** — Factory with blueprints, resolves paths for dev + PyInstaller
+- **`routes/sessions_v2.py`** — Synchronous upload endpoint (`POST /api/v1/sessions/upload`). Runs the full 14-stage pipeline in the request thread.
+- **`routes/data_v2.py`** — 12 data-serving API endpoints: session list, detail, laps, speed-trace, gps-trace, gg-data, scores, corners, delete, compare, report download, session update.
+- **`routes/`** — Other blueprints: `dashboard`, `tracks`, `api_v1_account`, `auth`, `billing`, `drivers`, `health`, `ingest`, `jobs`, `karts`, `leaderboard`, `race_strategy_v2`, `teams`, `weekends`, `workspaces`, etc.
+- **Note**: Previous telemetry data routes (`api_v1_data.py`, `api_data.py`, `analysis.py`, `comparisons.py`, `data_health.py`, `exports.py`, `batch.py`, `sessions.py`, `visualize.py`) were removed in the re-port.
 - **`middleware/auth.py`** — JWT verification, explicit path allowlist + `_OAUTH_PATH_RE`
 - **`middleware/tenant.py`** — `X-Workspace-Id` header → RLS context via `SET LOCAL`, populates `g.workspace_id` + `g.workspace_role`
 - **`schemas/`** — Pydantic v2 request/response schemas (auth, account, sessions, tracks, teams, jobs, batch, common)
@@ -120,6 +130,9 @@ Both use `_safe_step()`: each step catches exceptions, logs, and returns `None` 
   - `(marketing)/` — 20+ pages: pricing, product, teams, circuits, etc.
   - `app/` — authenticated dashboard, sessions, tracks, compare, analytics, etc.
 - **Middleware** (`src/middleware.ts`): Persona detection, UTM attribution, A/B experiments (`lap_exp_hero`, `lap_exp_pricing`, `lap_exp_cta`)
+- **Vanilla JS charts**: Desktop tool's chart modules copied to `lap-website/public/js/` (19 modules: speed_trace_zoom, gps_trace, gg_explorer, chart_sync, module_manager, etc.). Wrapped in React via `src/components/app/charts/` (SpeedTraceZoom, GpsTrace, GGExplorer) using a shared `useVanillaChart` hook.
+- **Distance-based hover sync**: Zustand store (`src/stores/hover-sync-store.ts`) provides cross-chart hover coordination via distance values.
+- **Module shim**: `public/js/module-shim.js` rewrites API paths so vanilla JS `fetch()` calls route to the correct backend URL.
 - **Tests**: Vitest (unit), Playwright (E2E in `e2e/` directory)
 
 ### Persistence
