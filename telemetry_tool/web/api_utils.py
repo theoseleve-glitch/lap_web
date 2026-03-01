@@ -57,6 +57,7 @@ class ErrorCode:
     SERVICE_UNAVAILABLE = "SERVICE_UNAVAILABLE"
     NOT_READY = "NOT_READY"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
+    DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
 
 
 # ---------------------------------------------------------------------------

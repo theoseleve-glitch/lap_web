@@ -270,17 +270,18 @@ def get_speed_trace(session_id: str):
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            f"No trace data for lap {lap_num}",
-            status=404,
-        )
+        return api_response({
+            "available": False,
+            "reason_code": "NO_SPEED_TRACE",
+            "message": f"No speed trace data for lap {lap_num}",
+        })
 
     result = {
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
     }
+    result["available"] = True
 
     # Optional reference lap overlay
     ref_raw = request.args.get("ref")
@@ -328,11 +329,11 @@ def get_gps_trace(session_id: str):
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            f"No GPS trace for lap {lap_num}",
-            status=404,
-        )
+        return api_response({
+            "available": False,
+            "reason_code": "NO_GPS_DATA",
+            "message": f"No GPS trace for lap {lap_num}",
+        })
 
     return api_response({
         "latitudes": trace.get("latitudes", []),
@@ -340,6 +341,7 @@ def get_gps_trace(session_id: str):
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
+        "available": True,
     })
 
 
@@ -377,12 +379,17 @@ def get_gg_data(session_id: str):
     lon_g = trace.get("accel_long") or []
     has_accel = bool(lat_g and lon_g)
 
-    return api_response({
+    result = {
         "accel_lat": lat_g if has_accel else [],
         "accel_long": lon_g if has_accel else [],
         "lap_number": lap_num,
         "available": has_accel,
-    })
+    }
+    if not has_accel:
+        result["reason_code"] = "NO_GG_DATA"
+        result["message"] = "No accelerometer data available for this session"
+
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -401,12 +408,13 @@ def get_scores(session_id: str):
 
     scores = models.get_score_details(conn, session_id)
     if scores is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "No score details for this session",
-            status=404,
-        )
+        return api_response({
+            "available": False,
+            "reason_code": "NO_SCORE_DATA",
+            "message": "Scoring data not available for this session",
+        })
 
+    scores["available"] = True
     return api_response(scores)
 
 
@@ -431,9 +439,17 @@ def get_corners(session_id: str):
     theo = models.get_theoretical_data(conn, session_id)
     corners = theo.get("corner_coaching") if theo else None
 
+    if not corners:
+        return api_response({
+            "corners": [],
+            "available": False,
+            "reason_code": "NO_CORNER_DATA",
+            "message": "Corner detection did not produce results for this session",
+        })
+
     return api_response({
-        "corners": corners or [],
-        "available": bool(corners),
+        "corners": corners,
+        "available": True,
     })
 
 
@@ -1314,7 +1330,10 @@ def get_sector_times(session_id: str):
 
     analysis = models.get_analysis_json(conn, session_id)
     if analysis and analysis.get("sector_analysis"):
-        return api_response(analysis["sector_analysis"])
+        result = analysis["sector_analysis"]
+        if isinstance(result, dict):
+            result["available"] = True
+        return api_response(result)
 
     # If no pre-computed sector analysis, try computing on the fly
     laps = models.get_laps_for_session(conn, session_id)
@@ -1332,8 +1351,11 @@ def get_sector_times(session_id: str):
         except Exception:
             pass
 
-    return api_error(ErrorCode.NOT_FOUND,
-                     "No sector analysis for this session", status=404)
+    return api_response({
+        "available": False,
+        "reason_code": "NO_SECTOR_DATA",
+        "message": "Sector analysis not available for this session",
+    })
 
 
 # ══════════════════════════════════════════════════════════════════
