@@ -225,12 +225,23 @@ def v1_theoretical(session_id: str):
 
     Returns:
         200 with theoretical data.
-        404 if no theoretical data exists.
+        404 if session does not exist.
+        409 if session exists but theoretical data has not been computed yet.
     """
     conn = get_db_connection()
+    session = conn.execute(
+        "SELECT id FROM sessions WHERE id = :sid", {"sid": session_id}
+    ).fetchone()
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
     data = get_theoretical_data(conn, session_id)
     if data is None:
-        return api_error(ErrorCode.NOT_FOUND, "No theoretical data", status=404)
+        return api_error(
+            ErrorCode.NOT_READY,
+            "Theoretical lap has not been computed for this session",
+            details=[{"required": ["track_geometry", "corners", "lap_data"]}],
+            status=409,
+        )
     response = {
         "theoretical_time_s": data.get("theoretical_time_s"),
         "actual_best_time_s": data.get("actual_best_time_s"),

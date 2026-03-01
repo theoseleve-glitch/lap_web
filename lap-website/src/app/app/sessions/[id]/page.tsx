@@ -431,10 +431,15 @@ export default function SessionDetailPage() {
     enabled: activeTab === 'Corners & Coaching',
   });
 
-  const { data: theoreticalData } = useQuery({
+  const { data: theoreticalData, error: theoreticalError } = useQuery({
     queryKey: ['session', id, 'theoretical'],
     queryFn: () => api.get<TheoreticalData>(`/sessions/${id}/theoretical`),
     enabled: activeTab === 'Corners & Coaching',
+    retry: (count, err) => {
+      // Don't retry 409 (not computed yet) — it won't magically appear
+      if (err instanceof Error && 'status' in err && (err as { status: number }).status === 409) return false;
+      return count < 2;
+    },
   });
 
   const { data: stintData } = useQuery({
@@ -1071,7 +1076,7 @@ export default function SessionDetailPage() {
         {activeTab === 'Corners & Coaching' && (
           <div className="space-y-8">
             {/* Theoretical Lap */}
-            {theoreticalData && theoreticalData.theoretical_time_s != null && (
+            {theoreticalData && theoreticalData.theoretical_time_s != null ? (
               <section>
                 <SectionHeader title="Theoretical Lap" />
                 <div className="bg-concrete rounded-lg border border-steel/10 p-5">
@@ -1104,6 +1109,18 @@ export default function SessionDetailPage() {
                       </span>
                     </div>
                   </div>
+                </div>
+              </section>
+            ) : theoreticalError && (
+              <section>
+                <SectionHeader title="Theoretical Lap" />
+                <div className="bg-concrete rounded-lg border border-steel/10 p-4 text-center">
+                  <p className="text-steel font-telemetry text-sm">
+                    Theoretical lap not yet computed for this session.
+                  </p>
+                  <p className="text-steel/60 font-telemetry text-xs mt-1">
+                    Re-process the session to generate theoretical lap data.
+                  </p>
                 </div>
               </section>
             )}
