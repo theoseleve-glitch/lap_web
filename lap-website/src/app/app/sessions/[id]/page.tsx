@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
-import { SectorPanel } from '@/components/shared/charts';
+import { SectorPanel, CornerReplay } from '@/components/shared/charts';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -312,7 +312,7 @@ export default function SessionDetailPage() {
       {activeTab === 'visualize' && (
         <VisualizeTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
       )}
-      {activeTab === 'corners' && <CornersTab corners={corners} />}
+      {activeTab === 'corners' && <CornersTab corners={corners} sessionId={sessionId} />}
       {activeTab === 'performance' && (
         <PerformanceTab session={session} scores={scores} sessionId={sessionId} />
       )}
@@ -579,7 +579,7 @@ function VisualizeTab({
 // 3. Corners Tab
 // ══════════════════════════════════════════════════════════════════
 
-function CornersTab({ corners }: { corners: CornerData[] }) {
+function CornersTab({ corners, sessionId }: { corners: CornerData[]; sessionId: string }) {
   if (corners.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
@@ -662,6 +662,15 @@ function CornersTab({ corners }: { corners: CornerData[] }) {
             </div>
           );
         })}
+      </div>
+
+      {/* Corner Replay — speed profile comparison with playback */}
+      <div className="mt-6">
+        <h2 className="text-lg font-monument text-chalk mb-4">Corner Replay</h2>
+        <CornerReplay
+          sessionId={sessionId}
+          className="bg-concrete rounded-xl border border-steel/10"
+        />
       </div>
     </div>
   );
