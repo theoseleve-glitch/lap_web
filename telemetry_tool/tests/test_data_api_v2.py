@@ -332,7 +332,7 @@ class TestSpeedTrace:
         assert body["data"]["lap_number"] == 3
 
     def test_speed_trace_no_data(self, client):
-        """Returns 404 when no GPS trace exists for the lap."""
+        """Returns 200 with available:false when no GPS trace exists."""
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
@@ -341,7 +341,10 @@ class TestSpeedTrace:
 
             resp = client.get("/api/v1/sessions/s1/speed-trace?lap=1")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "NO_SPEED_TRACE"
 
     def test_speed_trace_session_not_found(self, client):
         """Returns 404 when session does not exist."""
@@ -383,7 +386,7 @@ class TestGpsTrace:
         assert body["data"]["lap_number"] == 1
 
     def test_gps_trace_no_data(self, client):
-        """Returns 404 when no GPS trace for that lap."""
+        """Returns 200 with available:false when no GPS trace for that lap."""
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
@@ -392,7 +395,10 @@ class TestGpsTrace:
 
             resp = client.get("/api/v1/sessions/s1/gps-trace?lap=99")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "NO_GPS_DATA"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -483,7 +489,7 @@ class TestScores:
         assert data["strengths"] == ["Good consistency"]
 
     def test_scores_not_found(self, client):
-        """Returns 404 when no score details exist."""
+        """Returns 200 with available:false when no score details exist."""
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
@@ -492,7 +498,10 @@ class TestScores:
 
             resp = client.get("/api/v1/sessions/s1/scores")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "NO_SCORE_DATA"
 
     def test_scores_session_not_found(self, client):
         """Returns 404 when session does not exist."""
@@ -1028,8 +1037,8 @@ class TestSpeedTraceContract:
         assert isinstance(data["distances"], list)
         assert isinstance(data["speeds"], list)
 
-        # No extra unexpected keys (only these three)
-        expected_keys = {"lap_number", "distances", "speeds"}
+        # No extra unexpected keys
+        expected_keys = {"lap_number", "distances", "speeds", "available"}
         assert set(data.keys()) == expected_keys, \
             f"Speed trace data keys should be {expected_keys}, got {set(data.keys())}"
 
@@ -1076,7 +1085,7 @@ class TestGpsTraceContract:
             "All arrays in GPS trace should have equal length"
 
         # No extra unexpected keys
-        expected_keys = {"lap_number", "latitudes", "longitudes", "distances", "speeds"}
+        expected_keys = {"lap_number", "latitudes", "longitudes", "distances", "speeds", "available"}
         assert set(data.keys()) == expected_keys, \
             f"GPS trace data keys should be {expected_keys}, got {set(data.keys())}"
 
@@ -1986,7 +1995,10 @@ class TestSectorTimesEndpoint:
 
             resp = client.get("/api/v1/sessions/s1/sector_times")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["data"]["available"] is False
+        assert body["data"]["reason_code"] == "NO_SECTOR_DATA"
 
 
 # ══════════════════════════════════════════════════════════════════
