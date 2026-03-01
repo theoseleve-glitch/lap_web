@@ -234,6 +234,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.ingest',             'bp', 'ingest_bp'),        # Streaming ingest SSE (INGEST_V2)
         ('.routes.race_strategy_v2',   'bp', 'race_strategy_v2_bp'),
         ('.routes.sessions_v2',        'bp', 'sessions_v2_bp'),    # Sync upload endpoint
+        ('.routes.data_v2',            'bp', 'data_v2_bp'),        # Data-serving API endpoints
     ]
 
     import importlib

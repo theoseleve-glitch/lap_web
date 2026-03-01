@@ -1,0 +1,370 @@
+"""
+routes/data_v2.py
+-----------------
+Data-serving API endpoints for the Phase 1 re-port.
+
+These endpoints read from the SQLite database and return data
+the Next.js frontend needs to display session details, charts,
+scores, and coaching information.
+
+Endpoints:
+    GET    /api/v1/sessions                       - List sessions
+    GET    /api/v1/sessions/<id>                   - Session detail
+    GET    /api/v1/sessions/<id>/laps              - Lap list
+    GET    /api/v1/sessions/<id>/speed-trace       - Speed vs distance
+    GET    /api/v1/sessions/<id>/gps-trace         - GPS coordinates
+    GET    /api/v1/sessions/<id>/gg-data           - GG diagram data
+    GET    /api/v1/sessions/<id>/scores            - Score breakdown
+    GET    /api/v1/sessions/<id>/corners           - Corner coaching
+    DELETE /api/v1/sessions/<id>                   - Delete session
+"""
+from __future__ import annotations
+
+import logging
+
+from flask import Blueprint, request
+
+from web.api_utils import api_error, api_response, ErrorCode
+from web.db import get_db_connection
+from web import models
+
+logger = logging.getLogger(__name__)
+
+bp = Blueprint("data_v2", __name__, url_prefix="/api/v1")
+
+
+# ── Helpers ───────────────────────────────────────────────────────
+
+
+def _resolve_lap_number(conn, session_id: str) -> int | None:
+    """Determine the lap number to use when ?lap= is not provided.
+
+    Strategy: find the first lap with is_best=True; otherwise fall back
+    to the first lap in the list.
+    """
+    laps = models.get_laps_for_session(conn, session_id)
+    if not laps:
+        return None
+    for lap in laps:
+        if lap.get("is_best"):
+            return lap["lap_number"]
+    return laps[0]["lap_number"]
+
+
+def _get_lap_param(conn, session_id: str) -> int | None:
+    """Read the ?lap= query parameter or fall back to best/first lap."""
+    raw = request.args.get("lap")
+    if raw is not None:
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
+    return _resolve_lap_number(conn, session_id)
+
+
+# ── Tables to clean on session delete ─────────────────────────────
+
+_DELETE_RELATED_TABLES = [
+    "gps_traces",
+    "laps",
+    "score_details",
+    "condition_phases",
+    "theoretical_data",
+    "reference_lines",
+    "session_sectors",
+    "session_tags",
+    "corner_metrics",
+    "session_weather",
+    "data_health",
+    "driver_progression",
+    "driving_style_features",
+    "condition_markers",
+    "vehicle_setups",
+    "what_if_scenarios",
+    "session_annotations",
+    "stint_analysis",
+]
+
+
+# ══════════════════════════════════════════════════════════════════
+# 1. GET /api/v1/sessions — List sessions
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions", methods=["GET"])
+def list_sessions():
+    """List sessions with pagination.
+
+    Query params:
+        limit  (int, default 25)
+        offset (int, default 0)
+    """
+    try:
+        limit = int(request.args.get("limit", 25))
+    except (ValueError, TypeError):
+        limit = 25
+    try:
+        offset = int(request.args.get("offset", 0))
+    except (ValueError, TypeError):
+        offset = 0
+
+    # Clamp to reasonable bounds
+    limit = max(1, min(limit, 100))
+    offset = max(0, offset)
+
+    conn = get_db_connection()
+    sessions = models.get_sessions(conn, limit=limit, offset=offset)
+    total = models.count_sessions(conn)
+
+    return api_response({
+        "sessions": sessions,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 2. GET /api/v1/sessions/<id> — Session detail
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>", methods=["GET"])
+def get_session(session_id: str):
+    """Return a single session by ID."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+    return api_response(session)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 3. GET /api/v1/sessions/<id>/laps — Lap list
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/laps", methods=["GET"])
+def get_laps(session_id: str):
+    """Return all laps for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    laps = models.get_laps_for_session(conn, session_id)
+    return api_response({"laps": laps})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 4. GET /api/v1/sessions/<id>/speed-trace?lap=N
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/speed-trace", methods=["GET"])
+def get_speed_trace(session_id: str):
+    """Return speed vs distance arrays for a lap.
+
+    Query params:
+        lap (int, optional) — lap number; defaults to best lap
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    lap_num = _get_lap_param(conn, session_id)
+    if lap_num is None:
+        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+
+    trace = models.get_gps_trace(conn, session_id, lap_num)
+    if trace is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No trace data for lap {lap_num}",
+            status=404,
+        )
+
+    return api_response({
+        "distances": trace.get("distances", []),
+        "speeds": trace.get("speeds", []),
+        "lap_number": lap_num,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 5. GET /api/v1/sessions/<id>/gps-trace?lap=N
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/gps-trace", methods=["GET"])
+def get_gps_trace(session_id: str):
+    """Return GPS coordinates and speed arrays for a lap.
+
+    Query params:
+        lap (int, optional) — lap number; defaults to best lap
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    lap_num = _get_lap_param(conn, session_id)
+    if lap_num is None:
+        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+
+    trace = models.get_gps_trace(conn, session_id, lap_num)
+    if trace is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No GPS trace for lap {lap_num}",
+            status=404,
+        )
+
+    return api_response({
+        "lat": trace.get("latitudes", []),
+        "lon": trace.get("longitudes", []),
+        "distances": trace.get("distances", []),
+        "speeds": trace.get("speeds", []),
+        "lap_number": lap_num,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 6. GET /api/v1/sessions/<id>/gg-data?lap=N
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/gg-data", methods=["GET"])
+def get_gg_data(session_id: str):
+    """Return lateral and longitudinal acceleration arrays for GG diagram.
+
+    Query params:
+        lap (int, optional) — lap number; defaults to best lap
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    lap_num = _get_lap_param(conn, session_id)
+    if lap_num is None:
+        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+
+    trace = models.get_gps_trace(conn, session_id, lap_num)
+    if trace is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No trace data for lap {lap_num}",
+            status=404,
+        )
+
+    lat_g = trace.get("accel_lat")
+    lon_g = trace.get("accel_long")
+    if not lat_g or not lon_g:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No acceleration data for lap {lap_num}",
+            status=404,
+        )
+
+    return api_response({
+        "lat_g": lat_g,
+        "lon_g": lon_g,
+        "lap_number": lap_num,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 7. GET /api/v1/sessions/<id>/scores
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/scores", methods=["GET"])
+def get_scores(session_id: str):
+    """Return score breakdown for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    scores = models.get_score_details(conn, session_id)
+    if scores is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "No score details for this session",
+            status=404,
+        )
+
+    return api_response(scores)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 8. GET /api/v1/sessions/<id>/corners
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corners", methods=["GET"])
+def get_corners(session_id: str):
+    """Return corner coaching data for a session.
+
+    Corner coaching is stored inside the theoretical_data table as
+    a JSON field (corner_coaching_json).
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    theo = models.get_theoretical_data(conn, session_id)
+    if theo is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "No theoretical data for this session",
+            status=404,
+        )
+
+    corners = theo.get("corner_coaching")
+    if not corners:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "No corner coaching data for this session",
+            status=404,
+        )
+
+    return api_response({"corners": corners})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 9. DELETE /api/v1/sessions/<id>
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>", methods=["DELETE"])
+def delete_session(session_id: str):
+    """Delete a session and all related data."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Delete from all related tables first (foreign key order).
+    for table in _DELETE_RELATED_TABLES:
+        try:
+            conn.execute(
+                f"DELETE FROM {table} WHERE session_id = :session_id",
+                {"session_id": session_id},
+            )
+        except Exception as exc:
+            # Table might not exist in older schema versions — skip
+            logger.debug("Skipping delete from %s: %s", table, exc)
+
+    # Delete the session itself.
+    conn.execute(
+        "DELETE FROM sessions WHERE session_id = :session_id",
+        {"session_id": session_id},
+    )
+    conn.commit()
+
+    logger.info("Deleted session %s and related data", session_id)
+    return api_response({"deleted": session_id})
