@@ -21,7 +21,7 @@ export default function EditRacePage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [error, setError] = useState('');
-  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit);
+  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit) as string | undefined;
 
   const { data, isLoading } = useQuery({
     queryKey: ['race-strategy', id],
