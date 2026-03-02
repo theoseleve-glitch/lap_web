@@ -38,6 +38,10 @@ def _make_summary(
     flagged_only=None,
     deviated_laps=None,
     incomplete_laps=None,
+    invalid_laps=None,
+    track_cuts=None,
+    incidents=None,
+    manual_exclusions=None,
     session_type="practice",
     drivers=None,
     joker_lap=None,
@@ -65,6 +69,12 @@ def _make_summary(
                 "inlap_numbers": inlap_numbers or [],
                 "flagged_only": flagged_only or [],
             },
+        },
+        "invalid_lap_analysis": {
+            "invalid_laps": invalid_laps or [],
+            "track_cuts": track_cuts or [],
+            "incidents": incidents or [],
+            "manual": manual_exclusions or [],
         },
         "incomplete_lap_analysis": {
             "incomplete_laps": incomplete_laps or [],
@@ -263,3 +273,97 @@ class TestEndurancePitDetection:
         laps = _get_laps(db)
         assert laps[10]["invalid_reason"] == "Joker lap"
         assert laps[10]["is_joker"] == 1
+
+
+class TestInvalidLapAnalysis:
+    """Track cuts, incidents, and manual exclusions from identify_invalid_laps()."""
+
+    def test_track_cut_flagged_invalid(self, db):
+        """A track-cut lap is marked is_valid=0 with reason 'Track cut'."""
+        summary = _make_summary(
+            invalid_laps=[4], track_cuts=[4],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[4]["is_valid"] == 0
+        assert laps[4]["invalid_reason"] == "Track cut"
+
+    def test_incident_flagged_invalid(self, db):
+        """An incident lap is marked is_valid=0 with reason 'Incident'."""
+        summary = _make_summary(
+            invalid_laps=[7], incidents=[7],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[7]["is_valid"] == 0
+        assert laps[7]["invalid_reason"] == "Incident"
+
+    def test_manual_exclusion_flagged_invalid(self, db):
+        """A manually excluded lap is marked with reason 'Manual exclusion'."""
+        summary = _make_summary(
+            invalid_laps=[2], manual_exclusions=[2],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[2]["is_valid"] == 0
+        assert laps[2]["invalid_reason"] == "Manual exclusion"
+
+    def test_invalid_wins_over_dist_anomaly(self, db):
+        """Track cut (invalid_set) takes priority over distance anomaly."""
+        summary = _make_summary(
+            invalid_laps=[3], track_cuts=[3],
+            dist_flagged=[3],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[3]["is_valid"] == 0
+        assert laps[3]["invalid_reason"] == "Track cut"
+
+    def test_invalid_wins_over_time_anomaly(self, db):
+        """Incident (invalid_set) takes priority over time anomaly."""
+        summary = _make_summary(
+            invalid_laps=[5], incidents=[5],
+            time_flagged=[5],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[5]["is_valid"] == 0
+        assert laps[5]["invalid_reason"] == "Incident"
+
+    def test_joker_still_wins_over_invalid(self, db):
+        """Joker lap takes priority over track cut."""
+        summary = _make_summary(
+            invalid_laps=[3], track_cuts=[3],
+            joker_lap=3,
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[3]["is_valid"] == 0
+        assert laps[3]["invalid_reason"] == "Joker lap"
+        assert laps[3]["is_joker"] == 1
+
+    def test_endurance_invalid_near_boundary_relabeled(self, db):
+        """Track cut near a stint boundary in endurance → 'Pitted lap'."""
+        summary = _make_summary(
+            n_laps=20,
+            invalid_laps=[10], track_cuts=[10],
+            session_type="endurance",
+            drivers=[
+                {"name": "A", "lap_range": (1, 10)},
+                {"name": "B", "lap_range": (11, 20)},
+            ],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        assert laps[10]["invalid_reason"] == "Pitted lap"
+
+    def test_valid_laps_unaffected_by_invalid_set(self, db):
+        """Laps NOT in invalid_set remain valid."""
+        summary = _make_summary(
+            invalid_laps=[3, 8], track_cuts=[3], incidents=[8],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        for n in [1, 2, 4, 5, 6, 7, 9, 10]:
+            assert laps[n]["is_valid"] == 1, f"Lap {n} should be valid"
+            assert laps[n]["invalid_reason"] is None

@@ -195,12 +195,83 @@ _FINALIZE_STAGES = [
 
 
 def _build_session_meta(ctx: PipelineContext) -> dict:
-    """Build the session_meta dict expected by ``run_full_analysis()``."""
-    return {
+    """Build the session_meta dict expected by ``run_full_analysis()``.
+
+    Reads user-provided metadata from Redis ``pipeline:meta:{job_id}``
+    (set by the upload endpoint) and merges with context defaults.
+    """
+    import json as _json
+
+    meta = {
         "session_id": ctx.session_id,
         "session_type": "practice",
         "track_state": "dry",
+        "driver_name": "Unknown",
     }
+
+    # Read user-provided metadata from Redis (set by sessions_v2.py upload)
+    try:
+        r = _get_redis()
+        raw = r.get(f"pipeline:meta:{ctx.job_id}")
+        if raw:
+            user_meta = _json.loads(raw)
+            meta.update(user_meta)
+    except Exception:
+        logger.warning("Failed to read pipeline:meta for job %s", ctx.job_id, exc_info=True)
+
+    # Ensure session_id is always from context
+    meta["session_id"] = ctx.session_id
+    return meta
+
+
+def _build_analysis_blob(result: dict) -> dict:
+    """Build a curated analysis JSON blob from the pipeline result.
+
+    Extracts serialisable metadata (no DataFrames) for the
+    ``sessions.analysis_json`` column.
+    """
+    blob: dict = {}
+
+    # Consistency metrics from score_result
+    score_result = result.get("score_result") or {}
+    details = score_result.get("details") or {}
+    if details.get("consistency"):
+        cons = details["consistency"]
+        blob["consistency_metrics"] = {
+            "cv_pct": cons.get("cv_pct"),
+            "std_dev_s": cons.get("std_dev_s"),
+            "best_to_median_delta_s": cons.get("best_to_median_delta_s"),
+        }
+
+    # Robustness metrics
+    if details.get("robustness"):
+        rob = details["robustness"]
+        blob["robustness_metrics"] = {
+            "early_mean_s": rob.get("early_mean_s"),
+            "late_mean_s": rob.get("late_mean_s"),
+        }
+
+    # Data quality summary
+    dq = result.get("data_quality")
+    if dq and isinstance(dq, dict):
+        blob["data_quality_summary"] = dq
+
+    # Track evolution
+    te = result.get("track_evolution")
+    if te and isinstance(te, dict):
+        blob["track_evolution"] = te
+
+    # Coaching summary
+    coaching = result.get("coaching_guide") or result.get("coaching_summary")
+    if coaching and isinstance(coaching, str):
+        blob["coaching_summary"] = coaching
+
+    # Corner performances
+    cp = result.get("corner_performances")
+    if cp and isinstance(cp, list):
+        blob["corner_performances"] = cp
+
+    return blob
 
 
 def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
@@ -325,11 +396,11 @@ def _run_analyze_stages(ctx: PipelineContext) -> None:
 
 
 def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, conn=None) -> None:
-    """Run the full analysis pipeline and persist results.
+    """Run the full analysis pipeline and persist all results to DB.
 
     Calls ``run_full_analysis()`` which orchestrates all 14 pipeline
-    stages in a single pass, then persists theoretical data and scores
-    to the database.
+    stages in a single pass, then persists the complete session data
+    (driver, track, session, laps, GPS, corners, scores, etc.).
 
     ``job_id`` and ``conn`` are forwarded to ``_make_progress_callback()``
     so that live stage updates are written to the ``ingestion_jobs`` table
@@ -351,51 +422,8 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
         progress_callback=_make_progress_callback(_job_id, conn),
     )
 
-    # Persist theoretical data if available
-    theo_metrics = result.get("theoretical_metrics")
-    if theo_metrics:
-        try:
-            conn = _get_pg_connection()
-            _store_theoretical_data(ctx.session_id, result, conn=conn)
-        except Exception:
-            logger.warning(
-                "Failed to store theoretical data for session %s",
-                ctx.session_id,
-                exc_info=True,
-            )
-
-    # Persist scores if available
-    score_result = result.get("score_result")
-    if score_result:
-        try:
-            conn = _get_pg_connection()
-            total_score = score_result.get("total_score")
-            grade = score_result.get("grade")
-            if total_score is not None or grade is not None:
-                conn.execute(
-                    text(
-                        "UPDATE sessions SET total_score = :total_score, "
-                        "grade = :grade WHERE session_id = :session_id"
-                    ),
-                    {
-                        "total_score": total_score,
-                        "grade": grade,
-                        "session_id": ctx.session_id,
-                    },
-                )
-                conn.commit()
-                logger.info(
-                    "Updated session %s with score=%.1f grade=%s",
-                    ctx.session_id,
-                    total_score or 0,
-                    grade or "n/a",
-                )
-        except Exception:
-            logger.warning(
-                "Failed to update scores for session %s",
-                ctx.session_id,
-                exc_info=True,
-            )
+    # ── Persist all session data to the database ──────────────────
+    _persist_session_data(ctx, result)
 
     # Mark all finalize stages as completed
     for i, stage in enumerate(_FINALIZE_STAGES):
@@ -404,6 +432,151 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
             "Job %s: stage %s completed (%d/%d)",
             ctx.job_id, stage, i + 1, len(_FINALIZE_STAGES),
         )
+
+
+def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
+    """Persist the full analysis result to the database.
+
+    Sets workspace RLS context, then upserts driver/track/session,
+    inserts laps, GPS traces, corner metrics, scores, theoretical data,
+    reference line, and analysis JSON.
+    """
+    from web.models import (
+        insert_analysis_json,
+        insert_corner_metrics,
+        insert_gps_traces,
+        insert_laps,
+        insert_reference_line,
+        insert_score_details,
+        upsert_driver,
+        upsert_session,
+        upsert_track,
+    )
+    from auth.workspace import set_workspace_context
+
+    conn = _get_pg_connection()
+
+    try:
+        # Set RLS context so INSERTs get the correct workspace_id
+        set_workspace_context(conn, ctx.workspace_id)
+
+        # 1. Upsert driver
+        meta = result.get("session_meta") or {}
+        driver_name = meta.get("driver_name", "Unknown")
+        driver_id = upsert_driver(conn, driver_name)
+        conn.commit()
+
+        # Re-set workspace context after commit (SET LOCAL resets)
+        set_workspace_context(conn, ctx.workspace_id)
+
+        # 2. Upsert track (if detected)
+        track_match = result.get("track_match")
+        if track_match and isinstance(track_match, dict):
+            try:
+                upsert_track(conn, track_match)
+                conn.commit()
+                set_workspace_context(conn, ctx.workspace_id)
+            except Exception:
+                logger.warning("Failed to upsert track for session %s", ctx.session_id, exc_info=True)
+                conn.commit()  # Clear any failed transaction state
+                set_workspace_context(conn, ctx.workspace_id)
+
+        # 3. Upsert session
+        session_id = upsert_session(conn, result, driver_id)
+        conn.commit()
+        set_workspace_context(conn, ctx.workspace_id)
+        logger.info("Persisted session %s (driver_id=%d)", session_id, driver_id)
+
+        # 4. Insert laps
+        try:
+            n_laps = insert_laps(conn, session_id, result)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+            logger.info("Inserted %d laps for session %s", n_laps, session_id)
+        except Exception:
+            logger.warning("Failed to insert laps for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 5. Insert GPS traces
+        try:
+            n_gps = insert_gps_traces(conn, session_id, result)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+            logger.info("Inserted %d GPS trace rows for session %s", n_gps, session_id)
+        except Exception:
+            logger.warning("Failed to insert GPS traces for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 6. Insert corner metrics
+        try:
+            corners = result.get("corners")
+            if corners:
+                insert_corner_metrics(conn, session_id, result)
+                conn.commit()
+                set_workspace_context(conn, ctx.workspace_id)
+                logger.info("Inserted corner metrics for session %s", session_id)
+        except Exception:
+            logger.warning("Failed to insert corner metrics for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 7. Insert score details (expects full result dict)
+        try:
+            score_result = result.get("score_result")
+            if score_result:
+                insert_score_details(conn, session_id, result)
+                conn.commit()
+                set_workspace_context(conn, ctx.workspace_id)
+                logger.info("Inserted score details for session %s", session_id)
+        except Exception:
+            logger.warning("Failed to insert score details for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 8. Insert theoretical data
+        try:
+            theo_metrics = result.get("theoretical_metrics")
+            if theo_metrics:
+                _store_theoretical_data(session_id, result, conn=conn)
+                conn.commit()
+                set_workspace_context(conn, ctx.workspace_id)
+        except Exception:
+            logger.warning("Failed to store theoretical data for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 9. Insert reference line
+        try:
+            ref_line = result.get("reference_line")
+            if ref_line is not None:
+                insert_reference_line(conn, session_id, result)
+                conn.commit()
+                set_workspace_context(conn, ctx.workspace_id)
+                logger.info("Inserted reference line for session %s", session_id)
+        except Exception:
+            logger.warning("Failed to insert reference line for session %s", session_id, exc_info=True)
+            conn.commit()
+            set_workspace_context(conn, ctx.workspace_id)
+
+        # 10. Insert curated analysis JSON blob
+        try:
+            analysis_blob = _build_analysis_blob(result)
+            if analysis_blob:
+                insert_analysis_json(conn, session_id, analysis_blob)
+                conn.commit()
+                logger.info("Inserted analysis JSON (%d keys) for session %s",
+                            len(analysis_blob), session_id)
+        except Exception:
+            logger.warning("Failed to insert analysis JSON for session %s", session_id, exc_info=True)
+            conn.commit()
+
+    except Exception:
+        logger.exception("Failed to persist session data for job %s", ctx.job_id)
+        raise
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------

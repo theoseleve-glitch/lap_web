@@ -1775,13 +1775,17 @@ def run_full_analysis(
                 for k in sorted_keys
             ]
 
-            # Pre-filter to best-N% laps if available (tighter envelope)
+            # Pre-filter to best-N% laps if available (tighter envelope).
+            # Also exclude any laps flagged after best-N% was computed
+            # (incomplete, anomalous, deviated, joker) for consistency.
 
             if best_n_lap_indices:
                 laps_for_theo = [laps_list[i] for i in best_n_lap_indices
-                                 if i < len(laps_list)]
+                                 if i < len(laps_list)
+                                 and sorted_keys[i] not in excluded_laps]
                 keys_for_theo = [sorted_keys[i] for i in best_n_lap_indices
-                                 if i < len(sorted_keys)]
+                                 if i < len(sorted_keys)
+                                 and sorted_keys[i] not in excluded_laps]
                 logger.info(
                     "Theoretical envelope: using %d best-N%% laps "
                     "(out of %d total).",

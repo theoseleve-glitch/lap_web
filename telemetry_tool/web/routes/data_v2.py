@@ -2692,4 +2692,31 @@ def get_consistency_heatmap(session_id: str):
     })
 
 
+# ══════════════════════════════════════════════════════════════════
+# 40. GET /api/v1/sessions/<id>/timeline — Session event timeline
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/timeline", methods=["GET"])
+@_safe_api
+def get_session_timeline(session_id: str):
+    """Return the session replay timeline — a narrative event feed."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    laps = models.get_laps_for_session(conn, session_id)
+
+    from session_replay import build_session_timeline
+    tl = build_session_timeline(
+        laps,
+        session_info={
+            "session_id": session_id,
+            "driver_name": session.get("driver_name", ""),
+        },
+    )
+    return api_response(tl.to_dict())
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

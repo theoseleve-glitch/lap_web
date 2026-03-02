@@ -589,6 +589,15 @@ def insert_laps(
     inlap_set = set(outlap_analysis.get("inlap_numbers") or [])
     flagged_set = set(outlap_analysis.get("flagged_only") or [])
 
+    # Invalid laps from identify_invalid_laps() — track cuts, incidents,
+    # and manual exclusions.  Previously missing, causing these laps to be
+    # stored as is_valid=1 even though the pipeline excluded them.
+    invalid_analysis = summary.get("invalid_lap_analysis") or {}
+    invalid_set = set(invalid_analysis.get("invalid_laps") or [])
+    track_cut_set = set(invalid_analysis.get("track_cuts") or [])
+    incident_set = set(invalid_analysis.get("incidents") or [])
+    manual_set = set(invalid_analysis.get("manual") or [])
+
     # Additional exclusion sets from pipeline analysis steps.
     incomplete_analysis = summary.get("incomplete_lap_analysis") or {}
     incomplete_set = set(incomplete_analysis.get("incomplete_laps") or [])
@@ -666,6 +675,21 @@ def insert_laps(
             is_joker = True
             is_valid = False
             invalid_reason = "Joker lap"
+        elif lap_num in invalid_set:
+            # Track cuts, incidents, and manual exclusions from
+            # identify_invalid_laps() — checked BEFORE distance/time
+            # anomalies so the more specific label wins.
+            is_valid = False
+            if stint_boundary_laps and _near_stint_boundary(lap_num):
+                invalid_reason = "Pitted lap"
+            elif lap_num in manual_set:
+                invalid_reason = "Manual exclusion"
+            elif lap_num in track_cut_set:
+                invalid_reason = "Track cut"
+            elif lap_num in incident_set:
+                invalid_reason = "Incident"
+            else:
+                invalid_reason = "Invalid"
         elif lap_num in all_dist_flagged:
             is_valid = False
             if stint_boundary_laps and _near_stint_boundary(lap_num):

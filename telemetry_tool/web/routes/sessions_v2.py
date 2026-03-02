@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 import tempfile
 import uuid
 from pathlib import Path
@@ -301,8 +302,17 @@ def upload_session():
     if limit_err:
         return api_error(ErrorCode.QUOTA_EXCEEDED, limit_err, status=402)
 
-    # ── 3. Save to temp directory ─────────────────────────────────
-    tmp_dir = tempfile.mkdtemp(prefix="telemetry_upload_")
+    # ── 3. Save to shared upload directory ────────────────────────
+    # Use /data/uploads/ (Docker shared volume between API + Celery)
+    # when available; fall back to tempfile for local dev.
+    _shared_upload_dir = Path(os.environ.get("UPLOAD_DIR", "/data/uploads"))
+    if _shared_upload_dir.is_dir():
+        tmp_dir = str(
+            _shared_upload_dir / f"job_{uuid.uuid4().hex[:12]}"
+        )
+        Path(tmp_dir).mkdir(parents=True, exist_ok=True)
+    else:
+        tmp_dir = tempfile.mkdtemp(prefix="telemetry_upload_")
     # Use the original filename (sanitised) to help pipeline logging.
     safe_name = Path(f.filename).name
     tmp_path = Path(tmp_dir) / safe_name

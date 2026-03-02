@@ -175,11 +175,14 @@ def create_app(config: Config | None = None) -> Flask:
     # Ensure OPTIONS preflight returns 200 even for non-existent routes.
     # Browsers require 2xx on preflight; flask_cors adds CORS headers
     # via after_request but Flask returns 404 for unknown routes.
+    # Return application/json to avoid the _json_guard HTML-detection.
     @app.before_request
     def _handle_preflight():
-        from flask import request as req
+        from flask import request as req, make_response
         if req.method == "OPTIONS":
-            return "", 200
+            resp = make_response("", 200)
+            resp.content_type = "application/json"
+            return resp
 
     # Redis client for rate limiting + caching.
     # The rate_limit module's get_redis() reads from app.extensions["redis"].

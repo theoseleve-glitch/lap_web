@@ -461,7 +461,7 @@
         var times = laps.map(function (l) { return l.lap_time_s; });
         var labels = laps.map(function (l) { return l.lap_number; });
         var isBest = laps.map(function (l) { return l.is_best; });
-        var isValid = laps.map(function (l) { return l.is_valid !== false; });
+        var isValid = laps.map(function (l) { return l.is_valid === 1; });
 
         // Use only valid laps for Y-axis scaling and mean
         var validTimes = [];
@@ -582,7 +582,7 @@
                     lapNum: l.lap_number,
                     time: l.lap_time_s,
                     isBest: l.is_best,
-                    isValid: l.is_valid !== false,
+                    isValid: l.is_valid === 1,
                 };
             }),
             padTop: pad.top,
