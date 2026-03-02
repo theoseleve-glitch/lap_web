@@ -1,0 +1,15 @@
+{
+  "local_tool_commit": "61d107bb0d57da650b2ad62dc3f2f0f569e69c67",
+  "saas_commit": "61d107bb0d57da650b2ad62dc3f2f0f569e69c67",
+  "environment": "production",
+  "fixture_file": "OK_R3.csv",
+  "fixture_sha256": "5d02cc9a0e6ec9337b0e6fb2958f5620403ef65e92b9ad92d959407c58933395",
+  "created_at": "2026-03-02",
+  "tolerance_rules": {
+    "lap_times_ms": 5,
+    "best_lap_index": "exact",
+    "score_pillar": 0.1,
+    "sector_times_s": 0.001,
+    "corner_boundaries_m": 1.0
+  }
+}
