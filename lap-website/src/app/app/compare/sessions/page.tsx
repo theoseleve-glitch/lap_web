@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
 
 // ── Types ────────────────────────────────────────────────────────
@@ -69,21 +70,6 @@ interface ComparisonData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function formatLapTime(seconds: number | null | undefined): string {
-  if (seconds == null || !isFinite(seconds)) return '--';
-  if (seconds >= 60) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds - mins * 60;
-    return `${mins}:${secs.toFixed(3).padStart(6, '0')}`;
-  }
-  return `${seconds.toFixed(3)}s`;
-}
-
-function mpsToKmh(mps: number | null | undefined): string {
-  if (mps == null || !isFinite(mps)) return '--';
-  return (mps * 3.6).toFixed(1);
-}
-
 const GRADE_COLORS: Record<string, string> = {
   S: 'text-yellow-400',
   A: 'text-green-400',
@@ -108,7 +94,7 @@ function deltaColor(delta: number, lowerIsBetter = false): string {
 }
 
 function formatDelta(delta: number | null, decimals = 1): string {
-  if (delta == null || !isFinite(delta)) return '--';
+  if (delta == null || !isFinite(delta)) return '\u2014';
   const sign = delta > 0 ? '+' : '';
   return `${sign}${delta.toFixed(decimals)}`;
 }
@@ -193,7 +179,7 @@ function ScoreCompareCard({
         <div className="flex justify-between text-xs mb-1">
           <span className="font-body" style={{ color: colorA }}>Session A</span>
           <span className="font-telemetry text-chalk">
-            {scoreA != null ? scoreA.toFixed(1) : '--'} / {max}
+            {scoreA != null ? scoreA.toFixed(1) : '\u2014'} / {max}
           </span>
         </div>
         <div className="w-full h-2 bg-asphalt rounded-full overflow-hidden">
@@ -209,7 +195,7 @@ function ScoreCompareCard({
         <div className="flex justify-between text-xs mb-1">
           <span className="font-body" style={{ color: colorB }}>Session B</span>
           <span className="font-telemetry text-chalk">
-            {scoreB != null ? scoreB.toFixed(1) : '--'} / {max}
+            {scoreB != null ? scoreB.toFixed(1) : '\u2014'} / {max}
           </span>
         </div>
         <div className="w-full h-2 bg-asphalt rounded-full overflow-hidden">
@@ -450,10 +436,10 @@ export default function CompareSessionsPage() {
                   Session A
                 </span>
                 <div className="text-4xl font-monument text-chalk mt-1">
-                  {comparison.session_a.session.total_score?.toFixed(1) ?? '--'}
+                  {comparison.session_a.session.total_score?.toFixed(1) ?? '\u2014'}
                 </div>
                 <div className={`text-lg font-monument mt-1 ${gradeColor(comparison.session_a.session.grade)}`}>
-                  {comparison.session_a.session.grade ?? '--'}
+                  {comparison.session_a.session.grade ?? '\u2014'}
                 </div>
               </div>
 
@@ -461,7 +447,7 @@ export default function CompareSessionsPage() {
               <div className="text-center px-6 py-3 rounded-lg bg-asphalt border border-steel/10">
                 <span className="text-xs font-body text-steel block mb-1">Delta</span>
                 <span className={`text-2xl font-monument ${compStats?.totalDelta != null ? deltaColor(compStats.totalDelta) : 'text-steel'}`}>
-                  {compStats?.totalDelta != null ? formatDelta(compStats.totalDelta) : '--'}
+                  {compStats?.totalDelta != null ? formatDelta(compStats.totalDelta) : '\u2014'}
                 </span>
               </div>
 
@@ -471,10 +457,10 @@ export default function CompareSessionsPage() {
                   Session B
                 </span>
                 <div className="text-4xl font-monument text-chalk mt-1">
-                  {comparison.session_b.session.total_score?.toFixed(1) ?? '--'}
+                  {comparison.session_b.session.total_score?.toFixed(1) ?? '\u2014'}
                 </div>
                 <div className={`text-lg font-monument mt-1 ${gradeColor(comparison.session_b.session.grade)}`}>
-                  {comparison.session_b.session.grade ?? '--'}
+                  {comparison.session_b.session.grade ?? '\u2014'}
                 </div>
               </div>
             </div>
@@ -548,8 +534,8 @@ export default function CompareSessionsPage() {
                     {/* Lap count */}
                     <CompareRow
                       label="Lap Count"
-                      valueA={comparison.session_a.session.n_laps != null ? String(comparison.session_a.session.n_laps) : '--'}
-                      valueB={comparison.session_b.session.n_laps != null ? String(comparison.session_b.session.n_laps) : '--'}
+                      valueA={comparison.session_a.session.n_laps != null ? String(comparison.session_a.session.n_laps) : '\u2014'}
+                      valueB={comparison.session_b.session.n_laps != null ? String(comparison.session_b.session.n_laps) : '\u2014'}
                       delta={null}
                       deltaColorClass="text-steel"
                     />
@@ -608,8 +594,8 @@ export default function CompareSessionsPage() {
                       return (
                         <CompareRow
                           label="Best Lap Avg Speed"
-                          valueA={bestA ? `${mpsToKmh(bestA.speed_mean_mps)} km/h` : '--'}
-                          valueB={bestB ? `${mpsToKmh(bestB.speed_mean_mps)} km/h` : '--'}
+                          valueA={bestA ? `${mpsToKmh(bestA.speed_mean_mps)} km/h` : '\u2014'}
+                          valueB={bestB ? `${mpsToKmh(bestB.speed_mean_mps)} km/h` : '\u2014'}
                           delta={speedDelta != null ? `${formatDelta(speedDelta)} km/h` : null}
                           deltaColorClass={speedDelta != null ? deltaColor(speedDelta) : 'text-steel'}
                         />
@@ -627,8 +613,8 @@ export default function CompareSessionsPage() {
                       return (
                         <CompareRow
                           label="Best Lap Max Speed"
-                          valueA={bestA ? `${mpsToKmh(bestA.speed_max_mps)} km/h` : '--'}
-                          valueB={bestB ? `${mpsToKmh(bestB.speed_max_mps)} km/h` : '--'}
+                          valueA={bestA ? `${mpsToKmh(bestA.speed_max_mps)} km/h` : '\u2014'}
+                          valueB={bestB ? `${mpsToKmh(bestB.speed_max_mps)} km/h` : '\u2014'}
                           delta={speedDelta != null ? `${formatDelta(speedDelta)} km/h` : null}
                           deltaColorClass={speedDelta != null ? deltaColor(speedDelta) : 'text-steel'}
                         />
@@ -687,9 +673,9 @@ function MetadataCard({
         <MetaRow label="File" value={session.csv_filename} />
         <MetaRow label="Driver" value={session.driver_name} />
         <MetaRow label="Track" value={session.track_name || 'Unknown'} />
-        <MetaRow label="Type" value={session.session_type || '--'} />
-        <MetaRow label="Conditions" value={session.track_state || '--'} />
-        <MetaRow label="Date" value={session.session_date} />
+        <MetaRow label="Type" value={session.session_type || '\u2014'} />
+        <MetaRow label="Conditions" value={session.track_state || '\u2014'} />
+        <MetaRow label="Date" value={formatDate(session.session_date)} />
       </dl>
     </div>
   );
@@ -723,7 +709,7 @@ function CompareRow({
       <td className="px-4 py-3 text-right font-telemetry text-chalk text-sm">{valueA}</td>
       <td className="px-4 py-3 text-right font-telemetry text-chalk text-sm">{valueB}</td>
       <td className={`px-4 py-3 text-right font-telemetry text-sm ${deltaColorClass}`}>
-        {delta ?? '--'}
+        {delta ?? '\u2014'}
       </td>
     </tr>
   );

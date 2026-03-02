@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
+import { formatLapTime, formatDate, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
 import { CornersTab, type CornerData } from '@/components/app/corners';
 import { AnalyticsTab } from '@/components/app/analytics';
 import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
@@ -88,20 +89,6 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'laps', label: 'Lap Data' },
 ];
 
-function formatLapTime(seconds: number | null | undefined): string {
-  if (seconds == null || !isFinite(seconds)) return '--';
-  if (seconds >= 60) {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds - mins * 60;
-    return `${mins}:${secs.toFixed(3).padStart(6, '0')}`;
-  }
-  return `${seconds.toFixed(3)}s`;
-}
-
-function mpsToKmh(mps: number | null | undefined): string {
-  if (mps == null || !isFinite(mps)) return '--';
-  return (mps * 3.6).toFixed(1);
-}
 
 const GRADE_COLORS: Record<string, string> = {
   S: 'text-yellow-400 border-yellow-400',
@@ -136,7 +123,7 @@ function ScoreBar({
       <div className="flex justify-between text-sm mb-1">
         <span className="text-chalk font-body">{label}</span>
         <span className="text-steel font-telemetry">
-          {score != null ? Math.round(score) : '--'} / {Math.round(max)}
+          {score != null ? Math.round(score) : '\u2014'} / {Math.round(max)}
         </span>
       </div>
       <div className="w-full h-2.5 bg-asphalt rounded-full overflow-hidden">
@@ -228,6 +215,21 @@ export default function SessionDetailPage() {
     setActiveTab(tab);
   }, []);
 
+  // F-key shortcut to open Focus Mode
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (
+        e.key === 'f' &&
+        !(e.target instanceof HTMLInputElement) &&
+        !(e.target instanceof HTMLTextAreaElement)
+      ) {
+        setFocusOpen(true);
+      }
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
   // ── Loading / error states ─────────────────────────────────────
 
   if (loading) {
@@ -280,7 +282,7 @@ export default function SessionDetailPage() {
           <p className="text-steel text-sm font-body mt-1">
             {session.driver_name}
             {session.track_name ? ` \u2022 ${session.track_name}` : ''}
-            {` \u2022 ${session.session_date}`}
+            {` \u2022 ${formatDate(session.session_date)}`}
           </p>
         </div>
 
@@ -307,10 +309,16 @@ export default function SessionDetailPage() {
           {/* Focus Mode */}
           <button
             onClick={() => setFocusOpen(true)}
-            className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
-            aria-label="Open focus mode"
+            className="flex items-center gap-2 px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
+            aria-label="Open focus mode (F)"
+            title="Open Focus Mode (F)"
           >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <polyline points="8,2 12,2 12,6" /><line x1="12" y1="2" x2="7" y2="7" />
+              <polyline points="6,12 2,12 2,8" /><line x1="2" y1="12" x2="7" y2="7" />
+            </svg>
             Focus Mode
+            <kbd className="text-[10px] px-1 py-0.5 rounded bg-asphalt border border-steel/20 text-steel/50 font-telemetry">F</kbd>
           </button>
         </div>
       </div>
@@ -360,6 +368,7 @@ export default function SessionDetailPage() {
         onClose={() => setFocusOpen(false)}
         gpsLaps={gpsLaps}
         bestLap={bestLap}
+        activeTab={activeTab}
       />
     </div>
   );
@@ -400,7 +409,7 @@ function OverviewTab({
                 <div className="text-4xl font-monument text-chalk">
                   {session.total_score != null
                     ? Math.round(session.total_score)
-                    : '--'}
+                    : '\u2014'}
                 </div>
                 <div className="text-steel font-body text-sm">/ 100</div>
                 {session.grade && (
@@ -499,7 +508,7 @@ function OverviewTab({
                     <div key={m.label} className="bg-asphalt rounded-lg p-3">
                       <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
                       <span className={`text-xl font-monument ${m.color}`}>
-                        {m.value != null ? Math.round(m.value) : '--'}
+                        {m.value != null ? Math.round(m.value) : '\u2014'}
                       </span>
                       <span className="text-steel text-xs font-body ml-1">/ {Math.round(m.max)}</span>
                     </div>
@@ -507,7 +516,7 @@ function OverviewTab({
                   <div className="bg-asphalt rounded-lg p-3">
                     <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">Grade</p>
                     <span className={`text-xl font-monument ${gradeColorClass(session.grade).split(' ')[0]}`}>
-                      {session.grade || '--'}
+                      {session.grade || '\u2014'}
                     </span>
                   </div>
                 </div>
@@ -532,10 +541,10 @@ function OverviewTab({
             <MetaRow label="Track" value={session.track_name || 'Unknown'} />
             <MetaRow label="Type" value={session.session_type} />
             <MetaRow label="Conditions" value={session.track_state} />
-            <MetaRow label="Date" value={session.session_date} />
+            <MetaRow label="Date" value={formatDate(session.session_date)} />
             <MetaRow
               label="Laps"
-              value={session.n_laps != null ? String(session.n_laps) : '--'}
+              value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
             />
           </dl>
         </div>
@@ -610,15 +619,6 @@ function MetaRow({
 // 3. Lap Data Tab
 // ══════════════════════════════════════════════════════════════════
 
-function mps2ToG(mps2: number | null | undefined): string {
-  if (mps2 == null || !isFinite(mps2)) return '--';
-  return (Math.abs(mps2) / 9.81).toFixed(2);
-}
-
-function fmtLineLength(m: number | null | undefined): string {
-  if (m == null || !isFinite(m)) return '--';
-  return m.toFixed(1);
-}
 
 function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhases: ConditionPhase[] }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
@@ -810,14 +810,14 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       <div>
         <h2 className="text-lg font-monument text-chalk mb-4">Performance Summary</h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <StatCard label="Best Time" value={bestTime != null ? formatLapTime(bestTime) : '--'} accent="text-acid-green" />
-          <StatCard label="Mean Time" value={meanTime != null ? formatLapTime(meanTime) : '--'} />
-          <StatCard label="Median Time" value={medianTime != null ? formatLapTime(medianTime) : '--'} />
-          <StatCard label="Consistency" value={consistencyCV != null ? `${consistencyCV.toFixed(1)}%` : '--'} sub="CV" accent={consistencyCV != null && consistencyCV < 1.5 ? 'text-acid-green' : consistencyCV != null && consistencyCV > 3 ? 'text-safety-red' : undefined} />
+          <StatCard label="Best Time" value={bestTime != null ? formatLapTime(bestTime) : '\u2014'} accent="text-acid-green" />
+          <StatCard label="Mean Time" value={meanTime != null ? formatLapTime(meanTime) : '\u2014'} />
+          <StatCard label="Median Time" value={medianTime != null ? formatLapTime(medianTime) : '\u2014'} />
+          <StatCard label="Consistency" value={consistencyCV != null ? `${consistencyCV.toFixed(1)}%` : '\u2014'} sub="CV" accent={consistencyCV != null && consistencyCV < 1.5 ? 'text-acid-green' : consistencyCV != null && consistencyCV > 3 ? 'text-safety-red' : undefined} />
           <StatCard label="Total Laps" value={String(laps.length)} />
           <StatCard label="Valid Laps" value={String(validLaps.length)} />
-          <StatCard label="Best Avg Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '--'} />
-          <StatCard label="Best Max Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '--'} />
+          <StatCard label="Best Avg Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '\u2014'} />
+          <StatCard label="Best Max Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '\u2014'} />
         </div>
       </div>
 
@@ -862,7 +862,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                     lap.invalid_reason?.toLowerCase().includes('outlap') ||
                     lap.invalid_reason?.toLowerCase().includes('inlap')
                   );
-                  const phaseName = phaseMap[lap.lap_number] || (lap.phase_id != null ? `P${lap.phase_id}` : '--');
+                  const phaseName = phaseMap[lap.lap_number] || (lap.phase_id != null ? `P${lap.phase_id}` : '\u2014');
 
                   return (
                     <tr
@@ -897,7 +897,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                         {mps2ToG(lap.accel_max_mps2)} G
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                        {fmtLineLength(lap.line_length_m)} m
+                        {formatDistance(lap.line_length_m)} m
                       </td>
                       <td className="px-4 py-3 text-center">
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-steel/10 text-steel font-body">
@@ -962,7 +962,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                   <div>
                     <span className="text-steel font-body block">Confidence</span>
                     <span className="text-chalk font-telemetry text-sm">
-                      {phase.confidence != null ? `${(phase.confidence * 100).toFixed(0)}%` : '--'}
+                      {phase.confidence != null ? `${(phase.confidence * 100).toFixed(0)}%` : '\u2014'}
                     </span>
                   </div>
                   <div>
@@ -1280,7 +1280,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
                     >
                       {stint.pace_drop_pct != null
                         ? `${stint.pace_drop_pct.toFixed(1)}%`
-                        : '--'}
+                        : '\u2014'}
                     </span>
                   </div>
                 </div>
