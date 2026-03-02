@@ -1,7 +1,11 @@
 """Tenant middleware — resolves workspace_id and sets RLS context."""
+import logging
+
 from flask import request, g, current_app, jsonify
 
 from auth.workspace import get_default_workspace_id
+
+logger = logging.getLogger(__name__)
 
 
 def tenant_middleware():
@@ -70,8 +74,12 @@ def tenant_middleware():
     try:
         from auth.entitlements import get_user_plan_tier
         g.plan_tier = get_user_plan_tier(conn, user_id)
-    except Exception:
-        g.plan_tier = "demo"  # Graceful fallback
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve plan_tier for user %s: %s: %s",
+            user_id, type(exc).__name__, exc,
+        )
+        g.plan_tier = "demo"
 
 
 def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:

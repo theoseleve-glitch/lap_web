@@ -52,11 +52,18 @@ _ALLOWED_EXTENSIONS = {".csv", ".txt"}
 
 _TIER_LIMITS = {
     "free":        {"max_bytes": 50 * 1024 * 1024,   "max_sessions": 10},
-    "performance": {"max_bytes": 500 * 1024 * 1024,  "max_sessions": None},
-    "pro_racer":   {"max_bytes": 2 * 1024**3,        "max_sessions": None},
+    "demo":        {"max_bytes": 50 * 1024 * 1024,   "max_sessions": 10},
+    "racer":       {"max_bytes": 500 * 1024 * 1024,  "max_sessions": None},
+    "world-class": {"max_bytes": 2 * 1024**3,        "max_sessions": None},
+    "world_class": {"max_bytes": 2 * 1024**3,        "max_sessions": None},
     "b2b":         {"max_bytes": 12 * 1024**3,        "max_sessions": None},
 }
-_TIER_TIMEOUTS = {"free": 120, "performance": 600, "pro_racer": 1800, "b2b": 3600}
+_TIER_TIMEOUTS = {
+    "free": 120, "demo": 120,
+    "racer": 600,
+    "world-class": 1800, "world_class": 1800,
+    "b2b": 3600,
+}
 
 
 def _get_conn():
@@ -381,9 +388,9 @@ def upload_session():
         )
 
         return api_response(
-            {"job_id": job_id, "status": "pending"},
+            {"job_id": job_id, "status": "pending",
+             "message": "Upload accepted. Processing started."},
             status=202,
-            message="Upload accepted. Processing started.",
         )
 
     except Exception as exc:
