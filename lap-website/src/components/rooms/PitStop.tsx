@@ -2,12 +2,10 @@
 
 import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { FaqAccordion } from '@/components/ui/FaqAccordion';
 import { PitButton } from '@/components/ui/PitButton';
 import { StampButton } from '@/components/ui/StampButton';
-import { b2bCard } from '@/data/pricing';
 import {
   trackPricingToggle,
   trackFaqExpand,
@@ -16,6 +14,7 @@ import {
 import { PitWheel } from '@/components/chrome/PitWheel';
 import { useTranslation } from '@/i18n';
 import { useCurrency } from '@/hooks/useCurrency';
+import type { BillingCycle } from '@/data/pricing';
 
 export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
@@ -154,9 +153,11 @@ export function PitStop() {
         </div>
 
         {/* Risk reversal */}
-        <div className="col-span-full flex flex-wrap justify-center gap-4 mb-12">
+        <div className="col-span-full flex flex-wrap justify-center gap-3 mb-12">
           {riskReversalKeys.map((key) => (
-            <ScrutineeringStamp key={key} label={t(key)} />
+            <span key={key} className="inline-block border border-chalk/20 px-3 py-1 font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">
+              {t(key)}
+            </span>
           ))}
         </div>
 
@@ -167,9 +168,11 @@ export function PitStop() {
         </div>
 
         {/* Trust strip */}
-        <div className="col-span-full flex flex-wrap justify-center gap-4 border-t border-chalk/15 pt-8">
+        <div className="col-span-full flex flex-wrap justify-center gap-3 border-t border-chalk/15 pt-8">
           {trustStripKeys.map((key) => (
-            <ScrutineeringStamp key={key} label={t(key)} />
+            <span key={key} className="inline-block border border-chalk/20 px-3 py-1 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel">
+              {t(key)}
+            </span>
           ))}
         </div>
       </div>

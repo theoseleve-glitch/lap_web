@@ -42,10 +42,10 @@ export function SiteHeader() {
       className="sticky top-0 z-50 border-b-2 border-chalk/15 bg-asphalt/95 backdrop-blur transition-transform duration-300"
       style={{ transform: visible ? 'translateY(0)' : 'translateY(-100%)' }}
     >
-      <div className="mx-auto max-w-6xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      <div className="mx-auto max-w-6xl px-4 py-1.5 flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/"
-          className="group relative font-monument text-3xl border-2 border-chalk/70 px-3.5 py-1.5 leading-none tracking-tight hover:border-pit-orange transition-colors duration-[420ms]"
+          className="group relative font-monument text-2xl border-2 border-chalk/70 px-3 py-1 leading-none tracking-tight hover:border-pit-orange transition-colors duration-[420ms]"
           onClick={() => trackNavRouteClick('/', 'header')}
         >
           <span className="text-chalk group-hover:text-pit-orange transition-colors duration-[420ms]">LAP</span>

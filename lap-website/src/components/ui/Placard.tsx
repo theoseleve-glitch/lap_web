@@ -1,14 +1,13 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { ScrutineeringStamp } from './ScrutineeringStamp';
 import { useKernelStore } from '@/experience/state/store';
 
 interface PlacardProps {
   title: string;
   children: React.ReactNode;
   revealContent?: React.ReactNode;
-  stamp?: { label: string; detail: string };
+  stamp?: { label: string; detail?: string };
   className?: string;
 }
 
@@ -51,8 +50,11 @@ export function Placard({
           <h3 className="font-monument text-[var(--text-h3)] mb-3">{title}</h3>
           <div className="font-body text-steel leading-relaxed">{children}</div>
           {stamp && (
-            <div className="mt-4">
-              <ScrutineeringStamp label={stamp.label} detail={stamp.detail} />
+            <div className="mt-4 inline-block border border-chalk/20 px-3 py-1">
+              <span className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">{stamp.label}</span>
+              {stamp.detail && (
+                <span className="block font-telemetry text-[9px] tracking-[0.12em] uppercase text-steel mt-0.5">{stamp.detail}</span>
+              )}
             </div>
           )}
           {revealContent && (

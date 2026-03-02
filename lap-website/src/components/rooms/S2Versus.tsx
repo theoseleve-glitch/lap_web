@@ -1,7 +1,6 @@
 'use client';
 
 import { MonumentText } from '@/components/ui/MonumentText';
-import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 
 /* ── Mock timing table (what competitors show) ──────────── */
 const TIMING_ROWS = [
@@ -79,7 +78,9 @@ export function S2Versus() {
               You don&apos;t know <em>why</em>.
             </p>
             <div className="absolute top-4 right-4">
-              <ScrutineeringStamp label="POSITIONS ONLY" className="text-steel/30 border-steel/20" />
+              <span className="font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/30 border border-steel/20 px-2 py-0.5">
+                POSITIONS ONLY
+              </span>
             </div>
           </div>
 
@@ -107,7 +108,9 @@ export function S2Versus() {
               You leave with <strong className="text-pit-orange">the fix</strong>.
             </p>
             <div className="absolute top-4 right-4">
-              <ScrutineeringStamp label="COACHING READY" className="text-pit-orange border-pit-orange/40" />
+              <span className="font-telemetry text-[10px] tracking-[0.12em] uppercase text-pit-orange border border-pit-orange/40 px-2 py-0.5">
+                COACHING READY
+              </span>
             </div>
           </div>
         </div>

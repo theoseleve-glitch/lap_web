@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 import { RadioCard } from '@/components/ui/RadioCard';
 import { CornerDrag } from '@/components/mechanisms/CornerDrag';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
@@ -55,12 +54,13 @@ export function S1Pain() {
           </div>
 
           {hasInteracted && (
-            <div className="mt-4">
-              <ScrutineeringStamp
-                label={t('home.pain.stampLabel')}
-                detail={t('home.pain.stampDetail')}
-                variant="slam"
-              />
+            <div className="mt-4 inline-block border border-chalk/30 px-3 py-1">
+              <span className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">
+                {t('home.pain.stampLabel')}
+              </span>
+              <span className="block font-telemetry text-[9px] tracking-[0.12em] uppercase text-steel mt-0.5">
+                {t('home.pain.stampDetail')}
+              </span>
             </div>
           )}
         </div>

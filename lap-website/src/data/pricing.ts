@@ -17,7 +17,8 @@ export interface Plan {
   availability: CapabilityStatus;
 }
 
-export const b2cPlans: Plan[] = [
+/** Individual driver plans */
+export const plans: Plan[] = [
   {
     name: 'DEMO',
     slug: 'demo',
@@ -79,10 +80,10 @@ export const b2cPlans: Plan[] = [
     name: 'WORLD-CLASS',
     slug: 'world-class',
     priceMonthly: '€13.99 / mo',
-    priceAnnual: '€109 / yr',
-    priceAnnualPerMonth: '€9.08 / mo',
-    annualTotal: '€109/yr',
-    savingsPercent: '35',
+    priceAnnual: '€108 / yr',
+    priceAnnualPerMonth: '€9.00 / mo',
+    annualTotal: '€108/yr',
+    savingsPercent: '36',
     features: {
       'Analysis Reports': 'Unlimited',
       '4-Pillar Scoring': 'Full',
@@ -112,8 +113,8 @@ export interface B2BCard {
   ctaHref: string;
 }
 
-export const b2bCard: B2BCard = {
-  name: 'FOR TEAMS & CIRCUITS',
+export const venueCard: B2BCard = {
+  name: 'FOR VENUES & TEAMS',
   features: [
     'Hardware for data logging',
     'Live telemetry software',
@@ -122,8 +123,14 @@ export const b2bCard: B2BCard = {
     'Dedicated onboarding',
   ],
   cta: 'Contact Sales',
-  ctaHref: '/contact?plan=b2b',
+  ctaHref: '/contact?plan=venues',
 };
+
+/** @deprecated Use `plans` instead */
+export const b2cPlans = plans;
+
+/** @deprecated Use `venueCard` instead */
+export const b2bCard = venueCard;
 
 export interface EligibilityRow {
   feature: string;
@@ -177,8 +184,8 @@ export const dataLifecycle: DataLifecycleItem[] = [
     category: 'PROCESSED REPORTS',
     description: '1–5MB',
     tiers: [
-      { label: 'All B2C tiers', value: 'Stored indefinitely' },
-      { label: 'B2B', value: '2 years' },
+      { label: 'All plans', value: 'Stored indefinitely' },
+      { label: 'Venues & Teams', value: '2 years' },
     ],
     note: 'Reports are your permanent record. Lightweight. No extra cost.',
   },

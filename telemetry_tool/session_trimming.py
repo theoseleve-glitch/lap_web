@@ -1498,79 +1498,122 @@ def identify_anomalous_laps(
             "lap_distances": lap_distances, "lap_times": lap_durations,
         }
 
-    # ── Distance band check ──
-    all_dists = np.array([d for d in lap_distances.values() if d > 0])
-    if len(all_dists) >= 3:
-        # Iterative median (exclude extremes first)
-        cands = all_dists.copy()
-        for _ in range(3):
-            med = float(np.median(cands))
-            mask = (cands >= med * 0.6) & (cands <= med * 1.5)
-            if mask.sum() >= 2:
-                cands = cands[mask]
-            else:
-                break
-        median_dist = float(np.median(cands))
-
-        low_thresh = median_dist * dist_band_low
-        high_thresh = median_dist * dist_band_high
-
-        for lap_num, dist in lap_distances.items():
-            if dist < low_thresh:
-                dist_flagged.add(lap_num)
-                reason[lap_num] = (
-                    f"short distance: {dist:.0f}m < {low_thresh:.0f}m "
-                    f"({dist_band_low:.0%} of median {median_dist:.0f}m)"
-                )
-            elif dist > high_thresh:
-                dist_flagged.add(lap_num)
-                reason[lap_num] = (
-                    f"long distance: {dist:.0f}m > {high_thresh:.0f}m "
-                    f"({dist_band_high:.0%} of median {median_dist:.0f}m)"
-                )
-    else:
-        median_dist = float(np.median(all_dists)) if len(all_dists) > 0 else float("nan")
-
-    # ── Rolling-mean time-band check ──
+    # ── Detect stints from lap numbering gaps ──
+    # A gap > 1 in consecutive lap numbers indicates a pit stop / stint break.
     sorted_laps = sorted(lap_durations.keys())
-    if len(sorted_laps) >= 3:
-        # Build rolling mean from a window of preceding clean laps
-        clean_times: list[float] = []
-        for lap_num in sorted_laps:
-            dur = lap_durations[lap_num]
-            if lap_num in dist_flagged or dur <= 0 or not np.isfinite(dur):
-                continue
+    stints: list[list[int]] = []
+    if sorted_laps:
+        current_stint: list[int] = [sorted_laps[0]]
+        for i in range(1, len(sorted_laps)):
+            if sorted_laps[i] - sorted_laps[i - 1] > 1:
+                stints.append(current_stint)
+                current_stint = [sorted_laps[i]]
+            else:
+                current_stint.append(sorted_laps[i])
+        stints.append(current_stint)
 
-            if len(clean_times) >= 2:
-                # Use up to rolling_window preceding clean laps
-                window = clean_times[-rolling_window:]
-                roll_mean = float(np.mean(window))
-                low_t = roll_mean * time_band_low
-                high_t = roll_mean * time_band_high
+    # ── Per-stint reference: mean of the 5 median laps ──
+    stint_ref_time: dict[int, float] = {}
+    stint_ref_dist: dict[int, float | None] = {}
+    stint_refs_info: dict[int, dict] = {}  # stint_idx -> {ref_time, ref_dist, ...}
 
-                if dur < low_t:
-                    time_flagged.add(lap_num)
-                    reason.setdefault(lap_num, (
-                        f"fast anomaly: {dur:.2f}s < {low_t:.2f}s "
-                        f"({time_band_low:.0%} of rolling mean {roll_mean:.2f}s)"
-                    ))
-                elif dur > high_t:
-                    time_flagged.add(lap_num)
-                    reason.setdefault(lap_num, (
-                        f"slow anomaly: {dur:.2f}s > {high_t:.2f}s "
-                        f"({time_band_high:.0%} of rolling mean {roll_mean:.2f}s)"
-                    ))
+    for stint_idx, stint_laps in enumerate(stints):
+        # Gather valid (non-excluded, positive, finite) lap times in this stint
+        valid_in_stint = [
+            (ln, lap_durations[ln])
+            for ln in stint_laps
+            if ln not in excluded_laps
+            and lap_durations.get(ln, 0) > 0
+            and np.isfinite(lap_durations.get(ln, 0))
+        ]
+        if len(valid_in_stint) < 3:
+            continue  # Not enough laps for a meaningful reference
 
-            # Only add to clean rolling window if not flagged
-            if lap_num not in time_flagged and lap_num not in dist_flagged:
-                clean_times.append(dur)
+        # Sort by time, select up to 5 central (median) laps
+        valid_in_stint.sort(key=lambda x: x[1])
+        n = len(valid_in_stint)
+        n_select = min(5, n)
+        start_idx = (n - n_select) // 2
+        median_entries = valid_in_stint[start_idx : start_idx + n_select]
+
+        ref_time = float(np.mean([t for _, t in median_entries]))
+
+        # Reference distance from the same median laps
+        median_dists = [
+            lap_distances[ln]
+            for ln, _ in median_entries
+            if lap_distances.get(ln, 0) > 0
+        ]
+        ref_dist = float(np.mean(median_dists)) if median_dists else None
+
+        stint_refs_info[stint_idx] = {
+            "laps": stint_laps,
+            "median_lap_nums": [ln for ln, _ in median_entries],
+            "ref_time_s": round(ref_time, 3),
+            "ref_distance_m": round(ref_dist, 1) if ref_dist is not None else None,
+            "n_valid": len(valid_in_stint),
+        }
+
+        for ln in stint_laps:
+            stint_ref_time[ln] = ref_time
+            stint_ref_dist[ln] = ref_dist
+
+    # Overall median distance for logging
+    all_dists = np.array([d for d in lap_distances.values() if d > 0])
+    median_dist = float(np.median(all_dists)) if len(all_dists) > 0 else float("nan")
+
+    # ── Flag laps outside [90%, 110%] of stint reference ──
+    for lap_num in sorted_laps:
+        if lap_num in excluded_laps:
+            continue
+        if lap_num not in stint_ref_time:
+            continue
+        ref_t = stint_ref_time[lap_num]
+        ref_d = stint_ref_dist[lap_num]
+        dur = lap_durations.get(lap_num, 0)
+        dist = lap_distances.get(lap_num, 0)
+
+        # Time check
+        if dur > 0 and np.isfinite(dur):
+            low_t = ref_t * time_band_low
+            high_t = ref_t * time_band_high
+            if dur < low_t:
+                time_flagged.add(lap_num)
+                reason.setdefault(lap_num, (
+                    f"fast anomaly: {dur:.2f}s < {low_t:.2f}s "
+                    f"({time_band_low:.0%} of stint ref {ref_t:.2f}s)"
+                ))
+            elif dur > high_t:
+                time_flagged.add(lap_num)
+                reason.setdefault(lap_num, (
+                    f"slow anomaly: {dur:.2f}s > {high_t:.2f}s "
+                    f"({time_band_high:.0%} of stint ref {ref_t:.2f}s)"
+                ))
+
+        # Distance check
+        if ref_d is not None and dist > 0:
+            low_d = ref_d * dist_band_low
+            high_d = ref_d * dist_band_high
+            if dist < low_d:
+                dist_flagged.add(lap_num)
+                reason.setdefault(lap_num, (
+                    f"short distance: {dist:.0f}m < {low_d:.0f}m "
+                    f"({dist_band_low:.0%} of stint ref {ref_d:.0f}m)"
+                ))
+            elif dist > high_d:
+                dist_flagged.add(lap_num)
+                reason.setdefault(lap_num, (
+                    f"long distance: {dist:.0f}m > {high_d:.0f}m "
+                    f"({dist_band_high:.0%} of stint ref {ref_d:.0f}m)"
+                ))
 
     flagged = dist_flagged | time_flagged
 
     logger.info(
         "Anomalous lap filter: %d flagged "
-        "(dist=%d, time=%d), median_dist=%.0f m.",
+        "(dist=%d, time=%d), %d stint(s), median_dist=%.0f m.",
         len(flagged), len(dist_flagged), len(time_flagged),
+        len(stints),
         median_dist if np.isfinite(median_dist) else 0.0,
     )
 
@@ -1582,6 +1625,7 @@ def identify_anomalous_laps(
         "median_distance_m": round(median_dist, 1) if np.isfinite(median_dist) else float("nan"),
         "lap_distances":    lap_distances,
         "lap_times":        lap_durations,
+        "stint_refs":       stint_refs_info,
     }
 
 

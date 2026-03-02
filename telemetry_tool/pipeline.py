@@ -1307,13 +1307,15 @@ def run_full_analysis(
     def _reference_line() -> pd.DataFrame:
         if ref_line_mod is None:
             raise ImportError("reference_line unavailable")
-        # Pass invalid laps as exclude set if the function supports it
+        # Pass all known-bad laps as exclude set if the function supports it
+        # (deviated_lap_set and joker_lap_set aren't populated yet at this point)
 
         import inspect
         sig = inspect.signature(ref_line_mod.compute_reference_line)
         if "exclude_laps" in sig.parameters:
+            _pre_excl = invalid_lap_set | incomplete_lap_set | anomalous_lap_set
             return ref_line_mod.compute_reference_line(
-                resampled_laps, exclude_laps=invalid_lap_set or None,
+                resampled_laps, exclude_laps=_pre_excl or None,
             )
         return ref_line_mod.compute_reference_line(resampled_laps)
 
@@ -1477,27 +1479,34 @@ def run_full_analysis(
     summary["best_lap"]     = best_lap_df
     summary["best_lap_key"] = best_lap_key
 
+    # ── Build clean data for ALL downstream analysis ──
+    # Excluded laps (invalid, incomplete, anomalous, deviated, joker) must
+    # not distort scoring, physics models, or data-quality assessment.
+    # Every analysis step from here forward uses these filtered structures.
+    sorted_keys = sorted(resampled_laps.keys())
+    _clean_resampled = {
+        k: v for k, v in resampled_laps.items()
+        if k not in excluded_laps
+    }
+    _clean_lap_times = [
+        t for k, t in zip(sorted_keys, lap_times)
+        if k not in excluded_laps and math.isfinite(t)
+    ]
+    _clean_lap_metrics = [
+        m for m in lap_metrics
+        if m.get("lap_number") not in excluded_laps
+    ]
+
     # ── 08i — Recompute consistency & robustness with excluded laps removed ──
     #
     # Steps 08b/08c computed these metrics *before* invalid/incomplete/anomalous
-    # laps were identified.  That means flagged laps (e.g. short inlaps, track
-    # cuts, paused laps) were inflating CV%, skewing early/late stint averages,
-    # and corrupting the robustness score.  We now recompute using only valid
-    # lap times so the scoring system receives clean data.
+    # laps were identified.  Recompute using only valid lap times so the
+    # scoring system receives clean data.
 
     if excluded_laps:
-        sorted_keys = sorted(resampled_laps.keys())
-        _clean_lap_times = [
-            t for k, t in zip(sorted_keys, lap_times)
-            if k not in excluded_laps and math.isfinite(t)
-        ]
-        _clean_resampled = {
-            k: v for k, v in resampled_laps.items()
-            if k not in excluded_laps
-        }
         logger.info(
-            "Recomputing consistency/robustness after excluding %d lap(s) "
-            "(kept %d of %d).",
+            "Excluded %d lap(s) — all downstream analysis uses %d clean laps "
+            "(of %d total).",
             len(excluded_laps), len(_clean_lap_times), len(lap_times),
         )
 
@@ -1589,7 +1598,7 @@ def run_full_analysis(
     def _friction() -> Any:
         if fric_mod is None:
             raise ImportError("friction_model unavailable")
-        return fric_mod.build_friction_model(resampled_laps)
+        return fric_mod.build_friction_model(_clean_resampled or resampled_laps)
 
     friction_circle, err = _safe_step("09c_friction_model", _friction)
     _record("09c_friction_model", friction_circle, err)
@@ -1602,7 +1611,9 @@ def run_full_analysis(
             raise ImportError("vehicle_model unavailable")
         if friction_circle is None:
             raise ValueError("No friction model from step 09c")
-        return veh_mod.classify_vehicle(friction_circle, lap_metrics)
+        return veh_mod.classify_vehicle(
+            friction_circle, _clean_lap_metrics or lap_metrics,
+        )
 
     vehicle_params, err = _safe_step("09d_vehicle_model", _vehicle_class)
     _record("09d_vehicle_model", vehicle_params, err)
@@ -1643,7 +1654,10 @@ def run_full_analysis(
     def _data_quality() -> Any:
         if dq_mod is None:
             raise ImportError("data_quality unavailable")
-        return dq_mod.score_data_quality(resampled_laps, lap_times)
+        return dq_mod.score_data_quality(
+            _clean_resampled or resampled_laps,
+            _clean_lap_times or lap_times,
+        )
 
     data_quality_rpt, err = _safe_step("09e_data_quality", _data_quality)
     _record("09e_data_quality", data_quality_rpt, err)

@@ -2,7 +2,6 @@
 
 import { MonumentText } from '@/components/ui/MonumentText';
 import { TrackCard } from '@/components/ui/TrackCard';
-import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 
 /* ── SVG Icons (inline, 24x24 viewBox) ───────────────────── */
 
@@ -56,9 +55,9 @@ const CHANNELS = [
     title: 'DEEP COACHING',
     eyebrow: 'PREMIUM UPSELL',
     description:
-      'Serious drivers unlock the full report. Corner-by-corner coaching, score breakdown, improvement plan. Same quality as the B2C product.',
+      'Serious drivers unlock the full report. Corner-by-corner coaching, score breakdown, improvement plan. Same quality as individual plans.',
     icon: <ChartIcon />,
-    stamp: 'B2C GRADE',
+    stamp: 'FULL GRADE',
     stampDetail: 'SAME ENGINE',
   },
   {
@@ -88,7 +87,7 @@ export function S3Venue() {
           TWO CHANNELS.
         </MonumentText>
         <p className="font-body text-steel text-base max-w-2xl mb-16 leading-relaxed">
-          The same analysis that powers serious B2C drivers runs at scale for your venue.
+          The same analysis that powers serious individual drivers runs at scale for your venue.
           Two distribution channels. One quality bar.
         </p>
 
@@ -104,12 +103,13 @@ export function S3Venue() {
                 description={ch.description}
                 icon={ch.icon}
               >
-                <div className="mt-3">
-                  <ScrutineeringStamp
-                    label={ch.stamp}
-                    detail={ch.stampDetail}
-                    className="text-pit-orange border-pit-orange/30"
-                  />
+                <div className="mt-3 inline-block border border-pit-orange/30 px-2 py-0.5">
+                  <span className="font-telemetry text-[10px] tracking-[0.12em] uppercase text-pit-orange">
+                    {ch.stamp}
+                  </span>
+                  <span className="block font-telemetry text-[8px] tracking-[0.12em] uppercase text-steel mt-0.5">
+                    {ch.stampDetail}
+                  </span>
                 </div>
               </TrackCard>
             </div>
@@ -124,14 +124,13 @@ export function S3Venue() {
             </h3>
             <p className="font-body text-sm text-steel max-w-xl">
               Competitors often have one &ldquo;venue tool&rdquo; and a weak &ldquo;driver tool.&rdquo;
-              We run the same 14-stage pipeline everywhere &mdash; B2C individuals get the same depth as B2B venues.
+              We run the same 14-stage pipeline everywhere &mdash; individual drivers get the same depth as venue operations.
             </p>
           </div>
-          <ScrutineeringStamp
-            label="UNIFIED"
-            detail="14-STAGE PIPELINE"
-            className="text-chalk border-chalk/30 shrink-0"
-          />
+          <span className="inline-block border border-chalk/30 px-3 py-1 shrink-0">
+            <span className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">UNIFIED</span>
+            <span className="block font-telemetry text-[9px] tracking-[0.12em] uppercase text-steel mt-0.5">14-STAGE PIPELINE</span>
+          </span>
         </div>
 
         {/* ── Roadmap teaser ─────────────────────────────── */}

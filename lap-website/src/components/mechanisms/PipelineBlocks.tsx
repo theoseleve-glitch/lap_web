@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo } from 'react';
-import { ScrutineeringStamp } from '@/components/ui/ScrutineeringStamp';
 import { pipelineStages } from '@/data/pipeline-stages';
 import { colors } from '@/lib/tokens';
 
@@ -51,14 +50,15 @@ export function PipelineBlocks({ progress, className = '' }: PipelineBlocksProps
                 </span>
               </div>
 
-              {/* Stamp on complete */}
+              {/* Completion indicator */}
               {state.complete && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <ScrutineeringStamp
-                    label={stage.stamp.label}
-                    detail={stage.stamp.detail}
-                    variant="slam"
-                  />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <span className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">
+                    {stage.stamp.label}
+                  </span>
+                  <span className="font-telemetry text-[9px] tracking-[0.12em] uppercase text-steel mt-0.5">
+                    {stage.stamp.detail}
+                  </span>
                 </div>
               )}
             </div>
