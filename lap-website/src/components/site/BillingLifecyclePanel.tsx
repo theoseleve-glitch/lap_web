@@ -45,7 +45,7 @@ export function BillingLifecyclePanel() {
       <article className="border border-chalk/15 p-5 bg-concrete/40">
         <h2 className="font-monument text-[var(--text-h3)] mb-2">Checkout Flow</h2>
         <p className="text-sm text-steel mb-4">
-          Select a B2C plan and continue directly to secure checkout.
+          Select a plan and continue directly to secure checkout.
         </p>
         <div className="grid md:grid-cols-3 gap-3 mb-4">
           <select

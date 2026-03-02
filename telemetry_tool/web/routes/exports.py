@@ -5,8 +5,8 @@ Endpoints:
     GET    /api/v1/exports                   - List user's exports
     GET    /api/v1/exports/<id>/download     - Download a completed export
 
-All endpoints require authentication (g.user_id, g.workspace_id from
-middleware).  Export generation is dispatched as a Celery task on the
+All endpoints require authentication (g.current_user_id, g.workspace_id
+from middleware).  Export generation is dispatched as a Celery task on the
 ``default`` queue.
 """
 from __future__ import annotations
@@ -111,7 +111,7 @@ def generate_export():
 
     conn = _get_conn()
     export_id = str(uuid.uuid4())
-    user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
     workspace_id = getattr(g, "workspace_id", None)
 
     # Insert export record
@@ -167,7 +167,7 @@ def list_exports():
         {"exports": [{id, data_type, format, status, file_size, created_at, completed_at}, ...]}
     """
     conn = _get_conn()
-    user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
 
     cursor = conn.execute(
         text(
@@ -208,7 +208,7 @@ def download_export(export_id: str):
     status is 'ready'.  Returns the file as an attachment.
     """
     conn = _get_conn()
-    user_id = getattr(g, "current_user_id", None) or getattr(g, "user_id", None)
+    user_id = getattr(g, "current_user_id", None)
 
     row = conn.execute(
         text(

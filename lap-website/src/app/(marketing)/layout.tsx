@@ -7,10 +7,10 @@ export default function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <a
-        href="/pricing"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-1/2 focus:-translate-x-1/2 focus:z-[200] font-telemetry bg-asphalt text-chalk px-4 py-2 border-2 border-chalk"
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-1/2 focus:-translate-x-1/2 focus:z-[200] font-telemetry bg-asphalt text-chalk px-4 py-2 border-2 border-pit-orange min-h-[44px] inline-flex items-center"
       >
-        Skip to pricing
+        Skip to main content
       </a>
       <ExperienceProvider>
         <ChromeLayout>{children}</ChromeLayout>

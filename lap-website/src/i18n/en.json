@@ -3,6 +3,7 @@
   "nav.pricing": "Pricing",
   "nav.demo": "Demo",
   "nav.contact": "Contact",
+  "nav.venues": "For Venues",
   "nav.login": "Log In",
   "nav.signup": "Sign Up",
 
@@ -40,6 +41,9 @@
   "home.startGrid.heading3": "HAS A SECRET",
   "home.startGrid.instruction": "HOLD TO START // 2.0s",
   "home.startGrid.scrollHint": "OR SCROLL DOWN TO SKIP",
+  "home.startGrid.subtitle": "Telemetry reports that coach every driver. Live event tools for every venue.",
+  "home.startGrid.ctaVenue": "BOOK A PILOT",
+  "home.startGrid.trustStrip": "NO CARD REQUIRED // FIRST REPORT IN MINUTES // GDPR COMPLIANT",
 
   "home.pain.monument1": "YOU'RE LOSING TIME",
   "home.pain.monument2": "IN PLACES YOU CAN'T SEE",

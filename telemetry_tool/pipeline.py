@@ -649,8 +649,21 @@ def run_full_analysis(
         io_mod = _import("io_racechrono")
 
         def _ingest() -> pd.DataFrame:
+            # Try adapter registry first (handles all formats).
+            try:
+                from telemetry_tool.adapters import parse_file as _parse_file
+                _df, _adapter = _parse_file(csv_path, progress_cb=progress_callback)
+                summary["source_format"] = _adapter.FORMAT_NAME
+                summary["available_channels"] = _adapter.available_channels()
+                summary["data_tier"] = _adapter.data_tier()
+                summary["source_metadata"] = _adapter.metadata()
+                return _df
+            except (ValueError, ImportError):
+                pass
+
+            # Fallback to original RaceChrono reader.
             if io_mod is None:
-                raise ImportError("io_racechrono unavailable")
+                raise ImportError("No adapter matched and io_racechrono unavailable")
             return io_mod.read_racechrono_csv(csv_path)
 
         raw_df, err = _safe_step("01_ingest", _ingest)

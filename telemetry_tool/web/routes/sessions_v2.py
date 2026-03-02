@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("sessions_v2", __name__, url_prefix="/api/v1")
 
 # File extensions accepted for upload.
-_ALLOWED_EXTENSIONS = {".csv", ".txt"}
+_ALLOWED_EXTENSIONS = {".csv", ".txt", ".ibt", ".ld", ".ldx", ".vbo", ".xrk", ".drk"}
 
 # ── Tier limits ────────────────────────────────────────────────────────────
 
@@ -291,7 +291,7 @@ def upload_session():
     if ext not in _ALLOWED_EXTENSIONS:
         return api_error(
             ErrorCode.UNSUPPORTED_FORMAT,
-            f"Unsupported file type '{ext}'. Only CSV files are accepted.",
+            f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
             status=400,
         )
 

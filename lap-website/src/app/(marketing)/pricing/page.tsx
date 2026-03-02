@@ -4,7 +4,7 @@ import { Fragment, useState, useCallback } from 'react';
 import { PageShell } from '@/components/site/PageShell';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
-import { b2bCard } from '@/data/pricing';
+import { venueCard } from '@/data/pricing';
 import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
 import { useCurrency } from '@/hooks/useCurrency';
@@ -97,7 +97,7 @@ export default function PricingPage() {
         </span>
       </div>
 
-      {/* Pricing Table + B2B card */}
+      {/* Pricing Table + Venue card */}
       <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
         <PricingTable
           plans={localizedPlans}
@@ -105,7 +105,7 @@ export default function PricingPage() {
           onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
         />
 
-        {/* B2B card */}
+        {/* Venue card */}
         <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
           <p className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase mb-2">
             {t('pricing.b2bLabel')}
@@ -126,7 +126,7 @@ export default function PricingPage() {
             ))}
           </ul>
           <StampButton
-            href={b2bCard.ctaHref}
+            href={venueCard.ctaHref}
             onClick={() => trackCtaClick('contact_sales', 'pricing', 'b2b')}
             className="w-full"
           >

@@ -23,7 +23,7 @@ export function S3Product() {
     {
       label: t('home.product.strategistTile3Label'),
       description: t('home.product.strategistTile3Detail'),
-      image: '/images/screenshots/dashboard-hero.png',
+      image: '/images/screenshots/score-overview.png',
       alt: 'Pit call planning board with projected outcomes and decision support',
     },
   ];

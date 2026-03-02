@@ -14,7 +14,7 @@ import {
 import { PitWheel } from '@/components/chrome/PitWheel';
 import { useTranslation } from '@/i18n';
 import { useCurrency } from '@/hooks/useCurrency';
-import type { BillingCycle } from '@/data/pricing';
+
 
 export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
@@ -99,41 +99,13 @@ export function PitStop() {
           </span>
         </div>
 
-        {/* Pricing Table + B2B card */}
-        <div className="col-span-full grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0 mb-8">
+        {/* Pricing Table */}
+        <div className="col-span-full mb-8">
           <PricingTable
             plans={localizedPlans}
             billingPeriod={billingPeriod}
             onCtaClick={(plan) => trackCtaClick(plan, 'pit-stop', 'b2c')}
           />
-
-          {/* B2B card */}
-          <div className="p-6 bg-concrete border border-chalk/15 lg:border-l-0">
-            <h3 className="font-monument text-[var(--text-h3)] mb-4">{t('pricing.b2b.name')}</h3>
-            <ul className="space-y-2 mb-6">
-              {[
-                t('pricing.b2b.feature1'),
-                t('pricing.b2b.feature2'),
-                t('pricing.b2b.feature3'),
-                t('pricing.b2b.feature4'),
-                t('pricing.b2b.feature5'),
-                t('pricing.b2b.feature6'),
-                t('pricing.b2b.feature7'),
-              ].map((feature) => (
-                <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
-                  <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
-                  {feature}
-                </li>
-              ))}
-            </ul>
-            <StampButton
-              href={b2bCard.ctaHref}
-              onClick={() => trackCtaClick('contact_sales', 'pit-stop', 'b2b')}
-              className="w-full"
-            >
-              {t('cta.contactSales')}
-            </StampButton>
-          </div>
         </div>
 
         {/* CTAs */}

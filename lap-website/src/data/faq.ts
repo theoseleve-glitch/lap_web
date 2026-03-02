@@ -6,7 +6,7 @@ export interface FaqItem {
 export const faqItems: FaqItem[] = [
   {
     question: 'What payment methods do you accept?',
-    answer: 'Card via Stripe. Bank transfer for B2B annual plans.',
+    answer: 'Card via Stripe. Bank transfer for venue and team annual plans.',
   },
   {
     question: 'Can I switch plans?',

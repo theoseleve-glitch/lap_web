@@ -6,11 +6,11 @@
   --steel: #888888;
 
   /* ── Accent Colors ────────────────── */
-  --acid-green: #F0EDE5;
+  --acid-green: #22C55E;
   --safety-red: #FF2A2A;
-  --marshal-yellow: #F0EDE5;
+  --marshal-yellow: #FACC15;
   --pit-orange: #C9A84C;
-  --racing-purple: #C9A84C;
+  --racing-purple: #8B5CF6;
 
   /* ── Active accent (overridden per room via data-accent) ── */
   --accent: var(--chalk);
@@ -86,8 +86,8 @@
 
 /* ── Single-accent enforcement per room ── */
 [data-accent="none"]    { --accent: var(--chalk); }
-[data-accent="green"]   { --accent: var(--chalk); }
+[data-accent="green"]   { --accent: var(--acid-green); }
 [data-accent="red"]     { --accent: var(--safety-red); }
-[data-accent="yellow"]  { --accent: var(--chalk); }
+[data-accent="yellow"]  { --accent: var(--marshal-yellow); }
 [data-accent="orange"]  { --accent: var(--pit-orange); }
 [data-accent="purple"]  { --accent: var(--racing-purple); }

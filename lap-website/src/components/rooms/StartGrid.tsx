@@ -1,73 +1,42 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { StartLights } from '@/components/mechanisms/StartLights';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
-import { trackStartGridHold, trackStartGridComplete } from '@/lib/analytics';
+import { trackStartGridComplete, trackCtaClick } from '@/lib/analytics';
 import { colors } from '@/lib/tokens';
 import { useTranslation } from '@/i18n';
 
 export function StartGrid() {
-  const [launched, setLaunched] = useState(false);
-  const [flashing, setFlashing] = useState(false);
-  const holdStartRef = useRef(0);
-  const scrollIntentRef = useRef(0);
+  const [lightsOut, setLightsOut] = useState(false);
   const { reducedMotion } = useReducedMotion();
   const { t } = useTranslation();
 
-  const handleComplete = useCallback(async () => {
-    if (launched) return;
-
-    // Track hold duration
-    if (holdStartRef.current > 0) {
-      trackStartGridHold(Date.now() - holdStartRef.current);
-    }
-    trackStartGridComplete();
-
-    // Flash
-    setFlashing(true);
-    await new Promise((r) => setTimeout(r, 120));
-    setFlashing(false);
-    setLaunched(true);
-
-    // Scroll to S1 (Lenis intercepts native smooth scroll)
-    const target = document.getElementById('s1-pain');
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [launched]);
-
+  // Auto-complete the start lights after 1.5s — no gate, just ambient delight
   useEffect(() => {
-    if (launched) return;
-
-    const handleWheel = (event: WheelEvent) => {
-      if (event.deltaY <= 0) return;
-      scrollIntentRef.current += event.deltaY;
-      if (scrollIntentRef.current >= 220) {
-        void handleComplete();
-      }
-    };
-
-    window.addEventListener('wheel', handleWheel, { passive: true });
-    return () => window.removeEventListener('wheel', handleWheel);
-  }, [handleComplete, launched]);
+    if (reducedMotion) {
+      setLightsOut(true);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setLightsOut(true);
+      trackStartGridComplete();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [reducedMotion]);
 
   return (
     <section
       id="start-grid"
       data-accent="none"
       className="room relative"
-      aria-label="Start Grid"
-      onPointerDown={() => { holdStartRef.current = Date.now(); }}
+      aria-label="Hero — what is Lap Coach"
     >
-      {/* White flash overlay */}
-      {flashing && (
-        <div className="absolute inset-0 bg-chalk z-50 pointer-events-none" />
-      )}
-
       <div className="grid-lap">
         <div className="col-span-full flex flex-col items-center justify-center text-center gap-4 md:gap-6">
+          {/* Brand headline — always visible */}
           <MonumentText size="xl" as="h1" className="text-center">
             <span className="text-shimmer">
               {t('home.startGrid.heading1')}
@@ -86,19 +55,42 @@ export function StartGrid() {
             </span>
           </MonumentText>
 
-          {!launched && (
-            <>
+          {/* Product subtitle — always visible, explains what the product does */}
+          <p className="font-body text-steel text-base md:text-lg max-w-2xl leading-relaxed">
+            {t('home.startGrid.subtitle')}
+          </p>
+
+          {/* Dual CTAs — always visible */}
+          <div className="flex flex-col sm:flex-row items-center gap-3 mt-2">
+            <Link
+              href="/register?source=free-report&redirect=/free-report/analyze"
+              className="inline-flex items-center justify-center min-h-[44px] px-6 py-3 font-telemetry text-xs tracking-[0.12em] uppercase bg-pit-orange border border-pit-orange text-asphalt hover:bg-[#D4B35A] transition-colors duration-200 cursor-pointer"
+              onClick={() => trackCtaClick('try_free_report', 'hero', 'b2c')}
+            >
+              {t('cta.startFreeReport')}
+            </Link>
+            <Link
+              href="/contact?plan=b2b"
+              className="inline-flex items-center justify-center min-h-[44px] px-6 py-3 font-telemetry text-xs tracking-[0.12em] uppercase border border-chalk/40 text-chalk hover:border-chalk hover:text-white transition-colors duration-200 cursor-pointer"
+              onClick={() => trackCtaClick('book_pilot', 'hero', 'b2b')}
+            >
+              {t('home.startGrid.ctaVenue')}
+            </Link>
+          </div>
+
+          {/* Trust micro-strip */}
+          <p className="font-telemetry text-steel/60 text-[11px] tracking-widest mt-1">
+            {t('home.startGrid.trustStrip')}
+          </p>
+
+          {/* Start lights — ambient animation, no gate */}
+          {!lightsOut && (
+            <div className="mt-4" aria-hidden="true">
               <StartLights
-                onComplete={handleComplete}
+                onComplete={() => setLightsOut(true)}
                 reducedMotion={reducedMotion}
               />
-              <p className="font-telemetry text-steel text-sm md:text-base tracking-widest animate-pulse">
-                {t('home.startGrid.instruction')}
-              </p>
-              <p className="font-telemetry text-steel/50 text-xs tracking-widest">
-                {t('home.startGrid.scrollHint')}
-              </p>
-            </>
+            </div>
           )}
         </div>
       </div>
