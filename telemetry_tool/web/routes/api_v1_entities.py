@@ -183,6 +183,28 @@ def _map_kart(row):
     }
 
 
+@bp.route("/tracks/<track_id>", methods=["DELETE"])
+def delete_track(track_id):
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT * FROM tracks WHERE track_id = ?", (track_id,)
+    ).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    count = conn.execute(
+        "SELECT COUNT(*) AS c FROM sessions WHERE track_id = ?", (track_id,)
+    ).fetchone()
+    if count and count["c"] > 0:
+        return api_error(
+            ErrorCode.CONFLICT,
+            f"Cannot delete track with {count['c']} linked session(s). Unlink sessions first.",
+            status=409,
+        )
+    conn.execute("DELETE FROM tracks WHERE track_id = ?", (track_id,))
+    conn.commit()
+    return api_response({"deleted": True})
+
+
 @bp.route("/karts", methods=["GET"])
 def list_karts():
     conn = _get_conn()

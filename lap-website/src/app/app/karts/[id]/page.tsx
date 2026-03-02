@@ -1,66 +1,97 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
+import { PageHeader, StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 
 interface KartDetail {
   id: number;
   name: string;
-  number: string | null;
-  chassis: string | null;
+  manufacturer: string | null;
+  model: string | null;
   engine: string | null;
+  power_hp: number | null;
   weight_kg: number | null;
   notes: string | null;
-  sessions_count: number;
-  best_time: number | null;
-  avg_score: number | null;
-}
-
-interface SessionRow {
-  id: string;
-  date: string;
-  track_name: string;
-  driver_name: string;
-  laps: number;
-  best_time: number | null;
-  score: number | null;
-}
-
-function formatTime(s: number | null): string {
-  if (s == null) return '—';
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
-}
-
-function scoreColor(score: number | null): string {
-  if (score == null) return 'text-steel';
-  if (score >= 80) return 'text-acid-green';
-  if (score >= 60) return 'text-pit-orange';
-  return 'text-safety-red';
+  session_count: number;
 }
 
 export default function KartDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const id = params.id as string;
 
-  const { data: kart, isLoading: kartLoading, error: kartError, refetch } = useQuery({
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [form, setForm] = useState({
+    name: '',
+    manufacturer: '',
+    model: '',
+    engine: '',
+    power_hp: '',
+    weight_kg: '',
+    notes: '',
+  });
+
+  const { data: kart, isLoading, error, refetch } = useQuery({
     queryKey: ['kart', id],
     queryFn: () => api.get<KartDetail>(`/karts/${id}`),
   });
 
-  const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['kart-sessions', id],
-    queryFn: () => api.get<{ sessions: SessionRow[] }>(`/karts/${id}/sessions`),
-    enabled: !!kart,
+  const updateMutation = useMutation({
+    mutationFn: (payload: Record<string, unknown>) =>
+      api.patch<KartDetail>(`/karts/${id}`, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kart', id] });
+      queryClient.invalidateQueries({ queryKey: ['karts'] });
+      setEditing(false);
+    },
   });
 
-  const sessions = sessionsData?.sessions ?? [];
-  const isLoading = kartLoading || sessionsLoading;
+  const deleteMutation = useMutation({
+    mutationFn: () => api.delete<{ deleted: boolean }>(`/karts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['karts'] });
+      router.push('/app/karts');
+    },
+  });
+
+  const startEditing = () => {
+    if (!kart) return;
+    setForm({
+      name: kart.name || '',
+      manufacturer: kart.manufacturer || '',
+      model: kart.model || '',
+      engine: kart.engine || '',
+      power_hp: kart.power_hp != null ? String(kart.power_hp) : '',
+      weight_kg: kart.weight_kg != null ? String(kart.weight_kg) : '',
+      notes: kart.notes || '',
+    });
+    setEditing(true);
+  };
+
+  const handleSave = () => {
+    if (!form.name.trim()) return;
+    updateMutation.mutate({
+      name: form.name.trim(),
+      manufacturer: form.manufacturer.trim() || null,
+      model: form.model.trim() || null,
+      engine: form.engine.trim() || null,
+      power_hp: form.power_hp ? parseFloat(form.power_hp) : null,
+      weight_kg: form.weight_kg ? parseFloat(form.weight_kg) : null,
+      notes: form.notes.trim() || null,
+    });
+  };
+
+  const handleChange =
+    (field: string) =>
+    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      setForm((prev) => ({ ...prev, [field]: e.target.value }));
+    };
 
   if (isLoading) {
     return (
@@ -70,12 +101,11 @@ export default function KartDetailPage() {
           <SkeletonBox className="h-3 w-24" />
         </div>
         <SkeletonStatCards count={3} />
-        <SkeletonTableRows rows={4} cols={6} />
       </div>
     );
   }
 
-  if (kartError) {
+  if (error) {
     return <QueryError message="Couldn't load kart details." onRetry={() => refetch()} />;
   }
 
@@ -95,102 +125,158 @@ export default function KartDetailPage() {
     <div>
       <PageHeader
         title={kart.name}
-        subtitle={[kart.chassis, kart.engine].filter(Boolean).join(' · ') || 'Kart details'}
+        subtitle={[kart.manufacturer, kart.model, kart.engine].filter(Boolean).join(' \u00b7 ') || 'Kart details'}
         actions={
-          <Link
-            href="/app/karts"
-            className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
-          >
-            ← All Karts
-          </Link>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={startEditing}
+              className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(true)}
+              className="px-4 py-2 border border-safety-red/30 text-safety-red font-telemetry text-sm rounded hover:bg-safety-red/10 transition-colors"
+            >
+              Delete
+            </button>
+            <Link
+              href="/app/karts"
+              className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
+            >
+              \u2190 All Karts
+            </Link>
+          </div>
         }
       />
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Sessions" value={kart.sessions_count} />
-        <StatCard label="Best Time" value={formatTime(kart.best_time)} />
-        <StatCard
-          label="Avg Score"
-          value={kart.avg_score != null ? kart.avg_score.toFixed(1) : '—'}
-          trend={
-            kart.avg_score == null ? 'neutral' :
-            kart.avg_score >= 80 ? 'up' :
-            kart.avg_score >= 60 ? 'neutral' : 'down'
-          }
-        />
-      </div>
-
-      {(kart.number || kart.weight_kg || kart.notes) && (
-        <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">
-          <h2 className="font-telemetry text-xs uppercase tracking-wider text-steel mb-3">Details</h2>
-          <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {kart.number && (
-              <div>
-                <dt className="text-steel font-telemetry text-xs uppercase">Number</dt>
-                <dd className="text-chalk font-body mt-0.5">#{kart.number}</dd>
-              </div>
+      {/* Delete confirmation */}
+      {confirmDelete && (
+        <div className="bg-safety-red/5 border border-safety-red/30 rounded-lg p-4 mb-6">
+          <p className="text-chalk font-body text-sm mb-3">
+            Are you sure you want to delete <strong>{kart.name}</strong>?
+            {kart.session_count > 0 && (
+              <span className="text-safety-red"> This kart has {kart.session_count} linked session(s) — you must unlink them first.</span>
             )}
-            {kart.chassis && (
-              <div>
-                <dt className="text-steel font-telemetry text-xs uppercase">Chassis</dt>
-                <dd className="text-chalk font-body mt-0.5">{kart.chassis}</dd>
-              </div>
-            )}
-            {kart.engine && (
-              <div>
-                <dt className="text-steel font-telemetry text-xs uppercase">Engine</dt>
-                <dd className="text-chalk font-body mt-0.5">{kart.engine}</dd>
-              </div>
-            )}
-            {kart.weight_kg && (
-              <div>
-                <dt className="text-steel font-telemetry text-xs uppercase">Weight</dt>
-                <dd className="text-chalk font-body mt-0.5">{kart.weight_kg} kg</dd>
-              </div>
-            )}
-          </dl>
-          {kart.notes && (
-            <div className="mt-3 pt-3 border-t border-steel/10">
-              <dt className="text-steel font-telemetry text-xs uppercase mb-1">Notes</dt>
-              <dd className="text-chalk font-body text-sm">{kart.notes}</dd>
-            </div>
+          </p>
+          {deleteMutation.error && (
+            <p className="text-safety-red font-telemetry text-sm mb-2">
+              {(deleteMutation.error as Error).message}
+            </p>
           )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => deleteMutation.mutate()}
+              disabled={deleteMutation.isPending}
+              className="px-4 py-2 bg-safety-red text-white font-telemetry text-sm rounded hover:bg-safety-red/80 transition-colors disabled:opacity-50"
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Confirm Delete'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
-      <h2 className="font-monument text-lg text-chalk mb-3">Session History</h2>
-      <DataTable
-        columns={[
-          { key: 'date', header: 'Date', sortable: true },
-          { key: 'track_name', header: 'Track', sortable: true },
-          { key: 'driver_name', header: 'Driver', sortable: true },
-          { key: 'laps', header: 'Laps', sortable: true, className: 'font-telemetry text-right' },
-          {
-            key: 'best_time',
-            header: 'Best Time',
-            sortable: true,
-            className: 'font-telemetry',
-            render: (row: SessionRow) => (
-              <span className="text-acid-green">{formatTime(row.best_time)}</span>
-            ),
-          },
-          {
-            key: 'score',
-            header: 'Score',
-            sortable: true,
-            className: 'font-telemetry text-right',
-            render: (row: SessionRow) => (
-              <span className={scoreColor(row.score)}>
-                {row.score != null ? row.score.toFixed(1) : '—'}
-              </span>
-            ),
-          },
-        ]}
-        data={sessions}
-        keyField="id"
-        onRowClick={(row) => router.push(`/app/sessions/${row.id}`)}
-        emptyMessage="No sessions recorded for this kart yet."
-      />
+      {/* Edit form */}
+      {editing && (
+        <div className="bg-concrete rounded-lg border border-pit-orange/30 p-6 mb-6">
+          <h2 className="font-monument text-lg text-chalk mb-4">Edit Kart</h2>
+          <div className="space-y-1">
+            <FormField label="Name" value={form.name} onChange={handleChange('name')} required />
+            <FormField label="Manufacturer" value={form.manufacturer} onChange={handleChange('manufacturer')} placeholder="e.g. Tony Kart" />
+            <FormField label="Model" value={form.model} onChange={handleChange('model')} placeholder="e.g. Racer 401R" />
+            <FormField label="Engine" value={form.engine} onChange={handleChange('engine')} placeholder="e.g. IAME X30" />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label="Power (hp)" type="number" value={form.power_hp} onChange={handleChange('power_hp')} min="0" step="0.1" />
+              <FormField label="Weight (kg)" type="number" value={form.weight_kg} onChange={handleChange('weight_kg')} min="0" step="0.1" />
+            </div>
+            <div className="mb-4">
+              <label className="block text-steel font-telemetry text-xs uppercase tracking-wider mb-1.5">Notes</label>
+              <textarea
+                className="w-full bg-asphalt border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 resize-none"
+                rows={3}
+                value={form.notes}
+                onChange={handleChange('notes')}
+              />
+            </div>
+          </div>
+          {updateMutation.error && (
+            <p className="text-safety-red font-telemetry text-sm mb-2">
+              {(updateMutation.error as Error).message}
+            </p>
+          )}
+          <div className="flex gap-2 mt-3">
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={updateMutation.isPending || !form.name.trim()}
+              className="px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            >
+              {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="px-6 py-2.5 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
+        <StatCard label="Sessions" value={kart.session_count} />
+        <StatCard label="Power" value={kart.power_hp != null ? `${kart.power_hp}` : '\u2014'} unit="hp" />
+        <StatCard label="Weight" value={kart.weight_kg != null ? `${kart.weight_kg}` : '\u2014'} unit="kg" />
+      </div>
+
+      {/* Details card */}
+      <div className="bg-concrete rounded-lg border border-steel/20 p-4">
+        <h2 className="font-telemetry text-xs uppercase tracking-wider text-steel mb-3">Details</h2>
+        <dl className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {kart.manufacturer && (
+            <div>
+              <dt className="text-steel font-telemetry text-xs uppercase">Manufacturer</dt>
+              <dd className="text-chalk font-body mt-0.5">{kart.manufacturer}</dd>
+            </div>
+          )}
+          {kart.model && (
+            <div>
+              <dt className="text-steel font-telemetry text-xs uppercase">Model</dt>
+              <dd className="text-chalk font-body mt-0.5">{kart.model}</dd>
+            </div>
+          )}
+          {kart.engine && (
+            <div>
+              <dt className="text-steel font-telemetry text-xs uppercase">Engine</dt>
+              <dd className="text-chalk font-body mt-0.5">{kart.engine}</dd>
+            </div>
+          )}
+          {kart.weight_kg != null && (
+            <div>
+              <dt className="text-steel font-telemetry text-xs uppercase">Weight</dt>
+              <dd className="text-chalk font-body mt-0.5">{kart.weight_kg} kg</dd>
+            </div>
+          )}
+        </dl>
+        {kart.notes && (
+          <div className="mt-3 pt-3 border-t border-steel/10">
+            <dt className="text-steel font-telemetry text-xs uppercase mb-1">Notes</dt>
+            <dd className="text-chalk font-body text-sm">{kart.notes}</dd>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

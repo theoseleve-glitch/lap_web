@@ -9,8 +9,8 @@ import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components
 /* ── Types ──────────────────────────────────────────────── */
 
 interface TrackRow {
-  track_id: string;
-  track_name: string;
+  id: string;
+  name: string;
   session_count: number;
   best_time_s: number | null;
   lap_length_m: number | null;
@@ -43,19 +43,19 @@ export default function TracksPage() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tracks'],
-    queryFn: () => api.get<{ tracks: TrackRow[] }>('/tracks'),
+    queryFn: () => api.get<TrackRow[]>('/tracks'),
   });
 
-  const tracks = data?.tracks ?? [];
+  const tracks = data ?? [];
 
   const filtered = useMemo(() => {
     let list = tracks;
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter((t) => t.track_name.toLowerCase().includes(q));
+      list = list.filter((t) => t.name.toLowerCase().includes(q));
     }
     list = [...list].sort((a, b) => {
-      if (sort === 'name') return a.track_name.localeCompare(b.track_name);
+      if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'sessions') return (b.session_count ?? 0) - (a.session_count ?? 0);
       if (sort === 'record') {
         if (a.best_time_s == null) return 1;
@@ -143,14 +143,14 @@ export default function TracksPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((track) => (
             <Link
-              key={track.track_id}
-              href={`/app/tracks/${track.track_id}`}
+              key={track.id}
+              href={`/app/tracks/${track.id}`}
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all"
             >
               {/* Track name */}
               <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors truncate">
-                {track.track_name}
+                {track.name}
               </h3>
 
               {/* Meta row */}

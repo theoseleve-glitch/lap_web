@@ -9,13 +9,13 @@ import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components
 /* ── Types ──────────────────────────────────────────────── */
 
 interface KartRow {
-  kart_id: number;
-  kart_name: string;
+  id: number;
+  name: string;
   manufacturer?: string | null;
   model?: string | null;
   engine?: string | null;
   power_hp?: number | null;
-  kart_weight_kg?: number | null;
+  weight_kg?: number | null;
   session_count?: number;
   notes: string | null;
 }
@@ -57,10 +57,10 @@ export default function KartsPage() {
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['karts'],
-    queryFn: () => api.get<{ karts: KartRow[] }>('/karts'),
+    queryFn: () => api.get<KartRow[]>('/karts'),
   });
 
-  const karts = data?.karts ?? [];
+  const karts = data ?? [];
 
   const filtered = useMemo(() => {
     let list = karts;
@@ -68,13 +68,13 @@ export default function KartsPage() {
       const q = search.toLowerCase();
       list = list.filter(
         (k) =>
-          k.kart_name.toLowerCase().includes(q) ||
+          k.name.toLowerCase().includes(q) ||
           (k.manufacturer?.toLowerCase().includes(q) ?? false) ||
           (k.engine?.toLowerCase().includes(q) ?? false),
       );
     }
     list = [...list].sort((a, b) => {
-      if (sort === 'name') return a.kart_name.localeCompare(b.kart_name);
+      if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'sessions') return (b.session_count ?? 0) - (a.session_count ?? 0);
       if (sort === 'power') return (b.power_hp ?? 0) - (a.power_hp ?? 0);
       return 0;
@@ -90,9 +90,9 @@ export default function KartsPage() {
     return powered.reduce((s, k) => s + k.power_hp!, 0) / powered.length;
   })();
   const avgWeight = (() => {
-    const weighted = karts.filter((k) => k.kart_weight_kg != null && k.kart_weight_kg > 0);
+    const weighted = karts.filter((k) => k.weight_kg != null && k.weight_kg > 0);
     if (weighted.length === 0) return null;
-    return weighted.reduce((s, k) => s + k.kart_weight_kg!, 0) / weighted.length;
+    return weighted.reduce((s, k) => s + k.weight_kg!, 0) / weighted.length;
   })();
 
   return (
@@ -175,8 +175,8 @@ export default function KartsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((kart) => (
             <Link
-              key={kart.kart_id}
-              href={`/app/karts/${kart.kart_id}`}
+              key={kart.id}
+              href={`/app/karts/${kart.id}`}
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all"
             >
@@ -184,9 +184,9 @@ export default function KartsPage() {
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors truncate">
-                    {kart.kart_name}
+                    {kart.name}
                   </h3>
-                  <span className="text-steel font-telemetry text-xs">#{kart.kart_id}</span>
+                  <span className="text-steel font-telemetry text-xs">#{kart.id}</span>
                 </div>
                 {kart.engine && (
                   <span className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-telemetry uppercase ${engineBadgeClass(kart.engine)}`}>
@@ -211,10 +211,10 @@ export default function KartsPage() {
                     <span>{fmtPower(kart.power_hp)}</span>
                   </>
                 )}
-                {kart.kart_weight_kg != null && kart.kart_weight_kg > 0 && (
+                {kart.weight_kg != null && kart.weight_kg > 0 && (
                   <>
                     <span className="text-steel/20">|</span>
-                    <span>{fmtWeight(kart.kart_weight_kg)}</span>
+                    <span>{fmtWeight(kart.weight_kg)}</span>
                   </>
                 )}
               </div>
@@ -230,7 +230,7 @@ export default function KartsPage() {
                 <div>
                   <span className="text-steel/60 text-[10px] font-telemetry block">WEIGHT</span>
                   <span className="text-chalk font-telemetry text-sm">
-                    {fmtWeight(kart.kart_weight_kg)}
+                    {fmtWeight(kart.weight_kg)}
                   </span>
                 </div>
                 <div className="text-right">

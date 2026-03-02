@@ -9,7 +9,7 @@ import { PageHeader, FormField } from '@/components/app';
 interface NewKartPayload {
   name: string;
   number: string;
-  chassis: string;
+  manufacturer: string;
   model: string;
   engine: string;
   power_hp: string;
@@ -34,10 +34,7 @@ interface PresetKart {
   top_speed_kmh: number;
 }
 
-interface PredefinedKartsResponse {
-  segments: Record<string, PresetKart[]>;
-  count: number;
-}
+type PredefinedKartsResponse = Record<string, PresetKart[]>;
 
 export default function NewKartPage() {
   const router = useRouter();
@@ -45,7 +42,7 @@ export default function NewKartPage() {
   const [form, setForm] = useState<NewKartPayload>({
     name: '',
     number: '',
-    chassis: '',
+    manufacturer: '',
     model: '',
     engine: '',
     power_hp: '',
@@ -54,22 +51,25 @@ export default function NewKartPage() {
   });
   const [errors, setErrors] = useState<Partial<NewKartPayload>>({});
   const [presetMode, setPresetMode] = useState(true);
-  const [selectedSegment, setSelectedSegment] = useState('RENTAL');
+  const [selectedSegment, setSelectedSegment] = useState('');
 
   const { data: presets } = useQuery({
     queryKey: ['predefined-karts'],
     queryFn: () => api.get<PredefinedKartsResponse>('/predefined-karts'),
   });
 
-  const segments = presets?.segments ?? {};
+  const segments = presets ?? {};
   const segmentKeys = Object.keys(segments);
-  const currentKarts = segments[selectedSegment] ?? [];
+  const activeSegment = selectedSegment && segmentKeys.includes(selectedSegment)
+    ? selectedSegment
+    : segmentKeys[0] ?? '';
+  const currentKarts = segments[activeSegment] ?? [];
 
   const handlePresetSelect = (preset: PresetKart) => {
     setForm({
       name: `${preset.manufacturer} ${preset.model}`,
       number: '',
-      chassis: preset.manufacturer,
+      manufacturer: preset.manufacturer,
       model: preset.model,
       engine: preset.engine,
       power_hp: String(preset.power_hp),
@@ -84,7 +84,7 @@ export default function NewKartPage() {
       api.post<KartCreated>('/karts', {
         name: payload.name,
         number: payload.number || null,
-        chassis: payload.chassis || null,
+        manufacturer: payload.manufacturer || null,
         model: payload.model || null,
         engine: payload.engine || null,
         power_hp: payload.power_hp ? parseFloat(payload.power_hp) : null,
@@ -171,7 +171,7 @@ export default function NewKartPage() {
                 type="button"
                 onClick={() => setSelectedSegment(seg)}
                 className={`px-3 py-1.5 font-telemetry text-xs rounded transition-colors ${
-                  selectedSegment === seg
+                  activeSegment === seg
                     ? 'bg-pit-orange text-asphalt'
                     : 'bg-asphalt border border-steel/30 text-steel hover:text-chalk'
                 }`}
@@ -231,8 +231,8 @@ export default function NewKartPage() {
           <FormField
             label="Manufacturer"
             placeholder="e.g. Tony Kart / Sodikart"
-            value={form.chassis}
-            onChange={handleChange('chassis')}
+            value={form.manufacturer}
+            onChange={handleChange('manufacturer')}
           />
           <FormField
             label="Model"
