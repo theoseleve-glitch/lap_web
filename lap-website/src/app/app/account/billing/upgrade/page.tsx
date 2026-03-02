@@ -119,7 +119,7 @@ export default function UpgradePage() {
               <ul className="space-y-1.5 mb-6">
                 {Object.entries(plan.features).map(([feature, value]) => (
                   <li key={feature} className="flex items-start gap-2 text-xs">
-                    <span className={`mt-0.5 ${value === '—' ? 'text-steel/40' : 'text-acid-green'}`}>
+                    <span className={`mt-0.5 ${value === '—' ? 'text-steel/60' : 'text-acid-green'}`}>
                       {value === '—' ? '✕' : '✓'}
                     </span>
                     <span className="text-steel font-body">

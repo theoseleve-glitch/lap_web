@@ -158,13 +158,13 @@ export default function VisualizeSessionPage() {
             </svg>
             Back to Session
           </Link>
-          <span className="text-steel/30">|</span>
+          <span className="text-steel/50">|</span>
           <span className="text-chalk font-telemetry text-sm truncate max-w-[300px]">
             {session.csv_filename}
           </span>
           {session.track_name && (
             <>
-              <span className="text-steel/30">-</span>
+              <span className="text-steel/50">-</span>
               <span className="text-steel font-body text-sm">{session.track_name}</span>
             </>
           )}

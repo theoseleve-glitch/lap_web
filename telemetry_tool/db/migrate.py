@@ -516,6 +516,32 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (28, "Phase 28 schema — channel_inventory JSON on sessions"),
     )
 
+    # Phase 29 migration: rich telemetry channel columns on gps_traces.
+    _CHANNEL_COLS = [
+        "throttle_json TEXT",
+        "brake_json TEXT",
+        "steering_json TEXT",
+        "rpm_json TEXT",
+        "gear_json TEXT",
+        "tire_temp_json TEXT",
+        "tire_pressure_json TEXT",
+        "brake_temp_json TEXT",
+        "wheel_slip_json TEXT",
+        "fuel_json TEXT",
+    ]
+    for col in _CHANNEL_COLS:
+        try:
+            cur.execute(f"ALTER TABLE gps_traces ADD COLUMN {col};")
+            logger.debug("Added column gps_traces.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (29, "Phase 29 schema — rich telemetry channel columns on gps_traces"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

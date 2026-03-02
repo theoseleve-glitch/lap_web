@@ -82,7 +82,7 @@ export function CornerSelection({
           >
             All
           </button>
-          <span className="text-steel/20 text-[10px]">|</span>
+          <span className="text-steel/60 text-[10px]">|</span>
           <button
             type="button"
             onClick={clearAll}
@@ -125,7 +125,7 @@ export function CornerSelection({
       </div>
 
       <div className="mt-2 pt-2 border-t border-steel/10">
-        <p className="text-[10px] text-steel/40 font-telemetry">
+        <p className="text-[10px] text-steel/60 font-telemetry">
           {selected.size}/{corners.length} selected
         </p>
       </div>

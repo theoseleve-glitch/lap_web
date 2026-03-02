@@ -239,7 +239,7 @@ function AreaOfInterestBar({
         >
           {allSelected ? 'Clear All' : 'Select All'}
         </button>
-        <span className="text-[9px] text-steel/30 font-telemetry ml-1">
+        <span className="text-[9px] text-steel/50 font-telemetry ml-1">
           {selected.size}/{corners.length}
         </span>
       </div>
@@ -302,7 +302,7 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
           <p className="text-steel font-telemetry text-sm mb-2">
             No corners detected for this session.
           </p>
-          <p className="text-steel/40 font-telemetry text-xs">
+          <p className="text-steel/60 font-telemetry text-xs">
             Corner detection requires GPS data with sufficient curvature changes.
           </p>
         </div>

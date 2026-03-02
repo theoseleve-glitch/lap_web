@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { colors } from '@/lib/tokens';
 
 interface StartLightsProps {
@@ -10,74 +10,46 @@ interface StartLightsProps {
 
 export function StartLights({ onComplete, reducedMotion = false }: StartLightsProps) {
   const [litCount, setLitCount] = useState(0);
-  const [holding, setHolding] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const [lightsOut, setLightsOut] = useState(false);
   const completedRef = useRef(false);
 
-  const startHold = useCallback(() => {
+  // Auto-play: light up 1→5 sequentially, then "lights out" → green flag
+  useEffect(() => {
     if (completedRef.current) return;
 
     if (reducedMotion) {
       setLitCount(5);
+      setLightsOut(true);
       completedRef.current = true;
       onComplete();
       return;
     }
 
-    setHolding(true);
-    setLitCount(0);
     let count = 0;
-
-    intervalRef.current = setInterval(() => {
+    const interval = setInterval(() => {
       count++;
       setLitCount(count);
       if (count >= 5) {
-        clearInterval(intervalRef.current);
+        clearInterval(interval);
+        // Hold all 5 lit for 800ms, then lights out
+        setTimeout(() => {
+          setLightsOut(true);
+          completedRef.current = true;
+          onComplete();
+        }, 800);
       }
     }, 400);
+
+    return () => clearInterval(interval);
   }, [onComplete, reducedMotion]);
-
-  const endHold = useCallback(() => {
-    if (!holding || completedRef.current) return;
-    setHolding(false);
-    clearInterval(intervalRef.current);
-
-    if (litCount >= 5) {
-      completedRef.current = true;
-      onComplete();
-    } else {
-      setLitCount(0);
-    }
-  }, [holding, litCount, onComplete]);
-
-  // Cleanup
-  useEffect(() => {
-    return () => clearInterval(intervalRef.current);
-  }, []);
 
   return (
     <div
-      className="flex items-center justify-center gap-5 md:gap-8 select-none touch-none cursor-pointer py-10"
-      onPointerDown={startHold}
-      onPointerUp={endHold}
-      onPointerLeave={endHold}
-      onKeyDown={(e) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-          e.preventDefault();
-          startHold();
-        }
-      }}
-      onKeyUp={(e) => {
-        if (e.key === ' ' || e.key === 'Enter') {
-          endHold();
-        }
-      }}
-      tabIndex={0}
-      role="button"
-      aria-label="Hold to start — press and hold for 2 seconds"
+      className="flex items-center justify-center gap-5 md:gap-8 select-none py-10"
+      aria-label="F1 start lights sequence"
     >
       {Array.from({ length: 5 }).map((_, i) => {
-        const lit = i < litCount;
+        const lit = !lightsOut && i < litCount;
         return (
           <div
             key={i}

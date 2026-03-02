@@ -235,9 +235,9 @@ export default function RaceStrategyListPage() {
                 {/* Track + Team */}
                 <div className="flex items-center gap-3 mt-1 text-steel font-body text-sm">
                   {race.track_name && <span>{race.track_name}</span>}
-                  {race.track_name && race.team_name && <span className="text-steel/20">·</span>}
+                  {race.track_name && race.team_name && <span className="text-steel/60">·</span>}
                   {race.team_name && <span>{race.team_name}</span>}
-                  {!race.track_name && !race.team_name && <span className="text-steel/40">No track/team set</span>}
+                  {!race.track_name && !race.team_name && <span className="text-steel/60">No track/team set</span>}
                 </div>
 
                 {/* Specs */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { StartLights } from '@/components/mechanisms/StartLights';
@@ -13,19 +13,6 @@ export function StartGrid() {
   const [lightsOut, setLightsOut] = useState(false);
   const { reducedMotion } = useReducedMotion();
   const { t } = useTranslation();
-
-  // Auto-complete the start lights after 1.5s — no gate, just ambient delight
-  useEffect(() => {
-    if (reducedMotion) {
-      setLightsOut(true);
-      return;
-    }
-    const timer = setTimeout(() => {
-      setLightsOut(true);
-      trackStartGridComplete();
-    }, 1500);
-    return () => clearTimeout(timer);
-  }, [reducedMotion]);
 
   return (
     <section
@@ -83,15 +70,16 @@ export function StartGrid() {
             {t('home.startGrid.trustStrip')}
           </p>
 
-          {/* Start lights — ambient animation, no gate */}
-          {!lightsOut && (
-            <div className="mt-4" aria-hidden="true">
-              <StartLights
-                onComplete={() => setLightsOut(true)}
-                reducedMotion={reducedMotion}
-              />
-            </div>
-          )}
+          {/* F1 start lights — auto-play 5 red lights sequence */}
+          <div className="mt-4" aria-hidden="true">
+            <StartLights
+              onComplete={() => {
+                setLightsOut(true);
+                trackStartGridComplete();
+              }}
+              reducedMotion={reducedMotion}
+            />
+          </div>
         </div>
       </div>
     </section>

@@ -403,7 +403,7 @@ export default function CompareSessionsPage() {
       {/* Empty state */}
       {!sessionAId && !sessionBId && !loadingComparison && (
         <div className="bg-concrete rounded-xl border border-steel/10 p-12 text-center">
-          <p className="font-telemetry text-4xl text-steel/30 mb-4">vs</p>
+          <p className="font-telemetry text-4xl text-steel/50 mb-4">vs</p>
           <h2 className="font-monument text-lg text-chalk mb-2">Pick Two Sessions</h2>
           <p className="text-steel font-body text-sm max-w-md mx-auto">
             Use the dropdowns above to select two sessions. The comparison will load automatically.

@@ -82,7 +82,7 @@ function scoreColor(score: number | null): string {
 
 function GradeBadge({ score }: { score: number | null }) {
   const grade = scoreToGrade(score);
-  if (grade === '\u2014') return <span className="text-steel/40">{grade}</span>;
+  if (grade === '\u2014') return <span className="text-steel/60">{grade}</span>;
   const colorClass = GRADE_COLORS[grade] ?? 'bg-steel/10 text-steel';
   return (
     <span
@@ -94,7 +94,7 @@ function GradeBadge({ score }: { score: number | null }) {
 }
 
 function ConditionBadge({ condition }: { condition: string | null }) {
-  if (!condition) return <span className="text-steel/40">{'\u2014'}</span>;
+  if (!condition) return <span className="text-steel/60">{'\u2014'}</span>;
   const styles: Record<string, { bg: string; text: string }> = {
     dry:    { bg: 'bg-acid-green/10', text: 'text-acid-green' },
     wet:    { bg: 'bg-blue-400/10', text: 'text-blue-400' },

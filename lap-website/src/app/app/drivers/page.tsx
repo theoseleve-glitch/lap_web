@@ -168,11 +168,11 @@ export default function DriversPage() {
                 {/* Stats row */}
                 <div className="flex items-center gap-3 mt-2 text-steel font-telemetry text-xs">
                   <span>{driver.session_count} session{driver.session_count !== 1 ? 's' : ''}</span>
-                  <span className="text-steel/20">|</span>
+                  <span className="text-steel/60">|</span>
                   <span>{driver.total_laps} laps</span>
                   {driver.has_profile && (
                     <>
-                      <span className="text-steel/20">|</span>
+                      <span className="text-steel/60">|</span>
                       <span className="text-acid-green/60">Profile</span>
                     </>
                   )}
@@ -205,7 +205,7 @@ export default function DriversPage() {
                 </div>
 
                 <div className="mt-3 text-right">
-                  <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+                  <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                     View profile →
                   </span>
                 </div>

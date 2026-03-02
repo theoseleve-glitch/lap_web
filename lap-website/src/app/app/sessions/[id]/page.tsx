@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
@@ -11,6 +11,8 @@ import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
 import { SessionDebrief } from '@/components/app/SessionDebrief';
 import { AchievementsBadges } from '@/components/app/AchievementsBadges';
 import { FocusMode } from '@/components/app/focus-mode/FocusMode';
+
+const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -153,7 +155,7 @@ function TrackNamePrompt({
           placeholder="e.g. Franciacorta, Lonato South..."
           onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
           className="flex-1 min-w-0 bg-concrete border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
-            placeholder:text-steel/40 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
+            placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
         />
         <button
           type="button"
@@ -217,6 +219,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [trackNamed, setTrackNamed] = useState(false);
 
   // Fetch all data on mount
@@ -282,16 +285,12 @@ export default function SessionDetailPage() {
     setActiveTab(tab);
   }, []);
 
-  // F-key shortcut to open Focus Mode
+  // F-key shortcut to open Focus Mode, D-key for Driving Analyzer
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (
-        e.key === 'f' &&
-        !(e.target instanceof HTMLInputElement) &&
-        !(e.target instanceof HTMLTextAreaElement)
-      ) {
-        setFocusOpen(true);
-      }
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'f') setFocusOpen(true);
+      if (e.key === 'd') setAnalyzerOpen(true);
     }
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
@@ -354,7 +353,7 @@ export default function SessionDetailPage() {
             >
               Sessions
             </Link>
-            <span className="text-steel/40">/</span>
+            <span className="text-steel/60">/</span>
           </div>
           <h1 className="text-2xl font-monument text-chalk tracking-tight">
             {session.display_name || session.csv_filename?.replace('.csv', '') || session.session_id}
@@ -385,6 +384,20 @@ export default function SessionDetailPage() {
           >
             Download Report
           </a>
+
+          {/* Driving Analyzer */}
+          <button
+            onClick={() => setAnalyzerOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-acid-green/10 transition-colors"
+            aria-label="Open Driving Analyzer (D)"
+            title="Open Driving Analyzer (D)"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="7" cy="7" r="5" /><path d="M7 4v3l2 1.5" />
+            </svg>
+            Driving Analyzer
+            <kbd className="text-[10px] px-1 py-0.5 rounded bg-asphalt border border-steel/20 text-steel/50 font-telemetry">D</kbd>
+          </button>
 
           {/* Focus Mode */}
           <button
@@ -450,6 +463,19 @@ export default function SessionDetailPage() {
         bestLap={bestLap}
         activeTab={activeTab}
       />
+
+      {analyzerOpen && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 bg-asphalt/98 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+          </div>
+        }>
+          <DrivingAnalyzer
+            sessionId={sessionId}
+            onClose={() => setAnalyzerOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

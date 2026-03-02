@@ -1,10 +1,12 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+
+const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -63,6 +65,7 @@ const TYPE_LABELS: Record<string, string> = {
 export default function VisualizeLandingPage() {
 
   const [search, setSearch] = useState('');
+  const [analyzerSessionId, setAnalyzerSessionId] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions', 'recent'],
@@ -133,7 +136,7 @@ export default function VisualizeLandingPage() {
             </>
           ) : (
             <>
-              <p className="font-telemetry text-4xl text-steel/30 mb-4">◆</p>
+              <p className="font-telemetry text-4xl text-steel/50 mb-4">◆</p>
               <h2 className="font-monument text-lg text-chalk mb-2">No sessions yet</h2>
               <p className="text-steel font-body text-sm mb-6 max-w-md mx-auto">
                 Upload and analyze a session first, then come back here to visualize GPS traces,
@@ -161,7 +164,7 @@ export default function VisualizeLandingPage() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <span className="text-chalk font-telemetry text-sm">{formatDate(session.session_date)}</span>
-                  <span className="text-steel/40 font-telemetry text-xs ml-2">{session.session_date}</span>
+                  <span className="text-steel/60 font-telemetry text-xs ml-2">{session.session_date}</span>
                 </div>
                 {session.session_type && (
                   <span className="shrink-0 px-2 py-0.5 rounded text-[10px] font-telemetry uppercase bg-steel/10 text-steel border border-steel/20">
@@ -200,14 +203,33 @@ export default function VisualizeLandingPage() {
                 </div>
               </div>
 
-              <div className="mt-3 text-right">
-                <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+              <div className="mt-3 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAnalyzerSessionId(session.session_id); }}
+                  className="px-2.5 py-1 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-acid-green/10 transition-colors"
+                >
+                  Analyze
+                </button>
+                <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                   Visualize →
                 </span>
               </div>
             </Link>
           ))}
         </div>
+      )}
+      {analyzerSessionId && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 bg-asphalt/98 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+          </div>
+        }>
+          <DrivingAnalyzer
+            sessionId={analyzerSessionId}
+            onClose={() => setAnalyzerSessionId(null)}
+          />
+        </Suspense>
       )}
     </div>
   );

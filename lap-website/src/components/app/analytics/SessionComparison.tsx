@@ -260,7 +260,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
       {/* Empty state */}
       {!selectedId && !loading && (
-        <div className="flex items-center justify-center p-8 text-steel/40 text-sm">
+        <div className="flex items-center justify-center p-8 text-steel/60 text-sm">
           Select a session above to compare speed traces and time deltas.
         </div>
       )}

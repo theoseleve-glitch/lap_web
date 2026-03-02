@@ -181,18 +181,18 @@ export function ThrottleOnsetMap({ sessionId }: ThrottleOnsetMapProps) {
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="text-sm text-chalk font-telemetry">Throttle Onset</h3>
-          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+          <p className="text-[10px] text-steel/60 font-telemetry mt-0.5">
             Distance from apex before throttle application (m)
           </p>
         </div>
         <div className="flex items-center gap-2 text-[9px] font-telemetry">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-green-400" />
-            <span className="text-steel/40">Early (&lt;3m)</span>
+            <span className="text-steel/60">Early (&lt;3m)</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded-full bg-red-400" />
-            <span className="text-steel/40">Late (&gt;8m)</span>
+            <span className="text-steel/60">Late (&gt;8m)</span>
           </span>
         </div>
       </div>
@@ -202,7 +202,7 @@ export function ThrottleOnsetMap({ sessionId }: ThrottleOnsetMapProps) {
         style={{ height: Math.max(data.length * 28 + 48, 120) }}
       />
       {earlyOnset > 0 && (
-        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+        <p className="text-[10px] text-steel/60 font-telemetry mt-2">
           {earlyOnset} corner{earlyOnset > 1 ? 's' : ''} with early throttle onset — good exit discipline.
         </p>
       )}

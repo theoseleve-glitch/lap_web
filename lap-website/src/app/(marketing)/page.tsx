@@ -65,7 +65,7 @@ function DriverHome({ onSwitch }: { onSwitch: () => void }) {
       {/* Switch link */}
       <div className="flex justify-center pb-8">
         <button
-          className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/40 hover:text-steel transition-colors"
+          className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/60 hover:text-steel transition-colors"
           onClick={onSwitch}
         >
           Not a driver? Switch to venue view
@@ -84,7 +84,7 @@ function VenueHomeWithSwitch({ onSwitch }: { onSwitch: () => void }) {
       {/* Switch link */}
       <div className="flex justify-center pb-8">
         <button
-          className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/40 hover:text-steel transition-colors"
+          className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/60 hover:text-steel transition-colors"
           onClick={onSwitch}
         >
           Are you a driver? Switch to driver view
@@ -115,10 +115,8 @@ export default function Home() {
     window.scrollTo({ top: 0 });
   }, []);
 
-  // Before hydration, render nothing to avoid flash
-  if (!mounted) return null;
-
-  if (persona === 'chooser') {
+  // Before hydration or when no persona chosen, show the audience chooser
+  if (!mounted || persona === 'chooser') {
     return <AudienceChooser onChoose={handleChoose} />;
   }
 

@@ -248,7 +248,7 @@ export default function SetupTrackerPage() {
                 )}
               </div>
               <svg
-                className="w-5 h-5 text-steel/40 group-hover:text-chalk transition-colors shrink-0 mt-1"
+                className="w-5 h-5 text-steel/60 group-hover:text-chalk transition-colors shrink-0 mt-1"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"

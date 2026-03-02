@@ -77,7 +77,7 @@ function SpeedBar({ label, actual, theory }: { label: string; actual: number | n
         <span className="text-[10px] font-telemetry uppercase tracking-wider text-steel/60">{label}</span>
         <div className="flex items-center gap-2 text-[10px] font-mono">
           <span className="text-chalk">{fmtKmh(actual)}</span>
-          <span className="text-steel/30">/</span>
+          <span className="text-steel/50">/</span>
           <span className="text-steel/50">{fmtKmh(theory)}</span>
           {delta != null && (
             <span className={`${deltaColor} font-telemetry`}>
@@ -164,12 +164,12 @@ function CornerCard({ corner, expanded, onToggle, rank }: {
         {/* Quick stats strip */}
         <div className="flex-1 flex items-center gap-4 overflow-hidden">
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-telemetry text-steel/40 uppercase">Apex</span>
+            <span className="text-[9px] font-telemetry text-steel/60 uppercase">Apex</span>
             <span className="text-xs font-mono text-chalk">{fmtKmh(apexKmh)} km/h</span>
           </div>
 
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-telemetry text-steel/40 uppercase">Grip</span>
+            <span className="text-[9px] font-telemetry text-steel/60 uppercase">Grip</span>
             <span className={`text-xs font-mono ${gripColor(corner.grip_utilisation_pct)}`}>
               {corner.grip_utilisation_pct != null ? `${corner.grip_utilisation_pct.toFixed(0)}%` : '--'}
             </span>
@@ -288,28 +288,28 @@ function SummaryStats({ corners }: { corners: CornerData[] }) {
       <div className="bg-concrete rounded-lg border border-steel/10 px-4 py-3">
         <p className="text-[10px] font-telemetry uppercase tracking-wider text-steel/60 mb-1">Corners</p>
         <p className="text-lg font-monument text-chalk">{corners.length}</p>
-        <p className="text-[10px] font-telemetry text-steel/40">{available.length} with data</p>
+        <p className="text-[10px] font-telemetry text-steel/60">{available.length} with data</p>
       </div>
       <div className="bg-concrete rounded-lg border border-steel/10 px-4 py-3">
         <p className="text-[10px] font-telemetry uppercase tracking-wider text-steel/60 mb-1">Total Time Lost</p>
         <p className={`text-lg font-monument ${timeLossColor(totalLossMs)}`}>
           {totalLossMs > 0 ? `+${totalLossMs}ms` : '--'}
         </p>
-        <p className="text-[10px] font-telemetry text-steel/40">across all corners</p>
+        <p className="text-[10px] font-telemetry text-steel/60">across all corners</p>
       </div>
       <div className="bg-concrete rounded-lg border border-steel/10 px-4 py-3">
         <p className="text-[10px] font-telemetry uppercase tracking-wider text-steel/60 mb-1">Avg Grip</p>
         <p className={`text-lg font-monument ${gripColor(avgGrip)}`}>
           {avgGrip != null ? `${avgGrip.toFixed(0)}%` : '--'}
         </p>
-        <p className="text-[10px] font-telemetry text-steel/40">utilization</p>
+        <p className="text-[10px] font-telemetry text-steel/60">utilization</p>
       </div>
       <div className="bg-concrete rounded-lg border border-steel/10 px-4 py-3">
         <p className="text-[10px] font-telemetry uppercase tracking-wider text-steel/60 mb-1">Biggest Loss</p>
         <p className={`text-lg font-monument ${timeLossColor(timeLossMs(worstCorner?.time_loss_total_s))}`}>
           {worstCorner ? `C${worstCorner.corner_id}` : '--'}
         </p>
-        <p className="text-[10px] font-telemetry text-steel/40">
+        <p className="text-[10px] font-telemetry text-steel/60">
           {worstCorner ? `+${timeLossMs(worstCorner.time_loss_total_s)}ms` : ''}
         </p>
       </div>

@@ -208,7 +208,7 @@ export default function WeekendsPage() {
                   <span>{formatDateRange(weekend.start_date, weekend.end_date)}</span>
                   {days > 1 && (
                     <>
-                      <span className="text-steel/20">|</span>
+                      <span className="text-steel/60">|</span>
                       <span>{days} days</span>
                     </>
                   )}
@@ -240,7 +240,7 @@ export default function WeekendsPage() {
                 )}
 
                 <div className="mt-3 text-right">
-                  <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+                  <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                     View weekend →
                   </span>
                 </div>

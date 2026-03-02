@@ -135,7 +135,7 @@ export function S3Venue() {
 
         {/* ── Roadmap teaser ─────────────────────────────── */}
         <div className="mt-8 border-t border-chalk/5 pt-6">
-          <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/40 block mb-2">
+          <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/60 block mb-2">
             ROADMAP
           </span>
           <p className="font-body text-sm text-steel/60 max-w-xl">

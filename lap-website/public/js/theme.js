@@ -70,8 +70,8 @@ window.setLang = function(lang) {
 
         /* Text */
         textPrimary:   '#e6edf3',
-        textSecondary: '#8b949e',
-        textMuted:     '#484f58',
+        textSecondary: '#9CA3AF',
+        textMuted:     '#6B7280',
 
         /* Accent */
         accent:     '#ff6b35',

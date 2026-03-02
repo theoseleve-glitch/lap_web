@@ -66,19 +66,19 @@ export function S2Versus() {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="w-8 text-steel/30">{r.pos}</span>
+                    <span className="w-8 text-steel/50">{r.pos}</span>
                     <span>{r.name}</span>
                   </div>
                   <span className="tabular-nums">{r.time}</span>
                 </div>
               ))}
             </div>
-            <p className="text-steel/40 font-body text-sm mt-6 max-w-xs">
+            <p className="text-steel/60 font-body text-sm mt-6 max-w-xs">
               You know you&apos;re P3.<br />
               You don&apos;t know <em>why</em>.
             </p>
             <div className="absolute top-4 right-4">
-              <span className="font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/30 border border-steel/20 px-2 py-0.5">
+              <span className="font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/50 border border-steel/20 px-2 py-0.5">
                 POSITIONS ONLY
               </span>
             </div>

@@ -181,7 +181,7 @@ export function VenueHome() {
       {/* 6. Roadmap teaser */}
       <section className="relative px-6 md:px-12 lg:px-20 py-12">
         <div className="max-w-6xl mx-auto border-t border-chalk/5 pt-6">
-          <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/40 block mb-2">
+          <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/60 block mb-2">
             ROADMAP
           </span>
           <p className="font-body text-sm text-steel/60 max-w-xl">

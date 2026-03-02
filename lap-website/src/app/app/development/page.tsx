@@ -239,14 +239,14 @@ export default function DevelopmentPlansPage() {
                 <span>Created {formatDate(plan.created_at)}</span>
                 {plan.level && (
                   <>
-                    <span className="text-steel/20">|</span>
+                    <span className="text-steel/60">|</span>
                     <span>{plan.level}</span>
                   </>
                 )}
               </div>
 
               <div className="mt-3 text-right">
-                <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+                <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                   View plan &rarr;
                 </span>
               </div>

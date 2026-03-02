@@ -128,7 +128,7 @@ export function PricingTable({
                     }`}
                   >
                     <span className="text-steel">{key}</span>
-                    <span className={val === '\u2014' ? 'text-steel/40' : 'text-chalk'}>
+                    <span className={val === '\u2014' ? 'text-steel/60' : 'text-chalk'}>
                       {val}
                     </span>
                   </div>

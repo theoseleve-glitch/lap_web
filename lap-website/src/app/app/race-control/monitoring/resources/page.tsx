@@ -135,7 +135,7 @@ export default function UserResourcesPage() {
                   );
                 })}
               </div>
-              <div className="mt-1 flex justify-between text-[10px] text-steel/40">
+              <div className="mt-1 flex justify-between text-[10px] text-steel/60">
                 <span>{timeseries[0]?.day}</span>
                 <span>{timeseries[timeseries.length - 1]?.day}</span>
               </div>

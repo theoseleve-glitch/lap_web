@@ -64,7 +64,7 @@ const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> =
 };
 
 function TypeBadge({ type }: { type: string | null }) {
-  if (!type) return <span className="text-steel/40">—</span>;
+  if (!type) return <span className="text-steel/60">—</span>;
   const style = TYPE_STYLES[type] ?? { bg: 'bg-steel/10', text: 'text-steel', label: type };
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-telemetry uppercase tracking-wider ${style.bg} ${style.text}`}>
@@ -305,7 +305,7 @@ export default function DashboardPage() {
             <p className="text-steel font-telemetry text-xs uppercase tracking-wider">
               Score Trend
             </p>
-            <span className="text-steel/40 font-telemetry text-[10px]">Last 20 sessions</span>
+            <span className="text-steel/60 font-telemetry text-[10px]">Last 20 sessions</span>
           </div>
           {stats.recent_scores.length > 1 ? (
             <Sparkline data={stats.recent_scores} color="#B6FF2E" height={56} />
@@ -320,7 +320,7 @@ export default function DashboardPage() {
             <p className="text-steel font-telemetry text-xs uppercase tracking-wider">
               Lap Time Trend
             </p>
-            <span className="text-steel/40 font-telemetry text-[10px]">Last 20 sessions</span>
+            <span className="text-steel/60 font-telemetry text-[10px]">Last 20 sessions</span>
           </div>
           {stats.recent_times.length > 1 ? (
             <Sparkline data={stats.recent_times} color="#FFD400" height={56} />

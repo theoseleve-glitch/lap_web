@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 28
+SCHEMA_VERSION = 29
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -102,15 +102,25 @@ CREATE TABLE IF NOT EXISTS laps (
 
 _GPS_TRACES_TABLE = """
 CREATE TABLE IF NOT EXISTS gps_traces (
-    id               INTEGER PRIMARY KEY AUTOINCREMENT,
-    session_id       TEXT    NOT NULL REFERENCES sessions(session_id),
-    lap_number       INTEGER NOT NULL,
-    latitudes_json   TEXT    NOT NULL,
-    longitudes_json  TEXT    NOT NULL,
-    distances_json   TEXT    NOT NULL,
-    speeds_json      TEXT    NOT NULL,
-    accel_lat_json   TEXT,
-    accel_long_json  TEXT,
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id         TEXT    NOT NULL REFERENCES sessions(session_id),
+    lap_number         INTEGER NOT NULL,
+    latitudes_json     TEXT    NOT NULL,
+    longitudes_json    TEXT    NOT NULL,
+    distances_json     TEXT    NOT NULL,
+    speeds_json        TEXT    NOT NULL,
+    accel_lat_json     TEXT,
+    accel_long_json    TEXT,
+    throttle_json      TEXT,
+    brake_json         TEXT,
+    steering_json      TEXT,
+    rpm_json           TEXT,
+    gear_json          TEXT,
+    tire_temp_json     TEXT,
+    tire_pressure_json TEXT,
+    brake_temp_json    TEXT,
+    wheel_slip_json    TEXT,
+    fuel_json          TEXT,
     UNIQUE(session_id, lap_number)
 );
 """

@@ -162,18 +162,36 @@ INSERT OR REPLACE INTO gps_traces (
     session_id, lap_number,
     latitudes_json, longitudes_json,
     distances_json, speeds_json,
-    accel_lat_json, accel_long_json
+    accel_lat_json, accel_long_json,
+    throttle_json, brake_json, steering_json,
+    rpm_json, gear_json,
+    tire_temp_json, tire_pressure_json,
+    brake_temp_json, wheel_slip_json, fuel_json
 ) VALUES (
     :session_id, :lap_number,
     :latitudes_json, :longitudes_json,
     :distances_json, :speeds_json,
-    :accel_lat_json, :accel_long_json
+    :accel_lat_json, :accel_long_json,
+    :throttle_json, :brake_json, :steering_json,
+    :rpm_json, :gear_json,
+    :tire_temp_json, :tire_pressure_json,
+    :brake_temp_json, :wheel_slip_json, :fuel_json
 );
 """
 
 SELECT_GPS_TRACE = """
 SELECT latitudes_json, longitudes_json, distances_json, speeds_json,
        accel_lat_json, accel_long_json
+FROM gps_traces
+WHERE session_id = :session_id AND lap_number = :lap_number;
+"""
+
+SELECT_GPS_TRACE_CHANNELS = """
+SELECT throttle_json, brake_json, steering_json,
+       rpm_json, gear_json,
+       tire_temp_json, tire_pressure_json,
+       brake_temp_json, wheel_slip_json, fuel_json,
+       distances_json, speeds_json
 FROM gps_traces
 WHERE session_id = :session_id AND lap_number = :lap_number;
 """

@@ -178,7 +178,7 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDo
             aria-pressed={isActive}
           >
             {tool.icon}
-            <span className="absolute -top-0.5 -right-0.5 text-[8px] font-telemetry text-steel/40">
+            <span className="absolute -top-0.5 -right-0.5 text-[8px] font-telemetry text-steel/60">
               {tool.shortcut}
             </span>
           </button>

@@ -58,7 +58,7 @@ const CONDITION_STYLES: Record<string, { bg: string; text: string; label: string
 };
 
 function TypeBadge({ type }: { type: string | null }) {
-  if (!type) return <span className="text-steel/40">—</span>;
+  if (!type) return <span className="text-steel/60">—</span>;
   const style = TYPE_STYLES[type] ?? { bg: 'bg-steel/10', text: 'text-steel', label: type };
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-telemetry uppercase tracking-wider ${style.bg} ${style.text}`}>
@@ -68,7 +68,7 @@ function TypeBadge({ type }: { type: string | null }) {
 }
 
 function ConditionBadge({ condition }: { condition: string | null }) {
-  if (!condition) return <span className="text-steel/40">—</span>;
+  if (!condition) return <span className="text-steel/60">—</span>;
   const style = CONDITION_STYLES[condition] ?? { bg: 'bg-steel/10', text: 'text-steel', label: condition };
   return (
     <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-telemetry uppercase tracking-wider ${style.bg} ${style.text}`}>
@@ -78,7 +78,7 @@ function ConditionBadge({ condition }: { condition: string | null }) {
 }
 
 function GradeBadge({ grade, score }: { grade: string | null; score: number | null }) {
-  if (!grade) return <span className="text-steel/40">—</span>;
+  if (!grade) return <span className="text-steel/60">—</span>;
   const color = scoreColor(score);
   return (
     <span className={`inline-flex items-center justify-center w-8 h-8 rounded-md border font-monument text-lg ${color} ${
@@ -421,7 +421,7 @@ export default function SessionsPage() {
             value={search}
             onChange={(e) => applyFilter(setSearch, e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 bg-concrete border border-steel/20 rounded-lg text-chalk font-body text-sm
-              placeholder:text-steel/40 focus:border-acid-green/40 focus:outline-none transition-colors"
+              placeholder:text-steel/60 focus:border-acid-green/40 focus:outline-none transition-colors"
           />
         </div>
       </div>
@@ -497,7 +497,7 @@ export default function SessionsPage() {
               min="0"
               max="100"
               className="w-24 bg-asphalt border border-steel/20 text-chalk text-xs font-telemetry rounded px-2 py-1.5
-                placeholder:text-steel/40 focus:border-acid-green/40 focus:outline-none transition-colors"
+                placeholder:text-steel/60 focus:border-acid-green/40 focus:outline-none transition-colors"
               aria-label="Minimum score"
             />
             <input
@@ -508,7 +508,7 @@ export default function SessionsPage() {
               min="0"
               max="100"
               className="w-24 bg-asphalt border border-steel/20 text-chalk text-xs font-telemetry rounded px-2 py-1.5
-                placeholder:text-steel/40 focus:border-acid-green/40 focus:outline-none transition-colors"
+                placeholder:text-steel/60 focus:border-acid-green/40 focus:outline-none transition-colors"
               aria-label="Maximum score"
             />
           </div>

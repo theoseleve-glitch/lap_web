@@ -462,16 +462,16 @@ function MetricsPanel({
         <h4 className="text-[10px] font-telemetry uppercase tracking-wider text-steel/50 mb-2">Live</h4>
         <div className="grid grid-cols-3 gap-2">
           <div>
-            <p className="text-[9px] text-steel/40 font-telemetry">Speed</p>
+            <p className="text-[9px] text-steel/60 font-telemetry">Speed</p>
             <p className="text-lg text-chalk font-mono">{Math.round(speedKmh)}</p>
-            <p className="text-[8px] text-steel/30 font-telemetry">km/h</p>
+            <p className="text-[8px] text-steel/50 font-telemetry">km/h</p>
           </div>
           <div>
-            <p className="text-[9px] text-steel/40 font-telemetry">Lat G</p>
+            <p className="text-[9px] text-steel/60 font-telemetry">Lat G</p>
             <p className="text-lg text-chalk font-mono">{gLat.toFixed(2)}</p>
           </div>
           <div>
-            <p className="text-[9px] text-steel/40 font-telemetry">Lon G</p>
+            <p className="text-[9px] text-steel/60 font-telemetry">Lon G</p>
             <p className="text-lg text-chalk font-mono">{gLon.toFixed(2)}</p>
           </div>
         </div>
@@ -492,12 +492,12 @@ function MetricsPanel({
               { label: 'Exit', actual: cornerMetrics?.exit_speed, theory: corner.exit_speed_theory },
             ] as const).map(({ label, actual, theory }) => (
               <div key={label} className="flex items-center justify-between">
-                <span className="text-[9px] font-telemetry text-steel/40 uppercase w-10">{label}</span>
+                <span className="text-[9px] font-telemetry text-steel/60 uppercase w-10">{label}</span>
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-mono text-chalk">{fmtSpd(actual)}</span>
-                  <span className="text-[9px] text-steel/30">/</span>
+                  <span className="text-[9px] text-steel/50">/</span>
                   <span className="text-xs font-mono text-steel/50">{fmtSpd(theory)}</span>
-                  <span className="text-[8px] text-steel/30 font-telemetry">km/h</span>
+                  <span className="text-[8px] text-steel/50 font-telemetry">km/h</span>
                 </div>
               </div>
             ))}
@@ -506,7 +506,7 @@ function MetricsPanel({
           {/* Grip */}
           {corner.grip_utilisation_pct != null && (
             <div className="flex items-center justify-between mb-2">
-              <span className="text-[9px] font-telemetry text-steel/40 uppercase">Grip</span>
+              <span className="text-[9px] font-telemetry text-steel/60 uppercase">Grip</span>
               <span className={`text-xs font-mono ${
                 corner.grip_utilisation_pct >= 85 ? 'text-acid-green' :
                 corner.grip_utilisation_pct >= 70 ? 'text-yellow-400' : 'text-safety-red'
@@ -519,7 +519,7 @@ function MetricsPanel({
           {/* Time loss */}
           {lossMs != null && (
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[9px] font-telemetry text-steel/40 uppercase">Time Loss</span>
+              <span className="text-[9px] font-telemetry text-steel/60 uppercase">Time Loss</span>
               <span className={`text-sm font-mono ${lossColor}`}>+{lossMs}ms</span>
             </div>
           )}
@@ -727,7 +727,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     return (
       <div className="bg-concrete rounded-lg border border-steel/10 p-6 text-center">
         <p className="text-steel font-telemetry text-sm mb-1">Failed to load replay data</p>
-        <p className="text-steel/40 font-telemetry text-xs">{error}</p>
+        <p className="text-steel/60 font-telemetry text-xs">{error}</p>
       </div>
     );
   }
@@ -736,7 +736,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     return (
       <div className="bg-concrete rounded-lg border border-steel/10 p-6 text-center">
         <p className="text-steel font-telemetry text-sm">No replay data available.</p>
-        <p className="text-steel/40 font-telemetry text-xs mt-1">
+        <p className="text-steel/60 font-telemetry text-xs mt-1">
           Replay requires GPS trace data with at least one lap.
         </p>
       </div>
@@ -890,7 +890,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
       </div>
 
       {/* Keyboard hints */}
-      <div className="flex items-center gap-4 px-2 text-[9px] text-steel/30 font-telemetry">
+      <div className="flex items-center gap-4 px-2 text-[9px] text-steel/50 font-telemetry">
         <span>Space: Play/Pause</span>
         <span>Arrows: Frame step</span>
         <span>[ ]: Prev/Next corner</span>

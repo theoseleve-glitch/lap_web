@@ -198,22 +198,22 @@ export function ConsistencyHeatmap({ sessionId }: ConsistencyHeatmapProps) {
       <div className="flex items-start justify-between mb-2">
         <div>
           <h3 className="text-sm text-chalk font-telemetry">Consistency Heatmap</h3>
-          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+          <p className="text-[10px] text-steel/60 font-telemetry mt-0.5">
             Time loss (ms) per corner per lap — darker = more consistent
           </p>
         </div>
         <div className="flex items-center gap-2 text-[9px] font-telemetry">
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded" style={{ background: '#4ade80' }} />
-            <span className="text-steel/40">&lt;10ms</span>
+            <span className="text-steel/60">&lt;10ms</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded" style={{ background: '#facc15' }} />
-            <span className="text-steel/40">30-50ms</span>
+            <span className="text-steel/60">30-50ms</span>
           </span>
           <span className="flex items-center gap-1">
             <span className="w-2 h-2 rounded" style={{ background: '#f87171' }} />
-            <span className="text-steel/40">&gt;100ms</span>
+            <span className="text-steel/60">&gt;100ms</span>
           </span>
         </div>
       </div>
@@ -223,7 +223,7 @@ export function ConsistencyHeatmap({ sessionId }: ConsistencyHeatmapProps) {
         style={{ height: canvasHeight }}
       />
       {worstCorner && worstCorner.mean_ms != null && worstCorner.mean_ms > 30 && (
-        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+        <p className="text-[10px] text-steel/60 font-telemetry mt-2">
           C{worstCorner.corner_id} has the highest avg time loss ({Math.round(worstCorner.mean_ms)}ms) — focus practice here.
         </p>
       )}

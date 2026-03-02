@@ -207,13 +207,13 @@ export default function KartsPage() {
                 <span>{kart.session_count ?? 0} session{(kart.session_count ?? 0) !== 1 ? 's' : ''}</span>
                 {kart.power_hp != null && kart.power_hp > 0 && (
                   <>
-                    <span className="text-steel/20">|</span>
+                    <span className="text-steel/60">|</span>
                     <span>{fmtPower(kart.power_hp)}</span>
                   </>
                 )}
                 {kart.weight_kg != null && kart.weight_kg > 0 && (
                   <>
-                    <span className="text-steel/20">|</span>
+                    <span className="text-steel/60">|</span>
                     <span>{fmtWeight(kart.weight_kg)}</span>
                   </>
                 )}
@@ -247,7 +247,7 @@ export default function KartsPage() {
               )}
 
               <div className="mt-3 text-right">
-                <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+                <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                   View kart →
                 </span>
               </div>

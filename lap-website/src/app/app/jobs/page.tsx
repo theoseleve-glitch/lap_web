@@ -229,7 +229,7 @@ export default function JobsPage() {
                     <div className="text-chalk font-body text-sm">
                       {job.file_name ?? job.job_id.slice(0, 8)}
                     </div>
-                    <div className="text-steel/40 font-telemetry text-[10px]">
+                    <div className="text-steel/60 font-telemetry text-[10px]">
                       {job.job_id.slice(0, 12)}
                     </div>
                   </td>
@@ -242,7 +242,7 @@ export default function JobsPage() {
                       {job.stage_name ?? '—'}
                     </span>
                     {job.stage_index != null && job.stage_total != null && (
-                      <span className="text-steel/40 font-telemetry text-[10px] ml-1">
+                      <span className="text-steel/60 font-telemetry text-[10px] ml-1">
                         ({job.stage_index}/{job.stage_total})
                       </span>
                     )}

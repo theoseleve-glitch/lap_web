@@ -185,7 +185,7 @@ export function BrakePrecisionChart({ sessionId }: BrakePrecisionChartProps) {
       <div className="flex items-start justify-between mb-3">
         <div>
           <h3 className="text-sm text-chalk font-telemetry">Brake Precision</h3>
-          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+          <p className="text-[10px] text-steel/60 font-telemetry mt-0.5">
             Brake point delta vs theoretical (metres)
           </p>
         </div>
@@ -210,7 +210,7 @@ export function BrakePrecisionChart({ sessionId }: BrakePrecisionChartProps) {
         style={{ height: Math.max(data.length * 28 + 48, 120) }}
       />
       {(earlyCount > 0 || lateCount > 0) && (
-        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+        <p className="text-[10px] text-steel/60 font-telemetry mt-2">
           {earlyCount > 0 && `${earlyCount} corner${earlyCount > 1 ? 's' : ''} with early braking. `}
           {lateCount > 0 && `${lateCount} corner${lateCount > 1 ? 's' : ''} with late braking.`}
         </p>

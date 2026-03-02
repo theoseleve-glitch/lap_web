@@ -156,11 +156,11 @@ export default function TracksPage() {
               {/* Meta row */}
               <div className="flex items-center gap-3 mt-2 text-steel font-telemetry text-xs">
                 <span>{fmtLength(track.lap_length_m)}</span>
-                <span className="text-steel/20">|</span>
+                <span className="text-steel/60">|</span>
                 <span>{track.session_count ?? 0} session{(track.session_count ?? 0) !== 1 ? 's' : ''}</span>
                 {track.lap_count != null && track.lap_count > 0 && (
                   <>
-                    <span className="text-steel/20">|</span>
+                    <span className="text-steel/60">|</span>
                     <span>{track.lap_count} laps</span>
                   </>
                 )}
@@ -177,7 +177,7 @@ export default function TracksPage() {
                 {track.start_lat != null && track.start_lon != null && (
                   <div className="text-right">
                     <span className="text-steel/60 text-[10px] font-telemetry block">GPS</span>
-                    <span className="text-steel/40 font-telemetry text-[10px]">
+                    <span className="text-steel/60 font-telemetry text-[10px]">
                       {track.start_lat.toFixed(4)}, {track.start_lon.toFixed(4)}
                     </span>
                   </div>
@@ -186,7 +186,7 @@ export default function TracksPage() {
 
               {/* Arrow hint */}
               <div className="mt-3 text-right">
-                <span className="text-steel/30 font-telemetry text-xs group-hover:text-acid-green transition-colors">
+                <span className="text-steel/50 font-telemetry text-xs group-hover:text-acid-green transition-colors">
                   View details →
                 </span>
               </div>

@@ -64,9 +64,9 @@ function ToolRenderer({
       );
     default:
       return (
-        <div className="flex items-center justify-center h-full text-steel/40 font-body text-sm">
+        <div className="flex items-center justify-center h-full text-steel/60 font-body text-sm">
           <div className="text-center">
-            <p className="text-lg font-monument text-steel/30 mb-1 capitalize">
+            <p className="text-lg font-monument text-steel/50 mb-1 capitalize">
               {toolId.replace(/-/g, ' ')}
             </p>
             <p>Coming soon</p>
@@ -247,7 +247,7 @@ export function FocusMode({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-steel/10 shrink-0">
         <div className="flex items-center gap-4">
           <h2 className="text-lg font-monument text-chalk">Focus Mode</h2>
-          <div className="hidden sm:flex items-center gap-2 text-[10px] font-telemetry text-steel/40">
+          <div className="hidden sm:flex items-center gap-2 text-[10px] font-telemetry text-steel/60">
             <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20">Esc</kbd>
             <span>close</span>
             <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20 ml-2">S</kbd>

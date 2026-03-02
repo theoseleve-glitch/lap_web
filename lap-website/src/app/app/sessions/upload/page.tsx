@@ -538,7 +538,7 @@ export default function UploadPage() {
               <input id="driver-name" type="text" value={driverName} onChange={(e) => setDriverName(e.target.value)}
                 disabled={isFormDisabled} required placeholder="e.g. Alex Rossi"
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/40 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div>
@@ -560,7 +560,7 @@ export default function UploadPage() {
             {karts.length > 0 && (
               <div>
                 <label htmlFor="kart-id" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
-                  Kart <span className="text-steel/40 text-xs normal-case">(optional)</span>
+                  Kart <span className="text-steel/60 text-xs normal-case">(optional)</span>
                 </label>
                 <select id="kart-id" value={kartId} onChange={(e) => setKartId(e.target.value)} disabled={isFormDisabled}
                   className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
@@ -572,7 +572,7 @@ export default function UploadPage() {
             )}
             <div>
               <label htmlFor="session-date" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
-                Session Date <span className="text-steel/40 text-xs normal-case">(optional — auto-detected from CSV)</span>
+                Session Date <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from CSV)</span>
               </label>
               <input id="session-date" type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} disabled={isFormDisabled}
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
@@ -580,22 +580,22 @@ export default function UploadPage() {
             </div>
             <div>
               <label htmlFor="lap-range" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
-                Lap Range <span className="text-steel/40 text-xs normal-case">(optional)</span>
+                Lap Range <span className="text-steel/60 text-xs normal-case">(optional)</span>
               </label>
               <input id="lap-range" type="text" value={lapRange} onChange={(e) => setLapRange(e.target.value)} disabled={isFormDisabled}
                 placeholder="e.g. 3-15"
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/40 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div className="sm:col-span-2">
               <label htmlFor="exclude-laps" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
-                Exclude Laps <span className="text-steel/40 text-xs normal-case">(optional)</span>
+                Exclude Laps <span className="text-steel/60 text-xs normal-case">(optional)</span>
               </label>
               <input id="exclude-laps" type="text" value={excludeLaps} onChange={(e) => setExcludeLaps(e.target.value)} disabled={isFormDisabled}
                 placeholder="e.g. 1,2,16"
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/40 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
           </div>

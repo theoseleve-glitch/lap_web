@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
+import { useReducer, useRef, useCallback, useEffect, useMemo, useState, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import type {
@@ -14,6 +14,8 @@ import { CornerReplayCockpit, type CockpitFrame } from './CornerReplayCockpit';
 import { CornerReplayControls } from './CornerReplayControls';
 import { CornerMetricsPanel } from './CornerMetricsPanel';
 
+const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
+
 interface CornerReplayProps {
   sessionId: string;
   cornerIds?: number[];
@@ -22,6 +24,7 @@ interface CornerReplayProps {
 const SPEEDS: PlaybackSpeed[] = [0.25, 0.5, 1, 2];
 
 export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
+  const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [state, dispatch] = useReducer(replayReducer, initialReplayState);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef(0);
@@ -274,12 +277,34 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
         </div>
       </div>
 
-      {/* Keyboard hints */}
-      <div className="flex items-center gap-4 text-[10px] text-steel/40 font-telemetry">
-        <span>Space: Play/Pause</span>
-        <span>←→: Prev/Next Corner</span>
-        <span>[ ]: Speed</span>
+      {/* Keyboard hints + Analyzer link */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 text-[10px] text-steel/60 font-telemetry">
+          <span>Space: Play/Pause</span>
+          <span>←→: Prev/Next Corner</span>
+          <span>[ ]: Speed</span>
+        </div>
+        <button
+          onClick={() => setAnalyzerOpen(true)}
+          className="px-3 py-1.5 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-acid-green/10 transition-colors"
+        >
+          Open in Driving Analyzer
+        </button>
       </div>
+
+      {analyzerOpen && (
+        <Suspense fallback={
+          <div className="fixed inset-0 z-50 bg-asphalt/98 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+          </div>
+        }>
+          <DrivingAnalyzer
+            sessionId={sessionId}
+            cornerFilter={cornerIds}
+            onClose={() => setAnalyzerOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
