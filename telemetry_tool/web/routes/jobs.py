@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from pathlib import PurePosixPath
 from typing import Generator
 
 from flask import Blueprint, Response, g
@@ -59,6 +60,25 @@ def _get_redis():
     return redis.Redis.from_url(Config.REDIS_URL)
 
 
+def _sanitize_job(job: dict) -> dict:
+    """Prepare a job dict for the API response.
+
+    - Derives ``file_name`` from ``file_path`` (basename only, never expose
+      full server paths).
+    - Removes ``file_path`` from the output.
+    - Adds ``session_id`` (equal to ``job_id`` — set at upload time).
+    """
+    out = dict(job)
+    fp = out.pop("file_path", None)
+    if fp:
+        out["file_name"] = PurePosixPath(fp).name
+    else:
+        out.setdefault("file_name", None)
+    # session_id is the same as job_id (set in sessions_v2.py upload).
+    out.setdefault("session_id", out.get("job_id"))
+    return out
+
+
 def _load_pipeline_context(redis_client, job_id: str):
     """Load PipelineContext from Redis (deferred import for testability)."""
     from pipeline_context import PipelineContext
@@ -92,7 +112,7 @@ def list_recent_jobs():
     limit = g.params.limit
     conn = get_pg_connection()
     jobs = list_jobs(conn, g.workspace_id, limit=limit)
-    return api_response({"jobs": jobs})
+    return api_response({"jobs": [_sanitize_job(j) for j in jobs]})
 
 
 @bp.route("/<job_id>/status", methods=["GET"])
@@ -107,7 +127,7 @@ def job_status(job_id: str):
     job = get_job(conn, job_id, g.workspace_id)
     if job is None:
         return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
-    return api_response(job)
+    return api_response(_sanitize_job(job))
 
 
 @bp.route("/<job_id>/cancel", methods=["POST"])

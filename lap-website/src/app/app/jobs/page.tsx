@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, QueryError, SkeletonTableRows } from '@/components/app';
 
@@ -9,6 +10,7 @@ import { PageHeader, StatCard, QueryError, SkeletonTableRows } from '@/component
 
 interface Job {
   job_id: string;
+  session_id: string | null;
   file_name: string | null;
   status: string;
   stage_name: string | null;
@@ -253,6 +255,15 @@ export default function JobsPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
+                      {job.status === 'completed' && (
+                        <Link
+                          href={`/app/sessions/${job.session_id ?? job.job_id}`}
+                          className="px-2 py-1 text-[10px] font-telemetry uppercase text-pit-orange border border-pit-orange/20 rounded
+                            hover:bg-pit-orange/10 transition-colors"
+                        >
+                          View
+                        </Link>
+                      )}
                       {(job.status === 'running' || job.status === 'processing' || job.status === 'queued') && (
                         <button
                           onClick={() => cancelMut.mutate(job.job_id)}

@@ -32,6 +32,23 @@ else
 end
 """
 
+# Lua script for re-entrant lock acquisition.
+# If key doesn't exist: set it with TTL and return 1 (acquired).
+# If key exists and value matches job_id: refresh TTL and return 1 (re-acquired).
+# If key exists and value differs: return 0 (locked by another job).
+_ACQUIRE_LOCK_LUA = """\
+local current = redis.call("get", KEYS[1])
+if current == false then
+    redis.call("set", KEYS[1], ARGV[1], "EX", ARGV[2])
+    return 1
+elseif current == ARGV[1] then
+    redis.call("expire", KEYS[1], ARGV[2])
+    return 1
+else
+    return 0
+end
+"""
+
 
 class WorkspaceBusyError(Exception):
     pass
@@ -42,10 +59,20 @@ class QueueFullError(Exception):
 
 
 def acquire_workspace_lock(redis_client, workspace_id: int, job_id: str, ttl: int = _LOCK_TTL_SECONDS) -> bool:
-    """SETNX on pipeline:lock:{workspace_id} with TTL. Returns True if acquired."""
+    """Re-entrant workspace lock via Redis Lua script.
+
+    - If lock doesn't exist: acquires it with TTL.
+    - If lock is already held by the same job_id: refreshes TTL (re-entrant).
+    - If lock is held by a different job: returns False.
+
+    The Lua script runs atomically on the Redis server (not Python eval).
+    """
     key = f"pipeline:lock:{workspace_id}"
-    acquired = redis_client.set(key, job_id, nx=True, ex=ttl)
-    return bool(acquired)
+    # redis_client.eval() sends Lua to Redis server for atomic execution
+    result = redis_client.eval(  # noqa: S307
+        _ACQUIRE_LOCK_LUA, 1, key, job_id, str(ttl),
+    )
+    return bool(result)
 
 
 def release_workspace_lock(redis_client, workspace_id: int, job_id: str) -> None:
