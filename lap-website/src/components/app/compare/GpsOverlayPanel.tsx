@@ -101,9 +101,8 @@ export default function GpsOverlayPanel({
       const offsetY = padding + (drawH - latRange * scale) / 2;
 
       const toX = (lon: number) => offsetX + (lon - minLon) * scale;
-      const toY = (lat: number) => offsetY + drawH - (lat - minLat) * scale + (drawH - latRange * scale) / 2 - (drawH - latRange * scale) / 2;
-      // Simplified: invert Y so north is up
-      const toYFixed = (lat: number) => offsetY + (maxLat - lat) * scale;
+      // Invert Y so north is up
+      const toY = (lat: number) => offsetY + (maxLat - lat) * scale;
 
       // Draw trace helper
       const drawTrace = (
@@ -118,7 +117,7 @@ export default function GpsOverlayPanel({
         ctx.beginPath();
         for (let i = 0; i < lats.length; i++) {
           const x = toX(lons[i]);
-          const y = toYFixed(lats[i]);
+          const y = toY(lats[i]);
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         ctx.stroke();
@@ -145,7 +144,7 @@ export default function GpsOverlayPanel({
         // Draw marker on trace A
         if (closestIdx < d.gps_a.latitudes.length) {
           const ax = toX(d.gps_a.longitudes[closestIdx]);
-          const ay = toYFixed(d.gps_a.latitudes[closestIdx]);
+          const ay = toY(d.gps_a.latitudes[closestIdx]);
           ctx.fillStyle = colorA;
           ctx.beginPath();
           ctx.arc(ax, ay, 5, 0, Math.PI * 2);
@@ -158,7 +157,7 @@ export default function GpsOverlayPanel({
         // Draw marker on trace B
         if (closestIdx < d.gps_b.latitudes.length) {
           const bx = toX(d.gps_b.longitudes[closestIdx]);
-          const by = toYFixed(d.gps_b.latitudes[closestIdx]);
+          const by = toY(d.gps_b.latitudes[closestIdx]);
           ctx.fillStyle = colorB;
           ctx.beginPath();
           ctx.arc(bx, by, 5, 0, Math.PI * 2);

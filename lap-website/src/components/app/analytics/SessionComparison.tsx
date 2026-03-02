@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { apiFetch, BACKEND_URL } from '@/lib/api-client';
+import { apiFetch } from '@/lib/api-client';
 
 interface SessionSummary {
   session_id: string;
