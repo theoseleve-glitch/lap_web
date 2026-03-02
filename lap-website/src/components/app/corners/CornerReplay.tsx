@@ -596,7 +596,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
 
   // Current corner + lap traces
   const currentCorner = corners[state.cornerIdx] ?? null;
-  const currentLap = data?.laps.find((l) => l.lap_number === state.lapA) ?? null;
+  const currentLap = data?.laps?.find((l) => l.lap_number === state.lapA) ?? null;
   const traces = currentLap?.traces ?? [];
   const totalFrames = traces.length;
 
@@ -708,7 +708,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
 
   // Lap options
   const lapOptions = useMemo(
-    () => data?.laps.map((l) => l.lap_number) ?? [],
+    () => data?.laps?.map((l) => l.lap_number) ?? [],
     [data],
   );
 
