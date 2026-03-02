@@ -844,8 +844,8 @@ export default function CompareDriversPage() {
                     />
                     <CompareRow
                       label="Avg Score"
-                      valueA={comparison.driver_a.stats.avg_score.toFixed(1)}
-                      valueB={comparison.driver_b.stats.avg_score.toFixed(1)}
+                      valueA={comparison.driver_a.stats.avg_score?.toFixed(1) ?? '—'}
+                      valueB={comparison.driver_b.stats.avg_score?.toFixed(1) ?? '—'}
                       delta={
                         compStats
                           ? formatDelta(compStats.avgScoreDelta)
@@ -857,8 +857,8 @@ export default function CompareDriversPage() {
                     />
                     <CompareRow
                       label="Best Score"
-                      valueA={comparison.driver_a.stats.best_score.toFixed(1)}
-                      valueB={comparison.driver_b.stats.best_score.toFixed(1)}
+                      valueA={comparison.driver_a.stats.best_score?.toFixed(1) ?? '—'}
+                      valueB={comparison.driver_b.stats.best_score?.toFixed(1) ?? '—'}
                       delta={
                         compStats
                           ? formatDelta(compStats.bestScoreDelta)

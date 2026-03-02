@@ -174,14 +174,38 @@ export function ThrottleOnsetMap({ sessionId }: ThrottleOnsetMapProps) {
     );
   }
 
+  const earlyOnset = data.filter((c) => c.mean_m < 3).length;
+
   return (
     <div className="bg-concrete rounded-lg border border-steel/10 p-4">
-      <h3 className="text-sm text-chalk font-telemetry mb-2">Throttle Onset</h3>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h3 className="text-sm text-chalk font-telemetry">Throttle Onset</h3>
+          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+            Distance from apex before throttle application (m)
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-[9px] font-telemetry">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-green-400" />
+            <span className="text-steel/40">Early (&lt;3m)</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-400" />
+            <span className="text-steel/40">Late (&gt;8m)</span>
+          </span>
+        </div>
+      </div>
       <canvas
         ref={canvasRef}
         className="w-full"
         style={{ height: Math.max(data.length * 28 + 48, 120) }}
       />
+      {earlyOnset > 0 && (
+        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+          {earlyOnset} corner{earlyOnset > 1 ? 's' : ''} with early throttle onset — good exit discipline.
+        </p>
+      )}
     </div>
   );
 }

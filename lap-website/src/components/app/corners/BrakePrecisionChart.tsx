@@ -175,14 +175,46 @@ export function BrakePrecisionChart({ sessionId }: BrakePrecisionChartProps) {
     );
   }
 
+  // Aggregate insight
+  const earlyCount = data.filter((d) => d.braking_point_delta_m < -2).length;
+  const lateCount = data.filter((d) => d.braking_point_delta_m > 2).length;
+  const goodCount = data.length - earlyCount - lateCount;
+
   return (
     <div className="bg-concrete rounded-lg border border-steel/10 p-4">
-      <h3 className="text-sm text-chalk font-telemetry mb-2">Brake Precision</h3>
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <h3 className="text-sm text-chalk font-telemetry">Brake Precision</h3>
+          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+            Brake point delta vs theoretical (metres)
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-[9px] font-telemetry">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-green-400" />
+            <span className="text-steel/50">Good ({goodCount})</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-yellow-400" />
+            <span className="text-steel/50">Moderate</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded-full bg-red-400" />
+            <span className="text-steel/50">Poor</span>
+          </span>
+        </div>
+      </div>
       <canvas
         ref={canvasRef}
         className="w-full"
         style={{ height: Math.max(data.length * 28 + 48, 120) }}
       />
+      {(earlyCount > 0 || lateCount > 0) && (
+        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+          {earlyCount > 0 && `${earlyCount} corner${earlyCount > 1 ? 's' : ''} with early braking. `}
+          {lateCount > 0 && `${lateCount} corner${lateCount > 1 ? 's' : ''} with late braking.`}
+        </p>
+      )}
     </div>
   );
 }

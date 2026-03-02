@@ -107,7 +107,12 @@ export function CornerMasteryCard({ sessionId }: CornerMasteryCardProps) {
 
   return (
     <div className="bg-concrete rounded-lg border border-steel/10 p-4">
-      <h3 className="text-sm text-chalk font-telemetry mb-3">Corner Mastery</h3>
+      <div className="mb-3">
+        <h3 className="text-sm text-chalk font-telemetry">Corner Mastery</h3>
+        <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+          Composite score: brake precision, apex speed, exit, consistency, grip
+        </p>
+      </div>
 
       {/* Overall grade + score */}
       <div className="flex items-center gap-3 mb-4">

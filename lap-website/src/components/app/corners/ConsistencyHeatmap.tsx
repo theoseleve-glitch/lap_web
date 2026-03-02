@@ -187,19 +187,46 @@ export function ConsistencyHeatmap({ sessionId }: ConsistencyHeatmapProps) {
 
   const canvasHeight = Math.max(response.laps.length * 18 + 32, 120);
 
+  // Find worst corner
+  const worstCorner = response.corner_stats?.reduce(
+    (worst, c) => (c.mean_ms != null && (worst == null || (c.mean_ms ?? 0) > (worst.mean_ms ?? 0)) ? c : worst),
+    null as typeof response.corner_stats[0] | null,
+  );
+
   return (
     <div className="bg-concrete rounded-lg border border-steel/10 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm text-chalk font-telemetry">Consistency</h3>
-        <span className="text-[9px] text-steel/40 font-body">
-          Time loss (ms) per corner per lap
-        </span>
+      <div className="flex items-start justify-between mb-2">
+        <div>
+          <h3 className="text-sm text-chalk font-telemetry">Consistency Heatmap</h3>
+          <p className="text-[10px] text-steel/40 font-telemetry mt-0.5">
+            Time loss (ms) per corner per lap — darker = more consistent
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-[9px] font-telemetry">
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded" style={{ background: '#4ade80' }} />
+            <span className="text-steel/40">&lt;10ms</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded" style={{ background: '#facc15' }} />
+            <span className="text-steel/40">30-50ms</span>
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-2 h-2 rounded" style={{ background: '#f87171' }} />
+            <span className="text-steel/40">&gt;100ms</span>
+          </span>
+        </div>
       </div>
       <canvas
         ref={canvasRef}
         className="w-full"
         style={{ height: canvasHeight }}
       />
+      {worstCorner && worstCorner.mean_ms != null && worstCorner.mean_ms > 30 && (
+        <p className="text-[10px] text-steel/40 font-telemetry mt-2">
+          C{worstCorner.corner_id} has the highest avg time loss ({Math.round(worstCorner.mean_ms)}ms) — focus practice here.
+        </p>
+      )}
     </div>
   );
 }

@@ -168,7 +168,7 @@ export default function FreeReportPage() {
         <div className="mb-6">
           <h2 className="font-monument text-lg text-chalk tracking-tight mb-4">KEY CORNER</h2>
           <p className="text-steel font-body text-sm mb-3">
-            Your biggest time loss: {worstCorner.corner_name} ({worstCorner.time_loss.toFixed(3)}s)
+            Your biggest time loss: {worstCorner.corner_name} ({(worstCorner.time_loss ?? 0).toFixed(3)}s)
           </p>
           <div className="h-[400px] bg-concrete rounded-lg border border-steel/20 overflow-hidden">
             <CornerReplay sessionId={id} />
@@ -188,7 +188,7 @@ export default function FreeReportPage() {
                 <div key={c.corner_id} className="bg-asphalt rounded-lg p-4 border border-steel/20">
                   <p className="font-monument text-sm text-chalk">{c.corner_name}</p>
                   <p className="text-steel font-telemetry text-xs mt-1">
-                    Time loss: {c.time_loss.toFixed(3)}s
+                    Time loss: {(c.time_loss ?? 0).toFixed(3)}s
                   </p>
                 </div>
               ))}

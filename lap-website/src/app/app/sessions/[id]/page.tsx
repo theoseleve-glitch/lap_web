@@ -1463,7 +1463,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
             <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
               <div className="text-[0.65rem] text-steel uppercase font-body">Best Lap</div>
               <div className="text-base font-bold text-yellow-400 font-telemetry">
-                L{timeline.best_lap} ({timeline.best_time_s.toFixed(3)}s)
+                L{timeline.best_lap} ({timeline.best_time_s != null ? timeline.best_time_s.toFixed(3) : '—'}s)
               </div>
             </div>
             {(timeline.event_counts.pb ?? 0) > 0 && (
@@ -1517,8 +1517,8 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
                           {icon} Lap {evt.lap}
                         </span>
                         <span className="text-xs text-steel font-telemetry">
-                          {evt.lap_time_s.toFixed(3)}s
-                          {evt.delta_to_best_s > 0 && (
+                          {evt.lap_time_s != null ? evt.lap_time_s.toFixed(3) : '—'}s
+                          {evt.delta_to_best_s != null && evt.delta_to_best_s > 0 && (
                             <span className="text-steel/60"> (+{evt.delta_to_best_s.toFixed(3)})</span>
                           )}
                         </span>
