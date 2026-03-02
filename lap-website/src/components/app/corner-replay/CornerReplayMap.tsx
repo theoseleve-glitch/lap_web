@@ -71,6 +71,7 @@ export function CornerReplayMap({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number>(0);
+  const drawRef = useRef<() => void>(() => {});
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -85,8 +86,6 @@ export function CornerReplayMap({
     const dpr = window.devicePixelRatio || 1;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
-    canvas.style.width = `${w}px`;
-    canvas.style.height = `${h}px`;
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -311,22 +310,31 @@ export function CornerReplayMap({
     }
   }, [traces, corners, cornerIndex, lapA, lapB, frame, mode, replayWindow]);
 
-  /* ── Resize observer + draw ──────────────────────────────────────── */
+  // Keep drawRef in sync so ResizeObserver always calls the latest draw
+  drawRef.current = draw;
+
+  /* ── Resize observer (stable — does NOT depend on draw) ──────────── */
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const observer = new ResizeObserver(() => {
       cancelAnimationFrame(rafRef.current);
-      rafRef.current = requestAnimationFrame(draw);
+      rafRef.current = requestAnimationFrame(() => drawRef.current());
     });
     observer.observe(container);
-    rafRef.current = requestAnimationFrame(draw);
+    rafRef.current = requestAnimationFrame(() => drawRef.current());
 
     return () => {
       observer.disconnect();
       cancelAnimationFrame(rafRef.current);
     };
+  }, []);
+
+  /* ── Redraw when frame / data changes ────────────────────────────── */
+  useEffect(() => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => drawRef.current());
   }, [draw]);
 
   const modeLabel = mode === 'review' ? 'Review' : mode === 'split' ? 'Split Compare' : 'Top 3';
@@ -341,7 +349,7 @@ export function CornerReplayMap({
           Track Map — {modeLabel}
         </span>
       </div>
-      <canvas ref={canvasRef} className="w-full h-full" />
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
     </div>
   );
 }
