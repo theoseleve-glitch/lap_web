@@ -16,7 +16,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS driver_stats_rollup (
             workspace_id  INTEGER NOT NULL REFERENCES workspaces(id),
-            driver_id     INTEGER NOT NULL REFERENCES drivers(id),
+            driver_id     INTEGER NOT NULL REFERENCES drivers(driver_id),
             session_count INTEGER NOT NULL DEFAULT 0,
             total_laps    INTEGER NOT NULL DEFAULT 0,
             best_time_s   DOUBLE PRECISION,
@@ -30,7 +30,7 @@ def upgrade() -> None:
     op.execute("""
         CREATE TABLE IF NOT EXISTS track_stats_rollup (
             workspace_id    INTEGER NOT NULL REFERENCES workspaces(id),
-            track_id        INTEGER NOT NULL REFERENCES tracks(id),
+            track_id        TEXT NOT NULL REFERENCES tracks(track_id),
             session_count   INTEGER NOT NULL DEFAULT 0,
             best_time_s     DOUBLE PRECISION,
             avg_score       DOUBLE PRECISION,
