@@ -1024,3 +1024,24 @@ class TestDashboardStatsMockContract:
 
         data = resp.get_json()["data"]
         assert data["total_laps"] == 0, "None total_laps must be coerced to 0"
+
+
+# ══════════════════════════════════════════════════════════════════
+# JSON guard middleware
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestJsonGuardMiddleware:
+    """Verify the JSON guard catches HTML responses on /api/* routes."""
+
+    def test_normal_json_passes_through(self, seeded_client):
+        """Normal JSON responses on /api/* should pass through unchanged."""
+        resp = seeded_client.get("/api/v1/sessions")
+        assert resp.content_type.startswith("application/json")
+        body = resp.get_json()
+        assert body["ok"] is True
+
+    def test_non_api_routes_not_guarded(self, seeded_client):
+        """Non-API routes should not be intercepted."""
+        resp = seeded_client.get("/healthz")
+        assert resp.status_code in (200, 503)

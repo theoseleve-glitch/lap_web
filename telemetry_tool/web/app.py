@@ -169,7 +169,8 @@ def create_app(config: Config | None = None) -> Flask:
     CORS(app, origins=origins, supports_credentials=True,
          allow_headers=["Authorization", "Content-Type", "X-Workspace-Id",
                         "Idempotency-Key", "X-CSRF-Token", "X-Request-Id"],
-         expose_headers=["X-Request-Id", "Retry-After"])
+         expose_headers=["X-Request-Id", "Retry-After"],
+         always_send=True)
 
     # Ensure OPTIONS preflight returns 200 even for non-existent routes.
     # Browsers require 2xx on preflight; flask_cors adds CORS headers
@@ -445,39 +446,46 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Guard: ensure /api/* never returns HTML to JSON consumers.
     @app.after_request
-    def _guard_api_json_contract(response):
+    def _json_guard(response):
+        """Intercept HTML responses on /api/* paths.
+
+        If a route under /api/ accidentally returns text/html (e.g. an old
+        template route leaked into the API namespace), replace the response
+        with a structured JSON error so the SaaS frontend never sees
+        'Unexpected token <'.
+        """
         if not request.path.startswith("/api/"):
             return response
         # Exempt file-download responses (report endpoint).
         if "attachment" in (response.headers.get("Content-Disposition") or ""):
             return response
+
         ct = response.content_type or ""
-        if "text/html" in ct:
-            from .api_utils import api_error as _err
-            err_resp = _err(
-                "API_HTML_RESPONSE",
+        is_html_ct = "text/html" in ct
+
+        def _make_html_error():
+            from .api_utils import api_error as _ae, ErrorCode as _EC2
+            resp, code = _ae(
+                _EC2.API_HTML_RESPONSE,
                 "Endpoint returned HTML instead of JSON",
                 status=500,
             )
-            if isinstance(err_resp, tuple):
-                return err_resp[0]
-            return err_resp
-        # Also catch responses where body starts with HTML even if content_type not set.
-        if response.content_length and response.content_length < 10000:
+            return app.make_response((resp, code))
+
+        # If content-type explicitly says HTML, intercept immediately.
+        if is_html_ct:
+            return _make_html_error()
+
+        # Also catch responses where body starts with HTML even if
+        # content-type is unset or generic.
+        if response.content_length and response.content_length < 10_000:
             try:
-                data = response.get_data(as_text=True)[:50]
-                if data.lstrip().startswith(("<!DOCTYPE", "<html", "<HTML")):
-                    from .api_utils import api_error as _err
-                    err_resp = _err(
-                        "API_HTML_RESPONSE",
-                        "Endpoint returned HTML instead of JSON",
-                        status=500,
-                    )
-                    if isinstance(err_resp, tuple):
-                        return err_resp[0]
-                    return err_resp
+                body_start = response.get_data(as_text=True)[:100].strip().lower()
             except Exception:
-                pass
+                return response
+            if body_start.startswith("<!doctype") or body_start.startswith("<html"):
+                return _make_html_error()
+
         return response
 
     # Debug endpoint to check template loading (only in debug mode)

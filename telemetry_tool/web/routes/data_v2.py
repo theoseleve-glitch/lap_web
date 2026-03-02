@@ -274,10 +274,10 @@ def list_sessions():
 def session_filter_options():
     """Return distinct values for filter dropdowns."""
     conn = get_db_connection()
-    drivers = [r[0] for r in conn.execute(
+    drivers = [r["driver_name"] for r in conn.execute(
         "SELECT DISTINCT driver_name FROM drivers ORDER BY driver_name"
     ).fetchall()]
-    tracks = [r[0] for r in conn.execute(
+    tracks = [r["track_name"] for r in conn.execute(
         "SELECT DISTINCT track_name FROM tracks WHERE track_name IS NOT NULL ORDER BY track_name"
     ).fetchall()]
     return api_response({
@@ -2338,7 +2338,7 @@ def get_corner_replay_data(session_id: str):
 
     # If no laps specified, use all available (up to 5)
     if not requested_laps:
-        all_laps = models.get_lap_list(conn, session_id) or []
+        all_laps = models.get_laps_for_session(conn, session_id) or []
         requested_laps = [lap["lap_number"] for lap in all_laps[:5]]
 
     # Fetch GPS traces for each requested lap
@@ -2347,7 +2347,7 @@ def get_corner_replay_data(session_id: str):
     has_pedal_data = False
     has_steering_data = False
 
-    all_laps_data = models.get_lap_list(conn, session_id) or []
+    all_laps_data = models.get_laps_for_session(conn, session_id) or []
     for lap_info in all_laps_data:
         ln = lap_info.get("lap_number")
         if ln is not None:

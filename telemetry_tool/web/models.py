@@ -517,7 +517,12 @@ def count_sessions_filtered(
         WHERE {where};
     """
     row = conn.execute(sql, params).fetchone()
-    return row[0] if row else 0
+    if not row:
+        return 0
+    # Support both tuple-style (SQLite) and dict-style (PG RealDictCursor)
+    if isinstance(row, dict):
+        return row.get("count", 0) or 0
+    return row[0]
 
 
 def get_session_by_id(
@@ -1762,10 +1767,11 @@ def upsert_track_sector(
     distance_m: Optional[float] = None,
 ) -> int:
     """Add a sector point and auto-assign next index. Returns new sector ID."""
-    next_idx = conn.execute(
-        "SELECT COALESCE(MAX(sector_index), -1) + 1 FROM track_sectors WHERE track_id = ?",
+    _row = conn.execute(
+        "SELECT COALESCE(MAX(sector_index), -1) + 1 AS next_idx FROM track_sectors WHERE track_id = ?",
         (track_id,),
-    ).fetchone()[0]
+    ).fetchone()
+    next_idx = (_row.get("next_idx", 0) if isinstance(_row, dict) else _row[0]) if _row else 0
     label = f"S{next_idx + 1}"
     cur = conn.execute(
         "INSERT INTO track_sectors (track_id, sector_index, latitude, longitude, distance_m, label) "
