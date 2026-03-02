@@ -186,6 +186,7 @@ class TestErrorCodes:
         "ANALYSIS_FAILED", "FILE_TOO_LARGE", "UNSUPPORTED_FORMAT",
         "IDEMPOTENCY_CONFLICT", "INTERNAL_ERROR", "SERVICE_UNAVAILABLE",
         "NOT_READY", "NOT_IMPLEMENTED",
+        "API_HTML_RESPONSE", "UNAUTHORIZED", "DATA_UNAVAILABLE",
     ]
 
     def test_all_error_codes_exist(self):

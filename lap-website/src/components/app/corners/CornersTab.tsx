@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { CoachingTable } from './CoachingTable';
-import { CornerReplay } from './CornerReplay';
+import { CornerReplay } from '../corner-replay';
 import { BrakePrecisionChart } from './BrakePrecisionChart';
 import { CornerMasteryCard } from './CornerMasteryCard';
 import { ThrottleOnsetMap } from './ThrottleOnsetMap';
@@ -358,7 +358,7 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
       )}
 
       {subTab === 'replay' && (
-        <CornerReplay sessionId={sessionId} corners={filtered} />
+        <CornerReplay sessionId={sessionId} cornerIds={Array.from(selected)} />
       )}
 
       {subTab === 'charts' && (

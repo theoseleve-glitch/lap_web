@@ -2,7 +2,7 @@
  * TrackMap.tsx — Canvas-based speed-colored track map.
  *
  * Renders GPS trace as a colored polyline where hue = speed.
- * Transparent background — pure data visualization, no map tiles.
+ * Dark background (#0B0C0F) — pure racing line, no map tiles.
  *
  * Dual-mode:
  *   - `sessionId` → fetches GPS data from API
@@ -160,6 +160,10 @@ function drawTrack(
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
 
+  // Dark background — pure racing line, no map tiles
+  ctx.fillStyle = '#0B0C0F';
+  ctx.fillRect(0, 0, w, h);
+
   const { latitudes: lats, longitudes: lons, speeds } = trace;
   if (lats.length < 2) return;
 
@@ -206,7 +210,7 @@ function drawTrack(
   ctx.beginPath();
   ctx.arc(sx, sy, 4, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = '#000';
+  ctx.strokeStyle = 'rgba(243,240,232,0.4)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
@@ -430,7 +434,7 @@ export function TrackMap(props: TrackMapProps) {
     <div className={className}>
       <div
         className="relative rounded-lg border border-steel/10"
-        style={{ width: '100%', height: '400px', background: 'transparent' }}
+        style={{ width: '100%', height: '400px', background: '#0B0C0F' }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">

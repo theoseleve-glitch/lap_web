@@ -2966,4 +2966,252 @@ def get_session_channels(session_id: str):
     return api_response(inventory)
 
 
+# ══════════════════════════════════════════════════════════════════
+# 43. GET /api/v1/sessions/<id>/corner-replay
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corner-replay", methods=["GET"])
+@_safe_api
+def get_corner_replay(session_id: str):
+    """Batch endpoint for modular corner replay — columnar traces,
+    replay windows, typed corners, structured laps, and per-corner metrics.
+
+    Query params:
+        corners   (str)  Comma-separated corner IDs to include (default: all)
+        laps      (str)  Comma-separated lap numbers (default: all, max 10)
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_id = session.get("track_id") or ""
+
+    # ── Parse optional corner filter ───────────────────────────
+    corners_param = request.args.get("corners", "")
+    requested_corner_ids = set()
+    if corners_param:
+        try:
+            requested_corner_ids = {
+                int(x.strip()) for x in corners_param.split(",") if x.strip()
+            }
+        except ValueError:
+            return api_error(ErrorCode.VALIDATION_ERROR,
+                             "corners must be comma-separated integers", status=400)
+
+    # ── Build corners list from theoretical data ───────────────
+    theo = models.get_theoretical_data(conn, session_id)
+    corners = []
+    if theo and theo.get("corner_coaching"):
+        seen = set()
+        for cc in theo["corner_coaching"]:
+            cid = cc.get("corner_id") or cc.get("corner_index")
+            if cid is None or cid in seen:
+                continue
+            if requested_corner_ids and cid not in requested_corner_ids:
+                continue
+            seen.add(cid)
+
+            s_start = cc.get("s_start") or cc.get("distance_start") or 0
+            s_end = cc.get("s_end") or cc.get("distance_end") or 0
+            s_apex = cc.get("s_apex") or cc.get("distance_apex")
+            dist_m = s_apex if s_apex is not None else (s_start + s_end) / 2
+
+            corners.append({
+                "corner_id": str(cid),
+                "label": cc.get("label") or cc.get("name") or f"C{cid}",
+                "lat": cc.get("lat"),
+                "lon": cc.get("lon"),
+                "dist_m": dist_m,
+                "direction": cc.get("direction"),
+                "_s_start": s_start,
+                "_s_end": s_end,
+            })
+
+    if not corners:
+        # Fall back to corner_metrics summary
+        summary = models.get_corner_metrics_summary(conn, session_id)
+        for row in summary:
+            cid = row["corner_id"]
+            if requested_corner_ids and cid not in requested_corner_ids:
+                continue
+            corners.append({
+                "corner_id": str(cid),
+                "label": f"C{cid}",
+                "lat": None,
+                "lon": None,
+                "dist_m": 0,
+                "direction": None,
+                "_s_start": None,
+                "_s_end": None,
+            })
+
+    if not corners:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "No key corners found for this session", status=409)
+
+    # ── Laps ───────────────────────────────────────────────────
+    all_laps = models.get_laps_for_session(conn, session_id) or []
+    if len(all_laps) < 2:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "Insufficient laps for replay (need >= 2)", status=422)
+
+    laps_param = request.args.get("laps", "")
+    requested_laps = []
+    if laps_param:
+        try:
+            requested_laps = [int(x.strip()) for x in laps_param.split(",") if x.strip()]
+        except ValueError:
+            return api_error(ErrorCode.VALIDATION_ERROR,
+                             "laps must be comma-separated integers", status=400)
+
+    if not requested_laps:
+        requested_laps = [lap["lap_number"] for lap in all_laps[:10]]
+
+    laps_out = []
+    for lap_info in all_laps:
+        ln = lap_info.get("lap_number")
+        if ln in requested_laps:
+            laps_out.append({
+                "lap_number": ln,
+                "lap_time_s": lap_info.get("lap_time_s"),
+            })
+
+    # ── Columnar traces per lap ────────────────────────────────
+    traces = {}
+    has_pedal_data = False
+    has_steering_data = False
+
+    for lap_num in requested_laps:
+        trace = models.get_gps_trace(conn, session_id, lap_num)
+        if trace is None:
+            continue
+
+        lats = trace.get("latitudes", [])
+        lons = trace.get("longitudes", [])
+        dists = trace.get("distances", [])
+        speeds = trace.get("speeds", [])
+        accel_lat = trace.get("accel_lat", [])
+        accel_long = trace.get("accel_long", [])
+
+        col_trace = {
+            "lat": lats,
+            "lon": lons,
+            "dist_m": dists,
+            "speed_mps": speeds,
+            "accel_lat": accel_lat or [0.0] * len(lats),
+            "accel_lon": accel_long or [0.0] * len(lats),
+        }
+
+        # Brake/throttle/steering not in gps_traces table yet,
+        # but include empty arrays for forward compatibility
+        col_trace["brake"] = []
+        col_trace["throttle"] = []
+        col_trace["steering"] = []
+
+        traces[str(lap_num)] = col_trace
+
+    if not traces:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "No GPS trace data available for replay", status=422)
+
+    # ── Enrich corner GPS from best-lap trace ──────────────────
+    best_lap = _resolve_lap_number(conn, session_id)
+    best_key = str(best_lap) if best_lap else None
+    if best_key and best_key in traces:
+        best_dists = traces[best_key]["dist_m"]
+        best_lats = traces[best_key]["lat"]
+        best_lons = traces[best_key]["lon"]
+        if best_dists and best_lats and best_lons:
+            for corner in corners:
+                if corner["lat"] is None:
+                    apex_d = corner["dist_m"]
+                    idx = _closest_index(best_dists, apex_d)
+                    if idx < len(best_lats):
+                        corner["lat"] = best_lats[idx]
+                        corner["lon"] = best_lons[idx]
+
+    # ── Replay windows per corner ──────────────────────────────
+    BUFFER_M = 50.0
+    replay_windows = {}
+    for corner in corners:
+        cid = corner["corner_id"]
+        s_start = corner.get("_s_start")
+        s_end = corner.get("_s_end")
+        if s_start is None or s_end is None:
+            replay_windows[cid] = []
+            continue
+
+        win_start = max(0, s_start - BUFFER_M)
+        win_end = s_end + BUFFER_M
+        windows = []
+
+        for lap_key, col_trace in traces.items():
+            dists = col_trace["dist_m"]
+            speeds = col_trace["speed_mps"]
+            if not dists:
+                continue
+
+            start_idx = _closest_index(dists, win_start)
+            end_idx = _closest_index(dists, win_end)
+            end_idx = min(end_idx, len(dists) - 1)
+
+            if end_idx <= start_idx:
+                continue
+
+            # Estimate duration: sum of dt = ds / speed for each segment
+            duration = 0.0
+            for i in range(start_idx, end_idx):
+                ds = abs(dists[i + 1] - dists[i]) if i + 1 < len(dists) else 0
+                spd = speeds[i] if i < len(speeds) and speeds[i] > 0.5 else 0.5
+                duration += ds / spd
+
+            windows.append({
+                "lap_number": int(lap_key),
+                "start_idx": start_idx,
+                "end_idx": end_idx,
+                "estimated_duration_s": round(duration, 2),
+            })
+
+        replay_windows[cid] = windows
+
+    # ── Corner metrics keyed by corner_id ──────────────────────
+    all_metrics = models.get_corner_metrics_for_session(conn, session_id) or []
+    corner_metrics = {}
+    corner_id_set = {c["corner_id"] for c in corners}
+    for m in all_metrics:
+        cid_int = m.get("corner_id")
+        cid_str = str(cid_int)
+        if cid_str not in corner_id_set:
+            continue
+        corner_metrics.setdefault(cid_str, []).append({
+            "lap_number": m.get("lap_number"),
+            "brake_point_m": m.get("brake_point_m"),
+            "entry_speed_mps": m.get("entry_speed_mps"),
+            "apex_speed_mps": m.get("apex_speed_mps"),
+            "exit_speed_mps": m.get("exit_speed_mps"),
+            "time_loss_ms": m.get("time_loss_ms"),
+            "coaching_hint": m.get("coaching_hint"),
+        })
+
+    # ── Strip internal fields from corners ─────────────────────
+    for corner in corners:
+        corner.pop("_s_start", None)
+        corner.pop("_s_end", None)
+        corner.pop("direction", None)
+
+    return api_response({
+        "session_id": session_id,
+        "track_id": track_id,
+        "has_pedal_data": has_pedal_data,
+        "has_steering_data": has_steering_data,
+        "corners": corners,
+        "laps": laps_out,
+        "traces": traces,
+        "replay_windows": replay_windows,
+        "corner_metrics": corner_metrics,
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

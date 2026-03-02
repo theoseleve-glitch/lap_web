@@ -16,19 +16,21 @@ import { CornerMetricsPanel } from './CornerMetricsPanel';
 
 interface CornerReplayProps {
   sessionId: string;
+  cornerIds?: number[];
 }
 
 const SPEEDS: PlaybackSpeed[] = [0.25, 0.5, 1, 2];
 
-export function CornerReplay({ sessionId }: CornerReplayProps) {
+export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
   const [state, dispatch] = useReducer(replayReducer, initialReplayState);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef(0);
 
   // Fetch batch data
+  const cornerParam = cornerIds?.length ? `?corners=${cornerIds.join(',')}` : '';
   const { data, error, isLoading } = useQuery({
-    queryKey: ['corner-replay', sessionId],
-    queryFn: () => api.get<CornerReplayData>(`/sessions/${sessionId}/corner-replay`),
+    queryKey: ['corner-replay', sessionId, cornerIds?.join(',') ?? 'all'],
+    queryFn: () => api.get<CornerReplayData>(`/sessions/${sessionId}/corner-replay${cornerParam}`),
     enabled: !!sessionId,
   });
 

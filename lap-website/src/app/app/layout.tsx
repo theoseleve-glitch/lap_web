@@ -1,11 +1,13 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@/providers/query-provider';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { DiagnosticsOverlay } from '@/components/dev/DiagnosticsOverlay';
+
+const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
 interface NavItem { href: string; label: string; icon: string; }
 interface NavGroup { label: string; items: NavItem[]; }
@@ -49,6 +51,19 @@ const navGroups: NavGroup[] = [
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    const stored = localStorage.getItem(SIDEBAR_KEY);
+    if (stored === '1') setCollapsed(true);
+  }, []);
+
+  const toggle = () => {
+    setCollapsed((prev) => {
+      localStorage.setItem(SIDEBAR_KEY, prev ? '0' : '1');
+      return !prev;
+    });
+  };
 
   return (
     <div className="flex min-h-screen">
@@ -61,31 +76,45 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       </a>
 
       {/* Sidebar */}
-      <aside className="w-60 bg-concrete border-r border-steel/20 flex flex-col shrink-0">
-        <div className="p-4 border-b border-steel/20">
-          <Link href="/" className="font-monument text-2xl text-chalk tracking-tight">
-            LAP
-          </Link>
+      <aside
+        className={`${collapsed ? 'w-14' : 'w-60'} bg-concrete border-r border-steel/20 flex flex-col shrink-0 overflow-hidden transition-all duration-300`}
+      >
+        <div className="p-4 border-b border-steel/20 flex items-center justify-between gap-2">
+          {!collapsed && (
+            <Link href="/" className="font-monument text-2xl text-chalk tracking-tight">
+              LAP
+            </Link>
+          )}
+          <button
+            onClick={toggle}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            className="text-steel hover:text-chalk transition-colors text-lg shrink-0"
+          >
+            {collapsed ? '▸' : '◂'}
+          </button>
         </div>
         <nav aria-label="Main navigation" className="flex-1 py-2 overflow-y-auto">
           {navGroups.map((group) => (
             <div key={group.label} role="group" aria-label={group.label}>
-              <p className="px-4 py-2 font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/60">{group.label}</p>
+              {!collapsed && (
+                <p className="px-4 py-2 font-telemetry text-[10px] tracking-[0.12em] uppercase text-steel/60">{group.label}</p>
+              )}
               {group.items.map((item) => {
                 const isActive = pathname.startsWith(item.href);
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
+                    title={collapsed ? item.label : undefined}
                     aria-current={isActive ? 'page' : undefined}
-                    className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+                    className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors ${
                       isActive
                         ? 'text-acid-green bg-asphalt/50 border-r-2 border-acid-green'
                         : 'text-steel hover:text-chalk hover:bg-asphalt/30'
                     }`}
                   >
-                    <span className="w-5 text-center font-telemetry" aria-hidden="true">{item.icon}</span>
-                    <span className="font-body">{item.label}</span>
+                    <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{item.icon}</span>
+                    {!collapsed && <span className="font-body whitespace-nowrap">{item.label}</span>}
                   </Link>
                 );
               })}
@@ -95,25 +124,28 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <div className="border-t border-steel/10 py-2">
           <Link
             href="/app/account"
+            title={collapsed ? 'Account' : undefined}
             aria-current={pathname.startsWith('/app/account') ? 'page' : undefined}
-            className={`flex items-center gap-3 px-4 py-2.5 text-sm transition-colors ${
+            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors ${
               pathname.startsWith('/app/account')
                 ? 'text-acid-green bg-asphalt/50 border-r-2 border-acid-green'
                 : 'text-steel hover:text-chalk hover:bg-asphalt/30'
             }`}
           >
-            <span className="w-5 text-center font-telemetry" aria-hidden="true">{'\u25C9'}</span>
-            <span className="font-body">Account</span>
+            <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{'\u25C9'}</span>
+            {!collapsed && <span className="font-body">Account</span>}
           </Link>
         </div>
-        <div className="p-4 border-t border-steel/20">
-          <Link
-            href="/"
-            className="text-xs text-steel hover:text-chalk transition-colors font-telemetry"
-          >
-            &larr; Back to lap-coach.racing
-          </Link>
-        </div>
+        {!collapsed && (
+          <div className="p-4 border-t border-steel/20">
+            <Link
+              href="/"
+              className="text-xs text-steel hover:text-chalk transition-colors font-telemetry"
+            >
+              &larr; Back to lap-coach.racing
+            </Link>
+          </div>
+        )}
       </aside>
 
       {/* Main content */}
