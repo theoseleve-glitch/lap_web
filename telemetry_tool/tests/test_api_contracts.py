@@ -1114,3 +1114,50 @@ class TestGracefulDegradation:
                 assert "reason_code" in data, (
                     "available=false response missing reason_code"
                 )
+
+
+# ══════════════════════════════════════════════════════════════════
+# Session identity — display_name, no path leaks
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestSessionIdentity:
+    """Session header must show clean display name, not raw upload path."""
+
+    def test_session_detail_has_display_name(self, seeded_client):
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        if not sessions:
+            pytest.skip("No sessions in seeded DB")
+        sid = sessions[0]["session_id"]
+        detail = seeded_client.get(f"/api/v1/sessions/{sid}")
+        detail_body = detail.get_json()
+        session = detail_body["data"]
+        assert "display_name" in session, "Missing display_name field"
+        dn = session["display_name"]
+        if dn:
+            assert "/" not in dn and "\\" not in dn, (
+                f"display_name contains path separator: {dn}"
+            )
+            assert not dn.lower().endswith(".csv"), (
+                f"display_name should not end with .csv: {dn}"
+            )
+
+    def test_csv_filename_is_just_name(self, seeded_client):
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        for s in sessions:
+            fn = s.get("csv_filename", "")
+            if fn:
+                assert "/" not in fn and "\\" not in fn, (
+                    f"csv_filename contains path: {fn}"
+                )
+
+    def test_source_path_never_exposed(self, seeded_client):
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        for s in sessions:
+            assert "source_path" not in s, "source_path leaked in API response"

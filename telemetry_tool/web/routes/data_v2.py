@@ -259,6 +259,10 @@ def list_sessions():
         s.pop("html_report_path", None)
         if s.get("csv_filename"):
             s["csv_filename"] = Path(s["csv_filename"]).name
+        # Ensure display_name is always set and clean
+        if not s.get("display_name"):
+            fn = s.get("csv_filename", "")
+            s["display_name"] = Path(fn).stem if fn else s.get("session_id", "")
         clean.append(s)
 
     return api_response({
@@ -308,6 +312,10 @@ def get_session(session_id: str):
     # Ensure csv_filename is just the filename, not a path
     if result.get("csv_filename"):
         result["csv_filename"] = Path(result["csv_filename"]).name
+    # Ensure display_name is always set and clean
+    if not result.get("display_name"):
+        fn = result.get("csv_filename", "")
+        result["display_name"] = Path(fn).stem if fn else result.get("session_id", "")
     return api_response(result)
 
 
