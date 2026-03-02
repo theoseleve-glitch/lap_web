@@ -1,11 +1,13 @@
-"""Weekly training Celery task -- train envelopes, global model, reprocess sessions.
+"""Bi-weekly training Celery task -- train envelopes, ML models, reprocess sessions.
 
-Runs every Sunday at 00:00 UTC via Celery Beat.
+Scheduled every Sunday at 00:00 UTC via Celery Beat, but only executes
+on even ISO-week numbers (i.e. every two weeks).
 
-Three tiers:
+Five tiers:
   1. Track-specific CapabilityEnvelopes (per track_id group, min 3 sessions)
-  2. Global model bundle (offline pipeline)
-  3. Reprocess all sessions with improved models
+  2. Global kart_envelope model bundle (offline pipeline)
+  3. ML engine models (global GBR, per-driver GBR + IsolationForest, anomaly)
+  4. Reprocess all sessions with improved models
 """
 from __future__ import annotations
 
@@ -35,10 +37,14 @@ _REPROCESS_BATCH_SIZE = 10
 # Redis config key
 _CONFIG_REDIS_KEY = "lap:training:config"
 
+# Bi-weekly interval: run on even ISO week numbers (0 = every week)
+_SCHEDULE_INTERVAL_WEEKS = 2
+
 # Paths (Docker volume mounts)
 _DATA_RAW_DIR = Path("/data/uploads")
 _MODELS_DIR = Path("/data/models/kart_envelope")
 _BUNDLES_DIR = _MODELS_DIR / "bundles"
+_ML_DATA_DIR = Path("/data")
 
 
 # ---------------------------------------------------------------------------
@@ -65,6 +71,7 @@ def _load_training_config() -> dict:
         "min_sessions_per_group": _MIN_SESSIONS_PER_GROUP,
         "reprocess_batch_size": _REPROCESS_BATCH_SIZE,
         "reprocess_pause_s": _REPROCESS_PAUSE_S,
+        "schedule_interval_weeks": _SCHEDULE_INTERVAL_WEEKS,
     }
     r = _get_redis_config()
     if r:
@@ -201,6 +208,119 @@ def _train_global_model() -> dict:
         return {"status": "failed", "error": str(exc)}
 
 
+def _train_ml_models(conn) -> dict:
+    """Tier 3: Train ML engine models (global, per-driver, anomaly).
+
+    Uses the accumulated features Parquet file as the training dataset.
+    Trains:
+      - Global GradientBoostingRegressor (lap time prediction)
+      - Per-driver GBR + IsolationForest (one set per active driver)
+      - Global anomaly detection model (condition-normalised IsolationForest)
+    """
+    results: dict[str, Any] = {
+        "global_model": None,
+        "driver_models_trained": 0,
+        "driver_models_skipped": 0,
+        "anomaly_model": None,
+        "errors": [],
+    }
+
+    # Check if feature dataset exists
+    features_path = _ML_DATA_DIR / "processed" / "features.parquet"
+    if not features_path.exists():
+        features_path = _ML_DATA_DIR / "processed" / "features.csv"
+    if not features_path.exists():
+        results["errors"].append("Feature dataset not found — ML training skipped")
+        logger.warning("ML training: feature dataset not found at %s", _ML_DATA_DIR)
+        return results
+
+    # -- Global model --
+    try:
+        from ml_engine import train_global_model
+        meta = train_global_model(str(_ML_DATA_DIR))
+        results["global_model"] = {
+            "status": "ok",
+            "training_samples": meta.get("training_samples"),
+            "mae": meta.get("mae"),
+        }
+        logger.info(
+            "Trained global model: %d samples, MAE=%.4f",
+            meta.get("training_samples", 0),
+            meta.get("mae", float("nan")),
+        )
+    except Exception as exc:
+        results["errors"].append({"model": "global", "error": str(exc)})
+        logger.warning("Global model training failed: %s", exc, exc_info=True)
+
+    # -- Per-driver models --
+    try:
+        drivers = conn.execute(
+            "SELECT DISTINCT driver_name FROM sessions "
+            "WHERE driver_name IS NOT NULL AND driver_name != ''"
+        ).fetchall()
+        driver_names = [
+            (dict(r) if not isinstance(r, dict) else r).get("driver_name")
+            for r in drivers
+        ]
+    except Exception as exc:
+        driver_names = []
+        results["errors"].append({"model": "drivers_query", "error": str(exc)})
+
+    for driver_name in driver_names:
+        if not driver_name:
+            continue
+        try:
+            from ml_engine import train_driver_model
+            meta = train_driver_model(driver_name, str(_ML_DATA_DIR))
+            results["driver_models_trained"] += 1
+            logger.info("Trained driver model for %s", driver_name)
+        except Exception as exc:
+            err_str = str(exc)
+            if "Insufficient" in err_str or "No data" in err_str:
+                results["driver_models_skipped"] += 1
+                logger.info("Skipped driver model for %s: %s", driver_name, err_str)
+            else:
+                results["errors"].append(
+                    {"model": f"driver:{driver_name}", "error": err_str}
+                )
+                logger.warning(
+                    "Driver model training failed for %s: %s",
+                    driver_name, exc, exc_info=True,
+                )
+
+    # -- Anomaly detection model --
+    try:
+        import pandas as pd
+        from anomaly_detection import train_anomaly_model
+
+        try:
+            import pyarrow.parquet as pq
+            feature_df = pq.read_table(
+                _ML_DATA_DIR / "processed" / "features.parquet"
+            ).to_pandas()
+        except (ImportError, FileNotFoundError):
+            feature_df = pd.read_csv(
+                _ML_DATA_DIR / "processed" / "features.csv"
+            )
+
+        model = train_anomaly_model(feature_df)
+        results["anomaly_model"] = {
+            "status": "ok",
+            "condition_keys": list(model.condition_models.keys()),
+            "total_samples": model.total_samples,
+        }
+        logger.info(
+            "Trained anomaly model: %d conditions, %d samples",
+            len(model.condition_models),
+            model.total_samples,
+        )
+    except Exception as exc:
+        results["errors"].append({"model": "anomaly", "error": str(exc)})
+        logger.warning("Anomaly model training failed: %s", exc, exc_info=True)
+
+    return results
+
+
 def _reprocess_sessions(
     sessions: list[dict],
     data_dir: str = "/data/uploads",
@@ -268,12 +388,30 @@ def _reprocess_sessions(
     queue="pipeline",
 )
 def weekly_retrain_and_reprocess() -> dict:
-    """Weekly training: envelopes, global model, reprocess all sessions.
+    """Bi-weekly training: envelopes, ML models, reprocess all sessions.
 
     Scheduled via Celery Beat every Sunday at 00:00 UTC.
+    Skips execution on odd ISO-weeks when schedule_interval_weeks == 2
+    (bi-weekly gate).
     """
     start = time.time()
     config = _load_training_config()
+
+    # -- Bi-weekly gate: skip odd ISO-week numbers ----------------
+    interval = config.get("schedule_interval_weeks", _SCHEDULE_INTERVAL_WEEKS)
+    if interval > 1:
+        iso_week = datetime.now(timezone.utc).isocalendar()[1]
+        if iso_week % interval != 0:
+            logger.info(
+                "Bi-weekly gate: ISO week %d is not divisible by %d — skipping.",
+                iso_week, interval,
+            )
+            return {
+                "skipped": True,
+                "reason": f"ISO week {iso_week} not divisible by {interval}",
+                "iso_week": iso_week,
+            }
+
     audit: dict[str, Any] = {
         "started_at": datetime.now(timezone.utc).isoformat(),
         "config": config,
@@ -290,23 +428,28 @@ def weekly_retrain_and_reprocess() -> dict:
     )
     audit["tiers"]["envelopes"] = tier1
 
-    # Tier 2: Global model bundle
-    logger.info("=== Tier 2: Training global model bundle ===")
+    # Tier 2: Global kart_envelope model bundle
+    logger.info("=== Tier 2: Training global kart_envelope model bundle ===")
     tier2 = _train_global_model()
     audit["tiers"]["global_model"] = tier2
 
-    # Tier 3: Reprocess all sessions
-    logger.info("=== Tier 3: Reprocessing all sessions ===")
+    # Tier 3: ML engine models (global, per-driver, anomaly)
+    logger.info("=== Tier 3: Training ML engine models ===")
+    tier3 = _train_ml_models(conn)
+    audit["tiers"]["ml_models"] = tier3
+
+    # Tier 4: Reprocess all sessions with improved models
+    logger.info("=== Tier 4: Reprocessing all sessions ===")
     all_sessions = []
     for group in groups:
         all_sessions.extend(group["sessions"])
-    tier3 = _reprocess_sessions(
+    tier4 = _reprocess_sessions(
         all_sessions,
         data_dir=str(_DATA_RAW_DIR),
         batch_size=config["reprocess_batch_size"],
         pause_s=config["reprocess_pause_s"],
     )
-    audit["tiers"]["reprocess"] = tier3
+    audit["tiers"]["reprocess"] = tier4
 
     elapsed = round(time.time() - start, 1)
     audit["elapsed_s"] = elapsed
@@ -326,10 +469,12 @@ def weekly_retrain_and_reprocess() -> dict:
         logger.warning("Failed to write audit manifest", exc_info=True)
 
     logger.info(
-        "Weekly retrain complete in %.1fs: envelopes=%d, reprocessed=%d/%d",
+        "Bi-weekly retrain complete in %.1fs: envelopes=%d, "
+        "ml_drivers=%d, reprocessed=%d/%d",
         elapsed,
         tier1["trained"],
-        tier3["succeeded"],
-        tier3["succeeded"] + tier3["failed"],
+        tier3["driver_models_trained"],
+        tier4["succeeded"],
+        tier4["succeeded"] + tier4["failed"],
     )
     return audit

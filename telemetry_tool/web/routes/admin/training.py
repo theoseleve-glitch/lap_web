@@ -28,6 +28,7 @@ _DEFAULT_CONFIG = {
     "schedule_day_of_week": 0,
     "schedule_hour": 0,
     "schedule_minute": 0,
+    "schedule_interval_weeks": 2,
     "min_sessions_per_group": 3,
     "reprocess_batch_size": 10,
     "reprocess_pause_s": 5,

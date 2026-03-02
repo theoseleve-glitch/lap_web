@@ -121,9 +121,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 60,  # Every minute
                 "options": {"queue": "default"},
             },
-            "weekly-retrain-and-reprocess": {
+            "biweekly-retrain-and-reprocess": {
                 "task": "tasks.training_tasks.weekly_retrain_and_reprocess",
-                "schedule": crontab(hour=0, minute=0, day_of_week=0),  # Sunday midnight UTC
+                # Fires every Sunday midnight UTC; the task itself gates on
+                # even ISO-week numbers for bi-weekly execution.
+                "schedule": crontab(hour=0, minute=0, day_of_week=0),
                 "options": {"queue": "pipeline"},
             },
             "enforce-tiered-retention": {

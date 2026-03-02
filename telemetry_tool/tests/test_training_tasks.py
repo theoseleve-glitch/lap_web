@@ -24,9 +24,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from tasks.training_tasks import (
     _MIN_SESSIONS_PER_GROUP,
+    _SCHEDULE_INTERVAL_WEEKS,
     _gather_training_groups,
     _load_training_config,
     _reprocess_sessions,
+    _train_ml_models,
     _train_track_envelopes,
 )
 
@@ -286,14 +288,16 @@ class TestReprocessSessions:
 
 class TestWeeklyRetrainAndReprocess:
     @patch("tasks.training_tasks._reprocess_sessions")
+    @patch("tasks.training_tasks._train_ml_models")
     @patch("tasks.training_tasks._train_global_model")
     @patch("tasks.training_tasks._train_track_envelopes")
     @patch("tasks.training_tasks._gather_training_groups")
     @patch("tasks.training_tasks._get_pg_connection")
-    def test_runs_all_three_tiers(
-        self, mock_conn, mock_gather, mock_tier1, mock_tier2, mock_tier3
+    def test_runs_all_four_tiers(
+        self, mock_conn, mock_gather, mock_tier1, mock_tier2,
+        mock_tier3, mock_tier4
     ):
-        """The main task calls all three tiers in order."""
+        """The main task calls all four tiers in order."""
         mock_conn.return_value = MagicMock()
         mock_gather.return_value = [
             {
@@ -306,11 +310,23 @@ class TestWeeklyRetrainAndReprocess:
         ]
         mock_tier1.return_value = {"trained": 0, "skipped": 1, "errors": []}
         mock_tier2.return_value = {"status": "ok"}
-        mock_tier3.return_value = {"succeeded": 2, "failed": 0, "errors": []}
+        mock_tier3.return_value = {
+            "global_model": None, "driver_models_trained": 0,
+            "driver_models_skipped": 0, "anomaly_model": None, "errors": [],
+        }
+        mock_tier4.return_value = {"succeeded": 2, "failed": 0, "errors": []}
 
         # Patch the _MODELS_DIR to a temp dir for the audit manifest
+        # Force even ISO week so the bi-weekly gate passes
+        from datetime import datetime as dt_cls
+        even_week_dt = MagicMock()
+        even_week_dt.isocalendar.return_value = (2026, 2, 7)
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch("tasks.training_tasks._MODELS_DIR", Path(tmpdir)):
+            with patch("tasks.training_tasks._MODELS_DIR", Path(tmpdir)), \
+                 patch("tasks.training_tasks.datetime") as mock_dt:
+                mock_dt.now.return_value = even_week_dt
+                mock_dt.side_effect = lambda *a, **kw: dt_cls(*a, **kw)
                 from tasks.training_tasks import weekly_retrain_and_reprocess
 
                 audit = weekly_retrain_and_reprocess()
@@ -319,33 +335,50 @@ class TestWeeklyRetrainAndReprocess:
         mock_tier1.assert_called_once()
         mock_tier2.assert_called_once()
         mock_tier3.assert_called_once()
+        mock_tier4.assert_called_once()
 
         assert "tiers" in audit
         assert "envelopes" in audit["tiers"]
         assert "global_model" in audit["tiers"]
+        assert "ml_models" in audit["tiers"]
         assert "reprocess" in audit["tiers"]
         assert "elapsed_s" in audit
         assert "started_at" in audit
         assert "completed_at" in audit
 
     @patch("tasks.training_tasks._reprocess_sessions")
+    @patch("tasks.training_tasks._train_ml_models")
     @patch("tasks.training_tasks._train_global_model")
     @patch("tasks.training_tasks._train_track_envelopes")
     @patch("tasks.training_tasks._gather_training_groups")
     @patch("tasks.training_tasks._get_pg_connection")
     def test_audit_manifest_saved(
-        self, mock_conn, mock_gather, mock_tier1, mock_tier2, mock_tier3
+        self, mock_conn, mock_gather, mock_tier1, mock_tier2,
+        mock_tier3, mock_tier4
     ):
         """Audit manifest JSON file is written to disk."""
         mock_conn.return_value = MagicMock()
         mock_gather.return_value = []
         mock_tier1.return_value = {"trained": 0, "skipped": 0, "errors": []}
         mock_tier2.return_value = {"status": "ok"}
-        mock_tier3.return_value = {"succeeded": 0, "failed": 0, "errors": []}
+        mock_tier3.return_value = {
+            "global_model": None, "driver_models_trained": 0,
+            "driver_models_skipped": 0, "anomaly_model": None, "errors": [],
+        }
+        mock_tier4.return_value = {"succeeded": 0, "failed": 0, "errors": []}
+
+        from datetime import datetime as dt_cls
+        even_week_dt = MagicMock()
+        even_week_dt.isocalendar.return_value = (2026, 4, 7)
+        even_week_dt.isoformat.return_value = "2026-01-25T00:00:00+00:00"
+        even_week_dt.strftime.return_value = "20260125"
 
         with tempfile.TemporaryDirectory() as tmpdir:
             models_dir = Path(tmpdir)
-            with patch("tasks.training_tasks._MODELS_DIR", models_dir):
+            with patch("tasks.training_tasks._MODELS_DIR", models_dir), \
+                 patch("tasks.training_tasks.datetime") as mock_dt:
+                mock_dt.now.return_value = even_week_dt
+                mock_dt.side_effect = lambda *a, **kw: dt_cls(*a, **kw)
                 from tasks.training_tasks import weekly_retrain_and_reprocess
 
                 audit = weekly_retrain_and_reprocess()
@@ -358,6 +391,61 @@ class TestWeeklyRetrainAndReprocess:
             with open(manifests[0]) as fh:
                 saved = json.load(fh)
             assert saved["started_at"] == audit["started_at"]
+
+    def test_biweekly_gate_skips_odd_weeks(self):
+        """Task returns early on odd ISO weeks when interval=2."""
+        from datetime import datetime as dt_cls
+        odd_week_dt = MagicMock()
+        odd_week_dt.isocalendar.return_value = (2026, 3, 7)  # week 3 = odd
+
+        with patch("tasks.training_tasks._load_training_config") as mock_cfg, \
+             patch("tasks.training_tasks.datetime") as mock_dt:
+            mock_cfg.return_value = {
+                "min_sessions_per_group": 3,
+                "reprocess_batch_size": 10,
+                "reprocess_pause_s": 5,
+                "schedule_interval_weeks": 2,
+            }
+            mock_dt.now.return_value = odd_week_dt
+            mock_dt.side_effect = lambda *a, **kw: dt_cls(*a, **kw)
+
+            from tasks.training_tasks import weekly_retrain_and_reprocess
+            result = weekly_retrain_and_reprocess()
+
+        assert result.get("skipped") is True
+        assert "ISO week 3" in result.get("reason", "")
+
+    def test_biweekly_gate_allows_even_weeks(self):
+        """Task proceeds on even ISO weeks when interval=2."""
+        from datetime import datetime as dt_cls
+        even_week_dt = MagicMock()
+        even_week_dt.isocalendar.return_value = (2026, 4, 7)  # week 4 = even
+
+        with patch("tasks.training_tasks._load_training_config") as mock_cfg, \
+             patch("tasks.training_tasks.datetime") as mock_dt, \
+             patch("tasks.training_tasks._get_pg_connection") as mock_conn, \
+             patch("tasks.training_tasks._gather_training_groups", return_value=[]), \
+             patch("tasks.training_tasks._train_track_envelopes", return_value={"trained": 0, "skipped": 0, "errors": []}), \
+             patch("tasks.training_tasks._train_global_model", return_value={"status": "ok"}), \
+             patch("tasks.training_tasks._train_ml_models", return_value={"global_model": None, "driver_models_trained": 0, "driver_models_skipped": 0, "anomaly_model": None, "errors": []}), \
+             patch("tasks.training_tasks._reprocess_sessions", return_value={"succeeded": 0, "failed": 0, "errors": []}), \
+             tempfile.TemporaryDirectory() as tmpdir:
+            mock_cfg.return_value = {
+                "min_sessions_per_group": 3,
+                "reprocess_batch_size": 10,
+                "reprocess_pause_s": 5,
+                "schedule_interval_weeks": 2,
+            }
+            mock_dt.now.return_value = even_week_dt
+            mock_dt.side_effect = lambda *a, **kw: dt_cls(*a, **kw)
+            mock_conn.return_value = MagicMock()
+
+            with patch("tasks.training_tasks._MODELS_DIR", Path(tmpdir)):
+                from tasks.training_tasks import weekly_retrain_and_reprocess
+                result = weekly_retrain_and_reprocess()
+
+        assert result.get("skipped") is not True
+        assert "tiers" in result
 
 
 # ---------------------------------------------------------------------------
@@ -410,3 +498,85 @@ class TestTrainingConfigRead:
             config = _load_training_config()
             assert config["min_sessions_per_group"] == 7
             assert "unknown_key" not in config
+
+    def test_schedule_interval_weeks_default(self):
+        """Config includes schedule_interval_weeks with default 2."""
+        with patch("tasks.training_tasks._get_redis_config", return_value=None):
+            config = _load_training_config()
+            assert config["schedule_interval_weeks"] == 2
+
+
+# ---------------------------------------------------------------------------
+# _train_ml_models
+# ---------------------------------------------------------------------------
+
+
+class TestTrainMlModels:
+    def test_skips_when_no_feature_dataset(self):
+        """Returns error when features.parquet doesn't exist."""
+        conn = FakeConn([])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch("tasks.training_tasks._ML_DATA_DIR", Path(tmpdir)):
+                result = _train_ml_models(conn)
+
+        assert len(result["errors"]) >= 1
+        assert "not found" in result["errors"][0].lower()
+        assert result["global_model"] is None
+
+    def test_trains_global_model_when_dataset_exists(self):
+        """Calls train_global_model when feature dataset exists."""
+        conn = FakeConn([])
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            (tmp / "processed").mkdir()
+            (tmp / "processed" / "features.parquet").write_text("fake")
+
+            mock_meta = {"training_samples": 100, "mae": 0.5}
+            with patch("tasks.training_tasks._ML_DATA_DIR", tmp), \
+                 patch("ml_engine.train_global_model", return_value=mock_meta):
+                result = _train_ml_models(conn)
+
+        assert result["global_model"]["status"] == "ok"
+        assert result["global_model"]["training_samples"] == 100
+
+    def test_trains_per_driver_models(self):
+        """Trains models for each distinct driver from PG."""
+        rows = [
+            {"driver_name": "Max"},
+            {"driver_name": "Lewis"},
+        ]
+        conn = FakeConn(rows)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            (tmp / "processed").mkdir()
+            (tmp / "processed" / "features.parquet").write_text("fake")
+
+            mock_meta = {"training_samples": 50, "mae": 0.3}
+            with patch("tasks.training_tasks._ML_DATA_DIR", tmp), \
+                 patch("ml_engine.train_global_model", return_value=mock_meta), \
+                 patch("ml_engine.train_driver_model", return_value=mock_meta) as mock_driver, \
+                 patch("anomaly_detection.train_anomaly_model", side_effect=Exception("skip")):
+                result = _train_ml_models(conn)
+
+        assert result["driver_models_trained"] == 2
+        assert mock_driver.call_count == 2
+
+    def test_skips_drivers_with_insufficient_data(self):
+        """Drivers with insufficient data are skipped, not errored."""
+        rows = [{"driver_name": "Newbie"}]
+        conn = FakeConn(rows)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            (tmp / "processed").mkdir()
+            (tmp / "processed" / "features.parquet").write_text("fake")
+
+            with patch("tasks.training_tasks._ML_DATA_DIR", tmp), \
+                 patch("ml_engine.train_global_model", return_value={"training_samples": 10, "mae": 0.5}), \
+                 patch("ml_engine.train_driver_model", side_effect=Exception("Insufficient data")) as mock_driver, \
+                 patch("anomaly_detection.train_anomaly_model", side_effect=Exception("skip")):
+                result = _train_ml_models(conn)
+
+        assert result["driver_models_skipped"] == 1
+        assert result["driver_models_trained"] == 0
