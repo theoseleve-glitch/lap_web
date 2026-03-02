@@ -707,6 +707,13 @@ def delete_session(session_id: str):
 
     conn.commit()
 
+    try:
+        from flask import g
+        from telemetry_tool.web.rollups import refresh_rollups
+        refresh_rollups(conn, int(g.workspace_id))
+    except Exception:
+        logger.warning("Rollup refresh failed after delete", exc_info=True)
+
     logger.info("Deleted session %s and related data", session_id)
     return api_response({"deleted": session_id})
 

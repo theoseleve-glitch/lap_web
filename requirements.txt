@@ -42,3 +42,6 @@ stripe>=8.0
 # PDF generation (optional — install if you want PDF reports)
 # pdfkit>=1.0
 # weasyprint>=60.0
+
+# Error tracking (optional — app works without it)
+sentry-sdk[flask,celery]>=2.0,<3.0

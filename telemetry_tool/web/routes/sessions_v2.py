@@ -1,26 +1,27 @@
 """
 routes/sessions_v2.py
 ---------------------
-Synchronous session upload endpoint.
+Async session upload endpoint.
 
 POST /api/v1/sessions/upload
-    Accepts a CSV file upload, runs the full analysis pipeline synchronously,
-    persists results to the database, and returns a summary.
+    Accepts a CSV file upload, inserts an ingestion_jobs record, seeds a
+    PipelineContext in Redis, dispatches a Celery chain, and immediately
+    returns a job_id with HTTP 202.  The caller polls
+    GET /api/v1/jobs/<job_id> for progress.
 
-This is the Phase 1 re-port endpoint -- no Celery, no async.  The pipeline
-runs in the request thread and blocks until complete.
+Tier limits enforce per-plan file-size and session-count caps before
+the file is accepted.
 """
 from __future__ import annotations
 
 import logging
 import math
-import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
-from pipeline import run_full_analysis
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
 from web.models import (
@@ -46,6 +47,48 @@ bp = Blueprint("sessions_v2", __name__, url_prefix="/api/v1")
 
 # File extensions accepted for upload.
 _ALLOWED_EXTENSIONS = {".csv", ".txt"}
+
+# ── Tier limits ────────────────────────────────────────────────────────────
+
+_TIER_LIMITS = {
+    "free":        {"max_bytes": 50 * 1024 * 1024,   "max_sessions": 10},
+    "performance": {"max_bytes": 500 * 1024 * 1024,  "max_sessions": None},
+    "pro_racer":   {"max_bytes": 2 * 1024**3,        "max_sessions": None},
+    "b2b":         {"max_bytes": 12 * 1024**3,        "max_sessions": None},
+}
+_TIER_TIMEOUTS = {"free": 120, "performance": 600, "pro_racer": 1800, "b2b": 3600}
+
+
+def _get_conn():
+    """Return a DB connection (alias for get_db_connection)."""
+    return get_db_connection()
+
+
+def _check_tier_limits(f, conn, workspace_id, plan_tier: str):
+    """Return error message if a tier limit is exceeded, else None."""
+    limits = _TIER_LIMITS.get(plan_tier, _TIER_LIMITS["free"])
+    # File size check
+    f.seek(0, 2)
+    file_size = f.tell()
+    f.seek(0)
+    max_bytes = limits["max_bytes"]
+    if file_size > max_bytes:
+        max_mb = max_bytes // (1024 * 1024)
+        return (
+            f"File size ({file_size // (1024 * 1024)} MB) exceeds your plan limit "
+            f"({max_mb} MB)."
+        )
+    # Session count check
+    max_sessions = limits.get("max_sessions")
+    if max_sessions is not None:
+        row = conn.execute(
+            "SELECT COUNT(*) AS cnt FROM sessions WHERE workspace_id = %(ws)s",
+            {"ws": workspace_id},
+        ).fetchone()
+        count = row["cnt"] if isinstance(row, dict) else row[0] if row else 0
+        if count >= max_sessions:
+            return f"Session limit reached ({max_sessions}). Upgrade your plan."
+    return None
 
 
 def _parse_lap_range(raw: str | None) -> tuple[int, int] | None:
@@ -198,7 +241,7 @@ def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
 
 @bp.route("/sessions/upload", methods=["POST"])
 def upload_session():
-    """Upload a CSV telemetry file and run synchronous analysis.
+    """Upload a CSV telemetry file and dispatch async analysis.
 
     Form fields
     -----------
@@ -217,8 +260,8 @@ def upload_session():
 
     Returns
     -------
-    JSON envelope ``{ok, data, meta}`` where ``data`` contains:
-        session_id, grade, total_score, steps_ok, steps_failed
+    HTTP 202 with JSON envelope ``{ok, data}`` where ``data`` contains:
+        job_id, status
     """
     # ── 1. Validate file ──────────────────────────────────────────
     if "file" not in request.files:
@@ -244,7 +287,14 @@ def upload_session():
             status=400,
         )
 
-    # ── 2. Save to temp directory ─────────────────────────────────
+    # ── 2. Tier limit check ───────────────────────────────────────
+    plan_tier = getattr(g, "plan_tier", "free")
+    conn = _get_conn()
+    limit_err = _check_tier_limits(f, conn, str(g.workspace_id), plan_tier)
+    if limit_err:
+        return api_error(ErrorCode.QUOTA_EXCEEDED, limit_err, status=402)
+
+    # ── 3. Save to temp directory ─────────────────────────────────
     tmp_dir = tempfile.mkdtemp(prefix="telemetry_upload_")
     # Use the original filename (sanitised) to help pipeline logging.
     safe_name = Path(f.filename).name
@@ -255,7 +305,7 @@ def upload_session():
         logger.info("Saved upload to temp path: %s (%d bytes)",
                      tmp_path, tmp_path.stat().st_size)
 
-        # ── 3. Build session metadata ─────────────────────────────
+        # ── 4. Build session metadata ─────────────────────────────
         session_meta: dict = {
             "session_type": request.form.get("session_type", "practice"),
             "track_state": request.form.get("track_state", "dry"),
@@ -273,156 +323,72 @@ def upload_session():
             session_meta["exclude_laps"] = exclude_laps
 
         lap_range = _parse_lap_range(request.form.get("lap_range"))
+        if lap_range:
+            session_meta["lap_range"] = list(lap_range)
 
-        # ── 4. Run pipeline synchronously ─────────────────────────
-        summary = run_full_analysis(
-            csv_path=str(tmp_path),
-            session_meta=session_meta,
-            enable_ml=True,
-            enable_report=False,  # No HTML/PDF in API mode
-            lap_range=lap_range,
+        # ── 5. Create job record ──────────────────────────────────
+        job_id = uuid.uuid4().hex
+        conn = _get_conn()
+        conn.execute(
+            """INSERT INTO ingestion_jobs
+               (job_id, workspace_id, file_path, file_size, sha256_partial,
+                status, stage_name, stage_index, stage_total, updated_at)
+               VALUES (%(job_id)s, %(ws)s, %(fpath)s, %(fsize)s, %(sha)s,
+                       'pending', 'Queued', 0, 14, NOW())""",
+            {
+                "job_id": job_id,
+                "ws": str(g.workspace_id),
+                "fpath": str(tmp_path),
+                "fsize": tmp_path.stat().st_size,
+                "sha": "",
+            },
         )
-
-        # Extract telemetry start time for session_date derivation
-        _ctx = summary.get("session_context")
-        if _ctx and hasattr(_ctx, "start_time") and _ctx.start_time:
-            summary["telemetry_start_time"] = str(_ctx.start_time)
-        elif summary.get("session_meta", {}).get("start_time"):
-            summary["telemetry_start_time"] = str(summary["session_meta"]["start_time"])
-
-        # ── 5. Persist to database ────────────────────────────────
-        conn = get_db_connection()
-        driver_name = (summary.get("session_meta") or session_meta).get(
-            "driver_name", "Unknown"
-        )
-        driver_id = upsert_driver(conn, driver_name)
-
-        # Ensure track exists before inserting session (FK constraint).
-        track_id = summary.get("track_id")
-        if track_id:
-            track_entry = None
-            # Try to get full fingerprint from tracks.json.
-            try:
-                from track_detection import load_track_database
-                for te in load_track_database():
-                    if te.get("track_id") == track_id:
-                        track_entry = te
-                        break
-            except Exception:
-                pass
-
-            if track_entry is None:
-                # Fall back to whatever the pipeline match result provides.
-                tm = summary.get("track_match")
-                track_entry = {
-                    "track_id": track_id,
-                    "track_name": (tm or {}).get("track_name", track_id),
-                    "fingerprint": {
-                        "lap_length_m": (tm or {}).get("lap_length_m", 0.0),
-                        "bbox": {},
-                        "start_lat": None,
-                        "start_lon": None,
-                        "sample_count": None,
-                        "lap_count": None,
-                    },
-                }
-            upsert_track(conn, track_entry)
-
-        session_id = upsert_session(conn, summary, driver_id)
-        insert_laps(conn, session_id, summary)
-        insert_score_details(conn, session_id, summary)
-        insert_gps_traces(conn, session_id, summary)
-
-        # ── Persist analysis outputs (defensive — each independent) ──
-        try:
-            insert_condition_phases(conn, session_id, summary)
-        except Exception as e:
-            logger.warning("Condition phases persist skipped: %s", e)
-
-        try:
-            insert_theoretical_data(conn, session_id, summary)
-            logger.info("Persisted theoretical data for session %s", session_id)
-        except Exception as e:
-            logger.warning("Theoretical data persist failed: %s", e,
-                           exc_info=True)
-
-        try:
-            insert_reference_line(conn, session_id, summary)
-            logger.info("Persisted reference line for session %s", session_id)
-        except Exception as e:
-            logger.warning("Reference line persist failed: %s", e,
-                           exc_info=True)
-
-        try:
-            cm_count = insert_corner_metrics(conn, session_id, summary)
-            if cm_count > 0:
-                logger.info("Persisted %d corner metrics for session %s",
-                            cm_count, session_id)
-        except Exception as e:
-            logger.warning("Corner metrics persist skipped: %s", e)
-
-        # Driving style features
-        driving_style = summary.get("driving_style")
-        if driving_style:
-            try:
-                insert_driving_style_features(
-                    conn, driver_id, session_id, driving_style,
-                )
-                logger.info("Persisted driving style: %s",
-                            driving_style.get("style_label"))
-            except Exception as e:
-                logger.warning("Driving style persist skipped: %s", e)
-
-        # Driver progression snapshot
-        try:
-            _persist_driver_progression(
-                conn, driver_id, session_id, summary, driving_style,
-            )
-        except Exception as e:
-            logger.warning("Driver progression persist skipped: %s", e)
-
-        # Stint analysis (from pipeline summary)
-        try:
-            insert_stint_analysis(conn, session_id, summary)
-        except Exception as e:
-            logger.warning("Stint analysis persist skipped: %s", e)
-
-        # ── Supplementary analysis blob (analysis_json) ──
-        try:
-            _persist_analysis_json(conn, session_id, summary)
-        except Exception as e:
-            logger.warning("analysis_json persist skipped: %s", e)
-
         conn.commit()
 
-        logger.info(
-            "Upload complete: session_id=%s, steps_ok=%d, steps_failed=%d",
-            session_id,
-            len(summary.get("steps_ok", [])),
-            len(summary.get("steps_failed", [])),
+        # ── 6. Seed pipeline context in Redis ─────────────────────
+        from tasks.pipeline_tasks import build_pipeline_chain
+        from pipeline_context import PipelineContext
+        from web.config import Config
+        import redis as _redis
+        import json as _json
+
+        _r = _redis.Redis.from_url(Config.REDIS_URL)
+        ctx = PipelineContext.create(
+            redis_client=_r,
+            job_id=job_id,
+            workspace_id=str(g.workspace_id),
+            session_id=job_id,  # placeholder — worker will create real session_id
+            file_path=str(tmp_path),
+        )
+        # Store session_meta alongside context so the worker can retrieve it.
+        _r.set(
+            f"pipeline:meta:{job_id}",
+            _json.dumps(session_meta),
+            ex=7200,
         )
 
-        # ── 6. Build response ─────────────────────────────────────
-        score = summary.get("score_result") or {}
-        return api_response({
-            "session_id": session_id,
-            "grade": score.get("grade"),
-            "total_score": score.get("total_score"),
-            "steps_ok": summary.get("steps_ok", []),
-            "steps_failed": summary.get("steps_failed", []),
-        })
+        # ── 7. Dispatch Celery chain ──────────────────────────────
+        timeout = _TIER_TIMEOUTS.get(plan_tier, 120)
+        build_pipeline_chain(job_id).apply_async(soft_time_limit=timeout)
+
+        logger.info(
+            "Upload accepted: job_id=%s workspace=%s file=%s tier=%s timeout=%ds",
+            job_id, g.workspace_id, safe_name, plan_tier, timeout,
+        )
+
+        return api_response(
+            {"job_id": job_id, "status": "pending"},
+            status=202,
+            message="Upload accepted. Processing started.",
+        )
 
     except Exception as exc:
-        logger.exception("Upload pipeline failed: %s", exc)
+        logger.exception("Upload dispatch failed: %s", exc)
         return api_error(
             ErrorCode.ANALYSIS_FAILED,
-            "Analysis pipeline failed. Please try again or contact support.",
+            "Failed to accept upload. Please try again or contact support.",
             status=500,
         )
 
     finally:
-        # ── 7. Cleanup temp files ─────────────────────────────────
-        try:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
-        except Exception:
-            pass
+        pass  # Cleanup handled by Celery finalize task

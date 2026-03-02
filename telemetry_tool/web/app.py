@@ -11,6 +11,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -134,6 +135,22 @@ def create_app(config: Config | None = None) -> Flask:
         from .logging_setup import setup_logging
 
         init_request_id(app)
+
+        # ── Sentry error tracking ──────────────────────────
+        _sentry_dsn = os.environ.get("SENTRY_DSN_API")
+        if _sentry_dsn:
+            try:
+                import sentry_sdk
+                sentry_sdk.init(
+                    dsn=_sentry_dsn,
+                    traces_sample_rate=float(os.environ.get("SENTRY_TRACES_RATE", "0.1")),
+                    environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+                    release=os.environ.get("SENTRY_RELEASE"),
+                )
+                logger.info("Sentry initialized for Flask API")
+            except ImportError:
+                logger.warning("sentry-sdk not installed, skipping Sentry init")
+
         setup_logging(app)
         logger.debug("Initialized Phase 4 API infrastructure (request_id + logging)")
     except ImportError:

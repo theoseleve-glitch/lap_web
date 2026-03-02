@@ -1,6 +1,7 @@
 """Celery application factory."""
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -52,6 +53,7 @@ def make_celery(app=None) -> Celery:
             "tasks.usage_tasks",
             "tasks.retention_tasks",
             "tasks.training_tasks",
+            "tasks.rollup_tasks",
         ],
     )
     celery.conf.update(
@@ -129,6 +131,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=3, minute=0),  # Daily 03:00 UTC
                 "options": {"queue": "default"},
             },
+            "refresh-all-rollups": {
+                "task": "tasks.rollup_tasks.refresh_all_rollups",
+                "schedule": crontab(hour=4, minute=0),  # Daily 04:00 UTC
+                "options": {"queue": "default"},
+            },
         },
     )
 
@@ -146,3 +153,16 @@ def make_celery(app=None) -> Celery:
 
 # Standalone entry point: celery -A telemetry_tool.celery_app worker
 celery = make_celery()
+
+# ── Sentry for Celery workers ──────────────────────────
+_worker_dsn = os.environ.get("SENTRY_DSN_WORKER")
+if _worker_dsn:
+    try:
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=_worker_dsn,
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_RATE", "0.1")),
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+        )
+    except ImportError:
+        pass
