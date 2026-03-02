@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { PageHeader } from '@/components/app';
@@ -44,6 +44,8 @@ async function uploadSession(file: File, metadata: {
   track_state: string;
   lap_range?: string;
   exclude_laps?: string;
+  kart_id?: string;
+  session_date?: string;
 }): Promise<UploadResponse> {
   const formData = new FormData();
   formData.append('file', file);
@@ -52,6 +54,8 @@ async function uploadSession(file: File, metadata: {
   formData.append('track_state', metadata.track_state);
   if (metadata.lap_range) formData.append('lap_range', metadata.lap_range);
   if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
+  if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
+  if (metadata.session_date) formData.append('session_date', metadata.session_date);
 
   const headers: Record<string, string> = {};
   const token = getAccessToken();
@@ -99,6 +103,20 @@ export default function UploadPage() {
   const [trackState, setTrackState] = useState('dry');
   const [lapRange, setLapRange] = useState('');
   const [excludeLaps, setExcludeLaps] = useState('');
+  const [kartId, setKartId] = useState('');
+  const [sessionDate, setSessionDate] = useState('');
+  const [karts, setKarts] = useState<{ kart_id: number; kart_name: string }[]>([]);
+
+  // Fetch karts for dropdown
+  useEffect(() => {
+    const token = getAccessToken();
+    fetch(`${BACKEND_URL}/api/v1/karts`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.karts) setKarts(data.karts); })
+      .catch(() => {});
+  }, []);
 
   // UI state
   const [status, setStatus] = useState<UploadStatus>('idle');
@@ -174,6 +192,8 @@ export default function UploadPage() {
         track_state: trackState,
         lap_range: lapRange.trim() || undefined,
         exclude_laps: excludeLaps.trim() || undefined,
+        kart_id: kartId || undefined,
+        session_date: sessionDate || undefined,
       });
 
       setStatus('success');
@@ -352,6 +372,46 @@ export default function UploadPage() {
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
+          </div>
+
+          {/* Kart (optional) */}
+          {karts.length > 0 && (
+            <div>
+              <label htmlFor="kart-id" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+                Kart <span className="text-steel/40 text-xs normal-case">(optional)</span>
+              </label>
+              <select
+                id="kart-id"
+                value={kartId}
+                onChange={(e) => setKartId(e.target.value)}
+                disabled={isDisabled}
+                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
+                  focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <option value="">None</option>
+                {karts.map((k) => (
+                  <option key={k.kart_id} value={String(k.kart_id)}>{k.kart_name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Session Date (optional) */}
+          <div>
+            <label htmlFor="session-date" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              Session Date <span className="text-steel/40 text-xs normal-case">(optional — auto-detected from CSV)</span>
+            </label>
+            <input
+              id="session-date"
+              type="date"
+              value={sessionDate}
+              onChange={(e) => setSessionDate(e.target.value)}
+              disabled={isDisabled}
+              className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
+                focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                disabled:opacity-50 disabled:cursor-not-allowed"
+            />
           </div>
 
           {/* Lap Range */}
