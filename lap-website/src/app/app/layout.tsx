@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@/providers/query-provider';
 import { AuthGuard } from '@/components/auth/AuthGuard';
+import { DiagnosticsOverlay } from '@/components/dev/DiagnosticsOverlay';
 
 interface NavItem { href: string; label: string; icon: string; }
 interface NavGroup { label: string; items: NavItem[]; }
@@ -124,6 +125,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             </div>
           </main>
         </AuthGuard>
+        {process.env.NODE_ENV === 'development' && <DiagnosticsOverlay />}
       </QueryProvider>
     </div>
   );
