@@ -133,6 +133,20 @@ def _update_job_progress(
     conn.commit()
 
 
+def _make_progress_callback(job_id: str, conn=None):
+    """Return a callback compatible with pipeline.run_full_analysis(progress_callback=...)."""
+    def _cb(stage_index: int, stage_total: int, stage_name: str, status: str) -> None:
+        _update_job_progress(
+            job_id,
+            status="processing",
+            stage_name=stage_name,
+            stage_index=stage_index,
+            stage_total=stage_total,
+            conn=conn,
+        )
+    return _cb
+
+
 # ---------------------------------------------------------------------------
 # Batch counter helpers
 # ---------------------------------------------------------------------------
@@ -310,12 +324,16 @@ def _run_analyze_stages(ctx: PipelineContext) -> None:
         ctx.update_stage(stage, "completed")
 
 
-def _run_finalize_stages(ctx: PipelineContext) -> None:
+def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, conn=None) -> None:
     """Run the full analysis pipeline and persist results.
 
     Calls ``run_full_analysis()`` which orchestrates all 14 pipeline
     stages in a single pass, then persists theoretical data and scores
     to the database.
+
+    ``job_id`` and ``conn`` are forwarded to ``_make_progress_callback()``
+    so that live stage updates are written to the ``ingestion_jobs`` table
+    as the pipeline advances.
     """
     from pipeline import run_full_analysis
 
@@ -325,10 +343,12 @@ def _run_finalize_stages(ctx: PipelineContext) -> None:
     ctx.update_stage(_FINALIZE_STAGES[0], "running")
     logger.info("Job %s: running full analysis pipeline", ctx.job_id)
 
+    _job_id = job_id or ctx.job_id
     result = run_full_analysis(
         csv_path=ctx.file_path,
         session_meta=session_meta,
         enable_report=False,
+        progress_callback=_make_progress_callback(_job_id, conn),
     )
 
     # Persist theoretical data if available
@@ -556,7 +576,8 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
     _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=15)
 
     try:
-        _run_finalize_stages(ctx)
+        _finalize_conn = _get_pg_connection()
+        _run_finalize_stages(ctx, job_id=job_id, conn=_finalize_conn)
         ctx.save()
 
         # Update sessions.processing_version
