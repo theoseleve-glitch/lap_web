@@ -6,7 +6,7 @@ Create Date: 2026-03-02
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 
 revision = "026"
 down_revision = "025"
@@ -17,9 +17,9 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "exports",
-        sa.Column("id", UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("workspace_id", UUID(as_uuid=True), sa.ForeignKey("workspaces.id"), nullable=False),
-        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+        sa.Column("workspace_id", sa.Integer, sa.ForeignKey("workspaces.id"), nullable=False),
+        sa.Column("user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
         sa.Column("data_type", sa.String(50), nullable=False),
         sa.Column("format", sa.String(20), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
@@ -34,7 +34,7 @@ def upgrade() -> None:
     op.execute("""
         ALTER TABLE exports ENABLE ROW LEVEL SECURITY;
         CREATE POLICY exports_workspace_isolation ON exports
-            USING (workspace_id = current_setting('app.workspace_id')::uuid);
+            USING (workspace_id = current_setting('app.workspace_id')::integer);
     """)
     op.create_index("ix_exports_workspace_user", "exports", ["workspace_id", "user_id"])
 
