@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
+import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 import type { ContextAction } from '@/components/app/DataTable';
 
@@ -39,35 +40,6 @@ interface FilterOptions {
 }
 
 /* ── Helpers ────────────────────────────────────────────── */
-
-function formatLapTime(seconds: number | null): string {
-  if (seconds == null) return '—';
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toFixed(3).padStart(6, '0')}`;
-}
-
-function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '—';
-  try {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return dateStr;
-  }
-}
-
-function scoreColor(score: number | null): string {
-  if (score == null) return 'text-steel';
-  if (score >= 80) return 'text-acid-green';
-  if (score >= 60) return 'text-marshal-yellow';
-  if (score >= 40) return 'text-pit-orange';
-  return 'text-safety-red';
-}
 
 const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   practice:   { bg: 'bg-acid-green/10', text: 'text-acid-green', label: 'Practice' },

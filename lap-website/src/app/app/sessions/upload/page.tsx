@@ -10,11 +10,8 @@ import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
 /* ── Types ──────────────────────────────────────────── */
 
 interface UploadResponse {
-  session_id: string;
-  grade: string | null;
-  total_score: number | null;
-  steps_ok: string[];
-  steps_failed: string[];
+  job_id: string;
+  status: string;
 }
 
 type UploadStatus = 'idle' | 'uploading' | 'success' | 'error';
@@ -171,7 +168,7 @@ export default function UploadPage() {
     setErrorMessage('');
 
     try {
-      const result = await uploadSession(file, {
+      await uploadSession(file, {
         driver_name: driverName.trim(),
         session_type: sessionType,
         track_state: trackState,
@@ -181,10 +178,8 @@ export default function UploadPage() {
 
       setStatus('success');
 
-      // Redirect to the new session page after a brief delay
-      setTimeout(() => {
-        router.push(`/app/sessions/${result.session_id}`);
-      }, 800);
+      // Redirect to the job monitor immediately
+      router.push('/app/jobs');
     } catch (err) {
       setStatus('error');
       if (err instanceof ApiError) {
@@ -432,7 +427,7 @@ export default function UploadPage() {
                 <path d="M6 10l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
               <p className="text-acid-green font-body text-sm">
-                Analysis complete. Redirecting to session...
+                Upload accepted. Redirecting to job monitor...
               </p>
             </div>
           </div>

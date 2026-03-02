@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { Sentry } from '@/lib/sentry';
 
 export default function Error({
   error,
@@ -12,6 +13,7 @@ export default function Error({
   useEffect(() => {
     // Log to analytics/error tracking
     console.error('Unhandled error:', error);
+    Sentry?.captureException(error);
   }, [error]);
 
   return (

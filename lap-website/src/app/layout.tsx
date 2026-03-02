@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import Script from 'next/script';
 import { ChunkErrorRecovery } from '@/components/providers/ChunkErrorRecovery';
+import { SentryInit } from '@/components/providers/SentryInit';
 import { TranslationProvider } from '@/i18n/TranslationProvider';
 import { getSiteHostname, getSiteUrlAsUrl } from '@/lib/site-url';
 import './globals.css';
@@ -71,6 +72,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body className="relative bg-asphalt text-chalk texture-grain">
         <TranslationProvider>
+          <SentryInit />
           <ChunkErrorRecovery />
           {children}
         </TranslationProvider>

@@ -25,7 +25,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               "font-src 'self' https://fonts.gstatic.com",
               "img-src 'self' data: blob: https://*.tile.openstreetmap.org",
-              "connect-src 'self' https://api.lap-coach.racing https://plausible.io",
+              "connect-src 'self' https://api.lap-coach.racing https://plausible.io https://*.ingest.sentry.io",
               "worker-src 'self' blob:",
               "frame-ancestors 'none'",
               "base-uri 'self'",
