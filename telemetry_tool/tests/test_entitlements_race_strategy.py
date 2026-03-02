@@ -79,3 +79,54 @@ class TestRaceStrategyFeatureGate:
                 assert ctx["upgrade_tier"] == "racer"
                 assert ctx["upgrade_url"] == "/billing?plan=RACER"
                 assert ctx["current_tier"] == "demo"
+
+
+class TestDurationLimit:
+    """Test 3-hour duration enforcement in create/update."""
+
+    def test_create_race_rejects_over_limit(self):
+        """create_race should raise ValueError when duration exceeds max."""
+        from services.race_strategy import create_race
+        from unittest.mock import MagicMock
+
+        conn = MagicMock()
+        data = {
+            "race": {"race_name": "Test", "race_duration_s": 14400},  # 4h
+            "drivers": [],
+        }
+        with pytest.raises(ValueError, match="3-hour"):
+            create_race(conn, data, max_duration_s=10800)
+
+    def test_create_race_allows_within_limit(self):
+        """create_race should succeed when duration is within max."""
+        from services.race_strategy import create_race
+        from unittest.mock import MagicMock
+
+        conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.lastrowid = 42
+        conn.execute.return_value = mock_cursor
+
+        data = {
+            "race": {"race_name": "Test", "race_duration_s": 7200},  # 2h
+            "drivers": [],
+        }
+        result = create_race(conn, data, max_duration_s=10800)
+        assert result == 42
+
+    def test_create_race_no_limit(self):
+        """create_race without max_duration_s should not check duration."""
+        from services.race_strategy import create_race
+        from unittest.mock import MagicMock
+
+        conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_cursor.lastrowid = 99
+        conn.execute.return_value = mock_cursor
+
+        data = {
+            "race": {"race_name": "Test", "race_duration_s": 86400},  # 24h
+            "drivers": [],
+        }
+        result = create_race(conn, data)  # no max — should succeed
+        assert result == 99

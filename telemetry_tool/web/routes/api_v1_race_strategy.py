@@ -109,8 +109,25 @@ def create_race_endpoint():
 
     try:
         conn = get_pg_connection()
-        race_id = create_race(conn, data)
+
+        # Resolve duration limit from entitlements
+        max_dur = None
+        try:
+            from flask import g
+            from auth.entitlements import get_user_entitlements
+            user_id = getattr(g, "current_user_id", None)
+            ws_id = getattr(g, "workspace_id", None)
+            if user_id is not None:
+                ent = get_user_entitlements(conn, user_id, ws_id)
+                if ent.get("race_strategy_limit") == "limited_3h":
+                    max_dur = 10800
+        except Exception:
+            pass  # Fail open — don't block on entitlement resolution errors
+
+        race_id = create_race(conn, data, max_duration_s=max_dur)
         return api_response({"race_id": race_id}, status=201)
+    except ValueError as ve:
+        return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to create race")
         return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
@@ -166,7 +183,22 @@ def update_race_endpoint(race_id: int):
 
     try:
         conn = get_pg_connection()
-        success = update_race(conn, race_id, data)
+
+        # Resolve duration limit from entitlements
+        max_dur = None
+        try:
+            from flask import g
+            from auth.entitlements import get_user_entitlements
+            user_id = getattr(g, "current_user_id", None)
+            ws_id = getattr(g, "workspace_id", None)
+            if user_id is not None:
+                ent = get_user_entitlements(conn, user_id, ws_id)
+                if ent.get("race_strategy_limit") == "limited_3h":
+                    max_dur = 10800
+        except Exception:
+            pass  # Fail open — don't block on entitlement resolution errors
+
+        success = update_race(conn, race_id, data, max_duration_s=max_dur)
         if not success:
             # Could be not found or wrong status
             return api_error(
@@ -175,6 +207,8 @@ def update_race_endpoint(race_id: int):
                 status=400,
             )
         return api_response({"ok": True})
+    except ValueError as ve:
+        return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to update race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)

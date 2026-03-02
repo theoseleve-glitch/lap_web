@@ -217,7 +217,7 @@ def get_race_detail(conn, race_id: int) -> dict | None:
     }
 
 
-def create_race(conn, data: dict) -> int:
+def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
     """Create a new race configuration with drivers and windows.
 
     Parameters
@@ -226,6 +226,9 @@ def create_race(conn, data: dict) -> int:
     data : dict
         Must contain ``race`` (config fields), ``drivers`` (list[dict]),
         and optionally ``windows`` (list[dict]).
+    max_duration_s : int | None
+        Optional plan-based maximum race duration in seconds.
+        Raises ValueError if the race duration exceeds this limit.
 
     Returns
     -------
@@ -233,6 +236,16 @@ def create_race(conn, data: dict) -> int:
         The new race_id.
     """
     race = data.get("race", data)  # accept flat or nested
+
+    # Enforce plan-based duration limit
+    duration = race.get("race_duration_s", 10800)
+    if max_duration_s is not None and duration > max_duration_s:
+        limit_h = max_duration_s / 3600
+        raise ValueError(
+            f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
+            f"Upgrade to Racer for unlimited race duration."
+        )
+
     drivers = data.get("drivers", [])
     windows = data.get("windows", [])
 
@@ -279,7 +292,7 @@ def create_race(conn, data: dict) -> int:
     return race_id
 
 
-def update_race(conn, race_id: int, data: dict) -> bool:
+def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = None) -> bool:
     """Update an existing race configuration.
 
     Only allowed when status is ``'draft'`` or ``'ready'``.
@@ -292,6 +305,9 @@ def update_race(conn, race_id: int, data: dict) -> bool:
     data : dict
         ``race`` (config fields), ``drivers`` (list[dict]),
         optionally ``windows`` (list[dict]).
+    max_duration_s : int | None
+        Optional plan-based maximum race duration in seconds.
+        Raises ValueError if the race duration exceeds this limit.
 
     Returns
     -------
@@ -305,6 +321,16 @@ def update_race(conn, race_id: int, data: dict) -> bool:
         return False
 
     cfg = data.get("race", data)
+
+    # Enforce plan-based duration limit
+    duration = cfg.get("race_duration_s", race.get("race_duration_s"))
+    if max_duration_s is not None and duration and duration > max_duration_s:
+        limit_h = max_duration_s / 3600
+        raise ValueError(
+            f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
+            f"Upgrade to Racer for unlimited race duration."
+        )
+
     drivers = data.get("drivers", [])
     windows = data.get("windows", [])
 
