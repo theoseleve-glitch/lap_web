@@ -210,7 +210,7 @@ export default function UploadPage() {
         setErrorMessage('An unexpected error occurred. Please try again.');
       }
     }
-  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, router]);
+  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, router]);
 
   const isDisabled = status === 'uploading' || status === 'success';
 
