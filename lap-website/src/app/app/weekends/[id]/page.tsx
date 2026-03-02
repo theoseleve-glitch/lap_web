@@ -14,9 +14,9 @@ interface WeekendDetail {
   start_date: string;
   end_date: string | null;
   notes: string | null;
-  sessions_count: number;
-  best_time: number | null;
-  avg_score: number | null;
+  session_count: number;
+  sessions: SessionRow[];
+  created_at: string;
 }
 
 interface SessionRow {
@@ -53,19 +53,19 @@ export default function WeekendDetailPage() {
   const router = useRouter();
   const id = params.id as string;
 
-  const { data: weekend, isLoading: weekendLoading, error: weekendError, refetch } = useQuery({
+  const { data: weekend, isLoading, error: weekendError, refetch } = useQuery({
     queryKey: ['weekend', id],
     queryFn: () => api.get<WeekendDetail>(`/weekends/${id}`),
   });
 
-  const { data: sessionsData, isLoading: sessionsLoading } = useQuery({
-    queryKey: ['weekend-sessions', id],
-    queryFn: () => api.get<{ sessions: SessionRow[] }>(`/weekends/${id}/sessions`),
-    enabled: !!weekend,
-  });
+  const sessions: SessionRow[] = weekend?.sessions ?? [];
 
-  const sessions = sessionsData?.sessions ?? [];
-  const isLoading = weekendLoading || sessionsLoading;
+  const bestTime = sessions.length
+    ? Math.min(...sessions.filter(s => s.best_time != null).map(s => s.best_time as number))
+    : null;
+  const avgScore = sessions.length
+    ? Number((sessions.reduce((sum, s) => sum + (s.score ?? 0), 0) / sessions.length).toFixed(1))
+    : null;
 
   if (isLoading) {
     return (
@@ -112,15 +112,15 @@ export default function WeekendDetailPage() {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Sessions" value={weekend.sessions_count} />
-        <StatCard label="Best Time" value={formatTime(weekend.best_time)} />
+        <StatCard label="Sessions" value={weekend.session_count} />
+        <StatCard label="Best Time" value={formatTime(bestTime)} />
         <StatCard
           label="Avg Score"
-          value={weekend.avg_score != null ? weekend.avg_score.toFixed(1) : '—'}
+          value={avgScore != null ? avgScore.toFixed(1) : '—'}
           trend={
-            weekend.avg_score == null ? 'neutral' :
-            weekend.avg_score >= 80 ? 'up' :
-            weekend.avg_score >= 60 ? 'neutral' : 'down'
+            avgScore == null ? 'neutral' :
+            avgScore >= 80 ? 'up' :
+            avgScore >= 60 ? 'neutral' : 'down'
           }
         />
       </div>

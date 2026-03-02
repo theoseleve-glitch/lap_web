@@ -61,6 +61,9 @@ declare global {
     TrackMap?: Record<string, unknown>;
     SpeedTraceZoom?: Record<string, unknown>;
     GGExplorer?: Record<string, unknown>;
+    LapOverlay?: Record<string, unknown>;
+    LapDistribution?: Record<string, unknown>;
+    LapProgress?: Record<string, unknown>;
     Toast?: { error: (title: string, msg: string) => void };
     ModuleShim?: {
       reinit: (moduleName: string | string[]) => void;

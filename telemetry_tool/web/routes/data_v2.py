@@ -19,6 +19,8 @@ Endpoints:
     GET    /api/v1/sessions/<id>/corners            - Corner coaching
     DELETE /api/v1/sessions/<id>                    - Delete session
     GET    /api/v1/compare/sessions?a=X&b=Y         - Session comparison
+    GET    /api/v1/compare/drivers?a=X&b=Y          - Driver comparison
+    GET    /api/v1/sessions/<id>/compare/sectors     - Sector/corner compare
     GET    /api/v1/sessions/<id>/report?format=html  - Report download
     PATCH  /api/v1/sessions/<id>                    - Update session fields
 """
@@ -757,6 +759,163 @@ def compare_sessions():
             "laps": laps_b,
         },
     })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 10b. GET /api/v1/compare/drivers?a=X&b=Y — Driver comparison
+# ══════════════════════════════════════════════════════════════════
+
+
+def _driver_data(conn, driver_id: int) -> dict | None:
+    """Aggregate scores, trend, and stats for a single driver.
+
+    Returns None if the driver does not exist.
+    Returns zeroed/empty data if the driver exists but has no sessions.
+    """
+    # --- driver record ---
+    row = conn.execute(
+        "SELECT driver_id, driver_name, created_at, notes "
+        "FROM drivers WHERE driver_id = :driver_id",
+        {"driver_id": driver_id},
+    ).fetchone()
+    if row is None:
+        return None
+    driver = {"id": row["driver_id"], "name": row["driver_name"]}
+
+    # --- all sessions for this driver (with track name) ---
+    sessions = [
+        dict(r)
+        for r in conn.execute(
+            "SELECT s.session_id, s.session_date, s.total_score, s.track_id "
+            "FROM sessions s "
+            "WHERE s.driver_id = :driver_id "
+            "ORDER BY s.session_date ASC",
+            {"driver_id": driver_id},
+        ).fetchall()
+    ]
+
+    if not sessions:
+        return {
+            "driver": driver,
+            "avg_scores": {
+                "pace": 0, "consistency": 0,
+                "execution": 0, "robustness": 0,
+            },
+            "trend": [],
+            "stats": {
+                "sessions": 0, "avg_score": 0,
+                "best_score": 0, "tracks": 0,
+            },
+        }
+
+    # --- score aggregation ---
+    pace_vals: list[float] = []
+    consistency_vals: list[float] = []
+    execution_vals: list[float] = []
+    robustness_vals: list[float] = []
+
+    for sess in sessions:
+        scores = models.get_score_details(conn, sess["session_id"])
+        if scores is None:
+            continue
+        if scores.get("pace_score") is not None:
+            pace_vals.append(scores["pace_score"])
+        if scores.get("consistency_score") is not None:
+            consistency_vals.append(scores["consistency_score"])
+        if scores.get("execution_score") is not None:
+            execution_vals.append(scores["execution_score"])
+        if scores.get("robustness_score") is not None:
+            robustness_vals.append(scores["robustness_score"])
+
+    def _avg(vals: list[float]) -> float:
+        return round(sum(vals) / len(vals), 1) if vals else 0
+
+    avg_scores = {
+        "pace": _avg(pace_vals),
+        "consistency": _avg(consistency_vals),
+        "execution": _avg(execution_vals),
+        "robustness": _avg(robustness_vals),
+    }
+
+    # --- trend (session_date + total_score, chronological) ---
+    trend = [
+        {
+            "session_date": s["session_date"],
+            "total_score": s["total_score"],
+        }
+        for s in sessions
+        if s.get("total_score") is not None
+    ]
+
+    # --- stats ---
+    total_scores = [
+        s["total_score"] for s in sessions if s.get("total_score") is not None
+    ]
+    unique_tracks = {s["track_id"] for s in sessions if s.get("track_id")}
+
+    stats = {
+        "sessions": len(sessions),
+        "avg_score": round(sum(total_scores) / len(total_scores), 1) if total_scores else 0,
+        "best_score": max(total_scores) if total_scores else 0,
+        "tracks": len(unique_tracks),
+    }
+
+    return {
+        "driver": driver,
+        "avg_scores": avg_scores,
+        "trend": trend,
+        "stats": stats,
+    }
+
+
+@bp.route("/compare/drivers", methods=["GET"])
+@_safe_api
+def compare_drivers():
+    """Return two drivers side-by-side with aggregated scores, trend, and stats.
+
+    Query params:
+        a (int, required) — first driver ID
+        b (int, required) — second driver ID
+    """
+    raw_a = request.args.get("a")
+    raw_b = request.args.get("b")
+
+    if not raw_a or not raw_b:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Both 'a' and 'b' query parameters are required",
+            status=400,
+        )
+
+    try:
+        driver_a_id = int(raw_a)
+        driver_b_id = int(raw_b)
+    except (ValueError, TypeError):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Driver IDs must be integers",
+            status=400,
+        )
+
+    conn = get_db_connection()
+
+    data_a = _driver_data(conn, driver_a_id)
+    if data_a is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"Driver {driver_a_id} not found",
+            status=404,
+        )
+
+    data_b = _driver_data(conn, driver_b_id)
+    if data_b is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"Driver {driver_b_id} not found",
+            status=404,
+        )
+
+    return api_response({"driver_a": data_a, "driver_b": data_b})
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1959,6 +2118,178 @@ def get_session_compare_overlay(session_id: str):
         "gps_b": {
             "latitudes": trace_b.get("latitudes", []),
             "longitudes": trace_b.get("longitudes", []),
+        },
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 31. GET /api/v1/sessions/<id>/compare/sectors?sessionKeyB=...
+# ══════════════════════════════════════════════════════════════════
+
+
+def _safe_float(val, default=None):
+    """Return float(val) rounded to 4 decimal places, or *default* if val is None/NaN."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        if math.isnan(f) or math.isinf(f):
+            return default
+        return round(f, 4)
+    except (TypeError, ValueError):
+        return default
+
+
+def _build_corner_comparison(summary_a: list[dict], summary_b: list[dict]) -> list[dict]:
+    """Align two corner-metrics-summary lists by corner_id and compute deltas.
+
+    Corners are matched by index position (both lists are ORDER BY corner_id).
+    If one session has more corners than the other, extra corners are dropped.
+    """
+    n = min(len(summary_a), len(summary_b))
+    corners = []
+    for i in range(n):
+        ca = summary_a[i]
+        cb = summary_b[i]
+
+        time_a = _safe_float(ca.get("avg_time_loss_ms"))
+        time_b = _safe_float(cb.get("avg_time_loss_ms"))
+        # Delta: positive means B is slower (lost more time)
+        delta = None
+        if time_a is not None and time_b is not None:
+            delta = round(time_b - time_a, 4)
+
+        min_speed_a = _safe_float(ca.get("avg_apex_speed"))
+        min_speed_b = _safe_float(cb.get("avg_apex_speed"))
+        entry_speed_a = _safe_float(ca.get("avg_entry_speed"))
+        entry_speed_b = _safe_float(cb.get("avg_entry_speed"))
+        exit_speed_a = _safe_float(ca.get("avg_exit_speed"))
+        exit_speed_b = _safe_float(cb.get("avg_exit_speed"))
+
+        corners.append({
+            "corner_id": ca.get("corner_id", i + 1),
+            "name": f"Corner {ca.get('corner_id', i + 1)}",
+            "time_a": time_a,
+            "time_b": time_b,
+            "delta": delta,
+            "min_speed_a": min_speed_a,
+            "min_speed_b": min_speed_b,
+            "entry_speed_a": entry_speed_a,
+            "entry_speed_b": entry_speed_b,
+            "exit_speed_a": exit_speed_a,
+            "exit_speed_b": exit_speed_b,
+        })
+    return corners
+
+
+def _build_sector_comparison(corner_list: list[dict], corners_per_sector: int = 3) -> list[dict]:
+    """Group consecutive corners into sectors and aggregate timing deltas.
+
+    Each sector spans *corners_per_sector* corners (the last sector may have
+    fewer).  Sector times are the sum of per-corner ``time_a`` / ``time_b``
+    values.  If any corner in a sector has a ``None`` time, that sector's
+    aggregate is also ``None``.
+    """
+    if not corner_list:
+        return []
+
+    sectors = []
+    for start in range(0, len(corner_list), corners_per_sector):
+        chunk = corner_list[start:start + corners_per_sector]
+        sector_id = (start // corners_per_sector) + 1
+
+        sum_a = 0.0
+        sum_b = 0.0
+        all_valid = True
+        for c in chunk:
+            if c.get("time_a") is None or c.get("time_b") is None:
+                all_valid = False
+                break
+            sum_a += c["time_a"]
+            sum_b += c["time_b"]
+
+        if all_valid:
+            sectors.append({
+                "sector_id": sector_id,
+                "name": f"Sector {sector_id}",
+                "time_a": round(sum_a, 4),
+                "time_b": round(sum_b, 4),
+                "delta": round(sum_b - sum_a, 4),
+            })
+        else:
+            sectors.append({
+                "sector_id": sector_id,
+                "name": f"Sector {sector_id}",
+                "time_a": None,
+                "time_b": None,
+                "delta": None,
+            })
+
+    return sectors
+
+
+@bp.route("/sessions/<session_id>/compare/sectors", methods=["GET"])
+@_safe_api
+def get_session_compare_sectors(session_id: str):
+    """Compare sector and corner timing between two sessions.
+
+    Query params:
+        sessionKeyB  (required) — session_id of the second session.
+
+    Corner data comes from ``corner_metrics_summary`` (aggregated per-corner
+    averages across all laps for each session).  Sectors are synthesised by
+    grouping consecutive corners (3 per sector by default).
+    """
+    conn = get_db_connection()
+
+    # -- Validate session A ---------------------------------------------------
+    session_a = models.get_session_by_id(conn, session_id)
+    if session_a is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # -- Validate session B ---------------------------------------------------
+    session_b_id = request.args.get("sessionKeyB")
+    if not session_b_id:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "sessionKeyB parameter is required", status=400)
+
+    session_b = models.get_session_by_id(conn, session_b_id)
+    if session_b is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         f"Session {session_b_id} not found", status=404)
+
+    # -- Fetch corner summaries for both sessions -----------------------------
+    summary_a = models.get_corner_metrics_summary(conn, session_id)
+    summary_b = models.get_corner_metrics_summary(conn, session_b_id)
+
+    # If either session has no corner data, return empty (not an error)
+    if not summary_a or not summary_b:
+        return api_response({
+            "sectors": [],
+            "corners": [],
+            "session_a": {"session_id": session_id},
+            "session_b": {"session_id": session_b_id},
+            "available": not summary_a and not summary_b,
+            "reason_code": "NO_CORNER_DATA",
+            "message": "Corner metrics not available for one or both sessions",
+        })
+
+    # -- Build corner comparison ----------------------------------------------
+    corners = _build_corner_comparison(summary_a, summary_b)
+
+    # -- Build sector comparison (group by 3 corners) -------------------------
+    sectors = _build_sector_comparison(corners, corners_per_sector=3)
+
+    return api_response({
+        "sectors": sectors,
+        "corners": corners,
+        "session_a": {
+            "session_id": session_id,
+            "best_time_s": session_a.get("best_lap_time_s"),
+        },
+        "session_b": {
+            "session_id": session_b_id,
+            "best_time_s": session_b.get("best_lap_time_s"),
         },
     })
 

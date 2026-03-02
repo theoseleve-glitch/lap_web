@@ -2,29 +2,36 @@
 
 import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
+import { api, BACKEND_URL } from '@/lib/api-client';
 import { PageHeader, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 
 interface ExportRow {
-  id: number;
-  name: string;
+  id: string;
+  data_type: string;
   format: string;
-  size: number;
-  status: 'ready' | 'generating' | 'failed';
+  file_size: number | null;
+  status: 'pending' | 'generating' | 'ready' | 'failed';
   created_at: string;
-  download_url: string | null;
+  completed_at: string | null;
+  error: string | null;
 }
 
 type ExportFormat = 'csv' | 'json' | 'pdf' | 'parquet';
 
-function formatSize(bytes: number): string {
+function formatSize(bytes: number | null): string {
+  if (bytes == null) return '\u2014';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function capitalizeDataType(dt: string): string {
+  return dt.charAt(0).toUpperCase() + dt.slice(1);
+}
+
 const statusColors: Record<string, string> = {
   ready: 'text-acid-green',
+  pending: 'text-marshal-yellow',
   generating: 'text-marshal-yellow',
   failed: 'text-safety-red',
 };
@@ -38,6 +45,13 @@ export default function ExportsPage() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['exports'],
     queryFn: () => api.get<{ exports: ExportRow[] }>('/exports'),
+    refetchInterval: (query) => {
+      const exports = query.state.data?.exports;
+      const hasActive = exports?.some(
+        (e) => e.status === 'generating' || e.status === 'pending',
+      );
+      return hasActive ? 5000 : false;
+    },
   });
 
   const exports = data?.exports ?? [];
@@ -55,6 +69,13 @@ export default function ExportsPage() {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleDownload = (row: ExportRow) => {
+    window.open(
+      `${BACKEND_URL}/api/v1/exports/${row.id}/download`,
+      '_blank',
+    );
   };
 
   return (
@@ -119,23 +140,30 @@ export default function ExportsPage() {
 
       {/* Exports list */}
       {isLoading ? (
-        <SkeletonTableRows rows={5} cols={4} />
+        <SkeletonTableRows rows={5} cols={5} />
       ) : error ? (
         <QueryError message="Couldn't load exports." onRetry={() => refetch()} />
       ) : (
         <DataTable
           columns={[
-            { key: 'name', header: 'Name', sortable: true },
+            {
+              key: 'data_type',
+              header: 'Data Type',
+              sortable: true,
+              render: (row: ExportRow) => (
+                <span>{capitalizeDataType(row.data_type)}</span>
+              ),
+            },
             {
               key: 'format',
               header: 'Format',
               className: 'font-telemetry text-xs uppercase',
             },
             {
-              key: 'size',
+              key: 'file_size',
               header: 'Size',
               className: 'font-telemetry',
-              render: (row: ExportRow) => <span>{formatSize(row.size)}</span>,
+              render: (row: ExportRow) => <span>{formatSize(row.file_size)}</span>,
             },
             {
               key: 'status',
@@ -144,10 +172,17 @@ export default function ExportsPage() {
                 <span
                   className={`font-telemetry text-xs uppercase ${statusColors[row.status] ?? 'text-steel'}`}
                 >
-                  {row.status === 'generating' ? (
+                  {row.status === 'generating' || row.status === 'pending' ? (
                     <span className="inline-flex items-center gap-1">
                       <span className="w-3 h-3 border border-marshal-yellow border-t-transparent rounded-full animate-spin" />
-                      generating
+                      {row.status}
+                    </span>
+                  ) : row.status === 'failed' && row.error ? (
+                    <span className="inline-flex items-center gap-1" title={row.error}>
+                      failed
+                      <span className="text-safety-red/60 text-[10px] normal-case truncate max-w-[180px] inline-block align-middle">
+                        {row.error}
+                      </span>
                     </span>
                   ) : (
                     row.status
@@ -162,17 +197,20 @@ export default function ExportsPage() {
               className: 'font-telemetry text-sm',
             },
             {
-              key: 'download_url',
+              key: 'actions',
               header: '',
               render: (row: ExportRow) =>
-                row.download_url ? (
-                  <a
-                    href={row.download_url}
+                row.status === 'ready' ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(row);
+                    }}
                     className="text-acid-green font-telemetry text-xs hover:underline"
-                    download
                   >
                     Download
-                  </a>
+                  </button>
                 ) : null,
             },
           ]}

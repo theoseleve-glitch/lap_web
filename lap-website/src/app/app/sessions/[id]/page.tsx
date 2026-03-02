@@ -4,9 +4,8 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
-import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
-import { SectorPanel } from '@/components/shared/charts';
 import { CornersTab, type CornerData } from '@/components/app/corners';
+import { AnalyticsTab } from '@/components/app/analytics';
 import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
 import { SessionDebrief } from '@/components/app/SessionDebrief';
 import { AchievementsBadges } from '@/components/app/AchievementsBadges';
@@ -344,7 +343,14 @@ export default function SessionDetailPage() {
       {activeTab === 'corners' && <CornersTab corners={corners} sessionId={sessionId} />}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'analytics' && (
-        <AnalyticsTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
+        <AnalyticsTab
+          sessionId={sessionId}
+          gpsLaps={gpsLaps}
+          bestLap={bestLap}
+          scores={scores}
+          corners={corners}
+          trackName={session?.track_name ?? null}
+        />
       )}
       {activeTab === 'laps' && <LapDataTab laps={laps} conditionPhases={conditionPhases} />}
 
@@ -598,72 +604,7 @@ function MetaRow({
   );
 }
 
-// ══════════════════════════════════════════════════════════════════
-// 2. Analytics Tab (formerly Visualize)
-// ══════════════════════════════════════════════════════════════════
-
-function AnalyticsTab({
-  sessionId,
-  gpsLaps,
-  bestLap,
-}: {
-  sessionId: string;
-  gpsLaps: number[];
-  bestLap: number | null;
-}) {
-  const apiBase = BACKEND_URL;
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: GPS Map (tall) */}
-        <div className="lg:col-span-1 lg:row-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">GPS Track Map</h3>
-            <GpsTrace
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
-          </div>
-        </div>
-
-        {/* Top-right: Speed Trace */}
-        <div className="lg:col-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">Speed Trace</h3>
-            <SpeedTraceZoom
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
-          </div>
-        </div>
-
-        {/* Bottom-right: GG Diagram */}
-        <div className="lg:col-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">G-G Diagram</h3>
-            <GGExplorer
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Sector Analysis (moved from Performance tab) */}
-      <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
-    </div>
-  );
-}
+// (Analytics Tab moved to components/app/analytics/AnalyticsTab.tsx)
 
 // ══════════════════════════════════════════════════════════════════
 // 3. Lap Data Tab

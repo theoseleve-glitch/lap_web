@@ -331,6 +331,11 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.api_v1_support import bp as api_v1_support_bp
             app.register_blueprint(api_v1_support_bp)
             logger.debug("Registered api_v1_support blueprint")
+
+            # Export API (authenticated — generate, list, download exports)
+            from .routes.exports import bp as exports_bp
+            app.register_blueprint(exports_bp)
+            logger.debug("Registered exports blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

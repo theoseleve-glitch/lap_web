@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { CompareChartPanel } from '@/components/app/compare';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -63,15 +65,6 @@ interface ComparisonData {
     scores: ScoreData | null;
     laps: LapData[];
   };
-}
-
-interface SpeedOverlayData {
-  distances: number[];
-  speeds_a: number[];
-  speeds_b: number[];
-  delta_s: number[];
-  session_a: { session_id: string; best_time_s: number | null; lap_number: number };
-  session_b: { session_id: string; best_time_s: number | null; lap_number: number };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -236,6 +229,8 @@ const COLOR_A = '#3ddc84'; // acid-green
 const COLOR_B = '#ff8c00'; // pit-orange
 
 export default function CompareSessionsPage() {
+  const searchParams = useSearchParams();
+
   const [sessions, setSessions] = useState<SessionListItem[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
 
@@ -245,6 +240,14 @@ export default function CompareSessionsPage() {
   const [comparison, setComparison] = useState<ComparisonData | null>(null);
   const [loadingComparison, setLoadingComparison] = useState(false);
   const [compError, setCompError] = useState<string | null>(null);
+
+  // Pre-populate from URL search params (?a=...&b=...)
+  useEffect(() => {
+    const paramA = searchParams.get('a');
+    const paramB = searchParams.get('b');
+    if (paramA) setSessionAId(paramA);
+    if (paramB) setSessionBId(paramB);
+  }, [searchParams]);
 
   // Fetch sessions list
   useEffect(() => {
@@ -516,13 +519,8 @@ export default function CompareSessionsPage() {
             </div>
           </div>
 
-          {/* ── Speed Overlay Chart ────────────────────────── */}
-          <SpeedOverlayChart
-            sessionAId={sessionAId}
-            sessionBId={sessionBId}
-            colorA={COLOR_A}
-            colorB={COLOR_B}
-          />
+          {/* ── Chart Panel (Speed / GPS / Sectors / Corners) ── */}
+          <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
 
           {/* ── Lap-by-Lap Comparison ────────────────────────── */}
           <div>
@@ -729,290 +727,6 @@ function CompareRow({
       </td>
     </tr>
   );
-}
-
-// ── Speed Overlay Chart ─────────────────────────────────────────
-
-function SpeedOverlayChart({
-  sessionAId,
-  sessionBId,
-  colorA,
-  colorB,
-}: {
-  sessionAId: string;
-  sessionBId: string;
-  colorA: string;
-  colorB: string;
-}) {
-  const speedCanvasRef = useRef<HTMLCanvasElement>(null);
-  const deltaCanvasRef = useRef<HTMLCanvasElement>(null);
-  const [overlay, setOverlay] = useState<SpeedOverlayData | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // Fetch overlay data
-  useEffect(() => {
-    if (!sessionAId || !sessionBId) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    api
-      .get<SpeedOverlayData>(
-        `/sessions/${encodeURIComponent(sessionAId)}/compare?sessionKeyB=${encodeURIComponent(sessionBId)}`,
-      )
-      .then((data) => {
-        if (!cancelled) setOverlay(data);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load speed overlay');
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => { cancelled = true; };
-  }, [sessionAId, sessionBId]);
-
-  // Draw speed traces
-  useEffect(() => {
-    if (!overlay || !speedCanvasRef.current || !deltaCanvasRef.current) return;
-
-    const { distances, speeds_a, speeds_b, delta_s } = overlay;
-    if (distances.length === 0) return;
-
-    drawSpeedCanvas(speedCanvasRef.current, distances, speeds_a, speeds_b, colorA, colorB);
-    drawDeltaCanvas(deltaCanvasRef.current, distances, delta_s, colorA, colorB);
-  }, [overlay, colorA, colorB]);
-
-  if (loading) {
-    return (
-      <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
-        <div className="w-5 h-5 border-2 border-acid-green border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-        <p className="text-steel font-body text-sm">Loading speed overlay...</p>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-        <h2 className="text-lg font-monument text-chalk mb-2">Speed Overlay</h2>
-        <p className="text-steel font-body text-sm">{error}</p>
-      </div>
-    );
-  }
-
-  if (!overlay) return null;
-
-  return (
-    <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-monument text-chalk">Speed Overlay</h2>
-        <div className="flex items-center gap-4 text-xs font-body">
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 rounded" style={{ backgroundColor: colorA }} />
-            <span style={{ color: colorA }}>Session A (Lap {overlay.session_a.lap_number})</span>
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-3 h-0.5 rounded" style={{ backgroundColor: colorB }} />
-            <span style={{ color: colorB }}>Session B (Lap {overlay.session_b.lap_number})</span>
-          </span>
-        </div>
-      </div>
-
-      {/* Speed chart */}
-      <div className="relative rounded-lg overflow-hidden bg-asphalt">
-        <canvas
-          ref={speedCanvasRef}
-          style={{ width: '100%', height: '220px', display: 'block' }}
-        />
-      </div>
-
-      {/* Delta chart */}
-      <div className="mt-2 relative rounded-lg overflow-hidden bg-asphalt">
-        <canvas
-          ref={deltaCanvasRef}
-          style={{ width: '100%', height: '80px', display: 'block' }}
-        />
-      </div>
-
-      <p className="text-xs text-steel/50 font-body mt-2 text-center">
-        Distance (m) — Delta: negative = Session A faster, positive = Session B faster
-      </p>
-    </div>
-  );
-}
-
-/** Draw overlaid speed traces on canvas */
-function drawSpeedCanvas(
-  canvas: HTMLCanvasElement,
-  distances: number[],
-  speedsA: number[],
-  speedsB: number[],
-  colorA: string,
-  colorB: string,
-) {
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = rect.height;
-
-  ctx.clearRect(0, 0, W, H);
-
-  const pad = { top: 20, right: 15, bottom: 30, left: 50 };
-  const cW = W - pad.left - pad.right;
-  const cH = H - pad.top - pad.bottom;
-
-  const maxDist = distances[distances.length - 1];
-  const allSpeeds = [...speedsA, ...speedsB];
-  const maxSpeed = Math.max(...allSpeeds) * 3.6;
-  const minSpeed = Math.max(0, Math.min(...allSpeeds) * 3.6 - 5);
-
-  const xScale = (d: number) => pad.left + (d / maxDist) * cW;
-  const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / (maxSpeed - minSpeed)) * cH;
-
-  // Grid
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.lineWidth = 1;
-  const nGridY = 5;
-  for (let i = 0; i <= nGridY; i++) {
-    const y = pad.top + (i / nGridY) * cH;
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(W - pad.right, y);
-    ctx.stroke();
-  }
-
-  // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '10px monospace';
-  ctx.textAlign = 'right';
-  for (let i = 0; i <= nGridY; i++) {
-    const val = maxSpeed - (i / nGridY) * (maxSpeed - minSpeed);
-    const y = pad.top + (i / nGridY) * cH;
-    ctx.fillText(`${val.toFixed(0)}`, pad.left - 5, y + 3);
-  }
-
-  // X-axis labels
-  ctx.textAlign = 'center';
-  const nGridX = 5;
-  for (let i = 0; i <= nGridX; i++) {
-    const d = (i / nGridX) * maxDist;
-    ctx.fillText(`${d.toFixed(0)}`, xScale(d), H - pad.bottom + 18);
-  }
-
-  // Y-axis title
-  ctx.save();
-  ctx.translate(12, pad.top + cH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
-  ctx.font = '10px sans-serif';
-  ctx.fillText('km/h', 0, 0);
-  ctx.restore();
-
-  // Speed trace A
-  ctx.strokeStyle = colorA;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  for (let i = 0; i < distances.length; i++) {
-    const x = xScale(distances[i]);
-    const y = yScale(speedsA[i]);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Speed trace B
-  ctx.strokeStyle = colorB;
-  ctx.beginPath();
-  for (let i = 0; i < distances.length; i++) {
-    const x = xScale(distances[i]);
-    const y = yScale(speedsB[i]);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-}
-
-/** Draw cumulative time delta on canvas */
-function drawDeltaCanvas(
-  canvas: HTMLCanvasElement,
-  distances: number[],
-  delta: number[],
-  colorA: string,
-  colorB: string,
-) {
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = rect.height;
-
-  ctx.clearRect(0, 0, W, H);
-
-  const pad = { top: 5, right: 15, bottom: 15, left: 50 };
-  const cW = W - pad.left - pad.right;
-  const cH = H - pad.top - pad.bottom;
-
-  const maxDist = distances[distances.length - 1];
-  const absMax = Math.max(0.01, ...delta.map(Math.abs));
-
-  const xScale = (d: number) => pad.left + (d / maxDist) * cW;
-  const yScale = (d: number) => pad.top + cH / 2 - (d / absMax) * (cH / 2);
-
-  // Zero line
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  const zeroY = pad.top + cH / 2;
-  ctx.moveTo(pad.left, zeroY);
-  ctx.lineTo(W - pad.right, zeroY);
-  ctx.stroke();
-
-  // Delta fill — green below zero (A faster), red above (B faster)
-  for (let i = 1; i < distances.length; i++) {
-    const x0 = xScale(distances[i - 1]);
-    const x1 = xScale(distances[i]);
-    const y0 = yScale(delta[i - 1]);
-    const y1 = yScale(delta[i]);
-    const isAbove = delta[i] >= 0;
-    ctx.fillStyle = isAbove ? colorB + '30' : colorA + '30';
-    ctx.beginPath();
-    ctx.moveTo(x0, zeroY);
-    ctx.lineTo(x0, y0);
-    ctx.lineTo(x1, y1);
-    ctx.lineTo(x1, zeroY);
-    ctx.closePath();
-    ctx.fill();
-  }
-
-  // Delta line
-  ctx.strokeStyle = '#e6edf3';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let i = 0; i < distances.length; i++) {
-    const x = xScale(distances[i]);
-    const y = yScale(delta[i]);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.stroke();
-
-  // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '9px monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(`+${absMax.toFixed(2)}s`, pad.left - 5, pad.top + 8);
-  ctx.fillText(`-${absMax.toFixed(2)}s`, pad.left - 5, H - pad.bottom);
-  ctx.fillText('0', pad.left - 5, zeroY + 3);
 }
 
 function LapTimesTable({
