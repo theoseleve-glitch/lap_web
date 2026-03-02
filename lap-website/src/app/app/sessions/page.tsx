@@ -149,6 +149,7 @@ export default function SessionsPage() {
 
   // Bulk action confirm
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [bulkStatus, setBulkStatus] = useState<string | null>(null);
 
   const offset = (page - 1) * PER_PAGE;
 
@@ -221,6 +222,18 @@ export default function SessionsPage() {
     setPage(1);
   }, []);
 
+  // Select All helpers
+  const allVisibleIds = sessions.map((s) => s.session_id);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selectedKeys.has(id));
+
+  function handleSelectAll() {
+    if (allSelected) {
+      setSelectedKeys(new Set());
+    } else {
+      setSelectedKeys(new Set(allVisibleIds));
+    }
+  }
+
   // Bulk delete mutation
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
@@ -230,6 +243,30 @@ export default function SessionsPage() {
       setSelectedKeys(new Set());
       setConfirmDelete(false);
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+  });
+
+  // Bulk re-analyze mutation
+  const reanalyzeMutation = useMutation({
+    mutationFn: async (ids: (string | number)[]) => {
+      setBulkStatus(`Re-analyzing 0/${ids.length}...`);
+      return api.post<{ succeeded: number; failed: number }>(
+        '/sessions/batch-reanalyze',
+        { session_ids: ids }
+      );
+    },
+    onSuccess: (data) => {
+      const msg = data.failed
+        ? `Done: ${data.succeeded} succeeded, ${data.failed} failed`
+        : `Done: ${data.succeeded} sessions re-analyzed`;
+      setBulkStatus(msg);
+      setTimeout(() => setBulkStatus(null), 3000);
+      setSelectedKeys(new Set());
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
+    onError: (err: Error) => {
+      setBulkStatus(`Error: ${err.message}`);
+      setTimeout(() => setBulkStatus(null), 5000);
     },
   });
 
@@ -481,32 +518,51 @@ export default function SessionsPage() {
       {/* ── Bulk Actions Bar ─────────────────────────────── */}
       {selectedKeys.size > 0 && (
         <div className="bg-asphalt border border-steel/20 rounded-lg px-4 py-2.5 mb-4 flex items-center gap-3">
-          <span className="text-chalk font-telemetry text-xs">
-            {selectedKeys.size} selected
-          </span>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={handleSelectAll}
+              className="accent-acid-green w-4 h-4 cursor-pointer"
+              aria-label="Select all visible sessions"
+            />
+            <span className="text-chalk font-telemetry text-xs">
+              {allSelected ? 'All' : selectedKeys.size} selected
+            </span>
+          </label>
           <div className="h-4 w-px bg-steel/20" />
           <button
             type="button"
             onClick={() => {
-              // Re-analyze selected: navigate to upload with re-analyze hint
-              // For now, just refetch to trigger fresh data
               const ids = Array.from(selectedKeys);
               if (window.confirm(`Re-analyze ${ids.length} session(s)? This will re-run the pipeline.`)) {
-                // Future: POST /api/v1/sessions/batch-reanalyze
-                refetch();
+                reanalyzeMutation.mutate(ids);
               }
             }}
-            className="text-marshal-yellow text-xs font-body hover:text-marshal-yellow/80 transition-colors"
+            disabled={reanalyzeMutation.isPending}
+            className="text-marshal-yellow text-xs font-body hover:text-marshal-yellow/80 transition-colors disabled:opacity-50"
           >
-            Re-analyze
+            Re-analyze {selectedKeys.size} Session{selectedKeys.size !== 1 ? 's' : ''}
           </button>
+          {selectedKeys.size === 2 && (
+            <button
+              type="button"
+              onClick={() => {
+                const [a, b] = Array.from(selectedKeys);
+                router.push(`/app/compare/sessions?a=${a}&b=${b}`);
+              }}
+              className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-xs font-telemetry hover:bg-blue-500/30 transition-colors"
+            >
+              Compare 2 Sessions
+            </button>
+          )}
           {!confirmDelete ? (
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
               className="text-safety-red text-xs font-body hover:text-safety-red/80 transition-colors"
             >
-              Delete
+              Delete {selectedKeys.size} Session{selectedKeys.size !== 1 ? 's' : ''}
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -527,6 +583,9 @@ export default function SessionsPage() {
                 Cancel
               </button>
             </div>
+          )}
+          {bulkStatus && (
+            <span className="text-xs font-telemetry text-steel animate-pulse">{bulkStatus}</span>
           )}
           <button
             type="button"
