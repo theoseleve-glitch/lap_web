@@ -485,6 +485,7 @@ def run_full_analysis(
     driver_tag: Optional[str] = None,
     corner_callback: Optional[Any] = None,
     joker_callback: Optional[Any] = None,
+    progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -602,6 +603,34 @@ def run_full_analysis(
         "weather_timeline":      None,
     }
 
+    # ── Stage progress tracking ─────────────────────────────
+    _STAGE_MAP: list[tuple[str, str]] = [
+        ("01_ingest",           "Ingesting CSV"),
+        ("02_filter",           "GPS Filtering"),
+        ("03_derived_channels", "Derived Channels"),
+        ("04_trim_session",     "Session Trim"),
+        ("05_detect_track",     "Track Detection"),
+        ("06_segment_laps",     "Lap Segmentation"),
+        ("06b_detect_corners",  "Corner Detection"),
+        ("08_compute_metrics",  "Computing Metrics"),
+        ("09a_reference_line",  "Reference Line"),
+        ("09_compute_deltas",   "Physics Models"),
+        ("10_theoretical",      "Theoretical Lap"),
+        ("11_build_features",   "Feature Engineering"),
+        ("13_score_session",    "Scoring"),
+        ("15_persist_db",       "Saving Results"),
+    ]
+    _STAGE_TOTAL = len(_STAGE_MAP)
+    _STAGE_LOOKUP = {name: (i + 1, label) for i, (name, label) in enumerate(_STAGE_MAP)}
+
+    def _fire_progress(step_name: str, status: str = "done") -> None:
+        if progress_callback and step_name in _STAGE_LOOKUP:
+            idx, label = _STAGE_LOOKUP[step_name]
+            try:
+                progress_callback(idx, _STAGE_TOTAL, label, status)
+            except Exception:
+                pass  # Never let progress reporting crash the pipeline
+
     # Phase-tracking state (populated by step 08d)
 
     phases_df: Optional[pd.DataFrame] = None
@@ -628,6 +657,7 @@ def run_full_analysis(
 
     raw_df, err = _safe_step("01_ingest", _ingest)
     _record("01_ingest", raw_df, err)
+    _fire_progress("01_ingest")
     summary["raw_df"] = None  # Not consumed downstream; avoid holding ~8 GB
 
     if raw_df is None:
@@ -647,6 +677,7 @@ def run_full_analysis(
 
     filtered_df, err = _safe_step("02_filter", _filter)
     _record("02_filter", filtered_df, err)
+    _fire_progress("02_filter")
     if filtered_df is None:
         filtered_df = raw_df
     summary["filtered_df"] = None  # Not consumed downstream; avoid holding ~8 GB
@@ -670,6 +701,7 @@ def run_full_analysis(
 
     enriched_df, err = _safe_step("03_derived_channels", _derived)
     _record("03_derived_channels", enriched_df, err)
+    _fire_progress("03_derived_channels")
     if enriched_df is None:
         enriched_df = filtered_df
     summary["enriched_df"] = None  # Not consumed downstream; avoid holding ~8 GB
@@ -690,6 +722,7 @@ def run_full_analysis(
 
     trim_result, err = _safe_step("04_trim_session", _trim)
     _record("04_trim_session", trim_result, err)
+    _fire_progress("04_trim_session")
     if trim_result is not None:
         trimmed_df, trim_report = trim_result
     else:
@@ -715,6 +748,7 @@ def run_full_analysis(
 
     track_result, err = _safe_step("05_detect_track", _detect_track)
     _record("05_detect_track", track_result, err)
+    _fire_progress("05_detect_track")
     if track_result is not None:
         track_match, track_id = track_result
     else:
@@ -759,6 +793,7 @@ def run_full_analysis(
 
     lap_dict, err = _safe_step("06_segment_laps", _segment_laps)
     _record("06_segment_laps", lap_dict, err)
+    _fire_progress("06_segment_laps")
     summary["lap_dict"] = lap_dict
 
     if lap_dict is None or len(lap_dict) == 0:
@@ -799,6 +834,7 @@ def run_full_analysis(
 
     corners, err = _safe_step("06b_detect_corners", _detect_corners)
     _record("06b_detect_corners", corners, err)
+    _fire_progress("06b_detect_corners")
     summary["corners"] = corners or []
 
     # ── Corner callback: notify caller with track layout for corner picker ──
@@ -839,6 +875,7 @@ def run_full_analysis(
 
     metrics_res, err = _safe_step("08_compute_metrics", _compute_metrics)
     _record("08_compute_metrics", metrics_res, err)
+    _fire_progress("08_compute_metrics")
     if metrics_res is not None:
         lap_metrics, lap_times = metrics_res
     else:
@@ -1250,6 +1287,7 @@ def run_full_analysis(
 
     reference_line, err = _safe_step("09a_reference_line", _reference_line)
     _record("09a_reference_line", reference_line, err)
+    _fire_progress("09a_reference_line")
     summary["reference_line"] = reference_line
 
     # -- 08h: Line deviation detection (deferred from earlier — needs reference_line)
@@ -1494,6 +1532,7 @@ def run_full_analysis(
 
     delta_res, err = _safe_step("09_compute_deltas", _compute_deltas)
     _record("09_compute_deltas", delta_res, err)
+    _fire_progress("09_compute_deltas")
     if delta_res is not None:
         delta_segments, segment_losses = delta_res
     else:
@@ -1785,6 +1824,7 @@ def run_full_analysis(
 
     theoretical_lap, err = _safe_step("10_theoretical", _theoretical)
     _record("10_theoretical", theoretical_lap, err)
+    _fire_progress("10_theoretical")
     summary["theoretical_lap"] = theoretical_lap
 
     def _compute_theo_metrics() -> dict[str, Any]:
@@ -2024,6 +2064,7 @@ def run_full_analysis(
 
     feature_df, err = _safe_step("11_build_features", _build_features)
     _record("11_build_features", feature_df, err)
+    _fire_progress("11_build_features")
     summary["feature_df"] = feature_df
 
     # STEP 12 --  Train / update ML + anomaly detection
@@ -2128,6 +2169,7 @@ def run_full_analysis(
 
     score_result, err = _safe_step("13_score_session", _score)
     _record("13_score_session", score_result, err)
+    _fire_progress("13_score_session")
     summary["score_result"] = score_result
 
     # STEP 14 --  Generate report (driver profile + HTML + PDF)
@@ -2546,6 +2588,7 @@ def run_full_analysis(
 
     db_session_id, err = _safe_step("15_persist_db", _persist_to_db)
     _record("15_persist_db", db_session_id, err)
+    _fire_progress("15_persist_db")
     summary["db_session_id"] = db_session_id
 
     # Final summary
