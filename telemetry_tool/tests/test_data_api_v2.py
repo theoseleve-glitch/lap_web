@@ -525,13 +525,55 @@ class TestScores:
 
 class TestCorners:
 
-    def test_corners_returns_coaching(self, client):
-        """Returns corner coaching data from theoretical_data."""
+    def test_corners_boundaries_with_coaching(self, client):
+        """Boundaries from corner_metrics merged with coaching from theoretical."""
         theo = _sample_theoretical_data()
+        # Coaching entries with CornerPerformance.to_dict() field names
+        theo["corner_coaching"] = [
+            {
+                "corner_id": 1, "s_start": 100.0, "s_end": 200.0,
+                "s_apex": 150.0, "direction": "L",
+                "actual_entry_speed_mps": 25.0,
+                "theoretical_entry_speed_mps": 27.0,
+                "actual_apex_speed_mps": 18.0,
+                "theoretical_apex_speed_mps": 20.0,
+                "actual_exit_speed_mps": 22.0,
+                "theoretical_exit_speed_mps": 24.0,
+                "time_loss_s": 0.35,
+                "grip_utilisation_pct": 82.0,
+                "primary_cause": "late_braking",
+                "coaching_hint": "Brake 5m earlier",
+            },
+            {
+                "corner_id": 2, "s_start": 350.0, "s_end": 450.0,
+                "s_apex": 400.0, "direction": "R",
+                "actual_entry_speed_mps": 30.0,
+                "theoretical_entry_speed_mps": 31.0,
+                "actual_apex_speed_mps": 22.0,
+                "theoretical_apex_speed_mps": 23.0,
+                "actual_exit_speed_mps": 28.0,
+                "theoretical_exit_speed_mps": 29.0,
+                "time_loss_s": 0.12,
+                "grip_utilisation_pct": 91.0,
+                "primary_cause": None,
+                "coaching_hint": "Well driven",
+            },
+        ]
+        boundary_rows = [
+            {"corner_id": 1, "n_laps": 5, "avg_entry_speed": 25.0,
+             "avg_apex_speed": 18.0, "avg_exit_speed": 22.0,
+             "avg_grip": 0.82, "avg_time_loss_ms": 350.0,
+             "total_time_loss_ms": 1750.0},
+            {"corner_id": 2, "n_laps": 5, "avg_entry_speed": 30.0,
+             "avg_apex_speed": 22.0, "avg_exit_speed": 28.0,
+             "avg_grip": 0.91, "avg_time_loss_ms": 120.0,
+             "total_time_loss_ms": 600.0},
+        ]
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
             mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_corner_metrics_summary.return_value = boundary_rows
             mock_models.get_theoretical_data.return_value = theo
 
             resp = client.get("/api/v1/sessions/s1/corners")
@@ -539,16 +581,89 @@ class TestCorners:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert isinstance(body["data"]["corners"], list)
-        assert len(body["data"]["corners"]) == 2
-        assert body["data"]["corners"][0]["corner_id"] == 1
+        data = body["data"]
+        assert data["available"] is True
+        assert isinstance(data["corners"], list)
+        assert len(data["corners"]) == 2
+        c1 = data["corners"][0]
+        assert c1["corner_id"] == 1
+        assert c1["available"] is True
+        assert c1["s_start"] == 100.0
+        assert c1["direction"] == "L"
+        assert c1["entry_speed_actual"] == 25.0
+        assert c1["entry_speed_theory"] == 27.0
+        assert c1["coaching_hint"] == "Brake 5m earlier"
 
-    def test_corners_no_theoretical_data(self, client):
-        """Returns 404 when no theoretical data exists."""
+    def test_corners_boundaries_without_coaching(self, client):
+        """Boundaries exist but no theoretical data -- corners still returned."""
+        boundary_rows = [
+            {"corner_id": 1, "n_laps": 3, "avg_entry_speed": 25.0,
+             "avg_apex_speed": 18.0, "avg_exit_speed": 22.0,
+             "avg_grip": 0.80, "avg_time_loss_ms": 300.0,
+             "total_time_loss_ms": 900.0},
+        ]
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
             mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_corner_metrics_summary.return_value = boundary_rows
+            mock_models.get_theoretical_data.return_value = None
+
+            resp = client.get("/api/v1/sessions/s1/corners")
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["available"] is True
+        assert len(data["corners"]) == 1
+        c = data["corners"][0]
+        assert c["corner_id"] == 1
+        assert c["available"] is False
+        assert c["coaching_hint"] == "Theoretical data unavailable for this corner"
+        assert c["entry_speed_actual"] is None
+        assert c["time_loss_total_s"] is None
+
+    def test_corners_no_boundaries_coaching_fallback(self, client):
+        """No boundary data but coaching exists -- uses coaching as fallback."""
+        theo = _sample_theoretical_data()
+        theo["corner_coaching"] = [
+            {
+                "corner_id": 1, "s_start": 100.0, "s_end": 200.0,
+                "s_apex": 150.0, "direction": "L",
+                "actual_entry_speed_mps": 25.0,
+                "theoretical_entry_speed_mps": 27.0,
+                "actual_apex_speed_mps": 18.0,
+                "theoretical_apex_speed_mps": 20.0,
+                "actual_exit_speed_mps": 22.0,
+                "theoretical_exit_speed_mps": 24.0,
+                "time_loss_s": 0.35,
+                "grip_utilisation_pct": 82.0,
+                "primary_cause": "late_braking",
+                "coaching_hint": "Brake 5m earlier",
+            },
+        ]
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_corner_metrics_summary.return_value = []
+            mock_models.get_theoretical_data.return_value = theo
+
+            resp = client.get("/api/v1/sessions/s1/corners")
+
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["available"] is True
+        assert len(data["corners"]) == 1
+        assert data["corners"][0]["available"] is True
+        assert data["corners"][0]["corner_id"] == 1
+
+    def test_corners_no_data_at_all(self, client):
+        """No boundaries and no coaching -- returns empty with available=false."""
+        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
+             patch("web.routes.data_v2.models") as mock_models:
+            mock_db.return_value = MagicMock()
+            mock_models.get_session_by_id.return_value = _sample_session()
+            mock_models.get_corner_metrics_summary.return_value = []
             mock_models.get_theoretical_data.return_value = None
 
             resp = client.get("/api/v1/sessions/s1/corners")
@@ -557,23 +672,7 @@ class TestCorners:
         data = resp.get_json()["data"]
         assert data["corners"] == []
         assert data["available"] is False
-
-    def test_corners_no_coaching_in_data(self, client):
-        """Returns empty corners when theoretical data has no corner_coaching."""
-        theo = _sample_theoretical_data()
-        theo["corner_coaching"] = None
-        with patch("web.routes.data_v2.get_db_connection") as mock_db, \
-             patch("web.routes.data_v2.models") as mock_models:
-            mock_db.return_value = MagicMock()
-            mock_models.get_session_by_id.return_value = _sample_session()
-            mock_models.get_theoretical_data.return_value = theo
-
-            resp = client.get("/api/v1/sessions/s1/corners")
-
-        assert resp.status_code == 200
-        data = resp.get_json()["data"]
-        assert data["corners"] == []
-        assert data["available"] is False
+        assert data["reason_code"] == "NO_CORNER_DATA"
 
     def test_corners_session_not_found(self, client):
         """Returns 404 when session does not exist."""

@@ -541,30 +541,122 @@ def get_scores(session_id: str):
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
 @_safe_api
 def get_corners(session_id: str):
-    """Return corner coaching data for a session.
+    """Return corner boundaries merged with coaching metrics.
 
-    Corner coaching is stored inside the theoretical_data table as
-    a JSON field (corner_coaching_json).
+    Corner boundaries come from corner_metrics_summary (aggregated
+    per-corner data across all laps).  Coaching metrics come from
+    theoretical_data.corner_coaching_json (physics-based theoretical
+    vs actual comparison).
+
+    If boundaries exist but coaching is missing for a corner, the
+    corner is still returned with ``available: false`` and metric
+    fields set to ``null``.  If no boundaries exist but coaching
+    does, the coaching list is returned directly as a fallback.
     """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    theo = models.get_theoretical_data(conn, session_id)
-    corners = theo.get("corner_coaching") if theo else None
+    # -- 1. Corner boundaries from corner_metrics_summary ----------------
+    boundary_rows = models.get_corner_metrics_summary(conn, session_id)
 
-    if not corners:
+    # -- 2. Coaching metrics from theoretical_data -----------------------
+    theo = models.get_theoretical_data(conn, session_id)
+    coaching_list = theo.get("corner_coaching") if theo else None
+
+    # -- 3. Build coaching lookup by corner_id ---------------------------
+    coaching_map: dict = {}
+    if coaching_list:
+        for cc in coaching_list:
+            cid = cc.get("corner_id")
+            if cid is not None:
+                coaching_map[cid] = cc
+
+    _METRIC_FIELDS = (
+        "entry_speed_actual", "entry_speed_theory",
+        "apex_speed_actual", "apex_speed_theory",
+        "exit_speed_actual", "exit_speed_theory",
+        "time_loss_total_s", "grip_utilisation_pct",
+        "primary_cause", "coaching_hint",
+    )
+
+    # Map from CornerPerformance.to_dict() keys to our API field names.
+    _COACHING_KEY_MAP = {
+        "entry_speed_actual":    "actual_entry_speed_mps",
+        "entry_speed_theory":    "theoretical_entry_speed_mps",
+        "apex_speed_actual":     "actual_apex_speed_mps",
+        "apex_speed_theory":     "theoretical_apex_speed_mps",
+        "exit_speed_actual":     "actual_exit_speed_mps",
+        "exit_speed_theory":     "theoretical_exit_speed_mps",
+        "time_loss_total_s":     "time_loss_s",
+        "grip_utilisation_pct":  "grip_utilisation_pct",
+        "primary_cause":         "primary_cause",
+        "coaching_hint":         "coaching_hint",
+    }
+
+    def _extract_coaching(cc: dict) -> dict:
+        """Extract metric fields from a coaching dict, mapping keys."""
+        out = {}
+        for api_key, src_key in _COACHING_KEY_MAP.items():
+            out[api_key] = cc.get(src_key) if cc.get(src_key) is not None else cc.get(api_key)
+        return out
+
+    # -- 4. Merge boundaries + coaching ----------------------------------
+    if boundary_rows:
+        corners = []
+        for row in boundary_rows:
+            cid = row["corner_id"]
+            cc = coaching_map.get(cid)
+            corner: dict = {
+                "corner_id": cid,
+                "s_start":   cc.get("s_start") if cc else None,
+                "s_end":     cc.get("s_end") if cc else None,
+                "s_apex":    cc.get("s_apex") if cc else None,
+                "direction": cc.get("direction") if cc else None,
+            }
+            if cc:
+                corner["available"] = True
+                corner.update(_extract_coaching(cc))
+            else:
+                corner["available"] = False
+                corner["coaching_hint"] = "Theoretical data unavailable for this corner"
+                for field in _METRIC_FIELDS:
+                    if field not in corner:
+                        corner[field] = None
+            corners.append(corner)
+
         return api_response({
-            "corners": [],
-            "available": False,
-            "reason_code": "NO_CORNER_DATA",
-            "message": "Corner detection did not produce results for this session",
+            "corners": corners,
+            "available": True,
         })
 
+    # -- 5. Fallback: no boundaries but coaching exists ------------------
+    if coaching_list:
+        corners = []
+        for cc in coaching_list:
+            corner = {
+                "corner_id": cc.get("corner_id"),
+                "s_start":   cc.get("s_start"),
+                "s_end":     cc.get("s_end"),
+                "s_apex":    cc.get("s_apex"),
+                "direction": cc.get("direction"),
+                "available": True,
+            }
+            corner.update(_extract_coaching(cc))
+            corners.append(corner)
+
+        return api_response({
+            "corners": corners,
+            "available": True,
+        })
+
+    # -- 6. No data at all -----------------------------------------------
     return api_response({
-        "corners": corners,
-        "available": True,
+        "corners": [],
+        "available": False,
+        "reason_code": "NO_CORNER_DATA",
+        "message": "Corner detection did not produce results for this session",
     })
 
 
@@ -1869,6 +1961,210 @@ def get_session_compare_overlay(session_id: str):
             "longitudes": trace_b.get("longitudes", []),
         },
     })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 25. GET /api/v1/sessions/<id>/corner-replay-data
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corner-replay-data", methods=["GET"])
+@_safe_api
+def get_corner_replay_data(session_id: str):
+    """Batch endpoint for corner replay — traces, positions, metrics, lap times."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Parse requested laps (comma-separated)
+    laps_param = request.args.get("laps", "")
+    requested_laps = []
+    if laps_param:
+        try:
+            requested_laps = [int(x.strip()) for x in laps_param.split(",") if x.strip()]
+        except ValueError:
+            return api_error(ErrorCode.VALIDATION_ERROR,
+                             "laps must be comma-separated integers", status=400)
+
+    # If no laps specified, use all available (up to 5)
+    if not requested_laps:
+        all_laps = models.get_lap_list(conn, session_id) or []
+        requested_laps = [lap["lap_number"] for lap in all_laps[:5]]
+
+    # Fetch GPS traces for each requested lap
+    traces = {}
+    lap_times = {}
+    has_pedal_data = False
+    has_steering_data = False
+
+    all_laps_data = models.get_lap_list(conn, session_id) or []
+    for lap_info in all_laps_data:
+        ln = lap_info.get("lap_number")
+        if ln is not None:
+            lt = lap_info.get("lap_time_s")
+            if lt is not None:
+                lap_times[str(ln)] = lt
+
+    for lap_num in requested_laps:
+        trace = models.get_gps_trace(conn, session_id, lap_num)
+        if trace is None:
+            continue
+
+        lats = trace.get("latitudes", [])
+        lons = trace.get("longitudes", [])
+        speeds = trace.get("speeds", [])
+        distances = trace.get("distances", [])
+        accel_lat = trace.get("accel_lat", [])
+        accel_long = trace.get("accel_long", [])
+        brake = trace.get("brake", [])
+        throttle = trace.get("throttle", [])
+        steering = trace.get("steering", [])
+
+        n = len(lats)
+        points = []
+        for i in range(n):
+            pt = {
+                "lat": lats[i] if i < len(lats) else None,
+                "lon": lons[i] if i < len(lons) else None,
+                "speed": speeds[i] if i < len(speeds) else 0,
+                "distance": distances[i] if i < len(distances) else 0,
+            }
+            if i < len(accel_lat):
+                pt["accel_lat"] = accel_lat[i]
+            if i < len(accel_long):
+                pt["accel_long"] = accel_long[i]
+            if brake and i < len(brake):
+                pt["brake"] = brake[i]
+                has_pedal_data = True
+            if throttle and i < len(throttle):
+                pt["throttle"] = throttle[i]
+                has_pedal_data = True
+            if steering and i < len(steering):
+                pt["steering"] = steering[i]
+                has_steering_data = True
+            points.append(pt)
+
+        traces[str(lap_num)] = points
+
+    if not traces:
+        return api_response({
+            "available": False,
+            "reason_code": "NO_REPLAY_DATA",
+            "message": "No GPS trace data available for replay",
+        })
+
+    # Corner positions
+    corner_positions = []
+    try:
+        cp_data = models.get_corner_positions(conn, session_id)
+        if cp_data:
+            corner_positions = cp_data
+    except Exception:
+        logger.warning("Failed to get corner positions for %s", session_id, exc_info=True)
+
+    # Corner metrics summary
+    corner_metrics = {}
+    try:
+        cm_data = models.get_corner_metrics_for_session(conn, session_id)
+        if cm_data:
+            corner_metrics = cm_data
+    except Exception:
+        logger.warning("Failed to get corner metrics for %s", session_id, exc_info=True)
+
+    # Best lap
+    best_lap_num = None
+    best_time = float("inf")
+    for ln_str, lt in lap_times.items():
+        if lt < best_time:
+            best_time = lt
+            best_lap_num = int(ln_str)
+
+    return api_response({
+        "traces": traces,
+        "corner_positions": corner_positions,
+        "corner_metrics": corner_metrics,
+        "lap_times": lap_times,
+        "best_lap_number": best_lap_num,
+        "has_pedal_data": has_pedal_data,
+        "has_steering_data": has_steering_data,
+        "available": True,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 26. GET /api/v1/sessions/<id>/corner-mastery
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corner-mastery", methods=["GET"])
+@_safe_api
+def get_corner_mastery(session_id: str):
+    """Return corner mastery report card with per-corner scoring."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Get per-corner metrics grouped by corner_id
+    metrics = models.get_corner_metrics_for_session(conn, session_id)
+    if not metrics:
+        return api_response({
+            "available": False,
+            "reason_code": "NO_CORNER_METRICS",
+            "message": "Corner metrics not available for mastery scoring",
+        })
+
+    try:
+        from corner_mastery import compute_corner_mastery, generate_corner_report_card
+
+        # Group metrics by corner_id
+        metrics_by_corner: dict[int, list[dict]] = {}
+        if isinstance(metrics, list):
+            for m in metrics:
+                cid = m.get("corner_id")
+                if cid is not None:
+                    metrics_by_corner.setdefault(cid, []).append(m)
+        elif isinstance(metrics, dict):
+            metrics_by_corner = metrics
+
+        mastery_results = compute_corner_mastery(metrics_by_corner)
+        report = generate_corner_report_card(mastery_results)
+        report["available"] = True
+        return api_response(report)
+    except Exception:
+        logger.warning("Corner mastery scoring failed for %s", session_id, exc_info=True)
+        return api_response({
+            "available": False,
+            "reason_code": "MASTERY_FAILED",
+            "message": "Corner mastery analysis could not be computed",
+        })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 34. GET /api/v1/sessions/<id>/condition-phases
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/condition-phases", methods=["GET"])
+@_safe_api
+def get_condition_phases(session_id: str):
+    """Return condition phase breakdown for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    phases = models.get_condition_phases(conn, session_id)
+    if not phases:
+        return api_response({
+            "available": False,
+            "reason_code": "no_condition_phases",
+            "message": "No condition phase data for this session",
+            "phases": [],
+        })
+
+    return api_response({"phases": phases})
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

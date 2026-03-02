@@ -5,7 +5,8 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
-import { SectorPanel, CornerReplay } from '@/components/shared/charts';
+import { SectorPanel } from '@/components/shared/charts';
+import { CornersTab, type CornerData } from '@/components/app/corners';
 import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
 import { SessionDebrief } from '@/components/app/SessionDebrief';
 import { AchievementsBadges } from '@/components/app/AchievementsBadges';
@@ -34,9 +35,23 @@ interface LapData {
   lap_time_s: number | null;
   speed_mean_mps: number | null;
   speed_max_mps: number | null;
+  braking_max_mps2: number | null;
+  accel_max_mps2: number | null;
+  line_length_m: number | null;
+  phase_id: number | null;
   is_valid: number;
   is_best: number;
+  is_joker: number;
   invalid_reason: string | null;
+}
+
+interface ConditionPhase {
+  phase_id: number;
+  lap_start: number;
+  lap_end: number;
+  label: string | null;
+  confidence: number | null;
+  median_pace_s: number | null;
 }
 
 interface BadgeData {
@@ -60,17 +75,6 @@ interface ScoreData {
   strengths: string[];
   weaknesses: string[];
   badges?: BadgeData[];
-}
-
-interface CornerData {
-  corner_number?: number;
-  name?: string;
-  coaching?: string;
-  entry_speed_mps?: number | null;
-  apex_speed_mps?: number | null;
-  exit_speed_mps?: number | null;
-  time_loss_s?: number | null;
-  severity?: string;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -157,6 +161,7 @@ export default function SessionDetailPage() {
   const [laps, setLaps] = useState<LapData[]>([]);
   const [scores, setScores] = useState<ScoreData | null>(null);
   const [corners, setCorners] = useState<CornerData[]>([]);
+  const [conditionPhases, setConditionPhases] = useState<ConditionPhase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
@@ -176,10 +181,11 @@ export default function SessionDetailPage() {
         setSession(sessionData);
 
         // Fetch supplementary data in parallel (non-critical)
-        const [lapsRes, scoresRes, cornersRes] = await Promise.allSettled([
+        const [lapsRes, scoresRes, cornersRes, phasesRes] = await Promise.allSettled([
           api.get<{ laps: LapData[] }>(`/sessions/${sessionId}/laps`),
           api.get<ScoreData>(`/sessions/${sessionId}/scores`),
           api.get<{ corners: CornerData[] }>(`/sessions/${sessionId}/corners`),
+          api.get<{ phases: ConditionPhase[] }>(`/sessions/${sessionId}/condition-phases`),
         ]);
 
         if (cancelled) return;
@@ -192,6 +198,9 @@ export default function SessionDetailPage() {
         }
         if (cornersRes.status === 'fulfilled') {
           setCorners(cornersRes.value.corners || []);
+        }
+        if (phasesRes.status === 'fulfilled') {
+          setConditionPhases(phasesRes.value.phases || []);
         }
       } catch (err) {
         if (!cancelled) {
@@ -337,7 +346,7 @@ export default function SessionDetailPage() {
       {activeTab === 'analytics' && (
         <AnalyticsTab sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} />
       )}
-      {activeTab === 'laps' && <LapDataTab laps={laps} />}
+      {activeTab === 'laps' && <LapDataTab laps={laps} conditionPhases={conditionPhases} />}
 
       <FocusMode
         sessionId={sessionId}
@@ -657,111 +666,195 @@ function AnalyticsTab({
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 3. Corners Tab
+// 3. Lap Data Tab
 // ══════════════════════════════════════════════════════════════════
 
-function CornersTab({ corners, sessionId }: { corners: CornerData[]; sessionId: string }) {
-  if (corners.length === 0) {
-    return (
-      <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
-        <p className="text-steel font-body">
-          No corner coaching data available for this session.
-        </p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      <h2 className="text-lg font-monument text-chalk">Corner Coaching</h2>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {corners.map((corner, idx) => {
-          const cornerNum = corner.corner_number ?? idx + 1;
-          const severityColor =
-            corner.severity === 'high'
-              ? 'border-safety-red/40'
-              : corner.severity === 'medium'
-                ? 'border-marshal-yellow/40'
-                : 'border-steel/10';
-
-          return (
-            <div
-              key={cornerNum}
-              className={`bg-concrete rounded-xl border p-5 ${severityColor}`}
-            >
-              <div className="flex items-center gap-3 mb-3">
-                <div className="w-8 h-8 flex items-center justify-center rounded-full bg-asphalt text-acid-green font-monument text-sm">
-                  {cornerNum}
-                </div>
-                <h3 className="text-chalk font-body text-sm font-medium">
-                  {corner.name || `Corner ${cornerNum}`}
-                </h3>
-                {corner.time_loss_s != null && (
-                  <span className="ml-auto text-xs font-telemetry text-safety-red">
-                    +{corner.time_loss_s.toFixed(3)}s
-                  </span>
-                )}
-              </div>
-
-              {corner.coaching && (
-                <p className="text-chalk/80 text-sm font-body mb-3">
-                  {corner.coaching}
-                </p>
-              )}
-
-              {/* Speed metrics */}
-              {(corner.entry_speed_mps != null ||
-                corner.apex_speed_mps != null ||
-                corner.exit_speed_mps != null) && (
-                <div className="flex gap-4 text-xs font-telemetry">
-                  {corner.entry_speed_mps != null && (
-                    <div>
-                      <span className="text-steel">Entry </span>
-                      <span className="text-chalk">
-                        {mpsToKmh(corner.entry_speed_mps)} km/h
-                      </span>
-                    </div>
-                  )}
-                  {corner.apex_speed_mps != null && (
-                    <div>
-                      <span className="text-steel">Apex </span>
-                      <span className="text-chalk">
-                        {mpsToKmh(corner.apex_speed_mps)} km/h
-                      </span>
-                    </div>
-                  )}
-                  {corner.exit_speed_mps != null && (
-                    <div>
-                      <span className="text-steel">Exit </span>
-                      <span className="text-chalk">
-                        {mpsToKmh(corner.exit_speed_mps)} km/h
-                      </span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Corner Replay — speed profile comparison with playback */}
-      <div className="mt-6">
-        <h2 className="text-lg font-monument text-chalk mb-4">Corner Replay</h2>
-        <CornerReplay
-          sessionId={sessionId}
-          className="bg-concrete rounded-xl border border-steel/10"
-        />
-      </div>
-    </div>
-  );
+function mps2ToG(mps2: number | null | undefined): string {
+  if (mps2 == null || !isFinite(mps2)) return '--';
+  return (Math.abs(mps2) / 9.81).toFixed(2);
 }
 
-// ══════════════════════════════════════════════════════════════════
-// 4. Lap Data Tab
-// ══════════════════════════════════════════════════════════════════
+function fmtLineLength(m: number | null | undefined): string {
+  if (m == null || !isFinite(m)) return '--';
+  return m.toFixed(1);
+}
 
-function LapDataTab({ laps }: { laps: LapData[] }) {
+function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhases: ConditionPhase[] }) {
+  const chartRef = useRef<HTMLCanvasElement>(null);
+
+  // Derived stats
+  const validLaps = useMemo(() => laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0), [laps]);
+  const validTimes = useMemo(() => validLaps.map((l) => l.lap_time_s!), [validLaps]);
+
+  const bestTime = validTimes.length > 0 ? Math.min(...validTimes) : null;
+  const meanTime = validTimes.length > 0 ? validTimes.reduce((a, b) => a + b, 0) / validTimes.length : null;
+  const medianTime = useMemo(() => {
+    if (validTimes.length === 0) return null;
+    const sorted = [...validTimes].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }, [validTimes]);
+
+  const consistencyCV = useMemo(() => {
+    if (validTimes.length < 2 || !meanTime) return null;
+    const stddev = Math.sqrt(validTimes.reduce((a, t) => a + (t - meanTime) ** 2, 0) / validTimes.length);
+    return (stddev / meanTime) * 100;
+  }, [validTimes, meanTime]);
+
+  const bestLapData = laps.find((l) => l.is_best === 1);
+
+  // Build phase lookup
+  const phaseMap = useMemo(() => {
+    const m: Record<number, string> = {};
+    for (const p of conditionPhases) {
+      for (let lap = p.lap_start; lap <= p.lap_end; lap++) {
+        m[lap] = p.label || `Phase ${p.phase_id}`;
+      }
+    }
+    return m;
+  }, [conditionPhases]);
+
+  // Lap times bar chart
+  useEffect(() => {
+    if (!chartRef.current || validLaps.length === 0) return;
+
+    const canvas = chartRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    const W = rect.width;
+    const H = rect.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = { top: 25, right: 15, bottom: 35, left: 55 };
+    const cW = W - pad.left - pad.right;
+    const cH = H - pad.top - pad.bottom;
+
+    const allTimes = laps.filter((l) => l.lap_time_s != null && l.lap_time_s > 0).map((l) => l.lap_time_s!);
+    if (allTimes.length === 0) return;
+
+    const minT = Math.min(...allTimes) * 0.995;
+    const maxT = Math.max(...allTimes) * 1.005;
+    const n = laps.length;
+    const barWidth = Math.max(4, Math.min(30, (cW / n) * 0.7));
+    const gap = (cW - barWidth * n) / (n + 1);
+
+    const xBar = (i: number) => pad.left + gap + i * (barWidth + gap);
+    const yScale = (t: number) => pad.top + cH - ((t - minT) / (maxT - minT)) * cH;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    const nGridY = 4;
+    for (let i = 0; i <= nGridY; i++) {
+      const y = pad.top + (i / nGridY) * cH;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(W - pad.right, y);
+      ctx.stroke();
+    }
+
+    // Mean line
+    if (meanTime != null) {
+      ctx.strokeStyle = 'rgba(255,140,0,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      const meanY = yScale(meanTime);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, meanY);
+      ctx.lineTo(W - pad.right, meanY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Best lap reference line
+    if (bestTime != null) {
+      ctx.strokeStyle = 'rgba(61,220,132,0.3)';
+      ctx.setLineDash([4, 4]);
+      const bestY = yScale(bestTime);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, bestY);
+      ctx.lineTo(W - pad.right, bestY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Y-axis labels
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= nGridY; i++) {
+      const val = maxT - (i / nGridY) * (maxT - minT);
+      const y = pad.top + (i / nGridY) * cH;
+      ctx.fillText(formatLapTime(val), pad.left - 5, y + 3);
+    }
+
+    // Bars
+    for (let i = 0; i < n; i++) {
+      const lap = laps[i];
+      const time = lap.lap_time_s;
+      if (time == null || time <= 0) continue;
+
+      const x = xBar(i);
+      const y = yScale(time);
+      const barH = pad.top + cH - y;
+      const isBest = lap.is_best === 1;
+      const isInvalid = lap.is_valid === 0;
+      const isIncomplete = lap.invalid_reason?.toLowerCase().includes('incomplete') ||
+                           lap.invalid_reason?.toLowerCase().includes('outlap') ||
+                           lap.invalid_reason?.toLowerCase().includes('inlap');
+
+      if (isBest) {
+        ctx.fillStyle = '#3ddc84';
+      } else if (isIncomplete) {
+        ctx.fillStyle = 'rgba(255,214,0,0.4)';
+      } else if (isInvalid) {
+        ctx.fillStyle = 'rgba(255,68,68,0.3)';
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      }
+      ctx.fillRect(x, y, barWidth, barH);
+
+      // Lap number label
+      ctx.fillStyle = isInvalid ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.5)';
+      ctx.font = '9px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(lap.lap_number), x + barWidth / 2, H - pad.bottom + 14);
+    }
+
+    // Legend
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    const legendY = 14;
+    // Best
+    ctx.fillStyle = '#3ddc84';
+    ctx.fillRect(pad.left, legendY - 4, 10, 8);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Best', pad.left + 14, legendY + 2);
+    // Mean
+    const meanLegX = pad.left + 50;
+    ctx.strokeStyle = 'rgba(255,140,0,0.8)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(meanLegX, legendY);
+    ctx.lineTo(meanLegX + 12, legendY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Mean', meanLegX + 16, legendY + 2);
+    // Incomplete
+    const incLegX = meanLegX + 55;
+    ctx.fillStyle = 'rgba(255,214,0,0.5)';
+    ctx.fillRect(incLegX, legendY - 4, 10, 8);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Incomplete', incLegX + 14, legendY + 2);
+  }, [laps, validLaps, meanTime, bestTime]);
+
   if (laps.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
@@ -771,85 +864,188 @@ function LapDataTab({ laps }: { laps: LapData[] }) {
   }
 
   return (
-    <div>
-      <h2 className="text-lg font-monument text-chalk mb-4">Lap Data</h2>
-      <div className="bg-concrete rounded-xl border border-steel/10 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-steel/10">
-                <th className="text-left px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">
-                  Lap
-                </th>
-                <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">
-                  Time
-                </th>
-                <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">
-                  Avg Speed
-                </th>
-                <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">
-                  Max Speed
-                </th>
-                <th className="text-center px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">
-                  Status
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {laps.map((lap) => {
-                const isBest = lap.is_best === 1;
-                const isInvalid = lap.is_valid === 0;
-                return (
-                  <tr
-                    key={lap.lap_number}
-                    className={`border-b border-steel/5 transition-colors hover:bg-asphalt/50 ${
-                      isBest ? 'bg-acid-green/5' : ''
-                    } ${isInvalid ? 'opacity-50' : ''}`}
-                  >
-                    <td className="px-4 py-3 font-telemetry text-chalk">
-                      <span className="flex items-center gap-2">
-                        {lap.lap_number}
-                        {isBest && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-acid-green/20 text-acid-green font-body uppercase tracking-wide">
-                            Best
-                          </span>
-                        )}
-                      </span>
-                    </td>
-                    <td
-                      className={`px-4 py-3 text-right font-telemetry ${
-                        isBest ? 'text-acid-green' : 'text-chalk'
-                      }`}
-                    >
-                      {formatLapTime(lap.lap_time_s)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                      {mpsToKmh(lap.speed_mean_mps)} km/h
-                    </td>
-                    <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                      {mpsToKmh(lap.speed_max_mps)} km/h
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {isInvalid ? (
-                        <span
-                          className="text-[10px] px-1.5 py-0.5 rounded bg-safety-red/20 text-safety-red font-body"
-                          title={lap.invalid_reason || 'Invalid lap'}
-                        >
-                          {lap.invalid_reason || 'Invalid'}
-                        </span>
-                      ) : (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-body">
-                          Valid
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+    <div className="space-y-6">
+      {/* Performance Summary — 8 stat cards */}
+      <div>
+        <h2 className="text-lg font-monument text-chalk mb-4">Performance Summary</h2>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <StatCard label="Best Time" value={bestTime != null ? formatLapTime(bestTime) : '--'} accent="text-acid-green" />
+          <StatCard label="Mean Time" value={meanTime != null ? formatLapTime(meanTime) : '--'} />
+          <StatCard label="Median Time" value={medianTime != null ? formatLapTime(medianTime) : '--'} />
+          <StatCard label="Consistency" value={consistencyCV != null ? `${consistencyCV.toFixed(1)}%` : '--'} sub="CV" accent={consistencyCV != null && consistencyCV < 1.5 ? 'text-acid-green' : consistencyCV != null && consistencyCV > 3 ? 'text-safety-red' : undefined} />
+          <StatCard label="Total Laps" value={String(laps.length)} />
+          <StatCard label="Valid Laps" value={String(validLaps.length)} />
+          <StatCard label="Best Avg Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '--'} />
+          <StatCard label="Best Max Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '--'} />
         </div>
       </div>
+
+      {/* Lap Times Chart */}
+      {validLaps.length > 0 && (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+          <h2 className="text-lg font-monument text-chalk mb-4">Lap Times</h2>
+          <div className="rounded-lg overflow-hidden bg-asphalt">
+            <canvas
+              ref={chartRef}
+              style={{ width: '100%', height: '220px', display: 'block' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Lap Data Table */}
+      <div>
+        <h2 className="text-lg font-monument text-chalk mb-4">Lap Data</h2>
+        <div className="bg-concrete rounded-xl border border-steel/10 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-steel/10">
+                  <th className="text-left px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Lap</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Time</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Avg Speed</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Max Speed</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Max Braking</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Max Accel</th>
+                  <th className="text-right px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Line</th>
+                  <th className="text-center px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Phase</th>
+                  <th className="text-center px-4 py-3 text-steel font-body font-normal text-xs uppercase tracking-wider">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {laps.map((lap) => {
+                  const isBest = lap.is_best === 1;
+                  const isInvalid = lap.is_valid === 0;
+                  const isIncomplete = isInvalid && (
+                    lap.invalid_reason?.toLowerCase().includes('incomplete') ||
+                    lap.invalid_reason?.toLowerCase().includes('outlap') ||
+                    lap.invalid_reason?.toLowerCase().includes('inlap')
+                  );
+                  const phaseName = phaseMap[lap.lap_number] || (lap.phase_id != null ? `P${lap.phase_id}` : '--');
+
+                  return (
+                    <tr
+                      key={lap.lap_number}
+                      className={`border-b border-steel/5 transition-colors hover:bg-asphalt/50 ${
+                        isBest ? 'bg-acid-green/5' : ''
+                      } ${isIncomplete ? 'opacity-60' : isInvalid ? 'opacity-40' : ''}`}
+                    >
+                      <td className="px-4 py-3 font-telemetry text-chalk">
+                        <span className="flex items-center gap-2">
+                          {lap.lap_number}
+                          {isBest && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-acid-green/20 text-acid-green font-body uppercase tracking-wide">
+                              Best
+                            </span>
+                          )}
+                        </span>
+                      </td>
+                      <td className={`px-4 py-3 text-right font-telemetry ${isBest ? 'text-acid-green' : 'text-chalk'}`}>
+                        {formatLapTime(lap.lap_time_s)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-telemetry text-chalk">
+                        {mpsToKmh(lap.speed_mean_mps)} km/h
+                      </td>
+                      <td className="px-4 py-3 text-right font-telemetry text-chalk">
+                        {mpsToKmh(lap.speed_max_mps)} km/h
+                      </td>
+                      <td className="px-4 py-3 text-right font-telemetry text-chalk">
+                        {mps2ToG(lap.braking_max_mps2)} G
+                      </td>
+                      <td className="px-4 py-3 text-right font-telemetry text-chalk">
+                        {mps2ToG(lap.accel_max_mps2)} G
+                      </td>
+                      <td className="px-4 py-3 text-right font-telemetry text-chalk">
+                        {fmtLineLength(lap.line_length_m)} m
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-steel/10 text-steel font-body">
+                          {phaseName}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {isIncomplete ? (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-marshal-yellow/20 text-marshal-yellow font-body"
+                            title={lap.invalid_reason || 'Incomplete'}
+                          >
+                            {lap.invalid_reason || 'Incomplete'}
+                          </span>
+                        ) : isInvalid ? (
+                          <span
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-safety-red/20 text-safety-red font-body"
+                            title={lap.invalid_reason || 'Invalid lap'}
+                          >
+                            {lap.invalid_reason || 'Invalid'}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-body">
+                            Valid
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Track Condition Phases */}
+      {conditionPhases.length > 0 && (
+        <div>
+          <h2 className="text-lg font-monument text-chalk mb-4">Track Condition Phases</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {conditionPhases.map((phase) => (
+              <div
+                key={phase.phase_id}
+                className="bg-concrete rounded-xl border border-steel/10 p-5"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-monument text-chalk">
+                    {phase.label || `Phase ${phase.phase_id}`}
+                  </h3>
+                  <span className="text-xs font-telemetry text-steel">
+                    Laps {phase.lap_start}–{phase.lap_end}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-steel font-body block">Median Pace</span>
+                    <span className="text-chalk font-telemetry text-sm">
+                      {formatLapTime(phase.median_pace_s)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-steel font-body block">Confidence</span>
+                    <span className="text-chalk font-telemetry text-sm">
+                      {phase.confidence != null ? `${(phase.confidence * 100).toFixed(0)}%` : '--'}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-steel font-body block">Laps</span>
+                    <span className="text-chalk font-telemetry text-sm">
+                      {phase.lap_end - phase.lap_start + 1}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, accent }: { label: string; value: string; sub?: string; accent?: string }) {
+  return (
+    <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+      <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{label}</p>
+      <span className={`text-lg font-monument ${accent || 'text-chalk'}`}>{value}</span>
+      {sub && <span className="text-steel text-xs font-body ml-1">{sub}</span>}
     </div>
   );
 }

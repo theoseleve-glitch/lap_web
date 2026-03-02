@@ -1,11 +1,11 @@
 'use client';
 
 interface CornerData {
-  corner_number?: number;
-  name?: string;
-  coaching?: string;
-  time_loss_s?: number | null;
-  severity?: string;
+  corner_id: number;
+  available: boolean;
+  direction?: 'L' | 'R';
+  coaching_hint?: string | null;
+  time_loss_total_s?: number | null;
 }
 
 interface ScoreData {
@@ -89,12 +89,12 @@ function buildHighlights(laps: LapData[]): string[] {
 
 function buildFocusAreas(corners: CornerData[]): { text: string; loss: number }[] {
   return corners
-    .filter((c) => c.coaching && c.time_loss_s != null && c.time_loss_s > 0)
-    .sort((a, b) => (b.time_loss_s ?? 0) - (a.time_loss_s ?? 0))
+    .filter((c) => c.available && c.coaching_hint && c.time_loss_total_s != null && c.time_loss_total_s > 0)
+    .sort((a, b) => (b.time_loss_total_s ?? 0) - (a.time_loss_total_s ?? 0))
     .slice(0, 4)
     .map((c) => ({
-      text: `${c.name || `Corner ${c.corner_number}`}: ${c.coaching} (+${c.time_loss_s!.toFixed(3)}s)`,
-      loss: c.time_loss_s!,
+      text: `Corner ${c.corner_id}${c.direction ? ` (${c.direction})` : ''}: ${c.coaching_hint} (+${c.time_loss_total_s!.toFixed(3)}s)`,
+      loss: c.time_loss_total_s!,
     }));
 }
 
