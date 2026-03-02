@@ -11,7 +11,7 @@ import { RaceConfigForm, type RaceFormData } from '@/components/app/race-strateg
 export default function NewRacePage() {
   const router = useRouter();
   const [error, setError] = useState('');
-  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit);
+  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit) ?? undefined;
 
   const mutation = useMutation({
     mutationFn: (payload: RaceFormData) =>
