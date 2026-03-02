@@ -6,6 +6,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app';
+import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -112,44 +113,6 @@ const stintStatusConfig: Record<string, { label: string; className: string }> = 
   completed: { label: 'DONE', className: 'text-chalk bg-chalk/10 border-chalk/30' },
   skipped: { label: 'SKIPPED', className: 'text-safety-red bg-safety-red/10 border-safety-red/30' },
 };
-
-/* ── StintTimeline ────────────────────────────────────────────────── */
-
-function StintTimeline({
-  stints,
-  totalDuration,
-  driverColors,
-  activeStintId,
-}: {
-  stints: Stint[];
-  totalDuration: number;
-  driverColors: Record<number, string>;
-  activeStintId?: number;
-}) {
-  if (!stints.length || !totalDuration) return null;
-  return (
-    <div className="flex h-10 w-full overflow-hidden border border-steel/20 rounded">
-      {stints.map((s) => {
-        const dur = s.planned_duration_s || s.actual_duration_s || 0;
-        const pct = (dur / totalDuration) * 100;
-        const bg = driverColors[s.driver_id] || '#888';
-        const isActive = s.stint_id === activeStintId;
-        return (
-          <div
-            key={s.stint_id}
-            className={`flex items-center justify-center text-[10px] font-telemetry text-asphalt truncate border-r border-asphalt/30 last:border-r-0 ${
-              isActive ? 'ring-2 ring-acid-green ring-inset animate-pulse' : ''
-            }`}
-            style={{ width: `${pct}%`, backgroundColor: bg }}
-            title={`${s.driver_name} \u2014 ${formatTime(dur)}`}
-          >
-            {pct > 8 ? s.driver_name : ''}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 /* ── Live Dashboard ───────────────────────────────────────────────── */
 

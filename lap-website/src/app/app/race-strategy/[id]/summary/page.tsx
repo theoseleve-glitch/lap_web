@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { PageHeader, StatCard } from '@/components/app';
+import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -118,39 +119,6 @@ const stintStatusConfig: Record<string, { label: string; className: string }> = 
   skipped: { label: 'SKIPPED', className: 'text-safety-red bg-safety-red/10 border-safety-red/30' },
 };
 
-/* ── StintTimeline ────────────────────────────────────────────────── */
-
-function StintTimeline({
-  stints,
-  totalDuration,
-  driverColors,
-}: {
-  stints: Stint[];
-  totalDuration: number;
-  driverColors: Record<number, string>;
-}) {
-  if (!stints.length || !totalDuration) return null;
-  return (
-    <div className="flex h-10 w-full overflow-hidden border border-steel/20 rounded">
-      {stints.map((s) => {
-        const dur = s.actual_duration_s || s.planned_duration_s || 0;
-        const pct = (dur / totalDuration) * 100;
-        const bg = driverColors[s.driver_id] || '#888';
-        return (
-          <div
-            key={s.stint_id}
-            className="flex items-center justify-center text-[10px] font-telemetry text-asphalt truncate border-r border-asphalt/30 last:border-r-0"
-            style={{ width: `${pct}%`, backgroundColor: bg }}
-            title={`${s.driver_name} \u2014 ${formatTime(dur)}`}
-          >
-            {pct > 8 ? s.driver_name : ''}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 /* ── Summary Page ─────────────────────────────────────────────────── */
 
 export default function SummaryPage() {
@@ -226,7 +194,7 @@ export default function SummaryPage() {
       {/* Stint Timeline */}
       <div className="space-y-2">
         <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Stint Timeline</h3>
-        <StintTimeline stints={stints} totalDuration={race.race_duration_s} driverColors={driverColors} />
+        <StintTimeline stints={stints} totalDuration={race.race_duration_s} driverColors={driverColors} preferActual />
       </div>
 
       {/* Driver Stats */}
