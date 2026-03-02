@@ -36,6 +36,7 @@ from flask import Blueprint, request, send_file
 
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
+from web.middleware.audit import audit_log
 from web import models
 
 logger = logging.getLogger(__name__)
@@ -694,6 +695,16 @@ def delete_session(session_id: str):
         "DELETE FROM sessions WHERE session_id = :session_id",
         {"session_id": session_id},
     )
+
+    audit_log(
+        conn,
+        "session.delete",
+        {
+            "session_id": session_id,
+            "tables_cleaned": list(_DELETE_RELATED_TABLES),
+        },
+    )
+
     conn.commit()
 
     logger.info("Deleted session %s and related data", session_id)
