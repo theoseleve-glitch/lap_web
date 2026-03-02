@@ -121,7 +121,7 @@ export default function TrainingPage() {
           <h2 className="text-sm font-semibold text-steel">Configuration</h2>
           <button
             onClick={() => { setEditConfig(!editConfig); setConfigDraft(config ?? {}); }}
-            className="rounded px-2 py-0.5 text-xs text-acid-green hover:bg-acid-green/10"
+            className="rounded px-2 py-0.5 text-xs text-acid-green hover:bg-gold/10"
           >
             {editConfig ? 'Cancel' : 'Edit'}
           </button>
@@ -150,7 +150,7 @@ export default function TrainingPage() {
             <button
               onClick={() => configMutation.mutate(configDraft)}
               disabled={configMutation.isPending}
-              className="mt-2 rounded bg-acid-green/20 px-3 py-1 text-xs text-acid-green hover:bg-acid-green/30 disabled:opacity-50"
+              className="mt-2 rounded bg-acid-green/20 px-3 py-1 text-xs text-acid-green hover:bg-gold/30 disabled:opacity-50"
             >
               {configMutation.isPending ? 'Saving...' : 'Save Config'}
             </button>

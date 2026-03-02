@@ -90,7 +90,7 @@ export default function DataHealthDetailPage() {
             {job.session_id && (
               <Link
                 href={`/app/sessions/${job.session_id}`}
-                className="px-4 py-2 bg-acid-green/10 text-acid-green border border-acid-green/30 font-telemetry text-sm rounded hover:bg-acid-green/20 transition-colors"
+                className="px-4 py-2 bg-acid-green/10 text-acid-green border border-acid-green/30 font-telemetry text-sm rounded hover:bg-gold/20 transition-colors"
               >
                 View Session →
               </Link>

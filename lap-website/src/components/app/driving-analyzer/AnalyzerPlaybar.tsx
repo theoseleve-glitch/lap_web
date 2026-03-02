@@ -101,7 +101,7 @@ export function AnalyzerPlaybar({
             onClick={() => onSpeedChange(s)}
             className={`px-1.5 py-0.5 text-[10px] font-telemetry rounded transition-colors ${
               playbackSpeed === s
-                ? 'bg-acid-green text-asphalt'
+                ? 'bg-gold text-asphalt'
                 : 'text-steel hover:text-chalk'
             }`}
           >

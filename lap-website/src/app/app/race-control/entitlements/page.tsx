@@ -76,7 +76,7 @@ export default function EntitlementsPage() {
       <div className="mt-6">
         <button
           onClick={() => setShowForm(!showForm)}
-          className="rounded bg-acid-green/20 px-3 py-1 text-xs font-medium text-acid-green hover:bg-acid-green/30 transition-colors"
+          className="rounded bg-acid-green/20 px-3 py-1 text-xs font-medium text-acid-green hover:bg-gold/30 transition-colors"
         >
           {showForm ? 'Cancel' : 'Create Override'}
         </button>

@@ -103,9 +103,9 @@ export default function OnboardingPage() {
         <button
           type="submit"
           disabled={saving || !displayName.trim()}
-          className="px-6 py-3 bg-acid-green text-carbon font-monument text-sm rounded-lg
-            hover:bg-acid-green/90 transition-colors
-            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acid-green"
+          className="px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+            hover:bg-gold/90 transition-colors
+            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold"
         >
           {saving ? 'Saving...' : 'Start Analyzing'}
         </button>

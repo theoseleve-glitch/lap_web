@@ -69,7 +69,7 @@ export function SplitPane({
       {/* Divider */}
       <div
         onMouseDown={handleMouseDown}
-        className="w-1 shrink-0 cursor-col-resize bg-steel/30 hover:bg-acid-green transition-colors"
+        className="w-1 shrink-0 cursor-col-resize bg-steel/30 hover:bg-gold transition-colors"
         role="separator"
         aria-orientation="vertical"
         aria-label="Resize panels"

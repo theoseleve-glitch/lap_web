@@ -191,7 +191,7 @@ export default function DataPrivacyPage() {
         <button
           onClick={() => exportMutation.mutate()}
           disabled={exportMutation.isPending}
-          className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+          className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
         >
           {exportMutation.isPending ? 'Creating export...' : 'Request Data Export'}
         </button>

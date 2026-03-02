@@ -15,13 +15,13 @@ const initialState = {
   pointerX: 0.5,
   pointerY: 0.5,
   pointerMagnetism: { x: 0, y: 0 },
-  mode: 'preloading' as const,
+  mode: 'idle' as const,
   qualityTier: 'high' as const,
   qualityMode: 'auto' as const,
   reducedMotion: false,
   webglAvailable: true,
-  loadProgress: 0,
-  preloaderComplete: false,
+  loadProgress: 1,
+  preloaderComplete: true,
 
   // ── Narrative state ─────────────────────
   hudTower: {

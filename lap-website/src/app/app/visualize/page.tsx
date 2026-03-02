@@ -144,7 +144,7 @@ export default function VisualizeLandingPage() {
               </p>
               <Link
                 href="/app/analyze"
-                className="inline-block px-6 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm rounded hover:bg-acid-green/80 transition-colors"
+                className="inline-block px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
               >
                 Analyze a Session
               </Link>
@@ -207,7 +207,7 @@ export default function VisualizeLandingPage() {
                 <button
                   type="button"
                   onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAnalyzerSessionId(session.session_id); }}
-                  className="px-2.5 py-1 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-acid-green/10 transition-colors"
+                  className="px-2.5 py-1 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-gold/10 transition-colors"
                 >
                   Analyze
                 </button>

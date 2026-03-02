@@ -278,9 +278,9 @@ export function CornerPicker({ trackLayout, onSubmit, isSubmitting }: CornerPick
           type="button"
           onClick={handleSubmit}
           disabled={isSubmitting || selectedCount === 0}
-          className="w-full px-6 py-3 bg-acid-green text-carbon font-monument text-sm rounded-lg
-            hover:bg-acid-green/90 transition-colors
-            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acid-green"
+          className="w-full px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+            hover:bg-gold/90 transition-colors
+            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold"
         >
           {isSubmitting ? 'Resuming Analysis...' : `Continue Analysis (${selectedCount} corners)`}
         </button>

@@ -610,9 +610,9 @@ export default function UploadPage() {
           {/* ── Submit Button ──────────────────────────── */}
           <div className="flex items-center gap-4">
             <button type="submit" disabled={isFormDisabled || !file || !driverName.trim()}
-              className="px-6 py-3 bg-acid-green text-carbon font-monument text-sm rounded-lg
-                hover:bg-acid-green/90 transition-colors
-                disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-acid-green">
+              className="px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+                hover:bg-gold/90 transition-colors
+                disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold">
               Upload &amp; Analyze
             </button>
             <Link href="/app/sessions"

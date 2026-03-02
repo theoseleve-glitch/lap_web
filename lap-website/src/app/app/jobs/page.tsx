@@ -293,7 +293,7 @@ export default function JobsPage() {
                           onClick={() => retryMut.mutate(job.job_id)}
                           disabled={retryMut.isPending}
                           className="px-2 py-1 text-[10px] font-telemetry uppercase text-acid-green border border-acid-green/20 rounded
-                            hover:bg-acid-green/10 disabled:opacity-50 transition-colors"
+                            hover:bg-gold/10 disabled:opacity-50 transition-colors"
                         >
                           Retry
                         </button>

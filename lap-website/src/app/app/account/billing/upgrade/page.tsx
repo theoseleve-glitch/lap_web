@@ -49,7 +49,7 @@ export default function UpgradePage() {
           onClick={() => setCycle('monthly')}
           className={`px-4 py-1.5 rounded-full font-telemetry text-xs transition-colors ${
             cycle === 'monthly'
-              ? 'bg-acid-green text-asphalt'
+              ? 'bg-gold text-asphalt'
               : 'bg-concrete text-steel hover:text-chalk'
           }`}
         >
@@ -61,7 +61,7 @@ export default function UpgradePage() {
           onClick={() => setCycle('annual')}
           className={`px-4 py-1.5 rounded-full font-telemetry text-xs transition-colors ${
             cycle === 'annual'
-              ? 'bg-acid-green text-asphalt'
+              ? 'bg-gold text-asphalt'
               : 'bg-concrete text-steel hover:text-chalk'
           }`}
         >
@@ -137,7 +137,7 @@ export default function UpgradePage() {
               ) : isUpgrade ? (
                 <Link
                   href={`/billing?plan=${plan.slug.toUpperCase()}&billing=${cycle}`}
-                  className="block w-full text-center bg-acid-green text-asphalt font-telemetry text-sm py-2.5 rounded-md hover:brightness-110 transition"
+                  className="block w-full text-center bg-gold text-asphalt font-telemetry text-sm py-2.5 rounded-md hover:brightness-110 transition"
                 >
                   Upgrade to {plan.name}
                 </Link>

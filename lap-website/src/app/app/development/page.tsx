@@ -158,8 +158,8 @@ export default function DevelopmentPlansPage() {
             <button
               type="submit"
               disabled={createMutation.isPending}
-              className="px-6 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm rounded
-                hover:bg-acid-green/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded
+                hover:bg-gold/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? 'Creating...' : 'Create'}
             </button>

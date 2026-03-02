@@ -280,7 +280,7 @@ export default function UsagePage() {
           </p>
           <Link
             href="/app/account/billing/upgrade"
-            className="inline-block bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
+            className="inline-block bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
           >
             Upgrade Plan
           </Link>

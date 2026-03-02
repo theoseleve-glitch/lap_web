@@ -155,7 +155,7 @@ export function CookieConsent() {
 
             <button
               onClick={handleSaveCustom}
-              className="w-full bg-acid-green text-asphalt font-telemetry text-sm py-2 rounded-md hover:brightness-110 transition"
+              className="w-full bg-gold text-asphalt font-telemetry text-sm py-2 rounded-md hover:brightness-110 transition"
             >
               Save Preferences
             </button>
@@ -164,7 +164,7 @@ export function CookieConsent() {
           <div className="flex flex-wrap gap-2">
             <button
               onClick={handleAcceptAll}
-              className="bg-acid-green text-asphalt font-telemetry text-xs px-4 py-2 rounded-md hover:brightness-110 transition"
+              className="bg-gold text-asphalt font-telemetry text-xs px-4 py-2 rounded-md hover:brightness-110 transition"
             >
               Accept All
             </button>

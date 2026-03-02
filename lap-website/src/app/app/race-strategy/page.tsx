@@ -51,7 +51,7 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; dotColor
   live: {
     label: 'LIVE',
     className: 'bg-acid-green/10 text-acid-green border-acid-green/30',
-    dotColor: 'bg-acid-green animate-pulse',
+    dotColor: 'bg-gold animate-pulse',
   },
   finished: {
     label: 'FINISHED',

@@ -269,7 +269,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={profileMutation.isPending}
-              className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+              className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
             >
               {profileMutation.isPending ? 'Saving...' : 'Save Changes'}
             </button>
@@ -371,7 +371,7 @@ export default function ProfilePage() {
                 })
               }
               disabled={prefsMutation.isPending}
-              className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+              className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
             >
               {prefsMutation.isPending ? 'Saving...' : 'Save Preferences'}
             </button>

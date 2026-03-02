@@ -251,7 +251,7 @@ export default function DevelopmentPlanDetailPage() {
                   disabled={patchMutation.isPending}
                   className={`shrink-0 w-5 h-5 rounded border transition-colors flex items-center justify-center ${
                     item.done
-                      ? 'bg-acid-green border-acid-green text-asphalt'
+                      ? 'bg-gold border-acid-green text-asphalt'
                       : 'border-steel/40 hover:border-acid-green/60'
                   }`}
                   aria-label={item.done ? `Mark "${item.text}" as incomplete` : `Mark "${item.text}" as complete`}
@@ -298,7 +298,7 @@ export default function DevelopmentPlanDetailPage() {
             type="submit"
             disabled={!newItemText.trim() || patchMutation.isPending}
             className="px-4 py-2 bg-acid-green/20 text-acid-green border border-acid-green/30 font-telemetry text-xs rounded
-              hover:bg-acid-green/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              hover:bg-gold/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Add
           </button>

@@ -477,7 +477,7 @@ export default function LiveDashboardPage() {
         <button
           onClick={() => reoptimizeMut.mutate()}
           disabled={reoptimizeMut.isPending}
-          className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50"
+          className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
         >
           {reoptimizeMut.isPending ? 'Re-Optimizing...' : 'Re-Optimize'}
         </button>

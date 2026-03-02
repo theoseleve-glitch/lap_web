@@ -286,7 +286,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
         </div>
         <button
           onClick={() => setAnalyzerOpen(true)}
-          className="px-3 py-1.5 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-acid-green/10 transition-colors"
+          className="px-3 py-1.5 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-gold/10 transition-colors"
         >
           Open in Driving Analyzer
         </button>

@@ -21,7 +21,7 @@ export function ActionButton({
 
   const colors = variant === 'danger'
     ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-    : 'bg-acid-green/20 text-acid-green hover:bg-acid-green/30';
+    : 'bg-gold/20 text-gold hover:bg-gold/30';
 
   async function handleConfirm() {
     if (requireReason && !reason.trim()) return;

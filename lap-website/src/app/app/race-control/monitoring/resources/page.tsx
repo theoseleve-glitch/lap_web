@@ -125,7 +125,7 @@ export default function UserResourcesPage() {
                   return (
                     <div key={i} className="group relative flex-1 min-w-[8px]">
                       <div
-                        className="w-full rounded-t bg-acid-green/40 transition-colors group-hover:bg-acid-green/60"
+                        className="w-full rounded-t bg-acid-green/40 transition-colors group-hover:bg-gold/60"
                         style={{ height: `${Math.max(pct, 2)}%` }}
                       />
                       <div className="absolute -top-16 left-1/2 -translate-x-1/2 hidden group-hover:block rounded bg-concrete border border-white/10 px-2 py-1 text-[10px] text-chalk whitespace-nowrap z-10">

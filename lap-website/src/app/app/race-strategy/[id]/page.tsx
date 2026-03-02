@@ -226,7 +226,7 @@ export default function RaceDetailPage() {
           <button
             onClick={() => optimizeMut.mutate()}
             disabled={optimizeMut.isPending}
-            className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             {optimizeMut.isPending ? 'Optimizing...' : 'Optimize'}
           </button>

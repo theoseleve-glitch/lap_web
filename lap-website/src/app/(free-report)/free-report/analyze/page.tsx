@@ -232,7 +232,7 @@ export default function FreeReportAnalyzePage() {
               type="button"
               disabled={!selectedFile}
               onClick={() => setStep(2)}
-              className="px-6 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-acid-green/80 transition-colors"
+              className="px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gold/80 transition-colors"
             >
               {t('freeReport.nextConfigure')}
             </button>
@@ -294,7 +294,7 @@ export default function FreeReportAnalyzePage() {
             <button
               type="button"
               onClick={handleSubmit}
-              className="px-6 py-2.5 bg-acid-green text-asphalt font-monument text-sm tracking-wider rounded hover:bg-acid-green/80 transition-colors"
+              className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors"
             >
               {t('freeReport.startAnalysis')}
             </button>
@@ -322,7 +322,7 @@ export default function FreeReportAnalyzePage() {
                         : '/free-report/analyze',
                     )
                   }
-                  className="px-6 py-2.5 bg-acid-green text-asphalt font-monument text-sm tracking-wider rounded hover:bg-acid-green/80 transition-colors"
+                  className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors"
                 >
                   {t('freeReport.viewReport')}
                 </button>

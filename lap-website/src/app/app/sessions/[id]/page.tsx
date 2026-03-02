@@ -388,7 +388,7 @@ export default function SessionDetailPage() {
           {/* Driving Analyzer */}
           <button
             onClick={() => setAnalyzerOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-acid-green/10 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-gold/10 transition-colors"
             aria-label="Open Driving Analyzer (D)"
             title="Open Driving Analyzer (D)"
           >

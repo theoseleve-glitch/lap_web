@@ -90,7 +90,7 @@ export function CornerReplayControls({
               onClick={() => onCornerChange(i)}
               className={`min-w-[28px] h-7 px-1.5 rounded text-xs font-telemetry transition-colors ${
                 cornerIndex === i
-                  ? 'bg-acid-green text-carbon font-bold'
+                  ? 'bg-gold text-carbon font-bold'
                   : 'bg-steel/10 text-steel hover:text-chalk'
               }`}
               title={c.label}

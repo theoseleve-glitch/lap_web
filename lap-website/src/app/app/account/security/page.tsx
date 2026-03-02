@@ -289,7 +289,7 @@ export default function SecurityPage() {
           <button
             type="submit"
             disabled={!canSubmitPassword || changePasswordMutation.isPending}
-            className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+            className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
           >
             {changePasswordMutation.isPending ? 'Updating...' : 'Update Password'}
           </button>
@@ -373,7 +373,7 @@ export default function SecurityPage() {
                       type="button"
                       onClick={() => regenBackupMutation.mutate()}
                       disabled={!regenPassword || regenCode.length !== 6 || regenBackupMutation.isPending}
-                      className="bg-acid-green text-asphalt font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+                      className="bg-gold text-asphalt font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
                     >
                       {regenBackupMutation.isPending ? 'Generating...' : 'Generate New Codes'}
                     </button>
@@ -461,7 +461,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => setupTotpMutation.mutate()}
                 disabled={setupTotpMutation.isPending}
-                className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+                className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
               >
                 {setupTotpMutation.isPending ? 'Setting up...' : 'Enable 2FA'}
               </button>
@@ -498,7 +498,7 @@ export default function SecurityPage() {
               <button
                 type="button"
                 onClick={() => setTwoFaStep('verify')}
-                className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
+                className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
               >
                 Next: Enter Code
               </button>
@@ -542,7 +542,7 @@ export default function SecurityPage() {
                 type="button"
                 onClick={() => confirmTotpMutation.mutate()}
                 disabled={totpCode.length !== 6 || confirmTotpMutation.isPending}
-                className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+                className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
               >
                 {confirmTotpMutation.isPending ? 'Verifying...' : 'Verify & Enable'}
               </button>
@@ -580,7 +580,7 @@ export default function SecurityPage() {
                 setBackupCodes([]);
                 setTotpSetup(null);
               }}
-              className="bg-acid-green text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
+              className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition"
             >
               I&apos;ve Saved These Codes
             </button>

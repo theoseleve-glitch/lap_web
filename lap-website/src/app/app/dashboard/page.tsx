@@ -214,7 +214,7 @@ export default function DashboardPage() {
           </p>
           <Link
             href="/app/analyze"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-acid-green text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-acid-green/90 transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gold text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors"
           >
             + Upload Your First Session
           </Link>
@@ -336,7 +336,7 @@ export default function DashboardPage() {
       <div className="flex gap-3 mb-6">
         <Link
           href="/app/analyze"
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-acid-green text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-acid-green/90 transition-colors"
+          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gold text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors"
         >
           + New Analysis
         </Link>

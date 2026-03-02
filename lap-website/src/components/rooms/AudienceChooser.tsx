@@ -51,9 +51,13 @@ interface AudienceChooserProps {
 export function AudienceChooser({ onChoose }: AudienceChooserProps) {
   const [hovered, setHovered] = useState<'driver' | 'venue' | null>(null);
 
-  function choose(persona: string) {
-    document.cookie = `lap_persona=${persona};path=/;max-age=${60 * 60 * 24 * 365};SameSite=Lax`;
-    onChoose(persona);
+  function chooseDriver() {
+    document.cookie = `lap_persona=drivers;path=/;max-age=${60 * 60 * 24 * 365};SameSite=Lax`;
+    onChoose('drivers');
+  }
+
+  function chooseVenue() {
+    window.location.href = '/contact?plan=venues';
   }
 
   return (
@@ -73,13 +77,13 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
         `}
         onMouseEnter={() => setHovered('driver')}
         onMouseLeave={() => setHovered(null)}
-        onClick={() => choose('drivers')}
+        onClick={chooseDriver}
       >
         <div className={`transition-transform duration-500 ${hovered === 'driver' ? 'scale-110' : ''}`}>
           <HelmetIcon className="text-chalk w-16 h-16 md:w-20 md:h-20" />
         </div>
         <h2 className="font-monument text-[clamp(24px,4vw,48px)] text-chalk leading-tight">
-          I&apos;M A DRIVER
+          FOR DRIVERS
         </h2>
         <p className="font-telemetry text-steel text-sm tracking-widest max-w-xs text-center">
           FIND WHERE YOU LOSE TIME. GET FASTER.
@@ -101,13 +105,13 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
         `}
         onMouseEnter={() => setHovered('venue')}
         onMouseLeave={() => setHovered(null)}
-        onClick={() => choose('venues')}
+        onClick={chooseVenue}
       >
         <div className={`transition-transform duration-500 ${hovered === 'venue' ? 'scale-110' : ''}`}>
           <TrackIcon className="text-pit-orange w-16 h-16 md:w-20 md:h-20" />
         </div>
         <h2 className="font-monument text-[clamp(24px,4vw,48px)] text-chalk leading-tight">
-          I RUN A VENUE
+          FOR VENUES
         </h2>
         <p className="font-telemetry text-steel text-sm tracking-widest max-w-xs text-center">
           ONE ENGINE. YOUR DRIVERS. ZERO STAFF PAIN.

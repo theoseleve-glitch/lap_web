@@ -70,7 +70,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       {/* Skip to content — visible on focus for keyboard users */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-acid-green focus:text-carbon focus:font-telemetry focus:text-sm focus:rounded"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-gold focus:text-carbon focus:font-telemetry focus:text-sm focus:rounded"
       >
         Skip to content
       </a>

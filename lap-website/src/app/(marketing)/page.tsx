@@ -13,7 +13,6 @@ import { Garage } from '@/components/rooms/Garage';
 import { Podium } from '@/components/rooms/Podium';
 import { MarqueeStrip } from '@/components/ui/MarqueeStrip';
 import { AudienceChooser } from '@/components/rooms/AudienceChooser';
-import { VenueHome } from '@/components/rooms/VenueHome';
 
 const MARQUEE_TOP = [
   'TELEMETRY', 'LAP ANALYSIS', 'CORNER COACHING', 'RACE STRATEGY',
@@ -25,7 +24,7 @@ const MARQUEE_MID = [
   'BRAKING', 'APEX SPEED', 'EXIT DRIVE', 'RACING LINE',
 ];
 
-type Persona = 'chooser' | 'drivers' | 'venues';
+type Persona = 'chooser' | 'drivers';
 
 function getPersonaCookie(): Persona {
   if (typeof document === 'undefined') return 'chooser';
@@ -36,7 +35,6 @@ function getPersonaCookie(): Persona {
   if (!match) return 'chooser';
   const val = match.split('=').slice(1).join('=');
   if (val === 'drivers') return 'drivers';
-  if (val === 'venues' || val === 'circuits' || val === 'teams') return 'venues';
   return 'chooser';
 }
 
@@ -75,25 +73,6 @@ function DriverHome({ onSwitch }: { onSwitch: () => void }) {
   );
 }
 
-/* ── Venue Homepage wrapper (adds switch link) ── */
-function VenueHomeWithSwitch({ onSwitch }: { onSwitch: () => void }) {
-  return (
-    <>
-      <VenueHome />
-
-      {/* Switch link */}
-      <div className="flex justify-center pb-8">
-        <button
-          className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/60 hover:text-steel transition-colors"
-          onClick={onSwitch}
-        >
-          Are you a driver? Switch to driver view
-        </button>
-      </div>
-    </>
-  );
-}
-
 /* ── Page orchestrator ────────────────────────── */
 export default function Home() {
   const [persona, setPersona] = useState<Persona>('chooser');
@@ -105,8 +84,7 @@ export default function Home() {
   }, []);
 
   const handleChoose = useCallback((chosen: string) => {
-    const p: Persona = chosen === 'drivers' ? 'drivers' : 'venues';
-    setPersona(p);
+    if (chosen === 'drivers') setPersona('drivers');
   }, []);
 
   const handleSwitch = useCallback(() => {
@@ -118,10 +96,6 @@ export default function Home() {
   // Before hydration or when no persona chosen, show the audience chooser
   if (!mounted || persona === 'chooser') {
     return <AudienceChooser onChoose={handleChoose} />;
-  }
-
-  if (persona === 'venues') {
-    return <VenueHomeWithSwitch onSwitch={handleSwitch} />;
   }
 
   return <DriverHome onSwitch={handleSwitch} />;

@@ -140,7 +140,7 @@ export default function NewKartPage() {
           onClick={() => setPresetMode(true)}
           className={`px-4 py-2 font-telemetry text-sm rounded transition-colors ${
             presetMode
-              ? 'bg-acid-green text-asphalt'
+              ? 'bg-gold text-asphalt'
               : 'bg-concrete border border-steel/30 text-steel hover:text-chalk'
           }`}
         >
@@ -151,7 +151,7 @@ export default function NewKartPage() {
           onClick={() => setPresetMode(false)}
           className={`px-4 py-2 font-telemetry text-sm rounded transition-colors ${
             !presetMode
-              ? 'bg-acid-green text-asphalt'
+              ? 'bg-gold text-asphalt'
               : 'bg-concrete border border-steel/30 text-steel hover:text-chalk'
           }`}
         >
@@ -188,7 +188,7 @@ export default function NewKartPage() {
                 key={`${k.manufacturer}-${k.model}-${i}`}
                 type="button"
                 onClick={() => handlePresetSelect(k)}
-                className="w-full text-left px-4 py-3 rounded border border-steel/10 hover:border-acid-green/40 hover:bg-acid-green/5 transition-colors group"
+                className="w-full text-left px-4 py-3 rounded border border-steel/10 hover:border-acid-green/40 hover:bg-gold/5 transition-colors group"
               >
                 <div className="flex items-center justify-between">
                   <div>
