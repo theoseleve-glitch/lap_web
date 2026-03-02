@@ -14,6 +14,7 @@ in the chain.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Optional
 
 import redis
@@ -383,28 +384,111 @@ def _run_ingest_stages(ctx: PipelineContext) -> None:
         ctx.update_stage(stage, "completed")
 
 
-def _run_analyze_stages(ctx: PipelineContext) -> None:
-    """Pass-through: mark analyze stages 5-8 as completed.
+def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=None) -> dict:
+    """Run pipeline stages 1-7 (ingest through corner detection).
 
-    The real analysis happens in ``_run_finalize_stages`` via
-    ``run_full_analysis()``.
+    Calls ``run_full_analysis(stop_after_corners=True)`` to get track
+    layout and intermediate data, then saves resampled laps to temp dir
+    and corners to Redis for the finalize stage to pick up.
+
+    Returns the pipeline result dict (contains track_layout, resampled_laps,
+    corners). Returns empty dict if no corners detected (flat track / poor GPS).
     """
-    for i, stage in enumerate(_ANALYZE_STAGES):
-        ctx.update_stage(stage, "running")
-        logger.info("Job %s: stage %s (%d/%d)", ctx.job_id, stage, i + 1, len(_ANALYZE_STAGES))
-        ctx.update_stage(stage, "completed")
+    import json as _json
+    from pipeline import run_full_analysis
+
+    session_meta = _build_session_meta(ctx)
+    _job_id = job_id or ctx.job_id
+
+    result = run_full_analysis(
+        csv_path=ctx.file_path,
+        session_meta=session_meta,
+        enable_report=False,
+        progress_callback=_make_progress_callback(_job_id, conn),
+        stop_after_corners=True,
+    )
+
+    resampled_laps = result.get("resampled_laps") or {}
+    corners = result.get("corners") or []
+    track_layout = result.get("track_layout")
+
+    # Persist resampled laps to temp dir (Parquet) for finalize to load
+    for lap_num, df in resampled_laps.items():
+        ctx.save_dataframe(f"resampled_lap_{lap_num}", df)
+
+    # Persist corners to Redis with 2-hour TTL
+    r = _get_redis()
+    r.set(
+        f"pipeline:corners:{ctx.job_id}",
+        _json.dumps(corners),
+        ex=7200,
+    )
+
+    # Persist track layout to Redis with 2-hour TTL
+    if track_layout:
+        r.set(
+            f"pipeline:layout:{ctx.job_id}",
+            _json.dumps(track_layout),
+            ex=7200,
+        )
+
+    return {
+        "corners": corners,
+        "track_layout": track_layout,
+        "resampled_lap_count": len(resampled_laps),
+    }
+
+
+def _load_intermediate_state(ctx: PipelineContext) -> tuple[dict | None, list | None]:
+    """Load resampled laps and corners saved by _run_analyze_stages.
+
+    Returns (resampled_laps, corners) or (None, None) if state is missing
+    (e.g. Redis TTL expired).
+    """
+    import json as _json
+    import glob as _glob
+
+    # Load resampled laps from Parquet files in temp dir
+    resampled_laps = {}
+    pattern = str(ctx.temp_dir / "resampled_lap_*.parquet")
+    for path in sorted(_glob.glob(pattern)):
+        # Extract lap number from filename: "resampled_lap_3.parquet" → 3
+        stem = Path(path).stem  # "resampled_lap_3"
+        try:
+            lap_num = int(stem.split("_")[-1])
+        except (ValueError, IndexError):
+            continue
+        df = ctx.load_dataframe(stem)
+        if df is not None:
+            resampled_laps[lap_num] = df
+
+    if not resampled_laps:
+        logger.warning("No resampled laps found in temp dir for job %s", ctx.job_id)
+        return None, None
+
+    # Load corners from Redis
+    corners = []
+    try:
+        r = _get_redis()
+        raw = r.get(f"pipeline:corners:{ctx.job_id}")
+        if raw:
+            corners = _json.loads(raw)
+    except Exception:
+        logger.warning("Failed to load corners from Redis for job %s", ctx.job_id, exc_info=True)
+
+    return resampled_laps, corners
 
 
 def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, conn=None) -> None:
-    """Run the full analysis pipeline and persist all results to DB.
+    """Run pipeline stages 8-14 and persist all results to DB.
 
-    Calls ``run_full_analysis()`` which orchestrates all 14 pipeline
-    stages in a single pass, then persists the complete session data
-    (driver, track, session, laps, GPS, corners, scores, etc.).
+    Attempts to load intermediate state (resampled laps + corners) saved
+    by ``_run_analyze_stages``. If available, calls ``run_full_analysis()``
+    in resume mode (skipping stages 1-7). Falls back to a full re-run if
+    intermediate state is missing (e.g. Redis TTL expired).
 
-    ``job_id`` and ``conn`` are forwarded to ``_make_progress_callback()``
-    so that live stage updates are written to the ``ingestion_jobs`` table
-    as the pipeline advances.
+    If ``ctx.selected_corner_ids`` is set, filters corners to only those
+    selected by the user.
     """
     from pipeline import run_full_analysis
 
@@ -412,15 +496,41 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
 
     # Mark first finalize stage as running
     ctx.update_stage(_FINALIZE_STAGES[0], "running")
-    logger.info("Job %s: running full analysis pipeline", ctx.job_id)
-
     _job_id = job_id or ctx.job_id
-    result = run_full_analysis(
-        csv_path=ctx.file_path,
-        session_meta=session_meta,
-        enable_report=False,
-        progress_callback=_make_progress_callback(_job_id, conn),
-    )
+
+    # Try to load intermediate state from analyze stage
+    resampled_laps, corners = _load_intermediate_state(ctx)
+
+    if resampled_laps:
+        # Filter corners by user selection if specified
+        if ctx.selected_corner_ids is not None and corners:
+            selected_set = set(ctx.selected_corner_ids)
+            corners = [c for c in corners if c.get("corner_id") in selected_set]
+            logger.info(
+                "Job %s: filtered to %d selected corners (from user selection)",
+                ctx.job_id, len(corners),
+            )
+
+        logger.info("Job %s: resuming from step 8 with %d laps, %d corners",
+                     ctx.job_id, len(resampled_laps), len(corners))
+        result = run_full_analysis(
+            csv_path=ctx.file_path,
+            session_meta=session_meta,
+            enable_report=False,
+            progress_callback=_make_progress_callback(_job_id, conn),
+            resume_from_step8=True,
+            preloaded_resampled_laps=resampled_laps,
+            preloaded_corners=corners,
+        )
+    else:
+        # Fallback: full re-run (intermediate state expired or missing)
+        logger.warning("Job %s: intermediate state missing, running full pipeline", ctx.job_id)
+        result = run_full_analysis(
+            csv_path=ctx.file_path,
+            session_meta=session_meta,
+            enable_report=False,
+            progress_callback=_make_progress_callback(_job_id, conn),
+        )
 
     # ── Persist all session data to the database ──────────────────
     _persist_session_data(ctx, result)
@@ -440,6 +550,11 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
     Sets workspace RLS context, then upserts driver/track/session,
     inserts laps, GPS traces, corner metrics, scores, theoretical data,
     reference line, and analysis JSON.
+
+    Uses connection-scoped ``SET`` (not ``SET LOCAL``) so the
+    ``app.current_workspace_id`` parameter survives ``COMMIT`` and
+    ``ROLLBACK`` across all steps.  Each step commits independently
+    so that a later failure doesn't roll back earlier steps.
     """
     from web.models import (
         insert_analysis_json,
@@ -452,22 +567,30 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
         upsert_session,
         upsert_track,
     )
-    from auth.workspace import set_workspace_context
 
     conn = _get_pg_connection()
 
     try:
-        # Set RLS context so INSERTs get the correct workspace_id
-        set_workspace_context(conn, ctx.workspace_id)
+        # Use connection-scoped SET (not SET LOCAL) so the workspace
+        # context survives COMMIT/ROLLBACK between steps.  SET LOCAL
+        # resets on every COMMIT, which caused workspace_id DEFAULT
+        # failures (`unrecognized configuration parameter`) in tables
+        # that rely on current_setting('app.current_workspace_id').
+        conn.execute(
+            "SET app.current_workspace_id = %(ws)s",
+            {"ws": str(ctx.workspace_id)},
+        )
+        logger.info(
+            "Set workspace context (connection-scoped) ws=%s for job %s",
+            ctx.workspace_id, ctx.job_id,
+        )
 
         # 1. Upsert driver
         meta = result.get("session_meta") or {}
         driver_name = meta.get("driver_name", "Unknown")
         driver_id = upsert_driver(conn, driver_name)
         conn.commit()
-
-        # Re-set workspace context after commit (SET LOCAL resets)
-        set_workspace_context(conn, ctx.workspace_id)
+        logger.info("Upserted driver '%s' (id=%d) for job %s", driver_name, driver_id, ctx.job_id)
 
         # 2. Upsert track (if detected)
         track_match = result.get("track_match")
@@ -475,39 +598,33 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             try:
                 upsert_track(conn, track_match)
                 conn.commit()
-                set_workspace_context(conn, ctx.workspace_id)
+                logger.info("Upserted track %s for job %s", track_match.get("track_id", "?"), ctx.job_id)
             except Exception:
                 logger.warning("Failed to upsert track for session %s", ctx.session_id, exc_info=True)
-                conn.commit()  # Clear any failed transaction state
-                set_workspace_context(conn, ctx.workspace_id)
+                conn.rollback()
 
-        # 3. Upsert session
+        # 3. Upsert session (critical — must succeed)
         session_id = upsert_session(conn, result, driver_id)
         conn.commit()
-        set_workspace_context(conn, ctx.workspace_id)
-        logger.info("Persisted session %s (driver_id=%d)", session_id, driver_id)
+        logger.info("Persisted session %s (driver_id=%d) for job %s", session_id, driver_id, ctx.job_id)
 
         # 4. Insert laps
         try:
             n_laps = insert_laps(conn, session_id, result)
             conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
             logger.info("Inserted %d laps for session %s", n_laps, session_id)
         except Exception:
             logger.warning("Failed to insert laps for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 5. Insert GPS traces
         try:
             n_gps = insert_gps_traces(conn, session_id, result)
             conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
             logger.info("Inserted %d GPS trace rows for session %s", n_gps, session_id)
         except Exception:
             logger.warning("Failed to insert GPS traces for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 6. Insert corner metrics
         try:
@@ -515,12 +632,10 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             if corners:
                 insert_corner_metrics(conn, session_id, result)
                 conn.commit()
-                set_workspace_context(conn, ctx.workspace_id)
                 logger.info("Inserted corner metrics for session %s", session_id)
         except Exception:
             logger.warning("Failed to insert corner metrics for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 7. Insert score details (expects full result dict)
         try:
@@ -528,24 +643,20 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             if score_result:
                 insert_score_details(conn, session_id, result)
                 conn.commit()
-                set_workspace_context(conn, ctx.workspace_id)
                 logger.info("Inserted score details for session %s", session_id)
         except Exception:
             logger.warning("Failed to insert score details for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 8. Insert theoretical data
         try:
             theo_metrics = result.get("theoretical_metrics")
             if theo_metrics:
                 _store_theoretical_data(session_id, result, conn=conn)
-                conn.commit()
-                set_workspace_context(conn, ctx.workspace_id)
+                # _store_theoretical_data commits internally
         except Exception:
             logger.warning("Failed to store theoretical data for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 9. Insert reference line
         try:
@@ -553,12 +664,10 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             if ref_line is not None:
                 insert_reference_line(conn, session_id, result)
                 conn.commit()
-                set_workspace_context(conn, ctx.workspace_id)
                 logger.info("Inserted reference line for session %s", session_id)
         except Exception:
             logger.warning("Failed to insert reference line for session %s", session_id, exc_info=True)
-            conn.commit()
-            set_workspace_context(conn, ctx.workspace_id)
+            conn.rollback()
 
         # 10. Insert curated analysis JSON blob
         try:
@@ -570,7 +679,7 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                             len(analysis_blob), session_id)
         except Exception:
             logger.warning("Failed to insert analysis JSON for session %s", session_id, exc_info=True)
-            conn.commit()
+            conn.rollback()
 
     except Exception:
         logger.exception("Failed to persist session data for job %s", ctx.job_id)
@@ -680,8 +789,19 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
     _update_job_progress(job_id=job_id, status="running", stage_name="analyze", stage_index=4, stage_total=15)
 
     try:
-        _run_analyze_stages(ctx)
+        analyze_conn = _get_pg_connection()
+        phase1_result = _run_analyze_stages(ctx, job_id=job_id, conn=analyze_conn)
         ctx.save()
+
+        corners = phase1_result.get("corners") or []
+        if corners:
+            # Corners detected — pause for user corner selection
+            raise InteractionRequired(
+                reason="corner_selection",
+                payload={"corner_count": len(corners)},
+            )
+
+        # No corners (flat track / poor GPS) — continue to finalize directly
         _update_job_progress(
             job_id=job_id, status="running",
             stage_name="analyze_complete", stage_index=8, stage_total=15,
@@ -689,9 +809,11 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
         return job_id
     except InteractionRequired as exc:
         ctx.save()
+        # Use specific status for corner selection vs generic pause
+        status = "awaiting_corner_selection" if exc.reason == "corner_selection" else "paused"
         _update_job_progress(
-            job_id=job_id, status="paused",
-            stage_name=ctx.current_stage, stage_index=None, stage_total=15,
+            job_id=job_id, status=status,
+            stage_name="corner_detect", stage_index=7, stage_total=15,
             pause_reason=exc.reason,
         )
         return None

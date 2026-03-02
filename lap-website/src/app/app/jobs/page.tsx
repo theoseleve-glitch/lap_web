@@ -45,6 +45,11 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; dotClass
     className: 'bg-marshal-yellow/10 text-marshal-yellow border-marshal-yellow/30',
     dotClass: 'bg-marshal-yellow',
   },
+  awaiting_corner_selection: {
+    label: 'Awaiting Selection',
+    className: 'bg-amber-400/10 text-amber-400 border-amber-400/30',
+    dotClass: 'bg-amber-400 animate-pulse',
+  },
   completed: {
     label: 'Completed',
     className: 'bg-acid-green/10 text-acid-green border-acid-green/30',
@@ -262,6 +267,15 @@ export default function JobsPage() {
                             hover:bg-pit-orange/10 transition-colors"
                         >
                           View
+                        </Link>
+                      )}
+                      {job.status === 'awaiting_corner_selection' && (
+                        <Link
+                          href={`/app/sessions/upload?resume=${job.job_id}`}
+                          className="px-2 py-1 text-[10px] font-telemetry uppercase text-amber-400 border border-amber-400/20 rounded
+                            hover:bg-amber-400/10 transition-colors"
+                        >
+                          Select Corners
                         </Link>
                       )}
                       {(job.status === 'running' || job.status === 'processing' || job.status === 'queued') && (

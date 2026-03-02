@@ -205,18 +205,17 @@ def retry(job_id: str):
     return api_response({"retried": True, "new_job_id": new_job_id})
 
 
-@bp.route("/<job_id>/resume", methods=["POST"])
-@rate_limit(tier="write")
-@validate_body(ResumeJobSchema)
-def resume(job_id: str):
-    """Resume a paused job with a joker decision.
+@bp.route("/<job_id>/track-layout", methods=["GET"])
+@rate_limit(tier="read")
+def track_layout(job_id: str):
+    """Get the track layout for corner selection.
 
-    Expects validated JSON body via ResumeJobSchema: ``{"joker_decision": "accept"|"reject"}``
+    Only available when the job is in ``awaiting_corner_selection`` status.
 
     Returns:
-        200 with ``{"resumed": true}`` if successful.
+        200 with track layout JSON (latitudes, longitudes, distances, speeds, corners).
         404 if job not found.
-        409 if job is not in "paused" status.
+        409 if job is not awaiting corner selection.
     """
     conn = get_pg_connection()
     job = get_job(conn, job_id, g.workspace_id)
@@ -224,22 +223,71 @@ def resume(job_id: str):
     if job is None:
         return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
 
-    if job.get("status") != "paused":
+    if job.get("status") != "awaiting_corner_selection":
         return api_error(
             ErrorCode.CONFLICT,
-            f"Job is not paused (current status: {job.get('status')})",
+            f"Job is not awaiting corner selection (current: {job.get('status')})",
             status=409,
         )
 
-    # Read joker decision from validated body
-    joker_decision = g.body.joker_decision
+    # Read track layout from Redis
+    redis_client = _get_redis()
+    raw = redis_client.get(f"pipeline:layout:{job_id}")
+    if raw is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Track layout not found (may have expired)",
+            status=404,
+        )
 
-    # Store joker decision in PipelineContext via Redis
+    layout = json.loads(raw)
+    return api_response(layout)
+
+
+@bp.route("/<job_id>/resume", methods=["POST"])
+@rate_limit(tier="write")
+@validate_body(ResumeJobSchema)
+def resume(job_id: str):
+    """Resume a paused job with a joker decision or corner selection.
+
+    Accepts either:
+    - ``{"joker_decision": "accept"|"reject"}`` for paused (joker) jobs
+    - ``{"selected_corner_ids": [0, 2, 5]}`` for awaiting_corner_selection jobs
+
+    Returns:
+        200 with ``{"resumed": true}`` if successful.
+        404 if job not found.
+        409 if job is not in a resumable status.
+    """
+    conn = get_pg_connection()
+    job = get_job(conn, job_id, g.workspace_id)
+
+    if job is None:
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+
+    current_status = job.get("status")
+    if current_status not in ("paused", "awaiting_corner_selection"):
+        return api_error(
+            ErrorCode.CONFLICT,
+            f"Job is not resumable (current status: {current_status})",
+            status=409,
+        )
+
     redis_client = _get_redis()
     ctx = _load_pipeline_context(redis_client, job_id)
-    if ctx is not None:
-        ctx.set_joker_decision(joker_decision)
-        ctx.save()
+
+    if current_status == "awaiting_corner_selection":
+        # Corner selection path
+        selected_ids = g.body.selected_corner_ids
+        if ctx is not None and selected_ids is not None:
+            ctx.set_selected_corner_ids(selected_ids)
+            ctx.save()
+    else:
+        # Joker decision path
+        joker_decision = g.body.joker_decision
+        if ctx is not None and joker_decision is not None:
+            ctx.set_joker_decision(joker_decision)
+            ctx.save()
 
     # Update job status to processing
     conn.execute(
@@ -314,6 +362,7 @@ def stream(job_id: str):
                     "stage_name": job.get("stage_name"),
                     "progress_pct": progress_pct,
                     "error_message": job.get("error_message"),
+                    "session_id": job.get("session_id") or job.get("job_id"),
                 }
                 yield f"data: {json.dumps(event)}\n\n"
 
