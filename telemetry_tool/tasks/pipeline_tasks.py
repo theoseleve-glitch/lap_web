@@ -794,14 +794,14 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
         ctx.save()
 
         corners = phase1_result.get("corners") or []
-        if corners:
-            # Corners detected — pause for user corner selection
-            raise InteractionRequired(
-                reason="corner_selection",
-                payload={"corner_count": len(corners)},
-            )
+        logger.info(
+            "Job %s: analyze complete — %d corners detected, continuing to finalize",
+            job_id, len(corners),
+        )
 
-        # No corners (flat track / poor GPS) — continue to finalize directly
+        # Continue to finalize with all detected corners.
+        # Corner selection UI (InteractionRequired pause) can be re-enabled
+        # once the frontend supports it.
         _update_job_progress(
             job_id=job_id, status="running",
             stage_name="analyze_complete", stage_index=8, stage_total=15,
