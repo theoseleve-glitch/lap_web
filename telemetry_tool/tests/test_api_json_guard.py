@@ -47,6 +47,20 @@ def test_html_guard_catches_html_on_api_path(app):
         assert body["error"]["code"] == "API_HTML_RESPONSE"
 
 
+def test_options_preflight_not_intercepted_by_guard(client):
+    """OPTIONS preflight on /api/* must return 200, not 500 from HTML guard."""
+    resp = client.options(
+        "/api/v1/dashboard/stats",
+        headers={
+            "Origin": "http://localhost:3000",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "Authorization,Content-Type",
+        },
+    )
+    assert resp.status_code == 200, \
+        f"OPTIONS preflight should be 200, got {resp.status_code}"
+
+
 def test_html_guard_allows_attachment_downloads(app):
     """Report download (Content-Disposition: attachment) is exempt from guard."""
     from flask import send_file

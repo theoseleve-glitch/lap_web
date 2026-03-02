@@ -456,6 +456,10 @@ def create_app(config: Config | None = None) -> Flask:
         """
         if not request.path.startswith("/api/"):
             return response
+        # CORS preflight returns empty body with text/html content-type;
+        # don't intercept it — the 200 from _handle_preflight is correct.
+        if request.method == "OPTIONS":
+            return response
         # Exempt file-download responses (report endpoint).
         if "attachment" in (response.headers.get("Content-Disposition") or ""):
             return response
