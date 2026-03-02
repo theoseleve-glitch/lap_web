@@ -540,3 +540,50 @@ class TestFormatDetection:
 
     def test_empty_metadata(self):
         assert detect_format({}) == "unknown"
+
+
+# =====================================================================
+# TestPipelineIntegration
+# =====================================================================
+class TestPipelineIntegration:
+    """Verify discovery produces same internal names as the old _RAW_TO_INTERNAL."""
+
+    def test_all_old_mappings_still_work(self):
+        """Every column name in the old _RAW_TO_INTERNAL produces the same internal name."""
+        old_mapping = {
+            "Distance (m)": "distance_m",
+            "Speed (m/s)": "speed_mps",
+            "Speed (m/s) *calc": "speed_mps",
+            "Longitudinal acceleration (G) *calc": "accel_long_mps2",
+            "Longitudinal acceleration (m/s\u00b2)": "accel_long_mps2",
+            "Lateral acceleration (G) *calc": "accel_lat_mps2",
+            "Lateral acceleration (m/s\u00b2)": "accel_lat_mps2",
+            "Time (s)": "time_s",
+            "Lap #": "lap_number",
+        }
+        for raw, expected_internal in old_mapping.items():
+            df = pd.DataFrame({raw: [1.0]})
+            result = discover_columns(df)
+            actual = result.rename_map.get(raw, raw)
+            assert actual == expected_internal, (
+                f"Column {raw!r}: expected {expected_internal!r}, got {actual!r}"
+            )
+
+    def test_raw_accel_without_calc_now_maps(self):
+        """Raw 'Longitudinal acceleration (G)' (no *calc) now maps correctly."""
+        df = pd.DataFrame({"Longitudinal acceleration (G)": [0.5]})
+        result = discover_columns(df)
+        assert result.rename_map["Longitudinal acceleration (G)"] == "accel_long_mps2"
+
+    def test_racebox_accel_columns(self):
+        """RaceBox uses 'Acceleration X/Y/Z' -- should map correctly."""
+        df = pd.DataFrame({
+            "Time (s)": [0.0],
+            "Acceleration X (m/s\u00b2)": [1.0],
+            "Acceleration Y (m/s\u00b2)": [2.0],
+            "Acceleration Z (m/s\u00b2)": [3.0],
+        })
+        result = discover_columns(df)
+        assert result.rename_map["Acceleration X (m/s\u00b2)"] == "accel_long_mps2"
+        assert result.rename_map["Acceleration Y (m/s\u00b2)"] == "accel_lat_mps2"
+        assert result.rename_map["Acceleration Z (m/s\u00b2)"] == "accel_vert_mps2"

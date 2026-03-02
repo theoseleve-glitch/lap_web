@@ -67,64 +67,13 @@ _COL_SPEED: Final[str] = "Speed (m/s)"
 _COL_DIST:  Final[str] = "Distance (m)"
 
 
-# -- -
-
-# Raw -- ... --  internal column-name mapping.
-
-#
-
-# Upstream modules (io_racechrono, resampling, derived_channels) keep the
-
-# original RaceChrono header names throughout.  The theoretical engine and
-
-# feature schema expect snake_case internal names.
-
-# This map bridges the gap; it is applied lazily just before any module
-
-# that requires internal names.
-
-# -- -
-
-_RAW_TO_INTERNAL: Final[dict[str, str]] = {
-    "Distance (m)":                           "distance_m",
-    "Speed (m/s)":                            "speed_mps",
-    "Speed (m/s) *calc":                      "speed_mps",
-    "Longitudinal acceleration (G) *calc":    "accel_long_mps2",
-    "Longitudinal acceleration (m/s²)":             "accel_long_mps2",
-    "accel_long":                             "accel_long_mps2",
-    "accel_long_g":                           "accel_long_mps2",
-    "Lateral acceleration (G) *calc":         "accel_lat_mps2",
-    "Lateral acceleration (m/s²)":                  "accel_lat_mps2",
-    "accel_lat":                              "accel_lat_mps2",
-    "Time (s)":                               "time_s",
-    "Lap #":                                  "lap_number",
-}
-
-
-def _map_to_internal_names(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Return a copy of *df* with raw RaceChrono column names replaced by the
-    internal snake_case names expected by downstream modules such as
-    ``theoretical_engine`` and ``feature_builder``.
-
-    Only columns present in ``_RAW_TO_INTERNAL`` are renamed; unrecognised
-    columns pass through unchanged.  If an internal name already exists in
-    *df* (e.g. from a previous mapping pass) the raw candidate is skipped
-    to avoid collisions.
-    """
-    rename: dict[str, str] = {}
-    claimed: set[str] = set()
-
-    for raw_name, internal_name in _RAW_TO_INTERNAL.items():
-        if internal_name in claimed:
-            continue  # first raw match wins for each internal name
-        if raw_name in df.columns and internal_name not in df.columns:
-            rename[raw_name] = internal_name
-            claimed.add(internal_name)
-
-    if rename:
-        df = df.rename(columns=rename)
-    return df
+# -- Column discovery engine (replaces _RAW_TO_INTERNAL) --
+# Import is placed here at module level for clarity; the actual discovery
+# runs lazily during the pipeline orchestrator.
+try:
+    from telemetry_tool.column_discovery import discover_columns, apply_discovery
+except ImportError:
+    from column_discovery import discover_columns, apply_discovery
 
 
 # -- -
@@ -663,6 +612,10 @@ def run_full_analysis(
             summary["errors"][step] = error
         return result
 
+    # Column discovery result — populated during Phase 1 (ingest),
+    # used lazily at the theoretical engine step.
+    _channel_discovery = None
+
     # ── Phase 1 vs Resume branching ────────────────────────
     if resume_from_step8:
         # Resume path: skip stages 1-7, use preloaded intermediate data
@@ -699,6 +652,26 @@ def run_full_analysis(
         if raw_df is None:
             logger.error("Ingest failed --  cannot continue.")
             return summary
+
+        # -- Step: Column discovery --
+        # Run discovery on the raw DataFrame to classify channels, detect
+        # units, and build the rename map.  The result is stored in the
+        # summary for downstream reporting.  Renaming is NOT applied here
+        # because upstream modules (gps_filtering, derived_channels,
+        # session_trimming, track_detection, resampling, corner_detection)
+        # still expect raw RaceChrono column names.  The rename map is
+        # applied lazily per-lap at the theoretical engine step.
+        try:
+            _channel_discovery = discover_columns(raw_df)
+            summary["channel_discovery"] = _channel_discovery.to_dict()
+            logger.info(
+                "Column discovery: %d channels (%d custom), format=%s",
+                len(_channel_discovery.channels),
+                len(_channel_discovery.custom_channels),
+                _channel_discovery.format,
+            )
+        except Exception as exc:
+            logger.warning("Column discovery failed: %s — raw names preserved", exc)
 
         # STEP 2 --  Filter (GPS quality)
 
@@ -1809,10 +1782,13 @@ def run_full_analysis(
 
         if theo_mod is not None:
             sorted_keys = sorted(resampled_laps.keys())
-            laps_list = [
-                _map_to_internal_names(resampled_laps[k])
-                for k in sorted_keys
-            ]
+            if _channel_discovery is not None:
+                laps_list = [
+                    apply_discovery(resampled_laps[k], _channel_discovery)
+                    for k in sorted_keys
+                ]
+            else:
+                laps_list = [resampled_laps[k] for k in sorted_keys]
 
             # Pre-filter to best-N% laps if available (tighter envelope).
             # Also exclude any laps flagged after best-N% was computed

@@ -347,21 +347,22 @@ def t_import_helper():
 _test("import_helper", t_import_helper)
 
 
-def t_map_to_internal_names():
-    """_map_to_internal_names bridges raw RaceChrono names."""
-    import pipeline as p
+def t_column_discovery_replaces_old_mapping():
+    """column_discovery module bridges raw RaceChrono names (replaces _map_to_internal_names)."""
+    from column_discovery import discover_columns, apply_discovery
     df = pd.DataFrame({
         "Distance (m)": [0, 1],
         "Speed (m/s)": [10, 20],
         "Time (s)": [0, 0.1],
     })
-    mapped = p._map_to_internal_names(df)
+    result = discover_columns(df)
+    mapped = apply_discovery(df, result)
     assert "distance_m" in mapped.columns
     assert "speed_mps" in mapped.columns
     assert "time_s" in mapped.columns
 
 
-_test("map_to_internal_names", t_map_to_internal_names)
+_test("column_discovery_replaces_old_mapping", t_column_discovery_replaces_old_mapping)
 
 
 def t_reference_line_step():
