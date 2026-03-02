@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { StartGrid } from '@/components/rooms/StartGrid';
 import { S1Pain } from '@/components/rooms/S1Pain';
 import { S1DeepSculpture } from '@/components/rooms/S1DeepSculpture';
@@ -23,24 +23,6 @@ const MARQUEE_MID = [
   'PACE', 'CONSISTENCY', 'EXECUTION', 'ROBUSTNESS',
   'BRAKING', 'APEX SPEED', 'EXIT DRIVE', 'RACING LINE',
 ];
-
-type Persona = 'chooser' | 'drivers';
-
-function getPersonaCookie(): Persona {
-  if (typeof document === 'undefined') return 'chooser';
-  const match = document.cookie
-    .split(';')
-    .map((c) => c.trim())
-    .find((c) => c.startsWith('lap_persona='));
-  if (!match) return 'chooser';
-  const val = match.split('=').slice(1).join('=');
-  if (val === 'drivers') return 'drivers';
-  return 'chooser';
-}
-
-function clearPersonaCookie() {
-  document.cookie = 'lap_persona=;path=/;max-age=0;SameSite=Lax';
-}
 
 /* ── Driver Homepage ──────────────────────────── */
 function DriverHome({ onSwitch }: { onSwitch: () => void }) {
@@ -75,26 +57,20 @@ function DriverHome({ onSwitch }: { onSwitch: () => void }) {
 
 /* ── Page orchestrator ────────────────────────── */
 export default function Home() {
-  const [persona, setPersona] = useState<Persona>('chooser');
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setPersona(getPersonaCookie());
-    setMounted(true);
-  }, []);
+  // Always start with the chooser — no cookie bypass
+  const [showDriverHome, setShowDriverHome] = useState(false);
 
   const handleChoose = useCallback((chosen: string) => {
-    if (chosen === 'drivers') setPersona('drivers');
+    if (chosen === 'drivers') setShowDriverHome(true);
+    // 'venues' navigates to /contact via AudienceChooser directly
   }, []);
 
   const handleSwitch = useCallback(() => {
-    clearPersonaCookie();
-    setPersona('chooser');
+    setShowDriverHome(false);
     window.scrollTo({ top: 0 });
   }, []);
 
-  // Before hydration or when no persona chosen, show the audience chooser
-  if (!mounted || persona === 'chooser') {
+  if (!showDriverHome) {
     return <AudienceChooser onChoose={handleChoose} />;
   }
 

@@ -542,6 +542,26 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (29, "Phase 29 schema — rich telemetry channel columns on gps_traces"),
     )
 
+    # Phase 30 migration: channel metadata columns on sessions (idempotent).
+    _SESSION_META_COLS = [
+        "data_tier INTEGER NOT NULL DEFAULT 1",
+        "available_channels TEXT",
+        "source_format TEXT DEFAULT 'racechrono'",
+        "source_metadata TEXT",
+    ]
+    for col in _SESSION_META_COLS:
+        try:
+            cur.execute(f"ALTER TABLE sessions ADD COLUMN {col};")
+            logger.debug("Added column sessions.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (30, "Phase 30 schema — channel metadata columns on sessions"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

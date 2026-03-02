@@ -979,6 +979,128 @@ def compute_granular_execution(
     return result
 
 
+def enhance_execution_with_controls(
+    base_result: dict[str, Any],
+    controls_analysis: "dict[int, list[dict]] | None" = None,
+) -> dict[str, Any]:
+    """Enhance granular execution score using real brake/throttle/steering data.
+
+    When controls data is available from Tier 2+ adapters, this replaces the
+    accel-proxy-based braking and exit quality scores with direct pedal-trace
+    measurements for higher accuracy.
+
+    Parameters
+    ----------
+    base_result:
+        Output from ``compute_granular_execution()``.
+    controls_analysis:
+        Per-lap controls analysis from ``controls_physics.analyze_corners_with_controls()``.
+        Keys are lap numbers, values are lists of enriched corner dicts.
+
+    Returns the base_result dict with updated scores and a ``controls_enhanced`` flag.
+    """
+    if not controls_analysis:
+        return base_result
+
+    # Aggregate controls metrics across all laps
+    trail_brake_pcts: list[float] = []
+    brake_modulation_scores: list[float] = []
+    throttle_rates: list[float] = []
+    coasting_m_total = 0.0
+    steering_smoothness_scores: list[float] = []
+
+    for _lap_num, corners in controls_analysis.items():
+        for c in corners:
+            # Trail braking
+            tb = c.get("trail_brake_pct")
+            if isinstance(tb, (int, float)) and math.isfinite(tb):
+                trail_brake_pcts.append(tb)
+            # Brake modulation
+            bm = c.get("brake_modulation_score")
+            if isinstance(bm, (int, float)) and math.isfinite(bm):
+                brake_modulation_scores.append(bm)
+            # Throttle application rate
+            tar = c.get("exit_application_rate")
+            if isinstance(tar, (int, float)) and math.isfinite(tar):
+                throttle_rates.append(tar)
+            # Coasting
+            cz = c.get("coasting_zones")
+            if isinstance(cz, list):
+                for zone in cz:
+                    coasting_m_total += zone.get("duration_m", 0.0)
+            # Steering smoothness
+            ss = c.get("steering_smoothness")
+            if isinstance(ss, (int, float)) and math.isfinite(ss):
+                steering_smoothness_scores.append(ss)
+
+    enhanced = False
+
+    # Enhance braking quality with trail braking data
+    if trail_brake_pcts:
+        mean_trail = float(np.mean(trail_brake_pcts))
+        # Good trail braking = 30-70% of corner has simultaneous brake+steer
+        # Score: 0 at 0%, peaks at 50%, drops above 80% (excessive overlap)
+        if mean_trail <= 50:
+            trail_score = min(1.0, mean_trail / 50.0)
+        else:
+            trail_score = max(0.0, 1.0 - (mean_trail - 50) / 50.0)
+
+        # Blend: 60% trail braking + 40% original brake point accuracy
+        old_braking = base_result.get("braking_quality", 0.5)
+        base_result["braking_quality"] = round(
+            0.6 * trail_score + 0.4 * old_braking, 4,
+        )
+        base_result["detail"]["mean_trail_brake_pct"] = round(mean_trail, 1)
+        enhanced = True
+
+    # Enhance exit quality with throttle application data
+    if throttle_rates:
+        mean_rate = float(np.mean(throttle_rates))
+        # Good exit: progressive but confident throttle (1-5 pct/m)
+        if mean_rate <= 0:
+            throttle_score = 0.0
+        elif mean_rate <= 5.0:
+            throttle_score = min(1.0, mean_rate / 3.0)
+        else:
+            throttle_score = max(0.3, 1.0 - (mean_rate - 5.0) / 10.0)
+
+        old_exit = base_result.get("exit_quality", 0.5)
+        base_result["exit_quality"] = round(
+            0.5 * throttle_score + 0.5 * old_exit, 4,
+        )
+        base_result["detail"]["mean_throttle_rate_pct_per_m"] = round(mean_rate, 2)
+        enhanced = True
+
+    # Steering smoothness bonus
+    if steering_smoothness_scores:
+        mean_smooth = float(np.mean(steering_smoothness_scores))
+        old_line = base_result.get("line_quality", 0.5)
+        base_result["line_quality"] = round(
+            0.4 * mean_smooth + 0.6 * old_line, 4,
+        )
+        base_result["detail"]["mean_steering_smoothness"] = round(mean_smooth, 3)
+        enhanced = True
+
+    if enhanced:
+        # Recompute composite
+        composite = (
+            EXEC_GRAN_W_BRAKING * base_result["braking_quality"]
+            + EXEC_GRAN_W_CORNER_SPD * base_result["corner_speed"]
+            + EXEC_GRAN_W_EXIT * base_result["exit_quality"]
+            + EXEC_GRAN_W_LINE * base_result["line_quality"]
+        )
+        base_result["composite"] = round(composite, 4)
+        base_result["controls_enhanced"] = True
+        logger.info(
+            "Controls-enhanced execution: braking=%.3f, exit=%.3f, "
+            "line=%.3f, composite=%.3f",
+            base_result["braking_quality"], base_result["exit_quality"],
+            base_result["line_quality"], composite,
+        )
+
+    return base_result
+
+
 # =============================================================================
 
 # Racecraft scoring (race sessions only)
@@ -1228,6 +1350,7 @@ def score_session(
     *,
     is_wet:               bool = False,
     corner_coaching:      list[dict[str, Any]] | None = None,
+    progressive_physics:  dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Compute a structured performance score for a driver session.
@@ -1347,6 +1470,11 @@ def score_session(
     # Blend with granular corner-level execution when available
     if corner_coaching:
         granular = compute_granular_execution(corner_performances=corner_coaching)
+        # Enhance with real pedal data if progressive physics ran
+        if progressive_physics and progressive_physics.get("controls_analysis"):
+            granular = enhance_execution_with_controls(
+                granular, progressive_physics["controls_analysis"],
+            )
         if granular.get("has_corner_data"):
             # 70% granular (corner-level), 30% aggregate (speed/accel/brake)
             granular_score = granular["composite"] * MAX_EXECUTION

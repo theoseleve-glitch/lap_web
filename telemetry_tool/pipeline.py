@@ -1676,6 +1676,84 @@ def run_full_analysis(
     _record("09e_data_quality", data_quality_rpt, err)
     summary["data_quality"] = data_quality_rpt
 
+    # -- 09f: Progressive physics analysis (tier 2+) --
+
+    _data_tier = summary.get("data_tier", 1)
+    _progressive_physics: dict[str, Any] = {}
+
+    def _progressive_physics_step() -> dict[str, Any]:
+        results: dict[str, Any] = {}
+        _laps_to_analyze = _clean_resampled or resampled_laps
+        _corners = summary.get("corners") or []
+
+        if _data_tier >= 2 and _laps_to_analyze:
+            try:
+                from telemetry_tool.physics import controls_physics
+                per_lap_controls: dict[int, list[dict]] = {}
+                for ln in sorted(_laps_to_analyze.keys()):
+                    lap_df = _laps_to_analyze[ln]
+                    analysis = controls_physics.analyze_corners_with_controls(
+                        lap_df, _corners,
+                    )
+                    per_lap_controls[ln] = analysis
+                results["controls_analysis"] = per_lap_controls
+                logger.info(
+                    "Tier 2 controls physics: analysed %d laps.",
+                    len(per_lap_controls),
+                )
+            except Exception as _cp_exc:
+                logger.warning("Controls physics failed: %s", _cp_exc)
+
+        if _data_tier >= 3 and _laps_to_analyze:
+            # Tire thermal analysis
+            try:
+                from telemetry_tool.physics import tire_thermal
+                tire_result = tire_thermal.analyze_tire_session(
+                    _laps_to_analyze, _corners,
+                )
+                results["tire_thermal"] = tire_result
+                logger.info("Tier 3 tire thermal analysis complete.")
+            except Exception as _tt_exc:
+                logger.warning("Tire thermal analysis failed: %s", _tt_exc)
+
+            # Wheel slip analysis
+            try:
+                from telemetry_tool.physics import slip_model
+                slip_result = slip_model.analyze_slip_session(
+                    _laps_to_analyze, _corners,
+                )
+                results["slip_analysis"] = slip_result
+                logger.info("Tier 3 slip analysis complete.")
+            except Exception as _sl_exc:
+                logger.warning("Slip analysis failed: %s", _sl_exc)
+
+            # Fuel analysis
+            try:
+                from telemetry_tool.physics import fuel_model
+                _fuel_levels = []
+                for ln in sorted(_laps_to_analyze.keys()):
+                    _ldf = _laps_to_analyze[ln]
+                    for _fc in ("fuel_kg", "fuel_remaining_kg", "FuelLevel"):
+                        if _fc in _ldf.columns and _ldf[_fc].notna().any():
+                            _fuel_levels.append(float(_ldf[_fc].iloc[-1]))
+                            break
+                if _fuel_levels and len(_fuel_levels) >= 2:
+                    fuel_result = fuel_model.analyze_fuel_session(
+                        lap_times[:len(_fuel_levels)], _fuel_levels,
+                    )
+                    results["fuel_analysis"] = fuel_result
+                    logger.info("Tier 3 fuel analysis complete.")
+            except Exception as _fu_exc:
+                logger.warning("Fuel analysis failed: %s", _fu_exc)
+
+        return results
+
+    _progressive_physics, err = _safe_step(
+        "09f_progressive_physics", _progressive_physics_step,
+    )
+    _record("09f_progressive_physics", _progressive_physics, err)
+    summary["progressive_physics"] = _progressive_physics or {}
+
     # ====================================================================
 
     # STEP 10 -- Theoretical lap (cascading: physics -> percentile)
@@ -2237,6 +2315,7 @@ def run_full_analysis(
             m, theo_metrics, meta.get("session_type", "practice"),
             is_wet=_is_wet,
             corner_coaching=_corner_coaching,
+            progressive_physics=summary.get("progressive_physics"),
         )
 
     score_result, err = _safe_step("13_score_session", _score)

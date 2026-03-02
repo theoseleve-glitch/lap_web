@@ -380,6 +380,10 @@ def upsert_session(
         "source_path":       str(summary.get("csv_path", "")),
         "kart_id":           meta.get("kart_id"),
         "channel_inventory": channel_inventory_json,
+        "data_tier":         summary.get("data_tier", 1),
+        "available_channels": json.dumps(summary.get("available_channels", [])),
+        "source_format":     summary.get("source_format", "racechrono"),
+        "source_metadata":   json.dumps(summary.get("source_metadata", {})),
     })
     return session_id
 

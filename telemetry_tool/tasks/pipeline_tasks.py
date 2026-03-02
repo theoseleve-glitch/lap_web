@@ -693,6 +693,36 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
             logger.warning("Failed to insert analysis JSON for session %s", session_id, exc_info=True)
             conn.rollback()
 
+        # 11. Persist channel metadata from adapter registry
+        try:
+            import json as _json
+            _data_tier = result.get("data_tier", 1)
+            _avail_ch = result.get("available_channels", [])
+            _src_fmt = result.get("source_format", "racechrono")
+            _src_meta = result.get("source_metadata", {})
+            conn.execute(
+                "UPDATE sessions SET data_tier = %(tier)s, "
+                "available_channels = %(channels)s, "
+                "source_format = %(fmt)s, "
+                "source_metadata = %(meta)s "
+                "WHERE session_id = %(sid)s",
+                {
+                    "tier": _data_tier,
+                    "channels": _json.dumps(_avail_ch),
+                    "fmt": _src_fmt,
+                    "meta": _json.dumps(_src_meta),
+                    "sid": session_id,
+                },
+            )
+            conn.commit()
+            logger.info(
+                "Persisted channel metadata (tier=%d, %d channels, format=%s) for session %s",
+                _data_tier, len(_avail_ch), _src_fmt, session_id,
+            )
+        except Exception:
+            logger.warning("Failed to persist channel metadata for session %s", session_id, exc_info=True)
+            conn.rollback()
+
     except Exception:
         logger.exception("Failed to persist session data for job %s", ctx.job_id)
         raise

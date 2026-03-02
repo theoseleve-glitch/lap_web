@@ -17,7 +17,8 @@ INSERT OR REPLACE INTO sessions (
     total_score, grade, weather_json, notes,
     html_report_path, simulation_method, joker_lap_number,
     display_name, source_filename, source_path, kart_id,
-    channel_inventory
+    channel_inventory, data_tier, available_channels,
+    source_format, source_metadata
 ) VALUES (
     :session_id, :csv_filename, :driver_id, :track_id,
     :session_type, :track_state, :session_date,
@@ -25,7 +26,8 @@ INSERT OR REPLACE INTO sessions (
     :total_score, :grade, :weather_json, :notes,
     :html_report_path, :simulation_method, :joker_lap_number,
     :display_name, :source_filename, :source_path, :kart_id,
-    :channel_inventory
+    :channel_inventory, :data_tier, :available_channels,
+    :source_format, :source_metadata
 );
 """
 
