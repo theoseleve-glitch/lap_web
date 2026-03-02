@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 # ------------------------------------------------------------------
 # Phase 1 tables

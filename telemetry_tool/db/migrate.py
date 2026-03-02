@@ -503,6 +503,19 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (27, "Phase 27 schema — analysis_json on sessions for supplementary analysis data"),
     )
 
+    # Phase 28 migration: add channel_inventory to sessions (idempotent).
+    try:
+        cur.execute("ALTER TABLE sessions ADD COLUMN channel_inventory TEXT;")
+        logger.debug("Added column sessions.channel_inventory.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (28, "Phase 28 schema — channel_inventory JSON on sessions"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

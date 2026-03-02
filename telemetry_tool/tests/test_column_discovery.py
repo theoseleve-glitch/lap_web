@@ -587,3 +587,52 @@ class TestPipelineIntegration:
         assert result.rename_map["Acceleration X (m/s\u00b2)"] == "accel_long_mps2"
         assert result.rename_map["Acceleration Y (m/s\u00b2)"] == "accel_lat_mps2"
         assert result.rename_map["Acceleration Z (m/s\u00b2)"] == "accel_vert_mps2"
+
+
+# =====================================================================
+# TestChannelInventoryDB
+# =====================================================================
+class TestChannelInventoryDB:
+    """Channel inventory persisted to sessions.channel_inventory."""
+
+    @pytest.fixture
+    def db(self):
+        import json as _json
+        import sqlite3
+        from db.migrate import ensure_schema
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        ensure_schema(conn)
+        conn.execute(
+            "INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, csv_filename, driver_id, "
+            "session_type, session_date) VALUES ('s1', 'test.csv', 1, 'practice', '2026-01-01')"
+        )
+        conn.commit()
+        yield conn
+        conn.close()
+
+    def test_column_exists_after_migration(self, db):
+        """channel_inventory column should exist on sessions table."""
+        row = db.execute(
+            "SELECT channel_inventory FROM sessions WHERE session_id='s1'"
+        ).fetchone()
+        assert row is not None
+        assert row["channel_inventory"] is None
+
+    def test_can_store_json(self, db):
+        """Can store and retrieve JSON in channel_inventory."""
+        import json as _json
+        inventory = {"format": "racechrono", "channels": [], "custom": []}
+        db.execute(
+            "UPDATE sessions SET channel_inventory = ? WHERE session_id = ?",
+            (_json.dumps(inventory), "s1"),
+        )
+        db.commit()
+        row = db.execute(
+            "SELECT channel_inventory FROM sessions WHERE session_id='s1'"
+        ).fetchone()
+        loaded = _json.loads(row["channel_inventory"])
+        assert loaded["format"] == "racechrono"

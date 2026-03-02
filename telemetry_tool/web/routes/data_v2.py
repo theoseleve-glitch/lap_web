@@ -316,6 +316,10 @@ def get_session(session_id: str):
     if not result.get("display_name"):
         fn = result.get("csv_filename", "")
         result["display_name"] = Path(fn).stem if fn else result.get("session_id", "")
+    # Flag unnamed tracks (track_name == track_id means auto-generated UUID name)
+    tid = result.get("track_id") or ""
+    tname = (result.get("track_name") or "").strip()
+    result["track_unnamed"] = bool(tid and (not tname or tname == tid))
     return api_response(result)
 
 
@@ -2933,6 +2937,33 @@ def get_cross_session(session_id: str):
         "available": len(traces) >= 1,
         "focus_session_id": session_id,
     })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/channels — Channel inventory
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/channels", methods=["GET"])
+@_safe_api
+def get_session_channels(session_id: str):
+    """Return the channel inventory discovered during CSV ingestion."""
+    conn = get_db_connection()
+    row = conn.execute(
+        "SELECT channel_inventory FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    inventory = None
+    if row["channel_inventory"]:
+        try:
+            inventory = json.loads(row["channel_inventory"])
+        except (json.JSONDecodeError, TypeError):
+            inventory = None
+
+    return api_response(inventory)
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

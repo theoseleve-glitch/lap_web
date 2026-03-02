@@ -346,6 +346,10 @@ def upsert_session(
 
     theo_metrics = summary.get("theoretical_metrics") or {}
 
+    # Channel inventory from column discovery.
+    channel_discovery = summary.get("channel_discovery")
+    channel_inventory_json = json.dumps(channel_discovery) if channel_discovery else None
+
     # Derive session_date: prefer telemetry start time > meta date > session_id prefix
     _telemetry_start = summary.get("telemetry_start_time")
     if _telemetry_start and isinstance(_telemetry_start, str) and len(_telemetry_start) >= 10:
@@ -375,6 +379,7 @@ def upsert_session(
         "source_filename":   meta.get("source_filename") or Path(str(summary.get("csv_path", ""))).name,
         "source_path":       str(summary.get("csv_path", "")),
         "kart_id":           meta.get("kart_id"),
+        "channel_inventory": channel_inventory_json,
     })
     return session_id
 
