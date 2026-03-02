@@ -749,8 +749,15 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                            lap.invalid_reason?.toLowerCase().includes('outlap') ||
                            lap.invalid_reason?.toLowerCase().includes('inlap');
 
+      const isJoker = lap.is_joker === 1;
+      const isPit = lap.invalid_reason === 'Pitted lap';
+
       if (isBest) {
         ctx.fillStyle = '#3ddc84';
+      } else if (isJoker) {
+        ctx.fillStyle = 'rgba(255,214,0,0.35)';
+      } else if (isPit) {
+        ctx.fillStyle = 'rgba(255,140,0,0.35)';
       } else if (isIncomplete) {
         ctx.fillStyle = 'rgba(255,214,0,0.4)';
       } else if (isInvalid) {
@@ -857,6 +864,8 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                 {laps.map((lap) => {
                   const isBest = lap.is_best === 1;
                   const isInvalid = lap.is_valid === 0;
+                  const isJoker = lap.is_joker === 1;
+                  const isPit = lap.invalid_reason === 'Pitted lap';
                   const isIncomplete = isInvalid && (
                     lap.invalid_reason?.toLowerCase().includes('incomplete') ||
                     lap.invalid_reason?.toLowerCase().includes('outlap') ||
@@ -869,7 +878,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                       key={lap.lap_number}
                       className={`border-b border-steel/5 transition-colors hover:bg-asphalt/50 ${
                         isBest ? 'bg-acid-green/5' : ''
-                      } ${isIncomplete ? 'opacity-60' : isInvalid ? 'opacity-40' : ''}`}
+                      } ${isJoker ? 'opacity-50' : isIncomplete ? 'opacity-60' : isInvalid ? 'opacity-40' : ''}`}
                     >
                       <td className="px-4 py-3 font-telemetry text-chalk">
                         <span className="flex items-center gap-2">
@@ -905,22 +914,33 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                         </span>
                       </td>
                       <td className="px-4 py-3 text-center">
-                        {isIncomplete ? (
+                        {isJoker ? (
                           <span
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-marshal-yellow/20 text-marshal-yellow font-body"
+                            className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-telemetry uppercase bg-marshal-yellow/20 text-marshal-yellow border border-marshal-yellow/30"
+                            title="Joker lap — excluded from ranking"
+                          >
+                            J
+                          </span>
+                        ) : isPit ? (
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-telemetry uppercase bg-pit-orange/20 text-pit-orange border border-pit-orange/30">
+                            Pit
+                          </span>
+                        ) : isIncomplete ? (
+                          <span
+                            className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-telemetry uppercase bg-marshal-yellow/20 text-marshal-yellow border border-marshal-yellow/30"
                             title={lap.invalid_reason || 'Incomplete'}
                           >
                             {lap.invalid_reason || 'Incomplete'}
                           </span>
                         ) : isInvalid ? (
                           <span
-                            className="text-[10px] px-1.5 py-0.5 rounded bg-safety-red/20 text-safety-red font-body"
+                            className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/30"
                             title={lap.invalid_reason || 'Invalid lap'}
                           >
                             {lap.invalid_reason || 'Invalid'}
                           </span>
                         ) : (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 font-body">
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-telemetry uppercase bg-green-500/10 text-green-400 border border-green-500/20">
                             Valid
                           </span>
                         )}
