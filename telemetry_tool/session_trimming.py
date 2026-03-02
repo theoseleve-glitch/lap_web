@@ -1379,15 +1379,15 @@ def select_best_n_percent_laps(
 
 # -- -
 
-# 6. Adaptive distance + rolling-mean lap-time filtering
+# 6. Stint-based distance + time filtering (mean of 5 median laps)
 
 # -- -
 
-_DEFAULT_DIST_BAND_LOW:   Final[float] = 0.90   # keep if distance >= 90% of median
-_DEFAULT_DIST_BAND_HIGH:  Final[float] = 1.10   # keep if distance <= 110% of median
-_DEFAULT_TIME_BAND_LOW:   Final[float] = 0.90   # keep if time >= 90% of rolling mean
-_DEFAULT_TIME_BAND_HIGH:  Final[float] = 1.10   # keep if time <= 110% of rolling mean
-_DEFAULT_ROLLING_MEAN_WIN: Final[int]  = 10     # rolling window for lap-time mean
+_DEFAULT_DIST_BAND_LOW:   Final[float] = 0.90   # keep if distance >= 90% of stint ref
+_DEFAULT_DIST_BAND_HIGH:  Final[float] = 1.10   # keep if distance <= 110% of stint ref
+_DEFAULT_TIME_BAND_LOW:   Final[float] = 0.90   # keep if time >= 90% of stint ref
+_DEFAULT_TIME_BAND_HIGH:  Final[float] = 1.10   # keep if time <= 110% of stint ref
+_DEFAULT_ROLLING_MEAN_WIN: Final[int]  = 10     # kept for backward compat (unused)
 
 
 def identify_anomalous_laps(
@@ -1401,23 +1401,16 @@ def identify_anomalous_laps(
     excluded_laps:    set[int] | None = None,
 ) -> dict[str, Any]:
     """
-    Flag laps whose distance or time deviates from the session norm.
+    Flag laps whose distance or time deviates from the stint reference.
 
-    Two independent checks
-    ~~~~~~~~~~~~~~~~~~~~~~
-    1. **Distance band** — a lap is flagged if its covered distance falls
-       outside ``[dist_band_low, dist_band_high] × median_distance``.
-       This catches short inlaps, pit laps, and laps with big off-tracks
-       that inflate distance.
-
-    2. **Rolling-mean time band** — a lap is flagged if its time falls
-       outside ``[time_band_low, time_band_high] × rolling_mean``, where
-       the rolling mean is computed over the preceding *rolling_window*
-       laps (excluding already-flagged laps).  This catches progressive
-       deterioration, incidents, and anomalously fast laps.
-
-    If a lap fails **either** check it is flagged and excluded from
-    scoring.
+    Reference computation
+    ~~~~~~~~~~~~~~~~~~~~~
+    Laps are grouped into **stints** (runs of consecutive lap numbers;
+    a gap > 1 in numbering indicates a pit stop).  Within each stint the
+    **5 median laps** (the 5 centrally-ranked laps when sorted by time)
+    are selected and their mean time and mean distance become the stint
+    reference.  Any lap whose time OR distance falls outside
+    ``[band_low, band_high] × stint_reference`` is flagged.
 
     Parameters
     ----------
@@ -1425,11 +1418,11 @@ def identify_anomalous_laps(
         Trimmed telemetry DataFrame (must contain ``Lap #``, ``Time (s)``,
         and ideally ``Distance (m)``).
     dist_band_low / dist_band_high : float
-        Fraction of the median lap distance defining the keep range.
+        Fraction of the stint reference distance defining the keep range.
     time_band_low / time_band_high : float
-        Fraction of the rolling mean lap time defining the keep range.
+        Fraction of the stint reference time defining the keep range.
     rolling_window : int
-        Number of preceding laps for the rolling time mean.
+        Kept for backward compatibility (unused).
     excluded_laps : set[int] | None
         Laps already excluded (outlaps etc.) — skip these.
 
@@ -1438,11 +1431,12 @@ def identify_anomalous_laps(
     dict with keys:
         ``flagged_laps``      -- set of lap numbers flagged
         ``dist_flagged``      -- set flagged by distance check
-        ``time_flagged``      -- set flagged by rolling-time check
+        ``time_flagged``      -- set flagged by time check
         ``reason``            -- dict[int, str]
-        ``median_distance_m`` -- float
+        ``median_distance_m`` -- float (overall, for logging)
         ``lap_distances``     -- dict[int, float]
         ``lap_times``         -- dict[int, float]
+        ``stint_refs``        -- dict[int, dict] per-stint reference info
     """
     _require_column(df, _COL_LAP)
     _require_column(df, _COL_TIME)
