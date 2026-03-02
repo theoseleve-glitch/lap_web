@@ -17,6 +17,7 @@ import { FocusMode } from '@/components/app/focus-mode/FocusMode';
 interface SessionData {
   session_id: string;
   csv_filename: string;
+  display_name: string | null;
   driver_name: string;
   track_name: string | null;
   session_type: string;
@@ -28,6 +29,10 @@ interface SessionData {
   total_score: number | null;
   grade: string | null;
   notes: string | null;
+  driver_id: number | null;
+  track_id: string | null;
+  kart_id: number | null;
+  kart_name: string | null;
 }
 
 interface LapData {
@@ -277,7 +282,7 @@ export default function SessionDetailPage() {
             <span className="text-steel/40">/</span>
           </div>
           <h1 className="text-2xl font-monument text-chalk tracking-tight">
-            {session.csv_filename}
+            {session.display_name || session.csv_filename?.replace('.csv', '') || session.session_id}
           </h1>
           <p className="text-steel text-sm font-body mt-1">
             {session.driver_name}
@@ -346,7 +351,7 @@ export default function SessionDetailPage() {
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} />
+        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} onSessionUpdate={setSession} />
       )}
       {activeTab === 'corners' && <CornersTab corners={corners} sessionId={sessionId} />}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
@@ -385,6 +390,7 @@ function OverviewTab({
   bestLap,
   sessionId,
   corners,
+  onSessionUpdate,
 }: {
   session: SessionData;
   scores: ScoreData | null;
@@ -392,8 +398,45 @@ function OverviewTab({
   bestLap: number | null;
   sessionId: string;
   corners: CornerData[];
+  onSessionUpdate: (s: SessionData) => void;
 }) {
   const bestLapData = laps.find((l) => l.is_best === 1);
+
+  // Editable session info state
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editFields, setEditFields] = useState<Record<string, string | null>>({});
+
+  const startEditing = useCallback(() => {
+    setEditFields({
+      session_date: session.session_date || '',
+      driver_name: session.driver_name || '',
+      session_type: session.session_type || 'practice',
+      track_state: session.track_state || 'dry',
+      display_name: session.display_name || '',
+    });
+    setEditing(true);
+  }, [session]);
+
+  const cancelEditing = useCallback(() => {
+    setEditing(false);
+    setEditFields({});
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    try {
+      const resp = await api.patch(`/sessions/${session.session_id}`, editFields);
+      if (resp) {
+        onSessionUpdate({ ...session, ...resp } as SessionData);
+        setEditing(false);
+      }
+    } catch {
+      // API errors handled by api-client
+    } finally {
+      setSaving(false);
+    }
+  }, [session, editFields, onSessionUpdate]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -534,19 +577,87 @@ function OverviewTab({
       <div className="space-y-6">
         {/* Metadata card */}
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-          <h2 className="text-lg font-monument text-chalk mb-4">Session Info</h2>
-          <dl className="space-y-3">
-            <MetaRow label="File" value={session.csv_filename} />
-            <MetaRow label="Driver" value={session.driver_name} />
-            <MetaRow label="Track" value={session.track_name || 'Unknown'} />
-            <MetaRow label="Type" value={session.session_type} />
-            <MetaRow label="Conditions" value={session.track_state} />
-            <MetaRow label="Date" value={formatDate(session.session_date)} />
-            <MetaRow
-              label="Laps"
-              value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
-            />
-          </dl>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-monument text-chalk">Session Info</h2>
+            {!editing ? (
+              <button
+                onClick={startEditing}
+                className="text-xs text-steel hover:text-acid-green transition-colors font-body"
+              >
+                Edit
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button
+                  onClick={cancelEditing}
+                  className="text-xs text-steel hover:text-chalk transition-colors font-body"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="text-xs text-acid-green hover:text-chalk transition-colors font-body disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )}
+          </div>
+          {editing ? (
+            <div className="space-y-3">
+              <EditRow
+                label="Name"
+                value={editFields.display_name || ''}
+                onChange={(v) => setEditFields({ ...editFields, display_name: v })}
+              />
+              <EditRow
+                label="Driver"
+                value={editFields.driver_name || ''}
+                onChange={(v) => setEditFields({ ...editFields, driver_name: v })}
+              />
+              <EditRow
+                label="Date"
+                value={editFields.session_date || ''}
+                type="date"
+                onChange={(v) => setEditFields({ ...editFields, session_date: v })}
+              />
+              <SelectRow
+                label="Type"
+                value={editFields.session_type || 'practice'}
+                options={['practice', 'qualifying', 'race', 'test', 'endurance']}
+                onChange={(v) => setEditFields({ ...editFields, session_type: v })}
+              />
+              <SelectRow
+                label="Conditions"
+                value={editFields.track_state || 'dry'}
+                options={['dry', 'wet', 'damp', 'mixed']}
+                onChange={(v) => setEditFields({ ...editFields, track_state: v })}
+              />
+              <MetaRow label="File" value={session.csv_filename} />
+              <MetaRow
+                label="Laps"
+                value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
+              />
+            </div>
+          ) : (
+            <dl className="space-y-3">
+              <MetaRow label="File" value={session.csv_filename} />
+              <MetaRow label="Driver" value={session.driver_name} />
+              <MetaRow label="Track" value={session.track_name || 'Unknown'} />
+              <MetaRow label="Type" value={session.session_type} />
+              <MetaRow label="Conditions" value={session.track_state} />
+              <MetaRow label="Date" value={formatDate(session.session_date)} />
+              {session.kart_name && (
+                <MetaRow label="Kart" value={session.kart_name} />
+              )}
+              <MetaRow
+                label="Laps"
+                value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
+              />
+            </dl>
+          )}
         </div>
 
         {/* Best lap card */}
@@ -609,6 +720,59 @@ function MetaRow({
       >
         {value}
       </dd>
+    </div>
+  );
+}
+
+function EditRow({
+  label,
+  value,
+  type = 'text',
+  onChange,
+}: {
+  label: string;
+  value: string;
+  type?: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex justify-between items-center">
+      <label className="text-steel text-sm font-body">{label}</label>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-asphalt text-chalk text-sm font-telemetry px-2 py-1 rounded border border-steel/20 focus:border-acid-green/50 outline-none w-40"
+      />
+    </div>
+  );
+}
+
+function SelectRow({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex justify-between items-center">
+      <label className="text-steel text-sm font-body">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-asphalt text-chalk text-sm font-telemetry px-2 py-1 rounded border border-steel/20 focus:border-acid-green/50 outline-none w-40"
+      >
+        {options.map((opt) => (
+          <option key={opt} value={opt}>
+            {opt.charAt(0).toUpperCase() + opt.slice(1)}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
