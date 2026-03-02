@@ -249,6 +249,10 @@ def compute_longitudinal_accel(
     """
     result = df.copy()
 
+    if _has(df, OUT_LONG):
+        logger.info("accel_long: internal channel '%s' already present; skipping.", OUT_LONG)
+        return result
+
     if _has(df, _RAW_LONG_G):
         logger.info("accel_long: using raw sensor channel '%s'.", _RAW_LONG_G)
         accel = pd.to_numeric(df[_RAW_LONG_G], errors="coerce") * _G_TO_MPS2
@@ -337,6 +341,10 @@ def compute_lateral_accel_from_xy(
         If neither source is available.
     """
     result = df.copy()
+
+    if _has(df, OUT_LAT):
+        logger.info("accel_lat: internal channel '%s' already present; skipping.", OUT_LAT)
+        return result
 
     if _has(df, _RAW_LAT_G):
         logger.info("accel_lat: using raw sensor channel '%s'.", _RAW_LAT_G)
@@ -431,6 +439,10 @@ def compute_yaw_rate_from_heading(
         If neither source is available.
     """
     result = df.copy()
+
+    if _has(df, OUT_YAW):
+        logger.info("yaw_rate: internal channel '%s' already present; skipping.", OUT_YAW)
+        return result
 
     if _has(df, _RAW_YAW_DPS):
         logger.info("yaw_rate: using raw sensor channel '%s'.", _RAW_YAW_DPS)

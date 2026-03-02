@@ -636,3 +636,155 @@ class TestChannelInventoryDB:
         ).fetchone()
         loaded = _json.loads(row["channel_inventory"])
         assert loaded["format"] == "racechrono"
+
+
+# =====================================================================
+# TestEdgeCases
+# =====================================================================
+class TestEdgeCases:
+    """Edge cases: empty columns, duplicates, all-NaN, mixed units."""
+
+    def test_all_nan_column(self):
+        df = pd.DataFrame({
+            "Time (s)": [0.0, 0.1],
+            "Speed (m/s)": [float("nan"), float("nan")],
+        })
+        result = discover_columns(df)
+        speed_ch = next(c for c in result.channels if c.internal_name == "speed_mps")
+        assert speed_ch.n_valid == 0
+
+    def test_empty_dataframe(self):
+        df = pd.DataFrame()
+        result = discover_columns(df)
+        assert result.channels == []
+        assert result.rename_map == {}
+
+    def test_duplicate_internal_names_first_wins(self):
+        """Two non-calc columns mapping to same internal: first wins."""
+        df = pd.DataFrame({
+            "Time (s)": [0.0],
+            "Speed (m/s)": [10.0],
+            "Speed (km/h)": [36.0],
+        })
+        result = discover_columns(df)
+        speed_mapped = [k for k, v in result.rename_map.items() if v == "speed_mps"]
+        assert len(speed_mapped) == 1
+        assert speed_mapped[0] == "Speed (m/s)"
+
+    def test_calc_wins_over_non_calc(self):
+        df = pd.DataFrame({
+            "Time (s)": [0.0],
+            "Lateral acceleration (G)": [0.5],
+            "Lateral acceleration (G) *calc": [0.6],
+        })
+        result = discover_columns(df)
+        mapped = [k for k, v in result.rename_map.items() if v == "accel_lat_mps2"]
+        assert "Lateral acceleration (G) *calc" in mapped
+        assert "Lateral acceleration (G)" in result.custom_channels
+
+    def test_mixed_accel_units(self):
+        """G and m/s\u00b2 variants for same axis -- *calc G should win."""
+        df = pd.DataFrame({
+            "Time (s)": [0.0],
+            "Longitudinal acceleration (m/s\u00b2)": [5.0],
+            "Longitudinal acceleration (G) *calc": [0.5],
+        })
+        result = discover_columns(df)
+        mapped = [k for k, v in result.rename_map.items() if v == "accel_long_mps2"]
+        assert "Longitudinal acceleration (G) *calc" in mapped
+
+    def test_european_decimal_values_ok(self):
+        df = pd.DataFrame({
+            "Time (s)": [0.0, 0.1],
+            "Speed (m/s)": [10.5, 11.3],
+        })
+        result = discover_columns(df)
+        df2 = apply_discovery(df, result)
+        assert df2["speed_mps"].iloc[0] == pytest.approx(10.5)
+
+
+# =====================================================================
+# TestEndToEnd
+# =====================================================================
+class TestEndToEnd:
+    """Full pipeline: CSV headers -> discover -> apply -> verify internal names."""
+
+    def test_racechrono_full_header_set(self):
+        """Simulates a real RaceChrono CSV with many channels."""
+        df = pd.DataFrame({
+            "Time (s)": [0.0, 0.1, 0.2],
+            "Lap #": [1, 1, 1],
+            "Distance (m)": [0.0, 2.0, 4.0],
+            "Speed (m/s) *calc": [10.0, 11.0, 12.0],
+            "Speed (m/s)": [9.8, 10.8, 11.8],
+            "Latitude (deg)": [51.5, 51.5001, 51.5002],
+            "Longitude (deg)": [-0.1, -0.1001, -0.1002],
+            "Longitudinal acceleration (G) *calc": [0.1, 0.2, 0.3],
+            "Longitudinal acceleration (G)": [0.09, 0.19, 0.29],
+            "Lateral acceleration (G) *calc": [0.5, 0.6, 0.7],
+            "Bearing (deg)": [90.0, 91.0, 92.0],
+            "Altitude (m)": [100.0, 100.5, 101.0],
+            "Yaw rate (deg/s)": [1.0, 1.5, 2.0],
+            "Engine RPM (rpm)": [5000, 5500, 6000],
+            "Throttle position (%)": [80.0, 85.0, 90.0],
+            "Tire temp FL (\u00b0C)": [45.0, 46.0, 47.0],
+        })
+        result = discover_columns(df)
+        df = apply_discovery(df, result)
+
+        # Core channels renamed
+        assert "time_s" in df.columns
+        assert "speed_mps" in df.columns
+        assert "latitude_deg" in df.columns
+        assert "longitude_deg" in df.columns
+        assert "accel_long_mps2" in df.columns
+        assert "accel_lat_mps2" in df.columns
+        assert "heading_deg" in df.columns
+        assert "altitude_m" in df.columns
+        assert "yaw_rate_dps" in df.columns
+        assert "engine_rpm" in df.columns
+        assert "throttle_pct" in df.columns
+        assert "lap_number" in df.columns
+        assert "distance_m" in df.columns
+
+        # *calc won for speed and accel
+        assert df["speed_mps"].iloc[0] == pytest.approx(10.0)  # *calc value
+        assert df["accel_long_mps2"].iloc[0] == pytest.approx(0.1 * 9.80665)  # G -> m/s\u00b2
+
+        # Custom channels: tire temp is a unique custom (in channels list, not in
+        # custom_channels which holds conflict losers)
+        custom_names = [ch.raw_name for ch in result.channels if ch.category == "custom"]
+        assert "Tire temp FL (\u00b0C)" in custom_names
+
+        # Serialization works
+        d = result.to_dict()
+        assert len(d["channels"]) > 0
+        custom_raw_names = [ch["raw_name"] for ch in d["channels"] if ch["category"] == "custom"]
+        assert "Tire temp FL (\u00b0C)" in custom_raw_names
+
+    def test_racebox_style_headers(self):
+        """RaceBox uses different names: Acceleration X/Y/Z, Lat/Lon."""
+        df = pd.DataFrame({
+            "Time": [0.0, 0.1],
+            "Lat": [51.5, 51.5001],
+            "Lon": [-0.1, -0.1001],
+            "Speed (km/h)": [36.0, 72.0],
+            "Acceleration X (m/s\u00b2)": [1.0, 2.0],
+            "Acceleration Y (m/s\u00b2)": [0.5, 1.0],
+            "Acceleration Z (m/s\u00b2)": [9.8, 9.8],
+            "Altitude (m)": [100.0, 101.0],
+        })
+        result = discover_columns(df)
+        df = apply_discovery(df, result)
+
+        assert "time_s" in df.columns
+        assert "latitude_deg" in df.columns
+        assert "longitude_deg" in df.columns
+        assert "speed_mps" in df.columns
+        assert "accel_long_mps2" in df.columns
+        assert "accel_lat_mps2" in df.columns
+        assert "accel_vert_mps2" in df.columns
+
+        # km/h -> m/s conversion
+        assert df["speed_mps"].iloc[0] == pytest.approx(10.0)
+        assert df["speed_mps"].iloc[1] == pytest.approx(20.0)
