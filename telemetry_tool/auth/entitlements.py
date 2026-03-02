@@ -145,6 +145,7 @@ _UPGRADE_TIERS = {
     "visualization": "racer",
     "live_monitoring": "racer",
     "export_pdf": "racer",
+    "race_strategy": "racer",
     "race_strategy_full": "racer",
 }
 
@@ -374,6 +375,18 @@ def authorize_feature(conn, user_id: int, feature: str) -> tuple[bool, dict]:
         if "pdf" not in formats:
             return False, {
                 "reason": "PDF export requires Racer plan or higher",
+                "upgrade_tier": "racer",
+                "upgrade_url": "/billing?plan=RACER",
+                "current_tier": tier,
+            }
+        return True, {"current_tier": tier}
+
+    # Check race_strategy (middleware passes this for POST/PUT/DELETE)
+    if feature == "race_strategy":
+        limit = entitlements.get("race_strategy_limit")
+        if not limit:
+            return False, {
+                "reason": "Race strategy requires Racer plan or higher",
                 "upgrade_tier": "racer",
                 "upgrade_url": "/billing?plan=RACER",
                 "current_tier": tier,
