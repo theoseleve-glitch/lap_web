@@ -2548,4 +2548,148 @@ def get_condition_phases(session_id: str):
     return api_response({"phases": phases})
 
 
+# ══════════════════════════════════════════════════════════════════
+# 38. GET /api/v1/sessions/<id>/throttle-onset
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/throttle-onset", methods=["GET"])
+@_safe_api
+def get_throttle_onset(session_id: str):
+    """Per-corner throttle onset distance from corner_metrics."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    metrics = models.get_corner_metrics_for_session(conn, session_id)
+    if not metrics:
+        return api_response({
+            "corners": [],
+            "available": False,
+            "reason_code": "no_corner_metrics",
+        })
+
+    from collections import defaultdict
+    import numpy as np
+    by_corner: dict = defaultdict(list)
+    for m in metrics:
+        onset = m.get("throttle_onset_m")
+        if onset is not None:
+            by_corner[m["corner_id"]].append(float(onset))
+
+    if not by_corner:
+        return api_response({
+            "corners": [],
+            "available": False,
+            "reason_code": "no_throttle_data",
+        })
+
+    corners = []
+    for cid in sorted(by_corner):
+        pts = by_corner[cid]
+        arr = np.array(pts)
+        mean_m = round(float(np.mean(arr)), 2)
+        std_m = round(float(np.std(arr)), 2)
+        corners.append({
+            "corner_id": cid,
+            "onset_points": [round(p, 2) for p in pts],
+            "mean_m": mean_m,
+            "std_m": std_m,
+            "n_laps": len(pts),
+        })
+
+    return api_response({"corners": corners, "available": True})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 39. GET /api/v1/sessions/<id>/consistency-heatmap
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/consistency-heatmap", methods=["GET"])
+@_safe_api
+def get_consistency_heatmap(session_id: str):
+    """Laps x corners consistency heatmap from corner_metrics."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    metrics = models.get_corner_metrics_for_session(conn, session_id)
+    if not metrics:
+        return api_response({
+            "available": False,
+            "reason_code": "no_corner_metrics",
+            "laps": [],
+            "corners": [],
+            "values": [],
+        })
+
+    # Build lap -> corner -> time_loss_ms mapping
+    from collections import defaultdict
+    lap_corners: dict = defaultdict(dict)
+    all_corners: set = set()
+    all_laps: set = set()
+    for m in metrics:
+        lap = m.get("lap_number")
+        cid = m.get("corner_id")
+        loss = m.get("time_loss_ms")
+        if lap is not None and cid is not None:
+            all_laps.add(lap)
+            all_corners.add(cid)
+            if loss is not None:
+                lap_corners[lap][cid] = round(float(loss), 1)
+
+    if not all_corners or not all_laps:
+        return api_response({
+            "available": False,
+            "reason_code": "no_corner_metrics",
+            "laps": [],
+            "corners": [],
+            "values": [],
+        })
+
+    laps_sorted = sorted(all_laps)
+    corners_sorted = sorted(all_corners)
+
+    # Build 2D array: values[lap_idx][corner_idx] = time_loss_ms or None
+    values = []
+    for lap in laps_sorted:
+        row = []
+        for cid in corners_sorted:
+            row.append(lap_corners.get(lap, {}).get(cid))
+        values.append(row)
+
+    # Per-corner stats
+    import numpy as np
+    corner_stats = []
+    for ci, cid in enumerate(corners_sorted):
+        col_vals = [values[li][ci] for li in range(len(laps_sorted))
+                    if values[li][ci] is not None]
+        if col_vals:
+            arr = np.array(col_vals)
+            corner_stats.append({
+                "corner_id": cid,
+                "mean_ms": round(float(np.mean(arr)), 1),
+                "std_ms": round(float(np.std(arr)), 1),
+                "max_ms": round(float(np.max(arr)), 1),
+            })
+        else:
+            corner_stats.append({
+                "corner_id": cid,
+                "mean_ms": None,
+                "std_ms": None,
+                "max_ms": None,
+            })
+
+    return api_response({
+        "available": True,
+        "laps": laps_sorted,
+        "corners": corners_sorted,
+        "values": values,
+        "corner_stats": corner_stats,
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

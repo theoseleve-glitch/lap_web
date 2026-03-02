@@ -73,8 +73,8 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <BrakePrecisionChart sessionId={sessionId} />
         <CornerMasteryCard sessionId={sessionId} />
-        <ThrottleOnsetMap />
-        <ConsistencyHeatmap />
+        <ThrottleOnsetMap sessionId={sessionId} />
+        <ConsistencyHeatmap sessionId={sessionId} />
       </div>
     </div>
   );

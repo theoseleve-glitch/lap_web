@@ -1066,6 +1066,8 @@ class TestGracefulDegradation:
         "/api/v1/sessions/{sid}/lap-distribution",
         "/api/v1/sessions/{sid}/brake-precision",
         "/api/v1/sessions/{sid}/condition-phases",
+        "/api/v1/sessions/{sid}/throttle-onset",
+        "/api/v1/sessions/{sid}/consistency-heatmap",
         "/api/v1/sessions/{sid}/speed-trace",
         "/api/v1/sessions/{sid}/gps-trace",
     ])
