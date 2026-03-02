@@ -1,0 +1,542 @@
+"""
+Tests for column_discovery module — Core Column Discovery Engine.
+
+Covers:
+- Header parsing (regex: name, unit, flag extraction)
+- Channel classification (34 priority-ordered rules + custom fallback)
+- Unit conversion (factor-based and function-based)
+- Full discovery pipeline (conflict resolution, *calc preference, n_valid)
+- Apply discovery (rename + conversions)
+- Format detection (racechrono, racebox, unknown)
+"""
+from __future__ import annotations
+
+import math
+import sys
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+# Ensure project root is on path (no package install — path manipulation)
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
+from column_discovery import (
+    HEADER_RE,
+    DiscoveredChannel,
+    DiscoveryResult,
+    apply_discovery,
+    classify_channel,
+    detect_format,
+    discover_columns,
+    get_conversion,
+    parse_header,
+)
+
+
+# =====================================================================
+# TestParseHeader
+# =====================================================================
+class TestParseHeader:
+    """Tests for parse_header() regex extraction."""
+
+    def test_speed_with_unit_and_calc(self):
+        name, unit, flag = parse_header("Speed (m/s) *calc")
+        assert name == "Speed"
+        assert unit == "m/s"
+        assert flag == "calc"
+
+    def test_lap_number_no_unit(self):
+        name, unit, flag = parse_header("Lap #")
+        assert name == "Lap #"
+        assert unit is None
+        assert flag is None
+
+    def test_tire_temp_with_unit(self):
+        name, unit, flag = parse_header("Tire temp FL (°C)")
+        assert name == "Tire temp FL"
+        assert unit == "°C"
+        assert flag is None
+
+    def test_simple_name(self):
+        name, unit, flag = parse_header("Time")
+        assert name == "Time"
+        assert unit is None
+        assert flag is None
+
+    def test_with_whitespace_padding(self):
+        name, unit, flag = parse_header("  Speed (m/s)  *calc  ")
+        assert name == "Speed"
+        assert unit == "m/s"
+        assert flag == "calc"
+
+    def test_unit_only_no_flag(self):
+        name, unit, flag = parse_header("Distance (m)")
+        assert name == "Distance"
+        assert unit == "m"
+        assert flag is None
+
+    def test_empty_string(self):
+        name, unit, flag = parse_header("")
+        assert name == ""
+        assert unit is None
+        assert flag is None
+
+    def test_flag_only_no_unit(self):
+        name, unit, flag = parse_header("Speed *calc")
+        assert name == "Speed"
+        assert unit is None
+        assert flag == "calc"
+
+    def test_complex_unit(self):
+        name, unit, flag = parse_header("Lateral acceleration (G) *calc")
+        assert name == "Lateral acceleration"
+        assert unit == "G"
+        assert flag == "calc"
+
+
+# =====================================================================
+# TestClassifyChannel
+# =====================================================================
+class TestClassifyChannel:
+    """Tests for classify_channel() — all 34 rules + custom fallback."""
+
+    # Priority 1: Time (exact match)
+    def test_time_exact(self):
+        assert classify_channel("Time", None) == ("time", "time_s")
+
+    def test_time_not_substring(self):
+        # "Datetime" should NOT match the exact "Time" rule
+        cat, _ = classify_channel("Datetime", None)
+        assert cat == "custom"
+
+    # Priority 2: Lap
+    def test_lap_number(self):
+        assert classify_channel("Lap #", None) == ("lap", "lap_number")
+
+    def test_lap_count(self):
+        assert classify_channel("Lap count", None) == ("lap", "lap_number")
+
+    # Priority 3: Distance
+    def test_distance(self):
+        assert classify_channel("Distance", "m") == ("distance", "distance_m")
+
+    def test_total_distance(self):
+        assert classify_channel("Total Distance", None) == ("distance", "distance_m")
+
+    # Priority 4: Speed
+    def test_speed(self):
+        assert classify_channel("Speed", "m/s") == ("speed", "speed_mps")
+
+    def test_ground_speed(self):
+        assert classify_channel("Ground Speed", "km/h") == ("speed", "speed_mps")
+
+    # Priority 5-6: Latitude / Longitude
+    def test_latitude_full(self):
+        assert classify_channel("Latitude", "deg") == ("position", "latitude_deg")
+
+    def test_lat_short(self):
+        assert classify_channel("Lat", None) == ("position", "latitude_deg")
+
+    def test_longitude_full(self):
+        assert classify_channel("Longitude", "deg") == ("position", "longitude_deg")
+
+    def test_lon_short(self):
+        assert classify_channel("Lon", None) == ("position", "longitude_deg")
+
+    # Priority 7-8: X / Y (exact)
+    def test_x_position(self):
+        assert classify_channel("X", "m") == ("position", "x_m")
+
+    def test_y_position(self):
+        assert classify_channel("Y", "m") == ("position", "y_m")
+
+    # Priority 9-12: Acceleration
+    def test_longitudinal_accel(self):
+        assert classify_channel("Longitudinal acceleration", "G") == (
+            "acceleration",
+            "accel_long_mps2",
+        )
+
+    def test_lateral_accel(self):
+        assert classify_channel("Lateral acceleration", "G") == (
+            "acceleration",
+            "accel_lat_mps2",
+        )
+
+    def test_accel_x(self):
+        assert classify_channel("Accelerometer X", "G") == (
+            "acceleration",
+            "accel_long_mps2",
+        )
+
+    def test_accel_y(self):
+        assert classify_channel("Accelerometer Y", "G") == (
+            "acceleration",
+            "accel_lat_mps2",
+        )
+
+    def test_accel_z(self):
+        assert classify_channel("Accelerometer Z", "G") == (
+            "acceleration",
+            "accel_vert_mps2",
+        )
+
+    # Priority 14-19: Gyro
+    def test_yaw_rate(self):
+        assert classify_channel("Yaw rate", "deg/s") == ("gyro", "yaw_rate_dps")
+
+    def test_pitch_rate(self):
+        assert classify_channel("Pitch rate", "deg/s") == ("gyro", "pitch_rate_dps")
+
+    def test_roll_rate(self):
+        assert classify_channel("Roll rate", "deg/s") == ("gyro", "roll_rate_dps")
+
+    def test_gyro_x(self):
+        assert classify_channel("Gyro X", "rad/s") == ("gyro", "roll_rate_dps")
+
+    def test_gyro_y(self):
+        assert classify_channel("Gyro Y", "rad/s") == ("gyro", "pitch_rate_dps")
+
+    def test_gyro_z(self):
+        assert classify_channel("Gyro Z", "rad/s") == ("gyro", "yaw_rate_dps")
+
+    # Priority 20: Heading / Bearing
+    def test_heading(self):
+        assert classify_channel("Heading", "deg") == ("heading", "heading_deg")
+
+    def test_bearing(self):
+        assert classify_channel("Bearing", "deg") == ("heading", "heading_deg")
+
+    # Priority 21: Altitude
+    def test_altitude(self):
+        assert classify_channel("Altitude", "m") == ("altitude", "altitude_m")
+
+    def test_alt_short(self):
+        assert classify_channel("Alt", "ft") == ("altitude", "altitude_m")
+
+    # Priority 22-23: GPS quality
+    def test_satellites(self):
+        assert classify_channel("Satellites used", None) == (
+            "gps_quality",
+            "satellites",
+        )
+
+    def test_accuracy(self):
+        assert classify_channel("Accuracy", "m") == ("gps_quality", "accuracy_m")
+
+    def test_hdop(self):
+        assert classify_channel("HDOP", None) == ("gps_quality", "accuracy_m")
+
+    # Priority 24-30: Engine
+    def test_rpm(self):
+        assert classify_channel("Engine RPM", "rpm") == ("engine", "engine_rpm")
+
+    def test_throttle(self):
+        assert classify_channel("Throttle position", "%") == ("engine", "throttle_pct")
+
+    def test_tps(self):
+        assert classify_channel("TPS", "%") == ("engine", "throttle_pct")
+
+    def test_coolant(self):
+        assert classify_channel("Coolant temp", "°C") == ("engine", "coolant_temp_c")
+
+    def test_oil_temp(self):
+        assert classify_channel("Oil temp", "°C") == ("engine", "oil_temp_c")
+
+    def test_intake_temp(self):
+        assert classify_channel("Intake air temp", "°C") == (
+            "engine",
+            "intake_temp_c",
+        )
+
+    def test_battery(self):
+        assert classify_channel("Battery voltage", "V") == ("engine", "battery_v")
+
+    def test_voltage(self):
+        assert classify_channel("Voltage", "V") == ("engine", "battery_v")
+
+    def test_boost(self):
+        assert classify_channel("Boost pressure", "kPa") == ("engine", "boost_kpa")
+
+    def test_map_exact(self):
+        assert classify_channel("MAP", "kPa") == ("engine", "boost_kpa")
+
+    # Priority 31: Brake
+    def test_brake(self):
+        assert classify_channel("Brake pressure", "bar") == ("pedal", "brake_pct")
+
+    # Priority 32: Steering
+    def test_steering(self):
+        assert classify_channel("Steering angle", "deg") == (
+            "steering",
+            "steering_angle_deg",
+        )
+
+    # Priority 33: Biometric
+    def test_heart_rate(self):
+        assert classify_channel("Heart rate", "bpm") == (
+            "biometric",
+            "heart_rate_bpm",
+        )
+
+    def test_hr_short(self):
+        assert classify_channel("HR", None) == ("biometric", "heart_rate_bpm")
+
+    def test_bpm(self):
+        assert classify_channel("BPM", None) == ("biometric", "heart_rate_bpm")
+
+    # Priority 34: Custom fallback
+    def test_custom_no_unit(self):
+        cat, internal = classify_channel("Tyre wear FL", None)
+        assert cat == "custom"
+        assert internal == "Tyre wear FL"
+
+    def test_custom_with_unit(self):
+        cat, internal = classify_channel("Tyre wear FL", "mm")
+        assert cat == "custom"
+        assert internal == "Tyre wear FL_mm"
+
+
+# =====================================================================
+# TestUnitConversion
+# =====================================================================
+class TestUnitConversion:
+    """Tests for get_conversion() — factor and function lookups."""
+
+    def test_g_to_mps2(self):
+        factor, func = get_conversion("G")
+        assert func is None
+        assert factor == pytest.approx(9.80665)
+
+    def test_g_lowercase(self):
+        factor, func = get_conversion("g")
+        assert factor == pytest.approx(9.80665)
+
+    def test_kmh_to_mps(self):
+        factor, _ = get_conversion("km/h")
+        assert factor == pytest.approx(1.0 / 3.6)
+
+    def test_mph_to_mps(self):
+        factor, _ = get_conversion("mph")
+        assert factor == pytest.approx(0.44704)
+
+    def test_knots_to_mps(self):
+        factor, _ = get_conversion("knots")
+        assert factor == pytest.approx(0.514444)
+
+    def test_kn_to_mps(self):
+        factor, _ = get_conversion("kn")
+        assert factor == pytest.approx(0.514444)
+
+    def test_ft_to_m(self):
+        factor, _ = get_conversion("ft")
+        assert factor == pytest.approx(0.3048)
+
+    def test_rad_s_to_deg_s(self):
+        factor, _ = get_conversion("rad/s")
+        assert factor == pytest.approx(180.0 / math.pi)
+
+    def test_fahrenheit_function(self):
+        factor, func = get_conversion("°F")
+        assert factor is None
+        assert func is not None
+        assert func(212.0) == pytest.approx(100.0)
+        assert func(32.0) == pytest.approx(0.0)
+
+    def test_psi_to_bar(self):
+        factor, _ = get_conversion("psi")
+        assert factor == pytest.approx(0.0689476)
+
+    def test_kpa_conversion(self):
+        factor, _ = get_conversion("kPa")
+        assert factor == pytest.approx(0.01)
+
+    def test_no_conversion_needed(self):
+        factor, func = get_conversion("m/s")
+        assert factor is None
+        assert func is None
+
+    def test_none_unit(self):
+        factor, func = get_conversion(None)
+        assert factor is None
+        assert func is None
+
+
+# =====================================================================
+# TestDiscoverColumns
+# =====================================================================
+class TestDiscoverColumns:
+    """Tests for discover_columns() — full pipeline."""
+
+    def test_basic_headers(self):
+        df = pd.DataFrame(
+            {
+                "Time (s)": [0.0, 0.1, 0.2],
+                "Speed (m/s)": [10.0, 11.0, 12.0],
+                "Lap #": [1, 1, 1],
+            }
+        )
+        result = discover_columns(df)
+        assert result.rename_map["Time (s)"] == "time_s"
+        assert result.rename_map["Speed (m/s)"] == "speed_mps"
+        assert result.rename_map["Lap #"] == "lap_number"
+        assert len(result.channels) == 3
+        assert len(result.custom_channels) == 0
+
+    def test_calc_preference(self):
+        """*calc column wins over non-calc for same internal name."""
+        df = pd.DataFrame(
+            {
+                "Speed (m/s)": [10.0, 11.0],
+                "Speed (m/s) *calc": [10.5, 11.5],
+            }
+        )
+        result = discover_columns(df)
+        # calc column should win
+        assert "speed_mps" in [ch.internal_name for ch in result.channels]
+        winner = [ch for ch in result.channels if ch.internal_name == "speed_mps"][0]
+        assert winner.raw_name == "Speed (m/s) *calc"
+        assert winner.is_calc is True
+        # Loser should be in custom_channels
+        assert "Speed (m/s)" in result.custom_channels
+        # calc_overrides should record the winning calc column
+        assert result.calc_overrides["speed_mps"] == "Speed (m/s) *calc"
+
+    def test_custom_channels(self):
+        df = pd.DataFrame(
+            {
+                "Time (s)": [0.0],
+                "Tyre wear FL (mm)": [3.2],
+                "Fuel level (L)": [15.0],
+            }
+        )
+        result = discover_columns(df)
+        # Time is known; the other two are custom
+        assert len(result.custom_channels) == 0  # both are unique custom, not conflicts
+        customs = [ch for ch in result.channels if ch.category == "custom"]
+        assert len(customs) == 2
+
+    def test_kmh_conversion_detected(self):
+        df = pd.DataFrame({"Speed (km/h)": [100.0, 200.0]})
+        result = discover_columns(df)
+        assert "Speed (km/h)" in result.conversions
+        assert result.conversions["Speed (km/h)"] == pytest.approx(1.0 / 3.6)
+
+    def test_n_valid_count(self):
+        df = pd.DataFrame(
+            {
+                "Speed (m/s)": [10.0, np.nan, 12.0, np.nan, 14.0],
+            }
+        )
+        result = discover_columns(df)
+        ch = result.channels[0]
+        assert ch.n_valid == 3
+
+    def test_to_dict_serializable(self):
+        df = pd.DataFrame({"Time (s)": [0.0, 0.1], "Speed (m/s)": [10.0, 11.0]})
+        result = discover_columns(df)
+        d = result.to_dict()
+        assert isinstance(d, dict)
+        assert "channels" in d
+        assert "rename_map" in d
+
+    def test_first_match_wins_among_same_flag(self):
+        """When two non-calc columns map to the same internal name,
+        the first one wins and the second becomes custom."""
+        df = pd.DataFrame(
+            {
+                "Yaw rate (deg/s)": [1.0, 2.0],
+                "Gyro Z (deg/s)": [1.1, 2.1],
+            }
+        )
+        result = discover_columns(df)
+        winner = [ch for ch in result.channels if ch.internal_name == "yaw_rate_dps"][0]
+        assert winner.raw_name == "Yaw rate (deg/s)"
+        assert "Gyro Z (deg/s)" in result.custom_channels
+
+
+# =====================================================================
+# TestApplyDiscovery
+# =====================================================================
+class TestApplyDiscovery:
+    """Tests for apply_discovery() — rename + conversions."""
+
+    def test_rename_and_factor_conversion(self):
+        df = pd.DataFrame(
+            {
+                "Speed (km/h)": [36.0, 72.0, 108.0],
+                "Lateral acceleration (G)": [0.5, 1.0, 1.5],
+            }
+        )
+        result = discover_columns(df)
+        out = apply_discovery(df, result)
+
+        # Speed should be converted from km/h to m/s
+        assert "speed_mps" in out.columns
+        assert out["speed_mps"].iloc[0] == pytest.approx(10.0, abs=0.01)
+        assert out["speed_mps"].iloc[1] == pytest.approx(20.0, abs=0.01)
+
+        # Accel should be converted from G to m/s^2
+        assert "accel_lat_mps2" in out.columns
+        assert out["accel_lat_mps2"].iloc[0] == pytest.approx(0.5 * 9.80665, abs=0.01)
+
+    def test_fahrenheit_conversion(self):
+        df = pd.DataFrame({"Coolant (°F)": [212.0, 32.0, 77.0]})
+        result = discover_columns(df)
+        out = apply_discovery(df, result)
+
+        assert "coolant_temp_c" in out.columns
+        assert out["coolant_temp_c"].iloc[0] == pytest.approx(100.0, abs=0.01)
+        assert out["coolant_temp_c"].iloc[1] == pytest.approx(0.0, abs=0.01)
+        assert out["coolant_temp_c"].iloc[2] == pytest.approx(25.0, abs=0.01)
+
+    def test_passthrough_no_conversion(self):
+        """Columns already in the right units pass through unchanged."""
+        df = pd.DataFrame(
+            {
+                "Time (s)": [0.0, 0.1, 0.2],
+                "Speed (m/s)": [10.0, 11.0, 12.0],
+            }
+        )
+        result = discover_columns(df)
+        out = apply_discovery(df, result)
+
+        assert "time_s" in out.columns
+        assert "speed_mps" in out.columns
+        assert out["speed_mps"].iloc[0] == pytest.approx(10.0)
+        assert out["time_s"].iloc[2] == pytest.approx(0.2)
+
+    def test_original_df_not_mutated(self):
+        df = pd.DataFrame({"Speed (km/h)": [36.0, 72.0]})
+        result = discover_columns(df)
+        _ = apply_discovery(df, result)
+        # Original should still have km/h column and original values
+        assert "Speed (km/h)" in df.columns
+        assert df["Speed (km/h)"].iloc[0] == pytest.approx(36.0)
+
+
+# =====================================================================
+# TestFormatDetection
+# =====================================================================
+class TestFormatDetection:
+    """Tests for detect_format()."""
+
+    def test_racechrono(self):
+        assert detect_format({"source": "RaceChrono Pro v7.0"}) == "racechrono"
+
+    def test_racebox(self):
+        assert detect_format({"app": "RaceBox Mini S"}) == "racebox"
+
+    def test_unknown(self):
+        assert detect_format({"source": "Custom logger"}) == "unknown"
+
+    def test_case_insensitive(self):
+        assert detect_format({"source": "RACECHRONO"}) == "racechrono"
+        assert detect_format({"app": "racebox"}) == "racebox"
+
+    def test_empty_metadata(self):
+        assert detect_format({}) == "unknown"
