@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { PageHeader, SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
+import { canUseFeature } from '@/lib/entitlements-store';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -231,17 +232,29 @@ export default function RaceDetailPage() {
           </button>
         )}
         {race.status === 'ready' && (
-          <button
-            onClick={() => {
-              if (window.confirm('Start the race? This will set the timer running.')) {
-                goLiveMut.mutate();
-              }
-            }}
-            disabled={goLiveMut.isPending}
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
-          >
-            {goLiveMut.isPending ? 'Going Live...' : 'Go Live'}
-          </button>
+          canUseFeature('race_strategy_full') ? (
+            <button
+              onClick={() => {
+                if (window.confirm('Start the race? This will set the timer running.')) {
+                  goLiveMut.mutate();
+                }
+              }}
+              disabled={goLiveMut.isPending}
+              className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            >
+              {goLiveMut.isPending ? 'Going Live...' : 'Go Live'}
+            </button>
+          ) : (
+            <div className="relative group inline-block">
+              <button disabled className="px-4 py-2 bg-steel/30 text-steel font-telemetry text-sm rounded cursor-not-allowed">
+                Go Live
+              </button>
+              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block
+                bg-concrete border border-steel/30 rounded px-3 py-1.5 text-xs text-steel whitespace-nowrap z-10">
+                Upgrade to Racer for Live Dashboard
+              </div>
+            </div>
+          )
         )}
         {editable && (
           <Link

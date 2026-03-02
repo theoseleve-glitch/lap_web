@@ -5,6 +5,8 @@ import { useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app';
+import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
+import { useEntitlementsStore } from '@/lib/entitlements-store';
 
 interface DriverForm {
   driver_name: string;
@@ -74,6 +76,7 @@ export default function NewRacePage() {
   const router = useRouter();
   const fieldId = useId();
   const [error, setError] = useState('');
+  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit);
 
   // Form state
   const [raceName, setRaceName] = useState('');
@@ -233,18 +236,28 @@ export default function NewRacePage() {
               <label htmlFor={`${fieldId}-track`} className={labelCls}>Track</label>
               <input id={`${fieldId}-track`} className={inputCls} value={trackName} onChange={e => setTrackName(e.target.value)} placeholder="Circuit de Pau-Arnos" />
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label>
-                <input id={`${fieldId}-dur-h`} type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" />
-              </div>
-              <div>
-                <label htmlFor={`${fieldId}-dur-m`} className={labelCls}>Minutes</label>
-                <input id={`${fieldId}-dur-m`} type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" />
-              </div>
-              <div>
-                <label htmlFor={`${fieldId}-stints`} className={labelCls}>Stints</label>
-                <input id={`${fieldId}-stints`} type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" />
+            <div>
+              {raceStrategyLimit === 'limited_3h' && (
+                <div className="mb-3">
+                  <UpgradeBanner
+                    feature="race_strategy_full"
+                    context="Demo plan: races limited to 3 hours. Upgrade for unlimited duration."
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label>
+                  <input id={`${fieldId}-dur-h`} type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" />
+                </div>
+                <div>
+                  <label htmlFor={`${fieldId}-dur-m`} className={labelCls}>Minutes</label>
+                  <input id={`${fieldId}-dur-m`} type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" />
+                </div>
+                <div>
+                  <label htmlFor={`${fieldId}-stints`} className={labelCls}>Stints</label>
+                  <input id={`${fieldId}-stints`} type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" />
+                </div>
               </div>
             </div>
           </div>

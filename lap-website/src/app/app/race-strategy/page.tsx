@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
+import { canUseFeature } from '@/lib/entitlements-store';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -118,12 +120,22 @@ export default function RaceStrategyListPage() {
         actions={
           <Link
             href="/app/race-strategy/new"
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="inline-flex items-center gap-1 px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
           >
             + New Race
+            {!canUseFeature('race_strategy_full') && (
+              <span className="text-[10px] opacity-60 ml-1" title="3h limit on Demo">3h max</span>
+            )}
           </Link>
         }
       />
+
+      <div className="mb-4">
+        <UpgradeBanner
+          feature="race_strategy_full"
+          context="Demo plan limited to 3-hour races. Upgrade for unlimited duration."
+        />
+      </div>
 
       {/* ── Stats ───────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

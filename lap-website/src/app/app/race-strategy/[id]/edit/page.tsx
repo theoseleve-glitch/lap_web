@@ -5,6 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter, useParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app';
+import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
+import { useEntitlementsStore } from '@/lib/entitlements-store';
 
 // Re-use the exact same types and helpers as new/page.tsx
 // (In production you'd extract a shared RaceConfigForm component,
@@ -71,6 +73,7 @@ export default function EditRacePage() {
   const queryClient = useQueryClient();
   const fieldId = useId();
   const [error, setError] = useState('');
+  const raceStrategyLimit = useEntitlementsStore((s) => s.entitlements?.raceStrategyLimit);
   const [loaded, setLoaded] = useState(false);
 
   const { data, isLoading } = useQuery({
@@ -246,10 +249,20 @@ export default function EditRacePage() {
             <div><label htmlFor={`${fieldId}-race-name`} className={labelCls}>Race Name *</label><input id={`${fieldId}-race-name`} className={inputCls} value={raceName} onChange={e => setRaceName(e.target.value)} /></div>
             <div><label htmlFor={`${fieldId}-team-name`} className={labelCls}>Team Name</label><input id={`${fieldId}-team-name`} className={inputCls} value={teamName} onChange={e => setTeamName(e.target.value)} /></div>
             <div><label htmlFor={`${fieldId}-track`} className={labelCls}>Track</label><input id={`${fieldId}-track`} className={inputCls} value={trackName} onChange={e => setTrackName(e.target.value)} /></div>
-            <div className="grid grid-cols-3 gap-2">
-              <div><label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label><input id={`${fieldId}-dur-h`} type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" /></div>
-              <div><label htmlFor={`${fieldId}-dur-m`} className={labelCls}>Minutes</label><input id={`${fieldId}-dur-m`} type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" /></div>
-              <div><label htmlFor={`${fieldId}-stints`} className={labelCls}>Stints</label><input id={`${fieldId}-stints`} type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" /></div>
+            <div>
+              {raceStrategyLimit === 'limited_3h' && (
+                <div className="mb-3">
+                  <UpgradeBanner
+                    feature="race_strategy_full"
+                    context="Demo plan: races limited to 3 hours. Upgrade for unlimited duration."
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-3 gap-2">
+                <div><label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label><input id={`${fieldId}-dur-h`} type="number" className={inputCls} value={durationH} onChange={e => setDurationH(e.target.value)} min="0" /></div>
+                <div><label htmlFor={`${fieldId}-dur-m`} className={labelCls}>Minutes</label><input id={`${fieldId}-dur-m`} type="number" className={inputCls} value={durationM} onChange={e => setDurationM(e.target.value)} min="0" max="59" /></div>
+                <div><label htmlFor={`${fieldId}-stints`} className={labelCls}>Stints</label><input id={`${fieldId}-stints`} type="number" className={inputCls} value={desiredStints} onChange={e => setDesiredStints(e.target.value)} min="1" /></div>
+              </div>
             </div>
           </div>
         </div>

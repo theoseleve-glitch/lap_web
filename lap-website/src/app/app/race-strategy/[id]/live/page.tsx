@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { PageHeader } from '@/components/app';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
+import { MessageLog } from '@/components/app/race-strategy/MessageLog';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -453,6 +454,14 @@ export default function LiveDashboardPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* ── Team Messages ──────────────────────────────── */}
+      {state.messages && state.messages.length > 0 && (
+        <div className="bg-concrete/50 border border-steel/20 rounded-lg p-4">
+          <h3 className="text-sm font-telemetry text-steel mb-3">TEAM MESSAGES</h3>
+          <MessageLog messages={state.messages as Array<{ msg_id: number; author: string; message: string; category: string; created_at: string }>} />
         </div>
       )}
 
