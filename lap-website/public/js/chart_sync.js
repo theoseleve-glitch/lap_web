@@ -38,6 +38,9 @@
     };
 
     document.addEventListener('DOMContentLoaded', function () {
+        // Guard: already initialized (React may re-fire DOMContentLoaded).
+        if (speedCanvas) return;
+
         speedCanvas = document.getElementById('speed-chart');
         lapCanvas = document.getElementById('lap-times-chart');
         crosshairEl = document.getElementById('chart-crosshair');

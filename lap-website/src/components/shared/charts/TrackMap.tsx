@@ -106,14 +106,10 @@ export function TrackMap(props: TrackMapProps) {
         await ensureLeaflet();
         if (cancelled) return;
 
-        if (window.GpsTrace) {
-          const loadLap = (window.GpsTrace as Record<string, unknown>).loadLap as
-            | ((lapNum: number) => void)
-            | undefined;
-          if (loadLap) {
-            const defaultLap = lap || bestLap || (gpsLaps.length > 0 ? gpsLaps[0] : null);
-            if (defaultLap) loadLap(defaultLap);
-          }
+        // Re-fire DOMContentLoaded so the vanilla JS modules' init handlers
+        // execute now that Leaflet is available and DOM elements are rendered.
+        if (window.ModuleShim) {
+          window.ModuleShim.fireDOMContentLoaded();
         }
       } catch (err) {
         console.error('Failed to load Leaflet for TrackMap:', err);

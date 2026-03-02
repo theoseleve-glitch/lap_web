@@ -129,22 +129,11 @@ export function SpeedTraceChart(props: SpeedTraceChartProps) {
     cleanedUpRef.current = false;
     const container = containerRef.current;
 
-    const speedCanvas = document.getElementById('speed-chart');
-    if (speedCanvas && window.ChartSync) {
-      const loadFn = (window.ChartSync as Record<string, unknown>)
-        .loadSpeedData as ((lapNum: number) => void) | undefined;
-      if (loadFn && bestLap) {
-        loadFn(bestLap);
-      } else if (loadFn && gpsLaps.length > 0) {
-        loadFn(gpsLaps[0]);
-      }
-    }
-
-    if (window.SpeedTraceZoom) {
-      const initFn = (window.SpeedTraceZoom as Record<string, unknown>).init as
-        | (() => void)
-        | undefined;
-      if (initFn) initFn();
+    // Re-fire DOMContentLoaded so chart_sync.js and speed_trace_zoom.js
+    // init handlers execute now that the canvas DOM elements are rendered.
+    // Guards in each module prevent double-init if TrackMap already fired this.
+    if (window.ModuleShim) {
+      window.ModuleShim.fireDOMContentLoaded();
     }
 
     return () => {

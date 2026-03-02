@@ -28,6 +28,44 @@
     };
 
     /**
+     * Unwrap API envelope responses.
+     * The SaaS backend wraps all responses in {ok, data, meta}.
+     * Vanilla JS modules expect raw data, so we unwrap here.
+     */
+    function _unwrapEnvelope(data) {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            if (data.ok === true && 'data' in data) {
+                return data.data;
+            }
+            if (data.ok === false) {
+                throw new Error(data.error || data.message || 'API request failed');
+            }
+        }
+        return data;
+    }
+
+    /**
+     * Inject auth headers (JWT + workspace) into fetch options.
+     * The getAuthHeaders function is set by useVanillaChart.ts in the SaaS frontend.
+     */
+    function _injectAuth(opts) {
+        var fh = window.FetchHelper;
+        if (fh && typeof fh.getAuthHeaders === 'function') {
+            var authHeaders = fh.getAuthHeaders();
+            if (authHeaders && typeof authHeaders === 'object') {
+                opts = opts || {};
+                opts.headers = opts.headers || {};
+                for (var k in authHeaders) {
+                    if (authHeaders.hasOwnProperty(k)) {
+                        opts.headers[k] = authHeaders[k];
+                    }
+                }
+            }
+        }
+        return opts;
+    }
+
+    /**
      * Show a skeleton/loading state inside container,
      * fetch url, call onSuccess(data) or show error with retry.
      */
@@ -49,7 +87,7 @@
             }, opts.timeout);
         }
 
-        fetch(url, fetchOpts)
+        fetch(url, _injectAuth(fetchOpts))
             .then(function (response) {
                 if (timer) clearTimeout(timer);
                 if (!response.ok) {
@@ -58,6 +96,7 @@
                 return response.json();
             })
             .then(function (data) {
+                data = _unwrapEnvelope(data);
                 container.removeAttribute('aria-busy');
                 // Check for empty data
                 if (opts.emptyCheck && opts.emptyCheck(data)) {
@@ -161,11 +200,14 @@
         }
         var timer = controller ? setTimeout(function () { controller.abort(); }, timeout) : null;
 
-        return fetch(url, opts)
+        return fetch(url, _injectAuth(opts))
             .then(function (response) {
                 if (timer) clearTimeout(timer);
                 if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                 return response.json();
+            })
+            .then(function (data) {
+                return _unwrapEnvelope(data);
             })
             .catch(function (err) {
                 if (timer) clearTimeout(timer);

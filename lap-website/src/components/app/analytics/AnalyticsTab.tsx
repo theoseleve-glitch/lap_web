@@ -3,6 +3,7 @@
 import { BACKEND_URL } from '@/lib/api-client';
 import { GpsTrace, SpeedTraceZoom, GGExplorer } from '@/components/app/charts';
 import { SectorPanel } from '@/components/shared/charts';
+import { DeltaTimeChart } from '@/components/shared/charts/DeltaTimeChart';
 import { LapSpeedOverlay } from './LapSpeedOverlay';
 import { LapDistribution } from './LapDistribution';
 import { LapProgressTracker } from './LapProgressTracker';
@@ -92,10 +93,21 @@ export function AnalyticsTab({
         </div>
       </div>
 
-      {/* ── Row 2: Sector Analysis ── */}
+      {/* ── Row 2: Delta Time Chart ── */}
+      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+        <h3 className="text-sm font-monument text-chalk mb-3">Time Delta</h3>
+        <DeltaTimeChart
+          sessionId={sessionId}
+          gpsLaps={gpsLaps}
+          bestLap={bestLap}
+          className="w-full"
+        />
+      </div>
+
+      {/* ── Row 3: Sector Analysis ── */}
       <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
 
-      {/* ── Row 3: Lap Speed Overlay ── */}
+      {/* ── Row 4: Lap Speed Overlay ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
         <h3 className="text-sm font-monument text-chalk mb-3">Lap Speed Overlay</h3>
         <LapSpeedOverlay
@@ -106,7 +118,7 @@ export function AnalyticsTab({
         />
       </div>
 
-      {/* ── Row 4: Distribution + Progress ── */}
+      {/* ── Row 5: Distribution + Progress ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-concrete rounded-xl border border-steel/10 p-4">
           <h3 className="text-sm font-monument text-chalk mb-3">Lap Distribution</h3>
@@ -118,13 +130,13 @@ export function AnalyticsTab({
         </div>
       </div>
 
-      {/* ── Row 5: Session Comparison ── */}
+      {/* ── Row 6: Session Comparison ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
         <h3 className="text-sm font-monument text-chalk mb-3">Session Comparison</h3>
         <SessionComparison sessionId={sessionId} trackName={trackName} />
       </div>
 
-      {/* ── Row 6: Development Drills ── */}
+      {/* ── Row 7: Development Drills ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
         <h3 className="text-sm font-monument text-chalk mb-3">Development Drills</h3>
         <DevelopmentDrills scores={scores} corners={corners} />

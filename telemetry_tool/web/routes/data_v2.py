@@ -2719,4 +2719,220 @@ def get_session_timeline(session_id: str):
     return api_response(tl.to_dict())
 
 
+# ══════════════════════════════════════════════════════════════════
+# 40. GET /api/v1/sessions/<id>/sector-analysis  (alias)
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/sector-analysis", methods=["GET"])
+@_safe_api
+def get_sector_analysis(session_id: str):
+    """Alias for sector_times — desktop tool vanilla JS uses this path."""
+    return get_sector_times(session_id)
+
+
+# ══════════════════════════════════════════════════════════════════
+# 41. GET /api/v1/sessions/<id>/comparison-matrix
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/comparison-matrix", methods=["GET"])
+@_safe_api
+def get_comparison_matrix(session_id: str):
+    """Return a multi-session comparison matrix for the same track.
+
+    Finds recent sessions on the same track, computes pairwise deltas
+    for key metrics (best lap, mean lap, consistency), and returns
+    structured data for the comparison_matrix.js visualisation.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_id = session.get("track_id")
+    if not track_id:
+        return api_response({
+            "sessions": [],
+            "pairwise": [],
+            "best_per_metric": {},
+            "metric_labels": {},
+            "lower_is_better": [],
+            "focus_session_id": session_id,
+        })
+
+    # Fetch other sessions on the same track (limit 10 most recent)
+    all_sessions = models.get_sessions(conn, limit=50, offset=0)
+    same_track = [
+        s for s in all_sessions
+        if s.get("track_id") == track_id and s.get("session_id")
+    ]
+    # Sort by date descending, take top 10
+    same_track.sort(key=lambda s: s.get("session_date", ""), reverse=True)
+    same_track = same_track[:10]
+
+    if len(same_track) < 2:
+        return api_response({
+            "sessions": [],
+            "pairwise": [],
+            "best_per_metric": {},
+            "metric_labels": {},
+            "lower_is_better": [],
+            "focus_session_id": session_id,
+        })
+
+    # Build session summaries with lap stats
+    summaries = []
+    for s in same_track:
+        sid = s["session_id"]
+        laps = models.get_laps_for_session(conn, sid)
+        valid = [
+            lp["lap_time_s"] for lp in laps
+            if lp.get("lap_time_s") and lp["lap_time_s"] > 0
+            and lp.get("is_valid", 1)
+        ]
+        best_t = min(valid) if valid else 0
+        mean_t = sum(valid) / len(valid) if valid else 0
+        consist = 0
+        if len(valid) >= 2 and mean_t > 0:
+            import statistics
+            std = statistics.stdev(valid)
+            consist = round(max(0, 100 - (std / mean_t * 100)), 1)
+
+        summaries.append({
+            "session_id": sid,
+            "session_date": s.get("session_date", ""),
+            "session_type": s.get("session_type", ""),
+            "best_lap_time_s": round(best_t, 3) if best_t else 0,
+            "mean_lap_time_s": round(mean_t, 3) if mean_t else 0,
+            "total_laps": len(valid),
+            "consistency_pct": consist,
+        })
+
+    # Best-per-metric
+    metrics = ["best_lap_time_s", "mean_lap_time_s", "consistency_pct"]
+    labels = {
+        "best_lap_time_s": "Best Lap",
+        "mean_lap_time_s": "Mean Lap",
+        "consistency_pct": "Consistency",
+    }
+    lower_better = ["best_lap_time_s", "mean_lap_time_s"]
+    best_per = {}
+    for m in metrics:
+        valid_s = [s for s in summaries if s[m] and s[m] > 0]
+        if valid_s:
+            if m in lower_better:
+                best_per[m] = min(valid_s, key=lambda s: s[m])["session_id"]
+            else:
+                best_per[m] = max(valid_s, key=lambda s: s[m])["session_id"]
+
+    # Pairwise deltas (focus session vs each other)
+    pairwise = []
+    focus = next((s for s in summaries if s["session_id"] == session_id), None)
+    if focus:
+        for other in summaries:
+            if other["session_id"] == session_id:
+                continue
+            deltas = {}
+            for m in metrics:
+                if focus[m] and other[m]:
+                    deltas[m] = round(other[m] - focus[m], 3)
+                else:
+                    deltas[m] = None
+
+            # Assessment
+            improvements = sum(
+                1 for m in metrics
+                if deltas.get(m) is not None and (
+                    (m in lower_better and deltas[m] > 0) or
+                    (m not in lower_better and deltas[m] < 0)
+                )
+            )
+            regressions = sum(
+                1 for m in metrics
+                if deltas.get(m) is not None and (
+                    (m in lower_better and deltas[m] < 0) or
+                    (m not in lower_better and deltas[m] > 0)
+                )
+            )
+            if improvements > 0 and regressions == 0:
+                assess = "improved"
+            elif regressions > 0 and improvements == 0:
+                assess = "regressed"
+            elif improvements > 0 and regressions > 0:
+                assess = "mixed"
+            else:
+                assess = "unchanged"
+
+            pairwise.append({
+                "session_a": session_id,
+                "session_b": other["session_id"],
+                "metrics": deltas,
+                "assessment": assess,
+            })
+
+    return api_response({
+        "sessions": summaries,
+        "pairwise": pairwise,
+        "best_per_metric": best_per,
+        "metric_labels": labels,
+        "lower_is_better": lower_better,
+        "focus_session_id": session_id,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 42. GET /api/v1/sessions/<id>/cross_session
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/cross_session", methods=["GET"])
+@_safe_api
+def get_cross_session(session_id: str):
+    """Return cross-session speed overlay data.
+
+    Finds comparable sessions on the same track and returns
+    best-lap speed traces for overlay comparison.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_id = session.get("track_id")
+    if not track_id:
+        return api_response({"sessions": [], "available": False})
+
+    # Find sessions on same track
+    all_sessions = models.get_sessions(conn, limit=50, offset=0)
+    same_track = [
+        s for s in all_sessions
+        if s.get("track_id") == track_id and s.get("session_id")
+    ]
+    same_track.sort(key=lambda s: s.get("session_date", ""), reverse=True)
+    same_track = same_track[:6]
+
+    traces = []
+    for s in same_track:
+        sid = s["session_id"]
+        best = _resolve_lap_number(conn, sid)
+        if best is None:
+            continue
+        trace = models.get_gps_trace(conn, sid, best)
+        if trace and trace.get("distances") and trace.get("speeds"):
+            traces.append({
+                "session_id": sid,
+                "session_date": s.get("session_date", ""),
+                "lap_number": best,
+                "distances": trace["distances"],
+                "speeds": trace["speeds"],
+            })
+
+    return api_response({
+        "sessions": traces,
+        "available": len(traces) >= 1,
+        "focus_session_id": session_id,
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

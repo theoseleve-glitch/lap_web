@@ -59,6 +59,10 @@
 
     // ── Init ────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
+        // Guard: already initialized or Leaflet not yet loaded.
+        if (map) return;
+        if (typeof L === 'undefined' || !L.map) return;
+
         var T = window.TELEMETRY;
         if (!T || !T.gpsLaps || T.gpsLaps.length === 0) return;
 

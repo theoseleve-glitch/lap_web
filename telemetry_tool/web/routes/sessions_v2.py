@@ -139,7 +139,7 @@ def _persist_driver_progression(conn, driver_id, session_id, summary,
     pace_delta = None
     theo_metrics = summary.get("theoretical_metrics") or {}
     if best_s and theo_metrics:
-        theo_t = theo_metrics.get("theoretical_time_s")
+        theo_t = theo_metrics.get("best_s")
         if theo_t and isinstance(theo_t, (int, float)):
             pace_delta = best_s - theo_t
 

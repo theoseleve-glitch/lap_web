@@ -57,6 +57,10 @@
         url = url.replace(/(\/sessions\/[^/]+)\/gg_data/, '$1/gg-data');
         // /sessions/{id}/lap_times → /sessions/{id}/laps
         url = url.replace(/(\/sessions\/[^/]+)\/lap_times/, '$1/laps');
+        // /sessions/{id}/sector-analysis → /sessions/{id}/sector_times
+        url = url.replace(/(\/sessions\/[^/]+)\/sector-analysis/, '$1/sector_times');
+        // /sessions/{id}/corner-coaching → /sessions/{id}/corners
+        url = url.replace(/(\/sessions\/[^/]+)\/corner-coaching/, '$1/corners');
         // corner-positions and corner-metrics now have dedicated endpoints
         // (previously incorrectly mapped to /corners)
 

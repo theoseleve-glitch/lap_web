@@ -461,6 +461,9 @@ def _extract_track_layout_for_picker(
                 "lat": lats[idx],
                 "lon": lons[idx],
                 "dist_m": apex_m,
+                "s_start": cn.get("s_start"),
+                "s_end": cn.get("s_end"),
+                "s_apex": cn.get("s_apex", apex_m),
             })
 
     return {
@@ -486,6 +489,10 @@ def run_full_analysis(
     corner_callback: Optional[Any] = None,
     joker_callback: Optional[Any] = None,
     progress_callback: Optional[Callable[[int, int, str, str], None]] = None,
+    stop_after_corners: bool = False,
+    resume_from_step8: bool = False,
+    preloaded_resampled_laps: Optional[dict] = None,
+    preloaded_corners: Optional[list] = None,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -656,211 +663,243 @@ def run_full_analysis(
             summary["errors"][step] = error
         return result
 
-    # STEP 1 --  Ingest
-
-    #
-    io_mod = _import("io_racechrono")
-
-    def _ingest() -> pd.DataFrame:
-        if io_mod is None:
-            raise ImportError("io_racechrono unavailable")
-        return io_mod.read_racechrono_csv(csv_path)
-
-    raw_df, err = _safe_step("01_ingest", _ingest)
-    _record("01_ingest", raw_df, err)
-    _fire_progress("01_ingest")
-    summary["raw_df"] = None  # Not consumed downstream; avoid holding ~8 GB
-
-    if raw_df is None:
-        logger.error("Ingest failed --  cannot continue.")
-        return summary
-
-    # STEP 2 --  Filter (GPS quality)
-
-    #
-    gps_mod = _import("gps_filtering")
-
-    def _filter() -> pd.DataFrame:
-        if gps_mod is None:
-            logger.info("GPS filtering skipped (module absent).")
-            return raw_df
-        return gps_mod.filter_gps_quality(raw_df)
-
-    filtered_df, err = _safe_step("02_filter", _filter)
-    _record("02_filter", filtered_df, err)
-    _fire_progress("02_filter")
-    if filtered_df is None:
-        filtered_df = raw_df
-    summary["filtered_df"] = None  # Not consumed downstream; avoid holding ~8 GB
-    del raw_df  # Allow GC of ingest DataFrame
-
-    # STEP 3 --  Derived channels
-
-    #
-    dc_mod = _import("derived_channels")
-
-    def _derived() -> pd.DataFrame:
-        # Work directly on filtered_df to avoid a full copy (~8 GB for 10 GB
-        # CSV files).  The local var is not used after this step.
-        if dc_mod is None:
-            logger.info("Derived channels skipped (module absent).")
-            return filtered_df
-        df = dc_mod.compute_longitudinal_accel(filtered_df)
-        df = dc_mod.compute_lateral_accel_from_xy(df)
-        df = dc_mod.compute_yaw_rate_from_heading(df)
-        return df
-
-    enriched_df, err = _safe_step("03_derived_channels", _derived)
-    _record("03_derived_channels", enriched_df, err)
-    _fire_progress("03_derived_channels")
-    if enriched_df is None:
-        enriched_df = filtered_df
-    summary["enriched_df"] = None  # Not consumed downstream; avoid holding ~8 GB
-    del filtered_df  # Allow GC
-
-    # STEP 4 --  Trim session (remove outlaps, waiting periods)
-
-    #
-    trim_mod = _import("session_trimming")
-
-    def _trim() -> tuple[pd.DataFrame, dict[str, Any]]:
-        if trim_mod is None:
-            return enriched_df, {"note": "session_trimming absent"}
-        return trim_mod.trim_session(
-            enriched_df,
-            session_type=session_meta.get("session_type", "practice"),
-        )
-
-    trim_result, err = _safe_step("04_trim_session", _trim)
-    _record("04_trim_session", trim_result, err)
-    _fire_progress("04_trim_session")
-    if trim_result is not None:
-        trimmed_df, trim_report = trim_result
+    # ── Phase 1 vs Resume branching ────────────────────────
+    if resume_from_step8:
+        # Resume path: skip stages 1-7, use preloaded intermediate data
+        if preloaded_resampled_laps is None:
+            logger.error("resume_from_step8=True but no preloaded_resampled_laps")
+            return summary
+        resampled_laps = preloaded_resampled_laps
+        corners = preloaded_corners or []
+        track_id = meta.get("track_id", "unknown_track")
+        trimmed_df = None
+        summary.update({
+            "resampled_laps": resampled_laps,
+            "corners": corners,
+            "track_id": track_id,
+        })
     else:
-        trimmed_df, trim_report = enriched_df, {}
-    del enriched_df  # Allow GC
-    summary["trimmed_df"]  = trimmed_df
-    summary["trim_report"] = trim_report
+        # ── Phase 1: Stages 1-7 ──────────────────────────
 
-    # STEP 5 --  Detect track
+        # STEP 1 --  Ingest
 
-    #
-    track_mod = _import("track_detection")
+        #
+        io_mod = _import("io_racechrono")
 
-    def _detect_track() -> tuple[Any, str]:
-        if track_mod is None:
-            return None, meta.get("track_id", "unknown_track")
-        # Use user-provided track_name if available, else fall back to track_id.
-        _tn = meta.get("track_name") or meta.get("track_id", "Unknown Track")
-        match, _ = track_mod.register_or_match_track(
-            trimmed_df, track_name=_tn,
+        def _ingest() -> pd.DataFrame:
+            if io_mod is None:
+                raise ImportError("io_racechrono unavailable")
+            return io_mod.read_racechrono_csv(csv_path)
+
+        raw_df, err = _safe_step("01_ingest", _ingest)
+        _record("01_ingest", raw_df, err)
+        _fire_progress("01_ingest")
+        summary["raw_df"] = None  # Not consumed downstream; avoid holding ~8 GB
+
+        if raw_df is None:
+            logger.error("Ingest failed --  cannot continue.")
+            return summary
+
+        # STEP 2 --  Filter (GPS quality)
+
+        #
+        gps_mod = _import("gps_filtering")
+
+        def _filter() -> pd.DataFrame:
+            if gps_mod is None:
+                logger.info("GPS filtering skipped (module absent).")
+                return raw_df
+            return gps_mod.filter_gps_quality(raw_df)
+
+        filtered_df, err = _safe_step("02_filter", _filter)
+        _record("02_filter", filtered_df, err)
+        _fire_progress("02_filter")
+        if filtered_df is None:
+            filtered_df = raw_df
+        summary["filtered_df"] = None  # Not consumed downstream; avoid holding ~8 GB
+        del raw_df  # Allow GC of ingest DataFrame
+
+        # STEP 3 --  Derived channels
+
+        #
+        dc_mod = _import("derived_channels")
+
+        def _derived() -> pd.DataFrame:
+            # Work directly on filtered_df to avoid a full copy (~8 GB for 10 GB
+            # CSV files).  The local var is not used after this step.
+            if dc_mod is None:
+                logger.info("Derived channels skipped (module absent).")
+                return filtered_df
+            df = dc_mod.compute_longitudinal_accel(filtered_df)
+            df = dc_mod.compute_lateral_accel_from_xy(df)
+            df = dc_mod.compute_yaw_rate_from_heading(df)
+            return df
+
+        enriched_df, err = _safe_step("03_derived_channels", _derived)
+        _record("03_derived_channels", enriched_df, err)
+        _fire_progress("03_derived_channels")
+        if enriched_df is None:
+            enriched_df = filtered_df
+        summary["enriched_df"] = None  # Not consumed downstream; avoid holding ~8 GB
+        del filtered_df  # Allow GC
+
+        # STEP 4 --  Trim session (remove outlaps, waiting periods)
+
+        #
+        trim_mod = _import("session_trimming")
+
+        def _trim() -> tuple[pd.DataFrame, dict[str, Any]]:
+            if trim_mod is None:
+                return enriched_df, {"note": "session_trimming absent"}
+            return trim_mod.trim_session(
+                enriched_df,
+                session_type=session_meta.get("session_type", "practice"),
+            )
+
+        trim_result, err = _safe_step("04_trim_session", _trim)
+        _record("04_trim_session", trim_result, err)
+        _fire_progress("04_trim_session")
+        if trim_result is not None:
+            trimmed_df, trim_report = trim_result
+        else:
+            trimmed_df, trim_report = enriched_df, {}
+        del enriched_df  # Allow GC
+        summary["trimmed_df"]  = trimmed_df
+        summary["trim_report"] = trim_report
+
+        # STEP 5 --  Detect track
+
+        #
+        track_mod = _import("track_detection")
+
+        def _detect_track() -> tuple[Any, str]:
+            if track_mod is None:
+                return None, meta.get("track_id", "unknown_track")
+            # Use user-provided track_name if available, else fall back to track_id.
+            _tn = meta.get("track_name") or meta.get("track_id", "Unknown Track")
+            match, _ = track_mod.register_or_match_track(
+                trimmed_df, track_name=_tn,
+            )
+            return match, match.track_id
+
+        track_result, err = _safe_step("05_detect_track", _detect_track)
+        _record("05_detect_track", track_result, err)
+        _fire_progress("05_detect_track")
+        if track_result is not None:
+            track_match, track_id = track_result
+        else:
+            track_match, track_id = None, meta.get("track_id", "unknown_track")
+        meta["track_id"] = track_id
+        summary["track_match"] = (
+            track_match.to_dict()
+            if track_match and hasattr(track_match, "to_dict")
+            else None
         )
-        return match, match.track_id
+        summary["track_id"] = track_id
 
-    track_result, err = _safe_step("05_detect_track", _detect_track)
-    _record("05_detect_track", track_result, err)
-    _fire_progress("05_detect_track")
-    if track_result is not None:
-        track_match, track_id = track_result
-    else:
-        track_match, track_id = None, meta.get("track_id", "unknown_track")
-    meta["track_id"] = track_id
-    summary["track_match"] = (
-        track_match.to_dict()
-        if track_match and hasattr(track_match, "to_dict")
-        else None
-    )
-    summary["track_id"] = track_id
+        # --- Persist SessionContext if provided -- -
 
-    # --- Persist SessionContext if provided -- -
+        if context is not None:
+            context.track_id = track_id
+            try:
+                from session_context import save_session_context
+                if output_dir is not None:
+                    _ctx_path = Path(output_dir) / f"session_context{_dtag_suffix}.json"
+                    _ctx_path.parent.mkdir(parents=True, exist_ok=True)
+                    save_session_context(context, _ctx_path)
+            except Exception as _ctx_exc:
+                logger.warning("Could not persist session context: %s", _ctx_exc)
 
-    if context is not None:
-        context.track_id = track_id
-        try:
-            from session_context import save_session_context
-            if output_dir is not None:
-                _ctx_path = Path(output_dir) / f"session_context{_dtag_suffix}.json"
-                _ctx_path.parent.mkdir(parents=True, exist_ok=True)
-                save_session_context(context, _ctx_path)
-        except Exception as _ctx_exc:
-            logger.warning("Could not persist session context: %s", _ctx_exc)
+        # STEP 6 --  Segment laps into individual DataFrames
 
-    # STEP 6 --  Segment laps into individual DataFrames
+        #
+        def _segment_laps() -> dict[int, pd.DataFrame]:
+            if _COL_LAP not in trimmed_df.columns:
+                raise PipelineError(f"Column {_COL_LAP!r} missing.")
+            lap_col = pd.to_numeric(trimmed_df[_COL_LAP], errors="coerce")
+            laps: dict[int, pd.DataFrame] = {}
+            for lap_num, grp in trimmed_df.groupby(lap_col, sort=True):
+                ln = int(lap_num)
+                if lap_range is not None and not (lap_range[0] <= ln <= lap_range[1]):
+                    continue
+                laps[ln] = grp.reset_index(drop=True)
+            if not laps:
+                raise PipelineError("No laps after segmentation / range filter.")
+            return laps
 
-    #
-    def _segment_laps() -> dict[int, pd.DataFrame]:
-        if _COL_LAP not in trimmed_df.columns:
-            raise PipelineError(f"Column {_COL_LAP!r} missing.")
-        lap_col = pd.to_numeric(trimmed_df[_COL_LAP], errors="coerce")
-        laps: dict[int, pd.DataFrame] = {}
-        for lap_num, grp in trimmed_df.groupby(lap_col, sort=True):
-            ln = int(lap_num)
-            if lap_range is not None and not (lap_range[0] <= ln <= lap_range[1]):
-                continue
-            laps[ln] = grp.reset_index(drop=True)
-        if not laps:
-            raise PipelineError("No laps after segmentation / range filter.")
-        return laps
+        lap_dict, err = _safe_step("06_segment_laps", _segment_laps)
+        _record("06_segment_laps", lap_dict, err)
+        _fire_progress("06_segment_laps")
+        summary["lap_dict"] = lap_dict
 
-    lap_dict, err = _safe_step("06_segment_laps", _segment_laps)
-    _record("06_segment_laps", lap_dict, err)
-    _fire_progress("06_segment_laps")
-    summary["lap_dict"] = lap_dict
+        if lap_dict is None or len(lap_dict) == 0:
+            logger.error("No laps --  returning partial summary.")
+            return summary
 
-    if lap_dict is None or len(lap_dict) == 0:
-        logger.error("No laps --  returning partial summary.")
-        return summary
+        # -- Safety net: validate & repair distance data before resampling
+        lap_dict = validate_lap_consistency(lap_dict)
 
-    # -- Safety net: validate & repair distance data before resampling
-    lap_dict = validate_lap_consistency(lap_dict)
+        # STEP 7 --  Normalise (resample to uniform distance grid)
 
-    # STEP 7 --  Normalise (resample to uniform distance grid)
+        #
+        resamp_mod = _import("resampling")
 
-    #
-    resamp_mod = _import("resampling")
+        def _resample() -> dict[int, pd.DataFrame]:
+            if resamp_mod is None:
+                raise ImportError("resampling unavailable")
+            return resamp_mod.resample_all_laps(lap_dict, n_points=n_resample_points)
 
-    def _resample() -> dict[int, pd.DataFrame]:
-        if resamp_mod is None:
-            raise ImportError("resampling unavailable")
-        return resamp_mod.resample_all_laps(lap_dict, n_points=n_resample_points)
+        resampled_laps, err = _safe_step("07_normalise", _resample)
+        _record("07_normalise", resampled_laps, err)
+        summary["resampled_laps"] = resampled_laps
 
-    resampled_laps, err = _safe_step("07_normalise", _resample)
-    _record("07_normalise", resampled_laps, err)
-    summary["resampled_laps"] = resampled_laps
+        if resampled_laps is None or len(resampled_laps) == 0:
+            logger.error("Resampling failed --  returning partial summary.")
+            return summary
 
-    if resampled_laps is None or len(resampled_laps) == 0:
-        logger.error("Resampling failed --  returning partial summary.")
-        return summary
+        # STEP 6b --  Detect corners (requires resampled data, hence after 7)
 
-    # STEP 6b --  Detect corners (requires resampled data, hence after 7)
+        #
+        corner_mod = _import("corner_detection")
 
-    #
-    corner_mod = _import("corner_detection")
+        def _detect_corners() -> list[dict[str, Any]]:
+            if corner_mod is None:
+                return []
+            first_key = sorted(resampled_laps.keys())[0]
+            return corner_mod.detect_corners(resampled_laps[first_key])
 
-    def _detect_corners() -> list[dict[str, Any]]:
-        if corner_mod is None:
-            return []
-        first_key = sorted(resampled_laps.keys())[0]
-        return corner_mod.detect_corners(resampled_laps[first_key])
+        corners, err = _safe_step("06b_detect_corners", _detect_corners)
+        _record("06b_detect_corners", corners, err)
+        _fire_progress("06b_detect_corners")
+        summary["corners"] = corners or []
 
-    corners, err = _safe_step("06b_detect_corners", _detect_corners)
-    _record("06b_detect_corners", corners, err)
-    _fire_progress("06b_detect_corners")
-    summary["corners"] = corners or []
+        # ── Corner callback: notify caller with track layout for corner picker ──
+        # The picker allows clicking anywhere on the track, so we show it even
+        # when auto-detection found no corners (they are just reference guides).
+        if corner_callback and resampled_laps:
+            try:
+                _best_key = sorted(resampled_laps.keys())[0]
+                _best_df = resampled_laps[_best_key]
+                _layout = _extract_track_layout_for_picker(_best_df, corners or [])
+                if _layout:
+                    _layout["track_id"] = track_id
+                    corner_callback(_layout)
+            except Exception as _cb_exc:
+                logger.warning("Corner callback failed: %s", _cb_exc)
 
-    # ── Corner callback: notify caller with track layout for corner picker ──
-    # The picker allows clicking anywhere on the track, so we show it even
-    # when auto-detection found no corners (they are just reference guides).
-    if corner_callback and resampled_laps:
-        try:
-            _best_key = sorted(resampled_laps.keys())[0]
-            _best_df = resampled_laps[_best_key]
-            _layout = _extract_track_layout_for_picker(_best_df, corners or [])
-            if _layout:
-                _layout["track_id"] = track_id
-                corner_callback(_layout)
-        except Exception as _cb_exc:
-            logger.warning("Corner callback failed: %s", _cb_exc)
+        # ── Early return for SaaS split-pipeline (stop after corner detection) ──
+        if stop_after_corners:
+            layout = None
+            if resampled_laps:
+                _best_key = sorted(resampled_laps.keys())[0]
+                layout = _extract_track_layout_for_picker(
+                    resampled_laps[_best_key], corners or []
+                )
+                if layout and track_id:
+                    layout["track_id"] = track_id
+            summary["track_layout"] = layout
+            summary["resampled_laps"] = resampled_laps
+            return summary
 
     # STEP 8 --  Compute per-lap metrics
 
@@ -1894,6 +1933,12 @@ def run_full_analysis(
         )
     summary["corner_performances"] = corner_performances
 
+    # If kart_envelope didn't provide corner coaching (Priority 0 failed)
+    # but step 10c produced corner performances, use those as corner
+    # coaching data so insert_theoretical_data persists them to the DB.
+    if _corner_coaching is None and corner_performances:
+        summary["corner_coaching"] = corner_performances
+
     # STEP 10d -- Per-lap corner metrics (for DB storage & dashboard)
 
     per_lap_corner_metrics: list[dict[str, Any]] = []
@@ -2479,7 +2524,7 @@ def run_full_analysis(
                 # Pace delta: best - theoretical (positive = slower)
                 _pace_delta = None
                 if _best_s and theo_metrics:
-                    _theo_t = theo_metrics.get("theoretical_time_s")
+                    _theo_t = theo_metrics.get("best_s")
                     if _theo_t and isinstance(_theo_t, (int, float)):
                         _pace_delta = _best_s - _theo_t
 

@@ -28,6 +28,23 @@
     };
 
     /**
+     * Unwrap API envelope responses.
+     * The SaaS backend wraps all responses in {ok, data, meta}.
+     * Vanilla JS modules expect raw data, so we unwrap here.
+     */
+    function _unwrapEnvelope(data) {
+        if (data && typeof data === 'object' && !Array.isArray(data)) {
+            if (data.ok === true && 'data' in data) {
+                return data.data;
+            }
+            if (data.ok === false) {
+                throw new Error(data.error || data.message || 'API request failed');
+            }
+        }
+        return data;
+    }
+
+    /**
      * Return default headers (e.g. Authorization) set by the host app.
      * The React wrapper sets FetchHelper.getAuthHeaders to provide the
      * current access token and workspace ID for every request.
@@ -71,6 +88,7 @@
                 return response.json();
             })
             .then(function (data) {
+                data = _unwrapEnvelope(data);
                 container.removeAttribute('aria-busy');
                 // Check for empty data
                 if (opts.emptyCheck && opts.emptyCheck(data)) {
@@ -188,6 +206,9 @@
                 if (timer) clearTimeout(timer);
                 if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                 return response.json();
+            })
+            .then(function (data) {
+                return _unwrapEnvelope(data);
             })
             .catch(function (err) {
                 if (timer) clearTimeout(timer);

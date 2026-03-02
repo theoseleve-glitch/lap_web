@@ -76,6 +76,7 @@ class PipelineContext:
     stage_status: Optional[str] = None
     errors: list = field(default_factory=list)
     joker_decision: Optional[str] = None
+    selected_corner_ids: Optional[list] = None
     temp_dir: Path = field(default_factory=lambda: Path(_DEFAULT_TEMP_ROOT))
     redis_client: Any = field(default=None, repr=False)
 
@@ -151,6 +152,7 @@ class PipelineContext:
             stage_status=data.get("stage_status"),
             errors=data.get("errors", []),
             joker_decision=data.get("joker_decision"),
+            selected_corner_ids=data.get("selected_corner_ids"),
             temp_dir=temp_dir,
             redis_client=redis_client,
         )
@@ -169,6 +171,7 @@ class PipelineContext:
             "stage_status": self.stage_status,
             "errors": self.errors,
             "joker_decision": self.joker_decision,
+            "selected_corner_ids": self.selected_corner_ids,
         }
 
     def save(self) -> None:
@@ -194,6 +197,10 @@ class PipelineContext:
     def set_joker_decision(self, decision: str) -> None:
         """Set the joker/strategy decision for this run."""
         self.joker_decision = decision
+
+    def set_selected_corner_ids(self, corner_ids: list) -> None:
+        """Set the user-selected corner IDs for analysis."""
+        self.selected_corner_ids = corner_ids
 
     # ------------------------------------------------------------------
     # DataFrame I/O (temp dir)

@@ -379,6 +379,73 @@ def create_app(config: Config | None = None) -> Flask:
             "supported_languages": getattr(g, "supported_languages", ["en"]),
         }
 
+    # ── Legacy /api/session/ path rewriting ────────────────────────
+    # The desktop tool's vanilla JS modules call /api/session/<id>/<endpoint>
+    # but the re-port moved all data endpoints to /api/v1/sessions/<id>/<endpoint>.
+    # This WSGI middleware transparently rewrites legacy paths so both the
+    # desktop tool and SaaS vanilla chart modules work.
+    import re as _re
+
+    _GPS_LAP_RE = _re.compile(r'/api/session/([^/]+)/gps/(\d+)$')
+    _GG_LAP_RE = _re.compile(r'/api/session/([^/]+)/gg/(\d+)$')
+
+    class _LegacyApiRewriteMiddleware:
+        """Rewrite /api/session/ paths to /api/v1/sessions/ equivalents."""
+
+        _SUB_PATH_MAP = [
+            ('gg_data',          'gg-data'),
+            ('lap_times',        'laps'),
+            ('sector-analysis',  'sector_times'),
+            ('corner-coaching',  'corners'),
+        ]
+
+        def __init__(self, wsgi_app, gps_re, gg_re):
+            self.wsgi_app = wsgi_app
+            self._gps_re = gps_re
+            self._gg_re = gg_re
+
+        def __call__(self, environ, start_response):
+            path = environ.get('PATH_INFO', '')
+            if '/api/session/' not in path:
+                return self.wsgi_app(environ, start_response)
+
+            qs = environ.get('QUERY_STRING', '')
+
+            # /api/session/{id}/gps/{lap} → /api/v1/sessions/{id}/gps-trace?lap={lap}
+            m = self._gps_re.search(path)
+            if m:
+                sid, lap = m.group(1), m.group(2)
+                environ['PATH_INFO'] = path[:m.start()] + '/api/v1/sessions/' + sid + '/gps-trace'
+                parts = [qs] if qs else []
+                parts.append('lap=' + lap)
+                environ['QUERY_STRING'] = '&'.join(parts)
+                return self.wsgi_app(environ, start_response)
+
+            # /api/session/{id}/gg/{lap} → /api/v1/sessions/{id}/gg-data?lap={lap}
+            m = self._gg_re.search(path)
+            if m:
+                sid, lap = m.group(1), m.group(2)
+                environ['PATH_INFO'] = path[:m.start()] + '/api/v1/sessions/' + sid + '/gg-data'
+                parts = [qs] if qs else []
+                parts.append('lap=' + lap)
+                environ['QUERY_STRING'] = '&'.join(parts)
+                return self.wsgi_app(environ, start_response)
+
+            # Prefix rewrite: /api/session/ → /api/v1/sessions/
+            new_path = path.replace('/api/session/', '/api/v1/sessions/')
+
+            # Sub-path name mapping (order matters: longer names first)
+            for old_name, new_name in self._SUB_PATH_MAP:
+                suffix = '/' + old_name
+                if new_path.endswith(suffix):
+                    new_path = new_path[:-len(old_name)] + new_name
+                    break
+
+            environ['PATH_INFO'] = new_path
+            return self.wsgi_app(environ, start_response)
+
+    app.wsgi_app = _LegacyApiRewriteMiddleware(app.wsgi_app, _GPS_LAP_RE, _GG_LAP_RE)
+
     # URL-decode percent-encoded path segments (e.g. %2B → +).
     # Werkzeug does NOT auto-decode %2B in path segments, so session IDs
     # containing '+' would 404 when JS uses encodeURIComponent().
