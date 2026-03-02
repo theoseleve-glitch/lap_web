@@ -124,6 +124,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=0, minute=0, day_of_week=0),  # Sunday midnight UTC
                 "options": {"queue": "pipeline"},
             },
+            "enforce-tiered-retention": {
+                "task": "tasks.retention_tasks.enforce_telemetry_retention",
+                "schedule": crontab(hour=3, minute=0),  # Daily 03:00 UTC
+                "options": {"queue": "default"},
+            },
         },
     )
 
