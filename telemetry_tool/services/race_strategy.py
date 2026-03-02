@@ -575,6 +575,29 @@ def get_live_state(conn, race_id: int) -> dict | None:
     except Exception:
         logger.debug("Engine load failed for race %d, returning basic state", race_id)
 
+    # Optional enrichment — weather alerts
+    weather_alerts: list = []
+    try:
+        from meteo_service import get_weather_forecast
+        # Weather enrichment requires track coordinates (lat/lon)
+        # Currently not available in race_configs — skip for now
+        # Future: add lat/lon to race_configs or resolve from track_name
+    except ImportError:
+        pass
+    except Exception:
+        logger.debug("Weather enrichment failed for race %d", race_id)
+
+    # Optional enrichment — race intelligence
+    intelligence: dict = {}
+    try:
+        from race_intelligence import analyze_race
+        elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+        intelligence = analyze_race(conn, race_id, elapsed) or {}
+    except ImportError:
+        pass
+    except Exception:
+        logger.debug("Intelligence enrichment failed for race %d", race_id)
+
     return {
         "race": race,
         "drivers": drivers,
@@ -584,6 +607,8 @@ def get_live_state(conn, race_id: int) -> dict | None:
         "active_stint": active_stint,
         "next_stint": next_stint,
         "driver_cumulative": driver_cumulative,
+        "weather_alerts": weather_alerts,
+        "intelligence": intelligence,
         **engine_data,
     }
 
