@@ -4,6 +4,8 @@ services:
   api:
     build: .
     env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
     volumes:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
@@ -81,6 +83,8 @@ services:
       --max-tasks-per-child=50
       -l info
     env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
     volumes:
       - upload_data:/data/uploads
       - parquet_data:/data/parquet
@@ -111,6 +115,8 @@ services:
       --max-tasks-per-child=200
       -l info
     env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
     healthcheck:
       test: ["CMD-SHELL", "celery -A telemetry_tool.celery_app inspect ping --timeout 5"]
       interval: 30s
@@ -133,6 +139,8 @@ services:
       -l info
       --schedule /tmp/celerybeat-schedule
     env_file: .env.production
+    environment:
+      TELEMETRY_LOG_FORMAT: json
     depends_on:
       redis:
         condition: service_healthy

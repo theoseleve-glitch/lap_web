@@ -116,6 +116,9 @@ def setup_logging(app: Flask) -> None:
     tt_logger = logging.getLogger("telemetry_tool")
     tt_logger.addFilter(request_filter)
 
+    # Also attach to root logger so third-party libs (celery, psycopg2) get request_id
+    logging.getLogger().addFilter(request_filter)
+
     log_format = os.environ.get("TELEMETRY_LOG_FORMAT", "").lower()
 
     if log_format == "json":
