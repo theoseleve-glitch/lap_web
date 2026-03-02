@@ -260,19 +260,29 @@ def entitlement_snapshot() -> dict:
 
 
 def require_feature(feature_name: str):
-    """Gate a route behind a boolean feature flag from entitlement snapshot."""
+    """Gate a route behind a feature flag using authorize_feature()."""
 
     def _decorator(fn):
         @wraps(fn)
         def _wrapped(*args, **kwargs):
-            snapshot = entitlement_snapshot()
-            if not snapshot.get(feature_name, False):
+            # Skip entitlement check if PG mode or auth is off
+            if not current_app.config.get("USE_PG") or not current_app.config.get("AUTH_REQUIRED"):
+                return fn(*args, **kwargs)
+
+            user_id, _ = _identity()
+            if user_id is None:
+                return fn(*args, **kwargs)  # Auth middleware handles 401
+
+            conn = _get_conn()
+            from auth.entitlements import authorize_feature as _authorize
+            allowed, ctx = _authorize(conn, user_id, feature_name)
+            if not allowed:
                 return api_error(
                     ErrorCode.FORBIDDEN,
-                    f"Feature '{feature_name}' is not enabled for your tier.",
+                    ctx.get("reason", f"Feature '{feature_name}' requires a plan upgrade."),
                     status=403,
                 )
-            g.entitlement_snapshot = snapshot
+            g.entitlement_snapshot = ctx
             return fn(*args, **kwargs)
 
         return _wrapped

@@ -633,7 +633,7 @@ def optimize(race_id: int):
 # ── Live Dashboard + API ─────────────────────────────────
 
 @bp.route("/<int:race_id>/go-live", methods=["POST"])
-@require_feature("strategy_live")
+@require_feature("race_strategy")
 def go_live(race_id: int):
     """Start the race — set status to live and record start timestamp."""
     conn = get_db_connection()
@@ -663,7 +663,7 @@ def go_live(race_id: int):
 
 
 @bp.route("/<int:race_id>/live")
-@require_feature("strategy_live")
+@require_feature("race_strategy")
 def live(race_id: int):
     """Live dashboard page."""
     conn = get_db_connection()
