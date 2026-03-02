@@ -152,7 +152,7 @@ export interface RaceConfigFormProps {
     windows: Array<Record<string, unknown>>;
   };
   /** Entitlement value, e.g. 'limited_3h' for demo plans. */
-  raceStrategyLimit?: string;
+  raceStrategyLimit?: string | null;
   onSubmit: (data: RaceFormData) => void;
   onCancel?: () => void;
   isSubmitting: boolean;
