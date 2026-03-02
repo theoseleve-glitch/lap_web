@@ -3,6 +3,7 @@ import {
   getAccessToken,
   setWorkspaceId,
   getWorkspaceId,
+  setUserProfile,
   broadcastTokenRefresh,
   broadcastLogout,
 } from './auth-store';
@@ -83,6 +84,7 @@ export async function login(email: string, password: string): Promise<LoginResul
   const result = await authFetch<LoginResult>('/login', { email, password });
   if ('access_token' in result) {
     setAccessToken(result.access_token);
+    setUserProfile(result.user);
     await resolveWorkspace();
     broadcastTokenRefresh(result.access_token, getWorkspaceId());
   }
@@ -100,6 +102,7 @@ export async function verify2fa(
     : { temp_token: tempToken, totp_code: code };
   const result = await authFetch<LoginResponse>('/2fa/verify', body);
   setAccessToken(result.access_token);
+  setUserProfile(result.user);
   await resolveWorkspace();
   broadcastTokenRefresh(result.access_token, getWorkspaceId());
   return result;
@@ -132,6 +135,7 @@ export async function register(
     display_name: displayName,
   });
   setAccessToken(result.access_token);
+  setUserProfile(result.user);
   await resolveWorkspace();
   broadcastTokenRefresh(result.access_token, getWorkspaceId());
   return result;
@@ -144,6 +148,7 @@ export async function verifyEmail(token: string): Promise<{ verified: boolean }>
 export async function logout(): Promise<void> {
   await authFetch('/logout');
   setAccessToken(null);
+  setUserProfile(null);
   setWorkspaceId(null);
   broadcastLogout();
 }
@@ -156,11 +161,13 @@ export async function silentRefresh(): Promise<AuthUser | null> {
   try {
     const result = await authFetch<LoginResponse>('/refresh');
     setAccessToken(result.access_token);
+    setUserProfile(result.user);
     await resolveWorkspace();
     broadcastTokenRefresh(result.access_token, getWorkspaceId());
     return result.user;
   } catch {
     setAccessToken(null);
+    setUserProfile(null);
     setWorkspaceId(null);
     return null;
   }

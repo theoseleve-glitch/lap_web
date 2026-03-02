@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { PageHeader } from '@/components/app';
 import { BACKEND_URL, ApiError } from '@/lib/api-client';
-import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
+import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerPicker, type TrackLayout } from '@/components/app/CornerPicker';
 
 /* ── Types ──────────────────────────────────────────── */
@@ -216,6 +216,14 @@ export default function UploadPage() {
   const [trackLayout, setTrackLayout] = useState<TrackLayout | null>(null);
   const [isSubmittingCorners, setIsSubmittingCorners] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Pre-fill driver name from user profile
+  useEffect(() => {
+    const profile = getUserProfile();
+    if (profile?.display_name) {
+      setDriverName(profile.display_name);
+    }
+  }, []);
 
   // Fetch karts for dropdown
   useEffect(() => {

@@ -625,7 +625,16 @@ def run_full_analysis(
         resampled_laps = preloaded_resampled_laps
         corners = preloaded_corners or []
         track_id = meta.get("track_id", "unknown_track")
-        trimmed_df = None
+        # Reconstruct trimmed_df from resampled laps so that steps 08f-08h
+        # (incomplete/anomalous/deviation detection) can run during resume.
+        # Without this, trimmed_df=None causes all validation steps to bail.
+        if resampled_laps:
+            trimmed_df = pd.concat(
+                [df for df in resampled_laps.values() if df is not None and not df.empty],
+                ignore_index=True,
+            )
+        else:
+            trimmed_df = None
         summary.update({
             "resampled_laps": resampled_laps,
             "corners": corners,

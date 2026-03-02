@@ -34,6 +34,24 @@ export function setWorkspaceId(id: number | null): void {
   _workspaceId = id;
 }
 
+// ── User profile (cached from last auth action) ───────────────────
+
+interface StoredUserProfile {
+  id: number;
+  email: string;
+  display_name: string;
+}
+
+let _userProfile: StoredUserProfile | null = null;
+
+export function getUserProfile(): StoredUserProfile | null {
+  return _userProfile;
+}
+
+export function setUserProfile(user: StoredUserProfile | null): void {
+  _userProfile = user;
+}
+
 // ── BroadcastChannel for cross-tab token coordination ─────────────
 
 export const AUTH_CHANNEL_NAME = 'lap-auth';
@@ -63,6 +81,7 @@ export function getAuthChannel(): BroadcastChannel | null {
       } else if (msg.type === 'logout') {
         _accessToken = null;
         _workspaceId = null;
+        _userProfile = null;
       }
     };
   }

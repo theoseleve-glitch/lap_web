@@ -272,6 +272,18 @@ def _build_analysis_blob(result: dict) -> dict:
     if cp and isinstance(cp, list):
         blob["corner_performances"] = cp
 
+    # Lap validation analysis (invalid, incomplete, anomalous, deviation)
+    # These are needed by insert_laps() and for the frontend to show status.
+    for key in ("invalid_lap_analysis", "incomplete_lap_analysis",
+                "anomalous_lap_analysis", "line_deviation_analysis"):
+        val = result.get(key)
+        if val and isinstance(val, dict):
+            # Convert sets to lists for JSON serialisation
+            serialisable = {}
+            for k, v in val.items():
+                serialisable[k] = sorted(v) if isinstance(v, set) else v
+            blob[key] = serialisable
+
     return blob
 
 
