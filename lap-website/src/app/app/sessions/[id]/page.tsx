@@ -445,13 +445,32 @@ function OverviewTab({
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
           <h2 className="text-lg font-monument text-chalk mb-1">Score Breakdown</h2>
           <p className="text-steel text-xs font-body mb-4">How your score is built</p>
-          {scores ? (
+          {scores ? (() => {
+            // Derive maxes so they always sum to exactly 100
+            const paceMax = scores.pace_max ?? 25;
+            const consMax = scores.consistency_max ?? 25;
+            const execMax = scores.execution_max ?? 20;
+            const robMax  = scores.robustness_max ?? 15;
+            const adaptMax = Math.max(0, 100 - paceMax - consMax - execMax - robMax);
+
+            // Compute displayed total as sum of visible sub-scores
+            // (backend total_score has confidence weighting that makes it diverge)
+            const subScores = [
+              scores.pace_score, scores.consistency_score,
+              scores.execution_score, scores.robustness_score,
+              scores.adaptation_score,
+            ];
+            const computedTotal = subScores.reduce<number>(
+              (sum, v) => sum + (v ?? 0), 0,
+            );
+
+            return (
             <div>
               {/* Total score */}
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-steel/10">
                 <div className="text-4xl font-monument text-chalk">
-                  {session.total_score != null
-                    ? Math.round(session.total_score)
+                  {subScores.some((v) => v != null)
+                    ? Math.round(computedTotal)
                     : '\u2014'}
                 </div>
                 <div className="text-steel font-body text-sm">/ 100</div>
@@ -468,31 +487,31 @@ function OverviewTab({
               <ScoreBar
                 label="Pace"
                 score={scores.pace_score}
-                max={scores.pace_max ?? 25}
+                max={paceMax}
                 accentColor="#B6FF2E"
               />
               <ScoreBar
                 label="Consistency"
                 score={scores.consistency_score}
-                max={scores.consistency_max ?? 25}
+                max={consMax}
                 accentColor="#00d4ff"
               />
               <ScoreBar
                 label="Execution"
                 score={scores.execution_score}
-                max={scores.execution_max ?? 20}
+                max={execMax}
                 accentColor="#D946EF"
               />
               <ScoreBar
                 label="Robustness"
                 score={scores.robustness_score}
-                max={scores.robustness_max ?? 15}
+                max={robMax}
                 accentColor="#FF6A00"
               />
               <ScoreBar
                 label="Adaptation"
                 score={scores.adaptation_score}
-                max={15}
+                max={adaptMax}
                 accentColor="#FFD400"
               />
 
@@ -541,12 +560,12 @@ function OverviewTab({
                 <h3 className="text-sm font-monument text-chalk mb-3">Performance Metrics</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: 'Total', value: session.total_score, max: 100, color: 'text-chalk' },
-                    { label: 'Pace', value: scores.pace_score, max: scores.pace_max ?? 25, color: 'text-acid-green' },
-                    { label: 'Consistency', value: scores.consistency_score, max: scores.consistency_max ?? 25, color: 'text-cyan-400' },
-                    { label: 'Execution', value: scores.execution_score, max: scores.execution_max ?? 20, color: 'text-racing-purple' },
-                    { label: 'Robustness', value: scores.robustness_score, max: scores.robustness_max ?? 15, color: 'text-pit-orange' },
-                    { label: 'Adaptation', value: scores.adaptation_score, max: 15, color: 'text-marshal-yellow' },
+                    { label: 'Total', value: computedTotal, max: 100, color: 'text-chalk' },
+                    { label: 'Pace', value: scores.pace_score, max: paceMax, color: 'text-acid-green' },
+                    { label: 'Consistency', value: scores.consistency_score, max: consMax, color: 'text-cyan-400' },
+                    { label: 'Execution', value: scores.execution_score, max: execMax, color: 'text-racing-purple' },
+                    { label: 'Robustness', value: scores.robustness_score, max: robMax, color: 'text-pit-orange' },
+                    { label: 'Adaptation', value: scores.adaptation_score, max: adaptMax, color: 'text-marshal-yellow' },
                   ].map((m) => (
                     <div key={m.label} className="bg-asphalt rounded-lg p-3">
                       <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
@@ -565,7 +584,8 @@ function OverviewTab({
                 </div>
               </div>
             </div>
-          ) : (
+            );
+          })() : (
             <p className="text-steel font-body text-sm">
               No score data available for this session.
             </p>
@@ -1179,6 +1199,30 @@ function StatCard({ label, value, sub, accent }: { label: string; value: string;
 // 6. Timeline Tab
 // ══════════════════════════════════════════════════════════════════
 
+interface TimelineEvent {
+  lap: number;
+  lap_time_s: number;
+  event_type: string;
+  severity: 'info' | 'positive' | 'warning' | 'highlight';
+  description: string;
+  delta_to_best_s: number;
+  rolling_avg_s: number;
+  cumulative_time_s: number;
+}
+
+interface SessionTimelineData {
+  session_id: string;
+  driver_name: string;
+  total_laps: number;
+  total_time_s: number;
+  best_lap: number;
+  best_time_s: number;
+  events: TimelineEvent[];
+  summary: string;
+  narrative: string[];
+  event_counts: Record<string, number>;
+}
+
 interface LapProgressData {
   lap_numbers: number[];
   times: number[];
@@ -1199,8 +1243,35 @@ interface StintData {
   }[];
 }
 
+const SEVERITY_STYLES: Record<string, { bg: string; border: string; text: string }> = {
+  highlight: { bg: 'bg-yellow-400/10', border: 'border-l-yellow-400', text: 'text-yellow-400' },
+  positive:  { bg: 'bg-green-400/10',  border: 'border-l-green-400',  text: 'text-green-400' },
+  warning:   { bg: 'bg-orange-400/10',  border: 'border-l-orange-400', text: 'text-orange-400' },
+  info:      { bg: 'bg-blue-400/5',    border: 'border-l-blue-400',   text: 'text-blue-400' },
+};
+
+const EVENT_ICONS: Record<string, string> = {
+  pb:              '\u2605',   // star
+  hot_lap:         '\u26A1',   // lightning
+  slow_lap:        '\u26A0',   // warning
+  momentum_up:     '\u2191',   // up arrow
+  momentum_down:   '\u2193',   // down arrow
+  first_lap:       '\u25B6',   // play
+  final_lap:       '\u2588',   // block (finish)
+  consistent_run:  '\u2261',   // triple bar
+  stint_start:     '\u27A4',   // arrow
+};
+
+const DOT_COLORS: Record<string, string> = {
+  highlight: 'bg-yellow-400',
+  positive:  'bg-green-400',
+  warning:   'bg-orange-400',
+  info:      'bg-blue-400',
+};
+
 function TimelineTab({ sessionId }: { sessionId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [timeline, setTimeline] = useState<SessionTimelineData | null>(null);
   const [progress, setProgress] = useState<LapProgressData | null>(null);
   const [stints, setStints] = useState<StintData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1210,10 +1281,12 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     setLoading(true);
 
     Promise.allSettled([
+      api.get<SessionTimelineData>(`/sessions/${sessionId}/timeline`),
       api.get<LapProgressData>(`/sessions/${sessionId}/lap-progress`),
       api.get<StintData>(`/sessions/${sessionId}/stint-analysis`),
-    ]).then(([progressResult, stintsResult]) => {
+    ]).then(([timelineResult, progressResult, stintsResult]) => {
       if (cancelled) return;
+      if (timelineResult.status === 'fulfilled') setTimeline(timelineResult.value);
       if (progressResult.status === 'fulfilled') setProgress(progressResult.value);
       if (stintsResult.status === 'fulfilled') setStints(stintsResult.value);
       setLoading(false);
@@ -1335,12 +1408,10 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'left';
     const legendY = 14;
-    // Rolling avg
     ctx.fillStyle = '#ff8c00';
     ctx.fillRect(pad.left, legendY - 4, 12, 2);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Rolling Avg', pad.left + 16, legendY);
-    // Trend
     const trendX = pad.left + 95;
     ctx.fillStyle = is_improving ? 'rgba(61,220,132,0.7)' : 'rgba(239,68,68,0.7)';
     ctx.setLineDash([4, 3]);
@@ -1355,7 +1426,6 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
       trendX + 16,
       legendY,
     );
-    // Best lap
     const bestX = trendX + 140;
     ctx.fillStyle = 'rgba(61,220,132,0.3)';
     ctx.setLineDash([4, 4]);
@@ -1379,7 +1449,97 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
 
   return (
     <div className="space-y-6">
-      {/* Lap Progress Chart */}
+      {/* ── Session Timeline Event Feed ── */}
+      {timeline && timeline.total_laps > 0 ? (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+          <h2 className="text-lg font-monument text-chalk mb-4">Session Timeline</h2>
+
+          {/* Summary cards */}
+          <div className="flex flex-wrap gap-3 mb-4">
+            <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
+              <div className="text-[0.65rem] text-steel uppercase font-body">Total Laps</div>
+              <div className="text-base font-bold text-blue-400 font-telemetry">{timeline.total_laps}</div>
+            </div>
+            <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
+              <div className="text-[0.65rem] text-steel uppercase font-body">Best Lap</div>
+              <div className="text-base font-bold text-yellow-400 font-telemetry">
+                L{timeline.best_lap} ({timeline.best_time_s.toFixed(3)}s)
+              </div>
+            </div>
+            {(timeline.event_counts.pb ?? 0) > 0 && (
+              <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
+                <div className="text-[0.65rem] text-steel uppercase font-body">PBs Set</div>
+                <div className="text-base font-bold text-green-400 font-telemetry">{timeline.event_counts.pb}</div>
+              </div>
+            )}
+            {(timeline.event_counts.hot_lap ?? 0) > 0 && (
+              <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
+                <div className="text-[0.65rem] text-steel uppercase font-body">Hot Laps</div>
+                <div className="text-base font-bold text-acid-green font-telemetry">{timeline.event_counts.hot_lap}</div>
+              </div>
+            )}
+            {(timeline.event_counts.slow_lap ?? 0) > 0 && (
+              <div className="bg-asphalt rounded-lg px-3 py-2 text-center min-w-[80px]">
+                <div className="text-[0.65rem] text-steel uppercase font-body">Slow Laps</div>
+                <div className="text-base font-bold text-safety-red font-telemetry">{timeline.event_counts.slow_lap}</div>
+              </div>
+            )}
+          </div>
+
+          {/* Summary text */}
+          {timeline.summary && (
+            <div className="bg-blue-400/5 px-4 py-2.5 rounded-md text-sm text-steel font-body mb-4">
+              {timeline.summary}
+            </div>
+          )}
+
+          {/* Vertical timeline */}
+          {timeline.events.length > 0 && (
+            <div className="relative pl-8">
+              {/* Vertical line */}
+              <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-steel/20" />
+
+              {timeline.events.map((evt, idx) => {
+                const sev = SEVERITY_STYLES[evt.severity] || SEVERITY_STYLES.info;
+                const icon = EVENT_ICONS[evt.event_type] || '\u2022';
+                const dotColor = DOT_COLORS[evt.severity] || DOT_COLORS.info;
+
+                return (
+                  <div key={idx} className="relative mb-2.5">
+                    {/* Dot on timeline */}
+                    <div
+                      className={`absolute -left-5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full ${dotColor} border-2 border-asphalt z-10`}
+                    />
+                    {/* Event card */}
+                    <div className={`${sev.bg} border-l-[3px] ${sev.border} rounded-r-md px-3 py-2`}>
+                      <div className="flex items-center justify-between">
+                        <span className={`text-sm font-semibold ${sev.text}`}>
+                          {icon} Lap {evt.lap}
+                        </span>
+                        <span className="text-xs text-steel font-telemetry">
+                          {evt.lap_time_s.toFixed(3)}s
+                          {evt.delta_to_best_s > 0 && (
+                            <span className="text-steel/60"> (+{evt.delta_to_best_s.toFixed(3)})</span>
+                          )}
+                        </span>
+                      </div>
+                      <p className="text-xs text-steel font-body mt-0.5">
+                        {evt.description}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
+          <p className="text-steel font-body text-sm">No timeline data available.</p>
+        </div>
+      )}
+
+      {/* ── Lap Progress Chart ── */}
       {progress ? (
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -1418,7 +1578,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
         </div>
       )}
 
-      {/* Stint Analysis */}
+      {/* ── Stint Analysis ── */}
       {stints && stints.stints.length > 0 && (
         <div>
           <h2 className="text-lg font-monument text-chalk mb-4">Stint Analysis</h2>
@@ -1433,7 +1593,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
                     Stint {stint.stint_number}
                   </h3>
                   <span className="text-xs font-telemetry text-steel">
-                    Laps {stint.lap_start}–{stint.lap_end}
+                    Laps {stint.lap_start}\u2013{stint.lap_end}
                   </span>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-xs">

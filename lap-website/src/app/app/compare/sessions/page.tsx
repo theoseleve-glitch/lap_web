@@ -469,43 +469,61 @@ export default function CompareSessionsPage() {
           </div>
 
           {/* ── Score Category Comparison ─────────────────────── */}
-          <div>
-            <h2 className="text-lg font-monument text-chalk mb-4">Score Breakdown</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ScoreCompareCard
-                label="Pace"
-                scoreA={comparison.session_a.scores?.pace_score ?? null}
-                scoreB={comparison.session_b.scores?.pace_score ?? null}
-                max={comparison.session_a.scores?.pace_max ?? 25}
-                colorA={COLOR_A}
-                colorB={COLOR_B}
-              />
-              <ScoreCompareCard
-                label="Consistency"
-                scoreA={comparison.session_a.scores?.consistency_score ?? null}
-                scoreB={comparison.session_b.scores?.consistency_score ?? null}
-                max={comparison.session_a.scores?.consistency_max ?? 25}
-                colorA={COLOR_A}
-                colorB={COLOR_B}
-              />
-              <ScoreCompareCard
-                label="Execution"
-                scoreA={comparison.session_a.scores?.execution_score ?? null}
-                scoreB={comparison.session_b.scores?.execution_score ?? null}
-                max={comparison.session_a.scores?.execution_max ?? 20}
-                colorA={COLOR_A}
-                colorB={COLOR_B}
-              />
-              <ScoreCompareCard
-                label="Robustness"
-                scoreA={comparison.session_a.scores?.robustness_score ?? null}
-                scoreB={comparison.session_b.scores?.robustness_score ?? null}
-                max={comparison.session_a.scores?.robustness_max ?? 15}
-                colorA={COLOR_A}
-                colorB={COLOR_B}
-              />
+          {(() => {
+            const sa = comparison.session_a.scores;
+            const pMax = sa?.pace_max ?? 25;
+            const cMax = sa?.consistency_max ?? 25;
+            const eMax = sa?.execution_max ?? 20;
+            const rMax = sa?.robustness_max ?? 15;
+            const aMax = Math.max(0, 100 - pMax - cMax - eMax - rMax);
+            return (
+            <div>
+              <h2 className="text-lg font-monument text-chalk mb-4">Score Breakdown</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <ScoreCompareCard
+                  label="Pace"
+                  scoreA={sa?.pace_score ?? null}
+                  scoreB={comparison.session_b.scores?.pace_score ?? null}
+                  max={pMax}
+                  colorA={COLOR_A}
+                  colorB={COLOR_B}
+                />
+                <ScoreCompareCard
+                  label="Consistency"
+                  scoreA={sa?.consistency_score ?? null}
+                  scoreB={comparison.session_b.scores?.consistency_score ?? null}
+                  max={cMax}
+                  colorA={COLOR_A}
+                  colorB={COLOR_B}
+                />
+                <ScoreCompareCard
+                  label="Execution"
+                  scoreA={sa?.execution_score ?? null}
+                  scoreB={comparison.session_b.scores?.execution_score ?? null}
+                  max={eMax}
+                  colorA={COLOR_A}
+                  colorB={COLOR_B}
+                />
+                <ScoreCompareCard
+                  label="Robustness"
+                  scoreA={sa?.robustness_score ?? null}
+                  scoreB={comparison.session_b.scores?.robustness_score ?? null}
+                  max={rMax}
+                  colorA={COLOR_A}
+                  colorB={COLOR_B}
+                />
+                <ScoreCompareCard
+                  label="Adaptation"
+                  scoreA={sa?.adaptation_score ?? null}
+                  scoreB={comparison.session_b.scores?.adaptation_score ?? null}
+                  max={aMax}
+                  colorA={COLOR_A}
+                  colorB={COLOR_B}
+                />
+              </div>
             </div>
-          </div>
+            );
+          })()}
 
           {/* ── Chart Panel (Speed / GPS / Sectors / Corners) ── */}
           <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
