@@ -58,15 +58,15 @@ export function S3Product() {
         {/* Engineer / Strategist dual columns */}
         <div className="col-span-full grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto">
           {/* Engineer Mode — left */}
-          <div className="border border-steel/20 p-6">
-            <h3 className="font-monument text-xs text-acid-green tracking-widest mb-1">
+          <div className="border border-chalk/15 p-6">
+            <h3 className="font-monument text-xs text-chalk tracking-widest mb-1">
               {t('home.product.engineerSubhead')}
             </h3>
             <p className="font-body text-steel text-sm mb-6">
               {t('home.product.engineerTagline')}
             </p>
 
-            <ReportScrubber className="mb-6" accentColor="var(--color-acid-green)" />
+            <ReportScrubber className="mb-6" accentColor="var(--chalk)" />
 
             <div className="space-y-3">
               {engineerTiles.map((tile) => (
@@ -82,8 +82,8 @@ export function S3Product() {
           </div>
 
           {/* Strategist Mode — right */}
-          <div className="border border-steel/20 p-6">
-            <h3 className="font-monument text-xs text-pit-orange tracking-widest mb-1">
+          <div className="border border-chalk/15 p-6">
+            <h3 className="font-monument text-xs text-gold tracking-widest mb-1">
               {t('home.product.strategistSubhead')}
             </h3>
             <p className="font-body text-steel text-sm mb-6">
@@ -94,7 +94,7 @@ export function S3Product() {
               className="mb-6"
               panels={strategistPanels}
               ariaLabel="Scrub through strategist views"
-              accentColor="var(--color-pit-orange)"
+              accentColor="var(--pit-orange)"
             />
 
             <div className="space-y-3">

@@ -6,9 +6,9 @@ import { StatusPill } from '@/components/site/StatusPill';
 import { useTranslation } from '@/i18n';
 
 const GROUP_META = {
-  engineer: { color: 'text-acid-green', border: 'border-acid-green/30', bg: 'bg-acid-green/5' },
-  strategist: { color: 'text-pit-orange', border: 'border-pit-orange/30', bg: 'bg-pit-orange/5' },
-  operations: { color: 'text-steel', border: 'border-steel/30', bg: 'bg-steel/5' },
+  engineer: { color: 'text-chalk', border: 'border-chalk/30', bg: 'bg-chalk/5' },
+  strategist: { color: 'text-gold', border: 'border-gold/30', bg: 'bg-gold/5' },
+  operations: { color: 'text-steel', border: 'border-chalk/20', bg: 'bg-chalk/5' },
 } as const;
 
 const groups = ['engineer', 'strategist', 'operations'] as const;
@@ -62,14 +62,14 @@ export function WorkflowCoverage() {
         })}
       </div>
 
-      <div className="border border-steel/20 bg-concrete/30 p-5">
+      <div className="border border-chalk/15 bg-concrete/30 p-5">
         <h3 className="font-monument text-[var(--text-h3)] mb-2">
           {t(`workflow.${active.id}.title`, active.title)}
         </h3>
         <p className="text-steel mb-4">{t(`workflow.${active.id}.summary`, active.summary)}</p>
         <ol className="grid grid-cols-1 md:grid-cols-2 gap-2">
           {active.steps.map((step, i) => (
-            <li key={step} className="border border-steel/20 bg-asphalt/40 px-3 py-2 text-sm text-chalk">
+            <li key={step} className="border border-chalk/15 bg-asphalt/40 px-3 py-2 text-sm text-chalk">
               <span className="font-telemetry text-steel mr-2">{String(i + 1).padStart(2, '0')}</span>
               {t(`workflow.${active.id}.step.${i}`, step)}
             </li>

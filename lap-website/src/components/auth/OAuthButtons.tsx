@@ -15,7 +15,7 @@ export function OAuthButtons() {
     <div className="mt-4">
       <div className="relative mb-4">
         <div className="absolute inset-0 flex items-center">
-          <div className="w-full border-t border-steel/20" />
+          <div className="w-full border-t border-chalk/15" />
         </div>
         <div className="relative flex justify-center text-xs">
           <span className="bg-concrete px-2 text-steel font-telemetry uppercase tracking-wider">
@@ -28,7 +28,7 @@ export function OAuthButtons() {
         type="button"
         onClick={handleGoogle}
         className="w-full flex items-center justify-center gap-3 px-4 py-3
-          border border-steel/30 rounded bg-asphalt text-chalk
+          border border-chalk/20 bg-asphalt text-chalk
           font-body text-sm hover:border-pit-orange/50 hover:bg-asphalt/80
           transition-colors"
       >

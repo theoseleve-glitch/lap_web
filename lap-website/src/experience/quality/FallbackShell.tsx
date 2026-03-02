@@ -32,12 +32,12 @@ export function FallbackShell({ children }: FallbackShellProps) {
       <div
         className="pointer-events-none fixed inset-0 z-0 transition-opacity duration-1000"
         style={{
-          background: `radial-gradient(circle 120px at var(--pointer-x, 50%) var(--pointer-y, 50%), rgba(217, 70, 239, 0.08) 0%, transparent 100%)`,
+          background: `radial-gradient(circle 120px at var(--pointer-x, 50%) var(--pointer-y, 50%), rgba(201, 168, 76, 0.08) 0%, transparent 100%)`,
         }}
       />
       {safetyCarActive && (
         <div
-          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 font-telemetry text-[11px] tracking-[0.3em] uppercase px-4 py-1.5 rounded-full border pointer-events-none"
+          className="fixed top-4 left-1/2 -translate-x-1/2 z-50 font-telemetry text-[11px] tracking-[0.3em] uppercase px-4 py-1.5 border pointer-events-none"
           style={{
             color: colors.marshalYellow,
             backgroundColor: `${colors.asphalt}CC`,

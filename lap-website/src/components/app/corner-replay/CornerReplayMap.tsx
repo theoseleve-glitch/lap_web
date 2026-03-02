@@ -6,13 +6,13 @@ import type { ReplayMode, CornerReplayTrace, CornerReplayCorner, ReplayWindow } 
 /* ─── Design Colors ──────────────────────────────────────────────────── */
 
 const COLORS = {
-  concrete: '#1A1A1A',
-  asphalt: '#0D0D0D',
-  steel: '#8A8F98',
-  acidGreen: '#BFFF00',
+  concrete: '#141414',
+  asphalt: '#000000',
+  steel: '#888888',
+  acidGreen: '#F0EDE5',
   safetyRed: '#EF4444',
-  chalk: '#F3F0E8',
-  gold: '#FFD700',
+  chalk: '#F0EDE5',
+  gold: '#C9A84C',
   silver: '#C0C0C0',
   bronze: '#CD7F32',
 };
@@ -101,7 +101,7 @@ export function CornerReplayMap({
     const traceA = traces[String(lapA)];
     if (!traceA || traceA.lat.length < 2) {
       ctx.fillStyle = COLORS.steel;
-      ctx.font = '12px "IBM Plex Mono", monospace';
+      ctx.font = '12px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No GPS data', w / 2, h / 2);
@@ -242,7 +242,7 @@ export function CornerReplayMap({
       offsetYPx: number = -10,
     ) => {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      ctx.font = '10px "IBM Plex Mono", monospace';
+      ctx.font = '10px "Space Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = COLORS.asphalt;

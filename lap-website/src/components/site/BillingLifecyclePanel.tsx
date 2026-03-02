@@ -42,7 +42,7 @@ export function BillingLifecyclePanel() {
 
   return (
     <section className="space-y-5">
-      <article className="border border-steel/20 p-5 bg-concrete/40">
+      <article className="border border-chalk/15 p-5 bg-concrete/40">
         <h2 className="font-monument text-[var(--text-h3)] mb-2">Checkout Flow</h2>
         <p className="text-sm text-steel mb-4">
           Select a B2C plan and continue directly to secure checkout.
@@ -51,7 +51,7 @@ export function BillingLifecyclePanel() {
           <select
             value={plan}
             onChange={(event) => setPlan(event.target.value)}
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           >
             {b2cPlanNames.map((planName) => (
               <option key={planName} value={planName}>
@@ -62,7 +62,7 @@ export function BillingLifecyclePanel() {
           <select
             value={billingCycle}
             onChange={(event) => setBillingCycle(event.target.value as 'monthly' | 'annual')}
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           >
             <option value="monthly">Monthly</option>
             <option value="annual">Annual</option>
@@ -71,7 +71,7 @@ export function BillingLifecyclePanel() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="Billing email"
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           />
         </div>
         <PitButton
@@ -97,7 +97,7 @@ export function BillingLifecyclePanel() {
         </PitButton>
       </article>
 
-      <article className="border border-steel/20 p-5 bg-concrete/40">
+      <article className="border border-chalk/15 p-5 bg-concrete/40">
         <h2 className="font-monument text-[var(--text-h3)] mb-2">Billing Portal (Authenticated)</h2>
         <p className="text-steel text-sm mb-3">
           Open your invoice and payment management portal. Active auth session required.
@@ -107,13 +107,13 @@ export function BillingLifecyclePanel() {
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             placeholder="Customer email"
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           />
           <input
             value={customerId}
             onChange={(event) => setCustomerId(event.target.value)}
             placeholder="Stripe customer ID (optional)"
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           />
         </div>
         <StampButton
@@ -137,7 +137,7 @@ export function BillingLifecyclePanel() {
         </StampButton>
       </article>
 
-      <article className="border border-steel/20 p-5 bg-concrete/40">
+      <article className="border border-chalk/15 p-5 bg-concrete/40">
         <h2 className="font-monument text-[var(--text-h3)] mb-2">Plan Switch</h2>
         <p className="text-steel text-sm mb-3">Switch an active subscription and confirm proration via provider rules.</p>
         <div className="grid md:grid-cols-3 gap-3 mb-3">
@@ -145,12 +145,12 @@ export function BillingLifecyclePanel() {
             value={subscriptionId}
             onChange={(event) => setSubscriptionId(event.target.value)}
             placeholder="Subscription ID"
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           />
           <select
             value={nextPlan}
             onChange={(event) => setNextPlan(event.target.value)}
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           >
             {b2cPlanNames.map((planName) => (
               <option key={planName} value={planName}>
@@ -161,7 +161,7 @@ export function BillingLifecyclePanel() {
           <select
             value={billingCycle}
             onChange={(event) => setBillingCycle(event.target.value as 'monthly' | 'annual')}
-            className="bg-asphalt border border-steel/30 px-3 py-2 text-sm"
+            className="bg-asphalt border border-chalk/20 px-3 py-2 text-sm"
           >
             <option value="monthly">Monthly</option>
             <option value="annual">Annual</option>
@@ -189,7 +189,7 @@ export function BillingLifecyclePanel() {
         </StampButton>
       </article>
 
-      {status && <p className="text-sm text-chalk border border-steel/30 px-3 py-2">{status}</p>}
+      {status && <p className="text-sm text-chalk border border-chalk/20 px-3 py-2">{status}</p>}
     </section>
   );
 }

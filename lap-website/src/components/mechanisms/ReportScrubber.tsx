@@ -57,7 +57,7 @@ export function ReportScrubber({
     <div className={`${className}`} style={{ '--accent': accentColor } as CSSProperties}>
       {/* Screenshot with art direction: grayscale + grain + single accent */}
       <div
-        className="relative w-full aspect-video bg-concrete border border-steel/20 overflow-hidden mb-6"
+        className="relative w-full aspect-video bg-concrete border border-chalk/15 overflow-hidden mb-6"
       >
         {panels.map((panel, i) => (
           <div

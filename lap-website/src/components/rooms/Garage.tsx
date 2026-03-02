@@ -30,8 +30,8 @@ export function Garage() {
       style={{
         minHeight: '100vh',
         backgroundImage: `
-          linear-gradient(rgba(138, 143, 152, 0.04) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(138, 143, 152, 0.04) 1px, transparent 1px)
+          linear-gradient(rgba(240, 237, 229, 0.04) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(240, 237, 229, 0.04) 1px, transparent 1px)
         `,
         backgroundSize: '48px 48px',
       }}
@@ -49,7 +49,7 @@ export function Garage() {
 
         <div className="col-span-full max-w-3xl mx-auto">
           {panels.map((panel, i) => (
-            <div key={panel.titleKey} className="border-b border-steel/20">
+            <div key={panel.titleKey} className="border-b border-chalk/15">
               <button
                 className="w-full flex items-center justify-between py-4 text-left font-monument text-[var(--text-h3)] hover:text-chalk transition-colors duration-300"
                 onClick={() => togglePanel(i)}

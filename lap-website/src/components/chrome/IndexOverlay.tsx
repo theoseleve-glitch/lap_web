@@ -86,7 +86,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
       className="fixed inset-0 flex flex-col items-center justify-center"
       style={{
         zIndex: 'var(--z-overlay)' as unknown as number,
-        background: 'rgba(11, 12, 15, 0.96)',
+        background: 'rgba(0, 0, 0, 0.96)',
         backdropFilter: 'blur(8px)',
       }}
       onClick={(e) => {
@@ -111,7 +111,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
           <button
             key={tab.id}
             onClick={() => navigate(tab.id)}
-            className="text-left p-4 bg-concrete/50 hover:bg-concrete transition-colors duration-[420ms] group border border-steel/20"
+            className="text-left p-4 bg-concrete/50 hover:bg-concrete transition-colors duration-[420ms] group border border-chalk/15"
           >
             <span className="relative block mb-3">
               <img
@@ -119,7 +119,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
                 alt={`${tab.label} preview`}
                 className="h-24 w-full object-cover opacity-75 group-hover:opacity-100 transition-opacity duration-[420ms]"
               />
-              <span className="absolute top-2 left-2 font-telemetry text-[10px] bg-asphalt/80 px-2 py-1 border border-steel/30 text-chalk">
+              <span className="absolute top-2 left-2 font-telemetry text-[10px] bg-asphalt/80 px-2 py-1 border border-chalk/20 text-chalk">
                 {sectionVisuals[tab.label]?.icon ?? tab.label}
               </span>
             </span>
@@ -144,7 +144,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
           <a
             key={link.href}
             href={link.href}
-            className="font-telemetry text-[11px] tracking-[0.12em] uppercase border border-steel/30 px-3 py-2 text-steel hover:text-chalk hover:border-steel"
+            className="font-telemetry text-[11px] tracking-[0.12em] uppercase border border-chalk/20 px-3 py-2 text-steel hover:text-chalk hover:border-chalk/40"
             onClick={() => trackNavRouteClick(link.href, 'index_overlay')}
           >
             {link.label}

@@ -41,7 +41,7 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
       {/* Hero screenshot */}
       <button
         type="button"
-        className="relative w-full border border-steel/20 bg-concrete/30 overflow-hidden cursor-zoom-in"
+        className="relative w-full border border-chalk/15 bg-concrete/30 overflow-hidden cursor-zoom-in"
         onClick={() => setLightboxOpen(true)}
         aria-label={`View ${active.title} in lightbox`}
       >
@@ -66,7 +66,7 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
             aria-selected={i === activeIndex}
             aria-label={item.title}
             className={`flex-shrink-0 border-2 transition-colors ${
-              i === activeIndex ? 'border-current' : 'border-steel/20 hover:border-steel/50'
+              i === activeIndex ? 'border-current' : 'border-chalk/15 hover:border-chalk/30'
             }`}
             style={i === activeIndex ? { borderColor: accentColor } : undefined}
             onClick={() => setActiveIndex(i)}

@@ -109,7 +109,7 @@ export function PitStop() {
           />
 
           {/* B2B card */}
-          <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
+          <div className="p-6 bg-concrete border border-chalk/15 lg:border-l-0">
             <h3 className="font-monument text-[var(--text-h3)] mb-4">{t('pricing.b2b.name')}</h3>
             <ul className="space-y-2 mb-6">
               {[
@@ -165,7 +165,7 @@ export function PitStop() {
         </div>
 
         {/* Trust strip */}
-        <div className="col-span-full flex flex-wrap justify-center gap-4 border-t border-steel/20 pt-8">
+        <div className="col-span-full flex flex-wrap justify-center gap-4 border-t border-chalk/15 pt-8">
           {trustStripKeys.map((key) => (
             <ScrutineeringStamp key={key} label={t(key)} />
           ))}

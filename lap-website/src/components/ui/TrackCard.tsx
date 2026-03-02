@@ -21,6 +21,7 @@ export function TrackCard({
 }: TrackCardProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [tilt, setTilt] = useState({ rotateX: 0, rotateY: 0 });
+  const [spotPos, setSpotPos] = useState({ x: 50, y: 50 });
   const [hovering, setHovering] = useState(false);
   const rafPending = useRef(false);
 
@@ -47,6 +48,7 @@ export function TrackCard({
         rotateX: (0.5 - y) * 16,  // max +/-8, inverted for natural feel
         rotateY: (x - 0.5) * 16,  // max +/-8
       });
+      setSpotPos({ x: x * 100, y: y * 100 });
       rafPending.current = false;
     });
   }, []);
@@ -90,7 +92,7 @@ export function TrackCard({
       onPointerLeave={handlePointerLeave}
     >
       <div
-        className={`relative border border-steel/20 bg-concrete/40 p-5 transition-transform duration-200 ease-out ${
+        className={`beam-card relative border border-chalk/15 bg-concrete p-5 transition-transform duration-200 ease-out ${
           onClick ? 'cursor-pointer' : ''
         }`}
         style={{
@@ -104,10 +106,20 @@ export function TrackCard({
         role={onClick ? 'button' : undefined}
         tabIndex={onClick ? 0 : undefined}
       >
+        {/* Raycast-style spotlight glow — follows cursor */}
+        <div
+          className="absolute inset-0 pointer-events-none transition-opacity duration-300"
+          style={{
+            opacity: hovering ? 1 : 0,
+            background: `radial-gradient(500px circle at ${spotPos.x}% ${spotPos.y}%, rgba(201,168,76,0.07), transparent 45%)`,
+            zIndex: 1,
+          }}
+        />
+
         {/* Icon layer */}
         {icon && (
           <div
-            className="mb-3 text-pit-orange transition-transform duration-200 ease-out"
+            className="relative z-[2] mb-3 text-pit-orange transition-transform duration-200 ease-out"
             style={{
               transform: hovering
                 ? `translate(${titleShift.x}px, ${titleShift.y}px)`
@@ -120,7 +132,7 @@ export function TrackCard({
 
         {/* Title layer — shifts more for parallax */}
         <h3
-          className="font-monument text-[var(--text-h3)] mb-2 transition-transform duration-200 ease-out"
+          className="relative z-[2] font-monument text-[var(--text-h3)] mb-2 transition-transform duration-200 ease-out"
           style={{
             transform: hovering
               ? `translate(${titleShift.x}px, ${titleShift.y}px)`
@@ -132,7 +144,7 @@ export function TrackCard({
 
         {/* Body layer — shifts less */}
         <p
-          className="text-sm text-steel mb-3 transition-transform duration-200 ease-out"
+          className="relative z-[2] text-sm text-steel mb-3 transition-transform duration-200 ease-out"
           style={{
             transform: hovering
               ? `translate(${bodyShift.x}px, ${bodyShift.y}px)`
@@ -145,7 +157,7 @@ export function TrackCard({
         {/* Optional children (buttons, etc.) */}
         {children && (
           <div
-            className="transition-transform duration-200 ease-out"
+            className="relative z-[2] transition-transform duration-200 ease-out"
             style={{
               transform: hovering
                 ? `translate(${bodyShift.x}px, ${bodyShift.y}px)`
@@ -158,7 +170,7 @@ export function TrackCard({
 
         {/* Sector highlight strip on hover */}
         <div
-          className="absolute bottom-0 left-0 right-0 h-[2px] bg-racing-purple transition-all duration-300 ease-out"
+          className="absolute bottom-0 left-0 right-0 h-[2px] bg-racing-purple transition-all duration-300 ease-out z-[2]"
           style={{
             transform: hovering ? 'scaleX(1)' : 'scaleX(0)',
             transformOrigin: 'left center',

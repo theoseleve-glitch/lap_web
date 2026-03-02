@@ -63,8 +63,8 @@ const GROUP_ORDER: WorkflowModule['group'][] = [
 ];
 
 const GROUP_LABEL_KEYS: Record<WorkflowModule['group'], { labelKey: string; color: string }> = {
-  engineer: { labelKey: 'home.workflow.groupEngineer', color: 'text-acid-green' },
-  strategist: { labelKey: 'home.workflow.groupStrategist', color: 'text-pit-orange' },
+  engineer: { labelKey: 'home.workflow.groupEngineer', color: 'text-chalk' },
+  strategist: { labelKey: 'home.workflow.groupStrategist', color: 'text-gold' },
   operations: { labelKey: 'home.workflow.groupOperations', color: 'text-steel' },
 };
 
@@ -75,7 +75,7 @@ export function S4WorkflowCoverage() {
     <section
       id="s4-workflows"
       data-accent="yellow"
-      className="room relative py-16 md:py-24 border-t border-steel/20"
+      className="room relative py-16 md:py-24 border-t border-chalk/15"
       aria-label="Workflow coverage"
     >
       <div className="grid-lap">
@@ -138,7 +138,7 @@ export function S4WorkflowCoverage() {
         <div className="col-span-full mt-6">
           <Link
             href="/product"
-            className="inline-flex items-center border border-pit-orange px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase"
+            className="inline-flex items-center border border-gold px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-gold hover:bg-gold hover:text-asphalt transition-colors duration-[420ms]"
           >
             {t('cta.openFullProduct')}
           </Link>

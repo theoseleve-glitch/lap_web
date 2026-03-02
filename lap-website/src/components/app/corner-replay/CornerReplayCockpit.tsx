@@ -4,14 +4,14 @@ import { useRef, useEffect, useCallback } from 'react';
 
 /** Design-token hex colors */
 const COLORS = {
-  asphalt: '#0B0C0F',
-  concrete: '#161A20',
-  chalk: '#F3F0E8',
-  steel: '#8A8F98',
-  acidGreen: '#B6FF2E',
+  asphalt: '#000000',
+  concrete: '#141414',
+  chalk: '#F0EDE5',
+  steel: '#888888',
+  acidGreen: '#F0EDE5',
   safetyRed: '#FF2A2A',
-  marshalYellow: '#FFD400',
-  pitOrange: '#FF6A00',
+  marshalYellow: '#F0EDE5',
+  pitOrange: '#C9A84C',
 };
 
 export interface CockpitFrame {
@@ -87,7 +87,7 @@ function drawCockpit(
   // Tick marks
   const tickR = Math.max(0, speedR - 4);
   ctx.fillStyle = COLORS.steel;
-  ctx.font = `${Math.max(8, speedR * 0.14)}px "IBM Plex Mono", monospace`;
+  ctx.font = `${Math.max(8, speedR * 0.14)}px "Space Mono", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let spd = 0; spd <= 200; spd += 20) {
@@ -145,13 +145,13 @@ function drawCockpit(
 
   // Speed readout
   ctx.fillStyle = COLORS.chalk;
-  ctx.font = `bold ${Math.max(14, speedR * 0.3)}px "IBM Plex Mono", monospace`;
+  ctx.font = `bold ${Math.max(14, speedR * 0.3)}px "Space Mono", monospace`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(`${Math.round(speed)}`, speedCX, speedCY + speedR * 0.5);
 
   ctx.fillStyle = COLORS.steel;
-  ctx.font = `${Math.max(8, speedR * 0.12)}px "IBM Plex Mono", monospace`;
+  ctx.font = `${Math.max(8, speedR * 0.12)}px "Space Mono", monospace`;
   ctx.fillText('km/h', speedCX, speedCY + speedR * 0.65);
 
   // === G-FORCE DIAMOND ===
@@ -212,11 +212,11 @@ function drawCockpit(
 
   // G labels
   ctx.fillStyle = COLORS.steel;
-  ctx.font = `${Math.max(8, gR * 0.14)}px "IBM Plex Mono", monospace`;
+  ctx.font = `${Math.max(8, gR * 0.14)}px "Space Mono", monospace`;
   ctx.textAlign = 'center';
   ctx.fillText('G-Force', gCX, gCY - gR - 6);
-  ctx.fillText(`${gLat.toFixed(2)}G lat`, gCX, gCY + gR + 14);
-  ctx.fillText(`${gLon.toFixed(2)}G lon`, gCX, gCY + gR + 26);
+  ctx.fillText(`${(gLat ?? 0).toFixed(2)}G lat`, gCX, gCY + gR + 14);
+  ctx.fillText(`${(gLon ?? 0).toFixed(2)}G lon`, gCX, gCY + gR + 26);
 
   // === BRAKE / THROTTLE BARS (horizontal) ===
   if (showPedals) {
@@ -231,7 +231,7 @@ function drawCockpit(
     // Throttle bar
     const thrLabel = 'THR';
     ctx.fillStyle = COLORS.steel;
-    ctx.font = `${Math.max(8, barH * 0.7)}px "IBM Plex Mono", monospace`;
+    ctx.font = `${Math.max(8, barH * 0.7)}px "Space Mono", monospace`;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillText(thrLabel, barX, barY - barH - 6);
@@ -311,7 +311,7 @@ function drawCockpit(
 
     // Steering label
     ctx.fillStyle = COLORS.steel;
-    ctx.font = `${Math.max(8, steerR * 0.3)}px "IBM Plex Mono", monospace`;
+    ctx.font = `${Math.max(8, steerR * 0.3)}px "Space Mono", monospace`;
     ctx.textAlign = 'center';
     ctx.fillText('STEER', steerCX, steerCY + 14);
     ctx.fillStyle = COLORS.marshalYellow;

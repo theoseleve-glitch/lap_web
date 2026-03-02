@@ -1,16 +1,16 @@
 :root {
   /* ── Base Colors ──────────────────── */
-  --asphalt: #0B0C0F;
-  --concrete: #161A20;
-  --chalk: #F3F0E8;
-  --steel: #8A8F98;
+  --asphalt: #000000;
+  --concrete: #141414;
+  --chalk: #F0EDE5;
+  --steel: #888888;
 
   /* ── Accent Colors ────────────────── */
-  --acid-green: #B6FF2E;
+  --acid-green: #F0EDE5;
   --safety-red: #FF2A2A;
-  --marshal-yellow: #FFD400;
-  --pit-orange: #FF6A00;
-  --racing-purple: #D946EF;
+  --marshal-yellow: #F0EDE5;
+  --pit-orange: #C9A84C;
+  --racing-purple: #C9A84C;
 
   /* ── Active accent (overridden per room via data-accent) ── */
   --accent: var(--chalk);
@@ -77,17 +77,17 @@
   --ease-pit-exit: cubic-bezier(0, 0, 0.2, 1);
 
   /* Layered background system */
-  --bg-radial-1: radial-gradient(1200px 720px at 10% -10%, rgba(255, 106, 0, 0.14), transparent 68%);
-  --bg-radial-2: radial-gradient(980px 620px at 90% 0%, rgba(182, 255, 46, 0.1), transparent 62%);
-  --bg-radial-3: radial-gradient(960px 720px at 50% 110%, rgba(255, 212, 0, 0.08), transparent 64%);
-  --bg-grid: linear-gradient(rgba(138, 143, 152, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(138, 143, 152, 0.08) 1px, transparent 1px);
+  --bg-radial-1: radial-gradient(1200px 720px at 10% -10%, rgba(201, 168, 76, 0.04), transparent 68%);
+  --bg-radial-2: none;
+  --bg-radial-3: none;
+  --bg-grid: linear-gradient(rgba(240, 237, 229, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 237, 229, 0.06) 1px, transparent 1px);
 }
 
 /* ── Single-accent enforcement per room ── */
 [data-accent="none"]    { --accent: var(--chalk); }
-[data-accent="green"]   { --accent: var(--acid-green); }
+[data-accent="green"]   { --accent: var(--chalk); }
 [data-accent="red"]     { --accent: var(--safety-red); }
-[data-accent="yellow"]  { --accent: var(--marshal-yellow); }
+[data-accent="yellow"]  { --accent: var(--chalk); }
 [data-accent="orange"]  { --accent: var(--pit-orange); }
 [data-accent="purple"]  { --accent: var(--racing-purple); }

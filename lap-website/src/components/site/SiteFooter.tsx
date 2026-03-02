@@ -11,7 +11,7 @@ const trustBadges = ['GDPR Ready', 'EU Data Residency', 'TLS + AES-256', '99.9% 
 
 export function SiteFooter() {
   return (
-    <footer className="border-t border-steel/20 mt-16">
+    <footer className="border-t-2 border-chalk/15 mt-16">
       <div className="mx-auto max-w-6xl px-4 py-10">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
           {footerLinks.map((link) => (
@@ -25,7 +25,7 @@ export function SiteFooter() {
           ))}
         </div>
 
-        <div className="grid md:grid-cols-3 gap-4 border border-steel/20 bg-concrete/20 p-4">
+        <div className="grid md:grid-cols-3 gap-4 border border-chalk/15 bg-concrete p-4">
           <div>
             <p className="font-telemetry text-[10px] text-steel tracking-[0.12em] uppercase mb-2">Headquarters</p>
             <p className="text-sm text-chalk">LAP Racing</p>
@@ -40,7 +40,7 @@ export function SiteFooter() {
                   href={social.href}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="border border-steel/30 px-2 py-1 text-xs text-steel hover:text-chalk hover:border-chalk"
+                  className="border border-chalk/20 px-2 py-1 text-xs text-steel hover:text-chalk hover:border-chalk"
                 >
                   {social.label}
                 </a>
@@ -51,7 +51,7 @@ export function SiteFooter() {
             <p className="font-telemetry text-[10px] text-steel tracking-[0.12em] uppercase mb-2">Trust</p>
             <div className="flex flex-wrap gap-2">
               {trustBadges.map((badge) => (
-                <span key={badge} className="border border-steel/30 px-2 py-1 text-xs text-steel">
+                <span key={badge} className="border border-chalk/20 px-2 py-1 text-xs text-steel">
                   {badge}
                 </span>
               ))}

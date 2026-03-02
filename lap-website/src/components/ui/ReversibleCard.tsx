@@ -13,7 +13,7 @@ export function ReversibleCard({ title, description, className = '' }: Reversibl
 
   return (
     <article
-      className={`relative border border-steel/20 bg-concrete/35 p-5 cursor-pointer ${className}`}
+      className={`relative border border-chalk/15 bg-concrete p-5 cursor-pointer ${className}`}
       style={{ perspective: '900px' }}
       onClick={() => setFlipped((value) => !value)}
       role="button"

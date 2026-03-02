@@ -1,15 +1,15 @@
 // Token values exported for JS/GSAP usage (mirrors tokens.css)
 
 export const colors = {
-  asphalt: '#0B0C0F',
-  concrete: '#161A20',
-  chalk: '#F3F0E8',
-  steel: '#8A8F98',
-  acidGreen: '#B6FF2E',
+  asphalt: '#000000',
+  concrete: '#141414',
+  chalk: '#F0EDE5',
+  steel: '#888888',
+  acidGreen: '#F0EDE5',
   safetyRed: '#FF2A2A',
-  marshalYellow: '#FFD400',
-  pitOrange: '#FF6A00',
-  racingPurple: '#D946EF',
+  marshalYellow: '#F0EDE5',
+  pitOrange: '#C9A84C',
+  racingPurple: '#C9A84C',
 } as const;
 
 export const timing = {

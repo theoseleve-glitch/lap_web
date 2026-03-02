@@ -19,7 +19,7 @@ export function PageShell({
 
   return (
     <main className={`mx-auto px-4 py-10 md:py-14 ${isDocument ? 'max-w-4xl' : 'max-w-6xl'}`}>
-      <section className={`mb-10 ${isDocument ? 'border border-steel/20 bg-concrete/25 p-5 md:p-7' : ''}`}>
+      <section className={`mb-10 ${isDocument ? 'border border-chalk/15 bg-concrete/25 p-5 md:p-7' : ''}`}>
         {eyebrow && (
           <p className="font-telemetry text-steel text-[11px] tracking-[0.12em] uppercase mb-3">
             {eyebrow}

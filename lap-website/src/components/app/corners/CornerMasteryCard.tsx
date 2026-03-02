@@ -115,7 +115,7 @@ export function CornerMasteryCard({ sessionId }: CornerMasteryCardProps) {
           {data.overall_grade}
         </span>
         <div>
-          <p className="text-chalk font-mono text-sm">{data.overall_score.toFixed(0)}/100</p>
+          <p className="text-chalk font-mono text-sm">{data.overall_score != null ? data.overall_score.toFixed(0) : '\u2014'}/100</p>
           <p className="text-steel text-[10px] font-telemetry uppercase">Overall Mastery</p>
         </div>
       </div>

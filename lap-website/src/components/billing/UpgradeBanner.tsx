@@ -48,7 +48,7 @@ export function UpgradeBanner({
 
   if (variant === 'inline') {
     return (
-      <div className="rounded-lg border border-racing-purple/30 bg-concrete/80 px-4 py-3 backdrop-blur-sm">
+      <div className="rounded-lg border border-gold/30 bg-concrete/80 px-4 py-3 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm font-medium text-chalk">
@@ -65,7 +65,7 @@ export function UpgradeBanner({
           </div>
           <Link
             href={upgrade.url}
-            className="shrink-0 rounded-md bg-acid-green px-4 py-2 text-xs font-semibold text-asphalt transition-colors hover:bg-acid-green/90"
+            className="shrink-0 rounded-md bg-gold px-4 py-2 text-xs font-semibold text-asphalt transition-colors hover:bg-gold/90"
           >
             Upgrade
           </Link>
@@ -77,7 +77,7 @@ export function UpgradeBanner({
   if (variant === 'modal') {
     return (
       <div className="fixed inset-0 z-overlay flex items-center justify-center bg-asphalt/80 backdrop-blur-sm">
-        <div className="mx-4 w-full max-w-md rounded-xl border border-steel/20 bg-concrete p-6 shadow-xl">
+        <div className="mx-4 w-full max-w-md border border-chalk/15 bg-concrete p-6 shadow-xl">
           <h3 className="font-monument text-xl text-chalk">
             Upgrade to {tierLabel}
           </h3>
@@ -90,14 +90,14 @@ export function UpgradeBanner({
           <div className="mt-6 flex gap-3">
             <Link
               href={upgrade.url}
-              className="flex-1 rounded-md bg-acid-green px-4 py-2.5 text-center text-sm font-semibold text-asphalt transition-colors hover:bg-acid-green/90"
+              className="flex-1 bg-gold px-4 py-2.5 text-center text-sm font-semibold text-asphalt transition-colors hover:bg-gold/90"
             >
               View Plans
             </Link>
             {onDismiss && (
               <button
                 onClick={onDismiss}
-                className="rounded-md border border-steel/30 px-4 py-2.5 text-sm text-steel transition-colors hover:border-steel/50 hover:text-chalk"
+                className="border border-chalk/20 px-4 py-2.5 text-sm text-steel transition-colors hover:border-chalk/40 hover:text-chalk"
               >
                 Not Now
               </button>
@@ -110,7 +110,7 @@ export function UpgradeBanner({
 
   // Toast variant
   return (
-    <div className="fixed bottom-4 right-4 z-overlay max-w-sm animate-slide-up rounded-lg border border-racing-purple/30 bg-concrete p-4 shadow-lg">
+    <div className="fixed bottom-4 right-4 z-overlay max-w-sm animate-slide-up border border-gold/30 bg-concrete p-4 shadow-lg">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-chalk">
@@ -123,7 +123,7 @@ export function UpgradeBanner({
         <div className="flex shrink-0 gap-2">
           <Link
             href={upgrade.url}
-            className="rounded-md bg-acid-green px-3 py-1.5 text-xs font-semibold text-asphalt"
+            className="bg-gold px-3 py-1.5 text-xs font-semibold text-asphalt"
           >
             Upgrade
           </Link>

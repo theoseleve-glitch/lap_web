@@ -93,8 +93,8 @@ function buildFocusAreas(corners: CornerData[]): { text: string; loss: number }[
     .sort((a, b) => (b.time_loss_total_s ?? 0) - (a.time_loss_total_s ?? 0))
     .slice(0, 4)
     .map((c) => ({
-      text: `Corner ${c.corner_id}${c.direction ? ` (${c.direction})` : ''}: ${c.coaching_hint} (+${c.time_loss_total_s!.toFixed(3)}s)`,
-      loss: c.time_loss_total_s!,
+      text: `Corner ${c.corner_id}${c.direction ? ` (${c.direction})` : ''}: ${c.coaching_hint} (+${(c.time_loss_total_s ?? 0).toFixed(3)}s)`,
+      loss: c.time_loss_total_s ?? 0,
     }));
 }
 

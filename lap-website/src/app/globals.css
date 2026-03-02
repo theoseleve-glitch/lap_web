@@ -24,7 +24,7 @@ body {
 
 /* Typography classes */
 .font-monument {
-  font-family: 'Teko', sans-serif;
+  font-family: 'Space Grotesk', sans-serif;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: -0.02em;
@@ -32,7 +32,7 @@ body {
 }
 
 .font-telemetry {
-  font-family: 'IBM Plex Mono', monospace;
+  font-family: 'Space Mono', monospace;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -86,6 +86,89 @@ body {
   animation: radio-wave 0.8s ease-in-out infinite;
 }
 
+/* ── Marquee scroll (Basement-inspired) ── */
+
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* ── Text shimmer (Vercel-inspired) ────── */
+/* A gold highlight sweeps across text, creating a metallic shimmer.
+   Uses background-clip:text + animated background-position. */
+
+@keyframes text-shimmer {
+  0%   { background-position: 100% 50%; }
+  100% { background-position: -100% 50%; }
+}
+
+.text-shimmer {
+  background: linear-gradient(
+    105deg,
+    var(--chalk) 0%,
+    var(--chalk) 35%,
+    rgba(201, 168, 76, 0.8) 50%,
+    var(--chalk) 65%,
+    var(--chalk) 100%
+  );
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: text-shimmer 6s ease-in-out infinite;
+}
+
+/* ── Beam border (Linear-inspired) ──────── */
+/* Rotating conic-gradient creates a light beam tracing card edges on hover.
+   The ::before is the spinning gradient, ::after is the inner fill that masks
+   everything except the 1px edge — producing the animated border illusion. */
+
+@keyframes beam-spin {
+  to { transform: rotate(360deg); }
+}
+
+.beam-card {
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.beam-card::before {
+  content: '';
+  position: absolute;
+  z-index: -2;
+  top: 50%;
+  left: 50%;
+  width: 200%;
+  height: 200%;
+  margin-top: -100%;
+  margin-left: -100%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    rgba(201, 168, 76, 0.6) 6%,
+    transparent 14%,
+    transparent 50%,
+    rgba(240, 237, 229, 0.15) 56%,
+    transparent 64%
+  );
+  animation: beam-spin 4s linear infinite;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}
+
+.beam-card:hover::before {
+  opacity: 1;
+}
+
+.beam-card::after {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 1px;
+  background: var(--concrete, #141414);
+}
+
 /* ── Microinteractions ─────────────────── */
 
 /* Animated underline on links */
@@ -117,7 +200,7 @@ body {
 
 .room button:hover,
 .room [role="button"]:hover {
-  transform: scale(1.02);
+  opacity: 0.85;
 }
 
 .room button:active,

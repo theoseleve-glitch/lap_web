@@ -1,13 +1,9 @@
-/* Concrete grain overlay */
+/* Brutalist grid overlay — ambient gold glow + structure */
 .texture-grain {
   position: relative;
-  background-image: var(--bg-radial-1), var(--bg-radial-2), var(--bg-radial-3), var(--bg-grid);
-  background-size:
-    auto,
-    auto,
-    auto,
-    56px 56px;
-  background-attachment: fixed, fixed, fixed, scroll;
+  background-image: var(--bg-radial-1), var(--bg-grid);
+  background-size: auto, 56px 56px;
+  background-attachment: fixed, scroll;
 }
 
 .texture-grain::before {
@@ -20,11 +16,9 @@
       0deg,
       transparent 0,
       transparent 3px,
-      rgba(243, 240, 232, 0.015) 3px,
-      rgba(243, 240, 232, 0.015) 4px
-    ),
-    radial-gradient(circle at 20% 20%, rgba(243, 240, 232, 0.05), transparent 42%),
-    radial-gradient(circle at 80% 70%, rgba(243, 240, 232, 0.03), transparent 50%);
+      rgba(240, 237, 229, 0.02) 3px,
+      rgba(240, 237, 229, 0.02) 4px
+    );
   z-index: 1;
 }
 
@@ -33,21 +27,21 @@
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.055;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   background-size: 256px 256px;
-  mix-blend-mode: soft-light;
+  mix-blend-mode: overlay;
   z-index: 2;
 }
 
-/* Dither overlay for panels */
+/* Dither overlay for panels — subtle dot grid */
 .texture-dither { position: relative; }
 .texture-dither::after {
   content: '';
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.03;
+  opacity: 0.02;
   background-image: radial-gradient(circle, var(--chalk) 1px, transparent 1px);
   background-size: 4px 4px;
   z-index: 1;

@@ -74,7 +74,7 @@ function drawBrakeChart(canvas: HTMLCanvasElement, brakeData: BrakeData[]) {
   // Draw bars
   brakeData.forEach((d, i) => {
     const y = topPad + (i * chartH) / n + (chartH / n - barH) / 2;
-    const delta = d.braking_point_delta_m;
+    const delta = d.braking_point_delta_m ?? 0;
     const barW = Math.abs(delta) * scale;
     const color = deltaColor(Math.abs(delta));
 

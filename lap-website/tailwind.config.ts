@@ -5,20 +5,21 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        asphalt: '#0B0C0F',
-        concrete: '#161A20',
-        chalk: '#F3F0E8',
-        steel: '#8A8F98',
-        'acid-green': '#B6FF2E',
+        asphalt: '#000000',
+        concrete: '#141414',
+        chalk: '#F0EDE5',
+        steel: '#888888',
+        'acid-green': '#F0EDE5',
         'safety-red': '#FF2A2A',
-        'marshal-yellow': '#FFD400',
-        'pit-orange': '#FF6A00',
-        'racing-purple': '#D946EF',
+        'marshal-yellow': '#F0EDE5',
+        'pit-orange': '#C9A84C',
+        'racing-purple': '#C9A84C',
+        gold: '#C9A84C',
       },
       fontFamily: {
-        monument: ['Teko', 'sans-serif'],
+        monument: ['"Space Grotesk"', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
-        telemetry: ['IBM Plex Mono', 'monospace'],
+        telemetry: ['"Space Mono"', 'monospace'],
       },
       spacing: {
         'grid-margin': 'var(--grid-margin)',

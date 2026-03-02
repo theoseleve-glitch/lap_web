@@ -74,7 +74,7 @@ export function PricingTable({
             key={plan.name}
             className={`
               p-6 bg-concrete
-              ${plan.highlighted ? 'border-2 border-pit-orange' : 'border border-steel/20'}
+              ${plan.highlighted ? 'beam-card border-2 border-pit-orange' : 'border border-chalk/15'}
               ${i > 0 ? 'md:border-l-0' : ''}
             `}
           >
@@ -95,7 +95,7 @@ export function PricingTable({
             {showAnnual && plan.annualTotal ? (
               <p className="mt-1 mb-4 font-telemetry text-[11px] tracking-[0.08em] text-steel">
                 {plan.annualTotal}{' '}
-                <span className="inline-flex ml-1 px-1.5 py-0.5 bg-acid-green/12 text-acid-green text-[10px] tracking-[0.12em] uppercase rounded-sm">
+                <span className="inline-flex ml-1 px-1.5 py-0.5 bg-chalk/12 text-chalk text-[10px] tracking-[0.12em] uppercase">
                   save {plan.savingsPercent}%
                 </span>
               </p>

@@ -39,7 +39,7 @@ export function RadioCard({
   className = '',
   sender = 'ENGINEER',
   receiver = 'DRIVER',
-  accentColor = '#D946EF',
+  accentColor = '#C9A84C',
 }: RadioCardProps) {
   const [expanded, setExpanded] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -68,8 +68,8 @@ export function RadioCard({
 
   return (
     <div
-      className={`relative rounded-lg overflow-hidden cursor-pointer select-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${className}`}
-      style={{ backgroundColor: '#231f20' }}
+      className={`relative overflow-hidden cursor-pointer select-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${className}`}
+      style={{ backgroundColor: '#141414' }}
       onClick={toggle}
       onKeyDown={handleKeyDown}
       role="button"
@@ -82,7 +82,7 @@ export function RadioCard({
         style={{ borderLeft: expanded ? 'none' : `3px solid ${accentColor}` }}
       >
         <span
-          className="shrink-0 font-telemetry text-[9px] tracking-[0.15em] uppercase px-1.5 py-0.5 rounded-sm"
+          className="shrink-0 font-telemetry text-[9px] tracking-[0.15em] uppercase px-1.5 py-0.5 "
           style={{ backgroundColor: `${accentColor}20`, color: accentColor }}
         >
           RADIO
@@ -131,7 +131,7 @@ export function RadioCard({
           {waveform.map((h, i) => (
             <div
               key={i}
-              className="flex-1 rounded-sm"
+              className="flex-1 "
               style={{
                 height: `${h * 100}%`,
                 backgroundColor: `${accentColor}60`,

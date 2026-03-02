@@ -69,7 +69,9 @@ export function StartGrid() {
       <div className="grid-lap">
         <div className="col-span-full flex flex-col items-center justify-center text-center gap-8 md:gap-12">
           <MonumentText size="xl" as="h1" className="text-center">
-            {t('home.startGrid.heading1')}{' '}
+            <span className="text-shimmer">
+              {t('home.startGrid.heading1')}
+            </span>{' '}
             <span
               style={{
                 color: colors.safetyRed,
@@ -78,7 +80,10 @@ export function StartGrid() {
             >
               {t('home.startGrid.heading2')}
             </span>
-            <br />{t('home.startGrid.heading3')}
+            <br />
+            <span className="text-shimmer">
+              {t('home.startGrid.heading3')}
+            </span>
           </MonumentText>
 
           {!launched && (
