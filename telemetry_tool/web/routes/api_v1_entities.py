@@ -96,15 +96,31 @@ def patch_driver(driver_id):
 # Tracks
 # ══════════════════════════════════════════════════════════════════
 
+def _is_unnamed_track(d: dict) -> bool:
+    """True if track_name is missing or looks like an auto-generated UUID."""
+    name = (d.get("track_name") or "").strip()
+    tid = (d.get("track_id") or "").strip()
+    if not name:
+        return True
+    # Pipeline falls back to track_id (a UUID) when no name is found
+    if name == tid:
+        return True
+    return False
+
+
 def _map_track(row):
     d = dict(row)
     return {
         "id": d["track_id"],
         "name": d["track_name"],
+        "unnamed": _is_unnamed_track(d),
         "lap_length_m": d.get("lap_length_m"),
         "has_joker": bool(d.get("has_joker")),
         "session_count": d.get("session_count", 0),
         "best_time_s": d.get("best_time_s"),
+        "lap_count": d.get("lap_count"),
+        "start_lat": d.get("start_lat"),
+        "start_lon": d.get("start_lon"),
         "created_at": d.get("created_at"),
         "updated_at": d.get("updated_at"),
     }
@@ -113,8 +129,12 @@ def _map_track(row):
 @bp.route("/tracks", methods=["GET"])
 def list_tracks():
     conn = _get_conn()
+    include_unnamed = request.args.get("include_unnamed", "0") == "1"
     rows = conn.execute(Q.SELECT_ALL_TRACKS).fetchall()
-    return api_response([_map_track(r) for r in rows])
+    mapped = [_map_track(r) for r in rows]
+    if not include_unnamed:
+        mapped = [t for t in mapped if not t["unnamed"]]
+    return api_response(mapped)
 
 
 @bp.route("/tracks/<track_id>", methods=["GET"])
@@ -124,7 +144,8 @@ def get_track(track_id):
         "SELECT t.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS best_time_s "
         "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id "
-        "WHERE t.track_id = ?", (track_id,)
+        "WHERE t.track_id = ? "
+        "GROUP BY t.track_id", (track_id,)
     ).fetchone()
     if not row or row["track_id"] is None:
         return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
@@ -157,7 +178,8 @@ def patch_track(track_id):
         "SELECT t.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS best_time_s "
         "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id "
-        "WHERE t.track_id = ?", (track_id,)
+        "WHERE t.track_id = ? "
+        "GROUP BY t.track_id", (track_id,)
     ).fetchone()
     return api_response(_map_track(updated))
 

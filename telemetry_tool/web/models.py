@@ -357,7 +357,7 @@ def upsert_session(
         "session_id":        session_id,
         "csv_filename":      Path(str(summary.get("csv_path", ""))).name,
         "driver_id":         driver_id,
-        "track_id":          summary.get("track_id"),
+        "track_id":          summary.get("track_id") or "unknown_track",
         "session_type":      meta.get("session_type", "practice"),
         "track_state":       meta.get("track_state", "dry"),
         "session_date":      _session_date,

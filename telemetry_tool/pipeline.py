@@ -2348,6 +2348,11 @@ def run_full_analysis(
 
     def _persist_to_db() -> Optional[str]:
         """Save pipeline results to SQLite.  Returns session_id or None."""
+        # Skip when running under PostgreSQL — Celery finalize handles persistence.
+        import os as _os
+        if _os.environ.get("USE_PG", "0") == "1":
+            logger.info("Skipping SQLite persist (USE_PG=1; Celery handles DB persistence).")
+            return None
         try:
             from web.db import get_db_connection, init_db, set_default_db_path
             from web.models import (
