@@ -14,23 +14,23 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_ws_date "
+        "CREATE INDEX IF NOT EXISTS idx_sessions_ws_date "
         "ON sessions (workspace_id, session_date DESC)"
     )
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_ws_driver "
+        "CREATE INDEX IF NOT EXISTS idx_sessions_ws_driver "
         "ON sessions (workspace_id, driver_id)"
     )
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_sessions_ws_track "
+        "CREATE INDEX IF NOT EXISTS idx_sessions_ws_track "
         "ON sessions (workspace_id, track_id)"
     )
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_laps_session_lap "
+        "CREATE INDEX IF NOT EXISTS idx_laps_session_lap "
         "ON laps (session_id, lap_number)"
     )
     op.execute(
-        "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_gps_session_lap "
+        "CREATE INDEX IF NOT EXISTS idx_gps_session_lap "
         "ON gps_traces (session_id, lap_number)"
     )
 
