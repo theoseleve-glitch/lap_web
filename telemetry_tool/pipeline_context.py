@@ -142,6 +142,7 @@ class PipelineContext:
 
         data = json.loads(raw)
         temp_dir = Path(temp_root) / "pipeline" / job_id
+        temp_dir.mkdir(parents=True, exist_ok=True)
 
         return cls(
             job_id=job_id,
