@@ -350,13 +350,17 @@ def get_speed_trace(session_id: str):
 
     lap_num = _get_lap_param(conn, session_id)
     if lap_num is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_laps",
+            "message": "No laps available for this session",
+        })
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
         return api_response({
             "available": False,
-            "reason_code": "NO_SPEED_TRACE",
+            "reason_code": "no_speed_trace",
             "message": f"No speed trace data for lap {lap_num}",
         })
 
@@ -409,13 +413,17 @@ def get_gps_trace(session_id: str):
 
     lap_num = _get_lap_param(conn, session_id)
     if lap_num is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "available": False,
+            "reason_code": "no_laps",
+            "message": "No laps available for this session",
+        })
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
         return api_response({
             "available": False,
-            "reason_code": "NO_GPS_DATA",
+            "reason_code": "no_gps_data",
             "message": f"No GPS trace for lap {lap_num}",
         })
 
@@ -449,15 +457,26 @@ def get_gg_data(session_id: str):
 
     lap_num = _get_lap_param(conn, session_id)
     if lap_num is None:
-        return api_error(ErrorCode.NOT_FOUND, "No laps available", status=404)
+        return api_response({
+            "accel_lat": [],
+            "accel_long": [],
+            "distances": [],
+            "available": False,
+            "reason_code": "no_laps",
+            "message": "No laps available for this session",
+        })
 
     trace = models.get_gps_trace(conn, session_id, lap_num)
     if trace is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            f"No trace data for lap {lap_num}",
-            status=404,
-        )
+        return api_response({
+            "accel_lat": [],
+            "accel_long": [],
+            "distances": [],
+            "lap_number": lap_num,
+            "available": False,
+            "reason_code": "NO_GG_DATA",
+            "message": "No trace data available for this lap",
+        })
 
     lat_g = trace.get("accel_lat") or []
     lon_g = trace.get("accel_long") or []
@@ -623,6 +642,7 @@ def get_corners(session_id: str):
                 corner.update(_extract_coaching(cc))
             else:
                 corner["available"] = False
+                corner["reason_code"] = "no_theoretical"
                 corner["coaching_hint"] = "Theoretical data unavailable for this corner"
                 for field in _METRIC_FIELDS:
                     if field not in corner:
@@ -1832,7 +1852,11 @@ def get_brake_precision(session_id: str):
 
     metrics = models.get_corner_metrics_for_session(conn, session_id)
     if not metrics:
-        return api_response({"corners": [], "available": False})
+        return api_response({
+            "corners": [],
+            "available": False,
+            "reason_code": "no_corner_metrics",
+        })
 
     # Group by corner_id, collect brake points
     from collections import defaultdict

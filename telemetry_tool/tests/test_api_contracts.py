@@ -1045,3 +1045,72 @@ class TestJsonGuardMiddleware:
         """Non-API routes should not be intercepted."""
         resp = seeded_client.get("/healthz")
         assert resp.status_code in (200, 503)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Graceful degradation — optional endpoints never return 500
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestGracefulDegradation:
+    """Optional data endpoints must return 200 + available=false, never 500."""
+
+    @pytest.mark.parametrize("endpoint", [
+        "/api/v1/sessions/{sid}/corners",
+        "/api/v1/sessions/{sid}/scores",
+        "/api/v1/sessions/{sid}/gg-data",
+        "/api/v1/sessions/{sid}/driving-style",
+        "/api/v1/sessions/{sid}/theoretical",
+        "/api/v1/sessions/{sid}/stint-analysis",
+        "/api/v1/sessions/{sid}/corner-mastery",
+        "/api/v1/sessions/{sid}/lap-distribution",
+        "/api/v1/sessions/{sid}/brake-precision",
+        "/api/v1/sessions/{sid}/condition-phases",
+        "/api/v1/sessions/{sid}/speed-trace",
+        "/api/v1/sessions/{sid}/gps-trace",
+    ])
+    def test_optional_endpoint_never_500(self, seeded_client, endpoint):
+        """When optional analysis data is missing, endpoint must not return 500."""
+        # Use a valid session from the seeded DB
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        if not sessions:
+            pytest.skip("No sessions in seeded DB")
+        sid = sessions[0]["session_id"]
+        url = endpoint.format(sid=sid)
+        resp = seeded_client.get(url)
+        assert resp.status_code != 500, (
+            f"{endpoint} returned 500: {resp.get_data(as_text=True)[:200]}"
+        )
+
+    @pytest.mark.parametrize("endpoint", [
+        "/api/v1/sessions/{sid}/speed-trace",
+        "/api/v1/sessions/{sid}/gps-trace",
+        "/api/v1/sessions/{sid}/gg-data",
+    ])
+    def test_trace_endpoints_graceful_when_no_session(self, seeded_client, endpoint):
+        """Trace endpoints with a nonexistent session should return 404 (not 500)."""
+        url = endpoint.format(sid="nonexistent-session-id")
+        resp = seeded_client.get(url)
+        # 404 for nonexistent session is acceptable, but never 500
+        assert resp.status_code in (200, 404), (
+            f"{endpoint} returned {resp.status_code}"
+        )
+
+    def test_available_false_includes_reason_code(self, seeded_client):
+        """When available=false, reason_code must be present."""
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        if not sessions:
+            pytest.skip("No sessions in seeded DB")
+        sid = sessions[0]["session_id"]
+        # Theoretical is likely missing for test fixtures
+        resp = seeded_client.get(f"/api/v1/sessions/{sid}/theoretical")
+        if resp.status_code == 200:
+            data = resp.get_json().get("data", {})
+            if isinstance(data, dict) and data.get("available") is False:
+                assert "reason_code" in data, (
+                    "available=false response missing reason_code"
+                )
