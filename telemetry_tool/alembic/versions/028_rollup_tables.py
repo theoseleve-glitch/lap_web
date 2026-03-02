@@ -1,0 +1,69 @@
+"""028 – rollup tables for driver and track aggregate stats
+
+Revision ID: 028
+Revises: 027
+Create Date: 2026-03-02
+"""
+from alembic import op
+
+revision = "028"
+down_revision = "027"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS driver_stats_rollup (
+            workspace_id  INTEGER NOT NULL REFERENCES workspaces(id),
+            driver_id     INTEGER NOT NULL REFERENCES drivers(id),
+            session_count INTEGER NOT NULL DEFAULT 0,
+            total_laps    INTEGER NOT NULL DEFAULT 0,
+            best_time_s   DOUBLE PRECISION,
+            avg_score     DOUBLE PRECISION,
+            avg_consistency DOUBLE PRECISION,
+            last_session_date DATE,
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (workspace_id, driver_id)
+        )
+    """)
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS track_stats_rollup (
+            workspace_id    INTEGER NOT NULL REFERENCES workspaces(id),
+            track_id        INTEGER NOT NULL REFERENCES tracks(id),
+            session_count   INTEGER NOT NULL DEFAULT 0,
+            best_time_s     DOUBLE PRECISION,
+            avg_score       DOUBLE PRECISION,
+            last_session_date DATE,
+            unique_drivers  INTEGER NOT NULL DEFAULT 0,
+            updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (workspace_id, track_id)
+        )
+    """)
+
+    # RLS policies
+    op.execute("ALTER TABLE driver_stats_rollup ENABLE ROW LEVEL SECURITY")
+    op.execute(
+        "CREATE POLICY driver_stats_rollup_workspace ON driver_stats_rollup "
+        "USING (workspace_id = current_setting('app.current_workspace_id')::int)"
+    )
+    op.execute("ALTER TABLE track_stats_rollup ENABLE ROW LEVEL SECURITY")
+    op.execute(
+        "CREATE POLICY track_stats_rollup_workspace ON track_stats_rollup "
+        "USING (workspace_id = current_setting('app.current_workspace_id')::int)"
+    )
+
+    # Indexes
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_driver_rollup_ws "
+        "ON driver_stats_rollup (workspace_id)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_track_rollup_ws "
+        "ON track_stats_rollup (workspace_id)"
+    )
+
+
+def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS track_stats_rollup CASCADE")
+    op.execute("DROP TABLE IF EXISTS driver_stats_rollup CASCADE")
