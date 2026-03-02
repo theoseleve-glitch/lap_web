@@ -313,6 +313,10 @@ def upload_session():
             "source_filename": safe_name,
             "display_name": Path(safe_name).stem,
         }
+        # Pass user-provided session_date to the pipeline
+        _sd = request.form.get("session_date")
+        if _sd:
+            session_meta["session_date"] = _sd
 
         kart_id_str = request.form.get("kart_id")
         if kart_id_str:

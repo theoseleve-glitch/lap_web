@@ -540,6 +540,17 @@ def run_full_analysis(
     # Honour user-provided session_date from the web form
     if meta.get("session_date") and not meta.get("date"):
         meta["date"] = meta["session_date"]
+    # Derive session date from telemetry CSV headers if not user-provided
+    if not meta.get("date"):
+        try:
+            wt = _import("weather_timeline")
+            if wt and hasattr(wt, "parse_session_datetime"):
+                _dt = wt.parse_session_datetime(csv_path)
+                if _dt:
+                    meta["date"] = _dt.strftime("%Y-%m-%d")
+                    meta["session_datetime"] = _dt.isoformat()
+        except Exception:
+            pass  # Best-effort; fall through to now()
     meta.setdefault("date",         datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 
     # --- Driver-tag file suffix (multi-driver namespacing)
