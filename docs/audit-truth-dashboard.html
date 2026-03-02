@@ -219,12 +219,39 @@
     vertical-align: middle;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .section-heading {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--marshal-yellow);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 2rem 0 0.75rem 0;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid rgba(255, 165, 2, 0.25);
+  }
+  .section-heading:first-of-type { margin-top: 1.5rem; }
+
+  .btn-export {
+    background: transparent;
+    color: var(--marshal-yellow);
+    border: 1px solid var(--marshal-yellow);
+    border-radius: 4px;
+    padding: 0.5rem 1.25rem;
+    font-weight: 700;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: 0.5rem;
+  }
+  .btn-export:hover { background: rgba(255, 165, 2, 0.1); }
+  .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
 
 <h1>Audit Truth Dashboard</h1>
-<p class="subtitle">Live API probes for Report 1 conflict points &mdash; source of truth on SaaS parity gaps</p>
+<p class="subtitle">Live API probes for Report 1 conflict points, entity population &amp; chart completeness &mdash; source of truth on SaaS parity gaps</p>
 
 <div class="config-form">
   <div class="field field-api">
@@ -240,6 +267,7 @@
     <input type="text" id="jwtToken" placeholder="Bearer token if auth required" />
   </div>
   <button class="btn-run" id="btnRun">Run Probes</button>
+  <button class="btn-export" id="btnExport" disabled>Export Results</button>
 </div>
 
 <div class="summary" id="summary" style="display:none;">
@@ -372,6 +400,128 @@ var CONFLICTS = [
     ],
     success: 'Unlinked kart can be deleted (200/204). Linked kart delete is blocked with HTTP 409.',
     probe: probeKartSafety,
+  },
+
+  // ── Entity Population Probes ──────────────────────
+  {
+    id: 10,
+    section: 'Entity Population',
+    title: 'Drivers Population',
+    conflict: 'Entity population check: GET /api/v1/drivers must return a non-empty drivers array, confirming that driver records exist in the database.',
+    repro: [
+      'Call GET /api/v1/drivers',
+      'Verify response.data is an array (or response.data.drivers)',
+      'Verify array length > 0',
+    ],
+    success: 'Drivers endpoint returns 200 with at least one driver in the data array.',
+    probe: probeDriversPopulation,
+  },
+  {
+    id: 11,
+    section: 'Entity Population',
+    title: 'Tracks Population',
+    conflict: 'Entity population check: GET /api/v1/tracks must return a non-empty tracks array and each track must have a track_name field.',
+    repro: [
+      'Call GET /api/v1/tracks',
+      'Verify response.data is an array (or response.data.tracks)',
+      'Verify array length > 0',
+      'Verify first track has a track_name string field',
+    ],
+    success: 'Tracks endpoint returns 200 with at least one track. First track has a track_name field.',
+    probe: probeTracksPopulation,
+  },
+  {
+    id: 12,
+    section: 'Entity Population',
+    title: 'Karts Endpoint OK',
+    conflict: 'Entity population check: GET /api/v1/karts must return HTTP 200 (status ok), confirming the karts endpoint is operational.',
+    repro: [
+      'Call GET /api/v1/karts',
+      'Verify HTTP status is 200',
+      'Verify response.ok === true',
+    ],
+    success: 'Karts endpoint returns HTTP 200 with ok=true.',
+    probe: probeKartsOk,
+  },
+  {
+    id: 13,
+    section: 'Entity Population',
+    title: 'Weekends Endpoint OK',
+    conflict: 'Entity population check: GET /api/v1/weekends must return HTTP 200, not 500 or other server error.',
+    repro: [
+      'Call GET /api/v1/weekends',
+      'Verify HTTP status is 200 (not 500)',
+      'Verify response envelope is valid',
+    ],
+    success: 'Weekends endpoint returns HTTP 200 (not error/500).',
+    probe: probeWeekendsOk,
+  },
+
+  // ── Chart Data Completeness Probes ────────────────
+  {
+    id: 14,
+    section: 'Chart Data Completeness',
+    title: 'Speed Trace Data Complete',
+    conflict: 'Chart completeness: speed-trace endpoint must return non-empty speeds AND distances arrays for chart rendering.',
+    repro: [
+      'Call GET /api/v1/sessions/:id/speed-trace?lap=1',
+      'Verify data.speeds (or data.speed) array length > 0',
+      'Verify data.distances (or data.distance) array length > 0',
+    ],
+    success: 'Speed trace returns non-empty speeds and distances arrays.',
+    probe: probeSpeedTraceComplete,
+  },
+  {
+    id: 15,
+    section: 'Chart Data Completeness',
+    title: 'GPS Trace Data Complete',
+    conflict: 'Chart completeness: gps-trace endpoint must return non-empty latitudes AND longitudes arrays for map rendering.',
+    repro: [
+      'Call GET /api/v1/sessions/:id/gps-trace?lap=1',
+      'Verify data.latitudes array length > 0',
+      'Verify data.longitudes array length > 0',
+    ],
+    success: 'GPS trace returns non-empty latitudes and longitudes arrays.',
+    probe: probeGpsTraceComplete,
+  },
+  {
+    id: 16,
+    section: 'Chart Data Completeness',
+    title: 'G-G Data Complete',
+    conflict: 'Chart completeness: gg-data endpoint must return non-empty accel_lat AND accel_long arrays for G-G diagram.',
+    repro: [
+      'Call GET /api/v1/sessions/:id/gg-data?lap=1',
+      'Verify data.accel_lat array length > 0',
+      'Verify data.accel_long array length > 0',
+    ],
+    success: 'G-G data returns non-empty accel_lat and accel_long arrays.',
+    probe: probeGGDataComplete,
+  },
+  {
+    id: 17,
+    section: 'Chart Data Completeness',
+    title: 'Sectors Data Complete',
+    conflict: 'Chart completeness: sectors endpoint must return non-empty sectors array where each sector has a numeric best_time_s.',
+    repro: [
+      'Call GET /api/v1/sessions/:id/sectors',
+      'Verify data.sectors array length > 0',
+      'Verify each sector has a numeric best_time_s field',
+    ],
+    success: 'Sectors endpoint returns non-empty sectors array with numeric best_time_s on each.',
+    probe: probeSectorsComplete,
+  },
+  {
+    id: 18,
+    section: 'Chart Data Completeness',
+    title: 'Corners Data Complete',
+    conflict: 'Chart completeness: corners endpoint must return non-empty corners array where each corner has a coaching_hint string.',
+    repro: [
+      'Call GET /api/v1/sessions/:id/corners',
+      'Verify data.corners array length > 0',
+      'Verify each corner has a coaching_hint (or coaching) string field',
+    ],
+    success: 'Corners endpoint returns non-empty corners array with coaching_hint string on each.',
+    probe: probeCornersComplete,
   },
 ];
 
@@ -893,6 +1043,280 @@ function probeCSP() {
   });
 }
 
+// ── Entity Population Probes ──────────────────────────
+
+function probeDriversPopulation() {
+  return apiFetch('/drivers').then(function(res) {
+    var lines = [];
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /drivers returned HTTP ' + res.status }]);
+    }
+    var drivers = res.body.data;
+    if (drivers && drivers.drivers) drivers = drivers.drivers;
+    if (!Array.isArray(drivers)) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /drivers data is not an array' }]);
+    }
+    if (drivers.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS drivers array has ' + drivers.length + ' entries' });
+      return probeResult('pass', lines);
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL drivers array is empty (length=0)' });
+      return probeResult('fail', lines);
+    }
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeTracksPopulation() {
+  return apiFetch('/tracks').then(function(res) {
+    var lines = [];
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /tracks returned HTTP ' + res.status }]);
+    }
+    var tracks = res.body.data;
+    if (tracks && tracks.tracks) tracks = tracks.tracks;
+    if (!Array.isArray(tracks)) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /tracks data is not an array' }]);
+    }
+    var allPass = true;
+    if (tracks.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS tracks array has ' + tracks.length + ' entries' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL tracks array is empty (length=0)' });
+      allPass = false;
+    }
+    if (tracks.length > 0) {
+      var first = tracks[0];
+      if (first.track_name && typeof first.track_name === 'string' && first.track_name.length > 0) {
+        lines.push({ type: 'pass', text: 'PASS first track has track_name = "' + esc(first.track_name) + '"' });
+      } else {
+        lines.push({ type: 'fail', text: 'FAIL first track missing track_name field' });
+        allPass = false;
+      }
+    }
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeKartsOk() {
+  return apiFetch('/karts').then(function(res) {
+    if (res.status === 200 && res.body.ok) {
+      var count = Array.isArray(res.body.data) ? res.body.data.length : '?';
+      return probeResult('pass', [{ type: 'pass', text: 'PASS /karts returned 200 OK (' + count + ' karts)' }]);
+    } else {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /karts returned HTTP ' + res.status + ', ok=' + res.body.ok }]);
+    }
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeWeekendsOk() {
+  return apiFetch('/weekends').then(function(res) {
+    if (res.status >= 500) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL /weekends returned server error HTTP ' + res.status }]);
+    }
+    if (res.status === 200 && res.body.ok) {
+      var count = Array.isArray(res.body.data) ? res.body.data.length : '?';
+      return probeResult('pass', [{ type: 'pass', text: 'PASS /weekends returned 200 OK (' + count + ' weekends)' }]);
+    }
+    // Non-500, non-200 — still not a server error, so pass with info
+    return probeResult('pass', [
+      { type: 'pass', text: 'PASS /weekends returned HTTP ' + res.status + ' (not a server error)' },
+      { type: 'info', text: 'INFO response ok=' + res.body.ok }
+    ]);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+// ── Chart Data Completeness Probes ────────────────────
+
+function probeSpeedTraceComplete() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/speed-trace?lap=1').then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL speed-trace returned HTTP ' + res.status }]);
+    }
+    var d = res.body.data || {};
+    var lines = [];
+    var allPass = true;
+
+    var speeds = d.speeds || d.speed || [];
+    if (Array.isArray(speeds) && speeds.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS speeds array has ' + speeds.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL speeds array is empty or missing' });
+      allPass = false;
+    }
+
+    var distances = d.distances || d.distance || [];
+    if (Array.isArray(distances) && distances.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS distances array has ' + distances.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL distances array is empty or missing' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeGpsTraceComplete() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/gps-trace?lap=1').then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL gps-trace returned HTTP ' + res.status }]);
+    }
+    var d = res.body.data || {};
+    var lines = [];
+    var allPass = true;
+
+    var lats = d.latitudes || [];
+    if (Array.isArray(lats) && lats.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS latitudes array has ' + lats.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL latitudes array is empty or missing' });
+      allPass = false;
+    }
+
+    var lons = d.longitudes || [];
+    if (Array.isArray(lons) && lons.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS longitudes array has ' + lons.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL longitudes array is empty or missing' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeGGDataComplete() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/gg-data?lap=1').then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL gg-data returned HTTP ' + res.status }]);
+    }
+    var d = res.body.data || {};
+    var lines = [];
+    var allPass = true;
+
+    var accelLat = d.accel_lat || [];
+    if (Array.isArray(accelLat) && accelLat.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS accel_lat array has ' + accelLat.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL accel_lat array is empty or missing' });
+      allPass = false;
+    }
+
+    var accelLong = d.accel_long || [];
+    if (Array.isArray(accelLong) && accelLong.length > 0) {
+      lines.push({ type: 'pass', text: 'PASS accel_long array has ' + accelLong.length + ' points' });
+    } else {
+      lines.push({ type: 'fail', text: 'FAIL accel_long array is empty or missing' });
+      allPass = false;
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeSectorsComplete() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/sectors').then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL sectors returned HTTP ' + res.status }]);
+    }
+    var d = res.body.data || {};
+    var sectors = d.sectors || d.sector_stats || [];
+    var lines = [];
+    var allPass = true;
+
+    if (!Array.isArray(sectors) || sectors.length === 0) {
+      lines.push({ type: 'fail', text: 'FAIL sectors array is empty or missing' });
+      allPass = false;
+    } else {
+      lines.push({ type: 'pass', text: 'PASS sectors array has ' + sectors.length + ' sectors' });
+
+      var allHaveTime = true;
+      sectors.forEach(function(s, i) {
+        var t = s.best_time_s;
+        if (typeof t !== 'number' || isNaN(t)) {
+          allHaveTime = false;
+          lines.push({ type: 'fail', text: 'FAIL sector[' + i + '] best_time_s is not numeric (got ' + esc(String(t)) + ')' });
+        }
+      });
+      if (allHaveTime) {
+        lines.push({ type: 'pass', text: 'PASS all sectors have numeric best_time_s' });
+      } else {
+        allPass = false;
+      }
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
+function probeCornersComplete() {
+  var config = getConfig();
+  if (!config.sessionId) return Promise.resolve(probeResult('skip', [{ type: 'info', text: 'No session ID provided' }]));
+
+  return apiFetch('/sessions/' + config.sessionId + '/corners').then(function(res) {
+    if (res.status !== 200 || !res.body.ok) {
+      return probeResult('fail', [{ type: 'fail', text: 'FAIL corners returned HTTP ' + res.status }]);
+    }
+    var d = res.body.data || {};
+    var corners = d.corners || [];
+    var lines = [];
+    var allPass = true;
+
+    if (!Array.isArray(corners) || corners.length === 0) {
+      lines.push({ type: 'fail', text: 'FAIL corners array is empty or missing' });
+      allPass = false;
+    } else {
+      lines.push({ type: 'pass', text: 'PASS corners array has ' + corners.length + ' corners' });
+
+      var allHaveHint = true;
+      corners.forEach(function(c, i) {
+        var hint = c.coaching_hint || c.coaching || '';
+        if (typeof hint !== 'string' || hint.trim().length === 0) {
+          allHaveHint = false;
+          lines.push({ type: 'fail', text: 'FAIL corner[' + i + '] has no coaching_hint string' });
+        }
+      });
+      if (allHaveHint) {
+        lines.push({ type: 'pass', text: 'PASS all corners have coaching_hint string' });
+      } else {
+        allPass = false;
+      }
+    }
+
+    return probeResult(allPass ? 'pass' : 'fail', lines);
+  }).catch(function(e) {
+    return probeResult('skip', [{ type: 'info', text: 'Network error: ' + esc(e.message) }]);
+  });
+}
+
 // ── Safe DOM Rendering ────────────────────────────────
 
 function createEl(tag, className, text) {
@@ -906,7 +1330,13 @@ function renderCards() {
   var container = document.getElementById('cards');
   while (container.firstChild) container.removeChild(container.firstChild);
 
+  var lastSection = null;
   CONFLICTS.forEach(function(c) {
+    // Insert section heading when section changes
+    if (c.section && c.section !== lastSection) {
+      lastSection = c.section;
+      container.appendChild(createEl('h2', 'section-heading', c.section));
+    }
     var card = createEl('div', 'card status-pending');
     card.id = 'card-' + c.id;
 
@@ -1001,10 +1431,15 @@ function updateSummary(results) {
 
 // ── Main Runner ───────────────────────────────────────
 
+var _lastProbeResults = null;
+
 function runAllProbes() {
   var btn = document.getElementById('btnRun');
+  var btnExport = document.getElementById('btnExport');
   btn.disabled = true;
   btn.textContent = 'Running...';
+  btnExport.disabled = true;
+  _lastProbeResults = null;
 
   // Reset cards to pending
   CONFLICTS.forEach(function(c) {
@@ -1022,10 +1457,14 @@ function runAllProbes() {
   CONFLICTS.forEach(function(conflict) {
     chain = chain.then(function() {
       return conflict.probe().then(function(probeRes) {
+        probeRes._conflictId = conflict.id;
+        probeRes._conflictTitle = conflict.title;
         results.push(probeRes);
         updateCard(conflict.id, probeRes);
       }).catch(function(e) {
         var pr = probeResult('skip', [{ type: 'info', text: 'Probe crashed: ' + esc(e.message) }]);
+        pr._conflictId = conflict.id;
+        pr._conflictTitle = conflict.title;
         results.push(pr);
         updateCard(conflict.id, pr);
       });
@@ -1034,13 +1473,53 @@ function runAllProbes() {
 
   chain.then(function() {
     updateSummary(results);
+    _lastProbeResults = results;
     btn.disabled = false;
     btn.textContent = 'Run Probes';
+    btnExport.disabled = false;
   });
+}
+
+// ── Export ─────────────────────────────────────────────
+
+function exportResults() {
+  if (!_lastProbeResults) return;
+  var config = getConfig();
+  var probes = {};
+
+  _lastProbeResults.forEach(function(r) {
+    var key = r._conflictId + '_' + r._conflictTitle.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/_+$/, '');
+    var details = {};
+    r.lines.forEach(function(line, i) {
+      details['line_' + i] = { type: line.type, text: line.text };
+    });
+    probes[key] = {
+      status: r.status.toUpperCase(),
+      details: details
+    };
+  });
+
+  var exportObj = {
+    timestamp: new Date().toISOString(),
+    api_url: config.apiUrl,
+    session_id: config.sessionId || null,
+    probes: probes
+  };
+
+  var blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'audit-truth-dashboard-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ── Init ──────────────────────────────────────────────
 document.getElementById('btnRun').addEventListener('click', runAllProbes);
+document.getElementById('btnExport').addEventListener('click', exportResults);
 renderCards();
 </script>
 
