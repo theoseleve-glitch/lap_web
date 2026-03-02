@@ -211,11 +211,13 @@
   "pricing.value.pdfCsvApi": "PDF + CSV + API",
 
   "pricing.b2b.name": "POUR ÉQUIPES & CIRCUITS",
-  "pricing.b2b.feature1": "Matériel pour l'acquisition de données",
-  "pricing.b2b.feature2": "Logiciel de télémétrie en direct",
-  "pricing.b2b.feature3": "Rapports pilote personnalisés",
-  "pricing.b2b.feature4": "Rétention & conformité sur mesure",
-  "pricing.b2b.feature5": "Accompagnement dédié",
+  "pricing.b2b.feature1": "Mat\u00e9riel slide-in/out + tableau de bord SOC batteries",
+  "pricing.b2b.feature2": "R\u00e9cap QR autonome pour chaque pilote",
+  "pricing.b2b.feature3": "Rapports coaching profonds, qualit\u00e9 B2C",
+  "pricing.b2b.feature4": "Rapports bilis\u00e9s + upsell premium",
+  "pricing.b2b.feature5": "Z\u00e9ro charge staff \u2014 swap batterie hebdo",
+  "pricing.b2b.feature6": "R\u00e9tention & conformit\u00e9 sur mesure",
+  "pricing.b2b.feature7": "Accompagnement d\u00e9di\u00e9",
 
   "pricing.matrix.uploadAnalyze": "Import & analyse",
   "pricing.matrix.fourPillar": "Scoring 4 piliers",

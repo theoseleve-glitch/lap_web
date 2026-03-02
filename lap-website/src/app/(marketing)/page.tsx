@@ -5,7 +5,9 @@ import { S1Pain } from '@/components/rooms/S1Pain';
 import { S1DeepSculpture } from '@/components/rooms/S1DeepSculpture';
 import { S2Pipeline } from '@/components/rooms/S2Pipeline';
 import { S2Proof } from '@/components/rooms/S2Proof';
+import { S2Versus } from '@/components/rooms/S2Versus';
 import { S3Product } from '@/components/rooms/S3Product';
+import { S3Venue } from '@/components/rooms/S3Venue';
 import { S4WorkflowCoverage } from '@/components/rooms/S4WorkflowCoverage';
 import { PitStop } from '@/components/rooms/PitStop';
 import { Garage } from '@/components/rooms/Garage';
@@ -31,7 +33,9 @@ export default function Home() {
       <S1DeepSculpture />
       <S2Pipeline />
       <S2Proof />
+      <S2Versus />
       <S3Product />
+      <S3Venue />
       <S4WorkflowCoverage />
       <MarqueeStrip items={MARQUEE_MID} speed={40} reverse />
       <div id="s5-personas" aria-hidden="true" />

@@ -4,8 +4,9 @@ io_racechrono.py
 Production-grade reader for RaceChrono CSV exports.
 
 RaceChrono prepends a variable number of metadata/comment rows before the
-actual data header.  The header row is identified by its first cell containing
-"Time (s)" (after whitespace normalisation).  Every row above it is discarded.
+actual data header.  The header row is identified by its first cell matching
+one of several known sentinels (e.g. "Time (s)", "Time", "UTC Time") after
+whitespace normalisation.  Every row above it is discarded.
 
 Public API
 ~~~~~~~~~~
@@ -45,9 +46,12 @@ logger = logging.getLogger(__name__)
 # -- -
 
 
-#: The normalised cell value that identifies the data header row.
+#: Normalised cell values that identify the data header row.
+#: RaceChrono uses "Time (s)", RaceBox uses "Time" or "UTC Time".
 
-_HEADER_SENTINEL: Final[str] = "Time (s)"
+_HEADER_SENTINELS: Final[frozenset[str]] = frozenset({
+    "Time (s)", "Time", "UTC Time", "Timestamp", "time_s",
+})
 
 #: Encoding fallback chain -- tried in order until one succeeds.
 
@@ -121,8 +125,9 @@ def _open_with_fallback(path: Path) -> tuple[list[str], str]:
 def _find_header_row_from_lines(lines: list[str], source_label: str = "<unknown>") -> int:
     """
     Scan pre-read *lines* and return the **zero-based** index of the row
-    whose first CSV field (after whitespace normalisation) equals
-    ``_HEADER_SENTINEL`` (``"Time (s)"``).
+    whose first CSV field (after whitespace normalisation) matches one of
+    the ``_HEADER_SENTINELS`` (e.g. ``"Time (s)"``, ``"Time"``,
+    ``"UTC Time"``).
 
     Parameters
     ----------
@@ -139,7 +144,7 @@ def _find_header_row_from_lines(lines: list[str], source_label: str = "<unknown>
     Raises
     ------
     RaceChronoParseError
-        If the sentinel column is not found within the lines.
+        If no sentinel column is found within the lines.
     """
     for idx, line in enumerate(lines):
         # Try comma first, then semicolon -- RaceChrono exports vary by locale.
@@ -153,13 +158,13 @@ def _find_header_row_from_lines(lines: list[str], source_label: str = "<unknown>
             first_cell = _normalise_cell(stripped.split(";")[0])
         else:
             first_cell = _normalise_cell(stripped.split(",")[0])
-        if first_cell == _HEADER_SENTINEL:
+        if first_cell in _HEADER_SENTINELS:
             logger.debug("Header sentinel found at row %d in %s.", idx, source_label)
             return idx
 
     raise RaceChronoParseError(
         f"Could not locate the data header row in {source_label}.\n"
-        f"Expected first cell to contain {_HEADER_SENTINEL!r} "
+        f"Expected first cell to match one of {_HEADER_SENTINELS!r} "
         f"(after whitespace normalisation) on some row, "
         f"but no such row was found across {len(lines)} line(s)."
     )
@@ -168,8 +173,9 @@ def _find_header_row_from_lines(lines: list[str], source_label: str = "<unknown>
 def _find_header_row(path: str | Path) -> int:
     """
     Scan *path* line-by-line and return the **zero-based** index of the row
-    whose first CSV field (after whitespace normalisation) equals
-    ``_HEADER_SENTINEL`` (``"Time (s)"``).
+    whose first CSV field (after whitespace normalisation) matches one of
+    the ``_HEADER_SENTINELS`` (e.g. ``"Time (s)"``, ``"Time"``,
+    ``"UTC Time"``).
 
     Parameters
     ----------
@@ -186,7 +192,7 @@ def _find_header_row(path: str | Path) -> int:
     FileNotFoundError
         If *path* does not exist.
     RaceChronoParseError
-        If the sentinel column is not found within the file.
+        If no sentinel column is found within the file.
     """
     path = Path(path)
     if not path.exists():
@@ -310,9 +316,8 @@ def _parse_metadata(lines: list[str], header_row_idx: int) -> dict[str, str]:
 
 def _check_time_monotonicity(df: pd.DataFrame, *, sort: bool = True) -> pd.DataFrame:
     """
-    Check whether the time column (``_HEADER_SENTINEL`` / ``"Time (s)"``) is
-    monotonically non-decreasing.  GPS glitches can produce non-monotonic
-    timestamps.
+    Check whether the time column (``"Time (s)"``) is monotonically
+    non-decreasing.  GPS glitches can produce non-monotonic timestamps.
 
     If non-monotonic timestamps are detected a warning is logged.  When
     *sort* is ``True`` (the default) the DataFrame is sorted by the time
@@ -333,10 +338,11 @@ def _check_time_monotonicity(df: pd.DataFrame, *, sort: bool = True) -> pd.DataF
     pd.DataFrame
         Possibly re-sorted DataFrame.
     """
-    if _HEADER_SENTINEL not in df.columns:
+    _TIME_COL = "Time (s)"
+    if _TIME_COL not in df.columns:
         return df
 
-    time_col = df[_HEADER_SENTINEL]
+    time_col = df[_TIME_COL]
     if time_col.is_monotonic_increasing:
         return df
 
@@ -349,7 +355,7 @@ def _check_time_monotonicity(df: pd.DataFrame, *, sort: bool = True) -> pd.DataF
     )
 
     if sort:
-        df = df.sort_values(_HEADER_SENTINEL).reset_index(drop=True)
+        df = df.sort_values(_TIME_COL).reset_index(drop=True)
 
     return df
 

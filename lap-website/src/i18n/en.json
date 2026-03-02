@@ -211,11 +211,13 @@
   "pricing.value.pdfCsvApi": "PDF + CSV + API",
 
   "pricing.b2b.name": "FOR TEAMS & CIRCUITS",
-  "pricing.b2b.feature1": "Hardware for data logging",
-  "pricing.b2b.feature2": "Live telemetry software",
-  "pricing.b2b.feature3": "Branded driver reports",
-  "pricing.b2b.feature4": "Custom retention & compliance",
-  "pricing.b2b.feature5": "Dedicated onboarding",
+  "pricing.b2b.feature1": "Slide-in/out hardware + battery SOC dashboard",
+  "pricing.b2b.feature2": "Autonomous QR recap for every driver",
+  "pricing.b2b.feature3": "Same B2C-grade deep coaching reports",
+  "pricing.b2b.feature4": "Branded reports + upsell to premium",
+  "pricing.b2b.feature5": "Zero staff pain \u2014 weekly battery swap only",
+  "pricing.b2b.feature6": "Custom retention & compliance",
+  "pricing.b2b.feature7": "Dedicated onboarding",
 
   "pricing.matrix.uploadAnalyze": "Upload & Analyze",
   "pricing.matrix.fourPillar": "4-Pillar Scoring",

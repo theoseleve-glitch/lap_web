@@ -9,7 +9,7 @@ with O(1)-memory alternatives.
 
 Public API
 ~~~~~~~~~~
-- ``stream_detect_header(path)`` — scan first N lines for the header sentinel.
+- ``stream_detect_header(path)`` — scan first N lines for a header sentinel.
 - ``stream_read_chunks(path, …)`` — yield cleaned DataFrame chunks.
 - ``read_racechrono_csv_streamed(path, …)`` — full streaming pipeline returning
   a single merged DataFrame (or a path to the merged Parquet cache).
@@ -31,10 +31,12 @@ from telemetry_tool.ingest.progress import IngestionProgress, ProgressCallback, 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Constants (mirrored from io_racechrono for consistency)
+# Constants (mirrored from io_racechrono for consistency; sentinels shared)
 # ---------------------------------------------------------------------------
 
-_HEADER_SENTINEL: Final[str] = "Time (s)"
+_HEADER_SENTINELS: Final[frozenset[str]] = frozenset({
+    "Time (s)", "Time", "UTC Time", "Timestamp", "time_s",
+})
 _ENCODINGS: Final[tuple[str, ...]] = ("utf-8", "utf-8-sig", "latin-1", "cp1252")
 _WS_RE: Final[re.Pattern[str]] = re.compile(r"\s+")
 _NON_NUMERIC_RAW: Final[frozenset[str]] = frozenset({"Lap #", "lap_number"})
@@ -58,7 +60,7 @@ def stream_detect_header(
     *,
     max_lines: int = _LIMITS.max_header_search_lines,
 ) -> tuple[int, str, str, dict[str, str]]:
-    """Scan the first *max_lines* lines of *path* for the header sentinel.
+    """Scan the first *max_lines* lines of *path* for a header sentinel.
 
     Returns
     -------
@@ -114,7 +116,7 @@ def stream_detect_header(
         pass
 
     raise StreamingParseError(
-        f"Could not locate header row ('{_HEADER_SENTINEL}') in the first "
+        f"Could not locate header row (sentinels: {_HEADER_SENTINELS}) in the first "
         f"{max_lines} lines of {path}."
     )
 
@@ -141,14 +143,14 @@ def _scan_for_header(
             else:
                 first_cell = _normalise_cell(stripped.split(",")[0])
 
-            if first_cell == _HEADER_SENTINEL:
+            if first_cell in _HEADER_SENTINELS:
                 delim = ";" if stripped.count(";") > stripped.count(",") else ","
                 return idx, delim, meta_lines
 
             meta_lines.append(stripped)
 
     raise StreamingParseError(
-        f"Header sentinel '{_HEADER_SENTINEL}' not found in first "
+        f"Header sentinel (one of {_HEADER_SENTINELS}) not found in first "
         f"{max_lines} lines (encoding={encoding})."
     )
 
@@ -479,7 +481,7 @@ def read_racechrono_csv_streamed(
     # Time monotonicity (deferred from chunk level — needs global sort).
     # Use inplace operations to avoid allocating a full copy of the
     # DataFrame (~7+ GB for a 10 GB CSV).
-    time_col = _HEADER_SENTINEL
+    time_col = "Time (s)"
     if time_col in df.columns and not df[time_col].is_monotonic_increasing:
         n_violations = int((df[time_col].diff().dropna() < 0).sum())
         logger.warning(

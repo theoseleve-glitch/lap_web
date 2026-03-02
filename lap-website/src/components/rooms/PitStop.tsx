@@ -118,6 +118,8 @@ export function PitStop() {
                 t('pricing.b2b.feature3'),
                 t('pricing.b2b.feature4'),
                 t('pricing.b2b.feature5'),
+                t('pricing.b2b.feature6'),
+                t('pricing.b2b.feature7'),
               ].map((feature) => (
                 <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
                   <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
