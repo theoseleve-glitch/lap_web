@@ -1161,3 +1161,46 @@ class TestSessionIdentity:
         sessions = body["data"]["sessions"]
         for s in sessions:
             assert "source_path" not in s, "source_path leaked in API response"
+
+
+# ══════════════════════════════════════════════════════════════════
+# Driver/track resolution via FK joins
+# ══════════════════════════════════════════════════════════════════
+
+
+class TestDriverTrackResolution:
+    """Session detail must resolve driver_name and track_name from FK joins."""
+
+    def test_session_has_resolved_driver_name(self, seeded_client):
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        for s in sessions:
+            if s.get("driver_id"):
+                assert s.get("driver_name"), (
+                    f"Session {s['session_id']} has driver_id but no driver_name"
+                )
+
+    def test_session_has_resolved_track_name(self, seeded_client):
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        for s in sessions:
+            if s.get("track_id"):
+                assert s.get("track_name"), (
+                    f"Session {s['session_id']} has track_id but no track_name"
+                )
+
+    def test_session_detail_resolves_names(self, seeded_client):
+        """Session detail endpoint should have resolved names from joins."""
+        resp = seeded_client.get("/api/v1/sessions")
+        body = resp.get_json()
+        sessions = body["data"]["sessions"]
+        if not sessions:
+            pytest.skip("No sessions in seeded DB")
+        sid = sessions[0]["session_id"]
+        detail = seeded_client.get(f"/api/v1/sessions/{sid}")
+        session = detail.get_json()["data"]
+        # driver_name and track_name should be present (from JOINs)
+        assert "driver_name" in session, "Missing driver_name in session detail"
+        assert "track_name" in session, "Missing track_name in session detail"
