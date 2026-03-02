@@ -20,6 +20,7 @@ interface SessionData {
   display_name: string | null;
   driver_name: string;
   track_name: string | null;
+  track_unnamed?: boolean;
   session_type: string;
   track_state: string;
   session_date: string;
@@ -109,6 +110,66 @@ function gradeColorClass(grade: string | null): string {
   return GRADE_COLORS[grade.charAt(0).toUpperCase()] || 'text-steel border-steel';
 }
 
+// ── Track name prompt (unnamed track) ────────────────────────────
+
+function TrackNamePrompt({
+  trackId,
+  onNamed,
+}: {
+  trackId: string;
+  onNamed: (name: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/tracks/${trackId}`, { name: trimmed });
+      onNamed(trimmed);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-pit-orange/10 border border-pit-orange/30 rounded-lg p-4 mb-6">
+      <h3 className="font-monument text-sm text-chalk mb-1">Name this track</h3>
+      <p className="text-steel text-xs font-body mb-3">
+        This session was analyzed on a track that hasn&apos;t been named yet.
+        Enter a name so it appears in your track list.
+      </p>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Franciacorta, Lonato South..."
+          onKeyDown={(e) => { if (e.key === 'Enter') handleSave(); }}
+          className="flex-1 min-w-0 bg-concrete border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
+            placeholder:text-steel/40 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
+        />
+        <button
+          type="button"
+          onClick={handleSave}
+          disabled={saving || !name.trim()}
+          className="px-5 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80
+            transition-colors disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+      {err && <p className="text-safety-red text-xs font-telemetry mt-2">{err}</p>}
+    </div>
+  );
+}
+
 // ── Score bar for Overview tab ───────────────────────────────────
 
 function ScoreBar({
@@ -156,6 +217,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [trackNamed, setTrackNamed] = useState(false);
 
   // Fetch all data on mount
   useEffect(() => {
@@ -267,8 +329,21 @@ export default function SessionDetailPage() {
 
   // ── Page render ────────────────────────────────────────────────
 
+  const showTrackPrompt = session.track_unnamed && session.track_id && !trackNamed;
+
   return (
     <div>
+      {/* Track name prompt — shown when track has no user-given name */}
+      {showTrackPrompt && (
+        <TrackNamePrompt
+          trackId={session.track_id!}
+          onNamed={(newName) => {
+            setTrackNamed(true);
+            setSession((prev) => prev ? { ...prev, track_name: newName, track_unnamed: false } : prev);
+          }}
+        />
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
@@ -286,7 +361,7 @@ export default function SessionDetailPage() {
           </h1>
           <p className="text-steel text-sm font-body mt-1">
             {session.driver_name}
-            {session.track_name ? ` \u2022 ${session.track_name}` : ''}
+            {session.track_name && !session.track_unnamed ? ` \u2022 ${session.track_name}` : ''}
             {` \u2022 ${formatDate(session.session_date)}`}
           </p>
         </div>
