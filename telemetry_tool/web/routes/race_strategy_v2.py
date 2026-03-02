@@ -85,11 +85,18 @@ def _check_weather_alerts(race_id: int, lat: float, lon: float, conn) -> Optiona
 
     # 4. Check if we already sent a weather alert in the last 30 min
     try:
+        import os
+        use_pg = os.environ.get("USE_PG", "0") == "1"
+        if use_pg:
+            time_filter = "created_at > NOW() - INTERVAL '30 minutes'"
+        else:
+            time_filter = "created_at > datetime('now', '-30 minutes')"
+
         recent = conn.execute(
-            "SELECT id FROM race_alerts "
-            "WHERE race_id = ? AND alert_type = 'weather' "
-            "AND created_at > datetime('now', '-30 minutes') "
-            "ORDER BY id DESC LIMIT 1",
+            f"SELECT id FROM race_alerts "
+            f"WHERE race_id = ? AND alert_type = 'weather' "
+            f"AND {time_filter} "
+            f"ORDER BY id DESC LIMIT 1",
             (race_id,),
         ).fetchone()
         if recent:
