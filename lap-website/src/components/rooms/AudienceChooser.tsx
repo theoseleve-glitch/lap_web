@@ -1,48 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-
-/* ── Inline SVG: Helmet icon ─────────────────── */
-function HelmetIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 40c0-11 9-24 20-24s20 13 20 24" />
-      <path d="M12 40c0 6 3 10 8 12h24c5-2 8-6 8-12" />
-      <path d="M12 40h14l4-6h4l4 6h14" />
-      <circle cx="42" cy="36" r="2" fill="currentColor" />
-    </svg>
-  );
-}
-
-/* ── Inline SVG: Track layout icon ───────────── */
-function TrackIcon({ className = '' }: { className?: string }) {
-  return (
-    <svg
-      className={className}
-      width="64"
-      height="64"
-      viewBox="0 0 64 64"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M16 48 C8 36 8 20 20 12 C32 4 48 8 52 20 C56 32 48 36 40 32 C32 28 28 20 36 16 C44 12 48 20 44 28" />
-      <circle cx="16" cy="48" r="3" fill="currentColor" />
-    </svg>
-  );
-}
+import Image from 'next/image';
 
 interface AudienceChooserProps {
   onChoose: (persona: string) => void;
@@ -80,7 +39,14 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
         onClick={chooseDriver}
       >
         <div className={`transition-transform duration-500 ${hovered === 'driver' ? 'scale-110' : ''}`}>
-          <HelmetIcon className="text-chalk w-16 h-16 md:w-20 md:h-20" />
+          <Image
+            src="/logo/front_page_driver.svg"
+            alt="Driver icon"
+            className="w-16 h-16 md:w-20 md:h-20"
+            width={80}
+            height={80}
+            priority
+          />
         </div>
         <h2 className="font-monument text-[clamp(24px,4vw,48px)] text-chalk leading-tight">
           FOR DRIVERS
@@ -108,7 +74,14 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
         onClick={chooseVenue}
       >
         <div className={`transition-transform duration-500 ${hovered === 'venue' ? 'scale-110' : ''}`}>
-          <TrackIcon className="text-pit-orange w-16 h-16 md:w-20 md:h-20" />
+          <Image
+            src="/logo/front_page_venue.svg"
+            alt="Venue icon"
+            className="w-16 h-16 md:w-20 md:h-20"
+            width={80}
+            height={80}
+            priority
+          />
         </div>
         <h2 className="font-monument text-[clamp(24px,4vw,48px)] text-chalk leading-tight">
           FOR VENUES
