@@ -273,6 +273,8 @@ def stripe_webhook():
     try:
         if event_type == "checkout.session.completed":
             _handle_checkout_completed(data)
+        elif event_type == "customer.subscription.created":
+            _handle_subscription_created(data)
         elif event_type == "customer.subscription.updated":
             _handle_subscription_updated(data)
         elif event_type == "customer.subscription.deleted":
@@ -363,12 +365,66 @@ def _handle_checkout_completed(session: dict):
         logger.warning("Checkout completed but user not found: %s", customer_email)
 
 
+def _handle_subscription_created(subscription: dict):
+    """Handle new subscription creation.
+
+    Sets stripe_subscription_id, resolves plan_tier from price IDs,
+    and transitions to the appropriate billing state via state machine.
+    Covers subscriptions created outside checkout (API, Stripe dashboard).
+    """
+    customer_id = subscription.get("customer")
+    sub_id = subscription.get("id")
+    stripe_status = subscription.get("status", "active")
+
+    from billing.state_machine import map_stripe_status
+    new_status = map_stripe_status(stripe_status)
+
+    # Resolve tier from subscription items
+    items = subscription.get("items", {}).get("data", [])
+    plan_tier = None
+    for item in items:
+        price_id = item.get("price", {}).get("id")
+        if price_id and price_id in STRIPE_PRICE_TO_TIER:
+            plan_tier = STRIPE_PRICE_TO_TIER[price_id]
+            break
+
+    conn = _get_conn()
+
+    # Set stripe IDs
+    conn.execute(
+        "UPDATE users SET stripe_customer_id = COALESCE(stripe_customer_id, %(cid)s), "
+        "stripe_subscription_id = %(sid)s "
+        "WHERE stripe_customer_id = %(cid)s",
+        {"cid": customer_id, "sid": sub_id},
+    )
+    conn.commit()
+
+    cur = conn.execute(
+        "SELECT id FROM users WHERE stripe_customer_id = %(cid)s",
+        {"cid": customer_id},
+    )
+    user_row = cur.fetchone()
+    if not user_row:
+        logger.warning("Subscription created but no user for customer %s", customer_id)
+        return
+
+    uid = (dict(user_row) if not isinstance(user_row, dict) else user_row)["id"]
+    from billing.state_machine import transition_subscription
+    transition_subscription(
+        conn, uid, new_status,
+        plan_tier=plan_tier or "racer",
+        metadata={"subscription": sub_id, "customer": customer_id},
+    )
+    audit_log(conn, "billing_subscription_created", {"user_id": uid, "status": new_status})
+    logger.info("Subscription created for customer %s: status=%s tier=%s",
+                customer_id, new_status, plan_tier or "racer")
+
+
 def _handle_subscription_updated(subscription: dict):
     """Update subscription status when Stripe subscription changes.
 
-    Fetches CURRENT status from Stripe API to handle out-of-order events.
-    Only updates subscription_status — plan_tier changes come from
-    checkout (upgrade) or explicit plan switch events.
+    Uses the state machine for status transitions. Resolves plan_tier
+    from price IDs if the plan changed.
     """
     customer_id = subscription.get("customer")
     sub_id = subscription.get("id")
@@ -376,33 +432,55 @@ def _handle_subscription_updated(subscription: dict):
     # Fetch current status from Stripe to handle out-of-order events
     try:
         current_sub = stripe.Subscription.retrieve(sub_id)
-        status = current_sub.status
+        stripe_status = current_sub.status
     except Exception:
         logger.warning("Could not fetch sub %s from Stripe — using event data", sub_id)
-        status = subscription.get("status")
+        stripe_status = subscription.get("status")
+
+    from billing.state_machine import map_stripe_status
+    new_status = map_stripe_status(stripe_status)
 
     # Check if the plan itself changed (price ID changed)
     items = subscription.get("items", {}).get("data", [])
-    tier_update = ""
-    tier_params = {}
+    plan_tier = None
     for item in items:
         price_id = item.get("price", {}).get("id")
         if price_id and price_id in STRIPE_PRICE_TO_TIER:
-            tier_update = ", plan_tier = %(tier)s"
-            tier_params["tier"] = STRIPE_PRICE_TO_TIER[price_id]
+            plan_tier = STRIPE_PRICE_TO_TIER[price_id]
             break
 
     conn = _get_conn()
+
+    # Also ensure stripe IDs are set (handles edge cases)
     conn.execute(
-        f"UPDATE users SET subscription_status = %(status)s{tier_update} "
-        "WHERE stripe_customer_id = %(cid)s",
-        {"status": status, "cid": customer_id, **tier_params},
+        "UPDATE users SET stripe_subscription_id = %(sid)s "
+        "WHERE stripe_customer_id = %(cid)s AND "
+        "(stripe_subscription_id IS NULL OR stripe_subscription_id != %(sid)s)",
+        {"sid": sub_id, "cid": customer_id},
     )
     conn.commit()
-    audit_log(conn, "billing_subscription_updated", {"user_id": customer_id, "status": status})
+
+    # Use state machine for the transition
+    cur = conn.execute(
+        "SELECT id FROM users WHERE stripe_customer_id = %(cid)s",
+        {"cid": customer_id},
+    )
+    user_row = cur.fetchone()
+    if not user_row:
+        logger.warning("Subscription updated but no user for customer %s", customer_id)
+        return
+
+    uid = (dict(user_row) if not isinstance(user_row, dict) else user_row)["id"]
+    from billing.state_machine import transition_subscription
+    transition_subscription(
+        conn, uid, new_status,
+        plan_tier=plan_tier,
+        metadata={"stripe_status": stripe_status, "subscription": sub_id, "customer": customer_id},
+    )
+    audit_log(conn, "billing_subscription_updated", {"user_id": uid, "status": new_status})
     logger.info("Subscription updated for customer %s: status=%s%s",
-                customer_id, status,
-                f" tier={tier_params.get('tier')}" if tier_params else "")
+                customer_id, new_status,
+                f" tier={plan_tier}" if plan_tier else "")
 
 
 def _handle_subscription_deleted(subscription: dict):

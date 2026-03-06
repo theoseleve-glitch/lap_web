@@ -113,6 +113,43 @@ def entitlement_middleware():
 
     method = request.method
 
+    # ── Billing state enforcement ────────────────────────────────────
+    # Block paid-tier users whose subscription is not in good standing.
+    # Only applies when the user has a non-demo plan_tier.
+    plan_tier = getattr(g, "plan_tier", "demo")
+    if plan_tier not in ("demo", "free", None):
+        from auth.entitlements import get_user_subscription_status, _get_conn as _ent_conn
+        conn = _ent_conn()
+        sub_status = get_user_subscription_status(conn, user_id)
+        if sub_status == "unpaid":
+            from web.api_utils import api_error, ErrorCode
+            return api_error(
+                ErrorCode.FORBIDDEN,
+                "Your subscription payment is overdue. Please update your payment method.",
+                status=403,
+                details=[{"code": "UNPAID"}],
+            )
+        if sub_status == "canceled":
+            # Check if grace period has expired
+            cur = conn.execute(
+                "SELECT grace_period_end FROM users WHERE id = %(uid)s",
+                {"uid": user_id},
+            )
+            row = cur.fetchone()
+            if row:
+                from datetime import datetime, timezone
+                grace_end = (dict(row) if not isinstance(row, dict) else row).get("grace_period_end")
+                if grace_end is not None:
+                    if hasattr(grace_end, "tzinfo") and grace_end.tzinfo is None:
+                        grace_end = grace_end.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) > grace_end:
+                        return api_error(
+                            ErrorCode.FORBIDDEN,
+                            "Your subscription has been canceled. Subscribe to regain access.",
+                            status=403,
+                            details=[{"code": "CANCELED"}],
+                        )
+
     # ── Feature gates ────────────────────────────────────────────────
     for gate_entry in _FEATURE_GATES:
         gate_method, gate_prefix, feature = gate_entry[0], gate_entry[1], gate_entry[2]
