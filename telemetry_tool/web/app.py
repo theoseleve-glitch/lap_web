@@ -163,19 +163,22 @@ def create_app(config: Config | None = None) -> Flask:
     except ImportError:
         logger.debug("Metrics module not available — skipping")
 
-    # CORS — allow Next.js frontend origin
-    from flask_cors import CORS
-    origins = [o.strip() for o in cfg.CORS_ALLOWED_ORIGINS.split(",")]
-    CORS(app, origins=origins, supports_credentials=True,
-         allow_headers=["Authorization", "Content-Type", "X-Workspace-Id",
-                        "Idempotency-Key", "X-CSRF-Token", "X-Request-Id"],
-         expose_headers=["X-Request-Id", "Retry-After"],
-         always_send=True)
+    # Access logging middleware (method/path/status/latency with redaction)
+    try:
+        from .middleware.access_log import init_access_log
+        init_access_log(app)
+        logger.debug("Initialized access log middleware")
+    except ImportError:
+        logger.debug("Access log middleware not available — skipping")
+
+    # CORS — custom middleware (replaced flask_cors for full control).
+    app.config["CORS_ALLOWED_ORIGINS"] = cfg.CORS_ALLOWED_ORIGINS
+    from .middleware.cors import init_cors
+    init_cors(app)
 
     # Ensure OPTIONS preflight returns 200 even for non-existent routes.
-    # Browsers require 2xx on preflight; flask_cors adds CORS headers
-    # via after_request but Flask returns 404 for unknown routes.
-    # Return application/json to avoid the _json_guard HTML-detection.
+    # Browsers require 2xx on preflight; the CORS after_request hook adds
+    # headers to whatever response is returned here.
     @app.before_request
     def _handle_preflight():
         from flask import request as req, make_response

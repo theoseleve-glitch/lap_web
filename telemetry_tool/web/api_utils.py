@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any
 from uuid import uuid4
@@ -66,9 +67,10 @@ class ErrorCode:
 # ---------------------------------------------------------------------------
 
 def _build_meta(extra: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build the ``meta`` section, always including ``request_id``."""
+    """Build the ``meta`` section, always including ``request_id`` and ``version``."""
     meta: dict[str, Any] = {
         "request_id": getattr(g, "request_id", None),
+        "version": os.environ.get("APP_VERSION", "dev"),
     }
     if extra:
         meta.update(extra)

@@ -42,8 +42,12 @@ def _load_config_with_env(monkeypatch, env: dict[str, str]):
 
 class TestConfigHardening:
     def test_dev_defaults_validate(self, monkeypatch):
+        """Dev mode with no env vars should validate (no auth, no pg)."""
         cfg = _load_config_with_env(monkeypatch, {})
         cfg.validate()
+        # Defaults should be empty, not insecure known values
+        assert cfg.SECRET_KEY == ""
+        assert cfg.JWT_SECRET == ""
 
     def test_production_requires_explicit_auth(self, monkeypatch):
         cfg = _load_config_with_env(
@@ -63,8 +67,8 @@ class TestConfigHardening:
             {
                 "ENV": "production",
                 "AUTH_REQUIRED": "1",
-                "TELEMETRY_JWT_SECRET": "jwt-dev-secret-change-me",
-                "TELEMETRY_SECRET_KEY": "telemetry-local-dev-key",
+                "TELEMETRY_JWT_SECRET": "short-weak",
+                "TELEMETRY_SECRET_KEY": "short-weak",
             },
         )
         with pytest.raises(ValueError, match="JWT_SECRET"):

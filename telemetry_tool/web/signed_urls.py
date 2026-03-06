@@ -26,8 +26,12 @@ _BASE_URL = os.environ.get("FRONTEND_URL", "https://api.lap-coach.racing")
 
 
 def _get_secret() -> str:
-    """Get the signing secret, falling back to app secret."""
-    return _SECRET or "telemetry-local-dev-key"
+    """Get the signing secret. Raises if unconfigured."""
+    if not _SECRET:
+        raise RuntimeError(
+            "TELEMETRY_JWT_SECRET or TELEMETRY_SECRET_KEY must be set for signed URLs"
+        )
+    return _SECRET
 
 
 def create_signed_url(path: str, expires_in: int = 3600) -> str:

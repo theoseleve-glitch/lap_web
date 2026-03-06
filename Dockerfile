@@ -28,9 +28,12 @@ RUN adduser --system --no-create-home --group app \
 COPY --chown=app:app telemetry_tool/ telemetry_tool/
 COPY --chown=app:app kart_envelope/ kart_envelope/
 COPY --chown=app:app predefined_kart_list.csv predefined_track_list.csv ./
+COPY --chown=app:app gunicorn.conf.py ./
 
+ARG APP_VERSION=dev
 ENV PYTHONPATH=/app \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    APP_VERSION=${APP_VERSION}
 
 USER app
 
@@ -39,4 +42,4 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/healthz')" || exit 1
 
-CMD ["gunicorn", "-b", "0.0.0.0:5000", "-w", "4", "--timeout", "300", "--access-logfile", "-", "telemetry_tool.web.app:create_app()"]
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "telemetry_tool.web.app:create_app()"]

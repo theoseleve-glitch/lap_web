@@ -8,6 +8,8 @@ on:
 
 jobs:
 
+  # ── Quality gates (run on every PR + push to main) ────────
+
   check-api-security-headers:
     runs-on: ubuntu-latest
     env:
@@ -24,6 +26,7 @@ jobs:
 
       - name: Check API security headers on preview
         run: scripts/check_api_security_headers.sh "${API_PREVIEW_URL}" /healthz
+
   test-backend:
     runs-on: ubuntu-latest
     steps:
@@ -109,6 +112,97 @@ jobs:
       - name: TypeScript type check
         run: npx tsc --noEmit
 
+  # ── Migration safety (fresh PG, upgrade/downgrade) ────────
+
+  migration-check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: telemetry
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: telemetry
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U telemetry"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run migration safety checks
+        env:
+          TELEMETRY_PG_URL: postgresql://telemetry:testpass@localhost:5432/telemetry
+        run: |
+          cd telemetry_tool
+
+          echo "── 1. Upgrade to head on fresh DB"
+          alembic upgrade head
+
+          echo "── 2. Verify current == head"
+          CURRENT=$(alembic current 2>/dev/null | grep -oP '^\w+' | head -1)
+          HEAD=$(alembic heads 2>/dev/null | grep -oP '^\w+' | head -1)
+          echo "current=$CURRENT head=$HEAD"
+          [ "$CURRENT" = "$HEAD" ] || { echo "MISMATCH"; exit 1; }
+
+          echo "── 3. Downgrade one step (reversibility)"
+          alembic downgrade -1
+
+          echo "── 4. Re-upgrade to head"
+          alembic upgrade head
+
+          echo "Migration checks PASSED"
+
+  # ── Performance budget ────────────────────────────────────
+
+  perf-budget:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    defaults:
+      run:
+        working-directory: lap-website
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: lap-website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and measure bundle
+        run: |
+          npm run build
+
+          echo "── Bundle size check"
+          if [ -d .next/static/chunks ]; then
+            TOTAL_KB=$(du -sk .next/static/chunks/ | cut -f1)
+            echo "Total chunks: ${TOTAL_KB} KB"
+            if [ "$TOTAL_KB" -gt 5000 ]; then
+              echo "FAIL: Total chunks ${TOTAL_KB} KB exceeds 5000 KB budget"
+              exit 1
+            fi
+          fi
+          echo "Bundle size within budget"
+
+  # ── E2E smoke (local API) ─────────────────────────────────
+
   e2e-smoke:
     runs-on: ubuntu-latest
     steps:
@@ -150,13 +244,79 @@ jobs:
           NEXT_PUBLIC_API_URL: http://localhost:5000
         run: npx playwright test e2e/critical-path.spec.ts --project=chromium
 
-  deploy-api:
+  # ── Deploy to staging (on push to main) ───────────────────
+
+  deploy-staging:
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend, contract-tests, typecheck]
+    needs: [test-backend, test-frontend, contract-tests, typecheck, migration-check]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: production
+    environment: staging
     concurrency:
-      group: deploy-api
+      group: deploy-staging
+      cancel-in-progress: false
+    env:
+      STAGING_HOST: ${{ secrets.STAGING_VPS_HOST }}
+      DEPLOY_USER: ${{ secrets.VPS_USER }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to staging VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/lap-api
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            DEPLOY_SHA=$(git rev-parse --short HEAD)
+
+            docker compose -f docker-compose.staging.yml build \
+              --build-arg DEPLOY_SHA="$DEPLOY_SHA" \
+              api celery-pipeline celery-default
+
+            # Migrations BEFORE deploying new code
+            docker compose -f docker-compose.staging.yml run --rm api \
+              alembic -c /app/telemetry_tool/alembic.ini upgrade head
+
+            # Tag previous image for rollback
+            docker tag lap-api_api:latest lap-api_api:previous 2>/dev/null || true
+
+            docker compose -f docker-compose.staging.yml up -d \
+              api celery-pipeline celery-default celery-beat
+
+            sleep 5
+            curl -sf http://localhost:5000/healthz || exit 1
+            echo "Staging deploy: $DEPLOY_SHA"
+
+  # ── Staging smoke test (external) ─────────────────────────
+
+  staging-smoke:
+    runs-on: ubuntu-latest
+    needs: [deploy-staging]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      STAGING_URL: ${{ vars.STAGING_API_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke tests against staging
+        run: |
+          chmod +x scripts/smoke_test.sh
+          scripts/smoke_test.sh "$STAGING_URL" --write
+
+  # ── Deploy to production (manual approval gate) ───────────
+
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [staging-smoke]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production  # GitHub environment with required reviewers
+    concurrency:
+      group: deploy-production
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
@@ -169,24 +329,50 @@ jobs:
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
             cd /opt/lap-api
-            git pull origin main
-            docker compose -f docker-compose.prod.yml build api celery-pipeline celery-default
-            docker compose -f docker-compose.prod.yml up -d api celery-pipeline celery-default celery-beat
-            # Run pending migrations
-            docker compose -f docker-compose.prod.yml exec -T api python -c "
-            import subprocess; subprocess.run(['alembic', 'upgrade', 'head'], cwd='/app/telemetry_tool', check=True)
-            "
-            # Verify health
-            sleep 5
-            curl -sf http://localhost:5000/healthz || exit 1
-            echo "Deploy successful"
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
 
-  parity-smoke:
+            DEPLOY_SHA=$(git rev-parse --short HEAD)
+
+            # Tag previous image for rollback
+            docker tag lap-api_api:latest lap-api_api:previous 2>/dev/null || true
+
+            docker compose -f docker-compose.prod.yml build \
+              --build-arg DEPLOY_SHA="$DEPLOY_SHA" \
+              api celery-pipeline celery-default
+
+            # Migrations BEFORE deploy
+            docker compose -f docker-compose.prod.yml run --rm api \
+              alembic -c /app/telemetry_tool/alembic.ini upgrade head
+
+            docker compose -f docker-compose.prod.yml up -d \
+              api celery-pipeline celery-default celery-beat
+
+            sleep 5
+            curl -sf http://localhost:5000/healthz || {
+              echo "HEALTH CHECK FAILED — rolling back"
+              docker tag lap-api_api:previous lap-api_api:latest
+              docker compose -f docker-compose.prod.yml up -d api
+              exit 1
+            }
+            echo "Production deploy: $DEPLOY_SHA"
+
+  # ── Production smoke test ─────────────────────────────────
+
+  production-smoke:
     runs-on: ubuntu-latest
-    needs: [deploy-api]
+    needs: [deploy-production]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      PROD_URL: ${{ vars.API_PREVIEW_URL }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Run smoke tests against production
+        run: |
+          chmod +x scripts/smoke_test.sh
+          scripts/smoke_test.sh "$PROD_URL"
 
       - name: Set up Node 20
         uses: actions/setup-node@v4
@@ -195,16 +381,11 @@ jobs:
           cache: npm
           cache-dependency-path: lap-website/package-lock.json
 
-      - name: Install frontend dependencies
-        working-directory: lap-website
-        run: npm ci
-
-      - name: Install Playwright Chromium
-        working-directory: lap-website
-        run: npx playwright install chromium
-
-      - name: Run certification parity tests against live
+      - name: Install and run parity tests
         working-directory: lap-website
         env:
           NEXT_PUBLIC_API_URL: ${{ vars.API_PREVIEW_URL }}
-        run: npx playwright test e2e/certification-parity.spec.ts --project=chromium
+        run: |
+          npm ci
+          npx playwright install chromium
+          npx playwright test e2e/certification-parity.spec.ts --project=chromium

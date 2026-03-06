@@ -48,9 +48,7 @@ def _resolve_base_dir() -> Path:
 class Config:
     """Default configuration for the Flask app."""
 
-    SECRET_KEY: str = os.environ.get(
-        "TELEMETRY_SECRET_KEY", "telemetry-local-dev-key"
-    )
+    SECRET_KEY: str = os.environ.get("TELEMETRY_SECRET_KEY", "")
 
     # Database — SQLite (legacy / single-user)
     BASE_DIR: Path = _resolve_base_dir()
@@ -76,9 +74,7 @@ class Config:
 
     # Authentication
     AUTH_REQUIRED: bool = os.environ.get("AUTH_REQUIRED", "0") == "1"
-    JWT_SECRET: str = os.environ.get(
-        "TELEMETRY_JWT_SECRET", "jwt-dev-secret-change-me"
-    )
+    JWT_SECRET: str = os.environ.get("TELEMETRY_JWT_SECRET", "")
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_EXPIRY_MINUTES: int = 15
     JWT_REFRESH_EXPIRY_DAYS: int = 30
@@ -131,6 +127,16 @@ class Config:
         if self.ENV == "production":
             if os.environ.get("AUTH_REQUIRED") != "1":
                 raise ValueError("ENV=production requires explicit AUTH_REQUIRED=1")
+            # CORS: reject localhost/127.0.0.1 in production allowlist.
+            for origin in self.CORS_ALLOWED_ORIGINS.split(","):
+                origin = origin.strip().lower()
+                if not origin:
+                    continue
+                if "localhost" in origin or "127.0.0.1" in origin:
+                    raise ValueError(
+                        f"CORS_ALLOWED_ORIGINS contains localhost origin "
+                        f"'{origin}' — forbidden in production"
+                    )
 
         if self.AUTH_REQUIRED or self.ENV == "production" or self.USE_PG:
             if not _is_strong_secret(self.JWT_SECRET):
@@ -189,8 +195,6 @@ class Config:
     # Rate limiting
     RATE_LIMIT_ENABLED: bool = os.environ.get("RATE_LIMIT_ENABLED", "1") == "1"
 
-    # CORS
-    CORS_ALLOWED_ORIGINS: str = os.environ.get(
-        "CORS_ALLOWED_ORIGINS", "http://localhost:3000"
-    )
+    # CORS — no default in production; explicit allowlist required.
+    CORS_ALLOWED_ORIGINS: str = os.environ.get("CORS_ALLOWED_ORIGINS", "")
     ENV: str = os.environ.get("ENV", "development").lower()

@@ -76,10 +76,13 @@ class JsonFormatter(logging.Formatter):
             ).isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "service": os.environ.get("SERVICE_NAME", "api"),
+            "env": os.environ.get("ENV", "development"),
             "message": message,
             "request_id": getattr(record, "request_id", "-"),
             "workspace_id": getattr(record, "workspace_id", "-"),
             "user_id": getattr(record, "user_id", "-"),
+            "version": os.environ.get("APP_VERSION", "dev"),
         }
         return json.dumps(log_obj, default=str)
 
