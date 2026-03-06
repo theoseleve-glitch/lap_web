@@ -17,58 +17,57 @@ depends_on = None
 
 
 def upgrade():
-    # ── 1. stripe_webhook_log: retry + dead-letter columns ──────────
-    op.add_column(
-        "stripe_webhook_log",
-        sa.Column("attempt_count", sa.Integer(), server_default="1", nullable=False),
-    )
-    op.add_column(
-        "stripe_webhook_log",
-        sa.Column("next_retry_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "stripe_webhook_log",
-        sa.Column("processed_at", sa.DateTime(timezone=True), nullable=True),
-    )
-    op.add_column(
-        "stripe_webhook_log",
-        sa.Column("received_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()"), nullable=False),
-    )
-    op.add_column(
-        "stripe_webhook_log",
-        sa.Column("livemode", sa.Boolean(), server_default="true", nullable=False),
-    )
+    conn = op.get_bind()
+
+    # ── 1. stripe_webhook_log: retry + dead-letter columns (idempotent) ─
+    _add_column_if_not_exists(conn, "stripe_webhook_log", "attempt_count",
+                              "INTEGER DEFAULT 1 NOT NULL")
+    _add_column_if_not_exists(conn, "stripe_webhook_log", "next_retry_at",
+                              "TIMESTAMPTZ")
+    _add_column_if_not_exists(conn, "stripe_webhook_log", "processed_at",
+                              "TIMESTAMPTZ")
+    _add_column_if_not_exists(conn, "stripe_webhook_log", "received_at",
+                              "TIMESTAMPTZ DEFAULT now() NOT NULL")
+    _add_column_if_not_exists(conn, "stripe_webhook_log", "livemode",
+                              "BOOLEAN DEFAULT true NOT NULL")
 
     # Index for retry worker: find retryable events efficiently
-    op.create_index(
-        "idx_stripe_wh_retry",
-        "stripe_webhook_log",
-        ["processing_status", "next_retry_at"],
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_stripe_wh_retry "
+        "ON stripe_webhook_log (processing_status, next_retry_at)"
     )
 
     # ── 2. billing_idempotency: endpoint-level dedup ────────────────
-    op.create_table(
-        "billing_idempotency",
-        sa.Column("id", sa.BigInteger(), autoincrement=True, primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
-        sa.Column("operation", sa.Text(), nullable=False),
-        sa.Column("idempotency_key", sa.Text(), nullable=False),
-        sa.Column("request_hash", sa.Text(), nullable=True),
-        sa.Column("response_status", sa.Integer(), nullable=True),
-        sa.Column("response_body", sa.Text(), nullable=True),
-        sa.Column("stripe_idempotency_key", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True),
-                  server_default=sa.text("now()")),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("user_id", "operation", "idempotency_key",
-                            name="uq_billing_idemp_user_op_key"),
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS billing_idempotency (
+            id BIGSERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            operation TEXT NOT NULL,
+            idempotency_key TEXT NOT NULL,
+            request_hash TEXT,
+            response_status INTEGER,
+            response_body TEXT,
+            stripe_idempotency_key TEXT,
+            created_at TIMESTAMPTZ DEFAULT now(),
+            expires_at TIMESTAMPTZ NOT NULL,
+            CONSTRAINT uq_billing_idemp_user_op_key
+                UNIQUE (user_id, operation, idempotency_key)
+        )
+    """)
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS idx_billing_idemp_expires "
+        "ON billing_idempotency (expires_at)"
     )
-    op.create_index(
-        "idx_billing_idemp_expires",
-        "billing_idempotency",
-        ["expires_at"],
-    )
+
+
+def _add_column_if_not_exists(conn, table, column, col_type):
+    """Add a column only if it doesn't already exist (PostgreSQL)."""
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = :table AND column_name = :column"
+    ), {"table": table, "column": column})
+    if result.fetchone() is None:
+        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 
 def downgrade():

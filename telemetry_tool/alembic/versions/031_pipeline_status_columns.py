@@ -20,26 +20,10 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "sessions",
-        sa.Column(
-            "pipeline_version_hash",
-            sa.Text(),
-            nullable=True,
-            server_default="unknown",
-            comment="Deterministic pipeline version string (e.g. v2-a3f8b2c1)",
-        ),
-    )
-    op.add_column(
-        "sessions",
-        sa.Column(
-            "model_version",
-            sa.Text(),
-            nullable=True,
-            server_default="none",
-            comment="ML model version identifier at analysis time",
-        ),
-    )
+    conn = op.get_bind()
+    _add_col(conn, "sessions", "pipeline_version_hash", "TEXT DEFAULT 'unknown'")
+    _add_col(conn, "sessions", "model_version", "TEXT DEFAULT 'none'")
+
     # Backfill existing sessions
     op.execute(
         "UPDATE sessions SET pipeline_version_hash = 'unknown' "
@@ -49,6 +33,15 @@ def upgrade() -> None:
         "UPDATE sessions SET model_version = 'none' "
         "WHERE model_version IS NULL"
     )
+
+
+def _add_col(conn, table, column, col_type):
+    result = conn.execute(sa.text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = :table AND column_name = :column"
+    ), {"table": table, "column": column})
+    if result.fetchone() is None:
+        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
 
 
 def downgrade() -> None:

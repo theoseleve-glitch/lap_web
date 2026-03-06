@@ -17,26 +17,30 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        "billing_profiles",
-        sa.Column("id", sa.Integer, primary_key=True),
-        sa.Column("workspace_id", sa.Integer, sa.ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, unique=True),
-        sa.Column("billing_type", sa.String(10), nullable=False, server_default="b2c"),  # b2c | b2b
-        sa.Column("company_name", sa.String(255), nullable=True),
-        sa.Column("vat_id", sa.String(50), nullable=True),
-        sa.Column("address_line1", sa.String(255), nullable=True),
-        sa.Column("address_line2", sa.String(255), nullable=True),
-        sa.Column("city", sa.String(100), nullable=True),
-        sa.Column("postal_code", sa.String(20), nullable=True),
-        sa.Column("state_region", sa.String(100), nullable=True),
-        sa.Column("country_code", sa.String(2), nullable=True),  # ISO 3166-1 alpha-2
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS billing_profiles (
+            id SERIAL PRIMARY KEY,
+            workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
+            billing_type VARCHAR(10) NOT NULL DEFAULT 'b2c',
+            company_name VARCHAR(255),
+            vat_id VARCHAR(50),
+            address_line1 VARCHAR(255),
+            address_line2 VARCHAR(255),
+            city VARCHAR(100),
+            postal_code VARCHAR(20),
+            state_region VARCHAR(100),
+            country_code VARCHAR(2),
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+    """)
 
-    # RLS policy
+    # RLS policy (idempotent)
     op.execute(
         "ALTER TABLE billing_profiles ENABLE ROW LEVEL SECURITY"
+    )
+    op.execute(
+        "DROP POLICY IF EXISTS billing_profiles_workspace_policy ON billing_profiles"
     )
     op.execute(
         "CREATE POLICY billing_profiles_workspace_policy ON billing_profiles "
