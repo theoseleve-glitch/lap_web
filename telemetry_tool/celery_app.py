@@ -96,6 +96,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": 86400,  # Daily
                 "options": {"queue": "default"},
             },
+            "retry-failed-webhooks": {
+                "task": "tasks.billing_tasks.retry_failed_webhooks",
+                "schedule": 300,  # Every 5 minutes
+                "options": {"queue": "default"},
+            },
             "alerting-checks": {
                 "task": "tasks.alerting_tasks.run_alerting_checks",
                 "schedule": 300,  # Every 5 minutes
