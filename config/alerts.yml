@@ -1,0 +1,127 @@
+# Prometheus alerting rules for Lap platform
+# Deploy alongside prometheus.yml
+
+groups:
+  - name: availability
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx error rate >5% for 2 minutes"
+
+      - alert: HighLatencyP95
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 latency >2s for 5 minutes"
+
+      - alert: HighLatencyP99
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 5.0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "p99 latency >5s for 5 minutes"
+
+  - name: infrastructure
+    rules:
+      - alert: DiskSpaceHigh
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage >80%"
+
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk usage >90%"
+
+      - alert: HighCPU
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU usage >85% for 10 minutes"
+
+      - alert: HighMemory
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory usage >85%"
+
+  - name: database
+    rules:
+      - alert: PostgresConnectionsHigh
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connections >80"
+
+      - alert: PostgresDeadlocks
+        expr: rate(pg_stat_database_deadlocks[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL deadlocks detected"
+
+  - name: redis
+    rules:
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage >85%"
+
+      - alert: RedisEvictions
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis evicting >10 keys/s"
+
+  - name: celery
+    rules:
+      - alert: CeleryQueueBacklog
+        expr: celery_queue_length > 50
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery queue backlog >50 tasks for 10 min"
+
+      - alert: CeleryTaskFailureSpike
+        expr: rate(celery_task_failures_total[10m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery task failure rate elevated"
+
+  - name: webhooks
+    rules:
+      - alert: StripeWebhookFailures
+        expr: rate(stripe_webhook_events_total{outcome="error"}[15m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stripe webhook failures elevated"

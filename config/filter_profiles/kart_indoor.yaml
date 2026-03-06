@@ -1,0 +1,12 @@
+profile_name: kart_indoor
+version: 1
+inherits: default
+description: "Indoor karting — lower speeds, tighter GPS thresholds"
+
+gps:
+  max_speed_mps: 30.0       # ~108 km/h — indoor kart max
+  max_accel_mps2: 25.0      # lower grip on rental karts
+
+laps:
+  min_lap_distance_m: 200.0
+  min_samples_per_lap: 80

@@ -1,0 +1,8 @@
+profile_name: gt_car
+version: 1
+inherits: default
+description: "GT / sports cars — high speed, high grip"
+
+gps:
+  max_speed_mps: 90.0       # ~324 km/h
+  max_accel_mps2: 60.0      # ~6g with downforce

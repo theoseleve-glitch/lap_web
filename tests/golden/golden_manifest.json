@@ -1,0 +1,177 @@
+[
+  {
+    "session_id": "kart_clean_gps",
+    "file": "sessions/kart_clean_gps.csv",
+    "track_shape": "oval",
+    "vehicle_type": "kart",
+    "track_state": "dry",
+    "gps_quality": "clean",
+    "seed": 42,
+    "expected_laps": 8,
+    "expected_lap_time_range_s": [
+      24.0,
+      32.0
+    ],
+    "expected_total_distance_m": [
+      3800.0,
+      4200.0
+    ],
+    "expected_derived_channels": [
+      "accel_long_mps2",
+      "accel_lat_mps2",
+      "yaw_rate_dps",
+      "Distance (m)",
+      "combined_g"
+    ],
+    "expected_corners_range": [
+      2,
+      8
+    ],
+    "expected_score_range": [
+      50,
+      100
+    ],
+    "expected_vehicle_class": "kart",
+    "snapshot_file": "snapshots/kart_clean_gps_expected.json"
+  },
+  {
+    "session_id": "car_noisy_gps",
+    "file": "sessions/car_noisy_gps.csv",
+    "track_shape": "hairpin",
+    "vehicle_type": "car",
+    "track_state": "dry",
+    "gps_quality": "noisy",
+    "seed": 43,
+    "expected_laps": 5,
+    "expected_lap_time_range_s": [
+      12.0,
+      22.0
+    ],
+    "expected_total_distance_m": [
+      2850.0,
+      3150.0
+    ],
+    "expected_derived_channels": [
+      "accel_long_mps2",
+      "accel_lat_mps2",
+      "yaw_rate_dps",
+      "Distance (m)",
+      "combined_g"
+    ],
+    "expected_corners_range": [
+      2,
+      6
+    ],
+    "expected_score_range": [
+      30,
+      100
+    ],
+    "expected_vehicle_class": "car",
+    "snapshot_file": "snapshots/car_noisy_gps_expected.json"
+  },
+  {
+    "session_id": "kart_wet_short",
+    "file": "sessions/kart_wet_short.csv",
+    "track_shape": "oval",
+    "vehicle_type": "kart",
+    "track_state": "wet",
+    "gps_quality": "clean",
+    "seed": 44,
+    "expected_laps": 3,
+    "expected_lap_time_range_s": [
+      28.0,
+      42.0
+    ],
+    "expected_total_distance_m": [
+      1425.0,
+      1575.0
+    ],
+    "expected_derived_channels": [
+      "accel_long_mps2",
+      "accel_lat_mps2",
+      "yaw_rate_dps",
+      "Distance (m)",
+      "combined_g"
+    ],
+    "expected_corners_range": [
+      2,
+      8
+    ],
+    "expected_score_range": [
+      30,
+      100
+    ],
+    "expected_vehicle_class": "kart",
+    "snapshot_file": "snapshots/kart_wet_short_expected.json"
+  },
+  {
+    "session_id": "car_long_clean",
+    "file": "sessions/car_long_clean.csv",
+    "track_shape": "figure8",
+    "vehicle_type": "car",
+    "track_state": "dry",
+    "gps_quality": "clean",
+    "seed": 45,
+    "expected_laps": 12,
+    "expected_lap_time_range_s": [
+      25.0,
+      42.0
+    ],
+    "expected_total_distance_m": [
+      9120.0,
+      10080.0
+    ],
+    "expected_derived_channels": [
+      "accel_long_mps2",
+      "accel_lat_mps2",
+      "yaw_rate_dps",
+      "Distance (m)",
+      "combined_g"
+    ],
+    "expected_corners_range": [
+      2,
+      8
+    ],
+    "expected_score_range": [
+      50,
+      100
+    ],
+    "expected_vehicle_class": "car",
+    "snapshot_file": "snapshots/car_long_clean_expected.json"
+  },
+  {
+    "session_id": "kart_mixed_quality",
+    "file": "sessions/kart_mixed_quality.csv",
+    "track_shape": "hairpin",
+    "vehicle_type": "kart",
+    "track_state": "damp",
+    "gps_quality": "mixed",
+    "seed": 46,
+    "expected_laps": 6,
+    "expected_lap_time_range_s": [
+      30.0,
+      52.0
+    ],
+    "expected_total_distance_m": [
+      3420.0,
+      3780.0
+    ],
+    "expected_derived_channels": [
+      "accel_long_mps2",
+      "accel_lat_mps2",
+      "yaw_rate_dps",
+      "Distance (m)",
+      "combined_g"
+    ],
+    "expected_corners_range": [
+      2,
+      6
+    ],
+    "expected_score_range": [
+      20,
+      100
+    ],
+    "expected_vehicle_class": "kart",
+    "snapshot_file": "snapshots/kart_mixed_quality_expected.json"
+  }
+]

@@ -1,0 +1,64 @@
+TERMS OF SERVICE
+Last updated: 04/03/2026
+Service description
+Lap Coach provides a telemetry analysis platform accessible at:
+lap-coach.racing
+lap-coach.racing/app
+The platform allows users to upload telemetry files and analyze motorsport performance data through visualizations and analytical tools.
+The service is intended for motorsport drivers and sim racers.
+The platform provides analytical tools only and does not guarantee performance improvements or competitive results.
+
+Account eligibility
+Users must be at least 13 years old to create an account.
+Users agree to provide accurate information and maintain the security of their account credentials.
+Users are responsible for activities conducted under their account.
+
+Acceptable use
+Users may not:
+attempt to reverse engineer the platform
+exploit security vulnerabilities
+upload malicious or harmful files
+disrupt service operations
+use the platform for unlawful activities
+Violation may result in suspension or termination of access.
+
+User data
+Users may upload telemetry files including CSV files containing motorsport telemetry data.
+Users retain ownership of their uploaded data.
+By uploading data, users grant Lap Coach permission to process and analyze the data solely for the purpose of providing the service.
+
+Service availability
+The platform is provided on an "as-is" basis.
+Lap Coach does not guarantee uninterrupted service availability.
+Maintenance operations and technical interruptions may occur.
+
+Subscriptions and payments
+Access to certain features may require a paid subscription.
+Payments are processed via Stripe.
+Subscriptions renew automatically unless canceled before the next billing period.
+
+EU consumer withdrawal rights
+For users located in the European Union, consumer protection regulations apply.
+Users may exercise withdrawal rights in accordance with EU consumer law unless the service has been fully performed before the end of the withdrawal period with the user's consent.
+
+Intellectual property
+All software, algorithms, and platform features remain the property of Lap Coach.
+Users may not reproduce, distribute, or resell the platform without authorization.
+
+Limitation of liability
+Lap Coach shall not be liable for:
+decisions made based on telemetry analysis
+motorsport performance outcomes
+temporary service interruptions
+external infrastructure failures
+
+Termination
+Lap Coach may suspend or terminate accounts in cases of:
+violation of these terms
+fraudulent use
+security risks
+Users may stop using the service at any time.
+
+Governing law
+These terms are governed by French law.
+Any dispute shall fall under the jurisdiction of the courts of Nantes, France.

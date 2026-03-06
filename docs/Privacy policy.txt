@@ -1,0 +1,26 @@
+rable within the platform.
+Users remain responsible for managing and deleting their uploaded data when necessary.
+
+Data processors
+Third-party providers used by the platform include:
+Hetzner – hosting infrastructure
+Cloudflare – security and network services
+Stripe – payment processing
+Resend – transactional email delivery
+These providers may process data only as necessary to deliver their services.
+
+User rights (GDPR)
+Users have the right to:
+access their personal data
+correct inaccurate data
+request deletion of their data
+request data portability
+Requests may be sent to:
+legal@lap.coach
+
+Data security
+Lap Coach implements technical and organizational measures designed to protect user data against unauthorized access or disclosure.
+
+Complaints
+Users may file complaints with the French data protection authority:
+CNIL – Commission Nationale de l’Informatique et des Libertés.

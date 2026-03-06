@@ -1,0 +1,128 @@
+DPA — DATA PROCESSING AGREEMENT
+
+Last updated: [DATE]
+
+This Data Processing Agreement applies when Lap Coach processes personal data on behalf of a customer.
+
+Parties
+
+Controller
+The customer using the Lap Coach platform.
+
+Processor
+Théo Stipa
+Lap Coach
+5 Rue Paré
+44000 Nantes
+France
+
+Contact: legal@lap.coach
+
+Purpose of processing
+
+The processor processes personal data only for the purpose of providing telemetry analysis services through the Lap Coach platform.
+
+Categories of data
+
+The platform may process:
+
+Account data
+
+email
+
+name
+
+Telemetry data
+
+lap times
+
+telemetry sensor values
+
+GPS data contained in uploaded CSV files
+
+Technical data
+
+IP address
+
+device information
+
+Categories of data subjects
+
+Data subjects may include:
+
+motorsport drivers
+
+sim racers
+
+users of the Lap Coach platform
+
+Processing activities
+
+The processor may perform:
+
+data storage
+
+telemetry processing
+
+analytical computation
+
+visualization generation
+
+Processing is limited to what is necessary to operate the platform.
+
+Security measures
+
+Lap Coach implements technical and organizational measures including:
+
+encrypted HTTPS communications
+
+secure infrastructure hosting
+
+access control
+
+monitoring of platform systems
+
+Infrastructure providers include:
+
+Hetzner – hosting
+Cloudflare – network security
+Stripe – payment processing
+Resend – transactional email delivery
+
+Sub-processors
+
+The processor may use sub-processors necessary to operate the platform infrastructure.
+
+These may include the providers listed above.
+
+Data retention
+
+Data retention may be configurable by the customer.
+
+Customers remain responsible for managing the retention and deletion of their telemetry data.
+
+Data subject rights
+
+The controller remains responsible for responding to data subject requests including:
+
+access requests
+
+correction requests
+
+deletion requests
+
+Lap Coach will provide reasonable assistance where technically feasible.
+
+Data breaches
+
+In case of a personal data breach, Lap Coach will notify affected customers without undue delay.
+
+Termination
+
+Upon termination of the service, customers may request deletion of their data where applicable.
+
+Governing law
+
+This agreement is governed by French law.
+
+Any dispute shall fall under the jurisdiction of the courts of Nantes, France.

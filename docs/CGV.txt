@@ -1,0 +1,92 @@
+CGV — TERMS OF SALE
+
+Last updated: 04/03/2026
+
+Seller
+
+The services are sold by:
+
+Théo Stipa
+Entrepreneur individuel – régime réel
+Trade name: Lap Coach
+
+Address
+5 Rue Paré
+44000 Nantes
+France
+
+Contact
+legal@lap.coach
+
+SIREN / SIRET: pending registration.
+
+Service
+
+Lap Coach provides an online telemetry analysis platform accessible at:
+
+lap-coach.racing
+lap-coach.racing/app
+
+The platform allows users to upload motorsport telemetry files and obtain analytical insights and visualizations.
+
+Subscription model
+
+Access to certain features of the platform requires a paid subscription.
+
+Subscriptions may include:
+
+monthly plans
+
+annual plans
+
+The details of pricing are provided on the website pricing page.
+
+Billing
+
+Payments are processed via Stripe.
+
+By subscribing, users authorize recurring billing for the selected subscription plan.
+
+Billing cycles renew automatically unless canceled before the next renewal date.
+
+Invoices may be generated electronically.
+
+Cancellation
+
+Users may cancel their subscription at any time through their account settings.
+
+Cancellation will take effect at the end of the current billing period.
+
+No additional charges will occur after cancellation.
+
+Refund policy
+
+Payments already processed are generally non-refundable.
+
+However, users located in the European Union may benefit from consumer protection rules under applicable law.
+
+EU withdrawal right
+
+Consumers located in the European Union may normally benefit from a 14-day withdrawal right for digital services.
+
+However, by subscribing and accessing the service immediately, the user expressly agrees that the service execution begins immediately and acknowledges that the withdrawal right may no longer apply once the service has been fully performed.
+
+Service modifications
+
+Lap Coach reserves the right to modify pricing, features, or subscription plans at any time.
+
+Changes will not affect already active billing periods.
+
+Liability limitation
+
+Lap Coach provides analytical tools only.
+
+The service does not guarantee performance improvement, race results, or specific outcomes.
+
+Lap Coach shall not be liable for decisions made based on the platform’s analysis.
+
+Governing law
+
+These Terms of Sale are governed by French law.
+
+Any dispute shall fall under the jurisdiction of the courts of Nantes, France.

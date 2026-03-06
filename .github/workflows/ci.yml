@@ -47,6 +47,35 @@ jobs:
       - name: Run kart_envelope tests
         run: pytest kart_envelope/tests/ -q --tb=short
 
+      - name: Run domain unit tests (fast, deterministic)
+        run: pytest tests/ -m domain -q --tb=short
+
+      - name: Run filter profile tests
+        run: pytest tests/test_filter_profile.py -q --tb=short
+
+      - name: Run vehicle override tests
+        run: pytest tests/test_vehicle_overrides.py -q --tb=short
+
+  test-golden-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate golden datasets
+        run: python tests/golden/generate_golden.py
+
+      - name: Run golden regression tests (full pipeline)
+        run: pytest tests/golden/test_golden_regression.py -m regression -v --tb=short
+
   test-frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -248,7 +277,7 @@ jobs:
 
   deploy-staging:
     runs-on: ubuntu-latest
-    needs: [test-backend, test-frontend, contract-tests, typecheck, migration-check]
+    needs: [test-backend, test-golden-regression, test-frontend, contract-tests, typecheck, migration-check]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment: staging
     concurrency:

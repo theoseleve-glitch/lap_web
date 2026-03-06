@@ -1,0 +1,17 @@
+profile_name: default
+version: 1
+description: "Default filter profile suitable for most circuit categories"
+
+gps:
+  min_satellites: 5
+  max_accuracy_m: 3.0
+  max_speed_mps: 80.0       # ~288 km/h — GT/touring/formula
+  max_accel_mps2: 50.0      # ~5g — catches GPS multipath
+
+laps:
+  min_samples_per_lap: 50
+  min_lap_distance_m: 100.0
+  outlap_time_ratio: 1.5
+
+outliers:
+  mad_threshold: 5.0

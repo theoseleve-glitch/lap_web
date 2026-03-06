@@ -1,0 +1,179 @@
+TERMS AND CONDITIONS – LAP
+
+Last updated: [DATE]
+
+Operator
+
+The Lap platform is operated by:
+
+Théo Stipa
+5 rue Paré
+44000 Nantes
+France
+
+Contact: contact@lap-coach.racing
+
+Once available, the following identifiers will be added:
+SIREN / SIRET number.
+
+Service description
+
+Lap is a software platform providing telemetry analysis, visualization tools, and performance insights for motorsport and related activities.
+
+The service may include:
+
+telemetry data upload and storage
+
+lap analysis and performance metrics
+
+graphical visualization tools
+
+automated coaching insights
+
+comparison of sessions or laps
+
+Lap provides analytical tools only. The service does not guarantee performance improvement, race results, or competitive outcomes.
+
+Account creation
+
+To use the service, users may be required to create an account.
+
+Users agree to:
+
+provide accurate information
+
+maintain the confidentiality of their login credentials
+
+be responsible for all activities performed through their account
+
+Lap reserves the right to suspend or terminate accounts providing false or misleading information.
+
+Acceptable use
+
+Users agree not to:
+
+use the platform for illegal purposes
+
+attempt to reverse engineer or copy the software
+
+exploit vulnerabilities in the platform
+
+upload malicious files or harmful data
+
+interfere with the proper functioning of the service
+
+Any violation may result in immediate suspension or termination of the account.
+
+User data and ownership
+
+Users retain full ownership of the telemetry data and files they upload to the platform.
+
+By uploading data, users grant Lap a limited license to:
+
+store the data
+
+process the data
+
+analyze the data
+
+generate visualizations and insights
+
+This license exists only for the purpose of operating the service.
+
+Lap does not sell user telemetry data.
+
+Data retention
+
+Telemetry data uploaded to the platform may be stored for up to 12 months.
+
+Lap reserves the right to delete data older than this retention period.
+
+Users remain responsible for maintaining their own backups of important data.
+
+Service availability
+
+Lap aims to provide a reliable and high-performance platform.
+
+However:
+
+the service is provided "as is"
+
+uninterrupted availability is not guaranteed
+
+maintenance operations may temporarily interrupt access
+
+Lap may modify, suspend, or discontinue parts of the service at any time.
+
+Payments and subscriptions
+
+Some features of the platform may require payment.
+
+Payments are processed via Stripe or other secure payment providers.
+
+Subscriptions may be billed on a recurring basis.
+
+Users may cancel subscriptions before the next billing cycle to avoid renewal.
+
+Unless required by law, payments already processed are non-refundable.
+
+Intellectual property
+
+All intellectual property rights related to the Lap platform, including software, design, algorithms, and branding, remain the exclusive property of Lap.
+
+Users may not:
+
+reproduce
+
+distribute
+
+modify
+
+resell
+
+any part of the platform without explicit authorization.
+
+Limitation of liability
+
+Lap shall not be liable for:
+
+racing or driving performance outcomes
+
+decisions made based on telemetry analysis
+
+temporary service interruptions
+
+data loss caused by external factors beyond reasonable control
+
+To the maximum extent permitted by law, Lap’s liability is limited to the amount paid by the user for the service during the previous 12 months.
+
+Account suspension or termination
+
+Lap reserves the right to suspend or terminate accounts in case of:
+
+violation of these Terms
+
+fraudulent activity
+
+abuse of the platform
+
+security risks
+
+Users may stop using the service at any time.
+
+Modifications
+
+Lap may update these Terms at any time.
+
+Updated terms will be published on the website.
+
+Continued use of the service after changes constitutes acceptance of the updated Terms.
+
+Governing law
+
+These Terms are governed by French law.
+
+Any dispute related to the service shall fall under the jurisdiction of the competent courts of Nantes, France.
+
+Acceptance
+
+By using the Lap platform, the user acknowledges having read and accepted these Terms and Conditions.

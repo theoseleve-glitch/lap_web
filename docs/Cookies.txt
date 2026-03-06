@@ -1,0 +1,10 @@
+COOKIE POLICY
+Last updated: 04/03/2026
+The Lap Coach website does not currently use analytics or advertising cookies.
+Only strictly necessary technical cookies may be used to ensure proper operation of the platform.
+These cookies are required for:
+authentication
+session management
+platform security
+Users may configure their browser to block cookies, though doing so may prevent the service from functioning correctly.
+

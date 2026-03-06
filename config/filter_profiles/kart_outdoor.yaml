@@ -1,0 +1,11 @@
+profile_name: kart_outdoor
+version: 1
+inherits: default
+description: "Outdoor karting — moderate speeds, standard GPS quality"
+
+gps:
+  max_speed_mps: 45.0       # ~162 km/h — fast outdoor karts
+  max_accel_mps2: 35.0
+
+laps:
+  min_lap_distance_m: 300.0

@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marble Background Generator</title>
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'SF Mono','Cascadia Code','Consolas',monospace;background:#0a0a0c;color:#e0dcd0;overflow-x:hidden}
+
+  /* ── Fixed marble background canvas ──────── */
+  #marbleBg{position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:0;pointer-events:none}
+
+  /* ── All content floats above marble ──────── */
+  #content{position:relative;z-index:1;min-height:200vh}
+
+  /* ── Controls panel ──────────────────────── */
+  .panel{background:rgba(10,10,12,.88);backdrop-filter:blur(12px);border-bottom:1px solid #222}
+  header{padding:12px 28px 8px;display:flex;align-items:center;gap:14px}
+  header h1{font-size:16px;font-weight:600;letter-spacing:.5px;background:linear-gradient(90deg,#c3a54b,#edd278,#c3a54b);-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  header .badge{font-size:9px;padding:2px 7px;border-radius:3px;background:#1a1a1e;border:1px solid #333;color:#888}
+  .controls-row{padding:6px 28px;display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;border-bottom:1px solid rgba(255,255,255,.04)}
+  .ctrl-group{display:flex;flex-direction:column;gap:2px}
+  .ctrl-group label{font-size:9px;color:#555}
+  .ctrl-group .val{font-size:9px;color:#c3a54b;min-width:22px;text-align:right;display:inline-block}
+  input[type="number"]{width:50px;padding:3px 4px;border:1px solid #333;border-radius:3px;background:#141416;color:#e0dcd0;font-family:inherit;font-size:10px;text-align:center}
+  input[type="number"]:focus{outline:none;border-color:#c3a54b}
+  select{padding:3px 5px;border:1px solid #333;border-radius:3px;background:#141416;color:#e0dcd0;font-family:inherit;font-size:10px}
+  input[type="range"]{width:70px;height:3px;-webkit-appearance:none;appearance:none;background:#333;border-radius:2px;cursor:pointer}
+  input[type="range"]::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:#c3a54b;cursor:pointer}
+  input[type="color"]{width:22px;height:22px;border:1px solid #333;border-radius:3px;background:#141416;cursor:pointer;padding:1px}
+  input[type="color"]::-webkit-color-swatch-wrapper{padding:1px}
+  input[type="color"]::-webkit-color-swatch{border:none;border-radius:2px}
+  button.primary{padding:5px 14px;border:none;border-radius:3px;background:linear-gradient(135deg,#c3a54b,#a8893a);color:#0a0a0c;font-weight:600;font-size:10px;font-family:inherit;cursor:pointer;transition:opacity .15s}
+  button.primary:hover{opacity:.85}
+  button.primary:disabled{opacity:.4;cursor:not-allowed}
+  button.secondary{padding:5px 10px;border:1px solid #333;border-radius:3px;background:transparent;color:#777;font-size:9px;font-family:inherit;cursor:pointer;transition:all .15s}
+  button.secondary:hover{border-color:#555;color:#ccc}
+  .sep{width:1px;height:24px;background:#222;margin:0 2px}
+  .section-label{font-size:8px;color:#c3a54b;letter-spacing:.5px;text-transform:uppercase;margin-bottom:1px}
+  .color-rows-wrap{display:flex;flex-direction:column;gap:3px;max-width:360px}
+  .color-row{display:flex;align-items:center;gap:3px}
+  .color-row input[type="number"]{width:40px}
+  .color-row label{font-size:8px;color:#555;min-width:8px}
+  .color-row .cr-remove{padding:1px 5px;font-size:11px;line-height:1;border:1px solid #333;border-radius:3px;background:transparent;color:#555;cursor:pointer}
+  .color-row .cr-remove:hover{color:#e55;border-color:#e55}
+  #addColorBtn{font-size:8px;padding:2px 7px;margin-top:1px}
+
+  /* ── Demo elements — float over marble ───── */
+  .demo-section{padding:40px 28px;display:flex;flex-wrap:wrap;gap:20px;justify-content:center;margin-top:20px}
+  .demo-card{
+    width:220px;padding:24px 20px;
+    background:rgba(10,10,12,.55);backdrop-filter:blur(8px);
+    border:1px solid rgba(255,255,255,.08);border-radius:10px;
+    transition:all .3s ease;cursor:default;
+  }
+  .demo-card:hover{
+    background:rgba(10,10,12,.35);
+    border-color:rgba(195,165,75,.3);
+    transform:translateY(-2px);
+    box-shadow:0 8px 32px rgba(195,165,75,.08);
+  }
+  .demo-card h3{font-size:13px;color:#c3a54b;margin-bottom:6px;font-weight:600}
+  .demo-card p{font-size:10px;color:#777;line-height:1.5}
+
+  /* ── Scroll spacer for parallax demo ─────── */
+  .scroll-section{padding:80px 28px;text-align:center}
+  .scroll-section p{font-size:11px;color:#444;max-width:400px;margin:0 auto;line-height:1.6}
+
+  /* ── Status bar ──────────────────────────── */
+  .status-bar{position:fixed;bottom:0;left:0;right:0;z-index:2;padding:4px 28px;background:rgba(10,10,12,.9);border-top:1px solid #1a1a1e;display:flex;gap:16px;font-size:9px;color:#444}
+  .status-bar .val{color:#c3a54b}
+
+  /* ── Brush cursor indicator ──────────────── */
+  .brush-cursor{position:fixed;pointer-events:none;z-index:3;border:1px solid rgba(195,165,75,.2);border-radius:50%;opacity:0;transition:opacity .2s}
+  .brush-cursor.visible{opacity:1}
+</style>
+</head>
+<body>
+
+<!-- Fixed marble background canvas -->
+<canvas id="marbleBg"></canvas>
+
+<!-- Brush cursor indicator -->
+<div class="brush-cursor" id="brushCursor"></div>
+
+<!-- Content overlay -->
+<div id="content">
+  <div class="panel">
+    <header>
+      <h1>MARBLE GENERATOR</h1>
+      <span class="badge">v1.0 interactive</span>
+    </header>
+
+    <!-- Row 1: Preset, Distribution, Smoothness, Colors -->
+    <div class="controls-row">
+      <div class="ctrl-group">
+        <label>Preset</label>
+        <select id="marblePreset"></select>
+      </div>
+      <div class="ctrl-group">
+        <label>Distribution</label>
+        <select id="distributionMode">
+          <option value="veined" selected>veined</option>
+          <option value="radial">radial</option>
+          <option value="linear">linear</option>
+          <option value="clustered">clustered</option>
+          <option value="swirl">swirl</option>
+        </select>
+      </div>
+      <div class="sep"></div>
+      <div class="ctrl-group">
+        <label>Smoothness <span class="val" id="smoothnessVal">50</span></label>
+        <input type="range" id="smoothness" min="0" max="100" step="1" value="50">
+      </div>
+      <div class="ctrl-group">
+        <label>Contrast <span class="val" id="contrastVal">1.2</span></label>
+        <input type="range" id="contrast" min="0.5" max="3.0" step="0.1" value="1.2">
+      </div>
+      <div class="ctrl-group">
+        <label>Warp <span class="val" id="warpVal">0.4</span></label>
+        <input type="range" id="warpStrength" min="0" max="1.5" step="0.05" value="0.4">
+      </div>
+      <div class="sep"></div>
+      <div class="ctrl-group">
+        <label>Brush <span class="val" id="brushVal">80</span></label>
+        <input type="range" id="brushSize" min="20" max="200" step="5" value="80">
+      </div>
+      <div class="ctrl-group">
+        <label>Strength <span class="val" id="strengthVal">0.6</span></label>
+        <input type="range" id="brushStrength" min="0.1" max="1.5" step="0.05" value="0.6">
+      </div>
+      <div class="sep"></div>
+      <div class="ctrl-group">
+        <div class="section-label">Colors</div>
+        <div class="color-rows-wrap">
+          <div id="colorRows"></div>
+          <button class="secondary" id="addColorBtn">+ Add</button>
+        </div>
+      </div>
+      <div class="sep"></div>
+      <div class="ctrl-group"><label>Seed</label><input type="number" id="seed" min="0" max="999999" placeholder="random"></div>
+      <button class="primary" id="generateBtn">Generate</button>
+      <button class="secondary" id="resetBtn">Reset Edits</button>
+      <button class="secondary" id="downloadBtn">Download PNG</button>
+    </div>
+  </div>
+
+  <!-- Demo elements that react with the marble background -->
+  <div class="demo-section" id="demoSection">
+    <div class="demo-card" data-brush-boost="2.0">
+      <h3>Element Contact</h3>
+      <p>Move your mouse here. The brush doubles in size near UI elements, smearing the marble beneath as you move.</p>
+    </div>
+    <div class="demo-card" data-brush-boost="1.5">
+      <h3>Scroll Parallax</h3>
+      <p>Scroll the page. The marble shifts at 30% speed. Mouse movement pushes the marble as you scroll through it.</p>
+    </div>
+    <div class="demo-card" data-brush-boost="2.5">
+      <h3>Permanent Deformation</h3>
+      <p>Mouse movement permanently smears the marble. Every motion pushes pixels along your path. Hit Reset to restore.</p>
+    </div>
+  </div>
+
+  <!-- Scroll content for parallax demo -->
+  <div class="scroll-section">
+    <p>Keep scrolling to see the marble parallax effect. The background shifts at 30% of scroll speed, creating a layered depth illusion.</p>
+  </div>
+  <div class="scroll-section">
+    <p>The marble texture is a static image rendered once from noise. All interactions (mouse, scroll, element hover) use GPU-accelerated canvas compositing — no per-pixel work at 60fps.</p>
+  </div>
+  <div class="scroll-section">
+    <p>This component can be embedded in any frontend. The canvas sits at z-index 0 with pointer-events: none. Content floats above.</p>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="status-bar" id="statusBar">
+  <span>mouse: <span class="val" id="statMouse">0, 0</span></span>
+  <span>scroll: <span class="val" id="statScroll">0</span></span>
+  <span>velocity: <span class="val" id="statVel">0</span></span>
+  <span>fps: <span class="val" id="statFps">--</span></span>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// SIMPLEX NOISE 2D
+// ═══════════════════════════════════════════════════════════════
+var ST2=(1/Math.sqrt(3)-1)/2,SQ2=(Math.sqrt(3)-1)/2,N2=47;
+var GR2=[5,2,2,5,-5,2,-2,5,5,-2,2,-5,-5,-2,-2,-5];
+function makeNoise2D(seed){
+  var p=new Uint8Array(256),p2=new Uint8Array(256),s=new Uint8Array(256);
+  for(var i=0;i<256;i++)s[i]=i;seed=seed>>>0;
+  for(var i=255;i>=0;i--){seed=((seed*1103515245+12345)&0x7fffffff)>>>0;var r=((seed+31)%(i+1));if(r<0)r+=i+1;p[i]=s[r];p2[i]=p[i]&0x0E;s[r]=s[i]}
+  return function(x,y){var so=(x+y)*ST2,xs=x+so,ys=y+so,xb=Math.floor(xs),yb=Math.floor(ys),sq=(xb+yb)*SQ2,dx0=x-xb-sq,dy0=y-yb-sq,ins=xs-xb+ys-yb,v=0,dx,dy,a,g;
+  dx=dx0;dy=dy0;a=2-dx*dx-dy*dy;if(a>0){a*=a;g=p2[(p[xb&255]+yb)&255];v+=a*a*(GR2[g]*dx+GR2[g+1]*dy)}
+  dx=dx0-1-SQ2;dy=dy0-SQ2;a=2-dx*dx-dy*dy;if(a>0){a*=a;g=p2[(p[(xb+1)&255]+yb)&255];v+=a*a*(GR2[g]*dx+GR2[g+1]*dy)}
+  dx=dx0-SQ2;dy=dy0-1-SQ2;a=2-dx*dx-dy*dy;if(a>0){a*=a;g=p2[(p[xb&255]+yb+1)&255];v+=a*a*(GR2[g]*dx+GR2[g+1]*dy)}
+  if(ins>1){dx=dx0-1-2*SQ2;dy=dy0-1-2*SQ2;a=2-dx*dx-dy*dy;if(a>0){a*=a;g=p2[(p[(xb+1)&255]+yb+1)&255];v+=a*a*(GR2[g]*dx+GR2[g+1]*dy)}}
+  return v/N2}
+}
+
+function fbm(fn,x,y,octaves,freq,persistence){
+  var v=0,a=1,m=0,f=freq;
+  for(var i=0;i<octaves;i++){v+=a*fn(x*f,y*f);m+=a;a*=persistence;f*=2.1379}
+  return v/m;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOMAIN WARP
+// ═══════════════════════════════════════════════════════════════
+function domainWarp(noises,nx,ny,warpStrength,warpScale){
+  var o=5,f=2.5,pe=0.5;
+  var dx1=fbm(noises.w1,nx*warpScale,ny*warpScale,o,f,pe);
+  var dy1=fbm(noises.w2,nx*warpScale,ny*warpScale,o,f,pe);
+  var x1=nx+warpStrength*dx1, y1=ny+warpStrength*dy1;
+  var dx2=fbm(noises.w3,(x1+5.2)*warpScale,(y1+1.3)*warpScale,o,f,pe);
+  var dy2=fbm(noises.w4,(x1+1.7)*warpScale,(y1+9.2)*warpScale,o,f,pe);
+  return {wx:x1+warpStrength*0.6*dx2, wy:y1+warpStrength*0.6*dy2};
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DISTRIBUTION MODES
+// ═══════════════════════════════════════════════════════════════
+function distVeined(x,y,noiseFn,seed,oct,freq){
+  return fbm(noiseFn,x,y,oct,freq,0.5)*0.5+0.5;
+}
+function distRadial(x,y,noiseFn,seed,oct,freq){
+  var dx=x-0.5,dy=y-0.5;
+  var dist=Math.sqrt(dx*dx+dy*dy)/0.7071;
+  var noise=noiseFn(x*freq,y*freq);
+  return Math.max(0,Math.min(1,dist+noise*0.15));
+}
+function distLinear(x,y,noiseFn,seed,oct,freq){
+  var base=x;
+  var noise=noiseFn(x*freq,y*freq);
+  return Math.max(0,Math.min(1,base+noise*0.1));
+}
+function seededRandom(n){
+  var t=(n+0x6D2B79F5)|0;
+  t=Math.imul(t^(t>>>15),t|1);
+  t^=t+Math.imul(t^(t>>>7),t|61);
+  return((t^(t>>>14))>>>0)/4294967296;
+}
+function distClustered(x,y,noiseFn,seed){
+  var numPoints=20,minDist=Infinity,closest=0;
+  for(var i=0;i<numPoints;i++){
+    var px=seededRandom(seed*1000+i*2);
+    var py=seededRandom(seed*1000+i*2+1);
+    var ddx=x-px,ddy=y-py,d=ddx*ddx+ddy*ddy;
+    if(d<minDist){minDist=d;closest=i}
+  }
+  return closest/numPoints;
+}
+function distSwirl(x,y,noiseFn,seed,oct,freq){
+  var cx=x-0.5,cy=y-0.5;
+  var dist=Math.sqrt(cx*cx+cy*cy);
+  var angle=Math.atan2(cy,cx);
+  var phase=angle*3+dist*4*Math.PI*2;
+  var spiral=Math.sin(phase)*0.5+0.5;
+  var noise=noiseFn(x*freq,y*freq);
+  return Math.max(0,Math.min(1,spiral+noise*0.2));
+}
+
+var DISTRIBUTIONS={veined:distVeined,radial:distRadial,linear:distLinear,clustered:distClustered,swirl:distSwirl};
+
+// ═══════════════════════════════════════════════════════════════
+// PRESETS
+// ═══════════════════════════════════════════════════════════════
+var PRESETS={
+  'Nero Marquina':{colors:[{hex:'#0a0a0c',ratio:60},{hex:'#ebe6dc',ratio:35},{hex:'#c3a54b',ratio:5}],mode:'veined'},
+  'Calacatta Gold':{colors:[{hex:'#f5f0e8',ratio:70},{hex:'#d4c9a8',ratio:20},{hex:'#b89b4f',ratio:10}],mode:'veined'},
+  'Verde Guatemala':{colors:[{hex:'#1a3a2a',ratio:50},{hex:'#3d7a5a',ratio:35},{hex:'#e8e0d0',ratio:15}],mode:'veined'},
+  'Rosso Levanto':{colors:[{hex:'#6b1a1a',ratio:45},{hex:'#a83232',ratio:40},{hex:'#f0e8dc',ratio:15}],mode:'veined'},
+  'Blue Sodalite':{colors:[{hex:'#0d1b3a',ratio:40},{hex:'#1a3a6b',ratio:30},{hex:'#c3a54b',ratio:10},{hex:'#e8e0d0',ratio:20}],mode:'veined'},
+  'Arabescato':{colors:[{hex:'#f2ede5',ratio:65},{hex:'#b0a898',ratio:25},{hex:'#555045',ratio:10}],mode:'clustered'},
+  'Portoro':{colors:[{hex:'#0a0a0a',ratio:75},{hex:'#c3a54b',ratio:18},{hex:'#e8d888',ratio:7}],mode:'veined'},
+  'Rainbow Onyx':{colors:[{hex:'#e8d0b0',ratio:30},{hex:'#c87850',ratio:20},{hex:'#6b4030',ratio:20},{hex:'#3a5040',ratio:15},{hex:'#d4a840',ratio:15}],mode:'swirl'}
+};
+
+// ═══════════════════════════════════════════════════════════════
+// COLOR HELPERS
+// ═══════════════════════════════════════════════════════════════
+function hexToRgb(h){var n=parseInt(h.replace('#',''),16);return{r:(n>>16)&255,g:(n>>8)&255,b:n&255}}
+
+// ═══════════════════════════════════════════════════════════════
+// CORE RENDERER — no gradient, flat color bands, smoothness param
+// ═══════════════════════════════════════════════════════════════
+function renderMarble(w,h,seed,colors,distributionMode,contrast,warpStrength,smoothness){
+  seed=Math.max(0,Math.floor(seed))>>>0;
+
+  // Smoothness maps to noise parameters:
+  // 0 (rough) = 7 octaves, freq 3.0 — lots of fine detail
+  // 100 (smooth) = 2 octaves, freq 0.8 — broad, flowing shapes
+  var t=smoothness/100;
+  var octaves=Math.round(7-t*5); // 7 → 2
+  var freq=3.0-t*2.2;            // 3.0 → 0.8
+
+  var noises={
+    w1:makeNoise2D(seed),
+    w2:makeNoise2D(seed+1000),
+    w3:makeNoise2D(seed+2000),
+    w4:makeNoise2D(seed+3000),
+    dye:makeNoise2D(seed+4000)
+  };
+
+  var rgbColors=colors.map(function(c){return hexToRgb(c.hex)});
+  var totalRatio=colors.reduce(function(s,c){return s+c.ratio},0);
+  var thresholds=[];
+  var cum=0;
+  for(var i=0;i<colors.length;i++){
+    cum+=colors[i].ratio/totalRatio;
+    thresholds.push(cum);
+  }
+  thresholds[thresholds.length-1]=1.0;
+
+  var distFn=DISTRIBUTIONS[distributionMode]||DISTRIBUTIONS.veined;
+  var warpScale=2.0;
+  var data=new Uint8ClampedArray(w*h*4);
+
+  for(var y=0;y<h;y++){
+    for(var x=0;x<w;x++){
+      var nx=x/w, ny=y/h;
+      var warped=domainWarp(noises,nx,ny,warpStrength,warpScale);
+
+      // Distribution value [0,1]
+      var dv=distFn(warped.wx,warped.wy,noises.dye,seed,octaves,freq);
+
+      // Contrast
+      dv=0.5+(dv-0.5)*contrast;
+      dv=Math.max(0,Math.min(1,dv));
+
+      // Hard color band — NO gradient/smoothstep
+      var bandIdx=0;
+      for(var ci=0;ci<thresholds.length;ci++){
+        if(dv<=thresholds[ci]){bandIdx=ci;break}
+        bandIdx=ci;
+      }
+      var color=rgbColors[bandIdx];
+
+      // Minimal dither (just anti-banding, no blending)
+      var dither=(Math.random()+Math.random()-1)*1.0;
+      var off=(y*w+x)*4;
+      data[off]=Math.max(0,Math.min(255,color.r+dither|0));
+      data[off+1]=Math.max(0,Math.min(255,color.g+dither|0));
+      data[off+2]=Math.max(0,Math.min(255,color.b+dither|0));
+      data[off+3]=255;
+    }
+  }
+  return data;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════
+var currentColors=[{hex:'#0a0a0c',ratio:60},{hex:'#ebe6dc',ratio:35},{hex:'#c3a54b',ratio:5}];
+var pristineCanvas=document.createElement('canvas'); // original marble, never modified
+var pristineCtx=pristineCanvas.getContext('2d');
+var editCanvas=document.createElement('canvas');     // working copy, modified by mouse
+var editCtx=editCanvas.getContext('2d');
+var bgCanvas=document.getElementById('marbleBg');
+var bgCtx=bgCanvas.getContext('2d');
+var marbleReady=false;
+var currentSeed=0;
+
+// Mouse / interaction state
+var paletteRgb=[];
+var mouseX=0,mouseY=0,prevMx=0,prevMy=0;
+var mouseInWindow=false;
+var dragging=false;
+var hasPrev=false;
+var brushBoost=1.0;
+var touchId=null;
+
+// ═══════════════════════════════════════════════════════════════
+// INIT CANVAS SIZE
+// ═══════════════════════════════════════════════════════════════
+function sizeCanvases(){
+  var w=window.innerWidth,h=window.innerHeight;
+  bgCanvas.width=w;bgCanvas.height=h;
+  var extraH=Math.round(h*0.5);
+  pristineCanvas.width=w;pristineCanvas.height=h+extraH;
+  editCanvas.width=w;editCanvas.height=h+extraH;
+}
+sizeCanvases();
+window.addEventListener('resize',function(){
+  sizeCanvases();
+  if(marbleReady)regenerate();
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GENERATE & RENDER
+// ═══════════════════════════════════════════════════════════════
+function regenerate(){
+  var w=pristineCanvas.width,h=pristineCanvas.height;
+  var seedInput=document.getElementById('seed').value;
+  currentSeed=seedInput?parseInt(seedInput,10):Math.floor(Math.random()*1000000);
+  var distMode=document.getElementById('distributionMode').value;
+  var contrast=parseFloat(document.getElementById('contrast').value)||1.2;
+  var warpStrength=parseFloat(document.getElementById('warpStrength').value)||0.4;
+  var smoothness=parseFloat(document.getElementById('smoothness').value)||50;
+
+  document.getElementById('generateBtn').disabled=true;
+  document.getElementById('generateBtn').textContent='Rendering...';
+
+  paletteRgb=currentColors.map(function(c){return hexToRgb(c.hex)});
+
+  setTimeout(function(){
+    var data=renderMarble(w,h,currentSeed,currentColors,distMode,contrast,warpStrength,smoothness);
+    var imgData=new ImageData(data,w,h);
+    pristineCtx.putImageData(imgData,0,0);
+    // Copy pristine to edit canvas
+    editCtx.drawImage(pristineCanvas,0,0);
+    marbleReady=true;
+    document.getElementById('generateBtn').disabled=false;
+    document.getElementById('generateBtn').textContent='Generate';
+  },20);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SMUDGE — permanently pushes pixels along mouse velocity
+// ═══════════════════════════════════════════════════════════════
+function smudge(cx,cy,dx,dy){
+  var mag=Math.sqrt(dx*dx+dy*dy);
+  if(mag<1)return;
+
+  var radius=parseFloat(document.getElementById('brushSize').value)||80;
+  radius*=brushBoost;
+  var strength=parseFloat(document.getElementById('brushStrength').value)||0.6;
+
+  // Cap displacement per step to avoid tearing
+  var maxDisp=radius*0.4;
+  if(mag>maxDisp){var scale=maxDisp/mag;dx*=scale;dy*=scale;mag=maxDisp}
+
+  var cw=editCanvas.width,ch=editCanvas.height;
+  var r=Math.ceil(radius);
+  var x0=Math.max(0,Math.floor(cx-r));
+  var y0=Math.max(0,Math.floor(cy-r));
+  var x1=Math.min(cw,Math.ceil(cx+r));
+  var y1=Math.min(ch,Math.ceil(cy+r));
+  var rw=x1-x0,rh=y1-y0;
+  if(rw<=0||rh<=0)return;
+
+  var src=editCtx.getImageData(x0,y0,rw,rh);
+  var dst=new Uint8ClampedArray(src.data.length);
+  dst.set(src.data);
+
+  var r2=radius*radius;
+
+  for(var py=0;py<rh;py++){
+    for(var px=0;px<rw;px++){
+      var ax=x0+px-cx;
+      var ay=y0+py-cy;
+      var d2=ax*ax+ay*ay;
+      if(d2>=r2)continue;
+
+      // Quadratic falloff: 1.0 at center, 0.0 at edge
+      var w=1-d2/r2;
+      w=w*w*strength;
+
+      // Source = current pixel shifted back by velocity * weight
+      var sx=px-dx*w;
+      var sy=py-dy*w;
+
+      // Bilinear sample for smooth sub-pixel displacement
+      var sx0=Math.floor(sx),sy0=Math.floor(sy);
+      var fx=sx-sx0,fy=sy-sy0;
+      sx0=Math.max(0,Math.min(rw-1,sx0));
+      sy0=Math.max(0,Math.min(rh-1,sy0));
+      var sx1=Math.min(rw-1,sx0+1),sy1=Math.min(rh-1,sy0+1);
+      var i00=(sy0*rw+sx0)*4,i10=(sy0*rw+sx1)*4,i01=(sy1*rw+sx0)*4,i11=(sy1*rw+sx1)*4;
+      var di=(py*rw+px)*4;
+      var w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
+      var br=src.data[i00]*w00+src.data[i10]*w10+src.data[i01]*w01+src.data[i11]*w11;
+      var bg=src.data[i00+1]*w00+src.data[i10+1]*w10+src.data[i01+1]*w01+src.data[i11+1]*w11;
+      var bb=src.data[i00+2]*w00+src.data[i10+2]*w10+src.data[i01+2]*w01+src.data[i11+2]*w11;
+
+      // Snap to nearest palette color — smooth motion, no mixing
+      var bestD=Infinity,bestR=br,bestG=bg,bestB=bb;
+      for(var pi=0;pi<paletteRgb.length;pi++){
+        var pc=paletteRgb[pi];
+        var dd=(br-pc.r)*(br-pc.r)+(bg-pc.g)*(bg-pc.g)+(bb-pc.b)*(bb-pc.b);
+        if(dd<bestD){bestD=dd;bestR=pc.r;bestG=pc.g;bestB=pc.b}
+      }
+      dst[di]=bestR;dst[di+1]=bestG;dst[di+2]=bestB;dst[di+3]=255;
+    }
+  }
+
+  editCtx.putImageData(new ImageData(dst,rw,rh),x0,y0);
+}
+
+// Interpolate between two points so fast strokes don't skip pixels
+function smudgeStroke(x0,y0,x1,y1){
+  var dx=x1-x0,dy=y1-y0;
+  var dist=Math.sqrt(dx*dx+dy*dy);
+  var radius=parseFloat(document.getElementById('brushSize').value)||80;
+  var step=Math.max(2,radius*0.2);
+  var steps=Math.max(1,Math.ceil(dist/step));
+
+  for(var i=0;i<steps;i++){
+    var t=(i+1)/steps;
+    var cx=x0+dx*t;
+    var cy=y0+dy*t;
+    smudge(cx,cy,dx/steps,dy/steps);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMATION LOOP — draw editCanvas with scroll parallax
+// ═══════════════════════════════════════════════════════════════
+var lastTime=0,fpsAccum=0,fpsCount=0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+  if(!marbleReady)return;
+
+  var dt=now-lastTime;lastTime=now;
+  if(dt>0){fpsAccum+=1000/dt;fpsCount++;if(fpsCount>=30){document.getElementById('statFps').textContent=Math.round(fpsAccum/fpsCount);fpsAccum=0;fpsCount=0}}
+
+  var vw=bgCanvas.width,vh=bgCanvas.height;
+  var scrollY=window.scrollY||window.pageYOffset||0;
+  var parallax=scrollY*0.3;
+
+  // Draw the edited marble with scroll parallax
+  bgCtx.drawImage(editCanvas,0,parallax,vw,vh,0,0,vw,vh);
+
+  // Brush cursor position
+  if(mouseInWindow){
+    var radius=parseFloat(document.getElementById('brushSize').value)||80;
+    radius*=brushBoost;
+    var cursor=document.getElementById('brushCursor');
+    var size=radius*2;
+    cursor.style.width=size+'px';
+    cursor.style.height=size+'px';
+    cursor.style.left=(mouseX-radius)+'px';
+    cursor.style.top=(mouseY-radius)+'px';
+  }
+
+  // Status
+  document.getElementById('statMouse').textContent=Math.round(mouseX)+', '+Math.round(mouseY);
+  document.getElementById('statScroll').textContent=Math.round(scrollY);
+  document.getElementById('statVel').textContent=mouseInWindow?'active':'idle';
+}
+requestAnimationFrame(frame);
+
+// ═══════════════════════════════════════════════════════════════
+// MOUSE — drag to smudge
+// ═══════════════════════════════════════════════════════════════
+function canvasCoords(clientX,clientY){
+  var scrollY=window.scrollY||window.pageYOffset||0;
+  return {x:clientX, y:clientY+scrollY*0.3};
+}
+
+document.addEventListener('mousemove',function(e){
+  mouseX=e.clientX;mouseY=e.clientY;
+  mouseInWindow=true;
+  document.getElementById('brushCursor').classList.add('visible');
+
+  if(!marbleReady)return;
+  var c=canvasCoords(e.clientX,e.clientY);
+  if(!hasPrev){prevMx=c.x;prevMy=c.y;hasPrev=true;return}
+  smudgeStroke(prevMx,prevMy,c.x,c.y);
+  prevMx=c.x;prevMy=c.y;
+});
+
+document.addEventListener('mouseleave',function(){
+  mouseInWindow=false;hasPrev=false;
+  document.getElementById('brushCursor').classList.remove('visible');
+});
+document.addEventListener('mouseenter',function(){mouseInWindow=true;hasPrev=false});
+
+// Touch support
+document.addEventListener('touchstart',function(e){
+  if(touchId!==null)return;
+  var t=e.changedTouches[0];
+  touchId=t.identifier;
+  dragging=true;
+  var c=canvasCoords(t.clientX,t.clientY);
+  prevMx=c.x;prevMy=c.y;
+  mouseX=t.clientX;mouseY=t.clientY;
+  mouseInWindow=true;
+},{passive:true});
+
+document.addEventListener('touchmove',function(e){
+  for(var i=0;i<e.changedTouches.length;i++){
+    var t=e.changedTouches[i];
+    if(t.identifier!==touchId)continue;
+    mouseX=t.clientX;mouseY=t.clientY;
+    if(!marbleReady)return;
+    var c=canvasCoords(t.clientX,t.clientY);
+    smudgeStroke(prevMx,prevMy,c.x,c.y);
+    prevMx=c.x;prevMy=c.y;
+  }
+},{passive:true});
+
+document.addEventListener('touchend',function(e){
+  for(var i=0;i<e.changedTouches.length;i++){
+    if(e.changedTouches[i].identifier===touchId){
+      touchId=null;dragging=false;mouseInWindow=false;
+    }
+  }
+},{passive:true});
+
+// ═══════════════════════════════════════════════════════════════
+// ELEMENT CONTACT — elements boost brush size on hover
+// ═══════════════════════════════════════════════════════════════
+document.querySelectorAll('[data-brush-boost]').forEach(function(el){
+  el.addEventListener('mouseenter',function(){
+    brushBoost=parseFloat(this.getAttribute('data-brush-boost'))||1.5;
+  });
+  el.addEventListener('mouseleave',function(){brushBoost=1.0});
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SCROLL — wheel event also smudges vertically for tactile feel
+// ═══════════════════════════════════════════════════════════════
+document.addEventListener('wheel',function(e){
+  if(!marbleReady||!mouseInWindow)return;
+  var scrollDy=e.deltaY*0.15;
+  if(Math.abs(scrollDy)>1){
+    var c=canvasCoords(mouseX,mouseY);
+    smudge(c.x,c.y,0,scrollDy);
+  }
+},{passive:true});
+
+// ═══════════════════════════════════════════════════════════════
+// UI CONTROLS
+// ═══════════════════════════════════════════════════════════════
+var presetSelect=document.getElementById('marblePreset');
+Object.keys(PRESETS).forEach(function(name){
+  var opt=document.createElement('option');
+  opt.value=name;opt.textContent=name;
+  presetSelect.appendChild(opt);
+});
+presetSelect.addEventListener('change',function(){
+  var p=PRESETS[this.value];
+  if(!p)return;
+  currentColors=p.colors.map(function(c){return{hex:c.hex,ratio:c.ratio}});
+  document.getElementById('distributionMode').value=p.mode;
+  rebuildColorRows();
+  scheduleRegenerate();
+});
+
+// Range displays — marble controls auto-regenerate, brush controls don't
+var marbleRanges=[['smoothness','smoothnessVal'],['contrast','contrastVal'],['warpStrength','warpVal']];
+var brushRanges=[['brushSize','brushVal'],['brushStrength','strengthVal']];
+marbleRanges.forEach(function(pair){
+  document.getElementById(pair[0]).addEventListener('input',function(){
+    document.getElementById(pair[1]).textContent=this.value;
+    scheduleRegenerate();
+  });
+});
+brushRanges.forEach(function(pair){
+  document.getElementById(pair[0]).addEventListener('input',function(){
+    document.getElementById(pair[1]).textContent=this.value;
+  });
+});
+
+// Color rows
+function rebuildColorRows(){
+  var container=document.getElementById('colorRows');
+  while(container.firstChild)container.removeChild(container.firstChild);
+  currentColors.forEach(function(c,i){
+    var row=document.createElement('div');row.className='color-row';
+
+    var ci=document.createElement('input');
+    ci.type='color';ci.value=c.hex;
+    ci.addEventListener('input',function(){currentColors[i].hex=this.value;scheduleRegenerate()});
+    row.appendChild(ci);
+
+    var lbl=document.createElement('label');lbl.textContent='%';row.appendChild(lbl);
+
+    var ri=document.createElement('input');
+    ri.type='number';ri.min='1';ri.max='100';ri.value=String(c.ratio);
+    ri.addEventListener('input',function(){currentColors[i].ratio=parseInt(this.value)||1;scheduleRegenerate()});
+    row.appendChild(ri);
+
+    if(currentColors.length>2){
+      var rm=document.createElement('button');rm.className='secondary cr-remove';rm.textContent='\u00d7';
+      rm.addEventListener('click',function(){currentColors.splice(i,1);rebuildColorRows();scheduleRegenerate()});
+      row.appendChild(rm);
+    }
+    container.appendChild(row);
+  });
+}
+rebuildColorRows();
+
+document.getElementById('addColorBtn').addEventListener('click',function(){
+  if(currentColors.length>=6)return;
+  currentColors.push({hex:'#888888',ratio:10});
+  rebuildColorRows();
+  scheduleRegenerate();
+});
+document.getElementById('distributionMode').addEventListener('change',function(){scheduleRegenerate()});
+
+// Debounced auto-regenerate for live control feedback
+var regenTimer=null;
+function scheduleRegenerate(){
+  if(regenTimer)clearTimeout(regenTimer);
+  regenTimer=setTimeout(function(){regenerate()},250);
+}
+
+// Generate (new marble)
+document.getElementById('generateBtn').addEventListener('click',function(){regenerate()});
+
+// Reset edits (restore pristine marble)
+document.getElementById('resetBtn').addEventListener('click',function(){
+  if(!marbleReady)return;
+  editCtx.drawImage(pristineCanvas,0,0);
+});
+
+// Download current state (with edits)
+document.getElementById('downloadBtn').addEventListener('click',function(){
+  if(!marbleReady)return;
+  var vw=bgCanvas.width,vh=bgCanvas.height;
+  var dlCanvas=document.createElement('canvas');
+  dlCanvas.width=vw;dlCanvas.height=vh;
+  var scrollY=window.scrollY||window.pageYOffset||0;
+  dlCanvas.getContext('2d').drawImage(editCanvas,0,scrollY*0.3,vw,vh,0,0,vw,vh);
+  dlCanvas.toBlob(function(blob){
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download='marble_'+currentSeed+'_'+vw+'x'+vh+'.png';
+    document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
+  },'image/png');
+});
+
+// Auto-generate on load
+regenerate();
+</script>
+</body>
+</html>
