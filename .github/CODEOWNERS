@@ -1,0 +1,28 @@
+# CODEOWNERS — require review for critical paths
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Infrastructure & deployment
+Dockerfile                           @owner
+docker-compose*.yml                  @owner
+Caddyfile*                           @owner
+.github/workflows/                   @owner
+.env.example                         @owner
+
+# Security & auth
+telemetry_tool/auth/                 @owner
+telemetry_tool/web/middleware/auth.py @owner
+telemetry_tool/web/middleware/csrf.py @owner
+telemetry_tool/web/middleware/cors.py @owner
+
+# Billing
+telemetry_tool/web/routes/billing.py @owner
+telemetry_tool/web/routes/api_v1_billing.py @owner
+lap-website/src/lib/stripe-billing.ts @owner
+
+# Database migrations
+telemetry_tool/alembic/              @owner
+
+# Multi-tenancy & RBAC
+telemetry_tool/auth/rbac.py          @owner
+telemetry_tool/auth/workspace.py     @owner
+telemetry_tool/web/middleware/tenant.py @owner

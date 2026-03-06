@@ -1,0 +1,155 @@
+version: "3.9"
+
+# Staging environment — mirrors prod topology with isolated data.
+# Domain: staging-api.lap-coach.racing
+# Uses: .env.staging (separate secrets, Stripe test keys, isolated DB/Redis)
+
+services:
+  api:
+    build:
+      context: .
+      args:
+        DEPLOY_SHA: ${DEPLOY_SHA:-dev}
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_ENVIRONMENT: staging
+    volumes:
+      - upload_data:/data/uploads
+      - parquet_data:/data/parquet
+      - export_data:/data/exports
+      - models_data:/data/models
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: telemetry
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: telemetry_staging
+    volumes:
+      - pgdata_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telemetry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - internal
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 64mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - internal
+
+  celery-pipeline:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q pipeline
+      --concurrency=1
+      --soft-time-limit=1800
+      --time-limit=2100
+      --max-tasks-per-child=50
+      -l info
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_ENVIRONMENT: staging
+    volumes:
+      - upload_data:/data/uploads
+      - parquet_data:/data/parquet
+      - models_data:/data/models
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  celery-default:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app worker
+      -Q default
+      --concurrency=2
+      --soft-time-limit=600
+      --time-limit=900
+      --max-tasks-per-child=200
+      -l info
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      TELEMETRY_LOG_FORMAT: json
+      SENTRY_ENVIRONMENT: staging
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  celery-beat:
+    build: .
+    command: >
+      celery -A telemetry_tool.celery_app beat
+      -l info
+      --schedule /tmp/celerybeat-schedule
+    env_file: .env.staging
+    environment:
+      APP_ENV: staging
+      SENTRY_ENVIRONMENT: staging
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - internal
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.staging:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - internal
+
+volumes:
+  pgdata_staging:
+  upload_data:
+  parquet_data:
+  export_data:
+  models_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:

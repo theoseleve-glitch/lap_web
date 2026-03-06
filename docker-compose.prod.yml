@@ -73,9 +73,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    env_file: .env.production
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD}
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $REDIS_PASSWORD ping || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5

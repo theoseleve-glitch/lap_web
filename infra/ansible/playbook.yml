@@ -1,0 +1,195 @@
+---
+# Ansible playbook for lap-coach API server provisioning.
+# Usage: ansible-playbook -i inventory.ini playbook.yml
+#
+# Provisions: deploy user, Docker, firewall, fail2ban, backups, Tailscale.
+# Idempotent — safe to re-run.
+
+- name: Provision lap-coach API server
+  hosts: api_servers
+  become: true
+  vars:
+    deploy_user: deploy
+    app_dir: /opt/lap-api
+    backup_dir: /opt/lap-api/backups
+    cloudflare_ipv4:
+      - 173.245.48.0/20
+      - 103.21.244.0/22
+      - 103.22.200.0/22
+      - 103.31.4.0/22
+      - 141.101.64.0/18
+      - 108.162.192.0/18
+      - 190.93.240.0/20
+      - 188.114.96.0/20
+      - 197.234.240.0/22
+      - 198.41.128.0/17
+      - 162.158.0.0/15
+      - 104.16.0.0/13
+      - 104.24.0.0/14
+      - 172.64.0.0/13
+      - 131.0.72.0/22
+
+  tasks:
+    # ── System packages ─────────────────────────────────────
+    - name: Install base packages
+      apt:
+        name:
+          - curl
+          - git
+          - ufw
+          - fail2ban
+          - auditd
+          - unattended-upgrades
+          - logrotate
+        state: present
+        update_cache: true
+
+    # ── Deploy user ─────────────────────────────────────────
+    - name: Create deploy user
+      user:
+        name: "{{ deploy_user }}"
+        shell: /bin/bash
+        groups: docker
+        append: true
+        create_home: true
+
+    - name: Add SSH authorized key for deploy user
+      authorized_key:
+        user: "{{ deploy_user }}"
+        key: "{{ lookup('file', '~/.ssh/id_ed25519.pub') }}"
+        state: present
+
+    - name: Allow deploy user to manage Docker without sudo
+      lineinfile:
+        path: /etc/sudoers.d/deploy
+        line: "{{ deploy_user }} ALL=(ALL) NOPASSWD: /usr/bin/docker, /usr/bin/docker-compose"
+        create: true
+        validate: "visudo -cf %s"
+
+    # ── Application directory ───────────────────────────────
+    - name: Create app directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0755"
+
+    - name: Create backup directory
+      file:
+        path: "{{ backup_dir }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: "0700"
+
+    # ── Docker ──────────────────────────────────────────────
+    - name: Install Docker (if not present)
+      shell: |
+        if ! command -v docker &>/dev/null; then
+          curl -fsSL https://get.docker.com | sh
+        fi
+      args:
+        creates: /usr/bin/docker
+
+    - name: Enable Docker service
+      systemd:
+        name: docker
+        enabled: true
+        state: started
+
+    # ── Firewall (UFW) ──────────────────────────────────────
+    - name: Reset UFW to defaults
+      ufw:
+        state: reset
+
+    - name: Allow SSH (port 22)
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Allow HTTPS from Cloudflare IPs only
+      ufw:
+        rule: allow
+        port: "443"
+        proto: tcp
+        from_ip: "{{ item }}"
+      loop: "{{ cloudflare_ipv4 }}"
+
+    - name: Allow HTTP from Cloudflare IPs (for ACME redirect)
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+        from_ip: "{{ item }}"
+      loop: "{{ cloudflare_ipv4 }}"
+
+    - name: Enable UFW (deny by default)
+      ufw:
+        state: enabled
+        policy: deny
+
+    # ── Fail2ban ────────────────────────────────────────────
+    - name: Configure fail2ban SSH jail
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          filter = sshd
+          maxretry = 5
+          bantime = 3600
+          findtime = 600
+      notify: restart fail2ban
+
+    # ── Auditd ──────────────────────────────────────────────
+    - name: Enable auditd
+      systemd:
+        name: auditd
+        enabled: true
+        state: started
+
+    # ── Unattended upgrades (security only) ─────────────────
+    - name: Enable unattended security upgrades
+      copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+
+    # ── Daily backup cron ───────────────────────────────────
+    - name: Add daily pg_dump cron
+      cron:
+        name: "Daily PostgreSQL backup"
+        minute: "0"
+        hour: "3"
+        user: "{{ deploy_user }}"
+        job: >
+          docker compose -f {{ app_dir }}/docker-compose.prod.yml exec -T postgres
+          pg_dump -U telemetry telemetry | gzip > {{ backup_dir }}/telemetry_$(date +\%Y\%m\%d).sql.gz
+          && find {{ backup_dir }} -name '*.sql.gz' -mtime +7 -delete
+
+    # ── Logrotate for app logs ──────────────────────────────
+    - name: Configure logrotate for Docker logs
+      copy:
+        dest: /etc/logrotate.d/docker-containers
+        content: |
+          /var/lib/docker/containers/*/*.log {
+              daily
+              rotate 7
+              compress
+              missingok
+              notifempty
+              copytruncate
+          }
+
+  handlers:
+    - name: restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
