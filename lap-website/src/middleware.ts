@@ -61,7 +61,9 @@ export function middleware(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.host = CANONICAL_HOST;
     url.port = '';
-    return NextResponse.redirect(url, 301);
+    const redirect = NextResponse.redirect(url, 301);
+    redirect.headers.set('Strict-Transport-Security', 'max-age=300');
+    return redirect;
   }
 
   const response = NextResponse.next();

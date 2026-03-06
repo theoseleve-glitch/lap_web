@@ -127,8 +127,8 @@ def create_override_route():
             workspace_id=workspace_id,
             created_by=getattr(g, "current_user_id", 0),
         )
-    except ValueError as e:
-        return api_error(ErrorCode.VALIDATION_ERROR, str(e), status=400)
+    except ValueError:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Invalid override parameters", status=400)
 
     return api_response({"override_id": override_id})
 

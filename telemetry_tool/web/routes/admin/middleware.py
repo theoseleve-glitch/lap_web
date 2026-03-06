@@ -6,10 +6,12 @@ cross-workspace visibility.
 """
 from __future__ import annotations
 
+import ipaddress
 import logging
+import os
 from functools import wraps
 
-from flask import g, jsonify
+from flask import g, jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +22,41 @@ ADMIN_ROLES = {
     "sre_admin",
     "auditor",
 }
+
+# Optional IP allowlist for admin endpoints.
+# Set ADMIN_ALLOWED_IPS="10.0.0.1,192.168.1.0/24" to restrict access.
+# Empty or unset = no IP restriction (auth-only).
+_ADMIN_ALLOWED_IPS_RAW = os.environ.get("ADMIN_ALLOWED_IPS", "").strip()
+_ADMIN_ALLOWED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
+
+if _ADMIN_ALLOWED_IPS_RAW:
+    for entry in _ADMIN_ALLOWED_IPS_RAW.split(","):
+        entry = entry.strip()
+        if entry:
+            try:
+                _ADMIN_ALLOWED_NETWORKS.append(
+                    ipaddress.ip_network(entry, strict=False)
+                )
+            except ValueError:
+                logger.warning("Invalid ADMIN_ALLOWED_IPS entry: %s", entry)
+
+
+def _check_admin_ip() -> bool:
+    """Return True if request IP is allowed (or no restriction configured)."""
+    if not _ADMIN_ALLOWED_NETWORKS:
+        return True
+    # Respect Cloudflare / reverse proxy real IP headers
+    client_ip_str = (
+        request.headers.get("CF-Connecting-IP")
+        or request.headers.get("X-Real-IP")
+        or request.remote_addr
+        or ""
+    )
+    try:
+        client_ip = ipaddress.ip_address(client_ip_str)
+    except ValueError:
+        return False
+    return any(client_ip in net for net in _ADMIN_ALLOWED_NETWORKS)
 
 
 def _get_admin_conn():
@@ -63,8 +100,16 @@ def admin_before_request():
     """before_request hook for admin blueprint.
 
     Loads admin user info into g.admin_user. Does NOT set RLS context
-    (admin sees all workspaces).
+    (admin sees all workspaces). Optionally enforces IP allowlist.
     """
+    if not _check_admin_ip():
+        logger.warning(
+            "Admin access denied from IP %s",
+            request.headers.get("CF-Connecting-IP")
+            or request.remote_addr,
+        )
+        return _error_response("FORBIDDEN", "Access denied", status=403)
+
     user_id = _get_current_user_id()
     if user_id is None:
         return _error_response("FORBIDDEN", "Authentication required")
