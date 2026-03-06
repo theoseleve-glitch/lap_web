@@ -20,7 +20,7 @@ export default function TermsPage() {
     <PageShell
       eyebrow="Legal"
       title="Terms of Service"
-      description="Terms governing your use of the LAP platform. Last updated: February 2026."
+      description="Terms governing your use of the LAP platform. Effective: 2026-02-01. Last updated: 2026-03-06."
       tone="document"
     >
       <Section title="1. Account & Access">

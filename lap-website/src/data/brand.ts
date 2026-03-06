@@ -43,3 +43,67 @@ export const BRAND_USAGE = {
   emailHeaderPreheader: BRAND.oneLiner,
   footerTagline: `${BRAND.productName} // ${BRAND.oneLiner}`,
 } as const;
+
+/* ── CTA Dictionary ────────────────────────────────────────── */
+
+/**
+ * Canonical CTA labels. Any button/link with CTA role must use one of these.
+ * Enforced by lint-copy-standards.mjs.
+ */
+export const CTA_DICTIONARY = [
+  'Start free',
+  'See pricing',
+  'Request demo',
+  'Open app',
+  'Contact sales',
+  'Sign in',
+  'Create account',
+  'Join waitlist',
+  'Book session',
+  'Compare plans',
+  'Upgrade',
+  'Go World-Class',
+  'Send message',
+] as const;
+
+export type CtaLabel = (typeof CTA_DICTIONARY)[number];
+
+/* ── Name Tokens ───────────────────────────────────────────── */
+
+/**
+ * Canonical product and entity names.
+ * - productName: always "LAP" in UI (caps)
+ * - entityName: "Lap Coach" for legal/entity contexts only
+ * Forbidden variants are caught by lint.
+ */
+export const NAME_TOKENS = {
+  product: 'LAP',
+  entity: 'Lap Coach',
+  /** Forbidden product name variants (case-insensitive match) */
+  forbiddenProductVariants: [
+    'Lap Racing',
+    'LAP Racing',
+    'Lap Technologies',
+    'LAP Technologies',
+    'LapCoach',
+    'lap-coach',
+  ],
+} as const;
+
+/* ── Plan Naming ───────────────────────────────────────────── */
+
+/** B2C plan names — used on pricing, billing, and driver-facing pages */
+export const B2C_PLANS = ['Demo', 'Racer', 'World-Class'] as const;
+
+/** B2B plan names — used on venue/team/enterprise-facing pages */
+export const B2B_PLANS = ['Venue Pilot', 'Venue Pro', 'Enterprise'] as const;
+
+/** Pages where B2B plan tokens are allowed */
+export const B2B_ALLOWED_PAGES = [
+  'contact', 'book', 'pricing', 'billing',
+] as const;
+
+/** Pages where B2C plan tokens are allowed */
+export const B2C_ALLOWED_PAGES = [
+  'pricing', 'billing', 'demo', 'product', 'customers', 'waitlist',
+] as const;

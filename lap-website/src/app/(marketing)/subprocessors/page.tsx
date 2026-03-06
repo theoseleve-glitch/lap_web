@@ -54,7 +54,7 @@ export default function SubprocessorsPage() {
       </p>
 
       <p className="mb-6 text-sm text-steel">
-        Last updated: February 2026. We will notify customers at least 30 days
+        Effective: 2026-02-01. Last updated: 2026-03-06. We will notify customers at least 30 days
         before adding a new subprocessor.
       </p>
 

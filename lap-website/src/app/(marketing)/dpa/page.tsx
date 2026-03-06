@@ -27,7 +27,7 @@ export default function DpaPage() {
       <div className="border border-steel/20 bg-concrete/30 p-6 mb-8">
         <p className="text-steel text-sm leading-relaxed">
           This Data Processing Addendum (&ldquo;DPA&rdquo;) forms part of the agreement between the
-          Customer (&ldquo;Controller&rdquo;) and LAP Technologies (&ldquo;Processor&rdquo;) for
+          Customer (&ldquo;Controller&rdquo;) and Lap Coach (&ldquo;Processor&rdquo;) for
           the provision of telemetry analysis services. It applies to any processing of personal data
           where the Controller determines the purposes and means, and the Processor acts solely on
           documented instructions.

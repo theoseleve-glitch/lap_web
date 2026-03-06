@@ -19,8 +19,10 @@
     "qa:content": "node scripts/content-qa.mjs",
     "lint:copy": "node scripts/lint-duplicate-copy.mjs",
     "lint:cta": "node scripts/lint-cta-count.mjs",
+    "lint:standards": "node scripts/lint-copy-standards.mjs",
+    "lint:links": "node scripts/lint-internal-links.mjs",
     "scan:inventory": "node scripts/scan-content-inventory.mjs",
-    "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run lint:copy && npm run lint:cta && npm run ci:assert-site-url",
+    "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run lint:copy && npm run lint:cta && npm run lint:standards && npm run lint:links && npm run ci:assert-site-url",
     "ci:assert-site-url": "node scripts/assert-no-legacy-domain.mjs",
     "qa:sitemap-preview": "node scripts/check-sitemap-preview.mjs",
     "ci:preview": "npm run qa:sitemap-preview"

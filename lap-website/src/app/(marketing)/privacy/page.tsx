@@ -20,7 +20,7 @@ export default function PrivacyPage() {
     <PageShell
       eyebrow="Legal"
       title="Privacy Policy"
-      description="How LAP collects, processes, and protects your data. Last updated: February 2026."
+      description="How LAP collects, processes, and protects your data. Effective: 2026-02-01. Last updated: 2026-03-06."
       tone="document"
     >
       <Section title="Data We Collect">
