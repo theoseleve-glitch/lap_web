@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { footerLinks } from '@/data/navigation';
+import { BRAND, BRAND_USAGE } from '@/data/brand';
 
 const socialLinks = [
   { label: 'Instagram', href: 'https://instagram.com' },
@@ -28,8 +29,8 @@ export function SiteFooter() {
         <div className="grid md:grid-cols-3 gap-4 border border-chalk/15 bg-concrete p-4">
           <div>
             <p className="font-telemetry text-[10px] text-steel tracking-[0.12em] uppercase mb-2">Headquarters</p>
-            <p className="text-sm text-chalk">LAP Racing</p>
-            <p className="text-sm text-steel">2 Avenue des Virages, 75008 Paris, France</p>
+            <p className="text-sm text-chalk">{BRAND.companyName}</p>
+            <p className="text-sm text-steel">{BRAND.address.full}</p>
           </div>
           <div>
             <p className="font-telemetry text-[10px] text-steel tracking-[0.12em] uppercase mb-2">Social</p>
@@ -60,7 +61,7 @@ export function SiteFooter() {
         </div>
 
         <p className="font-telemetry text-steel/80 text-[10px] tracking-[0.12em] uppercase mt-6">
-          LAP // Find time faster with outcome-first telemetry workflows.
+          {BRAND_USAGE.footerTagline}
         </p>
       </div>
     </footer>

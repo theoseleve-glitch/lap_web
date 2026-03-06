@@ -1,0 +1,16 @@
+claim_id,claim_text,page_locations,proof_url(s),proof_type,status,owner,last_reviewed
+CLM-001,"Scoring pipeline is deterministic and checksum-verified",home;product;customers,internal: telemetry_tool/tests/test_re_port_correctness.py,internal_test,approved,,2026-03-06
+CLM-002,"Actionable scorecard in under a minute",home;pricing,internal: benchmarks/bench_ingest.py (sub-60s on typical session),internal_test,approved,,2026-03-06
+CLM-003,"Corner expectations derived from vehicle behavior and track geometry",home;product,internal: telemetry_tool/pipeline.py stage 10 (physics models),internal_test,approved,,2026-03-06
+CLM-004,"Condition-aware adjustments for grip weather and setup",home,internal: telemetry_tool/pipeline.py stage 10-11,internal_test,needs_hedge,,2026-03-06
+CLM-005,"18% faster onboarding at kart racing academy",customers,,user_quote,needs_hedge,,2026-03-06
+CLM-006,"11% reduction in lap-time spread for junior team",customers,,user_quote,needs_hedge,,2026-03-06
+CLM-007,"2 fewer unplanned pit stops per 6-hour race",customers,,user_quote,needs_hedge,,2026-03-06
+CLM-008,"256-bit encryption at rest and in transit",home;security;footer,internal: docker-compose.prod.yml (TLS) + PG encryption,internal_test,approved,,2026-03-06
+CLM-009,"99.9% uptime target",home;footer,n/a — target not SLA,n/a,needs_hedge,,2026-03-06
+CLM-010,"GDPR compliant",home;footer;security;dpa,internal: privacy policy + DPA + retention controls,internal_test,approved,,2026-03-06
+CLM-011,"Data export deletion and retention controls built in",product;security;dpa,internal: telemetry_tool/tasks/gdpr_tasks.py,internal_test,approved,,2026-03-06
+CLM-012,"Session-vs-session and driver-vs-driver comparison",product;pricing,internal: routes/data_v2.py compare endpoint,internal_test,approved,,2026-03-06
+CLM-013,"EU data residency",security;footer,internal: Hetzner DE VPS + Cloudflare EU,internal_test,approved,,2026-03-06
+CLM-014,"No card required for demo",home;pricing,internal: register flow has no Stripe checkout,internal_test,approved,,2026-03-06
+CLM-015,"First report in minutes",home;pricing,internal: pipeline benchmark,internal_test,approved,,2026-03-06

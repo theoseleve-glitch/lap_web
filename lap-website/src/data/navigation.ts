@@ -21,6 +21,7 @@ export const footerLinks: NavLink[] = [
   { label: 'Status', href: '/status' },
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
+  { label: 'Security', href: '/security' },
   { label: 'DPA', href: '/dpa' },
   { label: 'Subprocessors', href: '/subprocessors' },
 ];

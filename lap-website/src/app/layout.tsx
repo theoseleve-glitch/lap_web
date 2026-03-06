@@ -1,31 +1,35 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
-import Script from 'next/script';
 import { ChunkErrorRecovery } from '@/components/providers/ChunkErrorRecovery';
+import { ConsentGatedAnalytics } from '@/components/providers/ConsentGatedAnalytics';
 import { SentryInit } from '@/components/providers/SentryInit';
 import { WebVitalsInit } from '@/components/providers/WebVitalsInit';
 import { TranslationProvider } from '@/i18n/TranslationProvider';
 import { getSiteHostname, getSiteUrlAsUrl } from '@/lib/site-url';
+import { BRAND, BRAND_USAGE } from '@/data/brand';
 import './globals.css';
 
 const siteUrl = getSiteUrlAsUrl();
 const siteHostname = getSiteHostname();
 
+const metaTitle = `${BRAND.productName} — ${BRAND.tagline}`;
+const metaDescription = `${BRAND_USAGE.metaDescriptionOpening} ${BRAND.positioning.split(',').slice(1).join(',').trim()}`;
+
 export const metadata: Metadata = {
   metadataBase: siteUrl,
-  title: { default: 'LAP — Find Time.', template: '%s | LAP' },
-  description: 'Motorsport telemetry analysis for kart and car drivers.',
+  title: { default: metaTitle, template: `%s | ${BRAND.productName}` },
+  description: metaDescription,
   openGraph: {
     type: 'website',
-    siteName: 'LAP',
-    title: 'LAP — Find Time.',
-    description: 'Motorsport telemetry analysis for kart and car drivers.',
+    siteName: BRAND.productName,
+    title: metaTitle,
+    description: BRAND_USAGE.ogCardSubtitle,
     locale: 'en_US',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'LAP — Find Time.',
-    description: 'Motorsport telemetry analysis for kart and car drivers.',
+    title: metaTitle,
+    description: BRAND_USAGE.ogCardSubtitle,
   },
   robots: {
     index: true,
@@ -50,8 +54,15 @@ const jsonLd = {
     },
     {
       '@type': 'Organization',
-      name: 'LAP Racing',
+      name: 'Lap Coach',
       url: siteUrl.href,
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: '5 rue Paré',
+        addressLocality: 'Nantes',
+        postalCode: '44000',
+        addressCountry: 'FR',
+      },
     },
   ],
 };
@@ -83,12 +94,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <ChunkErrorRecovery />
           {children}
         </TranslationProvider>
-        <Script
-          defer
-          data-domain={siteHostname}
-          src="https://plausible.io/js/script.js"
-          strategy="afterInteractive"
-        />
+        <ConsentGatedAnalytics dataDomain={siteHostname} />
       </body>
     </html>
   );
