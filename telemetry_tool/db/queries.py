@@ -18,7 +18,8 @@ INSERT OR REPLACE INTO sessions (
     html_report_path, simulation_method, joker_lap_number,
     display_name, source_filename, source_path, kart_id,
     channel_inventory, data_tier, available_channels,
-    source_format, source_metadata
+    source_format, source_metadata,
+    pipeline_version_hash, model_version
 ) VALUES (
     :session_id, :csv_filename, :driver_id, :track_id,
     :session_type, :track_state, :session_date,
@@ -27,7 +28,8 @@ INSERT OR REPLACE INTO sessions (
     :html_report_path, :simulation_method, :joker_lap_number,
     :display_name, :source_filename, :source_path, :kart_id,
     :channel_inventory, :data_tier, :available_channels,
-    :source_format, :source_metadata
+    :source_format, :source_metadata,
+    :pipeline_version_hash, :model_version
 );
 """
 

@@ -75,6 +75,11 @@ def pipeline_version():
     """Return the current pipeline processing version.
 
     Returns:
-        200 with ``{"pipeline_version": N}``
+        200 with ``{"pipeline_version": N, "pipeline_version_full": "vN-hash"}``
     """
-    return api_response({"pipeline_version": PIPELINE_VERSION})
+    from pipeline_version import full_version_string
+
+    return api_response({
+        "pipeline_version": PIPELINE_VERSION,
+        "pipeline_version_full": full_version_string(),
+    })

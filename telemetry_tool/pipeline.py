@@ -49,6 +49,17 @@ from typing import Any, Callable, Final, Optional, TypeVar
 import numpy as np
 import pandas as pd
 
+from pipeline_status import (
+    PipelineState,
+    PipelineStatus,
+    StepState,
+    StepStatus,
+    compute_pipeline_version_string,
+    get_model_version,
+    now_epoch,
+    now_monotonic,
+)
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -189,6 +200,15 @@ class PipelineError(Exception):
     """Raised internally when a pipeline step fails."""
 
 
+_last_step_status: Optional[StepStatus] = None
+"""Module-level slot used by ``run_full_analysis`` closures.
+
+``_safe_step`` writes the most recent :class:`StepStatus` here;
+``_record`` reads and clears it so the pipeline status tracker
+stays in sync without requiring changes to every call-site.
+"""
+
+
 def _safe_step(
     step_name: str,
     fn: Callable[..., T],
@@ -198,16 +218,38 @@ def _safe_step(
     """
     Execute *fn*.  Return ``(result, None)`` on success, or
     ``(None, error_msg)`` on failure.  Never raises.
+
+    Side-effect: stores a :class:`StepStatus` in the module-level
+    ``_last_step_status`` slot for ``_record`` to pick up.
     """
+    global _last_step_status  # noqa: PLW0603
+    t_start_epoch = now_epoch()
+    t_start = now_monotonic()
     try:
         result = fn(*args, **kwargs)
-        logger.info("Step [%s] --  OK", step_name)
+        duration_ms = (now_monotonic() - t_start) * 1000
+        logger.info("Step [%s] --  OK  (%.0f ms)", step_name, duration_ms)
+        _last_step_status = StepStatus(
+            name=step_name,
+            status=StepState.OK,
+            started_at=t_start_epoch,
+            duration_ms=duration_ms,
+        )
         return result, None
     except Exception as exc:
+        duration_ms = (now_monotonic() - t_start) * 1000
         tb = traceback.format_exc()
         msg = f"{type(exc).__name__}: {exc}"
-        logger.warning("Step [%s] --  FAILED: %s", step_name, msg)
+        logger.warning("Step [%s] --  FAILED: %s  (%.0f ms)", step_name, msg, duration_ms)
         logger.debug("Step [%s] traceback:\n%s", step_name, tb)
+        _last_step_status = StepStatus(
+            name=step_name,
+            status=StepState.FAIL,
+            started_at=t_start_epoch,
+            duration_ms=duration_ms,
+            message_code=type(exc).__name__,
+            message=str(exc)[:200],
+        )
         return None, msg
 
 
@@ -513,6 +555,12 @@ def run_full_analysis(
 
     _dtag_suffix = f"_{driver_tag}" if driver_tag else ""
 
+    # ── Pipeline status tracker ─────────────────────────────
+    _pipeline_status = PipelineStatus(
+        pipeline_version=compute_pipeline_version_string(),
+        model_version=get_model_version(),
+    )
+
     summary: dict[str, Any] = {
         "csv_path":             str(csv_path),
         "session_meta":         meta,
@@ -604,12 +652,20 @@ def run_full_analysis(
     lap_to_phase: Optional[dict[int, int]] = None
 
     def _record(step: str, result: Any, error: Optional[str]) -> Any:
-        """Book-keep step outcome; return *result* for chaining."""
+        """Book-keep step outcome; return *result* for chaining.
+
+        Automatically picks up the :class:`StepStatus` left by the most
+        recent ``_safe_step`` call and feeds it to ``_pipeline_status``.
+        """
+        global _last_step_status  # noqa: PLW0603
         if error is None:
             summary["steps_ok"].append(step)
         else:
             summary["steps_failed"].append(step)
             summary["errors"][step] = error
+        if _last_step_status is not None:
+            _pipeline_status.record_step(_last_step_status)
+            _last_step_status = None
         return result
 
     # Column discovery result — populated during Phase 1 (ingest),
@@ -673,6 +729,9 @@ def run_full_analysis(
 
         if raw_df is None:
             logger.error("Ingest failed --  cannot continue.")
+            _pipeline_status.mark_failed()
+            _pipeline_status.finalize()
+            summary["pipeline"] = _pipeline_status.to_dict()
             return summary
 
         # -- Step: Column discovery --
@@ -2747,20 +2806,35 @@ def run_full_analysis(
     _fire_progress("15_persist_db")
     summary["db_session_id"] = db_session_id
 
-    # Final summary
+    # Final summary — build pipeline status report
 
     #
     n_ok     = len(summary["steps_ok"])
     n_fail   = len(summary["steps_failed"])
+
+    # If ingest failed (pipeline cannot produce any result), mark as failed.
+    if raw_df is None and not resume_from_step8:
+        _pipeline_status.mark_failed()
+
+    _pipeline_status.finalize()
+    summary["pipeline"] = _pipeline_status.to_dict()
+
     score_str = (
         f"{score_result['total_score']:.1f}/{score_result['grade']}"
         if score_result else "n/a"
     )
+    _degraded_tag = (
+        f"  DEGRADED=[{', '.join(_pipeline_status.degraded_steps)}]"
+        if _pipeline_status.degraded else ""
+    )
     logger.info(
-        "Pipeline complete: %d/%d steps OK  track=%s  laps=%d  score=%s",
+        "Pipeline complete: %d/%d steps OK  track=%s  laps=%d  score=%s  "
+        "version=%s%s",
         n_ok, n_ok + n_fail, track_id,
         len(resampled_laps) if resampled_laps else 0,
         score_str,
+        _pipeline_status.pipeline_version,
+        _degraded_tag,
     )
     return summary
 

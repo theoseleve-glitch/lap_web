@@ -562,6 +562,21 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (30, "Phase 30 schema — channel metadata columns on sessions"),
     )
 
+    # Phase 31 migration: pipeline versioning columns on sessions (idempotent).
+    for col in ("pipeline_version_hash TEXT DEFAULT 'unknown'",
+                "model_version TEXT DEFAULT 'none'"):
+        try:
+            cur.execute(f"ALTER TABLE sessions ADD COLUMN {col};")
+            logger.debug("Added column sessions.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (31, "Phase 31 schema — pipeline_version_hash, model_version on sessions"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

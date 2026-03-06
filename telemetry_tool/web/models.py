@@ -357,6 +357,11 @@ def upsert_session(
     else:
         _session_date = meta.get("session_date") or meta.get("date") or session_id[:10]
 
+    # Extract pipeline version info from pipeline status if available.
+    _pipeline_info = summary.get("pipeline") or {}
+    _pvh = _pipeline_info.get("pipeline_version", "unknown")
+    _mv = _pipeline_info.get("model_version", "none")
+
     conn.execute(Q.INSERT_SESSION, {
         "session_id":        session_id,
         "csv_filename":      Path(str(summary.get("csv_path", ""))).name,
@@ -384,6 +389,8 @@ def upsert_session(
         "available_channels": json.dumps(summary.get("available_channels", [])),
         "source_format":     summary.get("source_format", "racechrono"),
         "source_metadata":   json.dumps(summary.get("source_metadata", {})),
+        "pipeline_version_hash": _pvh,
+        "model_version":     _mv,
     })
     return session_id
 

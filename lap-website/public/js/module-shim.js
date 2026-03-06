@@ -63,6 +63,8 @@
         url = url.replace(/(\/sessions\/[^/]+)\/corner-coaching/, '$1/corners');
         // corner-positions and corner-metrics now have dedicated endpoints
         // (previously incorrectly mapped to /corners)
+        // /sessions/{id}/speed_overlay → already correct (dedicated endpoint)
+        // /sessions/{id}/cross_session → already correct (dedicated endpoint)
 
         return url;
     }

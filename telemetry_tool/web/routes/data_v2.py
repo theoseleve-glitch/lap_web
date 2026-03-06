@@ -320,6 +320,13 @@ def get_session(session_id: str):
     tid = result.get("track_id") or ""
     tname = (result.get("track_name") or "").strip()
     result["track_unnamed"] = bool(tid and (not tname or tname == tid))
+
+    # Surface pipeline status from analysis_json if available
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        pipeline = analysis.get("pipeline")
+        if pipeline:
+            result["pipeline"] = pipeline
     return api_response(result)
 
 
@@ -2932,10 +2939,153 @@ def get_cross_session(session_id: str):
                 "speeds": trace["speeds"],
             })
 
+    # Compute cross-session metrics for the initMetrics panel
+    comparable_count = len(traces)
+    historical_percentile = None
+    improvement = None
+    track_best_time_s = None
+
+    if comparable_count >= 1:
+        # Get best lap times for all comparable sessions
+        lap_times = []
+        focus_time = None
+        prev_time = None
+        for t in traces:
+            laps = models.get_laps_for_session(conn, t["session_id"])
+            best = None
+            for lap in (laps or []):
+                lt = lap.get("lap_time_s")
+                if lt and lt > 0:
+                    if best is None or lt < best:
+                        best = lt
+            if best is not None:
+                lap_times.append(best)
+                if t["session_id"] == session_id:
+                    focus_time = best
+
+        if lap_times:
+            track_best_time_s = min(lap_times)
+
+        if focus_time is not None and len(lap_times) >= 2:
+            faster = sum(1 for t in lap_times if t < focus_time)
+            historical_percentile = (faster / len(lap_times)) * 100
+
+            # Find previous session's best time (second most recent on same track)
+            other_traces = [
+                t for t in traces if t["session_id"] != session_id
+            ]
+            if other_traces:
+                prev_laps = models.get_laps_for_session(
+                    conn, other_traces[0]["session_id"]
+                )
+                for lap in (prev_laps or []):
+                    lt = lap.get("lap_time_s")
+                    if lt and lt > 0:
+                        if prev_time is None or lt < prev_time:
+                            prev_time = lt
+
+            if prev_time is not None:
+                delta_s = focus_time - prev_time
+                improvement = {
+                    "delta_s": round(delta_s, 3),
+                    "delta_pct": round((delta_s / prev_time) * 100, 2),
+                    "improved": delta_s < 0,
+                }
+
     return api_response({
         "sessions": traces,
         "available": len(traces) >= 1,
         "focus_session_id": session_id,
+        "comparable_count": comparable_count,
+        "historical_percentile": historical_percentile,
+        "improvement": improvement,
+        "track_best_time_s": track_best_time_s,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 43. GET /api/v1/sessions/<id>/speed_overlay
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/speed_overlay", methods=["GET"])
+@_safe_api
+def get_speed_overlay(session_id: str):
+    """Return speed overlay traces keyed by session ID.
+
+    Used by the vanilla JS cross_session.js module (initOverlay).
+    Returns traces as an object keyed by session_id so the JS can
+    iterate and toggle individual traces.
+
+    Response shape (after envelope unwrap)::
+
+        {
+            "traces": {
+                "sid-1": {"distances": [...], "speeds": [...], "label": "...", "is_current": true},
+                "sid-2": {"distances": [...], "speeds": [...], "label": "...", "is_current": false}
+            }
+        }
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_id = session.get("track_id")
+    if not track_id:
+        return api_response({
+            "traces": {},
+            "available": False,
+            "reason_code": "no_track",
+            "message": "Session has no associated track for comparison",
+        })
+
+    # Find sessions on same track
+    all_sessions = models.get_sessions(conn, limit=50, offset=0)
+    same_track = [
+        s for s in all_sessions
+        if s.get("track_id") == track_id and s.get("session_id")
+    ]
+    same_track.sort(key=lambda s: s.get("session_date", ""), reverse=True)
+    same_track = same_track[:6]
+
+    traces_dict = {}
+    for s in same_track:
+        sid = s["session_id"]
+        best = _resolve_lap_number(conn, sid)
+        if best is None:
+            continue
+        trace = models.get_gps_trace(conn, sid, best)
+        if trace and trace.get("distances") and trace.get("speeds"):
+            date_str = s.get("session_date", "")
+            driver = s.get("driver_name", "")
+            label = f"{driver} {date_str}".strip() if driver else date_str
+            traces_dict[sid] = {
+                "distances": trace["distances"],
+                "speeds": trace["speeds"],
+                "label": label or sid[:8],
+                "is_current": sid == session_id,
+                "lap_number": best,
+            }
+
+    if not traces_dict:
+        return api_response({
+            "traces": {},
+            "available": False,
+            "reason_code": "no_comparable_traces",
+            "message": "No comparable speed traces found on this track",
+        })
+
+    # Observability
+    try:
+        from web.metrics import incr_counter
+        incr_counter("speed_overlay_served")
+    except Exception:
+        pass
+
+    return api_response({
+        "traces": traces_dict,
+        "available": True,
     })
 
 

@@ -197,6 +197,11 @@ def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
     """Build and persist the supplementary analysis_json blob."""
     blob: dict = {}
 
+    # Pipeline status — per-step statuses, degradation flags, versioning
+    pipeline = summary.get("pipeline")
+    if pipeline and isinstance(pipeline, dict):
+        blob["pipeline"] = pipeline
+
     # Sector analysis (computed fresh from lap times)
     sector = _compute_sector_analysis(summary)
     if sector:

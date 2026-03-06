@@ -233,6 +233,11 @@ def _build_analysis_blob(result: dict) -> dict:
     """
     blob: dict = {}
 
+    # Pipeline status — per-step statuses, degradation flags, versioning
+    pipeline = result.get("pipeline")
+    if pipeline and isinstance(pipeline, dict):
+        blob["pipeline"] = pipeline
+
     # Consistency metrics from score_result
     score_result = result.get("score_result") or {}
     details = score_result.get("details") or {}
@@ -917,15 +922,26 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
         _run_finalize_stages(ctx, job_id=job_id, conn=_finalize_conn)
         ctx.save()
 
-        # Update sessions.processing_version
+        # Update sessions.processing_version + pipeline version hash + model version
         try:
+            from pipeline_version import full_version_string
+            from pipeline_status import get_model_version
+
             conn = _get_pg_connection()
             conn.execute(
                 text(
-                    "UPDATE sessions SET processing_version = :version "
+                    "UPDATE sessions SET "
+                    "  processing_version = :version,"
+                    "  pipeline_version_hash = :version_hash,"
+                    "  model_version = :model_version "
                     "WHERE session_id = :session_id"
                 ),
-                {"version": PIPELINE_VERSION, "session_id": ctx.session_id},
+                {
+                    "version": PIPELINE_VERSION,
+                    "version_hash": full_version_string(),
+                    "model_version": get_model_version(),
+                    "session_id": ctx.session_id,
+                },
             )
             conn.commit()
         except Exception:

@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 30
+SCHEMA_VERSION = 31
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -80,6 +80,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     available_channels TEXT,
     source_format     TEXT    DEFAULT 'racechrono',
     source_metadata   TEXT,
+    pipeline_version_hash TEXT DEFAULT 'unknown',
+    model_version     TEXT    DEFAULT 'none',
     created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
 );
 """
