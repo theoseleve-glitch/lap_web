@@ -16,6 +16,7 @@ import sys
 from flask import Blueprint, g, request, jsonify
 
 from web.api_utils import ErrorCode, api_error, api_response
+from web.idempotency import idempotent
 from web.middleware.audit import audit_log
 
 try:
@@ -161,6 +162,52 @@ def _update_webhook_status(conn, stripe_event_id: str, status: str, error: str |
         logger.debug("Failed to update webhook status", exc_info=True)
 
 
+def _invalidate_cache_for_event(customer_id: str):
+    """Invalidate entitlement cache when a billing event is processed."""
+    if not customer_id:
+        return
+    try:
+        from web.entitlement_cache import invalidate_by_stripe_customer
+        invalidate_by_stripe_customer(customer_id)
+    except Exception:
+        logger.debug("Failed to invalidate entitlement cache", exc_info=True)
+
+
+def _schedule_webhook_retry(conn, stripe_event_id: str):
+    """Schedule a failed webhook for retry with exponential backoff."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        # Read current attempt count
+        cur = conn.execute(
+            "SELECT attempt_count FROM stripe_webhook_log "
+            "WHERE stripe_event_id = %(eid)s",
+            {"eid": stripe_event_id},
+        )
+        row = cur.fetchone()
+        if not row:
+            return
+        attempt = (dict(row) if not isinstance(row, dict) else row).get("attempt_count", 1)
+        backoff = [60, 300, 900, 3600, 21600, 86400]
+        max_attempts = len(backoff) + 1
+        if attempt >= max_attempts:
+            conn.execute(
+                "UPDATE stripe_webhook_log SET processing_status = 'deadletter' "
+                "WHERE stripe_event_id = %(eid)s",
+                {"eid": stripe_event_id},
+            )
+        else:
+            idx = min(attempt - 1, len(backoff) - 1)
+            next_retry = datetime.now(timezone.utc) + timedelta(seconds=backoff[idx])
+            conn.execute(
+                "UPDATE stripe_webhook_log SET next_retry_at = %(next)s "
+                "WHERE stripe_event_id = %(eid)s",
+                {"eid": stripe_event_id, "next": next_retry},
+            )
+        conn.commit()
+    except Exception:
+        logger.debug("Failed to schedule webhook retry", exc_info=True)
+
+
 def _resolve_tier_from_checkout(session: dict) -> str:
     """Resolve plan tier from a Stripe checkout session.
 
@@ -295,14 +342,35 @@ def stripe_webhook():
             logger.debug("Unhandled Stripe event type: %s", event_type)
         # Track successful webhook processing
         _update_webhook_status(conn, event_id, "processed")
+        # Mark processed_at timestamp
         try:
-            from web.metrics import incr_counter
-            incr_counter("webhook_processed")
+            from datetime import datetime, timezone
+            conn.execute(
+                "UPDATE stripe_webhook_log SET processed_at = %(now)s "
+                "WHERE stripe_event_id = %(eid)s",
+                {"now": datetime.now(timezone.utc), "eid": event_id},
+            )
+            conn.commit()
         except Exception:
             pass
+        try:
+            from web.metrics import incr_counter, record_histogram
+            incr_counter("webhook_processed")
+            # Track processing latency (event created → processed)
+            if event_created:
+                import time
+                latency_ms = (time.time() - event_created) * 1000
+                record_histogram("webhook_latency_ms", latency_ms)
+        except Exception:
+            pass
+        # Invalidate entitlement cache for affected user
+        _invalidate_cache_for_event(customer_id)
     except Exception:
         logger.exception("Error processing Stripe event %s", event_type)
-        _update_webhook_status(conn, event_id, "failed", str(sys.exc_info()[1]))
+        error_str = str(sys.exc_info()[1])[:500]
+        _update_webhook_status(conn, event_id, "failed", error_str)
+        # Schedule retry with backoff
+        _schedule_webhook_retry(conn, event_id)
         try:
             from web.metrics import incr_counter
             incr_counter("webhook_failed")
@@ -856,6 +924,7 @@ def billing_status():
 
 @bp.route("/portal", methods=["POST"])
 @rate_limit(tier="write")
+@idempotent
 def billing_portal():
     """Create a Stripe billing portal session.
 
@@ -911,6 +980,7 @@ def billing_portal():
 
 @bp.route("/email", methods=["PATCH"])
 @rate_limit(tier="write")
+@idempotent
 def billing_email():
     """Update the email on the user's Stripe customer record.
 
@@ -953,3 +1023,90 @@ def billing_email():
     except Exception:
         logger.exception("Failed to update Stripe customer email")
         return api_error(ErrorCode.INTERNAL_ERROR, "Could not update billing email", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /checkout — create Stripe Checkout Session (server-side, reuses customer)
+# ---------------------------------------------------------------------------
+
+# Allowlisted price IDs — only these can be selected via the API.
+# Populated from environment at startup via _init_price_mapping().
+# STRIPE_PRICE_TO_TIER already contains the allowlist.
+
+@bp.route("/checkout", methods=["POST"])
+@rate_limit(tier="write")
+@idempotent
+def create_checkout_session():
+    """Create a Stripe Checkout Session for subscription upgrade.
+
+    Reuses existing stripe_customer_id when available. Sets plan_tier
+    metadata so the webhook can resolve the tier without price ID lookup.
+
+    Accepts ``{plan, billing_cycle, success_url, cancel_url}``.
+    ``plan`` must be one of: racer, world-class.
+    ``billing_cycle`` must be: monthly or annual.
+    Returns ``{checkout_url}``.
+    """
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    if not STRIPE_SECRET_KEY or stripe is None:
+        return api_error(ErrorCode.SERVICE_UNAVAILABLE, "Stripe not configured", status=503)
+
+    body = request.get_json(silent=True) or {}
+    plan = (body.get("plan") or "").lower()
+    billing_cycle = (body.get("billing_cycle") or "annual").lower()
+
+    if plan not in ("racer", "world-class"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "plan must be 'racer' or 'world-class'", status=400)
+    if billing_cycle not in ("monthly", "annual"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "billing_cycle must be 'monthly' or 'annual'", status=400)
+
+    # Resolve price ID from allowlist
+    env_key = f"STRIPE_PRICE_{'WORLDCLASS' if plan == 'world-class' else 'RACER'}_{billing_cycle.upper()}"
+    price_id = os.environ.get(env_key)
+    if not price_id or price_id not in STRIPE_PRICE_TO_TIER:
+        return api_error(ErrorCode.VALIDATION_ERROR, f"Price not configured for {plan}/{billing_cycle}", status=400)
+
+    stripe.api_key = STRIPE_SECRET_KEY
+
+    conn = _get_conn()
+    row = conn.execute(
+        "SELECT email, stripe_customer_id FROM users WHERE id = %(uid)s",
+        {"uid": user_id},
+    ).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "User not found", status=404)
+
+    user = dict(row) if not isinstance(row, dict) else row
+    customer_id = user.get("stripe_customer_id")
+    email = user.get("email")
+
+    # Build checkout session params
+    session_params = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": body.get("success_url", f"{FRONTEND_URL}/thank-you/book"),
+        "cancel_url": body.get("cancel_url", f"{FRONTEND_URL}/pricing?checkout=cancelled"),
+        "metadata": {"plan_tier": plan, "plan": plan.upper()},
+        "allow_promotion_codes": True,
+        "tax_id_collection": {"enabled": True},
+    }
+
+    if customer_id:
+        session_params["customer"] = customer_id
+    elif email:
+        session_params["customer_email"] = email
+
+    try:
+        session = stripe.checkout.Session.create(**session_params)
+        try:
+            from web.metrics import incr_counter
+            incr_counter("checkout_session_created")
+        except Exception:
+            pass
+        return api_response({"checkout_url": session.url})
+    except Exception:
+        logger.exception("Failed to create Stripe checkout session")
+        return api_error(ErrorCode.INTERNAL_ERROR, "Could not create checkout session", status=500)

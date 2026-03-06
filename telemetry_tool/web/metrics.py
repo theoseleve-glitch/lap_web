@@ -224,11 +224,59 @@ def init_metrics(app: Flask) -> None:
             "webhooks": {
                 "processed_24h": get_counter_values("webhook_processed", hours=24, redis_client=r),
                 "failed_24h": get_counter_values("webhook_failed", hours=24, redis_client=r),
+                "latency": get_histogram_stats("webhook_latency_ms", hours=1, redis_client=r),
+                "retry_queue": _get_webhook_queue_metrics(r),
+            },
+            "billing": {
+                "checkout_sessions_24h": get_counter_values("checkout_session_created", hours=24, redis_client=r),
+                "plan_required_errors_24h": get_counter_values("plan_required_error", hours=24, redis_client=r),
+                "portal_sessions_24h": get_counter_values("portal_session_created", hours=24, redis_client=r),
+                "plan_switches_24h": get_counter_values("plan_switch_validated", hours=24, redis_client=r),
+                "billing_profile_updates_24h": get_counter_values("billing_profile_updated", hours=24, redis_client=r),
+                "upgrade_funnel": {
+                    "checkout_started_24h": get_counter_values("checkout_session_created", hours=24, redis_client=r),
+                    "subscription_activated_24h": get_counter_values("subscription_activated", hours=24, redis_client=r),
+                },
+                "payment_recovery": {
+                    "past_due_24h": get_counter_values("subscription_past_due", hours=24, redis_client=r),
+                    "recovered_24h": get_counter_values("subscription_recovered", hours=24, redis_client=r),
+                },
+                "entitlement_cache": {
+                    "hits_24h": get_counter_values("entitlement_cache_hit", hours=24, redis_client=r),
+                    "misses_24h": get_counter_values("entitlement_cache_miss", hours=24, redis_client=r),
+                    "invalidations_24h": get_counter_values("entitlement_cache_invalidation", hours=24, redis_client=r),
+                },
+                "idempotency": {
+                    "replayed_24h": get_counter_values("idempotency_replay", hours=24, redis_client=r),
+                },
+                "time_to_activate": get_histogram_stats("time_to_activate_s", hours=24, redis_client=r),
             },
         }
         return jsonify(data), 200
 
     app.register_blueprint(metrics_bp)
+
+
+def _get_webhook_queue_metrics(redis_client) -> dict:
+    """Count pending retries and dead-lettered webhooks from PG."""
+    try:
+        from web.db_pg import get_pg_connection
+        conn = get_pg_connection()
+        row = conn.execute(
+            "SELECT "
+            "COUNT(*) FILTER (WHERE processing_status = 'failed' AND next_retry_at IS NOT NULL) AS pending_retry, "
+            "COUNT(*) FILTER (WHERE processing_status = 'deadletter') AS deadlettered "
+            "FROM stripe_webhook_log"
+        ).fetchone()
+        if row:
+            r = dict(row) if not isinstance(row, dict) else row
+            return {
+                "pending_retry": r.get("pending_retry", 0),
+                "deadlettered": r.get("deadlettered", 0),
+            }
+    except Exception:
+        pass
+    return {"pending_retry": 0, "deadlettered": 0}
 
 
 def _get_job_metrics(redis_client) -> dict:

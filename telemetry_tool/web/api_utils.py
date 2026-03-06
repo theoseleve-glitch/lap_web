@@ -53,6 +53,7 @@ class ErrorCode:
     ANALYSIS_FAILED = "ANALYSIS_FAILED"
     FILE_TOO_LARGE = "FILE_TOO_LARGE"
     UNSUPPORTED_FORMAT = "UNSUPPORTED_FORMAT"
+    PLAN_REQUIRED = "PLAN_REQUIRED"
     IDEMPOTENCY_CONFLICT = "IDEMPOTENCY_CONFLICT"
     INTERNAL_ERROR = "INTERNAL_ERROR"
     API_HTML_RESPONSE = "API_HTML_RESPONSE"
@@ -60,6 +61,23 @@ class ErrorCode:
     NOT_READY = "NOT_READY"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
     DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
+
+
+class ReasonCode:
+    """Stable reason codes for billing/entitlement errors.
+
+    Used as the ``reason_code`` field inside PLAN_REQUIRED and
+    QUOTA_EXCEEDED error envelopes to let the frontend distinguish
+    *why* access was denied without parsing the human-readable message.
+    """
+
+    FEATURE_LOCKED = "FEATURE_LOCKED"
+    LIMIT_EXCEEDED = "LIMIT_EXCEEDED"
+    TRIAL_ENDED = "TRIAL_ENDED"
+    PLAN_MISMATCH = "PLAN_MISMATCH"
+    SUBSCRIPTION_UNPAID = "SUBSCRIPTION_UNPAID"
+    SUBSCRIPTION_CANCELED = "SUBSCRIPTION_CANCELED"
+    SUBSCRIPTION_PAUSED = "SUBSCRIPTION_PAUSED"
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +140,67 @@ def api_error(
         "error": error_section,
         "meta": _build_meta(),
     }
+    return jsonify(body), status
+
+
+def billing_error(
+    reason_code: str,
+    message: str,
+    *,
+    current_plan: str | None = None,
+    required_plan: str | None = None,
+    upgrade_url: str | None = None,
+    error_code: str = ErrorCode.PLAN_REQUIRED,
+    status: int = 403,
+    extra: dict[str, Any] | None = None,
+) -> tuple:
+    """Return a standardized billing/entitlement error envelope.
+
+    All plan-gating and quota errors MUST use this builder so the
+    frontend receives a predictable schema::
+
+        {
+            "ok": false,
+            "error": {
+                "code": "PLAN_REQUIRED",
+                "reason_code": "FEATURE_LOCKED",
+                "message": "...",
+                "upgrade_url": "/billing?upgrade=true",
+                "required_plan": "racer",
+                "current_plan": "free"
+            },
+            "meta": {"request_id": "...", "version": "..."}
+        }
+    """
+    if upgrade_url is None:
+        upgrade_url = os.environ.get(
+            "BILLING_UPGRADE_URL", "/billing?upgrade=true"
+        )
+
+    error_section: dict[str, Any] = {
+        "code": error_code,
+        "reason_code": reason_code,
+        "message": message,
+        "upgrade_url": upgrade_url,
+        "required_plan": required_plan,
+        "current_plan": current_plan,
+    }
+    if extra:
+        error_section.update(extra)
+
+    body = {
+        "ok": False,
+        "error": error_section,
+        "meta": _build_meta(),
+    }
+
+    # Observability: count billing errors
+    try:
+        from web.metrics import incr_counter
+        incr_counter("plan_required_error")
+    except Exception:
+        pass
+
     return jsonify(body), status
 
 

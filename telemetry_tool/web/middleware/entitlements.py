@@ -90,6 +90,50 @@ _EXEMPT_PREFIXES = (
 )
 
 
+# ── Grace period policy matrix ──────────────────────────────────────
+# billing_state → action_category → allowed (True/False)
+#
+# Action categories:
+#   ACCESS_VIEW  — read sessions, laps, dashboard, track list
+#   EXPORT       — download CSV/PDF, report download
+#   COMPUTE      — analysis, batch reanalyze, pipeline tasks
+#   UPLOAD       — file upload, ingest
+#   API_WRITE    — any POST/PUT/DELETE (catch-all for mutations)
+
+GRACE_POLICY: dict[str, dict[str, bool]] = {
+    "active":   {"ACCESS_VIEW": True,  "EXPORT": True,  "COMPUTE": True,  "UPLOAD": True,  "API_WRITE": True},
+    "trialing": {"ACCESS_VIEW": True,  "EXPORT": True,  "COMPUTE": True,  "UPLOAD": True,  "API_WRITE": True},
+    "past_due": {"ACCESS_VIEW": True,  "EXPORT": True,  "COMPUTE": True,  "UPLOAD": False, "API_WRITE": True},
+    "canceled": {"ACCESS_VIEW": True,  "EXPORT": True,  "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
+    "paused":   {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
+    "unpaid":   {"ACCESS_VIEW": True,  "EXPORT": False, "COMPUTE": False, "UPLOAD": False, "API_WRITE": False},
+}
+
+# Route → action category mapping
+_ACTION_CATEGORY_OVERRIDES: list[tuple[str, str, str]] = [
+    # (method, path_prefix, category)
+    ("POST", "/analyze/", "COMPUTE"),
+    ("POST", "/api/v1/batch-reanalyze", "COMPUTE"),
+    ("POST", "/api/data/files/upload", "UPLOAD"),
+    ("POST", "/api/v1/files/upload", "UPLOAD"),
+    ("POST", "/api/v1/ingest/start", "UPLOAD"),
+    ("POST", "/api/v1/sessions/upload", "UPLOAD"),
+    ("POST", "/api/v1/exports/", "EXPORT"),
+    ("POST", "/api/data/export/", "EXPORT"),
+    ("GET", "/api/v1/exports/", "EXPORT"),
+]
+
+
+def _classify_action(method: str, path: str) -> str:
+    """Classify a request into an action category for grace policy checks."""
+    for gate_method, gate_prefix, category in _ACTION_CATEGORY_OVERRIDES:
+        if method == gate_method and path.startswith(gate_prefix):
+            return category
+    if method == "GET":
+        return "ACCESS_VIEW"
+    return "API_WRITE"
+
+
 def entitlement_middleware():
     """Before-request hook: enforce plan-based feature and quota gates.
 
@@ -113,24 +157,17 @@ def entitlement_middleware():
 
     method = request.method
 
-    # ── Billing state enforcement ────────────────────────────────────
-    # Block paid-tier users whose subscription is not in good standing.
+    # ── Billing state enforcement (grace period policy matrix) ───────
     # Only applies when the user has a non-demo plan_tier.
     plan_tier = getattr(g, "plan_tier", "demo")
     if plan_tier not in ("demo", "free", None):
         from auth.entitlements import get_user_subscription_status, _get_conn as _ent_conn
         conn = _ent_conn()
         sub_status = get_user_subscription_status(conn, user_id)
-        if sub_status == "unpaid":
-            from web.api_utils import api_error, ErrorCode
-            return api_error(
-                ErrorCode.FORBIDDEN,
-                "Your subscription payment is overdue. Please update your payment method.",
-                status=403,
-                details=[{"code": "UNPAID"}],
-            )
+
+        # For canceled: check if grace period has expired → treat as "unpaid"
+        effective_status = sub_status
         if sub_status == "canceled":
-            # Check if grace period has expired
             cur = conn.execute(
                 "SELECT grace_period_end FROM users WHERE id = %(uid)s",
                 {"uid": user_id},
@@ -143,12 +180,30 @@ def entitlement_middleware():
                     if hasattr(grace_end, "tzinfo") and grace_end.tzinfo is None:
                         grace_end = grace_end.replace(tzinfo=timezone.utc)
                     if datetime.now(timezone.utc) > grace_end:
-                        return api_error(
-                            ErrorCode.FORBIDDEN,
-                            "Your subscription has been canceled. Subscribe to regain access.",
-                            status=403,
-                            details=[{"code": "CANCELED"}],
-                        )
+                        effective_status = "unpaid"  # Grace expired → full block
+
+        policy = GRACE_POLICY.get(effective_status, GRACE_POLICY["active"])
+        action_category = _classify_action(method, path)
+
+        if not policy.get(action_category, True):
+            from web.api_utils import billing_error, ReasonCode
+
+            reason_map = {
+                "unpaid": (ReasonCode.SUBSCRIPTION_UNPAID, "Your subscription payment is overdue. Please update your payment method."),
+                "canceled": (ReasonCode.SUBSCRIPTION_CANCELED, "Your subscription has been canceled. This action is not available during the grace period."),
+                "paused": (ReasonCode.SUBSCRIPTION_PAUSED, "Your subscription is paused. Resume to use this feature."),
+                "past_due": (ReasonCode.SUBSCRIPTION_UNPAID, "Your payment is past due. Uploads are blocked until resolved."),
+            }
+            reason_code, message = reason_map.get(
+                effective_status,
+                (ReasonCode.SUBSCRIPTION_UNPAID, "Action not available in current billing state."),
+            )
+            return billing_error(
+                reason_code=reason_code,
+                message=message,
+                current_plan=plan_tier,
+                status=403,
+            )
 
     # ── Feature gates ────────────────────────────────────────────────
     for gate_entry in _FEATURE_GATES:
@@ -288,12 +343,19 @@ def _identity() -> tuple[int | None, int | None]:
 
 
 def entitlement_snapshot() -> dict:
-    """Resolve entitlement snapshot from request context."""
+    """Resolve entitlement snapshot from request context.
+
+    Uses Redis cache (cache-aside) when available. Falls back to DB.
+    """
     user_id, workspace_id = _identity()
     if workspace_id is None:
         workspace_id = current_app.config.get("DEFAULT_WORKSPACE_ID", 1)
-    conn = _get_conn()
-    return get_user_entitlements(conn, user_id=user_id, workspace_id=workspace_id)
+    try:
+        from web.entitlement_cache import cached_entitlements
+        return cached_entitlements(user_id, workspace_id)
+    except Exception:
+        conn = _get_conn()
+        return get_user_entitlements(conn, user_id=user_id, workspace_id=workspace_id)
 
 
 def require_feature(feature_name: str):
@@ -314,9 +376,13 @@ def require_feature(feature_name: str):
             from auth.entitlements import authorize_feature as _authorize
             allowed, ctx = _authorize(conn, user_id, feature_name)
             if not allowed:
-                return api_error(
-                    ErrorCode.FORBIDDEN,
-                    ctx.get("reason", f"Feature '{feature_name}' requires a plan upgrade."),
+                from web.api_utils import billing_error, ReasonCode
+                return billing_error(
+                    reason_code=ReasonCode.FEATURE_LOCKED,
+                    message=ctx.get("reason", f"Feature '{feature_name}' requires a plan upgrade."),
+                    current_plan=ctx.get("current_tier"),
+                    required_plan=ctx.get("upgrade_tier"),
+                    upgrade_url=ctx.get("upgrade_url"),
                     status=403,
                 )
             g.entitlement_snapshot = ctx
@@ -352,10 +418,18 @@ def require_report_quota(fn):
         limit = policy.get("reports_per_month", 0)
         remaining = max(0, limit - reports_used) if limit != -1 else 999
         if remaining <= 0:
-            return api_error(
-                ErrorCode.QUOTA_EXCEEDED,
-                "Monthly report quota exceeded.",
+            from web.api_utils import billing_error, ErrorCode, ReasonCode
+            return billing_error(
+                reason_code=ReasonCode.LIMIT_EXCEEDED,
+                message="Monthly report quota exceeded.",
+                current_plan=snapshot.get("plan_tier"),
+                error_code=ErrorCode.QUOTA_EXCEEDED,
                 status=429,
+                extra={
+                    "limit": limit,
+                    "used": reports_used,
+                    "remaining": 0,
+                },
             )
 
         snapshot["reports_used"] = reports_used

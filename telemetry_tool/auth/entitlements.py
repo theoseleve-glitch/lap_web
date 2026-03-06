@@ -447,12 +447,15 @@ def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int
     else:
         resets_at = date(today.year, today.month + 1, 1).isoformat()
 
+    current_tier = entitlements.get("plan_tier", "demo")
+
     if remaining < cost:
         return False, {
             "remaining": remaining,
             "limit": limit,
             "used": used,
             "resets_at": resets_at,
+            "current_tier": current_tier,
         }
 
     return True, {
@@ -460,6 +463,7 @@ def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int
         "limit": limit,
         "used": used,
         "resets_at": resets_at,
+        "current_tier": current_tier,
     }
 
 
@@ -515,6 +519,7 @@ def check_and_record_quota(conn, user_id: int, workspace_id: int,
             "limit": limit,
             "used": current_total,
             "resets_at": resets_at,
+            "current_tier": plan_tier,
         }
 
     # Record the usage within the same transaction (row is locked)
@@ -525,6 +530,7 @@ def check_and_record_quota(conn, user_id: int, workspace_id: int,
         "limit": limit,
         "used": current_total + cost,
         "resets_at": resets_at,
+        "current_tier": plan_tier,
     }
 
 
@@ -638,35 +644,44 @@ def _get_conn():
 
 
 def _plan_required_response(feature: str, ctx: dict):
-    """Build 403 response for plan-gated features."""
-    from flask import jsonify
-    return jsonify({
-        "ok": False,
-        "error": {
-            "code": "PLAN_REQUIRED",
-            "message": ctx.get("reason", f"{feature} is not available on your current plan"),
-            "upgrade_tier": ctx.get("upgrade_tier"),
-            "upgrade_url": ctx.get("upgrade_url"),
-        },
-        "meta": {},
-    }), 403
+    """Build 403 response for plan-gated features.
+
+    Uses the standardized ``billing_error()`` builder so all billing
+    error responses share the same schema (code, reason_code, upgrade_url,
+    required_plan, current_plan, request_id).
+    """
+    from web.api_utils import billing_error, ReasonCode
+    return billing_error(
+        reason_code=ReasonCode.FEATURE_LOCKED,
+        message=ctx.get("reason", f"{feature} is not available on your current plan"),
+        current_plan=ctx.get("current_tier"),
+        required_plan=ctx.get("upgrade_tier"),
+        upgrade_url=ctx.get("upgrade_url"),
+        status=403,
+    )
 
 
 def _quota_exceeded_response(meter_key: str, ctx: dict):
-    """Build 429 response for quota-limited features."""
-    from flask import jsonify
-    return jsonify({
-        "ok": False,
-        "error": {
-            "code": "QUOTA_EXCEEDED",
-            "message": f"Monthly {meter_key} limit reached ({ctx.get('used', 0)}/{ctx.get('limit', 0)})",
+    """Build 429 response for quota-limited features.
+
+    Uses ``billing_error()`` with ``QUOTA_EXCEEDED`` code and ``LIMIT_EXCEEDED``
+    reason so the frontend receives the same schema as feature-gated errors
+    plus quota-specific fields (limit, remaining, used, resets_at).
+    """
+    from web.api_utils import billing_error, ErrorCode, ReasonCode
+    return billing_error(
+        reason_code=ReasonCode.LIMIT_EXCEEDED,
+        message=f"Monthly {meter_key} limit reached ({ctx.get('used', 0)}/{ctx.get('limit', 0)})",
+        current_plan=ctx.get("current_tier"),
+        error_code=ErrorCode.QUOTA_EXCEEDED,
+        status=429,
+        extra={
             "limit": ctx.get("limit"),
             "remaining": ctx.get("remaining", 0),
             "used": ctx.get("used", 0),
             "resets_at": ctx.get("resets_at"),
         },
-        "meta": {},
-    }), 429
+    )
 
 
 def _parse_json_or_default(value, default):

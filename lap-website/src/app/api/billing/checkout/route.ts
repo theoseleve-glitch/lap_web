@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     params.set('allow_promotion_codes', 'true');
     params.set('tax_id_collection[enabled]', 'true');
     params.set('metadata[plan]', body.plan);
+    params.set('metadata[plan_tier]', body.plan.toUpperCase() === 'WORLD-CLASS' ? 'world-class' : body.plan.toLowerCase());
     params.set('metadata[billingCycle]', body.billingCycle);
 
     if (body.email) {

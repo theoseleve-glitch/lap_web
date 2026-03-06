@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripeSecretKey, hasBillingAuth } from '@/lib/stripe-billing';
+import { getValidatedSiteOrigin } from '@/lib/site-origin';
 
 interface PortalBody {
   customerEmail?: string;
@@ -21,7 +22,7 @@ export async function POST(request: Request) {
   }
 
   const stripeKey = getStripeSecretKey();
-  const origin = request.headers.get('origin') ?? 'https://lap.racing';
+  const origin = getValidatedSiteOrigin();
   if (stripeKey) {
     try {
       let customerId = body.customerId;

@@ -98,6 +98,11 @@ def idempotent(fn):
                 payload = json.loads(cached)
                 resp = jsonify(payload["body"])
                 resp.status_code = payload["status"]
+                try:
+                    from web.metrics import incr_counter
+                    incr_counter("idempotency_replay")
+                except Exception:
+                    pass
                 return resp
             except Exception:
                 logger.warning("Corrupt idempotency cache for %s", cache_key)

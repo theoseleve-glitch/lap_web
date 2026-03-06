@@ -369,7 +369,287 @@ def create_portal():
             customer=customer_id,
             return_url=return_url,
         )
+        try:
+            from web.metrics import incr_counter
+            incr_counter("portal_session_created")
+        except Exception:
+            pass
         return api_response({"portal_url": session.url})
     except Exception:
         logger.exception("Failed to create Stripe portal session")
         return api_error(ErrorCode.INTERNAL_ERROR, "Could not create portal session", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /validate-switch — check downgrade constraints before plan change
+# ---------------------------------------------------------------------------
+
+@bp.route("/validate-switch", methods=["POST"])
+@rate_limit(tier="write")
+def validate_plan_switch():
+    """Check whether switching to *target_plan* would violate usage constraints.
+
+    Returns ``{ok: true, data: {allowed: true, ...}}`` or
+    ``{ok: true, data: {allowed: false, violations: [...]}}``
+    so the frontend can warn the user before sending them to the Stripe portal.
+    """
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+    if workspace_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "No workspace context", status=403)
+
+    body = request.get_json(silent=True) or {}
+    target_plan = (body.get("target_plan") or "").lower().replace("-", "_")
+
+    if not target_plan:
+        return api_error(ErrorCode.VALIDATION_ERROR, "target_plan is required", status=400)
+
+    from auth.entitlements import PLAN_ENTITLEMENTS, get_plan_entitlements
+
+    if target_plan not in PLAN_ENTITLEMENTS and target_plan not in ("demo", "free"):
+        return api_error(ErrorCode.VALIDATION_ERROR, f"Unknown plan: {target_plan}", status=400)
+
+    conn = get_pg_connection()
+
+    # Current plan
+    row = conn.execute(
+        "SELECT plan_tier FROM users WHERE id = %(uid)s",
+        {"uid": user_id},
+    ).fetchone()
+    current_plan = ((dict(row) if not isinstance(row, dict) else row).get("plan_tier") or "demo") if row else "demo"
+
+    target_ent = get_plan_entitlements(target_plan)
+    violations = []
+
+    # 1. Workspace member count
+    member_row = conn.execute(
+        "SELECT COUNT(*) AS cnt FROM workspace_members WHERE workspace_id = %(wsid)s",
+        {"wsid": workspace_id},
+    ).fetchone()
+    member_count = int((dict(member_row) if not isinstance(member_row, dict) else member_row).get("cnt", 0)) if member_row else 0
+    max_members = target_ent.get("max_workspace_members", 1)
+    if max_members != -1 and member_count > max_members:
+        violations.append({
+            "constraint": "max_workspace_members",
+            "current_value": member_count,
+            "target_limit": max_members,
+            "message": f"Your workspace has {member_count} members but the target plan allows {max_members}.",
+        })
+
+    # 2. Data retention — warn if retention would be shorter
+    current_ent = get_plan_entitlements(current_plan)
+    current_retention = current_ent.get("raw_retention_days", 30)
+    target_retention = target_ent.get("raw_retention_days", 30)
+    if target_retention < current_retention:
+        violations.append({
+            "constraint": "raw_retention_days",
+            "current_value": current_retention,
+            "target_limit": target_retention,
+            "message": f"Data retention drops from {current_retention} to {target_retention} days. Older data may be purged.",
+        })
+
+    # 3. Feature loss warnings (non-blocking)
+    feature_checks = [
+        ("api_access", "API Access"),
+        ("comparison_progress", "Session Comparison"),
+        ("coaching_drills", "Coaching Drills"),
+        ("viz_workspace", "Visualization Workspace"),
+        ("pdf_reports", "PDF Reports"),
+    ]
+    lost_features = []
+    for key, label in feature_checks:
+        if current_ent.get(key) and not target_ent.get(key):
+            lost_features.append(label)
+
+    try:
+        from web.metrics import incr_counter
+        incr_counter("plan_switch_validated")
+    except Exception:
+        pass
+
+    return api_response({
+        "allowed": len(violations) == 0,
+        "current_plan": current_plan,
+        "target_plan": target_plan,
+        "violations": violations,
+        "lost_features": lost_features,
+    })
+
+
+# ---------------------------------------------------------------------------
+# GET/PUT /profile — billing profile (EU/FR VAT, company info)
+# ---------------------------------------------------------------------------
+
+_VALID_BILLING_TYPES = {"b2c", "b2b"}
+_PROFILE_FIELDS = [
+    "billing_type", "company_name", "vat_id",
+    "address_line1", "address_line2", "city",
+    "postal_code", "state_region", "country_code",
+]
+
+
+@bp.route("/profile", methods=["GET"])
+@rate_limit(tier="read")
+def get_billing_profile():
+    """Return the workspace's billing profile (company, VAT, address)."""
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+    if workspace_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "No workspace context", status=403)
+
+    conn = get_pg_connection()
+    row = conn.execute(
+        "SELECT billing_type, company_name, vat_id, "
+        "address_line1, address_line2, city, postal_code, state_region, country_code "
+        "FROM billing_profiles WHERE workspace_id = %(wsid)s",
+        {"wsid": workspace_id},
+    ).fetchone()
+
+    if row is None:
+        return api_response({
+            "billing_type": "b2c",
+            "company_name": None,
+            "vat_id": None,
+            "address_line1": None,
+            "address_line2": None,
+            "city": None,
+            "postal_code": None,
+            "state_region": None,
+            "country_code": None,
+        })
+
+    profile = dict(row) if not isinstance(row, dict) else row
+    return api_response(profile)
+
+
+@bp.route("/profile", methods=["PUT"])
+@rate_limit(tier="write")
+def update_billing_profile():
+    """Create or update the workspace's billing profile.
+
+    Syncs company/VAT info to the Stripe customer if configured.
+    """
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+    if workspace_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "No workspace context", status=403)
+
+    body = request.get_json(silent=True) or {}
+
+    billing_type = body.get("billing_type", "b2c")
+    if billing_type not in _VALID_BILLING_TYPES:
+        return api_error(ErrorCode.VALIDATION_ERROR, "billing_type must be 'b2c' or 'b2b'", status=400)
+
+    # Validate country_code (ISO 3166-1 alpha-2)
+    country_code = body.get("country_code")
+    if country_code and (len(country_code) != 2 or not country_code.isalpha()):
+        return api_error(ErrorCode.VALIDATION_ERROR, "country_code must be a 2-letter ISO code", status=400)
+
+    # Validate VAT ID format (basic check: 2-letter country prefix + 2-15 chars)
+    vat_id = body.get("vat_id")
+    if vat_id:
+        vat_id = vat_id.strip().upper().replace(" ", "")
+        if len(vat_id) < 4 or len(vat_id) > 17:
+            return api_error(ErrorCode.VALIDATION_ERROR, "VAT ID format invalid", status=400)
+
+    conn = get_pg_connection()
+
+    # Upsert billing profile
+    conn.execute(
+        "INSERT INTO billing_profiles (workspace_id, billing_type, company_name, vat_id, "
+        "address_line1, address_line2, city, postal_code, state_region, country_code, updated_at) "
+        "VALUES (%(wsid)s, %(btype)s, %(company)s, %(vat)s, "
+        "%(a1)s, %(a2)s, %(city)s, %(postal)s, %(state)s, %(cc)s, NOW()) "
+        "ON CONFLICT (workspace_id) "
+        "DO UPDATE SET billing_type = %(btype)s, company_name = %(company)s, vat_id = %(vat)s, "
+        "address_line1 = %(a1)s, address_line2 = %(a2)s, city = %(city)s, "
+        "postal_code = %(postal)s, state_region = %(state)s, country_code = %(cc)s, "
+        "updated_at = NOW()",
+        {
+            "wsid": workspace_id,
+            "btype": billing_type,
+            "company": body.get("company_name"),
+            "vat": vat_id,
+            "a1": body.get("address_line1"),
+            "a2": body.get("address_line2"),
+            "city": body.get("city"),
+            "postal": body.get("postal_code"),
+            "state": body.get("state_region"),
+            "cc": country_code.upper() if country_code else None,
+        },
+    )
+    conn.commit()
+
+    # Sync to Stripe customer if available
+    _sync_billing_profile_to_stripe(conn, user_id, body, vat_id)
+
+    try:
+        from web.metrics import incr_counter
+        incr_counter("billing_profile_updated")
+    except Exception:
+        pass
+
+    return api_response({"updated": True})
+
+
+def _sync_billing_profile_to_stripe(conn, user_id: int, body: dict, vat_id: str | None):
+    """Best-effort sync of billing info to Stripe customer."""
+    stripe = _get_stripe()
+    if stripe is None:
+        return
+
+    row = conn.execute(
+        "SELECT stripe_customer_id FROM users WHERE id = %(uid)s",
+        {"uid": user_id},
+    ).fetchone()
+    if row is None:
+        return
+
+    customer_id = (dict(row) if not isinstance(row, dict) else row).get("stripe_customer_id")
+    if not customer_id:
+        return
+
+    try:
+        update_params = {}
+        if body.get("company_name"):
+            update_params["name"] = body["company_name"]
+        if body.get("address_line1"):
+            update_params["address"] = {
+                "line1": body.get("address_line1", ""),
+                "line2": body.get("address_line2", ""),
+                "city": body.get("city", ""),
+                "postal_code": body.get("postal_code", ""),
+                "state": body.get("state_region", ""),
+                "country": body.get("country_code", ""),
+            }
+
+        if update_params:
+            stripe.Customer.modify(customer_id, **update_params)
+
+        # Set VAT ID (tax_ids) if provided
+        if vat_id:
+            # Determine tax ID type from prefix
+            prefix = vat_id[:2].upper()
+            tax_type_map = {
+                "FR": "eu_vat", "DE": "eu_vat", "IT": "eu_vat",
+                "ES": "eu_vat", "NL": "eu_vat", "BE": "eu_vat",
+                "AT": "eu_vat", "PT": "eu_vat", "IE": "eu_vat",
+                "LU": "eu_vat", "FI": "eu_vat", "EL": "eu_vat",
+                "GB": "gb_vat", "CH": "ch_vat",
+            }
+            tax_type = tax_type_map.get(prefix, "eu_vat")
+            try:
+                stripe.Customer.create_tax_id(customer_id, type=tax_type, value=vat_id)
+            except Exception:
+                logger.warning("Failed to set VAT ID on Stripe customer %s", customer_id)
+    except Exception:
+        logger.warning("Failed to sync billing profile to Stripe", exc_info=True)

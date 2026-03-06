@@ -229,6 +229,155 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Task: retry_failed_webhooks
+# ---------------------------------------------------------------------------
+
+# Backoff schedule in seconds: 1m, 5m, 15m, 1h, 6h, 24h
+_RETRY_BACKOFF = [60, 300, 900, 3600, 21600, 86400]
+_MAX_ATTEMPTS = len(_RETRY_BACKOFF) + 1  # 7 total (1 initial + 6 retries)
+
+
+def _retry_failed_webhooks_impl() -> dict[str, Any]:
+    """Retry failed webhook events that are due for retry.
+
+    Picks up rows where processing_status='failed' and
+    next_retry_at <= now(), replays the webhook handler,
+    and updates status accordingly. After max attempts,
+    marks as 'deadletter'.
+
+    Returns:
+        Dict with ``{"checked": N, "retried": N, "deadlettered": N}``
+    """
+    import json
+    from datetime import datetime, timedelta, timezone
+
+    conn = get_pg_connection()
+    now = datetime.now(timezone.utc)
+
+    rows = conn.execute(
+        "SELECT id, stripe_event_id, event_type, payload_json, attempt_count "
+        "FROM stripe_webhook_log "
+        "WHERE processing_status = 'failed' "
+        "AND next_retry_at IS NOT NULL "
+        "AND next_retry_at <= %(now)s "
+        "ORDER BY next_retry_at ASC "
+        "LIMIT 50",
+        {"now": now},
+    ).fetchall()
+    events = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    if not events:
+        return {"checked": 0, "retried": 0, "deadlettered": 0}
+
+    retried = 0
+    deadlettered = 0
+
+    for event in events:
+        eid = event["id"]
+        event_type = event["event_type"]
+        attempt = event["attempt_count"] + 1
+        payload_json = event.get("payload_json")
+
+        if attempt > _MAX_ATTEMPTS:
+            # Dead-letter: max attempts exceeded
+            conn.execute(
+                "UPDATE stripe_webhook_log SET processing_status = 'deadletter', "
+                "attempt_count = %(attempt)s WHERE id = %(id)s",
+                {"attempt": attempt, "id": eid},
+            )
+            conn.commit()
+            deadlettered += 1
+            logger.warning(
+                "Webhook dead-lettered: event=%s type=%s attempts=%d",
+                event["stripe_event_id"], event_type, attempt,
+            )
+            continue
+
+        # Try to replay
+        success = False
+        error_msg = None
+        try:
+            if payload_json:
+                data = json.loads(payload_json)
+            else:
+                data = {}
+
+            from web.routes.billing import (
+                _handle_checkout_completed,
+                _handle_subscription_created,
+                _handle_subscription_updated,
+                _handle_subscription_deleted,
+                _handle_subscription_paused,
+                _handle_subscription_resumed,
+                _handle_payment_failed,
+                _handle_payment_succeeded,
+            )
+
+            handlers = {
+                "checkout.session.completed": _handle_checkout_completed,
+                "customer.subscription.created": _handle_subscription_created,
+                "customer.subscription.updated": _handle_subscription_updated,
+                "customer.subscription.deleted": _handle_subscription_deleted,
+                "customer.subscription.paused": _handle_subscription_paused,
+                "customer.subscription.resumed": _handle_subscription_resumed,
+                "invoice.payment_failed": _handle_payment_failed,
+                "invoice.paid": _handle_payment_succeeded,
+            }
+
+            handler = handlers.get(event_type)
+            if handler:
+                handler(data)
+                success = True
+            else:
+                # Unknown type, dead-letter immediately
+                error_msg = f"No handler for event type: {event_type}"
+
+        except Exception as exc:
+            error_msg = str(exc)[:500]
+            logger.warning(
+                "Webhook retry failed: event=%s type=%s attempt=%d error=%s",
+                event["stripe_event_id"], event_type, attempt, error_msg,
+            )
+
+        if success:
+            conn.execute(
+                "UPDATE stripe_webhook_log SET processing_status = 'processed', "
+                "processed_at = %(now)s, attempt_count = %(attempt)s "
+                "WHERE id = %(id)s",
+                {"now": now, "attempt": attempt, "id": eid},
+            )
+            conn.commit()
+            retried += 1
+        else:
+            # Schedule next retry with backoff
+            backoff_idx = min(attempt - 1, len(_RETRY_BACKOFF) - 1)
+            next_retry = now + timedelta(seconds=_RETRY_BACKOFF[backoff_idx])
+
+            if attempt >= _MAX_ATTEMPTS:
+                conn.execute(
+                    "UPDATE stripe_webhook_log SET processing_status = 'deadletter', "
+                    "attempt_count = %(attempt)s, error_message = %(error)s "
+                    "WHERE id = %(id)s",
+                    {"attempt": attempt, "error": error_msg, "id": eid},
+                )
+                deadlettered += 1
+            else:
+                conn.execute(
+                    "UPDATE stripe_webhook_log SET attempt_count = %(attempt)s, "
+                    "next_retry_at = %(next)s, error_message = %(error)s "
+                    "WHERE id = %(id)s",
+                    {"attempt": attempt, "next": next_retry, "error": error_msg, "id": eid},
+                )
+            conn.commit()
+
+    logger.info(
+        "Webhook retry sweep: checked=%d, retried=%d, deadlettered=%d",
+        len(events), retried, deadlettered,
+    )
+    return {"checked": len(events), "retried": retried, "deadlettered": deadlettered}
+
+
+# ---------------------------------------------------------------------------
 # Register as Celery tasks (or plain functions when Celery unavailable)
 # ---------------------------------------------------------------------------
 
@@ -240,9 +389,16 @@ if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(name="tasks.billing_tasks.enforce_subscription_grace_periods")
     def enforce_subscription_grace_periods() -> dict[str, Any]:
         return _enforce_grace_periods_impl()
+
+    @_celery_app.task(name="tasks.billing_tasks.retry_failed_webhooks")
+    def retry_failed_webhooks() -> dict[str, Any]:
+        return _retry_failed_webhooks_impl()
 else:
     def reconcile_stripe() -> dict[str, Any]:  # type: ignore[misc]
         return _reconcile_stripe_impl()
 
     def enforce_subscription_grace_periods() -> dict[str, Any]:  # type: ignore[misc]
         return _enforce_grace_periods_impl()
+
+    def retry_failed_webhooks() -> dict[str, Any]:  # type: ignore[misc]
+        return _retry_failed_webhooks_impl()
