@@ -88,3 +88,9 @@ telemetry_tool/test_output.txt
 # Next.js
 lap-website/.next/
 lap-website/node_modules/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+!.env.example
