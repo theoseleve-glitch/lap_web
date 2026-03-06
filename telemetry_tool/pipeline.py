@@ -484,6 +484,8 @@ def run_full_analysis(
     resume_from_step8: bool = False,
     preloaded_resampled_laps: Optional[dict] = None,
     preloaded_corners: Optional[list] = None,
+    filter_profile_name: Optional[str] = None,
+    vehicle_overrides: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -551,6 +553,19 @@ def run_full_analysis(
             pass  # Best-effort; fall through to now()
     meta.setdefault("date",         datetime.now(timezone.utc).strftime("%Y-%m-%d"))
 
+    # --- Resolve filter profile ---
+    _resolved_filter_profile = None
+    try:
+        from telemetry_tool.filter_profile import resolve_filter_profile as _resolve_fp
+        _resolved_filter_profile = _resolve_fp(
+            filter_profile_name,
+            track_id=meta.get("track_id"),
+            session_type=meta.get("session_type"),
+        )
+        logger.info("Filter profile resolved: %s", _resolved_filter_profile.profile_name)
+    except Exception as _fp_exc:
+        logger.debug("Filter profile resolution skipped: %s", _fp_exc)
+
     # --- Driver-tag file suffix (multi-driver namespacing)
 
     _dtag_suffix = f"_{driver_tag}" if driver_tag else ""
@@ -616,6 +631,12 @@ def run_full_analysis(
         "joker_lap_number":      None,
         # Weather timeline (step 08e)
         "weather_timeline":      None,
+        # Filter + vehicle override metadata
+        "filter_config":         (
+            _resolved_filter_profile.to_dict()
+            if _resolved_filter_profile else None
+        ),
+        "vehicle_overrides":     vehicle_overrides,
     }
 
     # ── Stage progress tracking ─────────────────────────────
@@ -671,6 +692,9 @@ def run_full_analysis(
     # Column discovery result — populated during Phase 1 (ingest),
     # used lazily at the theoretical engine step.
     _channel_discovery = None
+
+    # Initialise variables used in both Phase 1 and the tail of the function
+    raw_df: Optional[pd.DataFrame] = None
 
     # ── Phase 1 vs Resume branching ────────────────────────
     if resume_from_step8:
@@ -734,6 +758,23 @@ def run_full_analysis(
             summary["pipeline"] = _pipeline_status.to_dict()
             return summary
 
+        # -- Adapter compatibility: reverse canonical → RaceChrono names --
+        # The adapter registry renames columns to canonical names, but
+        # downstream modules still expect raw RaceChrono column names.
+        # Reverse-map the essential columns so the pipeline works with both.
+        _CANONICAL_TO_RAW: dict[str, str] = {
+            "time_s": "Time (s)", "speed_mps": "Speed (m/s)",
+            "distance_m": "Distance (m)", "lap_number": "Lap #",
+            "lat_deg": "Latitude (deg)", "lon_deg": "Longitude (deg)",
+            "altitude_m": "Altitude (m)", "heading_deg": "Bearing (deg)",
+            "satellites": "Satellites", "accuracy_m": "Accuracy (m)",
+        }
+        _reverse = {k: v for k, v in _CANONICAL_TO_RAW.items()
+                    if k in raw_df.columns and v not in raw_df.columns}
+        if _reverse:
+            raw_df = raw_df.rename(columns=_reverse)
+            logger.info("Reversed canonical→RaceChrono names: %s", list(_reverse.values()))
+
         # -- Step: Column discovery --
         # Run discovery on the raw DataFrame to classify channels, detect
         # units, and build the rename map.  The result is stored in the
@@ -763,7 +804,10 @@ def run_full_analysis(
             if gps_mod is None:
                 logger.info("GPS filtering skipped (module absent).")
                 return raw_df
-            return gps_mod.filter_gps_quality(raw_df)
+            return gps_mod.filter_gps_quality(
+                raw_df,
+                filter_profile=_resolved_filter_profile,
+            )
 
         filtered_df, err = _safe_step("02_filter", _filter)
         _record("02_filter", filtered_df, err)
@@ -771,7 +815,7 @@ def run_full_analysis(
         if filtered_df is None:
             filtered_df = raw_df
         summary["filtered_df"] = None  # Not consumed downstream; avoid holding ~8 GB
-        del raw_df  # Allow GC of ingest DataFrame
+        raw_df = None  # Allow GC of ingest DataFrame
 
         # STEP 3 --  Derived channels
 
@@ -868,9 +912,14 @@ def run_full_analysis(
 
         #
         def _segment_laps() -> dict[int, pd.DataFrame]:
+            # Support both RaceChrono raw name and canonical adapter name
+            _lap_col_name = _COL_LAP
             if _COL_LAP not in trimmed_df.columns:
-                raise PipelineError(f"Column {_COL_LAP!r} missing.")
-            lap_col = pd.to_numeric(trimmed_df[_COL_LAP], errors="coerce")
+                if "lap_number" in trimmed_df.columns:
+                    _lap_col_name = "lap_number"
+                else:
+                    raise PipelineError(f"Column {_COL_LAP!r} missing.")
+            lap_col = pd.to_numeric(trimmed_df[_lap_col_name], errors="coerce")
             laps: dict[int, pd.DataFrame] = {}
             for lap_num, grp in trimmed_df.groupby(lap_col, sort=True):
                 ln = int(lap_num)
@@ -1689,6 +1738,19 @@ def run_full_analysis(
 
     vehicle_params, err = _safe_step("09d_vehicle_model", _vehicle_class)
     _record("09d_vehicle_model", vehicle_params, err)
+
+    # Apply user vehicle overrides if provided
+    if vehicle_params is not None and vehicle_overrides:
+        _vo = vehicle_overrides
+        if _vo.get("mass_kg") is not None:
+            vehicle_params.estimated_mass_kg = float(_vo["mass_kg"])
+            vehicle_params.classification_reasons.append("mass overridden by user")
+            logger.info("Vehicle mass overridden: %.1f kg", _vo["mass_kg"])
+        if _vo.get("power_kw") is not None:
+            logger.info("Vehicle power override noted: %.1f kW", _vo["power_kw"])
+        if _vo.get("drag_model") is not None:
+            logger.info("Drag model override: %s", _vo["drag_model"])
+
     summary["vehicle_params"] = vehicle_params
 
     # -- 09d2: Kart traction correction -- # If the vehicle is classified as a kart, the friction model's traction

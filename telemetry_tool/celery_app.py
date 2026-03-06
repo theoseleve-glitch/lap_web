@@ -138,6 +138,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=3, minute=0),  # Daily 03:00 UTC
                 "options": {"queue": "default"},
             },
+            "cleanup-retention-audit": {
+                "task": "tasks.retention_tasks.cleanup_retention_audit",
+                "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
             "refresh-all-rollups": {
                 "task": "tasks.rollup_tasks.refresh_all_rollups",
                 "schedule": crontab(hour=4, minute=0),  # Daily 04:00 UTC

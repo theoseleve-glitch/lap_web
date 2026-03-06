@@ -23,6 +23,35 @@ build/
 # Claude Code
 .claude/
 
+# AI/Editor tool configs (not project code)
+.agent/
+.codebuddy/
+.codex/
+.continue/
+.cursor/
+.gemini/
+.kiro/
+.opencode/
+.qoder/
+.roo/
+.swarm/
+.trae/
+.windsurf/
+.claude-flow/
+.mcp.json
+
+# Log files
+*.err.log
+*.out.log
+
+# Temporary files
+tmp_test.py
+lap-website/test-results/
+lap-website/development-report-*.html
+lap-website/recovery-report-*.html
+lap-website/recovery-report-*.pdf
+claude-flow-task-compare.md
+
 # Data (raw telemetry files)
 data/raw/
 Results/

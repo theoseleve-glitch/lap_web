@@ -208,6 +208,7 @@ def filter_gps_quality(
     max_accuracy_m: float  = 3.0,
     max_speed_mps:  float  = 80.0,
     max_accel_mps2: float  = 50.0,
+    filter_profile: "FilterProfile | None" = None,
 ) -> pd.DataFrame:
     """
     Remove low-quality GPS rows from *df* and return a cleaned DataFrame.
@@ -260,6 +261,18 @@ def filter_gps_quality(
         raise TypeError(
             f"filter_gps_quality() expects a pandas DataFrame, "
             f"got {type(df).__name__!r}."
+        )
+
+    # Override defaults from filter profile if provided
+    if filter_profile is not None:
+        min_satellites = filter_profile.gps_min_satellites
+        max_accuracy_m = filter_profile.gps_max_accuracy_m
+        max_speed_mps  = filter_profile.gps_max_speed_mps
+        max_accel_mps2 = filter_profile.gps_max_accel_mps2
+        logger.info(
+            "GPS filter using profile %r (v%d): sat≥%d acc≤%.1fm spd≤%.1fm/s acc≤%.1fm/s²",
+            filter_profile.profile_name, filter_profile.version,
+            min_satellites, max_accuracy_m, max_speed_mps, max_accel_mps2,
         )
 
     _validate_params(min_satellites, max_accuracy_m, max_speed_mps, max_accel_mps2)

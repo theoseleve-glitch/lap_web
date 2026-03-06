@@ -138,8 +138,8 @@ class TestGetWorkspaceRetention:
         retention = _get_workspace_retention(conn, 1)
         assert retention is None
 
-    def test_fallback_to_demo_on_missing_owner(self):
-        """If workspace owner not found, fallback to 30-day demo retention."""
+    def test_fallback_to_default_on_missing_owner(self):
+        """If workspace owner not found, fallback to default retention (365 days)."""
         conn = MagicMock()
         cursor = FakeCursor([
             [],    # no override
@@ -148,30 +148,33 @@ class TestGetWorkspaceRetention:
         conn.cursor.return_value = cursor
 
         retention = _get_workspace_retention(conn, 1)
-        assert retention == 30
+        assert retention == 365
 
 
 class TestDeleteRawData:
     def test_deletes_from_all_raw_tables(self):
-        """Deletion covers gps_traces, reference_lines, driving_style_features, theoretical_data."""
+        """Deletion covers all raw data tables."""
+        from tasks.retention_tasks import _RAW_DATA_TABLES
         conn = MagicMock()
         cursor = MagicMock()
         cursor.rowcount = 5
         conn.cursor.return_value = cursor
 
         total = _delete_raw_data(conn, "session_001")
-        assert total == 20  # 5 rows × 4 tables
-        assert cursor.execute.call_count == 4
+        n_tables = len(_RAW_DATA_TABLES)
+        assert total == 5 * n_tables
+        assert cursor.execute.call_count == n_tables
 
     def test_dry_run_counts_without_deleting(self):
         """Dry run counts rows but doesn't delete them."""
+        from tasks.retention_tasks import _RAW_DATA_TABLES
         conn = MagicMock()
         cursor = MagicMock()
         cursor.fetchone.return_value = {"cnt": 3}
         conn.cursor.return_value = cursor
 
         total = _delete_raw_data(conn, "session_001", dry_run=True)
-        assert total == 12  # 3 rows × 4 tables
+        assert total == 3 * len(_RAW_DATA_TABLES)
         # Should use SELECT COUNT, not DELETE
         for c in cursor.execute.call_args_list:
             sql = c[0][0]

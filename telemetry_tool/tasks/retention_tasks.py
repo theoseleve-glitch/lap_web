@@ -5,22 +5,37 @@ Daily task: for each workspace, resolves the plan tier's
 the retention window, sends warning emails (7 days before), and
 deletes raw telemetry data past the deadline.
 
+Default retention: 12 months from session ``created_at``.
+Override via plan tier's ``telemetry_retention_days`` or entitlement overrides.
+
 Preserves: processed reports, scores, laps, annotations (indefinite retention).
-Deletes: gps_traces, raw_telemetry_chunks, session files on disk.
+Deletes: gps_traces, raw_telemetry_chunks, session files on disk, cached artifacts.
 Marks sessions as ``retention_expired`` (idempotent — skips already-expired).
 
+All retention actions are logged to ``retention_audit`` (24-month retention on
+audit logs themselves). Each enforcement run gets a unique ``run_id``.
+
 Environment:
-    RETENTION_DRY_RUN=1  — log what would be deleted without actually deleting
+    RETENTION_DRY_RUN=1           — log what would be deleted without actually deleting
+    RETENTION_DEFAULT_DAYS=365    — default retention when plan has no explicit value
+    TELEMETRY_RAW_DIR=data/raw    — base directory for raw upload files
+    TELEMETRY_CACHE_DIR=data/cache — base directory for analysis cache files
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
+import uuid
 from datetime import date, timedelta
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _DRY_RUN = os.environ.get("RETENTION_DRY_RUN", "0") == "1"
+
+# Default retention: 12 months (365 days)
+_DEFAULT_RETENTION_DAYS = int(os.environ.get("RETENTION_DEFAULT_DAYS", "365"))
 
 # Batch size to avoid loading all sessions at once
 _BATCH_SIZE = 100
@@ -31,6 +46,19 @@ _RAW_DATA_TABLES = [
     "reference_lines",
     "driving_style_features",
     "theoretical_data",
+    "corner_metrics",
+    "session_weather",
+    "session_weather_laps",
+    "data_health",
+]
+
+# Tables containing derived artifacts (deleted on full purge)
+_DERIVED_TABLES = [
+    "session_sectors",
+    "condition_phases",
+    "condition_markers",
+    "stint_analysis",
+    "session_tags",
 ]
 
 
@@ -85,7 +113,7 @@ def _get_workspace_retention(conn, workspace_id: int) -> int | None:
     )
     row = cur.fetchone()
     if row is None:
-        return 30  # Fallback to demo retention
+        return _DEFAULT_RETENTION_DAYS  # Fallback to default retention
 
     plan_tier = row.get("plan_tier") or "demo"
 
@@ -176,8 +204,7 @@ def _mark_warning_sent(conn, session_ids: list[str]):
 
 
 def _log_audit(conn, workspace_id: int, action: str, details: dict):
-    """Record retention action in audit_log."""
-    import json
+    """Record retention action in audit_log (legacy compatibility)."""
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO audit_log (workspace_id, action, details_json) "
@@ -186,11 +213,78 @@ def _log_audit(conn, workspace_id: int, action: str, details: dict):
     )
 
 
+def _log_retention_audit(
+    conn,
+    run_id: str,
+    workspace_id: int | None,
+    subject_type: str,
+    subject_id: str,
+    action: str,
+    reason: str,
+    result: str,
+    *,
+    actor: str = "system",
+    details: dict | None = None,
+    request_id: str | None = None,
+):
+    """Record a retention action in the dedicated retention_audit table."""
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO retention_audit "
+        "(run_id, workspace_id, subject_type, subject_id, action, "
+        "reason, actor, result, details_json, request_id) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            run_id, workspace_id, subject_type, subject_id, action,
+            reason, actor, result,
+            json.dumps(details) if details else None,
+            request_id,
+        ),
+    )
+
+
+def _delete_session_files(
+    session_id: str,
+    workspace_id: int,
+    *,
+    dry_run: bool = False,
+) -> int:
+    """Delete raw upload files and cached artifacts for a session.
+
+    Scans TELEMETRY_RAW_DIR and TELEMETRY_CACHE_DIR for files matching
+    the session_id. Returns count of files deleted.
+    """
+    deleted = 0
+    raw_dir = Path(os.environ.get("TELEMETRY_RAW_DIR", "data/raw"))
+    cache_dir = Path(os.environ.get("TELEMETRY_CACHE_DIR", "data/cache"))
+
+    for base_dir in (raw_dir, cache_dir):
+        ws_dir = base_dir / str(workspace_id)
+        if not ws_dir.is_dir():
+            continue
+        for path in ws_dir.glob(f"*{session_id}*"):
+            if not path.is_file():
+                continue
+            if dry_run:
+                logger.info("DRY RUN: would delete %s", path)
+                deleted += 1
+            else:
+                try:
+                    path.unlink()
+                    deleted += 1
+                except OSError as exc:
+                    logger.warning("Failed to delete %s: %s", path, exc)
+
+    return deleted
+
+
 def _enforce_retention_impl() -> dict:
     """Core retention enforcement logic.
 
+    Each run gets a unique run_id. All actions are logged to retention_audit.
     Returns summary dict with counts of warnings sent and sessions expired.
     """
+    run_id = str(uuid.uuid4())[:12]
     conn = _get_pg_conn()
     try:
         cur = conn.cursor()
@@ -267,15 +361,40 @@ def _enforce_retention_impl() -> dict:
                 continue
 
             ws_rows_deleted = 0
+            ws_files_deleted = 0
             expired_ids = []
 
             for session in expired_sessions:
                 sid = session["session_id"]
+
+                # Log identify action
+                _log_retention_audit(
+                    conn, run_id, ws_id, "session", sid, "identify",
+                    "retention_expired", "success",
+                    details={"retention_days": retention_days},
+                )
+
                 rows_deleted = _delete_raw_data(conn, sid, dry_run=_DRY_RUN)
+                files_deleted = _delete_session_files(
+                    sid, ws_id, dry_run=_DRY_RUN,
+                )
                 ws_rows_deleted += rows_deleted
+                ws_files_deleted += files_deleted
 
                 if not _DRY_RUN:
                     _mark_session_expired(conn, sid)
+
+                # Log delete action
+                _log_retention_audit(
+                    conn, run_id, ws_id, "session", sid, "delete",
+                    "retention_expired",
+                    "success" if not _DRY_RUN else "skipped",
+                    details={
+                        "rows_deleted": rows_deleted,
+                        "files_deleted": files_deleted,
+                        "dry_run": _DRY_RUN,
+                    },
+                )
                 expired_ids.append(sid)
 
             if not _DRY_RUN:
@@ -304,8 +423,10 @@ def _enforce_retention_impl() -> dict:
                         )
 
                 _log_audit(conn, ws_id, "retention_enforced", {
+                    "run_id": run_id,
                     "sessions_expired": len(expired_ids),
                     "rows_deleted": ws_rows_deleted,
+                    "files_deleted": ws_files_deleted,
                     "retention_days": retention_days,
                 })
                 conn.commit()
@@ -314,17 +435,18 @@ def _enforce_retention_impl() -> dict:
             total_rows_deleted += ws_rows_deleted
 
             logger.info(
-                "Retention enforced: workspace=%d expired=%d rows_deleted=%d%s",
-                ws_id, len(expired_ids), ws_rows_deleted,
+                "Retention enforced: workspace=%d expired=%d rows=%d files=%d%s",
+                ws_id, len(expired_ids), ws_rows_deleted, ws_files_deleted,
                 " (DRY RUN)" if _DRY_RUN else "",
             )
 
         logger.info(
-            "Retention enforcement complete: warned=%d expired=%d rows=%d%s",
-            total_warned, total_expired, total_rows_deleted,
+            "Retention enforcement complete: run_id=%s warned=%d expired=%d rows=%d%s",
+            run_id, total_warned, total_expired, total_rows_deleted,
             " (DRY RUN)" if _DRY_RUN else "",
         )
         return {
+            "run_id": run_id,
             "warned": total_warned,
             "expired": total_expired,
             "rows_deleted": total_rows_deleted,
@@ -334,6 +456,31 @@ def _enforce_retention_impl() -> dict:
     except Exception as exc:
         conn.rollback()
         logger.error("Retention enforcement failed: %s", exc, exc_info=True)
+        raise
+    finally:
+        conn.close()
+
+
+def _cleanup_retention_audit_impl() -> dict:
+    """Delete retention_audit rows older than 24 months.
+
+    Audit logs have their own retention: 24 months from performed_at.
+    Idempotent and safe to rerun.
+    """
+    conn = _get_pg_conn()
+    try:
+        cur = conn.cursor()
+        cutoff = date.today() - timedelta(days=730)  # ~24 months
+        cur.execute(
+            "DELETE FROM retention_audit WHERE performed_at < %s",
+            (cutoff,),
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        logger.info("Retention audit cleanup: deleted %d rows older than %s", deleted, cutoff)
+        return {"deleted": deleted, "cutoff": str(cutoff)}
+    except Exception:
+        conn.rollback()
         raise
     finally:
         conn.close()
@@ -352,9 +499,18 @@ try:
         except Exception as exc:
             raise self.retry(exc=exc, countdown=300)
 
+    @celery.task(queue="default", max_retries=1)
+    def cleanup_retention_audit():
+        """Monthly task: trim retention_audit rows older than 24 months."""
+        return _cleanup_retention_audit_impl()
+
 except ImportError:
     logger.debug("Celery not available — retention task not registered")
 
     def enforce_telemetry_retention():
         """Stub when Celery is not available."""
         return _enforce_retention_impl()
+
+    def cleanup_retention_audit():
+        """Stub when Celery is not available."""
+        return _cleanup_retention_audit_impl()

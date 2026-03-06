@@ -352,6 +352,47 @@ def upload_session():
         if lap_range:
             session_meta["lap_range"] = list(lap_range)
 
+        # ── 4b. Filter profile + vehicle overrides ──────────────
+        filter_profile_name = request.form.get("filter_profile")
+        if filter_profile_name:
+            session_meta["filter_profile"] = filter_profile_name
+
+        vehicle_overrides: dict = {}
+        _mass = request.form.get("mass_kg")
+        if _mass is not None:
+            _m = float(_mass)
+            if not (30 <= _m <= 2000):
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"mass_kg must be between 30 and 2000, got {_m}",
+                    status=400,
+                )
+            vehicle_overrides["mass_kg"] = _m
+
+        _power = request.form.get("power_kw")
+        if _power is not None:
+            _p = float(_power)
+            if not (1 <= _p <= 1000):
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"power_kw must be between 1 and 1000, got {_p}",
+                    status=400,
+                )
+            vehicle_overrides["power_kw"] = _p
+
+        _drag = request.form.get("drag_model")
+        if _drag is not None:
+            if _drag not in ("none", "kart", "gt", "touring", "custom"):
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"drag_model must be one of: none, kart, gt, touring, custom",
+                    status=400,
+                )
+            vehicle_overrides["drag_model"] = _drag
+
+        if vehicle_overrides:
+            session_meta["vehicle_overrides"] = vehicle_overrides
+
         # ── 5. Create job record ──────────────────────────────────
         job_id = uuid.uuid4().hex
         conn = _get_conn()
