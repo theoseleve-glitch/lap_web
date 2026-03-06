@@ -7,6 +7,8 @@
  * Tagged with build version + route for per-release tracking.
  */
 
+import { hasAnalyticsConsent } from '@/lib/consent';
+
 const BUILD_VERSION = process.env.NEXT_PUBLIC_BUILD_VERSION ?? 'dev';
 
 interface VitalMetric {
@@ -102,7 +104,8 @@ function getNavigationType(): string {
 }
 
 function sendToPlausible(metric: VitalMetric): void {
-  // Plausible custom event
+  if (!hasAnalyticsConsent()) return;
+
   const plausible = (window as Record<string, unknown>).plausible as
     | ((event: string, opts: { props: Record<string, string | number> }) => void)
     | undefined;

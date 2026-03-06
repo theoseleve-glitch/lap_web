@@ -40,14 +40,14 @@ function toRoute(appDir, pagePath) {
 
 export function collectAppPageRoutes(rootDir = process.cwd()) {
   const appDir = path.join(rootDir, 'src', 'app');
-  const pages = walk(appDir, (filePath) => /\/page\.(tsx|ts|jsx|js)$/.test(filePath));
+  const pages = walk(appDir, (filePath) => /[/\\]page\.(tsx|ts|jsx|js)$/.test(filePath));
   return pages.map((pagePath) => toRoute(appDir, pagePath));
 }
 
 export function collectMarketingSitemapRoutes(rootDir = process.cwd()) {
   const appDir = path.join(rootDir, 'src', 'app');
   const marketingDir = path.join(appDir, '(marketing)');
-  const pages = walk(marketingDir, (filePath) => /\/page\.(tsx|ts|jsx|js)$/.test(filePath));
+  const pages = walk(marketingDir, (filePath) => /[/\\]page\.(tsx|ts|jsx|js)$/.test(filePath));
 
   const routes = pages
     .map((pagePath) => toRoute(appDir, pagePath))

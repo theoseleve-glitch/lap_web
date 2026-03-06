@@ -1,9 +1,12 @@
+import { hasAnalyticsConsent } from '@/lib/consent';
+
 type EventProps = Record<string, string | number | boolean | undefined>;
 
 function getPlausible():
   | ((event: string, options?: { props?: EventProps }) => void)
   | undefined {
   if (typeof window === 'undefined') return undefined;
+  if (!hasAnalyticsConsent()) return undefined;
   const maybePlausible = (window as unknown as Record<string, unknown>).plausible;
   if (typeof maybePlausible !== 'function') return undefined;
   return maybePlausible as (event: string, options?: { props?: EventProps }) => void;
