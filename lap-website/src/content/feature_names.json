@@ -1,0 +1,24 @@
+{
+  "features": [
+    { "canonical": "Corner Coaching", "aliases": ["corner coaching", "Corner coaching", "CORNER COACHING"] },
+    { "canonical": "Optimal Lap", "aliases": ["optimal lap", "Optimal lap", "OPTIMAL LAP", "optimal Lap"] },
+    { "canonical": "Time Loss", "aliases": ["time loss", "Time loss", "TIME LOSS", "time Loss"] },
+    { "canonical": "Confidence Heatmap", "aliases": ["confidence heatmap", "Confidence heatmap", "CONFIDENCE HEATMAP"] },
+    { "canonical": "Speed Trace", "aliases": ["speed trace", "Speed trace", "SPEED TRACE"] },
+    { "canonical": "G-G Diagram", "aliases": ["g-g diagram", "GG Diagram", "gg diagram", "G-G diagram", "GG diagram"] },
+    { "canonical": "Session Intelligence", "aliases": ["session intelligence", "Session intelligence"] },
+    { "canonical": "4-Pillar Scoring", "aliases": ["4-pillar scoring", "4 Pillar Scoring", "four pillar scoring", "Four Pillar Scoring"] },
+    { "canonical": "Race Strategy Dashboard", "aliases": ["race strategy dashboard", "Race strategy dashboard"] },
+    { "canonical": "Pit Stop Planning", "aliases": ["pit stop planning", "Pit stop planning", "Pitstop Planning", "pitstop planning"] },
+    { "canonical": "Coaching Plans", "aliases": ["coaching plans", "Coaching plans"] },
+    { "canonical": "Visualization Workspace", "aliases": ["visualization workspace", "Visualization workspace"] },
+    { "canonical": "Engineer Mode", "aliases": ["engineer mode", "Engineer mode", "ENGINEER MODE"] },
+    { "canonical": "Strategist Mode", "aliases": ["strategist mode", "Strategist mode", "STRATEGIST MODE"] },
+    { "canonical": "Track Map", "aliases": ["track map", "Track map"] },
+    { "canonical": "Lap Data", "aliases": ["lap data", "Lap data"] },
+    { "canonical": "Corner Replay", "aliases": ["corner replay", "Corner replay"] },
+    { "canonical": "Data Export", "aliases": ["data export", "Data export"] },
+    { "canonical": "Live Monitoring", "aliases": ["live monitoring", "Live monitoring"] },
+    { "canonical": "Incident Queue", "aliases": ["incident queue", "Incident queue"] }
+  ]
+}

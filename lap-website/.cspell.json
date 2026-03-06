@@ -1,0 +1,36 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "words": [
+    "LAP", "Lapcoach", "RaceChrono", "RaceBox",
+    "telemetry", "kart", "karting", "motorsport",
+    "Hetzner", "Falkenstein", "Cloudflare", "Caddy", "Gunicorn",
+    "Argon2id", "bcrypt", "HMAC", "OIDC",
+    "Zustand", "TanStack", "Tailwind", "Vitest", "Playwright",
+    "GSAP", "Lenis", "Howler", "PostgreSQL", "Redis",
+    "Celery", "Alembic", "SQLite", "Parquet", "PyArrow",
+    "PyInstaller", "psutil", "psycopg2",
+    "GDPR", "RGPD", "DPA", "DPIA", "ePrivacy",
+    "Stripe", "Resend",
+    "braking", "throttle", "apex", "oversteer", "understeer",
+    "chicane", "hairpin", "esses", "kerb",
+    "prorated", "downgrade", "upsell",
+    "signup", "signin", "navbar", "topbar",
+    "Nantes", "EUR", "VAT", "SIRET",
+    "utm", "cta", "CTA", "OG", "SEO", "SERP",
+    "monospace", "eyebrow", "subhead",
+    "Opennext", "opennextjs", "wrangler",
+    "resampling", "dedup", "idempotent", "idempotency",
+    "webhook", "healthz", "SSE"
+  ],
+  "ignorePaths": [
+    "node_modules", ".next", "dist", "build",
+    "package-lock.json", "*.min.js", "*.min.css",
+    "public/js/vendor/**"
+  ],
+  "enableFiletypes": ["mdx"],
+  "dictionaries": ["en_US"],
+  "flagWords": [
+    "lorem", "ipsum", "teh", "nto"
+  ]
+}

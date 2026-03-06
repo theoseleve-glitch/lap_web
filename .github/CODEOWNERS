@@ -26,3 +26,13 @@ telemetry_tool/alembic/              @owner
 telemetry_tool/auth/rbac.py          @owner
 telemetry_tool/auth/workspace.py     @owner
 telemetry_tool/web/middleware/tenant.py @owner
+
+# Content & marketing copy
+lap-website/src/app/(marketing)/     @owner
+lap-website/src/i18n/                @owner
+lap-website/src/content/             @owner
+lap-website/src/data/brand.ts        @owner
+lap-website/src/data/benefits.ts     @owner
+docs/COPY_STYLE.md                   @owner
+docs/GLOSSARY.md                     @owner
+docs/CLAIMS_REGISTRY.csv             @owner

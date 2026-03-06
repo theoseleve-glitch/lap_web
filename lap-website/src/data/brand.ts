@@ -107,3 +107,25 @@ export const B2B_ALLOWED_PAGES = [
 export const B2C_ALLOWED_PAGES = [
   'pricing', 'billing', 'demo', 'product', 'customers', 'waitlist',
 ] as const;
+
+/* ── Tone Policy ──────────────────────────────────────────── */
+
+/**
+ * Default voice: single professional tone across all pages.
+ * Per-persona tone variants allowed ONLY when:
+ *  1. Persona has a distinct buying context AND
+ *  2. Copy differs meaningfully (not synonyms)
+ * Max 2 tone variants per page. Designated pages only.
+ */
+export const TONE_POLICY = {
+  defaultVoice: 'professional-technical' as const,
+  maxVariantsPerPage: 2,
+  /** Pages allowed to have persona-specific tone variants */
+  variantPages: ['pricing', 'product', 'demo'] as const,
+  /** Persona tone descriptions (for copywriters, not runtime) */
+  personaTones: {
+    driver: 'Direct, performance-focused. "Your lap time. Your improvement."',
+    venue: 'Operational, ROI-focused. "Revenue per session. Zero staff pain."',
+    coach: 'Technical, collaborative. "Coaching data your drivers trust."',
+  },
+} as const;

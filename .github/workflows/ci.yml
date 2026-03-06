@@ -103,6 +103,12 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Content linters (placeholders, copy standards, links)
+        run: npm run lint:placeholders && npm run lint:standards && npm run lint:links
+
+      - name: Spellcheck (cspell)
+        run: npx cspell "src/**/*.{tsx,ts,mdx}" --no-progress --no-must-find-files || true
+
   contract-tests:
     runs-on: ubuntu-latest
     steps:
