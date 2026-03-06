@@ -51,6 +51,7 @@ lap-website/development-report-*.html
 lap-website/recovery-report-*.html
 lap-website/recovery-report-*.pdf
 claude-flow-task-compare.md
+marble_generator/
 
 # Data (raw telemetry files)
 data/raw/
