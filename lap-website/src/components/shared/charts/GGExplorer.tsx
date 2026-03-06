@@ -196,13 +196,13 @@ export function GGExplorer({
           <div className="flex-1 min-w-0">
             <canvas
               id="gg-explorer-canvas"
-              style={{ width: '100%', display: 'block' }}
+              style={{ width: '100%', height: '300px', display: 'block' }}
             />
           </div>
           <div style={{ width: '250px', flexShrink: 0 }}>
             <canvas
               id="gg-explorer-minimap"
-              style={{ width: '100%', display: 'block' }}
+              style={{ width: '100%', height: '300px', display: 'block' }}
             />
           </div>
         </div>

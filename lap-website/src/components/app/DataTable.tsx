@@ -25,6 +25,7 @@ interface DataTableProps<T> {
   data: T[];
   keyField: string;
   onRowClick?: (row: T) => void;
+  onRowHover?: (row: T) => void;
   emptyMessage?: string;
   rowClassName?: (row: T) => string;
   /** Enable row selection with checkboxes. */
@@ -49,6 +50,7 @@ export function DataTable<T extends Record<string, any>>({
   data,
   keyField,
   onRowClick,
+  onRowHover,
   emptyMessage = 'No data available',
   rowClassName,
   selectable = false,
@@ -234,6 +236,7 @@ export function DataTable<T extends Record<string, any>>({
                       : ''
                   } ${isSelected ? 'bg-acid-green/5' : ''} ${rowClassName ? rowClassName(row) : ''}`}
                   onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  onPointerEnter={onRowHover ? () => onRowHover(row) : undefined}
                   onContextMenu={contextActions ? (e) => handleContextMenu(e, row) : undefined}
                   onKeyDown={
                     onRowClick

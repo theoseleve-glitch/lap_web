@@ -279,6 +279,7 @@ export function useVanillaChart(options: UseVanillaChartOptions): UseVanillaChar
 
     return () => {
       mountedRef.current = false;
+      try { window.ModuleManager?.deactivateAll(); } catch { /* ignore */ }
     };
   }, [loadAll]);
 

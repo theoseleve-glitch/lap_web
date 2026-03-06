@@ -6,4 +6,4 @@ export { LockedSection } from './LockedSection';
 export { UpgradeBanner } from './UpgradeBanner';
 export { QueryError } from './QueryError';
 export { InlineEdit } from './InlineEdit';
-export { SkeletonStatCards, SkeletonCardGrid, SkeletonTableRows, SkeletonBox } from './Skeleton';
+export { SkeletonStatCards, SkeletonCardGrid, SkeletonTableRows, SkeletonBox, SkeletonSessionDetail, SkeletonCompareView } from './Skeleton';

@@ -58,3 +58,117 @@ export function SkeletonTableRows({ rows = 5, cols = 6 }: { rows?: number; cols?
     </div>
   );
 }
+
+/**
+ * Session detail skeleton — matches the actual session detail layout:
+ * breadcrumb + header (56px), 4 stat cards (80px), tab bar (48px),
+ * chart area (300px), lap table (~250px).
+ */
+export function SkeletonSessionDetail() {
+  return (
+    <div role="status" aria-label="Loading session detail">
+      {/* Breadcrumb + title area */}
+      <div className="mb-6">
+        <SkeletonBox className="h-3 w-20 mb-2" />
+        <SkeletonBox className="h-8 w-64 mb-2" />
+        <SkeletonBox className="h-4 w-48" />
+      </div>
+
+      {/* Stat cards row — 4 cards, each ~80px tall */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="bg-concrete rounded-xl border border-steel/10 p-4" style={{ minHeight: '80px' }}>
+            <SkeletonBox className="h-3 w-16 mb-3" />
+            <SkeletonBox className="h-7 w-20" />
+          </div>
+        ))}
+      </div>
+
+      {/* Tab bar — 48px */}
+      <div className="flex gap-1 mb-6 border-b border-steel/10" style={{ minHeight: '48px' }}>
+        {Array.from({ length: 5 }, (_, i) => (
+          <SkeletonBox key={i} className="h-4 w-20 mb-3" />
+        ))}
+      </div>
+
+      {/* Chart area — 300px reserved for speed trace / GG explorer */}
+      <div className="bg-concrete rounded-xl border border-steel/10 mb-6" style={{ minHeight: '300px' }}>
+        <div className="p-4">
+          <SkeletonBox className="h-4 w-32 mb-4" />
+          <SkeletonBox className="h-full w-full" style={{ minHeight: '240px' }} />
+        </div>
+      </div>
+
+      {/* Score bars */}
+      <div className="bg-concrete rounded-xl border border-steel/10 p-5 mb-6">
+        <SkeletonBox className="h-5 w-28 mb-4" />
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="mb-3">
+            <div className="flex justify-between mb-1">
+              <SkeletonBox className="h-3 w-20" />
+              <SkeletonBox className="h-3 w-12" />
+            </div>
+            <SkeletonBox className="h-2.5 w-full rounded-full" />
+          </div>
+        ))}
+      </div>
+
+      {/* Lap table */}
+      <SkeletonTableRows rows={6} cols={5} />
+    </div>
+  );
+}
+
+/**
+ * Compare sessions skeleton — matches the compare layout:
+ * header (48px), selector bar (~72px), 2-col metadata cards,
+ * score comparison (240px), chart panel (300px), lap table.
+ */
+export function SkeletonCompareView() {
+  return (
+    <div role="status" aria-label="Loading comparison">
+      {/* Header */}
+      <div className="mb-6">
+        <SkeletonBox className="h-7 w-52 mb-2" />
+        <SkeletonBox className="h-4 w-96" />
+      </div>
+
+      {/* Session selectors bar */}
+      <div className="bg-concrete rounded-xl border border-steel/10 p-5 mb-6" style={{ minHeight: '72px' }}>
+        <div className="flex items-end gap-4">
+          <div className="flex-1">
+            <SkeletonBox className="h-3 w-16 mb-2" />
+            <SkeletonBox className="h-10 w-full rounded" />
+          </div>
+          <SkeletonBox className="h-10 w-10 shrink-0 rounded-lg" />
+          <div className="flex-1">
+            <SkeletonBox className="h-3 w-16 mb-2" />
+            <SkeletonBox className="h-10 w-full rounded" />
+          </div>
+        </div>
+      </div>
+
+      {/* Score comparison cards — 2x2 grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        {Array.from({ length: 4 }, (_, i) => (
+          <div key={i} className="bg-concrete rounded-xl border border-steel/10 p-4" style={{ minHeight: '120px' }}>
+            <SkeletonBox className="h-4 w-20 mb-3" />
+            <SkeletonBox className="h-2 w-full rounded-full mb-2" />
+            <SkeletonBox className="h-2 w-full rounded-full" />
+          </div>
+        ))}
+      </div>
+
+      {/* Chart panel placeholder */}
+      <div className="bg-concrete rounded-xl border border-steel/10 mb-6" style={{ minHeight: '300px' }}>
+        <div className="p-4">
+          <SkeletonBox className="h-4 w-32 mb-4" />
+          <SkeletonBox className="h-full w-full" style={{ minHeight: '240px' }} />
+        </div>
+      </div>
+
+      {/* Lap comparison table */}
+      <SkeletonTableRows rows={6} cols={4} />
+    </div>
+  );
+}

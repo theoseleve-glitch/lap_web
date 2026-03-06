@@ -282,6 +282,10 @@ export function useVanillaChart(options: UseVanillaChartOptions): UseVanillaChar
 
     return () => {
       mountedRef.current = false;
+      // Tear down all active vanilla JS chart modules to prevent memory leaks.
+      // ModuleManager.deactivateAll() calls each module's destroy(), which
+      // removes Chart.js instances, event listeners, and animation frames.
+      try { window.ModuleManager?.deactivateAll(); } catch { /* ignore */ }
     };
   }, [loadAll]);
 

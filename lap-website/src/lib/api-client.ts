@@ -7,8 +7,14 @@
  * httpOnly cookie and then replay the original request.
  */
 
-import { getAccessToken, getWorkspaceId } from './auth-store';
+import { getAccessToken, getWorkspaceId, broadcastLogout } from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
+
+/**
+ * Custom event emitted when a 401 cannot be recovered by silent refresh.
+ * The AuthGuard listens for this to show the SessionExpiredModal.
+ */
+export const SESSION_EXPIRED_EVENT = 'lap:session-expired';
 
 export const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 const API_BASE = `${BACKEND_URL}/api/v1`;
@@ -19,6 +25,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public details?: Array<{ field?: string; message: string }>,
+    public requestId?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -96,6 +103,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       });
       return parseEnvelopeOrThrow<T>(retryRes);
     }
+
+    // Refresh failed — session is truly expired.
+    // Emit event for UI (SessionExpiredModal) and broadcast logout to other tabs.
+    const { clearAuthState } = await import('./auth');
+    clearAuthState();
+    broadcastLogout();
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+
+    throw new ApiError(
+      'SESSION_EXPIRED',
+      'Your session has expired. Please log in again.',
+      401,
+    );
   }
 
   return parseEnvelopeOrThrow<T>(res);

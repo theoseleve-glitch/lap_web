@@ -213,6 +213,7 @@ export default function UploadPage() {
   const [stageName, setStageName] = useState<string | null>(null);
   const [sseStatus, setSseStatus] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorRequestId, setErrorRequestId] = useState<string | null>(null);
   const [trackLayout, setTrackLayout] = useState<TrackLayout | null>(null);
   const [isSubmittingCorners, setIsSubmittingCorners] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -401,9 +402,16 @@ export default function UploadPage() {
       connectSSE(result.job_id);
     } catch (err) {
       setPageState('error');
-      if (err instanceof ApiError) setErrorMessage(err.message);
-      else if (err instanceof Error) setErrorMessage(err.message);
-      else setErrorMessage('An unexpected error occurred.');
+      if (err instanceof ApiError) {
+        setErrorMessage(err.message);
+        setErrorRequestId(err.requestId ?? null);
+      } else if (err instanceof Error) {
+        setErrorMessage(err.message);
+        setErrorRequestId(null);
+      } else {
+        setErrorMessage('An unexpected error occurred.');
+        setErrorRequestId(null);
+      }
     }
   }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, connectSSE]);
 
@@ -604,6 +612,11 @@ export default function UploadPage() {
           {errorMessage && (
             <div className="mb-4 p-3 rounded-lg bg-safety-red/10 border border-safety-red/20 text-safety-red text-sm font-body" role="alert">
               {errorMessage}
+              {errorRequestId && (
+                <p className="mt-1 text-steel/50 text-[10px] tracking-wider font-telemetry">
+                  Ref: {errorRequestId}
+                </p>
+              )}
             </div>
           )}
 

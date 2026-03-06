@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { silentRefresh, type AuthUser } from '@/lib/auth';
 import { getAccessToken, getUserProfile, setUserProfile } from '@/lib/auth-store';
+import { SESSION_EXPIRED_EVENT } from '@/lib/api-client';
+import { getFlag } from '@/lib/feature-flags';
 import { useTranslation } from '@/i18n';
+import { SessionExpiredModal } from './SessionExpiredModal';
 
 const ONBOARDING_PATH = '/app/onboarding';
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
@@ -18,12 +21,17 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
  * Also enforces profile completeness: if the user's display_name is
  * empty, they are redirected to /app/onboarding before accessing any
  * other app page.
+ *
+ * Listens for SESSION_EXPIRED_EVENT (emitted by api-client on unrecoverable
+ * 401) and shows a SessionExpiredModal instead of a hard redirect.
  */
 export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { t } = useTranslation();
   const [state, setState] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading');
+  const [showExpired, setShowExpired] = useState(false);
+  const [retrying, setRetrying] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,6 +92,37 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     return () => { cancelled = true; };
   }, [pathname, router]);
 
+  // Listen for session-expired events from api-client
+  useEffect(() => {
+    const handler = () => {
+      if (getFlag('session_expired_modal')) {
+        setShowExpired(true);
+      } else {
+        // Fallback: hard redirect
+        const redirectTo = encodeURIComponent(pathname);
+        router.push(`/login?redirect=${redirectTo}`);
+      }
+    };
+
+    window.addEventListener(SESSION_EXPIRED_EVENT, handler);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handler);
+  }, [pathname, router]);
+
+  const handleRetry = useCallback(async () => {
+    setRetrying(true);
+    try {
+      const user = await silentRefresh();
+      if (user) {
+        setShowExpired(false);
+        setState('authenticated');
+      }
+    } catch {
+      // Still expired — modal stays open
+    } finally {
+      setRetrying(false);
+    }
+  }, []);
+
   if (state === 'loading') {
     return (
       <div className="flex min-h-screen items-center justify-center bg-asphalt">
@@ -101,5 +140,12 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     return null;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {showExpired && (
+        <SessionExpiredModal onRetry={handleRetry} retrying={retrying} />
+      )}
+      {children}
+    </>
+  );
 }

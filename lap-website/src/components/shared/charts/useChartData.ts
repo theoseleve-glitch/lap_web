@@ -26,6 +26,8 @@ interface UseChartDataResult<T> {
   data: T | null;
   loading: boolean;
   error: string | null;
+  /** Backend request ID for support correlation (only set on ApiError) */
+  requestId: string | null;
 }
 
 export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataResult<T> {
@@ -33,6 +35,7 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
   const [data, setData] = useState<T | null>(preFetched ?? null);
   const [loading, setLoading] = useState(!preFetched && !!sessionId);
   const [error, setError] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const mountedRef = useRef(true);
   // Store transform in a ref so it never triggers re-fetching when
   // callers pass an inline arrow function.
@@ -77,6 +80,7 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
           ? err.message
           : err instanceof Error ? err.message : 'Fetch failed';
         setError(message);
+        setRequestId(err instanceof ApiError ? (err.requestId ?? null) : null);
         setLoading(false);
       }
     })();
@@ -84,5 +88,5 @@ export function useChartData<T>(options: UseChartDataOptions<T>): UseChartDataRe
     return () => { cancelled = true; };
   }, [preFetched, sessionId, endpoint]);
 
-  return { data, loading, error };
+  return { data, loading, error, requestId };
 }

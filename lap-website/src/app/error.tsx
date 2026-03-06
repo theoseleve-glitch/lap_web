@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { Sentry } from '@/lib/sentry';
+import { logger } from '@/lib/logger';
 
 export default function Error({
   error,
@@ -11,8 +12,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Log to analytics/error tracking
-    console.error('Unhandled error:', error);
+    logger.error('Unhandled error:', error);
     Sentry?.captureException(error);
   }, [error]);
 

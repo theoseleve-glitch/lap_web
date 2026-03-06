@@ -8,6 +8,7 @@ import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
 import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 import type { ContextAction } from '@/components/app/DataTable';
+import { canPrefetch, markPrefetched, incrementInFlight, decrementInFlight } from '@/lib/prefetch';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -269,6 +270,29 @@ export default function SessionsPage() {
       setTimeout(() => setBulkStatus(null), 5000);
     },
   });
+
+  // Prefetch session detail + route on row hover
+  const handleRowHover = useCallback((row: SessionRow) => {
+    const href = `/app/sessions/${row.session_id}`;
+    const routeKey = `route:${href}`;
+    if (canPrefetch(routeKey)) {
+      markPrefetched(routeKey);
+      router.prefetch(href);
+    }
+
+    const dataKey = `data:session-detail-${row.session_id}`;
+    if (canPrefetch(dataKey)) {
+      markPrefetched(dataKey);
+      incrementInFlight();
+      queryClient
+        .prefetchQuery({
+          queryKey: ['sessions', 'detail', row.session_id],
+          queryFn: () => api.get(`/sessions/${row.session_id}`),
+          staleTime: 30_000,
+        })
+        .finally(decrementInFlight);
+    }
+  }, [router, queryClient]);
 
   // Context menu actions
   const contextActions: ContextAction<SessionRow>[] = useMemo(() => [
@@ -652,6 +676,7 @@ export default function SessionsPage() {
             selectedKeys={selectedKeys}
             onSelectionChange={setSelectedKeys}
             onRowClick={(row) => router.push(`/app/sessions/${row.session_id}`)}
+            onRowHover={handleRowHover}
             contextActions={contextActions}
             onSortChange={handleSortChange}
             activeSortKey={sortBy}

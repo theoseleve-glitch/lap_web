@@ -7,6 +7,7 @@ import { QueryProvider } from '@/providers/query-provider';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { DiagnosticsOverlay } from '@/components/dev/DiagnosticsOverlay';
 import { BillingStateBanner } from '@/components/billing/BillingStateBanner';
+import { OfflineBanner } from '@/components/shared/OfflineBanner';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -153,6 +154,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <QueryProvider>
         <AuthGuard>
           <main id="main-content" className="flex-1 overflow-y-auto bg-asphalt">
+            <OfflineBanner />
             <div className="max-w-7xl mx-auto px-6 py-6">
               <BillingStateBanner />
               {children}

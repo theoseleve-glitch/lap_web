@@ -156,21 +156,53 @@ export async function logout(): Promise<void> {
 /**
  * Silent refresh — uses the httpOnly cookie to get a new access token.
  * Called on page load to restore the session without localStorage.
+ *
+ * Retries once with exponential backoff before giving up.
+ * Caps at MAX_REFRESH_RETRIES to prevent infinite loops.
  */
+const MAX_REFRESH_RETRIES = 1;
+const REFRESH_BACKOFF_MS = 1000;
+let _refreshAttempts = 0;
+
 export async function silentRefresh(): Promise<AuthUser | null> {
+  // Prevent infinite refresh loops
+  if (_refreshAttempts > MAX_REFRESH_RETRIES) {
+    _refreshAttempts = 0;
+    clearAuthState();
+    return null;
+  }
+
   try {
+    _refreshAttempts++;
     const result = await authFetch<LoginResponse>('/refresh');
+    _refreshAttempts = 0; // Reset on success
     setAccessToken(result.access_token);
     setUserProfile(result.user);
     await resolveWorkspace();
     broadcastTokenRefresh(result.access_token, getWorkspaceId());
     return result.user;
   } catch {
-    setAccessToken(null);
-    setUserProfile(null);
-    setWorkspaceId(null);
+    if (_refreshAttempts <= MAX_REFRESH_RETRIES) {
+      // Wait with backoff before retry
+      await new Promise((r) => setTimeout(r, REFRESH_BACKOFF_MS * _refreshAttempts));
+      return silentRefresh();
+    }
+    _refreshAttempts = 0;
+    clearAuthState();
     return null;
   }
+}
+
+/** Clear all auth state. Exported for use by api-client on unrecoverable 401. */
+export function clearAuthState(): void {
+  setAccessToken(null);
+  setUserProfile(null);
+  setWorkspaceId(null);
+}
+
+/** Reset refresh attempt counter (for tests). */
+export function resetRefreshAttempts(): void {
+  _refreshAttempts = 0;
 }
 
 export async function refreshToken(): Promise<{ access_token: string }> {

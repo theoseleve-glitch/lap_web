@@ -10,10 +10,19 @@ interface Envelope<T> {
   ok?: boolean;
   data?: T;
   error?: EnvelopeError;
+  meta?: { request_id?: string };
 }
 
 function looksLikeEnvelope<T>(value: unknown): value is Envelope<T> {
   return typeof value === 'object' && value !== null && ('ok' in value || 'data' in value || 'error' in value);
+}
+
+/** Extract request_id from JSON meta or X-Request-Id header. */
+function extractRequestId(response: Response, body: unknown): string | undefined {
+  if (looksLikeEnvelope(body) && body.meta?.request_id) {
+    return body.meta.request_id;
+  }
+  return response.headers.get('X-Request-Id') ?? undefined;
 }
 
 export async function parseEnvelopeOrThrow<T>(response: Response): Promise<T> {
@@ -30,6 +39,8 @@ export async function parseEnvelopeOrThrow<T>(response: Response): Promise<T> {
     }
   }
 
+  const requestId = extractRequestId(response, parsedBody);
+
   if (looksLikeEnvelope<T>(parsedBody) && parsedBody.ok) {
     return parsedBody.data as T;
   }
@@ -40,6 +51,7 @@ export async function parseEnvelopeOrThrow<T>(response: Response): Promise<T> {
       parsedBody.error?.message ?? 'Request failed',
       response.status,
       parsedBody.error?.details,
+      requestId,
     );
   }
 
@@ -52,5 +64,7 @@ export async function parseEnvelopeOrThrow<T>(response: Response): Promise<T> {
     'INVALID_RESPONSE',
     plainMessage ? plainMessage.slice(0, 220) : fallbackMessage,
     response.status,
+    undefined,
+    requestId,
   );
 }
