@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getStripePriceId, getStripeSecretKey, isB2BPlan } from '@/lib/stripe-billing';
-import { getValidatedSiteOrigin } from '@/lib/site-origin';
+import { getSiteUrl } from '@/lib/site-url';
 
 const SUCCESS_PATH = '/thank-you/book';
 const CANCEL_PATH = '/pricing';
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
   const stripeKey = getStripeSecretKey();
   const stripePriceId = getStripePriceId(body.plan, body.billingCycle);
-  const siteOrigin = getValidatedSiteOrigin();
+  const siteOrigin = getSiteUrl();
   const successUrl = new URL(SUCCESS_PATH, siteOrigin);
   const cancelUrl = new URL(CANCEL_PATH, siteOrigin);
   cancelUrl.searchParams.set('checkout', 'cancelled');
