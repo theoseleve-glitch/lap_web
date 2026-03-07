@@ -22,7 +22,7 @@ export function getVariantForKey(key: ExperimentKey, fallback = 'control'): stri
 
 export function pickRandomVariant(key: ExperimentKey): string {
   const options = variants[key];
-  return options[Math.floor(Math.random() * options.length)];
+  return options[Math.floor(Math.random() * options.length)] ?? options[0] ?? 'control';
 }
 
 export function getExperimentOptions(key: ExperimentKey): string[] {

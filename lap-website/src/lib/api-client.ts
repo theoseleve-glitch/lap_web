@@ -71,7 +71,7 @@ function buildHeaders(): Record<string, string> {
     // Attach CSRF token from cookie (double-submit pattern)
     const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]+)/);
     if (csrfMatch) {
-      headers['X-CSRF-Token'] = csrfMatch[1];
+      headers['X-CSRF-Token'] = csrfMatch[1] ?? '';
     }
   }
 

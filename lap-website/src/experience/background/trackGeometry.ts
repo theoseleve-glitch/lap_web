@@ -109,7 +109,7 @@ export function buildRibbonGeometry(
   const indices = new Uint32Array(triCount * 3);
 
   for (let i = 0; i < count; i++) {
-    const s = samples[i];
+    const s = samples[i]!;
     const offset = new THREE.Vector3().copy(s.normal).multiplyScalar(halfW);
     const leftPos = new THREE.Vector3().copy(s.position).sub(offset);
     const rightPos = new THREE.Vector3().copy(s.position).add(offset);
@@ -226,8 +226,8 @@ export function scrollToTrackT(globalProgress: number, currentChapter: number): 
   const clampedChapter = Math.max(0, Math.min(chapterCount - 1, currentChapter));
   const nextChapter = Math.min(clampedChapter + 1, chapterCount - 1);
 
-  const chapterStart = CHAPTER_TRACK_T[clampedChapter];
-  const chapterEnd = CHAPTER_TRACK_T[nextChapter];
+  const chapterStart = CHAPTER_TRACK_T[clampedChapter] ?? 0;
+  const chapterEnd = CHAPTER_TRACK_T[nextChapter] ?? 1;
 
   // Fractional progress within the current chapter
   const chapterWidth = 1 / (chapterCount - 1);
@@ -248,5 +248,8 @@ export function curvatureAtT(samples: TrackSample[], trackT: number): number {
   const lo = Math.floor(idx);
   const hi = Math.min(lo + 1, samples.length - 1);
   const frac = idx - lo;
-  return samples[lo].curvature * (1 - frac) + samples[hi].curvature * frac;
+  const loSample = samples[lo];
+  const hiSample = samples[hi];
+  if (!loSample || !hiSample) return 0;
+  return loSample.curvature * (1 - frac) + hiSample.curvature * frac;
 }

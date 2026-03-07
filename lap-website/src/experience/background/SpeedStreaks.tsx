@@ -65,7 +65,7 @@ export function SpeedStreaks() {
       : bgTokens.streakSpawnThreshold;
 
     for (let i = 0; i < maxStreaks; i++) {
-      const s = streaks[i];
+      const s = streaks[i]!;
       if (!s.alive) {
         mesh.setMatrixAt(i, zeroMatrix);
         continue;
@@ -98,8 +98,8 @@ export function SpeedStreaks() {
       const spawnChance = (streakIntensity - spawnThreshold) * 2;
       if (Math.random() < spawnChance * delta * 60) {
         for (let i = 0; i < maxStreaks; i++) {
-          if (streaks[i].alive) continue;
-          const s = streaks[i];
+          const s = streaks[i]!;
+          if (s.alive) continue;
           s.alive = true;
           s.age = 0;
           s.lifetime = bgTokens.streakLifetime + Math.random() * 400;

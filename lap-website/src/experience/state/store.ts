@@ -109,10 +109,13 @@ export const useKernelStore = create<KernelStore>()((set) => ({
     set((state) => {
       if (index < 0 || index >= state.hudTower.sectors.length) return {};
       const sectors = [...state.hudTower.sectors];
-      sectors[index] = { ...sectors[index], status: 'completed', color: colors.racingPurple, progress: 1 };
+      const current = sectors[index];
+      if (!current) return {};
+      sectors[index] = { ...current, status: 'completed', color: colors.racingPurple, progress: 1 };
       const nextActive = Math.min(index + 1, sectors.length - 1);
-      if (sectors[nextActive].status === 'pending') {
-        sectors[nextActive] = { ...sectors[nextActive], status: 'active' };
+      const next = sectors[nextActive];
+      if (next && next.status === 'pending') {
+        sectors[nextActive] = { ...next, status: 'active' };
       }
       return { hudTower: { sectors, activeSectorIndex: nextActive } };
     }),
@@ -120,8 +123,9 @@ export const useKernelStore = create<KernelStore>()((set) => ({
   setSectorProgress: (index, progress) =>
     set((state) => {
       const sectors = [...state.hudTower.sectors];
-      if (index >= 0 && index < sectors.length) {
-        sectors[index] = { ...sectors[index], progress: Math.max(0, Math.min(1, progress)) };
+      const target = sectors[index];
+      if (index >= 0 && index < sectors.length && target) {
+        sectors[index] = { ...target, progress: Math.max(0, Math.min(1, progress)) };
       }
       return { hudTower: { ...state.hudTower, sectors } };
     }),

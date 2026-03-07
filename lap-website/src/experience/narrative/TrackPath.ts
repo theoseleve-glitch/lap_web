@@ -26,7 +26,7 @@ export const TRACK_PATH: readonly ChapterPathConfig[] = [
 
 export function getChapterPath(chapter: number): ChapterPathConfig {
   const clamped = Math.max(0, Math.min(TRACK_PATH.length - 1, chapter));
-  return TRACK_PATH[clamped];
+  return TRACK_PATH[clamped]!;
 }
 
 export function getHeadingDelta(chapter: number): number {
@@ -34,7 +34,7 @@ export function getHeadingDelta(chapter: number): number {
   const clamped = Math.max(0, Math.min(TRACK_PATH.length - 1, chapter));
   const prev = TRACK_PATH[clamped - 1];
   const curr = TRACK_PATH[clamped];
-  return curr.heading - prev.heading;
+  return (curr?.heading ?? 0) - (prev?.heading ?? 0);
 }
 
 export function isCornerChapter(chapter: number): boolean {

@@ -73,7 +73,7 @@ export function QualityManager() {
         } else if (avg < 45) {
           if (lowStartRef.current === 0) lowStartRef.current = now;
           if (now - lowStartRef.current > 2000 && tierIdx < 2) {
-            currentTierRef.current = TIER_ORDER[tierIdx + 1];
+            currentTierRef.current = TIER_ORDER[tierIdx + 1] ?? currentTierRef.current;
             setQualityTier(currentTierRef.current);
             lowStartRef.current = 0;
           }
@@ -83,7 +83,7 @@ export function QualityManager() {
           if (highStartRef.current === 0) highStartRef.current = now;
           const initialIdx = TIER_ORDER.indexOf(initialTierRef.current);
           if (now - highStartRef.current > 5000 && tierIdx > initialIdx) {
-            currentTierRef.current = TIER_ORDER[tierIdx - 1];
+            currentTierRef.current = TIER_ORDER[tierIdx - 1] ?? currentTierRef.current;
             setQualityTier(currentTierRef.current);
             highStartRef.current = 0;
           }

@@ -63,7 +63,7 @@ export function formatNumber(
 ): string {
   const { decimals = 0, locale = 'en' } = opts ?? {};
   const fixed = value.toFixed(decimals);
-  const [intPart, decPart] = fixed.split('.');
+  const [intPart = '0', decPart] = fixed.split('.');
   const absInt = intPart.replace('-', '');
 
   let formatted = absInt;

@@ -14,8 +14,9 @@ export function useActiveRoom(): string {
       if (!el) return;
 
       const observer = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) setActive(room.id);
+        (entries) => {
+          const entry = entries[0];
+          if (entry?.isIntersecting) setActive(room.id);
         },
         { threshold: 0.5 },
       );

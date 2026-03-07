@@ -106,7 +106,7 @@ function getNavigationType(): string {
 function sendToPlausible(metric: VitalMetric): void {
   if (!hasAnalyticsConsent()) return;
 
-  const plausible = (window as Record<string, unknown>).plausible as
+  const plausible = (window as unknown as Record<string, unknown>).plausible as
     | ((event: string, opts: { props: Record<string, string | number> }) => void)
     | undefined;
 
