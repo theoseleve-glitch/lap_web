@@ -32,11 +32,12 @@
     "lint:design-tokens": "node scripts/lint-design-tokens.mjs",
     "lint:icon-imports": "node scripts/lint-icon-imports.mjs",
     "lint:typography": "node scripts/lint-typography.mjs",
+    "lint:nav": "node scripts/lint-nav-overrides.mjs",
     "lint:spelling": "npx cspell \"src/**/*.{tsx,ts,mdx}\" --no-progress --no-must-find-files",
     "test:visual": "playwright test e2e/visual-regression.spec.ts",
     "test:visual:update": "playwright test e2e/visual-regression.spec.ts --update-snapshots",
     "scan:inventory": "node scripts/scan-content-inventory.mjs",
-    "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run lint:copy && npm run lint:cta && npm run lint:cta-text && npm run lint:standards && npm run lint:links && npm run lint:benefits && npm run lint:plan-names && npm run lint:placeholders && npm run ci:assert-site-url",
+    "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run lint:copy && npm run lint:cta && npm run lint:cta-text && npm run lint:standards && npm run lint:links && npm run lint:benefits && npm run lint:plan-names && npm run lint:placeholders && npm run lint:design-tokens && npm run lint:typography && npm run lint:icon-imports && npm run ci:assert-site-url",
     "ci:assert-site-url": "node scripts/assert-no-legacy-domain.mjs",
     "qa:sitemap-preview": "node scripts/check-sitemap-preview.mjs",
     "ci:preview": "npm run qa:sitemap-preview"
