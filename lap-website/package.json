@@ -31,6 +31,7 @@
     "lint:faq": "node scripts/lint-faq.mjs",
     "lint:design-tokens": "node scripts/lint-design-tokens.mjs",
     "lint:icon-imports": "node scripts/lint-icon-imports.mjs",
+    "lint:typography": "node scripts/lint-typography.mjs",
     "lint:spelling": "npx cspell \"src/**/*.{tsx,ts,mdx}\" --no-progress --no-must-find-files",
     "test:visual": "playwright test e2e/visual-regression.spec.ts",
     "test:visual:update": "playwright test e2e/visual-regression.spec.ts --update-snapshots",

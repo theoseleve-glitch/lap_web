@@ -45,10 +45,14 @@ export function formatDelta(seconds: number, locale: Locale = 'en'): string {
   return `${sign}${seconds.toFixed(2).replace('.', decSep(locale))}s`;
 }
 
-/** Format a percentage. No decimal unless < 1%. */
-export function formatPercent(value: number): string {
-  if (value > 0 && value < 1) return `${value.toFixed(1)}%`;
-  return `${Math.round(value)}%`;
+/**
+ * Format a percentage. No decimal unless < 1%.
+ * FR locale adds narrow no-break space before % per typographic rules.
+ */
+export function formatPercent(value: number, locale: Locale = 'en'): string {
+  const spacer = locale === 'fr' ? '\u202F' : '';
+  if (value > 0 && value < 1) return `${value.toFixed(1).replace('.', decSep(locale))}${spacer}%`;
+  return `${Math.round(value)}${spacer}%`;
 }
 
 /** Format EUR currency. Symbol prefix, 2 decimals. */
@@ -76,4 +80,34 @@ export function formatNumber(
     formatted += `${decSep(locale)}${decPart}`;
   }
   return formatted;
+}
+
+/**
+ * Format a value with unit, respecting locale spacing.
+ * FR uses narrow no-break space before units (km/h, s, etc.).
+ * EN uses non-breaking space before units.
+ */
+export function formatWithUnit(value: string, unit: string, locale: Locale = 'en'): string {
+  const spacer = locale === 'fr' ? '\u202F' : '\u00a0';
+  return `${value}${spacer}${unit}`;
+}
+
+/**
+ * Format seconds for display. Uses "s" suffix.
+ * For sub-second engineering contexts only — marketing should use formatLapTime.
+ */
+export function formatSeconds(value: number, opts?: { decimals?: number; locale?: Locale }): string {
+  const { decimals = 2, locale = 'en' } = opts ?? {};
+  return `${value.toFixed(decimals).replace('.', decSep(locale))}s`;
+}
+
+/**
+ * Apply FR typographic punctuation spacing.
+ * Adds narrow no-break space before : ; ! ? and after opening guillemets.
+ */
+export function frPunctuation(text: string): string {
+  return text
+    .replace(/\s*([;:!?])/g, '\u202F$1')
+    .replace(/\u00AB\s*/g, '\u00AB\u202F')
+    .replace(/\s*\u00BB/g, '\u202F\u00BB');
 }
