@@ -87,7 +87,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className="relative bg-asphalt text-chalk texture-grain">
+      <body className="relative bg-black text-chalk">
         <TranslationProvider>
           <SentryInit />
           <WebVitalsInit />
