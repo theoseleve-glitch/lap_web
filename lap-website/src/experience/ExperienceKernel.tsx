@@ -10,6 +10,7 @@ import { SectorGateController } from './narrative/SectorGateController';
 import { DrsController } from './narrative/DrsController';
 import { DeltaTickController } from './narrative/DeltaTickController';
 import { EXPERIENCE_V2 } from '@/lib/feature-flags';
+import { BackgroundController } from './background/BackgroundController';
 
 interface ExperienceKernelProps {
   children: ReactNode;
@@ -21,6 +22,7 @@ export function ExperienceKernel({ children }: ExperienceKernelProps) {
       <QualityManager />
       <InputManager />
       <MotionOrchestrator />
+      <BackgroundController />
       {EXPERIENCE_V2 && <SectorGateController />}
       {EXPERIENCE_V2 && <DrsController />}
       {EXPERIENCE_V2 && <DeltaTickController />}

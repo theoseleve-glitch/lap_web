@@ -135,6 +135,7 @@ export interface BackgroundState {
   cornerBank: number;      // current bank offset in degrees
   streakIntensity: number; // 0-1, modulated by DRS + velocity
   ribbonProgress: number;  // 0-1, where camera is on ribbon
+  lightSweepAngle: number; // radians, studio light sweep position
 }
 
 export interface AssetState {
@@ -177,6 +178,7 @@ export interface BackgroundActions {
   setCornerBank: (bank: number) => void;
   setStreakIntensity: (intensity: number) => void;
   setRibbonProgress: (progress: number) => void;
+  setLightSweepAngle: (angle: number) => void;
 }
 
 export interface AssetActions {
