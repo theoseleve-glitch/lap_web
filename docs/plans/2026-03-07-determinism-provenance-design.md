@@ -2,78 +2,67 @@
 
 **Date**: 2026-03-07
 **Status**: Approved
-**Scope**: Both pipelines (`telemetry_tool` 14-stage + `kart_envelope` 18-step)
+**Scope**: Both pipelines (`telemetry_tool` 14-stage, `kart_envelope` 18-step)
 
 ## Problem
 
-Analysis outputs must be deterministic for identical inputs, and every persisted analysis must carry robust provenance fields for reproducibility and traceability.
+Analysis outputs must be deterministic for identical inputs, and every persisted analysis must carry provenance fields for reproducibility and traceability.
 
 ## Audit Findings
 
 Determinism is already ~90% solved:
 - All sklearn models use `random_state=42` globally (`ml_engine.py`, `anomaly_detection.py`)
-- Sorting uses stable algorithms (`argsort(kind="stable")`) throughout
+- Sorting uses stable algorithms throughout (`argsort(kind="stable")`, `sorted()`)
 - No sklearn clustering used anywhere
 - Percentile/median operations are deterministic
 
 Remaining gaps:
-- No provenance fields (`analysis_run_id`, `input_fingerprint`, `params_hash`)
-- Float serialization not normalized for snapshot comparison
-- No regression tests proving determinism
+- No `analysis_run_id`, `input_fingerprint`, `params_hash` on outputs
+- No provenance endpoint for debugging
+- Float serialization not canonicalized for snapshot comparison
+- NaN/Inf handling inconsistent across JSON paths
 
 ## Approach: Full Provenance Layer (Approach 2)
 
-Shared `telemetry_tool/provenance/` package, Alembic migration 017, provenance API endpoint, shared snapshot test harness.
-
-## Section 1: Provenance Module
-
-### Package Structure
+### 1. Provenance Module (`telemetry_tool/provenance/`)
 
 ```
 telemetry_tool/provenance/
-    __init__.py          # exports build_provenance(), ProvenanceRecord
-    fingerprint.py       # file_hash (SHA-256) + data_fingerprint (canonical channel hash)
-    run_context.py       # analysis_run_id, params_hash, version fields, generated_at
-    canonical.py         # float normalization, canonical JSON serializer, hash computation
+├── __init__.py          # exports build_provenance(), ProvenanceRecord
+├── fingerprint.py       # file_hash + data_fingerprint
+├── run_context.py       # analysis_run_id, params_hash, versions, generated_at
+└── canonical.py         # float normalization, canonical JSON, hash computation
 ```
 
-### fingerprint.py
+**`fingerprint.py`**:
+- `compute_file_hash(path) -> str` — SHA-256, reuses `ingest/checksum.py` when available
+- `compute_data_fingerprint(df) -> str` — SHA-256 of sorted column names + shape + first 8 bytes per column as float64
 
-- `compute_file_hash(path) -> str` — Reuses `ingest/checksum.py` SHA-256. Desktop mode computes fresh.
-- `compute_data_fingerprint(df) -> str` — SHA-256 of: sorted column names + shape tuple + first 8 bytes of each column cast to float64. Fast even for 10GB files.
-
-### run_context.py
-
-`build_provenance(input_df, config, file_path=None) -> ProvenanceRecord`:
+**`run_context.py`**:
+- `build_provenance(input_df, config, file_path=None) -> ProvenanceRecord`
 
 ```python
 @dataclass
 class ProvenanceRecord:
-    analysis_run_id: str        # uuid4
-    input_fingerprint: str      # from compute_data_fingerprint()
-    file_hash: str | None       # from compute_file_hash() if path available
-    params_hash: str            # SHA-256 of JSON-serialized config/params
-    pipeline_version: str       # from pipeline_status.compute_pipeline_version_string()
-    model_version: str          # from ml_engine or kart_envelope config
-    solver_version: str | None  # kart_envelope solver backend, None for telemetry_tool
-    method_used: str            # "telemetry_tool_v2" or "kart_envelope_v2.2"
-    generated_at: str           # ISO 8601 UTC timestamp
-    training_data_hash: str | None  # hash of ML model training set, if applicable
+    analysis_run_id: str      # uuid4
+    input_fingerprint: str    # from compute_data_fingerprint()
+    file_hash: str | None     # from compute_file_hash() if path available
+    params_hash: str          # SHA-256 of JSON-serialized config/params
+    pipeline_version: str     # from pipeline_status.compute_pipeline_version_string()
+    model_version: str        # from ml_engine or kart_envelope config
+    solver_version: str | None
+    method_used: str          # "telemetry_tool_v2" or "kart_envelope_v2.2"
+    generated_at: str         # ISO 8601 UTC
+    training_data_hash: str | None
 ```
 
-### canonical.py
+**`canonical.py`**:
+- `canonicalize(obj, float_precision=6) -> str` — Round floats, normalize NaN/Inf to sentinels, sort keys
+- `canonical_hash(obj) -> str` — SHA-256 of canonicalize output
 
-- `canonicalize(obj, float_precision=6) -> str` — Recursively walks dicts/lists, rounds floats to N decimals, normalizes NaN to `"__NaN__"`, Inf to `"__Inf__"`, sorts dict keys, returns deterministic JSON string.
-- `canonical_hash(obj) -> str` — SHA-256 of canonicalize output.
+**Integration**: Call `build_provenance()` at top of `run_full_analysis()` and `analyze_session()`. Inject `summary["provenance"] = record.to_dict()`.
 
-### Integration
-
-- `telemetry_tool/pipeline.py`: Call `build_provenance()` at top of `run_full_analysis()` (after CSV read, before stage 1). Inject `summary["provenance"] = record.to_dict()`.
-- `kart_envelope/pipeline.py`: Same pattern at top of `analyze_session()`.
-
-## Section 2: Database — Migration 017
-
-### Table: `analysis_provenance`
+### 2. Database — Migration 017
 
 ```sql
 CREATE TABLE analysis_provenance (
@@ -98,135 +87,69 @@ CREATE INDEX idx_provenance_fingerprint ON analysis_provenance(input_fingerprint
 CREATE INDEX idx_provenance_pipeline_ver ON analysis_provenance(pipeline_version);
 ```
 
-### RLS
+RLS policy: `workspace_id = current_setting('app.workspace_id')::INTEGER`.
 
-```sql
-ALTER TABLE analysis_provenance ENABLE ROW LEVEL SECURITY;
-CREATE POLICY workspace_isolation ON analysis_provenance
-    USING (workspace_id = current_setting('app.workspace_id')::INTEGER);
-```
+**Dual-write**: Summary dict is source of truth. Table is denormalized query index. PG-only write (SQLite/desktop skips table, provenance lives in `results_json`).
 
-### Write Path
-
-- PG mode: `insert_provenance(conn, record)` writes to table + summary JSON.
-- SQLite/desktop: Table write skipped. Provenance lives only in `results_json`.
-
-### Consistency
-
-Summary dict is source of truth. Table is denormalized query index. Provenance endpoint reads table first, falls back to extracting from `results_json`.
-
-## Section 3: API Endpoint + Determinism Hardening
-
-### Endpoint
+### 3. API Endpoint
 
 `GET /api/v1/sessions/<session_id>/provenance` in `data_v2.py`.
 
-Response envelope:
-```json
-{
-  "ok": true,
-  "data": {
-    "analysis_run_id": "550e8400-e29b-41d4-a716-446655440000",
-    "input_fingerprint": "a3f8b2c1e9...",
-    "file_hash": "7f83b1657ff1fc53...",
-    "params_hash": "d4e5f6a7b8...",
-    "pipeline_version": "v2-a3f8b2c1",
-    "model_version": "2024-06-15_v3.1",
-    "solver_version": null,
-    "method_used": "telemetry_tool_v2",
-    "training_data_hash": null,
-    "generated_at": "2026-03-07T14:30:00Z"
-  }
-}
-```
+Read path: query table first, fall back to extracting from `results_json` for pre-migration sessions. Protected by auth + `require_permission("session:read")` + RLS.
 
-Read path: table lookup by session_id, fallback to `results_json` extraction. Protected by auth + RBAC (`session:read`).
+### 4. Determinism Hardening
 
-### Determinism Hardening
+- `canonical.py` normalizes floats to 6dp before JSON serialization
+- NaN → `"__NaN__"`, Inf → `"__Inf__"` for hashing (API responses unchanged)
+- Dict ordering made explicit via `sort_keys=True` in canonical form
 
-1. **Float serialization**: `canonical.py` normalizes floats to 6dp for hashing/snapshots.
-2. **Dict ordering**: `sort_keys=True` in canonical serialization.
-3. **NaN/Inf**: Normalized to string sentinels for hashing. API responses keep numeric NaN.
+No changes needed for: random seeds (fixed), sorting (stable), median/percentile (deterministic), clustering (not used).
 
-No changes needed for random seeds, sorting, median, or clustering (already deterministic).
+### 5. Snapshot Regression Tests
 
-## Section 4: Snapshot Regression Test Harness
+**Shared harness**: `tests/snapshot_harness.py`
+- `assert_snapshot_match(result, name, rtol=1e-6)` — Hash-first comparison, semantic diff fallback
+- Snapshots stored in `tests/snapshots/{telemetry_tool,kart_envelope}/` as `.json` + `.hash`
+- `pytest --update-snapshots` flag for intentional updates
 
-### Harness: `tests/snapshot_harness.py`
+**Test cases** (`test_determinism.py` in each package):
 
-```python
-def assert_snapshot_match(result: dict, snapshot_name: str, rtol: float = 1e-6) -> None
-def update_snapshot(result: dict, snapshot_name: str) -> None
-def canonical_hash(result: dict) -> str
-```
+| Test | Asserts |
+|------|---------|
+| `test_full_analysis_deterministic` | Two runs on same input produce identical canonical hashes |
+| `test_corners_snapshot` | Corner detection output matches stored baseline |
+| `test_theoretical_snapshot` | Theoretical lap output matches stored baseline |
+| `test_coaching_snapshot` (kart) | Coaching + corner_coaching matches baseline |
+| `test_delta_map_snapshot` (kart) | Delta map matches baseline |
+| `test_provenance_fields_present` | All provenance fields exist with correct types |
+| `test_provenance_version_change` | Pipeline version change → pipeline_version field changes |
+| `test_provenance_input_change` | Modified input → input_fingerprint changes, params_hash unchanged |
+| `test_provenance_params_change` | Config change → params_hash changes, input_fingerprint unchanged |
 
-Workflow:
-1. Canonical hash for fast pass/fail.
-2. First run stores snapshot JSON + hash in `tests/snapshots/`.
-3. Subsequent runs compare hash. On mismatch, semantic deep comparison with `rtol=1e-6` produces human-readable diff.
-4. `pytest --update-snapshots` to regenerate after intentional changes.
+**Fixtures**: Existing `seeded_db` + synthetic CSV (telemetry_tool), `synthetic_oval_laps` (kart_envelope).
 
-### Snapshot Storage
+## Input Fingerprint Strategy
 
-```
-tests/snapshots/
-    telemetry_tool/
-        full_analysis_oval.json + .hash
-        corners_oval.json + .hash
-        theoretical_oval.json + .hash
-    kart_envelope/
-        full_analysis_synthetic.json + .hash
-        coaching_synthetic.json + .hash
-        delta_map_synthetic.json + .hash
-```
+Dual hash:
+- `file_hash`: SHA-256 of raw CSV bytes (reuse `ingest/checksum.py`)
+- `data_fingerprint`: SHA-256 of sorted column names + shape + first 8 bytes per column as float64
 
-### Test Cases
+The file hash is cheap; the data fingerprint answers "same numeric data?" even with formatting differences.
 
-**telemetry_tool/tests/test_determinism.py:**
-- `test_full_analysis_deterministic` — Run twice, assert canonical hashes match
-- `test_corners_snapshot` — Corners output against stored baseline
-- `test_theoretical_snapshot` — Theoretical lap + metrics
-- `test_provenance_fields_present` — All fields exist with correct types
-
-**kart_envelope/tests/test_determinism.py:**
-- `test_full_analysis_deterministic` — Run twice on `synthetic_oval_laps`, assert match
-- `test_coaching_snapshot` — Coaching + corner coaching
-- `test_delta_map_snapshot` — Delta map output
-- `test_provenance_fields_present` — Field validation
-
-### Provenance-Specific Tests
-
-- `test_provenance_version_change` — Monkey-patch `PIPELINE_VERSION`, assert field changed
-- `test_provenance_input_change` — Modify input cell, assert `input_fingerprint` changed, `params_hash` unchanged
-- `test_provenance_params_change` — Change config param, assert `params_hash` changed, `input_fingerprint` unchanged
-
-### Fixtures
-
-- telemetry_tool: `seeded_db` + synthetic CSV (reuse `test_streaming_ingest.py` pattern)
-- kart_envelope: `synthetic_oval_laps` from conftest (seeded `np.random.seed(42)`)
-
-## Files Changed
+## Files Touched
 
 | File | Change |
 |------|--------|
 | `telemetry_tool/provenance/__init__.py` | New — exports |
-| `telemetry_tool/provenance/fingerprint.py` | New — hash functions |
+| `telemetry_tool/provenance/fingerprint.py` | New — hash computation |
 | `telemetry_tool/provenance/run_context.py` | New — ProvenanceRecord + build_provenance() |
-| `telemetry_tool/provenance/canonical.py` | New — canonicalization + hashing |
-| `telemetry_tool/pipeline.py` | Edit — call build_provenance(), inject into summary |
-| `kart_envelope/pipeline.py` | Edit — call build_provenance(), inject into summary |
+| `telemetry_tool/provenance/canonical.py` | New — canonicalization + hash |
+| `telemetry_tool/pipeline.py` | Modified — call build_provenance(), inject into summary |
+| `kart_envelope/pipeline.py` | Modified — call build_provenance(), inject into summary |
+| `telemetry_tool/web/routes/data_v2.py` | Modified — add provenance endpoint |
 | `alembic/versions/017_analysis_provenance.py` | New — migration |
-| `telemetry_tool/web/routes/data_v2.py` | Edit — add provenance endpoint |
 | `tests/snapshot_harness.py` | New — shared test harness |
 | `telemetry_tool/tests/test_determinism.py` | New — snapshot + determinism tests |
 | `kart_envelope/tests/test_determinism.py` | New — snapshot + determinism tests |
-| `tests/snapshots/` | New — snapshot JSON + hash files |
-| `telemetry_tool/tests/conftest.py` | Edit — add `--update-snapshots` flag |
-
-## Acceptance Criteria
-
-1. Running analysis twice on identical input yields identical canonical hashes.
-2. All provenance fields present in both pipeline outputs.
-3. `GET /api/v1/sessions/<id>/provenance` returns correct data.
-4. Snapshot tests pass for corners, theoretical, deltas, coaching.
-5. Provenance fields change only when expected (version/input/params change tests).
+| `tests/snapshots/` | New — stored baselines |
+| `tests/conftest.py` | Modified — add `--update-snapshots` flag |
