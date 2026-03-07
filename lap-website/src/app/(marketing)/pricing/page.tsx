@@ -18,7 +18,7 @@ interface MatrixRow {
 }
 
 const featureMatrix: MatrixRow[] = [
-  // ENGINEER
+  // COACHING
   { featureKey: 'pricing.matrix.uploadAnalyze', group: 'coaching', demoKey: 'pricing.matrix.1report', racerKey: 'pricing.matrix.10mo', worldClassKey: 'pricing.value.unlimited' },
   { featureKey: 'pricing.matrix.fourPillar', group: 'coaching', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.cornerCoaching', group: 'coaching', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
@@ -26,7 +26,7 @@ const featureMatrix: MatrixRow[] = [
   { featureKey: 'pricing.matrix.comparisonProgress', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.coachingDrills', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.vizWorkspace', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  // STRATEGIST
+  // STRATEGY
   { featureKey: 'pricing.matrix.strategyDashboard', group: 'strategy', demoKey: 'pricing.matrix.3hLimit', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.livePace', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.pitPlanning', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },

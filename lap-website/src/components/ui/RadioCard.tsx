@@ -37,7 +37,7 @@ export function RadioCard({
   label,
   children,
   className = '',
-  sender = 'ENGINEER',
+  sender = 'COACH',
   receiver = 'DRIVER',
   accentColor = '#C9A84C',
 }: RadioCardProps) {

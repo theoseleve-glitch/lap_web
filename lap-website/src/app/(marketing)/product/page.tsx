@@ -9,14 +9,14 @@ import { useTranslation } from '@/i18n';
 export default function ProductPage() {
   const { t } = useTranslation();
 
-  const engineerScreenshots = [
+  const coachingScreenshots = [
     { title: 'Score Overview', description: 'Pace, Consistency, Execution, Robustness — each scored /25.', src: '/images/screenshots/score-overview.png' },
     { title: 'Corner Replay', description: 'Entry, apex, and exit traces to spot where the lap was won or lost.', src: '/images/screenshots/corner-replay.png' },
     { title: 'Session Intelligence', description: 'Overview, Corners, Timeline, Analytics, and Lap Data tabs.', src: '/images/screenshots/session-detail.png' },
     { title: 'Comparison Suite', description: 'Session-vs-session and driver-vs-driver overlays.', src: '/images/screenshots/comparison-suite.png' },
   ];
 
-  const strategistScreenshots = [
+  const strategyScreenshots = [
     { title: 'Race Strategy Dashboard', description: 'Live operational board for stint calls and pit-window decisions.', src: '/images/screenshots/dashboard-hero.png' },
     { title: 'Live Monitoring', description: 'Real-time pace deltas and stint progress.', src: '/images/screenshots/live-monitoring.png' },
     { title: 'Pit Stop Planning', description: 'Plan pit windows based on fuel, tire, and driver rotation.', src: '/images/screenshots/pit-planning.png' },
@@ -35,15 +35,15 @@ export default function ProductPage() {
       </section>
 
       <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">{t('product.engineer.title', 'Coaching Mode')}</h2>
-        <p className="text-steel mb-4">{t('product.engineer.subtitle', 'Upload. Score. Fix. Drill. Improve.')}</p>
-        <ScreenshotGallery items={engineerScreenshots} accentColor="var(--color-acid-green)" />
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">{t('product.coaching.title', 'Coaching Mode')}</h2>
+        <p className="text-steel mb-4">{t('product.coaching.subtitle', 'Upload. Score. Fix. Drill. Improve.')}</p>
+        <ScreenshotGallery items={coachingScreenshots} accentColor="var(--color-acid-green)" />
       </section>
 
       <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">{t('product.strategist.title', 'Strategy Mode')}</h2>
-        <p className="text-steel mb-4">{t('product.strategist.subtitle', 'Pit Wall. Live Pace. Stint Plans. Decisions.')}</p>
-        <ScreenshotGallery items={strategistScreenshots} accentColor="var(--color-pit-orange)" />
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">{t('product.strategy.title', 'Strategy Mode')}</h2>
+        <p className="text-steel mb-4">{t('product.strategy.subtitle', 'Pit Wall. Live Pace. Stint Plans. Decisions.')}</p>
+        <ScreenshotGallery items={strategyScreenshots} accentColor="var(--color-pit-orange)" />
       </section>
 
       <section className="mb-10 border border-steel/20 bg-concrete/20 p-5">

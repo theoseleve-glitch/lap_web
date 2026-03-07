@@ -58,8 +58,8 @@ export const s2Proof = {
 
 export const s3Product = {
   monument: 'FIND TIME.',
-  engineer: {
-    subhead: 'ENGINEER MODE',
+  coaching: {
+    subhead: 'COACHING MODE',
     tagline: 'Post-session. Find where you lost time.',
     tiles: [
       { label: 'YOUR SCORE: CLEAR', detail: 'Understand pace, consistency, execution, and confidence at a glance' },
@@ -67,8 +67,8 @@ export const s3Product = {
       { label: 'NEXT SESSION: READY', detail: 'Leave with drills you can apply immediately on track' },
     ],
   },
-  strategist: {
-    subhead: 'STRATEGIST MODE',
+  strategy: {
+    subhead: 'STRATEGY MODE',
     tagline: 'Pre-event. Plan how you\'ll gain it back.',
     tiles: [
       { label: 'RACE PLAN: SET', detail: 'Build stint plans, pit windows, and fuel strategies before the green flag' },

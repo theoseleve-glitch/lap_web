@@ -51,8 +51,8 @@ describe('Copy', () => {
     expect(copy.startGrid.monument).toHaveLength(2);
     expect(copy.s1Pain.monument).toHaveLength(2);
     expect(copy.s2Proof.plates).toHaveLength(3);
-    expect(copy.s3Product.engineer.tiles).toHaveLength(3);
-    expect(copy.s3Product.strategist.tiles).toHaveLength(3);
+    expect(copy.s3Product.coaching.tiles).toHaveLength(3);
+    expect(copy.s3Product.strategy.tiles).toHaveLength(3);
     expect(copy.pitStop.riskReversal).toHaveLength(6);
     expect(copy.garage.panels).toHaveLength(4);
     expect(copy.podium.monument).toHaveLength(2);

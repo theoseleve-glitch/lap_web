@@ -7,37 +7,37 @@ import { useTranslation } from '@/i18n';
 export function S3Product() {
   const { t } = useTranslation();
 
-  const strategistPanels = [
+  const strategyPanels = [
     {
-      label: t('home.product.strategistTile1Label'),
-      description: t('home.product.strategistTile1Detail'),
+      label: t('home.product.strategyTile1Label'),
+      description: t('home.product.strategyTile1Detail'),
       image: '/images/screenshots/dashboard-hero.png',
       alt: 'Race Strategy Dashboard with stint and pit planning widgets',
     },
     {
-      label: t('home.product.strategistTile2Label'),
-      description: t('home.product.strategistTile2Detail'),
+      label: t('home.product.strategyTile2Label'),
+      description: t('home.product.strategyTile2Detail'),
       image: '/images/screenshots/lap-table.png',
       alt: 'Live lap table with pace deltas and stint progress indicators',
     },
     {
-      label: t('home.product.strategistTile3Label'),
-      description: t('home.product.strategistTile3Detail'),
+      label: t('home.product.strategyTile3Label'),
+      description: t('home.product.strategyTile3Detail'),
       image: '/images/screenshots/score-overview.png',
       alt: 'Pit call planning board with projected outcomes and decision support',
     },
   ];
 
-  const engineerTiles = [
-    { labelKey: 'home.product.engineerTile1Label', detailKey: 'home.product.engineerTile1Detail' },
-    { labelKey: 'home.product.engineerTile2Label', detailKey: 'home.product.engineerTile2Detail' },
-    { labelKey: 'home.product.engineerTile3Label', detailKey: 'home.product.engineerTile3Detail' },
+  const coachingTiles = [
+    { labelKey: 'home.product.coachingTile1Label', detailKey: 'home.product.coachingTile1Detail' },
+    { labelKey: 'home.product.coachingTile2Label', detailKey: 'home.product.coachingTile2Detail' },
+    { labelKey: 'home.product.coachingTile3Label', detailKey: 'home.product.coachingTile3Detail' },
   ];
 
-  const strategistTiles = [
-    { labelKey: 'home.product.strategistTile1Label', detailKey: 'home.product.strategistTile1Detail' },
-    { labelKey: 'home.product.strategistTile2Label', detailKey: 'home.product.strategistTile2Detail' },
-    { labelKey: 'home.product.strategistTile3Label', detailKey: 'home.product.strategistTile3Detail' },
+  const strategyTiles = [
+    { labelKey: 'home.product.strategyTile1Label', detailKey: 'home.product.strategyTile1Detail' },
+    { labelKey: 'home.product.strategyTile2Label', detailKey: 'home.product.strategyTile2Detail' },
+    { labelKey: 'home.product.strategyTile3Label', detailKey: 'home.product.strategyTile3Detail' },
   ];
 
   return (
@@ -55,21 +55,21 @@ export function S3Product() {
           </MonumentText>
         </div>
 
-        {/* Engineer / Strategist dual columns */}
+        {/* Coaching / Strategy dual columns */}
         <div className="col-span-full grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl mx-auto">
-          {/* Engineer Mode — left */}
+          {/* Coaching Mode — left */}
           <div className="border border-chalk/15 p-6">
             <h3 className="font-monument text-xs text-chalk tracking-widest mb-1">
-              {t('home.product.engineerSubhead')}
+              {t('home.product.coachingSubhead')}
             </h3>
             <p className="font-body text-steel text-sm mb-6">
-              {t('home.product.engineerTagline')}
+              {t('home.product.coachingTagline')}
             </p>
 
             <ReportScrubber className="mb-6" accentColor="var(--chalk)" />
 
             <div className="space-y-3">
-              {engineerTiles.map((tile) => (
+              {coachingTiles.map((tile) => (
                 <div
                   key={tile.labelKey}
                   className="bg-asphalt/40 p-4 border border-steel/10"
@@ -81,24 +81,24 @@ export function S3Product() {
             </div>
           </div>
 
-          {/* Strategist Mode — right */}
+          {/* Strategy Mode — right */}
           <div className="border border-chalk/15 p-6">
             <h3 className="font-monument text-xs text-gold tracking-widest mb-1">
-              {t('home.product.strategistSubhead')}
+              {t('home.product.strategySubhead')}
             </h3>
             <p className="font-body text-steel text-sm mb-6">
-              {t('home.product.strategistTagline')}
+              {t('home.product.strategyTagline')}
             </p>
 
             <ReportScrubber
               className="mb-6"
-              panels={strategistPanels}
-              ariaLabel="Scrub through strategist views"
+              panels={strategyPanels}
+              ariaLabel="Scrub through strategy views"
               accentColor="var(--pit-orange)"
             />
 
             <div className="space-y-3">
-              {strategistTiles.map((tile) => (
+              {strategyTiles.map((tile) => (
                 <div
                   key={tile.labelKey}
                   className="bg-asphalt/40 p-4 border border-steel/10"
