@@ -3364,4 +3364,47 @@ def get_corner_replay(session_id: str):
     })
 
 
+# ══════════════════════════════════════════════════════════════════
+# 44. GET /api/v1/sessions/<id>/provenance — Provenance record
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/provenance", methods=["GET"])
+@_safe_api
+def get_provenance(session_id: str):
+    """Return the provenance record for a session.
+
+    Read path: check analysis_provenance table first (fast indexed lookup),
+    fall back to extracting from analysis_json for pre-migration sessions.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Try provenance table first
+    try:
+        from provenance.persistence import get_provenance_by_session
+        prov = get_provenance_by_session(conn, session_id)
+        if prov is not None:
+            prov.pop("id", None)
+            prov.pop("created_at", None)
+            return api_response(prov)
+    except Exception:
+        pass
+
+    # Fall back to analysis_json
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        prov = analysis.get("provenance")
+        if prov:
+            return api_response(prov)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "No provenance available for this session",
+        status=404,
+    )
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
