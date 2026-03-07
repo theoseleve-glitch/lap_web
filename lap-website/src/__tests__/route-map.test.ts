@@ -36,6 +36,42 @@ describe('routeMap', () => {
   });
 });
 
+const SEO_EXEMPT = ['/', '/sitemap'];
+
+describe('SEO fields', () => {
+  const nonExemptEntries = Object.entries(routeMap).filter(
+    ([key]) => !SEO_EXEMPT.includes(key),
+  );
+
+  it('every non-exempt entry has primaryKeyword', () => {
+    for (const [key, entry] of nonExemptEntries) {
+      expect(entry.primaryKeyword, `${key} missing primaryKeyword`).toBeDefined();
+      expect(entry.primaryKeyword!.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every non-exempt entry has metaDescription between 80-160 chars', () => {
+    for (const [key, entry] of nonExemptEntries) {
+      expect(entry.metaDescription, `${key} missing metaDescription`).toBeDefined();
+      const len = entry.metaDescription!.length;
+      expect(len, `${key} metaDescription too short (${len})`).toBeGreaterThanOrEqual(80);
+      expect(len, `${key} metaDescription too long (${len})`).toBeLessThanOrEqual(160);
+    }
+  });
+
+  it('no two entries share the same primaryKeyword', () => {
+    const keywords = nonExemptEntries.map(([, e]) => e.primaryKeyword!.toLowerCase());
+    const unique = new Set(keywords);
+    expect(unique.size).toBe(keywords.length);
+  });
+
+  it('no two entries share the same metaDescription', () => {
+    const descriptions = nonExemptEntries.map(([, e]) => e.metaDescription!);
+    const unique = new Set(descriptions);
+    expect(unique.size).toBe(descriptions.length);
+  });
+});
+
 describe('buildBreadcrumbs', () => {
   it('returns empty array for top-level pages', () => {
     expect(buildBreadcrumbs('/')).toEqual([]);
