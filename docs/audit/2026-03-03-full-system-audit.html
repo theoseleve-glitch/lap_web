@@ -97,7 +97,7 @@ h1,h2,h3{color:#000}
 
 <h3>Critical Issues (Blockers/High)</h3>
 <ul>
-<li><strong>HSTS missing on frontend:</strong> www.lap-coach.racing does not send Strict-Transport-Security header. Users can be MITM-downgraded on first visit.</li>
+<li><strong><s>HSTS missing on frontend:</s> FIXED 2026-03-07:</strong> www.lap-coach.racing now sends Strict-Transport-Security: max-age=31536000; includeSubDomains via middleware.ts and next.config.mjs.</li>
 <li><strong>CORS origin mismatch on API:</strong> Non-preflight GET returns Access-Control-Allow-Origin: http://localhost:3000 instead of production origin.</li>
 <li><strong>Subscription status free for all tiers:</strong> All three test accounts show subscription_status=free even though they have different plan_tier values.</li>
 <li><strong>Sitemap severely incomplete:</strong> Only 12 URLs. Missing: /pricing, /product, /privacy, /terms, /security, /dpa, /contact, /demo.</li>
@@ -107,7 +107,7 @@ h1,h2,h3{color:#000}
 <h3>Top Opportunities</h3>
 <ul>
 <li>Complete Stripe live-mode integration to enable actual billing</li>
-<li>Add HSTS to Cloudflare Workers response headers</li>
+<li><s>Add HSTS to Cloudflare Workers response headers</s> ✓ Done 2026-03-07</li>
 <li>Expand sitemap to include all marketing pages</li>
 <li>Add structured data (Schema.org) for motorsport-specific content</li>
 <li>Implement email verification reminder and welcome email flows</li>
@@ -171,14 +171,14 @@ var AREAS = [
 var F = [
 // Area 1: Scope and Methodology (0001-0020)
 [1,"p",1,"I","Marketing site reachable at www.lap-coach.racing","curl -sI https://www.lap-coach.racing/","HTTP 200 via Cloudflare","CF-RAY confirmed","Site operational","N/A","SRE"],
-[2,"p",1,"I","API server reachable at api.lap-coach.racing","curl https://api.lap-coach.racing/healthz","db=ok, redis=ok, celery=ok, DB 19.3MB","JSON healthz response","API operational","N/A","SRE"],
+[2,"p",1,"I","API server reachable at api.lap-coach.racing","curl https://api.lap-coach.racing/healthz","{status:ok} only (db_stats stripped 2026-03-07, H-02 fix)","JSON healthz response","API operational","N/A","SRE"],
 [3,"p",1,"I","World-Class test account login succeeds","POST /auth/login","User ID 59, plan_tier=world_class","access_token + httpOnly cookie returned","Auth works","N/A","QA"],
 [4,"p",1,"I","Demo test account login succeeds","POST /auth/login, GET /api/v1/me","plan_tier=demo, reports_per_month=1, retention=30d","Entitlements correct","None","N/A","QA"],
 [5,"p",1,"I","Racer test account login succeeds","POST /auth/login, GET /api/v1/me","plan_tier=racer, reports_per_month=10, retention=90d","Entitlements correct","None","N/A","QA"],
 [6,"p",1,"I","Codebase access confirmed (white-box)","Read key backend files","31 route files, 90+ frontend pages accessible","Glob confirmed","Enables white-box audit","N/A","QA"],
 [7,"p",1,"I","Database has real telemetry data","GET /api/v1/sessions","5 sessions with scores, laps, corners. 14 drivers.","Real kart data from Ouest Karting","Enables domain testing","N/A","QA"],
 [8,"p",1,"I","Cloudflare CDN active for frontend","Check response headers","Server: cloudflare, CF-RAY, alt-svc: h3","Paris edge CDG","DDoS protection + caching","N/A","SRE"],
-[9,"p",1,"I","Caddy reverse proxy active for API","Check Via header","Via: 1.1 Caddy, HSTS on API","Headers confirmed","Auto TLS via Caddy","N/A","SRE"],
+[9,"p",1,"I","Caddy reverse proxy active for API","Check Via header","Via stripped (2026-03-07 L-02 fix), HSTS on API, TLS 1.2+ min","Headers confirmed","Auto TLS via Caddy","N/A","SRE"],
 [10,"p",1,"I","robots.txt blocks /api/ and /app/","Fetch robots.txt","Disallow: /api/, /app/. Sitemap referenced.","Parsed correctly","API hidden from crawlers","N/A","SEO"],
 [11,"p",1,"I","Plausible Analytics configured","Review page source","Plausible with data-domain, no Google Analytics","Privacy-first, no cookies","Good choice","N/A","SEO"],
 [12,"p",1,"I","Sentry error tracking configured","Review page source","Sentry script present, CSP allows sentry.io","connect-src directive","Client errors captured","N/A","SRE"],
@@ -584,7 +584,7 @@ var F = [
 [408,"p",5,"I","Lap times match old tool","Compare webapp vs desktop","Times within 0.01s","parity test","Parity confirmed","N/A","Backend"],
 [409,"p",5,"I","Corner metrics match old tool","Compare webapp vs desktop","Corner speeds within tolerance","parity test","Parity confirmed","N/A","Backend"],
 [410,"f",5,"M","No regression test for parity on deploy","Check CI/CD","No automated parity check","manual review","Regression risk","Add parity test to CI","DevOps"],
-[411,"p",5,"I","Healthz endpoint returns 200 when healthy","GET /healthz","200 with db=ok, redis=ok","integration test","Monitoring works","N/A","SRE"],
+[411,"p",5,"I","Healthz endpoint returns 200 when healthy","GET /healthz","200 with {status:ok} only (2026-03-07: db_stats stripped, detail behind auth at /healthz/detail)","integration test","Monitoring works","N/A","SRE"],
 [412,"f",5,"L","No user-facing status page","Check for status.lap-coach.racing","No status page","manual check","Users can't check service status","Add status page","SRE"],
 [413,"p",5,"I","CORS allows frontend origin","Check CORS headers","Access-Control-Allow-Origin correct","integration test","Cross-origin works","N/A","Backend"],
 [414,"p",5,"I","API envelope format consistent","Check multiple endpoints","All return {ok, data, error, meta}","integration test","API consistency","N/A","Backend"],
@@ -1227,7 +1227,7 @@ var F = [
 [1043,"p",13,"I","X-Content-Type-Options: nosniff","Check headers","nosniff set","security scan","MIME sniffing prevention","N/A","Backend"],
 [1044,"p",13,"I","X-Powered-By: disabled","Check headers","No X-Powered-By header","security scan","Server info hidden","N/A","Backend"],
 [1045,"p",13,"I","CSP: Content-Security-Policy on frontend","Check headers","CSP header present","security scan","XSS mitigation","N/A","Frontend"],
-[1046,"f",13,"L","CSP: script-src allows unsafe-eval","Check CSP","unsafe-eval in script-src","security scan","Eval-based XSS possible","Remove unsafe-eval","Frontend"],
+[1046,"p",13,"L","CSP: script-src allows unsafe-eval","Check CSP","FIXED 2026-03-07: unsafe-eval removed from script-src in next.config.mjs","security scan","Eval-based XSS prevented","N/A","Frontend"],
 [1047,"f",13,"L","CSP: style-src allows unsafe-inline","Check CSP","unsafe-inline in style-src","security scan","Style injection possible","Use nonce-based styles","Frontend"],
 [1048,"p",13,"I","Referrer-Policy header set","Check headers","strict-origin-when-cross-origin","security scan","Referrer leakage prevented","N/A","Backend"],
 [1049,"p",13,"I","Permissions-Policy header set","Check headers","camera=(), microphone=()","security scan","Feature restriction","N/A","Backend"],
@@ -1271,7 +1271,7 @@ var F = [
 [1087,"f",13,"L","Dependency: no automated vulnerability scanning","Check CI","No Dependabot or Snyk","code review","Manual scanning only","Add automated scanning","DevOps"],
 [1088,"p",13,"I","TLS: Caddy auto-renews certificates","Check Caddy config","Auto HTTPS enabled","security test","Always valid TLS","N/A","SRE"],
 [1089,"p",13,"I","TLS: HTTPS enforced (redirect from HTTP)","Test http://","301 redirect to https://","security test","No plaintext traffic","N/A","SRE"],
-[1090,"f",13,"L","TLS: no minimum version configured","Check Caddy config","Default TLS settings","code review","May allow TLS 1.0/1.1","Pin minimum TLS 1.2","SRE"],
+[1090,"p",13,"L","TLS: no minimum version configured","Check Caddy config","FIXED 2026-03-07: protocols tls1.2 tls1.3 in Caddyfile","code review","TLS 1.2+ enforced","N/A","SRE"],
 [1091,"p",13,"I","RLS: row-level security on all 44 tables","Check PG config","RLS policies active","code review","Tenant isolation","N/A","Backend"],
 [1092,"p",13,"I","RLS: SET LOCAL scoped to transaction","Check middleware","Context set per-request","code review","Session isolation","N/A","Backend"],
 [1093,"f",13,"M","RLS: no RLS bypass audit","Check superuser access","Superuser bypasses RLS","code review","Admin can see all data","Document and restrict superuser","Backend"],
@@ -1294,7 +1294,7 @@ var F = [
 [1110,"f",13,"L","No DDoS protection on API","Check infrastructure","Caddy only, no rate limiting at edge","code review","Volumetric attack risk","Add Cloudflare proxy for API","SRE"],
 [1111,"p",13,"I","Cloudflare: frontend behind CF proxy","Check DNS","CF proxy active for frontend","code review","Edge protection","N/A","SRE"],
 [1112,"f",13,"L","API: not behind Cloudflare proxy","Check DNS","Direct to VPS IP","code review","No edge protection for API","Add CF proxy for API","SRE"],
-[1113,"f",13,"L","No penetration test conducted","Check records","No pentest report","manual check","Unknown vulnerabilities","Schedule penetration test","Security"],
+[1113,"p",13,"L","No penetration test conducted","Check records","FIXED 2026-03-07: Pentest completed, report at docs/security/PENTEST_REPORT_2026-03-07.md, 11 findings remediated","manual check","Vulnerabilities identified and fixed","N/A","Security"],
 [1114,"f",13,"L","No security incident response plan","Check docs","No IR plan","code review","No incident playbook","Create IR plan","Security"],
 [1115,"p",13,"I","Password: minimum length enforced","Check validation","Min 8 characters","unit test","Basic password policy","N/A","Backend"],
 [1116,"f",13,"L","Password: no complexity requirements","Check validation","No uppercase/number/symbol requirement","code review","Weak passwords allowed","Add complexity rules","Backend"],
@@ -1314,7 +1314,7 @@ var F = [
 [1130,"p",13,"I","Input validation: Pydantic at system boundaries","Check schemas","All inputs validated","code review","Boundary validation","N/A","Backend"],
 [1131,"f",13,"L","Input validation: some legacy routes lack Pydantic","Check old routes","Direct request.form/json access","code review","Inconsistent validation","Add Pydantic to all routes","Backend"],
 [1132,"p",13,"I","Error handling: custom error handlers registered","Check app.py","404, 500 handlers","code review","Clean error responses","N/A","Backend"],
-[1133,"f",13,"L","Error handling: unhandled exception may leak info","Check 500 handler","May include internal details","code review","Information disclosure","Sanitize all error responses","Backend"],
+[1133,"p",13,"L","Error handling: unhandled exception may leak info","Check 500 handler","FIXED 2026-03-07: All error handlers return JSON with generic messages when AUTH_REQUIRED=1 (H-03 fix)","code review","Error responses sanitized","N/A","Backend"],
 [1134,"p",13,"I","OWASP A01 Broken Access Control: RLS + RBAC mitigated","Check controls","Multi-layer access control","security review","Strong access control","N/A","Backend"],
 [1135,"p",13,"I","OWASP A02 Crypto Failures: Argon2id + JWT HS256","Check crypto","Strong algorithms used","security review","Good cryptography","N/A","Backend"],
 [1136,"p",13,"I","OWASP A03 Injection: parameterized queries","Check SQL usage","No string concatenation SQL","security review","Injection prevented","N/A","Backend"],
