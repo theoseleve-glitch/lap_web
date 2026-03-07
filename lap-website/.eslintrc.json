@@ -1,7 +1,7 @@
 {
   "extends": ["next/core-web-vitals", "next/typescript"],
   "rules": {
-    "no-console": ["warn", { "allow": ["error"] }],
+    "no-console": ["error", { "allow": ["error"] }],
     "jsx-a11y/alt-text": "error",
     "jsx-a11y/aria-props": "error",
     "jsx-a11y/aria-role": "error",

@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/app';
 import { BACKEND_URL, ApiError } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerPicker, type TrackLayout } from '@/components/app/CornerPicker';
+import { logger } from '@/lib/logger';
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -284,7 +285,7 @@ export default function UploadPage() {
                   const layout = await fetchTrackLayout(jId);
                   setTrackLayout(layout);
                 } catch (err) {
-                  console.error('Failed to fetch track layout:', err);
+                  logger.error('Failed to fetch track layout:', err);
                   setErrorMessage('Failed to load track layout');
                   setPageState('error');
                 }
@@ -309,7 +310,7 @@ export default function UploadPage() {
           }
         }
       } catch (err) {
-        console.error('SSE connection error:', err);
+        logger.error('SSE connection error:', err);
       }
     };
 
