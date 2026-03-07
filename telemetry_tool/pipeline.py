@@ -2893,6 +2893,28 @@ def run_full_analysis(
             model_version=_pipeline_status.model_version,
         )
         summary["provenance"] = _provenance_record.to_dict()
+
+        # ── Write provenance to table (silently skipped if table missing) ──
+        if db_session_id is not None:
+            try:
+                from provenance.persistence import insert_provenance
+                import os as _prov_os
+                if _prov_os.environ.get("USE_PG", "0") != "1":
+                    from web.db import get_db_connection as _prov_get_conn
+                    _prov_conn = _prov_get_conn()
+                    _wid = None
+                    try:
+                        from flask import g
+                        _wid = getattr(g, "workspace_id", None)
+                    except (ImportError, RuntimeError):
+                        pass
+                    insert_provenance(
+                        _prov_conn, _provenance_record,
+                        session_id=str(db_session_id),
+                        workspace_id=_wid,
+                    )
+            except Exception as _prov_db_err:
+                logger.debug("Provenance table write skipped: %s", _prov_db_err)
     except Exception as _prov_err:
         logger.debug("Provenance generation skipped: %s", _prov_err)
 
