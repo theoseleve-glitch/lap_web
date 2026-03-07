@@ -1,5 +1,6 @@
 import { PageIntro } from '@/components/ui/PageIntro';
 import { changelog } from '@/data/changelog';
+import { generateSeoMetadata } from '@/lib/seo';
 
 const TAG_STYLES: Record<string, string> = {
   feature: 'border-acid-green/40 text-acid-green',
@@ -9,10 +10,7 @@ const TAG_STYLES: Record<string, string> = {
   breaking: 'border-safety-red/40 text-safety-red',
 };
 
-export const metadata = {
-  title: 'Changelog | LAP',
-  description: 'Product updates, new features, and improvements to LAP telemetry analysis.',
-};
+export const metadata = generateSeoMetadata('/changelog');
 
 export default function ChangelogPage() {
   return (

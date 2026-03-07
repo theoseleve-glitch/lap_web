@@ -2,11 +2,9 @@ import { Suspense } from 'react';
 import { LeadForm } from '@/components/forms/LeadForm';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Waitlist | LAP',
-  description: 'Join the waitlist for upcoming LAP features including sim telemetry and multisource import.',
-};
+export const metadata = generateSeoMetadata('/waitlist');
 
 export default function WaitlistPage() {
   return (

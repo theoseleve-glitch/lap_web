@@ -1,12 +1,9 @@
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 import Link from 'next/link';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Security | LAP',
-  description:
-    'Technical security posture: encryption, data isolation, residency, retention, incident response, and vulnerability disclosure.',
-};
+export const metadata = generateSeoMetadata('/security');
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

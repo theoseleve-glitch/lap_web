@@ -1,11 +1,7 @@
-import type { Metadata } from "next";
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: "Subprocessors | LAP",
-  description:
-    "List of third-party subprocessors used by LAP for data processing.",
-};
+export const metadata = generateSeoMetadata('/subprocessors');
 
 const subprocessors = [
   {

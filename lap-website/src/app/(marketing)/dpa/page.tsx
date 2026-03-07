@@ -1,11 +1,8 @@
 import { PageIntro } from '@/components/ui/PageIntro';
 import Link from 'next/link';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Data Processing Addendum | LAP',
-  description:
-    'Data Processing Addendum covering controller/processor roles, security measures, subprocessors, and international transfer safeguards.',
-};
+export const metadata = generateSeoMetadata('/dpa');
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

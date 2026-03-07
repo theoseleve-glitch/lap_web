@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Privacy Policy | LAP',
-  description: 'How LAP collects, processes, and protects your data.',
-};
+export const metadata = generateSeoMetadata('/privacy');
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

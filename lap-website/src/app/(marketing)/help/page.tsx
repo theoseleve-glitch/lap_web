@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Help | LAP',
-  description: 'Get started with LAP telemetry analysis. FAQ, guides, and support.',
-};
+export const metadata = generateSeoMetadata('/help');
 
 const gettingStarted = [
   { step: '01', text: 'Record your session with RaceChrono or RaceBox' },

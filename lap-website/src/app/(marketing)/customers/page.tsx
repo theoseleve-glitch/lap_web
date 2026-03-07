@@ -1,11 +1,8 @@
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Customer Results | LAP',
-  description:
-    'Measured outcomes from kart academies, junior teams, and endurance operations using LAP telemetry analysis.',
-};
+export const metadata = generateSeoMetadata('/customers');
 
 const caseStudies = [
   {

@@ -2,11 +2,9 @@ import { notFound } from 'next/navigation';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { SuccessPage } from '@/components/site/SuccessPage';
 import { ThankYouTracker } from '@/components/site/ThankYouTracker';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Thank You | LAP',
-  description: 'Your submission has been received.',
-};
+export const metadata = generateSeoMetadata('/thank-you');
 
 interface SuccessConfig {
   eyebrow: string;

@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
+import { generateSeoMetadata } from '@/lib/seo';
+
+export const metadata = generateSeoMetadata('/status');
 
 interface LiveStatus {
   indicator: 'none' | 'minor' | 'major' | 'critical';

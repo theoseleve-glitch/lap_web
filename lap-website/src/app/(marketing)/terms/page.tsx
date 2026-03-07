@@ -1,10 +1,8 @@
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata = {
-  title: 'Terms of Service | LAP',
-  description: 'Terms governing your use of the LAP platform.',
-};
+export const metadata = generateSeoMetadata('/terms');
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

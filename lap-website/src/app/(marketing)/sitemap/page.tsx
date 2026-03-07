@@ -1,11 +1,8 @@
-import type { Metadata } from 'next';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { generateSeoMetadata } from '@/lib/seo';
 
-export const metadata: Metadata = {
-  title: 'Sitemap',
-  description: 'Browse all pages on LAP — motorsport telemetry analysis platform.',
-};
+export const metadata = generateSeoMetadata('/sitemap');
 
 interface SitemapSection {
   heading: string;

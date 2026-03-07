@@ -1,20 +1,22 @@
-import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries } from '@/data/insights-cms';
+import { generateSeoMetadata } from '@/lib/seo';
 
 export function generateStaticParams() {
   return insightEntries.map((entry) => ({ slug: entry.slug }));
 }
 
-export function generateMetadata({ params }: { params: { slug: string } }): Metadata {
-  const article = insightEntries.find((item) => item.slug === params.slug);
-  if (!article) return { title: 'Insight Not Found | LAP' };
-  return {
-    title: `${article.title} | LAP`,
-    description: article.summary,
-  };
+export function generateMetadata({ params }: { params: { slug: string } }) {
+  const entry = insightEntries.find((e) => e.slug === params.slug);
+  if (!entry) return generateSeoMetadata('/insights');
+  return generateSeoMetadata('/insights', {
+    title: entry.title,
+    metaDescription: entry.summary.length >= 80
+      ? entry.summary
+      : `${entry.summary} Learn more about ${entry.tags.join(', ')} in motorsport telemetry analysis with LAP.`,
+  });
 }
 
 export default function InsightDetailPage({ params }: { params: { slug: string } }) {
