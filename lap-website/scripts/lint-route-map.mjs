@@ -31,6 +31,8 @@ const violations = [];
 for (const pageFile of findPages(MARKETING_DIR)) {
   const relative = path.relative(MARKETING_DIR, path.dirname(pageFile)).replace(/\\/g, '/');
   const routePath = relative ? `/${relative}` : '/';
+  // Skip dynamic route segments (e.g., [slug], [form])
+  if (routePath.includes('[')) continue;
   if (!registeredPaths.has(routePath) && routePath !== '/') {
     violations.push({
       file: path.relative(process.cwd(), pageFile).replace(/\\/g, '/'),

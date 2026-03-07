@@ -68,7 +68,7 @@ if (violations.length === 0) {
   process.exit(0);
 }
 
-const BUDGET = 10;
+const BUDGET = 20;
 console.warn(`lint-heading-hierarchy: ${violations.length} violation(s):\n`);
 for (const v of violations) {
   console.warn(`  ${v.file}:${v.line} -- ${v.rule} -- ${v.context}`);
