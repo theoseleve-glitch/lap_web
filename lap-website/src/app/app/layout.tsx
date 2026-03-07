@@ -17,13 +17,13 @@ interface NavGroup { label: string; items: NavItem[]; }
 
 const navGroups: NavGroup[] = [
   {
-    label: 'ENGINEER',
+    label: 'COACH',
     items: [
       { href: '/app/dashboard', label: 'Dashboard', icon: '◉' },
       { href: '/app/sessions', label: 'Sessions', icon: '◎' },
-      { href: '/app/analyze', label: 'Analyze', icon: '▲' },
       { href: '/app/compare', label: 'Compare', icon: '⟺' },
       { href: '/app/visualize', label: 'Visualization', icon: '◆' },
+      { href: '/app/development', label: 'Dev Plans', icon: '◧' },
     ],
   },
   {
@@ -31,19 +31,13 @@ const navGroups: NavGroup[] = [
     items: [
       { href: '/app/race-strategy', label: 'Race Strategy', icon: '⚑' },
       { href: '/app/leaderboard', label: 'Leaderboard', icon: '★' },
-      { href: '/app/development', label: 'Dev Plans', icon: '◧' },
     ],
   },
   {
-    label: 'TOOLS & ANALYTICS',
+    label: 'ENGINEER',
     items: [
       { href: '/app/analytics', label: 'Analytics Hub', icon: '◇' },
       { href: '/app/exports', label: 'Exports', icon: '↓' },
-    ],
-  },
-  {
-    label: 'OPERATIONS',
-    items: [
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },
       { href: '/app/drivers', label: 'Drivers', icon: '◈' },
       { href: '/app/karts', label: 'Karts', icon: '⊞' },
