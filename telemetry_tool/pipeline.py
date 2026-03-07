@@ -49,6 +49,7 @@ from typing import Any, Callable, Final, Optional, TypeVar
 import numpy as np
 import pandas as pd
 
+from provenance.run_context import build_provenance
 from pipeline_status import (
     PipelineState,
     PipelineStatus,
@@ -2880,6 +2881,20 @@ def run_full_analysis(
 
     _pipeline_status.finalize()
     summary["pipeline"] = _pipeline_status.to_dict()
+
+    # ── Provenance ─────────────────────────────────────────────────
+    try:
+        _provenance_record = build_provenance(
+            input_df=raw_df if raw_df is not None else pd.DataFrame(),
+            config=meta,
+            method_used="telemetry_tool_v2",
+            file_path=str(csv_path) if csv_path else None,
+            pipeline_version=_pipeline_status.pipeline_version,
+            model_version=_pipeline_status.model_version,
+        )
+        summary["provenance"] = _provenance_record.to_dict()
+    except Exception as _prov_err:
+        logger.debug("Provenance generation skipped: %s", _prov_err)
 
     score_str = (
         f"{score_result['total_score']:.1f}/{score_result['grade']}"
