@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
 import { ScreenshotGallery } from '@/components/site/ScreenshotGallery';
@@ -24,6 +25,8 @@ export default function ProductPage() {
   ];
 
   return (
+    <>
+    <JsonLd pathname="/product" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow={t('product.eyebrow')}
@@ -68,5 +71,6 @@ export default function ProductPage() {
         </div>
       </section>
     </main>
+    </>
   );
 }

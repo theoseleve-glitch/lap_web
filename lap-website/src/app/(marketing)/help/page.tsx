@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
 
@@ -36,6 +37,14 @@ const faq = [
 
 export default function HelpPage() {
   return (
+    <>
+    <JsonLd
+      pathname="/help"
+      faqItems={[
+        { question: 'How do I upload my first session?', answer: 'Export a CSV from RaceChrono or RaceBox, then drag it into the Sessions page. LAP processes it automatically.' },
+        { question: 'Which data loggers are supported?', answer: 'LAP supports RaceChrono and RaceBox CSV exports. More formats are planned.' },
+      ]}
+    />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Support"
@@ -96,5 +105,6 @@ export default function HelpPage() {
         </div>
       </section>
     </main>
+    </>
   );
 }

@@ -1,3 +1,4 @@
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { changelog } from '@/data/changelog';
 import { generateSeoMetadata } from '@/lib/seo';
@@ -14,6 +15,8 @@ export const metadata = generateSeoMetadata('/changelog');
 
 export default function ChangelogPage() {
   return (
+    <>
+    <JsonLd pathname="/changelog" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Changelog"
@@ -54,5 +57,6 @@ export default function ChangelogPage() {
         ))}
       </ol>
     </main>
+    </>
   );
 }

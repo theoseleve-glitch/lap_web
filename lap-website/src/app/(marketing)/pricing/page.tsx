@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useState, useCallback } from 'react';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
@@ -64,6 +65,14 @@ export default function PricingPage() {
   }));
 
   return (
+    <>
+    <JsonLd
+      pathname="/pricing"
+      faqItems={[
+        { question: 'What is included in the free demo?', answer: 'The free demo lets you upload one session and receive a full coaching report with speed traces, corner analysis, and scoring.' },
+        { question: 'Can I switch plans at any time?', answer: 'Yes. Upgrade or downgrade between Racer and World-Class at any time. Changes apply at your next billing cycle.' },
+      ]}
+    />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow={t('pricing.eyebrow')}
@@ -242,5 +251,6 @@ export default function PricingPage() {
         </div>
       </section>
     </main>
+    </>
   );
 }

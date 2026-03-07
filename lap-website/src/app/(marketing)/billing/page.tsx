@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Suspense } from 'react';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { BillingLifecyclePanel } from '@/components/site/BillingLifecyclePanel';
 import { PageIntro } from '@/components/ui/PageIntro';
 
@@ -56,6 +57,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 export default function BillingPage() {
   return (
+    <>
+    <JsonLd pathname="/billing" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Subscription"
@@ -100,5 +103,6 @@ export default function BillingPage() {
         </Link>
       </div>
     </main>
+    </>
   );
 }

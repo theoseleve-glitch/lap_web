@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense } from 'react';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { LeadForm } from '@/components/forms/LeadForm';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { useTranslation } from '@/i18n';
@@ -9,6 +10,8 @@ export default function BookPage() {
   const { t } = useTranslation();
 
   return (
+    <>
+    <JsonLd pathname="/book" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow={t('book.eyebrow')}
@@ -32,5 +35,6 @@ export default function BookPage() {
         </aside>
       </section>
     </main>
+    </>
   );
 }

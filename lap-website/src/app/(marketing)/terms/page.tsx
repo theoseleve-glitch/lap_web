@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
 
@@ -15,6 +16,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function TermsPage() {
   return (
+    <>
+    <JsonLd pathname="/terms" />
     <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Legal"
@@ -100,5 +103,6 @@ export default function TermsPage() {
         </Link>
       </div>
     </main>
+    </>
   );
 }

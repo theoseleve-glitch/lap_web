@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { generateSeoMetadata } from '@/lib/seo';
@@ -34,6 +35,8 @@ export default async function StatusPage() {
   const liveStatus = await getLiveStatus();
 
   return (
+    <>
+    <JsonLd pathname="/status" />
     <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Operations"
@@ -99,5 +102,6 @@ export default async function StatusPage() {
         </p>
       </section>
     </main>
+    </>
   );
 }

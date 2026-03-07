@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
 
@@ -54,6 +55,8 @@ const testimonials = [
 
 export default function CustomersPage() {
   return (
+    <>
+    <JsonLd pathname="/customers" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Results"
@@ -133,5 +136,6 @@ export default function CustomersPage() {
         </Link>
       </div>
     </main>
+    </>
   );
 }

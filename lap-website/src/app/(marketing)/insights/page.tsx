@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries, insightTags } from '@/data/insights-cms';
 
@@ -23,6 +24,8 @@ export default function InsightsPage() {
   }, [activeTag, query]);
 
   return (
+    <>
+    <JsonLd pathname="/insights" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Learn"
@@ -83,5 +86,6 @@ export default function InsightsPage() {
         ))}
       </section>
     </main>
+    </>
   );
 }

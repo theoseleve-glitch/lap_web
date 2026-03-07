@@ -1,3 +1,4 @@
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import Link from 'next/link';
 import { generateSeoMetadata } from '@/lib/seo';
@@ -15,6 +16,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function DpaPage() {
   return (
+    <>
+    <JsonLd pathname="/dpa" />
     <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Legal"
@@ -171,5 +174,6 @@ export default function DpaPage() {
         </Link>
       </div>
     </main>
+    </>
   );
 }

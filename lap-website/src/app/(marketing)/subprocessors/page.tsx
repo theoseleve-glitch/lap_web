@@ -1,3 +1,4 @@
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
 
@@ -43,6 +44,8 @@ const subprocessors = [
 
 export default function SubprocessorsPage() {
   return (
+    <>
+    <JsonLd pathname="/subprocessors" />
     <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <PageIntro
         title="Subprocessors"
@@ -113,5 +116,6 @@ export default function SubprocessorsPage() {
         </p>
       </div>
     </main>
+    </>
   );
 }

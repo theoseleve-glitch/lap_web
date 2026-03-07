@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries } from '@/data/insights-cms';
 import { generateSeoMetadata } from '@/lib/seo';
@@ -26,6 +27,11 @@ export default function InsightDetailPage({ params }: { params: { slug: string }
   }
 
   return (
+    <>
+    <JsonLd
+      pathname="/insights"
+      article={{ title: article.title, datePublished: '2026-01-01', summary: article.summary }}
+    />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro eyebrow="Insights" title={article.title} subtitle={article.summary} />
       <article className="border border-steel/20 bg-concrete/30 p-6">
@@ -71,5 +77,6 @@ export default function InsightDetailPage({ params }: { params: { slug: string }
         </Link>
       </div>
     </main>
+    </>
   );
 }

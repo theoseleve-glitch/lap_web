@@ -1,3 +1,4 @@
+import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 import Link from 'next/link';
@@ -16,6 +17,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function SecurityPage() {
   return (
+    <>
+    <JsonLd pathname="/security" />
     <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Security and Compliance"
@@ -136,5 +139,6 @@ export default function SecurityPage() {
         </ul>
       </section>
     </main>
+    </>
   );
 }

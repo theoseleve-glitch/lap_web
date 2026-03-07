@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useEffect } from 'react';
+import { JsonLd } from '@/components/seo/JsonLd';
 import { LeadForm } from '@/components/forms/LeadForm';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
@@ -17,6 +18,8 @@ export default function DemoPage() {
   }, []);
 
   return (
+    <>
+    <JsonLd pathname="/demo" />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow={t('demo.eyebrow')}
@@ -60,5 +63,6 @@ export default function DemoPage() {
         </article>
       </section>
     </main>
+    </>
   );
 }
