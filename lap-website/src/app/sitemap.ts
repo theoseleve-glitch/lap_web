@@ -1,29 +1,37 @@
 import type { MetadataRoute } from 'next';
 import { getSiteUrl } from '@/lib/site-url';
 import { insightEntries } from '@/data/insights-cms';
+import { routeMap } from '@/data/route-map';
 import { collectMarketingSitemapRoutes } from '@/lib/sitemap-routes.mjs';
 
-// Routes outside (marketing)/ that should still appear in the sitemap
 const extraRoutes = ['/free-report/analyze'];
+
+function getRoutePriority(route: string): number {
+  if (route === '') return 1;
+  const segments = route.split('/').filter(Boolean).length;
+  if (segments === 1) return 0.8;
+  return 0.6;
+}
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const now = new Date();
   const siteUrl = getSiteUrl();
 
-  // Dynamic marketing routes discovered from filesystem (may be empty in test)
   const marketingRoutes = collectMarketingSitemapRoutes();
   const discovered = marketingRoutes.map((r: string) => (r === '/' ? '' : r));
-  // Ensure root route is always present and first
-  const allRoutes = ['', ...discovered.filter((r: string) => r !== ''), ...extraRoutes];
+  const allRoutes = ['', ...discovered.filter((r: string) => r !== ''), ...extraRoutes]
+    .filter((route) => {
+      const entry = routeMap[route || '/'];
+      return !entry?.noIndex;
+    });
 
   const pages: MetadataRoute.Sitemap = allRoutes.map((route) => ({
     url: `${siteUrl}${route}`,
     lastModified: now,
     changeFrequency: route === '' ? ('weekly' as const) : ('monthly' as const),
-    priority: route === '' ? 1 : route === '/pricing' || route === '/product' ? 0.9 : 0.7,
+    priority: getRoutePriority(route),
   }));
 
-  // Dynamic insight article pages
   for (const entry of insightEntries) {
     pages.push({
       url: `${siteUrl}/insights/${entry.slug}`,
