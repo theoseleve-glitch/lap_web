@@ -57,14 +57,14 @@ const WORKFLOW_TRANSLATION_MAP: Record<string, { titleKey: string; summaryKey: s
 };
 
 const GROUP_ORDER: WorkflowModule['group'][] = [
-  'engineer',
-  'strategist',
+  'coaching',
+  'strategy',
   'operations',
 ];
 
 const GROUP_LABEL_KEYS: Record<WorkflowModule['group'], { labelKey: string; color: string }> = {
-  engineer: { labelKey: 'home.workflow.groupEngineer', color: 'text-chalk' },
-  strategist: { labelKey: 'home.workflow.groupStrategist', color: 'text-gold' },
+  coaching: { labelKey: 'home.workflow.groupCoaching', color: 'text-chalk' },
+  strategy: { labelKey: 'home.workflow.groupStrategy', color: 'text-gold' },
   operations: { labelKey: 'home.workflow.groupOperations', color: 'text-steel' },
 };
 

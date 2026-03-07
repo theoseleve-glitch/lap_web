@@ -20,8 +20,8 @@ describe('Pricing data', () => {
   it('has a feature eligibility matrix', () => {
     expect(featureEligibilityMatrix.length).toBeGreaterThanOrEqual(15);
     const groups = [...new Set(featureEligibilityMatrix.map((r) => r.group))];
-    expect(groups).toContain('engineer');
-    expect(groups).toContain('strategist');
+    expect(groups).toContain('coaching');
+    expect(groups).toContain('strategy');
     expect(groups).toContain('data');
   });
 

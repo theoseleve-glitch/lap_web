@@ -6,7 +6,7 @@ export interface WorkflowModule {
   summary: string;
   steps: string[];
   status: CapabilityStatus;
-  group: 'engineer' | 'strategist' | 'operations';
+  group: 'coaching' | 'strategy' | 'operations';
 }
 
 export const workflowModules: WorkflowModule[] = [
@@ -21,7 +21,7 @@ export const workflowModules: WorkflowModule[] = [
       'Joker confirmation before final scoring',
     ],
     status: 'available_now',
-    group: 'engineer',
+    group: 'coaching',
   },
   {
     id: 'session-intelligence',
@@ -29,7 +29,7 @@ export const workflowModules: WorkflowModule[] = [
     summary: 'Review each session through dedicated intelligence tabs.',
     steps: ['Overview', 'Corners', 'Timeline', 'Analytics', 'Lap Data'],
     status: 'available_now',
-    group: 'engineer',
+    group: 'coaching',
   },
   {
     id: 'comparison-progress',
@@ -41,7 +41,7 @@ export const workflowModules: WorkflowModule[] = [
       'Leaderboard and progression history',
     ],
     status: 'available_now',
-    group: 'engineer',
+    group: 'coaching',
   },
   {
     id: 'coaching-plans',
@@ -53,7 +53,7 @@ export const workflowModules: WorkflowModule[] = [
       'Progress scoring and notes',
     ],
     status: 'available_now',
-    group: 'engineer',
+    group: 'coaching',
   },
   {
     id: 'visualization-workspace',
@@ -66,7 +66,7 @@ export const workflowModules: WorkflowModule[] = [
       'Multi-session comparison mode',
     ],
     status: 'available_now',
-    group: 'engineer',
+    group: 'coaching',
   },
   {
     id: 'strategy-control-room',
@@ -79,7 +79,7 @@ export const workflowModules: WorkflowModule[] = [
       'Session feed health diagnostics',
     ],
     status: 'available_now',
-    group: 'strategist',
+    group: 'strategy',
   },
   {
     id: 'data-management',

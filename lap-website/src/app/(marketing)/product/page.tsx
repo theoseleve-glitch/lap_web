@@ -35,14 +35,14 @@ export default function ProductPage() {
       </section>
 
       <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">{t('product.engineer.title', 'Engineer Mode')}</h2>
-        <p className="text-steel mb-4">{t('product.engineer.subtitle', 'Upload. Score. Coach. Compare. Visualize.')}</p>
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-acid-green">{t('product.engineer.title', 'Coaching Mode')}</h2>
+        <p className="text-steel mb-4">{t('product.engineer.subtitle', 'Upload. Score. Fix. Drill. Improve.')}</p>
         <ScreenshotGallery items={engineerScreenshots} accentColor="var(--color-acid-green)" />
       </section>
 
       <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">{t('product.strategist.title', 'Strategist Mode')}</h2>
-        <p className="text-steel mb-4">{t('product.strategist.subtitle', 'Control Room. Live Monitoring. Pit Planning. Incidents.')}</p>
+        <h2 className="font-monument text-[var(--text-h2)] mb-2 text-pit-orange">{t('product.strategist.title', 'Strategy Mode')}</h2>
+        <p className="text-steel mb-4">{t('product.strategist.subtitle', 'Pit Wall. Live Pace. Stint Plans. Decisions.')}</p>
         <ScreenshotGallery items={strategistScreenshots} accentColor="var(--color-pit-orange)" />
       </section>
 

@@ -6,12 +6,12 @@ import { StatusPill } from '@/components/site/StatusPill';
 import { useTranslation } from '@/i18n';
 
 const GROUP_META = {
-  engineer: { color: 'text-chalk', border: 'border-chalk/30', bg: 'bg-chalk/5' },
-  strategist: { color: 'text-gold', border: 'border-gold/30', bg: 'bg-gold/5' },
+  coaching: { color: 'text-chalk', border: 'border-chalk/30', bg: 'bg-chalk/5' },
+  strategy: { color: 'text-gold', border: 'border-gold/30', bg: 'bg-gold/5' },
   operations: { color: 'text-steel', border: 'border-chalk/20', bg: 'bg-chalk/5' },
 } as const;
 
-const groups = ['engineer', 'strategist', 'operations'] as const;
+const groups = ['coaching', 'strategy', 'operations'] as const;
 
 export function WorkflowCoverage() {
   const { t } = useTranslation();

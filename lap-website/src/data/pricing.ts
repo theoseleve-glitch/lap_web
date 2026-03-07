@@ -134,26 +134,26 @@ export const b2bCard = venueCard;
 
 export interface EligibilityRow {
   feature: string;
-  group: 'engineer' | 'strategist' | 'data';
+  group: 'coaching' | 'strategy' | 'data';
   demo: string;
   racer: string;
   worldClass: string;
 }
 
 export const featureEligibilityMatrix: EligibilityRow[] = [
-  // ENGINEER
-  { feature: 'Upload & Analyze', group: 'engineer', demo: '1 report', racer: '10/mo', worldClass: 'Unlimited' },
-  { feature: '4-Pillar Scoring', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Corner-by-Corner Coaching', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Session Intelligence Tabs', group: 'engineer', demo: 'Full', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Comparison & Progress', group: 'engineer', demo: '—', racer: '—', worldClass: 'Full' },
-  { feature: 'Coaching Plans & Drills', group: 'engineer', demo: '—', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Visualization Workspace', group: 'engineer', demo: '—', racer: 'Full', worldClass: 'Full' },
-  // STRATEGIST
-  { feature: 'Race Strategy Dashboard', group: 'strategist', demo: '3h limit', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Live Pace & Stint Monitoring', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Pit Stop Planning', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Incident & Alert Queue', group: 'strategist', demo: '—', racer: 'Full', worldClass: 'Full' },
+  // COACHING
+  { feature: 'Upload & Analyze', group: 'coaching', demo: '1 report', racer: '10/mo', worldClass: 'Unlimited' },
+  { feature: '4-Pillar Scoring', group: 'coaching', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Corner-by-Corner Coaching', group: 'coaching', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Session Intelligence Tabs', group: 'coaching', demo: 'Full', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Comparison & Progress', group: 'coaching', demo: '—', racer: '—', worldClass: 'Full' },
+  { feature: 'Coaching Plans & Drills', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Visualization Workspace', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
+  // STRATEGY
+  { feature: 'Race Strategy Dashboard', group: 'strategy', demo: '3h limit', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Live Pace & Stint Monitoring', group: 'strategy', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Pit Stop Planning', group: 'strategy', demo: '—', racer: 'Full', worldClass: 'Full' },
+  { feature: 'Incident & Alert Queue', group: 'strategy', demo: '—', racer: 'Full', worldClass: 'Full' },
   // DATA & OPS
   { feature: 'Track/Driver/Kart Management', group: 'data', demo: 'Basic', racer: 'Full', worldClass: 'Full' },
   { feature: 'PDF Reports', group: 'data', demo: '—', racer: 'Full', worldClass: 'Full' },
