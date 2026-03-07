@@ -50,11 +50,11 @@ export const plans: Plan[] = [
   {
     name: 'RACER',
     slug: 'racer',
-    priceMonthly: '€8.99 / mo',
-    priceAnnual: '€69 / yr',
-    priceAnnualPerMonth: '€5.75 / mo',
-    annualTotal: '€69/yr',
-    savingsPercent: '36',
+    priceMonthly: '€9 / mo',
+    priceAnnual: '€72 / yr',
+    priceAnnualPerMonth: '€6 / mo',
+    annualTotal: '€72/yr',
+    savingsPercent: '33',
     features: {
       'Analysis Reports': '10 / month',
       '4-Pillar Scoring': 'Full',
@@ -79,7 +79,7 @@ export const plans: Plan[] = [
   {
     name: 'WORLD-CLASS',
     slug: 'world-class',
-    priceMonthly: '€13.99 / mo',
+    priceMonthly: '€14 / mo',
     priceAnnual: '€108 / yr',
     priceAnnualPerMonth: '€9.00 / mo',
     annualTotal: '€108/yr',

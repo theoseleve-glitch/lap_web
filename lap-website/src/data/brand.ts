@@ -120,7 +120,7 @@ export const NUMBERS_POLICY = {
   deltas: '+0.32s or -0.15s (always sign, 2 decimal places, 0.01s precision).',
   percentages: 'No decimal unless < 1%. E.g., 36%, 0.8%.',
   grip: '1% increments. E.g., 87%.',
-  currency: 'EUR with symbol prefix. E.g., \u20ac8.99.',
+  currency: 'EUR with symbol prefix. E.g., \u20ac9.',
   decimalSeparator: '"." for EN, "," for FR. Enforced per page locale.',
   thousandsSeparator: 'None for < 10,000. Thin space (\u2009) for >= 10,000.',
   marketingRule: 'Max 2 decimal places for time/speed. 0 decimals for percentages.',
