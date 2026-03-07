@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { routeMap } from '@/data/route-map';
 import { getSiteUrl } from '@/lib/site-url';
 
-const OG_WORKER_ORIGIN = 'https://og.lap-coach.racing';
+const OG_WORKER_ORIGIN = process.env.OG_WORKER_URL || 'https://lap-og-worker.theos-eleve.workers.dev';
 
 export interface SeoOverrides {
   title?: string;
