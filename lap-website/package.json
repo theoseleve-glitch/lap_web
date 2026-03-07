@@ -36,6 +36,8 @@
     "lint:spacing": "node scripts/lint-spacing-tokens.mjs",
     "lint:routes": "node scripts/lint-route-map.mjs",
     "lint:nav": "node scripts/lint-nav-overrides.mjs",
+    "lint:seo": "node scripts/lint-seo-fields.mjs",
+    "lint:canonical": "node scripts/lint-canonical.mjs",
     "lint:spelling": "npx cspell \"src/**/*.{tsx,ts,mdx}\" --no-progress --no-must-find-files",
     "test:visual": "playwright test e2e/visual-regression.spec.ts",
     "test:visual:update": "playwright test e2e/visual-regression.spec.ts --update-snapshots",
