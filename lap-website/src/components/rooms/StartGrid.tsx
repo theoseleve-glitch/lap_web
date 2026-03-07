@@ -40,16 +40,14 @@ export function StartGrid() {
           </span>
         </MonumentText>
 
-        {/* F1 start lights — auto-play 5 red lights sequence */}
-        <div aria-hidden="true">
-          <StartLights
-            onComplete={() => {
-              setLightsOut(true);
-              trackStartGridComplete();
-            }}
-            reducedMotion={reducedMotion}
-          />
-        </div>
+        {/* F1 start lights — click/tap to advance each light */}
+        <StartLights
+          onComplete={() => {
+            setLightsOut(true);
+            trackStartGridComplete();
+          }}
+          reducedMotion={reducedMotion}
+        />
       </div>
     </section>
   );

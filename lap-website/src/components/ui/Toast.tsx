@@ -45,12 +45,10 @@ export function Toast({ message, severity = 'info', duration, action, onDismiss 
       role="alert"
       aria-live="assertive"
       className={`
-        fixed bottom-6 right-6 z-[100]
         max-w-sm w-full
         bg-concrete border border-steel/20 border-l-4 ${SEVERITY_STYLES[severity]}
-        rounded-lg shadow-e3 p-4
+        rounded-2 shadow-e3 p-4
         flex items-start gap-3
-        animate-in slide-in-from-bottom-2
       `}
     >
       <p className="text-chalk text-sm flex-1">{message}</p>

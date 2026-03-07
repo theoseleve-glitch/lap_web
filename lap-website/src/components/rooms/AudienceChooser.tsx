@@ -42,9 +42,10 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
           <Image
             src="/logo/front_page_driver.svg"
             alt="Driver icon"
-            className="w-16 h-16 md:w-20 md:h-20"
-            width={80}
-            height={80}
+            className="w-24 h-16 md:w-32 md:h-20 object-contain"
+            width={192}
+            height={128}
+            unoptimized
             priority
           />
         </div>
@@ -77,9 +78,10 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
           <Image
             src="/logo/front_page_venue.svg"
             alt="Venue icon"
-            className="w-16 h-16 md:w-20 md:h-20"
-            width={80}
-            height={80}
+            className="w-24 h-16 md:w-32 md:h-20 object-contain"
+            width={192}
+            height={128}
+            unoptimized
             priority
           />
         </div>

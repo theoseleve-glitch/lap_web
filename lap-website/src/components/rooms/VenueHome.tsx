@@ -6,7 +6,7 @@ import { StampButton } from '@/components/ui/StampButton';
 import { PitButton } from '@/components/ui/PitButton';
 import { StartGrid } from '@/components/rooms/StartGrid';
 import { Garage } from '@/components/rooms/Garage';
-import { trackCtaClick } from '@/lib/analytics';
+import { trackCtaClick, trackDemoCtaClick } from '@/lib/analytics';
 
 /* ── Inline SVG Icons ────────────────────────── */
 
@@ -170,7 +170,7 @@ export function VenueHome() {
             </PitButton>
             <StampButton
               href="/book"
-              onClick={() => trackCtaClick('book_demo', 'venue-home', 'venues')}
+              onClick={() => { trackCtaClick('book_demo', 'venue-home', 'venues'); trackDemoCtaClick('venue-home'); }}
             >
               BOOK A DEMO
             </StampButton>
@@ -217,7 +217,7 @@ export function VenueHome() {
               </PitButton>
               <StampButton
                 href="/book"
-                onClick={() => trackCtaClick('book_demo', 'venue-podium', 'venues')}
+                onClick={() => { trackCtaClick('book_demo', 'venue-podium', 'venues'); trackDemoCtaClick('venue-podium'); }}
               >
                 BOOK A DEMO
               </StampButton>

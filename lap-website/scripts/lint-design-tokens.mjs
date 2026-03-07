@@ -107,6 +107,22 @@ function checkBoxShadow(line, trimmed) {
   return null;
 }
 
+/**
+ * Rule 4: Forbid inline style for design props (unless whitelisted via token-ok).
+ * Catches: style={{ padding:, margin:, gap:, borderRadius:, color:, backgroundColor: }}
+ * Allows: style={{ transform:, width:, height:, top/left/right/bottom }}
+ */
+const DESIGN_STYLE_PROPS = /style\s*=\s*\{?\{?\s*[^}]*(padding|margin|gap|borderRadius|color|backgroundColor)\s*:/;
+
+function checkInlineDesignStyle(line, trimmed) {
+  if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return null;
+  if (/\/\/\s*token-ok/.test(line)) return null;
+  // Allow inline styles that reference CSS variables (var(--...))
+  if (/var\(--/.test(line)) return null;
+  if (DESIGN_STYLE_PROPS.test(line)) return 'no-inline-design-style';
+  return null;
+}
+
 // ── Main scan ─────────────────────────────────────────────────────────
 
 const violations = [];
@@ -127,6 +143,7 @@ for (const dir of SCAN_DIRS) {
         checkHexColor(line, trimmed),
         checkBorderRadius(line, trimmed),
         checkBoxShadow(line, trimmed),
+        checkInlineDesignStyle(line, trimmed),
       ];
 
       for (const rule of rules) {
@@ -155,9 +172,14 @@ for (const v of violations) {
   console.warn(`  ${v.file}:${v.line} — ${v.rule} — ${v.context}`);
 }
 
-// Non-blocking exit — there are ~274 existing hex violations to fix incrementally.
-console.warn(`\nlint-design-tokens: ${violations.length} total (non-blocking, exit 0)`);
-process.exit(0);
-
-// To make this linter blocking, replace the exit above with:
-// process.exit(1);
+// Budget: fail CI only if violations INCREASE beyond this threshold.
+// Decrease this number as violations are fixed to ratchet down.
+const BUDGET = 198;
+console.warn(`\nlint-design-tokens: ${violations.length} violation(s) (budget: ${BUDGET})`);
+if (violations.length > BUDGET) {
+  console.error(`  FAIL: ${violations.length - BUDGET} new violation(s) introduced. Fix before merging.`);
+  process.exit(1);
+} else {
+  console.warn(`  OK: within budget (${BUDGET - violations.length} remaining to fix)`);
+  process.exit(0);
+}

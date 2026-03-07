@@ -127,7 +127,12 @@ if (violations.length === 0) {
     }
     console.error('');
   }
-  // Start as warnings to allow gradual migration
-  console.error('  (typography warnings \u2014 not blocking CI yet)\n');
+  // Budget: fail CI only if violations INCREASE beyond this threshold.
+  const BUDGET = 311;
+  console.error(`lint-typography: ${violations.length} violation(s) (budget: ${BUDGET})`);
+  if (violations.length > BUDGET) {
+    console.error(`  FAIL: ${violations.length - BUDGET} new violation(s) introduced.`);
+    process.exit(1);
+  }
   process.exit(0);
 }

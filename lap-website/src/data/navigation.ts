@@ -15,8 +15,11 @@ export const topNavLinks: NavLink[] = [
 
 export const footerLinks: NavLink[] = [
   { label: 'Contact', href: '/contact' },
+  { label: 'Demo', href: '/demo' },
   { label: 'Book', href: '/book' },
   { label: 'Waitlist', href: '/waitlist' },
+  { label: 'Help', href: '/help' },
+  { label: 'Changelog', href: '/changelog' },
   { label: 'Billing', href: '/billing' },
   { label: 'Status', href: '/status' },
   { label: 'Privacy', href: '/privacy' },

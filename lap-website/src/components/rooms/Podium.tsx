@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PitButton } from '@/components/ui/PitButton';
 import { StampButton } from '@/components/ui/StampButton';
-import { trackCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
+import { trackCtaClick, trackDemoCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
 import { getVariantForKey } from '@/lib/experiments';
 import { useTranslation } from '@/i18n';
 
@@ -75,7 +75,7 @@ export function Podium() {
                 </PitButton>
                 <StampButton
                   href="/demo"
-                  onClick={() => trackCtaClick('try_demo', 'podium', 'mixed')}
+                  onClick={() => { trackCtaClick('try_demo', 'podium', 'mixed'); trackDemoCtaClick('podium'); }}
                 >
                   {t('cta.tryDemo')}
                 </StampButton>

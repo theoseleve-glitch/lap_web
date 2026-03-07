@@ -3,6 +3,7 @@ const nextConfig = {
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },  // App Router type-gen race condition on Windows
   images: { unoptimized: true },
+  trailingSlash: false,
   poweredByHeader: false,
   output: 'standalone',
   experimental: {

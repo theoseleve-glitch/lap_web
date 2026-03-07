@@ -95,6 +95,11 @@ export const trackAddonExpand = () => track('addon_expand');
 export const trackFaqExpand = (questionId: number) =>
   track('faq_expand', { question_id: questionId });
 
+// Demo funnel
+export const trackDemoCtaClick = (location: string) =>
+  track('demo_cta_click', { location });
+export const trackDemoFormView = () => track('demo_form_view');
+
 // Conversion
 export const trackCtaClick = (cta: string, location: string, mode: string) =>
   track('cta_click', { cta_name: cta, location, mode });

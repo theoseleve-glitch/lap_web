@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { colors } from '@/lib/tokens';
 
 interface StartLightsProps {
@@ -12,41 +12,55 @@ export function StartLights({ onComplete, reducedMotion = false }: StartLightsPr
   const [litCount, setLitCount] = useState(0);
   const [lightsOut, setLightsOut] = useState(false);
   const completedRef = useRef(false);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-play: light up 1→5 sequentially, then "lights out" → green flag
+  // Reduced motion: skip straight to complete
   useEffect(() => {
-    if (completedRef.current) return;
-
-    if (reducedMotion) {
+    if (reducedMotion && !completedRef.current) {
       setLitCount(5);
       setLightsOut(true);
       completedRef.current = true;
       onComplete();
-      return;
     }
+  }, [onComplete, reducedMotion]);
 
-    let count = 0;
-    const interval = setInterval(() => {
-      count++;
-      setLitCount(count);
-      if (count >= 5) {
-        clearInterval(interval);
-        // Hold all 5 lit for 800ms, then lights out
-        setTimeout(() => {
+  // Clean up hold timer on unmount
+  useEffect(() => {
+    return () => {
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+    };
+  }, []);
+
+  const advance = useCallback(() => {
+    if (completedRef.current || reducedMotion) return;
+
+    setLitCount((prev) => {
+      const next = prev + 1;
+      if (next >= 5) {
+        // All 5 lit — hold then lights out
+        holdTimerRef.current = setTimeout(() => {
           setLightsOut(true);
           completedRef.current = true;
           onComplete();
         }, 800);
       }
-    }, 400);
-
-    return () => clearInterval(interval);
+      return Math.min(next, 5);
+    });
   }, [onComplete, reducedMotion]);
 
   return (
     <div
-      className="flex items-center justify-center gap-5 md:gap-8 select-none py-10"
-      aria-label="F1 start lights sequence"
+      className="flex items-center justify-center gap-5 md:gap-8 select-none py-10 cursor-pointer"
+      role="group"
+      aria-label="F1 start lights — tap to light each one"
+      onClick={advance}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          advance();
+        }
+      }}
+      tabIndex={completedRef.current ? -1 : 0}
     >
       {Array.from({ length: 5 }).map((_, i) => {
         const lit = !lightsOut && i < litCount;
