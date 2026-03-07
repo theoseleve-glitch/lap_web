@@ -15,14 +15,40 @@
   /* ── Active accent (overridden per room via data-accent) ── */
   --accent: var(--chalk);
 
-  /* ── Typography Scale ─────────────── */
-  --text-monument-xl: clamp(60px, 12vw, 196px);
-  --text-h1: clamp(48px, 6vw, 84px);
-  --text-h2: clamp(36px, 4vw, 56px);
-  --text-h3: clamp(24px, 2.5vw, 32px);
-  --text-body: clamp(17px, 1.3vw, 20px);
-  --text-caption: 13px;
-  --text-telemetry: 11px;
+  /* ── Font Stacks ─────────────────── */
+  --font-display: "Space Grotesk", "Arial Black", sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Space Mono", "Fira Code", "Courier New", monospace;
+
+  /* ── Typography Scale (rem, base = 16px) ── */
+  --text-monument-xl: clamp(3.75rem, 12vw, 12.25rem);
+  --text-h1: clamp(3rem, 6vw, 5.25rem);
+  --text-h2: clamp(2.25rem, 4vw, 3.5rem);
+  --text-h3: clamp(1.5rem, 2.5vw, 2rem);
+  --text-body: clamp(1.0625rem, 1.3vw, 1.25rem);
+  --text-caption: 0.8125rem;
+  --text-telemetry: 0.6875rem;
+  --text-tiny: 0.5625rem;
+
+  /* ── Line Heights ──────────────────── */
+  --lh-display: 0.85;
+  --lh-heading: 1.15;
+  --lh-body: 1.72;
+  --lh-label: 1.2;
+
+  /* ── Letter Spacing ────────────────── */
+  --ls-display: -0.02em;
+  --ls-wide: 0.12em;
+  --ls-medium: 0.08em;
+  --ls-xwide: 0.15em;
+
+  /* ── Max Line Length ───────────────── */
+  --max-prose: 65ch;
+  --max-wide: 90ch;
+  --max-tooltip: 18rem;
+
+  /* ── Muted Text (WCAG AA: 4.58:1 on #000) ── */
+  --text-muted: #9CA3AF;
 
   /* ── Spacing (8px baseline) ───────── */
   --space-1: 8px;
@@ -82,6 +108,54 @@
   --bg-radial-3: none;
   --bg-grid: linear-gradient(rgba(240, 237, 229, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(240, 237, 229, 0.06) 1px, transparent 1px);
+
+  /* ── Elevation (e0–e4) ─────────────── */
+  --shadow-e0: none;
+  --shadow-e1: 0 1px 3px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-e2: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-e3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-e4: 0 16px 48px rgba(0, 0, 0, 0.6), 0 8px 16px rgba(0, 0, 0, 0.35);
+
+  /* ── Border ────────────────────────── */
+  --border-width-default: 1px;
+  --border-width-thick: 2px;
+  --border-color-default: rgba(136, 136, 136, 0.2);
+  --border-color-muted: rgba(136, 136, 136, 0.1);
+  --border-color-focus: var(--accent);
+  --border-color-error: var(--safety-red);
+
+  /* ── Radius ────────────────────────── */
+  --radius-0: 0px;
+  --radius-1: 4px;
+  --radius-2: 8px;
+  --radius-3: 12px;
+  --radius-4: 16px;
+  --radius-full: 9999px;
+
+  /* ── Semantic Colors ───────────────── */
+  --color-success: var(--acid-green);
+  --color-warning: var(--marshal-yellow);
+  --color-error: var(--safety-red);
+  --color-info: var(--racing-purple);
+  --color-brand: var(--pit-orange);
+
+  /* ── Chart Palette ─────────────────── */
+  --chart-series-1: #22C55E;
+  --chart-series-2: #3B82F6;
+  --chart-series-3: #F59E0B;
+  --chart-series-4: #EF4444;
+  --chart-series-5: #A78BFA;
+  --chart-series-6: #EC4899;
+  --chart-alert: var(--safety-red);
+  --chart-reference: rgba(240, 237, 229, 0.3);
+
+  /* ── Focus Ring ────────────────────── */
+  --focus-ring-width: 3px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--accent);
+
+  /* ── Touch Target ──────────────────── */
+  --touch-min: 44px;
 }
 
 /* ── Single-accent enforcement per room ── */

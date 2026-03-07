@@ -81,3 +81,37 @@ export const sectorTabs = [
   { id: 'garage', label: 'GAR' },
   { id: 'podium', label: 'POD' },
 ] as const;
+
+export const elevation = {
+  e0: 'var(--shadow-e0)',
+  e1: 'var(--shadow-e1)',
+  e2: 'var(--shadow-e2)',
+  e3: 'var(--shadow-e3)',
+  e4: 'var(--shadow-e4)',
+} as const;
+
+export const radius = {
+  r0: 0,
+  r1: 4,
+  r2: 8,
+  r3: 12,
+  r4: 16,
+  full: 9999,
+} as const;
+
+export const border = {
+  default: 1,
+  thick: 2,
+} as const;
+
+export const semantic = {
+  success: '#22C55E',
+  warning: '#FACC15',
+  error: '#FF2A2A',
+  info: '#8B5CF6',
+  brand: '#C9A84C',
+} as const;
+
+export const chartPalette = [
+  '#22C55E', '#3B82F6', '#F59E0B', '#EF4444', '#A78BFA', '#EC4899',
+] as const;

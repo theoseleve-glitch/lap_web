@@ -11,38 +11,62 @@ html {
   scroll-behavior: auto;
   background: var(--asphalt);
   color: var(--chalk);
+  font-size: 16px;
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-body);
   font-size: var(--text-body);
-  line-height: 1.72;
+  line-height: var(--lh-body);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Typography classes */
+/* Typography classes — reference tokens, never raw values */
 .font-monument {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--font-display);
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: -0.02em;
-  line-height: 0.85;
+  letter-spacing: var(--ls-display);
+  line-height: var(--lh-display);
 }
 
 .font-telemetry {
-  font-family: 'Space Mono', monospace;
+  font-family: var(--font-mono);
   font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: var(--ls-wide);
   font-size: var(--text-telemetry);
+  line-height: var(--lh-label);
 }
 
 .font-body {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-body);
   font-weight: 400;
-  line-height: 1.72;
+  line-height: var(--lh-body);
+}
+
+/* Prose max line length */
+.prose-max {
+  max-width: var(--max-prose);
+}
+
+/* Muted text (WCAG AA compliant) */
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Numeric values: always mono */
+.tabular-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* CTA no-wrap */
+.cta-nowrap {
+  white-space: nowrap;
+  min-width: 8rem;
 }
 
 /* Layout utilities */

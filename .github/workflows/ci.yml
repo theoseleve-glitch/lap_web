@@ -112,6 +112,9 @@ jobs:
       - name: Spellcheck (cspell)
         run: npm run lint:spelling
 
+      - name: Design system linters (icon imports, token audit)
+        run: npm run lint:icon-imports && npm run lint:design-tokens
+
       - name: Content approval gate
         if: github.event_name == 'pull_request'
         run: node scripts/ci-content-approval.mjs
