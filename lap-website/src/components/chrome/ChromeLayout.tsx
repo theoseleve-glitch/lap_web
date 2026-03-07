@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { GsapProvider } from '@/components/providers/GsapProvider';
 import { PerformanceProvider } from '@/lib/performance-context';
 import { SiteHeader } from '@/components/site/SiteHeader';
+import { SectionTabs } from '@/components/ui/SectionTabs';
 import { SiteFooter } from '@/components/site/SiteFooter';
 
 export function ChromeLayout({ children }: { children: ReactNode }) {
@@ -21,6 +22,7 @@ export function ChromeLayout({ children }: { children: ReactNode }) {
     <PerformanceProvider>
       <GsapProvider>
         <SiteHeader />
+        <SectionTabs />
         {children}
         <SiteFooter />
       </GsapProvider>

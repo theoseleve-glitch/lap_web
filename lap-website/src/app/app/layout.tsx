@@ -4,6 +4,7 @@ import { type ReactNode, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { QueryProvider } from '@/providers/query-provider';
+import { AppFooter } from '@/components/ui/AppFooter';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { DiagnosticsOverlay } from '@/components/dev/DiagnosticsOverlay';
 import { BillingStateBanner } from '@/components/billing/BillingStateBanner';
@@ -125,6 +126,22 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </nav>
         <div className="border-t border-steel/10 py-2">
           <Link
+            href="/help"
+            title={collapsed ? 'Help' : undefined}
+            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors text-steel hover:text-chalk hover:bg-asphalt/30`}
+          >
+            <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">?</span>
+            {!collapsed && <span className="font-body">Help</span>}
+          </Link>
+          <Link
+            href="/changelog"
+            title={collapsed ? 'Changelog' : undefined}
+            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors text-steel hover:text-chalk hover:bg-asphalt/30`}
+          >
+            <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{'\u2261'}</span>
+            {!collapsed && <span className="font-body">Changelog</span>}
+          </Link>
+          <Link
             href="/app/account"
             title={collapsed ? 'Account' : undefined}
             aria-current={pathname.startsWith('/app/account') ? 'page' : undefined}
@@ -138,27 +155,18 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             {!collapsed && <span className="font-body">Account</span>}
           </Link>
         </div>
-        {!collapsed && (
-          <div className="p-4 border-t border-steel/20">
-            <Link
-              href="/"
-              className="text-xs text-steel hover:text-chalk transition-colors font-telemetry"
-            >
-              &larr; Back to lap-coach.racing
-            </Link>
-          </div>
-        )}
       </aside>
 
       {/* Main content */}
       <QueryProvider>
         <AuthGuard>
-          <main id="main-content" className="flex-1 overflow-y-auto bg-asphalt">
+          <main id="main-content" className="flex-1 flex flex-col overflow-y-auto bg-asphalt">
             <OfflineBanner />
             <div className="max-w-7xl mx-auto px-6 py-6">
               <BillingStateBanner />
               {children}
             </div>
+            <AppFooter />
           </main>
         </AuthGuard>
         {process.env.NODE_ENV === 'development' && <DiagnosticsOverlay />}

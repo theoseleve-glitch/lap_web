@@ -158,6 +158,11 @@
   --touch-min: 44px;
 }
 
+*:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: var(--focus-ring-offset);
+}
+
 /* ── Single-accent enforcement per room ── */
 [data-accent="none"]    { --accent: var(--chalk); }
 [data-accent="green"]   { --accent: var(--acid-green); }
