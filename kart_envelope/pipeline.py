@@ -107,6 +107,11 @@ from kart_envelope.tiering import (
     validate_sensor_contract,
 )
 
+try:
+    from provenance.run_context import build_provenance as _build_provenance
+except ImportError:
+    _build_provenance = None
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
@@ -1141,6 +1146,27 @@ def analyze_session(
                 4,
             ),
         }
+    # ── Provenance ──────────────────────────────────────────────
+    if _build_provenance is not None:
+        try:
+            _first_lap_df = next(iter(filtered.values())) if filtered else pd.DataFrame()
+            _provenance_record = _build_provenance(
+                input_df=_first_lap_df,
+                config={
+                    "model_version": str(config.model_version),
+                    "solver_backend": str(config.solver_backend),
+                    "physics_stack_version": str(config.physics_stack_version),
+                },
+                method_used="kart_envelope_v2.2",
+                file_path=str(metadata.session_file) if metadata and hasattr(metadata, "session_file") else None,
+                pipeline_version=summary.get("version", "2.2"),
+                model_version=str(config.model_version),
+                solver_version=str(theoretical.solver_backend) if theoretical and hasattr(theoretical, "solver_backend") else None,
+            )
+            summary["provenance"] = _provenance_record.to_dict()
+        except Exception as _prov_err:
+            logging.getLogger(__name__).debug("Provenance generation skipped: %s", _prov_err)
+
     write_session_summary(summary, out_dir / "session_summary.json")
 
     if delta_map is not None:
