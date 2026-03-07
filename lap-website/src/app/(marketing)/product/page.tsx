@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
 import { ScreenshotGallery } from '@/components/site/ScreenshotGallery';
 import { useTranslation } from '@/i18n';
@@ -24,11 +24,12 @@ export default function ProductPage() {
   ];
 
   return (
-    <PageShell
-      eyebrow={t('product.eyebrow')}
-      title={t('product.title')}
-      description={t('product.description')}
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow={t('product.eyebrow')}
+        title={t('product.title')}
+        subtitle={t('product.description')}
+      />
       <section className="mb-10">
         <WorkflowCoverage />
       </section>
@@ -66,6 +67,6 @@ export default function ProductPage() {
           </Link>
         </div>
       </section>
-    </PageShell>
+    </main>
   );
 }

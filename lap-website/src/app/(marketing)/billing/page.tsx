@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { Suspense } from 'react';
 import { BillingLifecyclePanel } from '@/components/site/BillingLifecyclePanel';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const [hasSession, setHasSession] = useState<boolean | null>(null);
@@ -56,11 +56,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
 export default function BillingPage() {
   return (
-    <PageShell
-      eyebrow="Subscription"
-      title="Billing & Subscription Management"
-      description="Manage your plan, update payment details, and access invoice history."
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Subscription"
+        title="Billing & Subscription Management"
+        subtitle="Manage your plan, update payment details, and access invoice history."
+      />
       <AuthGate>
         <section className="mb-8">
           <Suspense
@@ -98,6 +99,6 @@ export default function BillingPage() {
           Billing Support
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -88,7 +89,7 @@ export default function WeekendsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Weekends"
         subtitle={`${weekends.length} weekend${weekends.length !== 1 ? 's' : ''}`}
         actions={

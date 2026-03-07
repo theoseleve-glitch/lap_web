@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonTableRows } from '@/components/app';
+import { StatCard, QueryError, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -150,7 +151,7 @@ export default function JobsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Processing Jobs"
         subtitle="Pipeline processing queue"
         actions={

@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { StatCard, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface JobDetail {
   id: string;
@@ -82,7 +83,7 @@ export default function DataHealthDetailPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Processing Job"
         subtitle={job.file_name}
         actions={

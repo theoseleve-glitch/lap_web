@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries, insightTags } from '@/data/insights-cms';
 
 export default function InsightsPage() {
@@ -23,11 +23,12 @@ export default function InsightsPage() {
   }, [activeTag, query]);
 
   return (
-    <PageShell
-      eyebrow="Learn"
-      title="Telemetry Insights"
-      description="Practical motorsport analysis articles covering corners, consistency, strategy, and coaching."
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Learn"
+        title="Telemetry Insights"
+        subtitle="Practical motorsport analysis articles covering corners, consistency, strategy, and coaching."
+      />
       <section className="mb-6 grid md:grid-cols-[2fr_3fr] gap-3">
         <input
           value={query}
@@ -81,6 +82,6 @@ export default function InsightsPage() {
           </article>
         ))}
       </section>
-    </PageShell>
+    </main>
   );
 }

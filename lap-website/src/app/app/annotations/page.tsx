@@ -4,7 +4,8 @@ import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable, QueryError, SkeletonTableRows, SkeletonBox } from '@/components/app';
+import { DataTable, QueryError, SkeletonTableRows, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface AnnotationRow {
   id: number;
@@ -56,7 +57,7 @@ export default function AnnotationsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Annotations"
         subtitle={`${filtered.length} annotation${filtered.length !== 1 ? 's' : ''}${search ? ' (filtered)' : ''}`}
         actions={

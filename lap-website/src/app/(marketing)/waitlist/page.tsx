@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import { LeadForm } from '@/components/forms/LeadForm';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 
 export const metadata = {
@@ -10,11 +10,12 @@ export const metadata = {
 
 export default function WaitlistPage() {
   return (
-    <PageShell
-      eyebrow="Roadmap Waitlist"
-      title="Join the Coming-Soon Waitlist"
-      description="Upcoming capabilities — sim telemetry ingestion and multisource import — are captured through this waitlist."
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Roadmap Waitlist"
+        title="Join the Coming-Soon Waitlist"
+        subtitle="Upcoming capabilities — sim telemetry ingestion and multisource import — are captured through this waitlist."
+      />
       <section className="grid lg:grid-cols-[2fr_1fr] gap-6">
         <article className="border border-steel/20 bg-concrete/40 p-5">
           <Suspense fallback={<p className="text-steel text-sm">Loading form...</p>}>
@@ -35,6 +36,6 @@ export default function WaitlistPage() {
           </article>
         </aside>
       </section>
-    </PageShell>
+    </main>
   );
 }

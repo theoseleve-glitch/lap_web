@@ -1,4 +1,4 @@
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 const analyticsCards = [
   {
@@ -31,7 +31,7 @@ const analyticsCards = [
 export default function AnalyticsHubPage() {
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Analytics"
         subtitle="Advanced analysis tools and predictive insights"
       />

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -177,7 +177,7 @@ export default function ProfilePage() {
 
   return (
     <div>
-      <PageHeader title="Profile" subtitle="Manage your personal information and preferences" />
+      <PageIntro title="Profile" subtitle="Manage your personal information and preferences" />
 
       {/* ── Personal Info ──────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">

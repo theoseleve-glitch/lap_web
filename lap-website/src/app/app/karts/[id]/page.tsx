@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface KartDetail {
   id: number;
@@ -123,7 +124,7 @@ export default function KartDetailPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title={kart.name}
         subtitle={[kart.manufacturer, kart.model, kart.engine].filter(Boolean).join(' \u00b7 ') || 'Kart details'}
         actions={

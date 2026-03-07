@@ -3,7 +3,7 @@
 import { useState, useId } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
 import { useEntitlements } from '@/hooks/useEntitlements';
 
@@ -78,7 +78,7 @@ export default function SupportPage() {
 
   return (
     <div>
-      <PageHeader title="Support" subtitle="Get help with your LAP account" />
+      <PageIntro title="Support" subtitle="Get help with your LAP account" />
 
       {/* ── Status ────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">

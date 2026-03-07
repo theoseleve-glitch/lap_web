@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonTableRows, SkeletonBox } from '@/components/app';
+import { StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonTableRows, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /** Inline Sparkline — lightweight SVG replacement for deleted chart component */
 function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
@@ -83,7 +84,7 @@ export default function DashboardPage() {
   if (isLoading) {
     return (
       <div>
-        <PageHeader title="Dashboard" subtitle="Your telemetry overview" />
+        <PageIntro title="Dashboard" subtitle="Your telemetry overview" />
         <SkeletonStatCards count={4} />
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <div className="bg-concrete rounded-lg border border-steel/20 p-4">
@@ -103,7 +104,7 @@ export default function DashboardPage() {
   if (error) {
     return (
       <div>
-        <PageHeader title="Dashboard" subtitle="Your telemetry overview" />
+        <PageIntro title="Dashboard" subtitle="Your telemetry overview" />
         <QueryError message="Couldn't load your dashboard data. The server may be temporarily unavailable." onRetry={() => refetch()} />
       </div>
     );
@@ -202,7 +203,7 @@ export default function DashboardPage() {
   if (isEmpty) {
     return (
       <div>
-        <PageHeader title="Dashboard" subtitle="Your telemetry overview" />
+        <PageIntro title="Dashboard" subtitle="Your telemetry overview" />
 
         {/* Hero */}
         <div className="bg-concrete rounded-xl border border-steel/20 p-8 md:p-12 text-center mb-8">
@@ -261,7 +262,7 @@ export default function DashboardPage() {
   /* ── Populated Dashboard ── */
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Your telemetry overview" />
+      <PageIntro title="Dashboard" subtitle="Your telemetry overview" />
 
       {/* 7 Stat Cards — 2 rows */}
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 mb-4">

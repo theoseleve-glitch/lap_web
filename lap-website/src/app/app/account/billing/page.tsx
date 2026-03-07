@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { UsageDashboard } from '@/components/billing/UsageDashboard';
 import { apiFetch } from '@/lib/api-client';
 
@@ -82,7 +82,7 @@ export default function BillingPage() {
 
   return (
     <div>
-      <PageHeader title="Billing" subtitle="Plan, usage, and payment management" />
+      <PageIntro title="Billing" subtitle="Plan, usage, and payment management" />
 
       {(subError || invError) && (
         <div className="mb-4 rounded-lg border border-safety-red/30 bg-safety-red/10 p-3 text-safety-red text-sm font-body">

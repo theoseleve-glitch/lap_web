@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import type { ContextAction } from '@/components/app/DataTable';
 import { canPrefetch, markPrefetched, incrementInFlight, decrementInFlight } from '@/lib/prefetch';
 
@@ -396,7 +397,7 @@ export default function SessionsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Sessions"
         subtitle={data ? `${total} session${total !== 1 ? 's' : ''}` : undefined}
         actions={

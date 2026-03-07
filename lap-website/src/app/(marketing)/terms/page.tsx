@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 export const metadata = {
   title: 'Terms of Service | LAP',
@@ -17,12 +17,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function TermsPage() {
   return (
-    <PageShell
-      eyebrow="Legal"
-      title="Terms of Service"
-      description="Terms governing your use of the LAP platform. Effective: 2026-02-01. Last updated: 2026-03-06."
-      tone="document"
-    >
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Legal"
+        title="Terms of Service"
+        subtitle="Terms governing your use of the LAP platform. Effective: 2026-02-01. Last updated: 2026-03-06."
+      />
       <Section title="1. Account & Access">
         <p>
           You must be 16 or older to create an account. You are responsible for maintaining the
@@ -101,6 +101,6 @@ export default function TermsPage() {
           Contact Support
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

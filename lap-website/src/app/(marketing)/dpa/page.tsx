@@ -1,4 +1,4 @@
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import Link from 'next/link';
 
 export const metadata = {
@@ -18,12 +18,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function DpaPage() {
   return (
-    <PageShell
-      eyebrow="Legal"
-      title="Data Processing Addendum"
-      description="This DPA governs how LAP processes personal data on behalf of customers acting as data controllers."
-      tone="document"
-    >
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Legal"
+        title="Data Processing Addendum"
+        subtitle="This DPA governs how LAP processes personal data on behalf of customers acting as data controllers."
+      />
       <div className="border border-steel/20 bg-concrete/30 p-6 mb-8">
         <p className="text-steel text-sm leading-relaxed">
           This Data Processing Addendum (&ldquo;DPA&rdquo;) forms part of the agreement between the
@@ -173,6 +173,6 @@ export default function DpaPage() {
           Request DPA
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

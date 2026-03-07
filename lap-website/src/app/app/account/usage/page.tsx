@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -152,7 +152,7 @@ export default function UsagePage() {
 
   return (
     <div>
-      <PageHeader title="Usage & Limits" subtitle="Monitor your plan usage and feature entitlements" />
+      <PageIntro title="Usage & Limits" subtitle="Monitor your plan usage and feature entitlements" />
 
       {/* ── Current Plan ──────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-4 mb-6">

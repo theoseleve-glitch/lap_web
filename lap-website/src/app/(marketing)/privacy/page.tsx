@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 export const metadata = {
   title: 'Privacy Policy | LAP',
@@ -17,12 +17,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function PrivacyPage() {
   return (
-    <PageShell
-      eyebrow="Legal"
-      title="Privacy Policy"
-      description="How LAP collects, processes, and protects your data. Effective: 2026-02-01. Last updated: 2026-03-06."
-      tone="document"
-    >
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Legal"
+        title="Privacy Policy"
+        subtitle="How LAP collects, processes, and protects your data. Effective: 2026-02-01. Last updated: 2026-03-06."
+      />
       <Section title="Data We Collect">
         <p>
           Account information (email, name, password hash), telemetry CSV files (GPS traces, speed,
@@ -122,6 +122,6 @@ export default function PrivacyPage() {
           Manage Your Data
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

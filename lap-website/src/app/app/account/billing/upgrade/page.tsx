@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { b2cPlans, type BillingCycle } from '@/data/pricing';
 
@@ -39,7 +39,7 @@ export default function UpgradePage() {
 
   return (
     <div>
-      <PageHeader title="Change Plan" subtitle="Compare plans and features" />
+      <PageIntro title="Change Plan" subtitle="Compare plans and features" />
 
       {/* Billing cycle toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">

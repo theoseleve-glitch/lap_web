@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -109,7 +109,7 @@ export default function DataPrivacyPage() {
 
   return (
     <div>
-      <PageHeader title="Data & Privacy" subtitle="Manage your data, exports, and account" />
+      <PageIntro title="Data & Privacy" subtitle="Manage your data, exports, and account" />
 
       {/* ── Your Data ───────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">

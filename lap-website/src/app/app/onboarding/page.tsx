@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { BACKEND_URL } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile, setUserProfile } from '@/lib/auth-store';
 
@@ -62,7 +62,7 @@ export default function OnboardingPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Complete Your Profile"
         subtitle="Tell us who's behind the wheel before you start analyzing telemetry."
       />

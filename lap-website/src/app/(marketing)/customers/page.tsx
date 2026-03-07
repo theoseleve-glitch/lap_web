@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 export const metadata = {
   title: 'Customer Results | LAP',
@@ -57,11 +57,12 @@ const testimonials = [
 
 export default function CustomersPage() {
   return (
-    <PageShell
-      eyebrow="Results"
-      title="Measured Outcomes from Real Teams"
-      description="Anonymous case studies and testimonials from teams using LAP in competition."
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Results"
+        title="Measured Outcomes from Real Teams"
+        subtitle="Anonymous case studies and testimonials from teams using LAP in competition."
+      />
       {/* Case Studies */}
       <section className="mb-10">
         <h2 className="font-monument text-[var(--text-h2)] mb-4">Case Studies</h2>
@@ -134,6 +135,6 @@ export default function CustomersPage() {
           See It In Action
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

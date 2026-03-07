@@ -4,7 +4,8 @@ import Link from 'next/link';
 import { useState, useMemo, lazy, Suspense } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
@@ -94,7 +95,7 @@ export default function VisualizeLandingPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Visualization"
         subtitle="Select a session to open the telemetry visualization tool"
       />

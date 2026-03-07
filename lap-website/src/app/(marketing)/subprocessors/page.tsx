@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PageIntro } from '@/components/ui/PageIntro';
 
 export const metadata: Metadata = {
   title: "Subprocessors | LAP",
@@ -46,12 +47,11 @@ const subprocessors = [
 
 export default function SubprocessorsPage() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-16">
-      <h1 className="mb-2 text-3xl font-bold text-chalk">Subprocessors</h1>
-      <p className="mb-8 text-steel">
-        LAP uses the following third-party subprocessors to deliver our service.
-        This list is maintained as part of our GDPR compliance obligations.
-      </p>
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        title="Subprocessors"
+        subtitle="LAP uses the following third-party subprocessors to deliver our service. This list is maintained as part of our GDPR compliance obligations."
+      />
 
       <p className="mb-6 text-sm text-steel">
         Effective: 2026-02-01. Last updated: 2026-03-06. We will notify customers at least 30 days
@@ -116,6 +116,6 @@ export default function SubprocessorsPage() {
           .
         </p>
       </div>
-    </div>
+    </main>
   );
 }

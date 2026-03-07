@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
+import { StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface WeekendDetail {
   id: number;
@@ -98,7 +99,7 @@ export default function WeekendDetailPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title={weekend.name}
         subtitle={`${weekend.track_name} · ${formatDateRange(weekend.start_date, weekend.end_date)}`}
         actions={

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
 
 interface LiveStatus {
@@ -31,12 +31,12 @@ export default async function StatusPage() {
   const liveStatus = await getLiveStatus();
 
   return (
-    <PageShell
-      eyebrow="Operations"
-      title="Status and SLA Definitions"
-      description="Operational status source, uptime expectations, and support SLA definitions."
-      tone="document"
-    >
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Operations"
+        title="Status and SLA Definitions"
+        subtitle="Operational status source, uptime expectations, and support SLA definitions."
+      />
       <section className="grid md:grid-cols-2 gap-4 mb-8">
         <article className="border border-steel/20 p-4 bg-concrete/30">
           <h2 className="font-monument text-[var(--text-h3)] mb-2">Live Platform Status</h2>
@@ -95,6 +95,6 @@ export default async function StatusPage() {
           and report publication timestamp for compliance audits.
         </p>
       </section>
-    </PageShell>
+    </main>
   );
 }

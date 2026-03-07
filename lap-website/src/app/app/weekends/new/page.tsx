@@ -4,7 +4,8 @@ import { useState, useId } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, FormField } from '@/components/app';
+import { FormField } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface TrackOption {
   id: number;
@@ -80,7 +81,7 @@ export default function NewWeekendPage() {
 
   return (
     <div className="max-w-xl">
-      <PageHeader
+      <PageIntro
         title="New Weekend"
         subtitle="Group sessions into a race weekend"
         actions={

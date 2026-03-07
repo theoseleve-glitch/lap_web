@@ -2,7 +2,7 @@
 
 import { useState, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -225,7 +225,7 @@ export default function SecurityPage() {
 
   return (
     <div>
-      <PageHeader title="Security" subtitle="Password, two-factor authentication, and active sessions" />
+      <PageIntro title="Security" subtitle="Password, two-factor authentication, and active sessions" />
 
       {/* ── Change Password ───────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">

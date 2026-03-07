@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -77,7 +78,7 @@ export default function TracksPage() {
 
   return (
     <div>
-      <PageHeader title="Tracks" subtitle={`${tracks.length} track${tracks.length !== 1 ? 's' : ''}`} />
+      <PageIntro title="Tracks" subtitle={`${tracks.length} track${tracks.length !== 1 ? 's' : ''}`} />
 
       {/* ── Stats ───────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

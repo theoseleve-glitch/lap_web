@@ -3,7 +3,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface DataHealthStats {
   total_files: number;
@@ -60,7 +61,7 @@ export default function DataHealthPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Data Health"
         subtitle="Processing job status and file ingestion metrics"
         actions={

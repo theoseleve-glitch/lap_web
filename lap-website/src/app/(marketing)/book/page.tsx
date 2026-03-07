@@ -2,18 +2,19 @@
 
 import { Suspense } from 'react';
 import { LeadForm } from '@/components/forms/LeadForm';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { useTranslation } from '@/i18n';
 
 export default function BookPage() {
   const { t } = useTranslation();
 
   return (
-    <PageShell
-      eyebrow={t('book.eyebrow')}
-      title={t('book.title')}
-      description={t('book.description')}
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow={t('book.eyebrow')}
+        title={t('book.title')}
+        subtitle={t('book.description')}
+      />
       <section className="grid lg:grid-cols-[2fr_1fr] gap-6">
         <article className="border border-steel/20 bg-concrete/40 p-5">
           <Suspense fallback={<p className="text-steel text-sm">{t('book.loadingForm')}</p>}>
@@ -30,6 +31,6 @@ export default function BookPage() {
           </ul>
         </aside>
       </section>
-    </PageShell>
+    </main>
   );
 }

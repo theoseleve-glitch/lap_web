@@ -1,22 +1,28 @@
 'use client';
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { LeadForm } from '@/components/forms/LeadForm';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 import { ReversibleCard } from '@/components/ui/ReversibleCard';
 import { DemoCtaSection } from '@/components/marketing/DemoCtaSection';
+import { trackDemoFormView } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
 
 export default function DemoPage() {
   const { t } = useTranslation();
 
+  useEffect(() => {
+    trackDemoFormView();
+  }, []);
+
   return (
-    <PageShell
-      eyebrow={t('demo.eyebrow')}
-      title={t('demo.title')}
-      description={t('demo.description')}
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow={t('demo.eyebrow')}
+        title={t('demo.title')}
+        subtitle={t('demo.description')}
+      />
       <section className="grid lg:grid-cols-2 gap-6 mb-8">
         <article className="border border-steel/20 bg-concrete/40 p-5">
           <h2 className="font-monument text-[var(--text-h3)] mb-3">{t('demo.b2cTitle')}</h2>
@@ -53,6 +59,6 @@ export default function DemoPage() {
           </div>
         </article>
       </section>
-    </PageShell>
+    </main>
   );
 }

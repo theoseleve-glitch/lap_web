@@ -5,7 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, QueryError, SkeletonBox } from '@/components/app';
+import { QueryError, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* -- Types -------------------------------------------------- */
 
@@ -192,7 +193,7 @@ export default function DevelopmentPlanDetailPage() {
         &larr; Back to Development Plans
       </Link>
 
-      <PageHeader
+      <PageIntro
         title={plan.plan_name}
         subtitle={`Driver #${plan.driver_id}`}
         actions={

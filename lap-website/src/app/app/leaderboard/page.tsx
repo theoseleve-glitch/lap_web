@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, DataTable, QueryError, SkeletonTableRows, StatCard } from '@/components/app';
+import { DataTable, QueryError, SkeletonTableRows, StatCard } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* -- Types ---------------------------------------------------- */
 
@@ -264,7 +265,7 @@ export default function LeaderboardPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Leaderboard"
         subtitle={rows.length > 0 ? `${rows.length} result${rows.length !== 1 ? 's' : ''}` : undefined}
       />

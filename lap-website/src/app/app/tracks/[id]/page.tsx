@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface TrackDetail {
   id: string;
@@ -108,7 +109,7 @@ export default function TrackDetailPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title={track.name}
         subtitle={`${fmtLength(track.lap_length_m)} \u00b7 ${track.session_count} session${track.session_count !== 1 ? 's' : ''}`}
         actions={

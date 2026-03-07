@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
-import { PageHeader, SkeletonBox, SkeletonTableRows } from '@/components/app';
+import { SkeletonBox, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
 import { canUseFeature } from '@/lib/entitlements-store';
 
@@ -200,7 +201,7 @@ export default function RaceDetailPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <PageHeader
+      <PageIntro
         title={race.race_name}
         subtitle={[race.track_name, race.team_name].filter(Boolean).join(' \u2014 ') || undefined}
         actions={

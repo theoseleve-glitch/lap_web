@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 import { canUseFeature } from '@/lib/entitlements-store';
 
@@ -114,7 +115,7 @@ export default function RaceStrategyListPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Race Strategy"
         subtitle="Endurance race management — plan, optimize, and run"
         actions={

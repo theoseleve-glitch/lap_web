@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries } from '@/data/insights-cms';
 
 export function generateStaticParams() {
@@ -24,7 +24,8 @@ export default function InsightDetailPage({ params }: { params: { slug: string }
   }
 
   return (
-    <PageShell eyebrow="Insights" title={article.title} description={article.summary}>
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro eyebrow="Insights" title={article.title} subtitle={article.summary} />
       <article className="border border-steel/20 bg-concrete/30 p-6">
         <div className="text-chalk leading-relaxed space-y-4 mb-6">
           {article.bodyMdx.split('. ').reduce<string[]>((acc, sentence, i, arr) => {
@@ -67,6 +68,6 @@ export default function InsightDetailPage({ params }: { params: { slug: string }
           &larr; Back to Insights
         </Link>
       </div>
-    </PageShell>
+    </main>
   );
 }

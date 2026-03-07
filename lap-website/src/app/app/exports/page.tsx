@@ -3,7 +3,8 @@
 import { useState, useId } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, BACKEND_URL } from '@/lib/api-client';
-import { PageHeader, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { DataTable, QueryError, SkeletonTableRows } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface ExportRow {
   id: string;
@@ -80,7 +81,7 @@ export default function ExportsPage() {
 
   return (
     <div>
-      <PageHeader title="Exports" subtitle="Download your telemetry data" />
+      <PageIntro title="Exports" subtitle="Download your telemetry data" />
 
       {/* Generate new export */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">

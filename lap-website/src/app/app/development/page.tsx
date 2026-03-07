@@ -4,7 +4,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, QueryError, SkeletonCardGrid } from '@/components/app';
+import { QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* -- Types -------------------------------------------------- */
 
@@ -110,7 +111,7 @@ export default function DevelopmentPlansPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Development Plans"
         subtitle={`${plans.length} plan${plans.length !== 1 ? 's' : ''}`}
         actions={

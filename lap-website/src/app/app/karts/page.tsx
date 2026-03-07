@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
-import { PageHeader, StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -97,7 +98,7 @@ export default function KartsPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Karts"
         subtitle={`${karts.length} kart${karts.length !== 1 ? 's' : ''}`}
         actions={

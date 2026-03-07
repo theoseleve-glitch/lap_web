@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { BACKEND_URL, ApiError } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerPicker, type TrackLayout } from '@/components/app/CornerPicker';
@@ -441,7 +441,7 @@ export default function UploadPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Upload Session"
         subtitle="Upload a RaceChrono or RaceBox CSV file for analysis"
         actions={

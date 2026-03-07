@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 
 interface SetupStep {
   id: string;
@@ -162,7 +162,7 @@ export default function SetupTrackerPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Setup Tracker"
         subtitle={`${completedCount} of ${totalCount} steps complete`}
       />

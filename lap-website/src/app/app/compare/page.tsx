@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 import { api } from '@/lib/api-client';
@@ -227,7 +227,7 @@ export default function CompareHubPage() {
 
   return (
     <div>
-      <PageHeader
+      <PageIntro
         title="Compare"
         subtitle="Side-by-side analysis of sessions and drivers"
       />

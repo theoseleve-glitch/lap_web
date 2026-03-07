@@ -1,4 +1,4 @@
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 import Link from 'next/link';
 
@@ -19,12 +19,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function SecurityPage() {
   return (
-    <PageShell
-      eyebrow="Security and Compliance"
-      title="Security, Residency, Retention, and Incident Response"
-      description="Detailed trust posture for encryption, data controls, and operational process."
-      tone="document"
-    >
+    <main className="mx-auto max-w-4xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow="Security and Compliance"
+        title="Security, Residency, Retention, and Incident Response"
+        subtitle="Detailed trust posture for encryption, data controls, and operational process."
+      />
       <Section title="Encryption">
         <p>
           All traffic between the browser and LAP servers is protected by TLS 1.2+ via Caddy
@@ -138,6 +138,6 @@ export default function SecurityPage() {
           <li>Enterprise support: contract-specific SLA commitments.</li>
         </ul>
       </section>
-    </PageShell>
+    </main>
   );
 }

@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
-import { PageHeader } from '@/components/app';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
 import { MessageLog } from '@/components/app/race-strategy/MessageLog';
 
@@ -214,7 +214,7 @@ export default function LiveDashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <PageHeader
+      <PageIntro
         title={race.race_name}
         subtitle="Live Race Dashboard"
         actions={

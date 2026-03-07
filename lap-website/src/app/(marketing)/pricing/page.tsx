@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useState, useCallback } from 'react';
-import { PageShell } from '@/components/site/PageShell';
+import { PageIntro } from '@/components/ui/PageIntro';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
 import { venueCard } from '@/data/pricing';
@@ -64,11 +64,12 @@ export default function PricingPage() {
   }));
 
   return (
-    <PageShell
-      eyebrow={t('pricing.eyebrow')}
-      title={t('pricing.title')}
-      description={t('pricing.description')}
-    >
+    <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
+      <PageIntro
+        eyebrow={t('pricing.eyebrow')}
+        title={t('pricing.title')}
+        subtitle={t('pricing.description')}
+      />
       {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
         <span
@@ -240,6 +241,6 @@ export default function PricingPage() {
           </article>
         </div>
       </section>
-    </PageShell>
+    </main>
   );
 }
