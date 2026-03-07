@@ -46,7 +46,8 @@
     "ci": "npm run lint && npm run test && npm run build && npm run qa:content && npm run lint:copy && npm run lint:cta && npm run lint:cta-text && npm run lint:standards && npm run lint:links && npm run lint:benefits && npm run lint:plan-names && npm run lint:placeholders && npm run lint:design-tokens && npm run lint:typography && npm run lint:icon-imports && npm run lint:nav && npm run lint:headings && npm run lint:spacing && npm run lint:routes && npm run lint:seo && npm run lint:canonical && npm run lint:noindex && npm run ci:assert-site-url",
     "ci:assert-site-url": "node scripts/assert-no-legacy-domain.mjs",
     "qa:sitemap-preview": "node scripts/check-sitemap-preview.mjs",
-    "ci:preview": "npm run qa:sitemap-preview"
+    "ci:preview": "npm run qa:sitemap-preview",
+    "audit:seo": "node scripts/seo-audit.mjs"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
