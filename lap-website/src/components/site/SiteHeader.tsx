@@ -104,7 +104,7 @@ export function SiteHeader() {
             </Link>
             <Link
               href="/register"
-              className="inline-flex items-center min-h-[44px] px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase bg-pit-orange/90 border-pit-orange text-asphalt hover:bg-pit-orange transition-colors duration-200 cursor-pointer"
+              className="inline-flex items-center min-h-[44px] px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase bg-pit-orange border-pit-orange text-asphalt hover:bg-[#D4B35A] transition-colors duration-200 cursor-pointer"
               onClick={() => trackNavRouteClick('/register', 'header')}
             >
               {t('nav.signup')}

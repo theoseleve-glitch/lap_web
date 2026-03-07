@@ -45,9 +45,9 @@ export function FallbackShell({ children }: FallbackShellProps) {
       >
         <defs>
           <linearGradient id="fallback-track-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#D946EF" stopOpacity="0.06" />
-            <stop offset="50%" stopColor="#B6FF2E" stopOpacity="0.04" />
-            <stop offset="100%" stopColor="#D946EF" stopOpacity="0.06" />
+            <stop offset="0%" stopColor="#333333" stopOpacity="0.06" />
+            <stop offset="50%" stopColor="#444444" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#333333" stopOpacity="0.06" />
           </linearGradient>
         </defs>
         <path

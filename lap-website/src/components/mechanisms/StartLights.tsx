@@ -8,11 +8,14 @@ interface StartLightsProps {
   reducedMotion?: boolean;
 }
 
+const LIGHT_INTERVAL_MS = 1000;
+
 export function StartLights({ onComplete, reducedMotion = false }: StartLightsProps) {
   const [litCount, setLitCount] = useState(0);
   const [lightsOut, setLightsOut] = useState(false);
   const completedRef = useRef(false);
-  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countRef = useRef(0);
 
   // Reduced motion: skip straight to complete
   useEffect(() => {
@@ -24,40 +27,75 @@ export function StartLights({ onComplete, reducedMotion = false }: StartLightsPr
     }
   }, [onComplete, reducedMotion]);
 
-  // Clean up hold timer on unmount
+  // Clean up on unmount
   useEffect(() => {
     return () => {
-      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
 
-  const advance = useCallback(() => {
+  const startHold = useCallback(() => {
     if (completedRef.current || reducedMotion) return;
 
-    setLitCount((prev) => {
-      const next = prev + 1;
-      if (next >= 5) {
-        // All 5 lit — hold then lights out
-        holdTimerRef.current = setTimeout(() => {
-          setLightsOut(true);
-          completedRef.current = true;
-          onComplete();
-        }, 800);
+    // Reset if restarting
+    countRef.current = 0;
+    setLitCount(0);
+    setLightsOut(false);
+
+    // Light one immediately, then every second
+    countRef.current = 1;
+    setLitCount(1);
+
+    intervalRef.current = setInterval(() => {
+      countRef.current += 1;
+      setLitCount(countRef.current);
+      if (countRef.current >= 5) {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = null;
       }
-      return Math.min(next, 5);
-    });
+    }, LIGHT_INTERVAL_MS);
+  }, [reducedMotion]);
+
+  const endHold = useCallback(() => {
+    if (completedRef.current || reducedMotion) return;
+
+    // Stop the interval
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    if (countRef.current >= 5) {
+      // All 5 lit — lights out! Scroll to next section.
+      setLightsOut(true);
+      completedRef.current = true;
+      onComplete();
+    } else {
+      // Released early — reset
+      countRef.current = 0;
+      setLitCount(0);
+    }
   }, [onComplete, reducedMotion]);
 
   return (
     <div
-      className="flex items-center justify-center gap-5 md:gap-8 select-none py-10 cursor-pointer"
+      className="flex items-center justify-center gap-5 md:gap-8 select-none py-10 cursor-pointer touch-none"
       role="group"
-      aria-label="F1 start lights — tap to light each one"
-      onClick={advance}
+      aria-label="F1 start lights — press and hold to light all five, then release"
+      onPointerDown={startHold}
+      onPointerUp={endHold}
+      onPointerLeave={endHold}
       onKeyDown={(e) => {
+        if (e.repeat) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          advance();
+          startHold();
+        }
+      }}
+      onKeyUp={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          endHold();
         }
       }}
       tabIndex={completedRef.current ? -1 : 0}

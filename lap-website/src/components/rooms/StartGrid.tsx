@@ -40,11 +40,15 @@ export function StartGrid() {
           </span>
         </MonumentText>
 
-        {/* F1 start lights — click/tap to advance each light */}
+        {/* F1 start lights — hold to fill, release at 5 to go */}
         <StartLights
           onComplete={() => {
             setLightsOut(true);
             trackStartGridComplete();
+            // Scroll to the next section (sibling after #start-grid)
+            const grid = document.getElementById('start-grid');
+            const next = grid?.nextElementSibling as HTMLElement | null;
+            next?.scrollIntoView({ behavior: 'smooth' });
           }}
           reducedMotion={reducedMotion}
         />

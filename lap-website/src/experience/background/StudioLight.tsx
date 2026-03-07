@@ -31,7 +31,7 @@ export function StudioLight() {
       8
     );
 
-    // Velocity-modulated intensity — more visible purple light
+    // Velocity-modulated intensity
     light.intensity = 0.5 + Math.abs(scrollVelocity) * 0.8;
 
     // Counter-fill from opposite side
@@ -47,17 +47,17 @@ export function StudioLight() {
 
   return (
     <>
-      {/* Main purple key light */}
+      {/* Neutral key light */}
       <directionalLight
         ref={lightRef}
-        color="#D946EF"
+        color="#FFFFFF"
         intensity={0.5}
         position={[0, 5, 8]}
       />
-      {/* Softer purple fill from opposite side */}
+      {/* Soft fill from opposite side */}
       <directionalLight
         ref={fillRef}
-        color="#7C3AED"
+        color="#CCCCCC"
         intensity={0.15}
         position={[0, -5, 6]}
       />

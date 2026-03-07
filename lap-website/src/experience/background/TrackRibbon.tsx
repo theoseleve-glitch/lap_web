@@ -9,9 +9,9 @@ import { buildTrackCurve, sampleTrack, buildRibbonGeometry } from './trackGeomet
 
 const SEGMENTS_BY_TIER = { high: 300, balanced: 200, low: 100 } as const;
 
-// Purple metallic color (#D946EF)
-const PURPLE = new THREE.Color(0xD946EF);
-const PURPLE_DIM = new THREE.Color(0x6B21A8);
+// Neutral edge glow
+const EDGE_BRIGHT = new THREE.Color(0x444444);
+const EDGE_DIM = new THREE.Color(0x1a1a1a);
 
 export function TrackRibbon() {
   const ribbonRef = useRef<THREE.Mesh>(null);
@@ -44,7 +44,7 @@ export function TrackRibbon() {
   }), []);
 
   const edgeMat = useMemo(() => new THREE.MeshBasicMaterial({
-    color: PURPLE_DIM,
+    color: EDGE_DIM,
     transparent: true,
     opacity: 0.4,
     depthWrite: false,
@@ -62,9 +62,9 @@ export function TrackRibbon() {
     const velocityBoost = Math.abs(state.scrollVelocity) * 0.3;
     edgeMat.opacity = Math.min(breathe + velocityBoost, 0.7);
 
-    // Shift edge color between purple and brighter purple based on progress
+    // Shift edge brightness based on progress
     const intensity = 0.4 + Math.sin(t * 0.5) * 0.15;
-    edgeMat.color.copy(PURPLE_DIM).lerp(PURPLE, intensity);
+    edgeMat.color.copy(EDGE_DIM).lerp(EDGE_BRIGHT, intensity);
 
     // Move the glow light along the track
     if (glowLightRef.current) {
@@ -85,7 +85,7 @@ export function TrackRibbon() {
         <primitive object={ribbonMat} attach="material" />
       </mesh>
 
-      {/* Bright purple edges (additive glow) */}
+      {/* Subtle edges (additive glow) */}
       <mesh ref={edgeRef} frustumCulled={false}>
         <primitive object={edgeGeo} attach="geometry" />
         <primitive object={edgeMat} attach="material" />
@@ -94,14 +94,14 @@ export function TrackRibbon() {
       {/* Point light that follows progress along the track */}
       <pointLight
         ref={glowLightRef}
-        color="#D946EF"
-        intensity={0.6}
+        color="#666666"
+        intensity={0.4}
         distance={6}
         decay={2}
       />
 
-      {/* Ambient purple fill so the scene isn't pure black */}
-      <ambientLight color="#1a0a2e" intensity={0.3} />
+      {/* Minimal ambient so the scene stays dark */}
+      <ambientLight color="#0a0a0a" intensity={0.15} />
     </>
   );
 }
