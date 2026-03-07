@@ -12,7 +12,7 @@ export function S3Product() {
       label: t('home.product.strategistTile1Label'),
       description: t('home.product.strategistTile1Detail'),
       image: '/images/screenshots/dashboard-hero.png',
-      alt: 'Race strategy dashboard with stint and pit planning widgets',
+      alt: 'Race Strategy Dashboard with stint and pit planning widgets',
     },
     {
       label: t('home.product.strategistTile2Label'),

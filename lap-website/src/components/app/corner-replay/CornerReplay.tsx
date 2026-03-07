@@ -205,7 +205,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
     }
     return (
       <div className="rounded-lg border border-steel/20 bg-concrete p-6 text-center">
-        <p className="text-steel font-telemetry text-sm mb-2">Failed to load corner replay data.</p>
+        <p className="text-steel font-telemetry text-sm mb-2">Failed to load Corner Replay data.</p>
         <p className="text-steel/60 font-telemetry text-xs">Check your connection and try again.</p>
       </div>
     );

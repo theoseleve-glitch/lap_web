@@ -234,7 +234,7 @@ export default function UsagePage() {
               value={entitlements.entitlements.coaching_drills}
             />
             <FeatureRow
-              label="Visualization workspace"
+              label="Visualization Workspace"
               value={entitlements.entitlements.viz_workspace}
             />
             <FeatureRow

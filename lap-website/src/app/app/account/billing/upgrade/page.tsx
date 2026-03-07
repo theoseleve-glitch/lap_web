@@ -16,7 +16,7 @@ const RETENTION_DAYS: Record<string, number> = {
 
 const FEATURES_BY_TIER: Record<string, string[]> = {
   demo: ['1 report/month', 'Basic analysis', '30-day retention', 'CSV exports'],
-  racer: ['10 reports/month', 'Coaching plans', 'Visualization', 'PDF exports', '90-day retention'],
+  racer: ['10 reports/month', 'Coaching Plans', 'Visualization', 'PDF exports', '90-day retention'],
   'world-class': ['Unlimited reports', 'Comparison & progress', 'API access', '365-day retention'],
 };
 

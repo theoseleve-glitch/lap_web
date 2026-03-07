@@ -81,7 +81,5 @@ if (violations.length === 0) {
   for (const v of violations) {
     console.error(`  [${v.rule}] ${v.msg}`);
   }
-  // Warnings for now
-  console.error('\n  (faq warnings, not blocking CI yet)\n');
-  process.exit(0);
+  process.exit(1);
 }

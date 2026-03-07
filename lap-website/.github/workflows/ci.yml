@@ -16,3 +16,4 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run ci
+      - run: npm run lint:feature-case && npm run lint:i18n-ready && npm run lint:page-template && npm run lint:faq && npm run lint:spelling

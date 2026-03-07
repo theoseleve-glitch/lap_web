@@ -106,8 +106,16 @@ jobs:
       - name: Content linters (placeholders, copy standards, links)
         run: npm run lint:placeholders && npm run lint:standards && npm run lint:links
 
+      - name: Content linters (feature-case, i18n, page-template, faq)
+        run: npm run lint:feature-case && npm run lint:i18n-ready && npm run lint:page-template && npm run lint:faq
+
       - name: Spellcheck (cspell)
-        run: npx cspell "src/**/*.{tsx,ts,mdx}" --no-progress --no-must-find-files || true
+        run: npm run lint:spelling
+
+      - name: Content approval gate
+        if: github.event_name == 'pull_request'
+        run: node scripts/ci-content-approval.mjs
+        working-directory: lap-website
 
   contract-tests:
     runs-on: ubuntu-latest

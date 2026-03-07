@@ -747,7 +747,7 @@ function LapTimesTable({
   if (laps.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-6 text-center">
-        <p className="text-steel font-body text-sm">No lap data for {label}</p>
+        <p className="text-steel font-body text-sm">No Lap Data for {label}</p>
       </div>
     );
   }

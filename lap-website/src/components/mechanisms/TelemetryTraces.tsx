@@ -31,7 +31,7 @@ export function TelemetryTraces({
         <div
           className="flex-1 cursor-pointer"
           onMouseEnter={() => onTraceHover?.('speed')}
-          aria-label="Speed trace"
+          aria-label="Speed Trace"
         />
         <div
           className="flex-1 cursor-pointer"

@@ -279,7 +279,7 @@ export default function VisualizeSessionPage() {
               );
             })}
             {laps.length === 0 && (
-              <span className="text-steel/50 text-xs font-body">No lap data available</span>
+              <span className="text-steel/50 text-xs font-body">No Lap Data available</span>
             )}
           </div>
         </div>

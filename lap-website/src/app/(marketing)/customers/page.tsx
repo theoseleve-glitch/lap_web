@@ -30,7 +30,7 @@ const caseStudies = [
     category: 'Endurance Racing Operation',
     metric: '2 fewer unplanned pit stops per 6-hour race',
     description:
-      'A 4-car endurance team integrated the race strategy dashboard for live stint monitoring. Tyre degradation detection flagged pace fade before drivers reported it, enabling proactive pit calls.',
+      'A 4-car endurance team integrated the Race Strategy Dashboard for live stint monitoring. Tyre degradation detection flagged pace fade before drivers reported it, enabling proactive pit calls.',
     methodology:
       'Measured across 4 endurance races (6-hour format). Compared to the team\'s previous season data with manual timing and radio-based strategy calls.',
     highlight: 'Pit window accuracy improved from ±3 laps to ±1 lap, reducing time lost to late stops.',
@@ -51,7 +51,7 @@ const testimonials = [
   {
     role: 'Team Principal, Junior Formula Academy',
     quote:
-      'The corner coaching table is where the real value is. Instead of arguing about feel, we pointed to the data and focused on one corner per session. Progress was measurable.',
+      'The Corner Coaching table is where the real value is. Instead of arguing about feel, we pointed to the data and focused on one corner per session. Progress was measurable.',
   },
 ];
 

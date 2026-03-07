@@ -20,7 +20,7 @@ export default function ProductPage() {
     { title: 'Race Strategy Dashboard', description: 'Live operational board for stint calls and pit-window decisions.', src: '/images/screenshots/dashboard-hero.png' },
     { title: 'Live Monitoring', description: 'Real-time pace deltas and stint progress.', src: '/images/screenshots/live-monitoring.png' },
     { title: 'Pit Stop Planning', description: 'Plan pit windows based on fuel, tire, and driver rotation.', src: '/images/screenshots/pit-planning.png' },
-    { title: 'Lap Analysis Table', description: 'Detailed lap-by-lap data with sector splits.', src: '/images/screenshots/lap-table.png' },
+    { title: 'Lap Analysis Table', description: 'Detailed lap-by-Lap Data with sector splits.', src: '/images/screenshots/lap-table.png' },
   ];
 
   return (

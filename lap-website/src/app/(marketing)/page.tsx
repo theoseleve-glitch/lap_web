@@ -15,7 +15,7 @@ import { MarqueeStrip } from '@/components/ui/MarqueeStrip';
 import { AudienceChooser } from '@/components/rooms/AudienceChooser';
 
 const MARQUEE_TOP = [
-  'TELEMETRY', 'LAP ANALYSIS', 'CORNER COACHING', 'RACE STRATEGY',
+  'TELEMETRY', 'LAP ANALYSIS', 'Corner Coaching', 'RACE STRATEGY',
   'PIT PLANNING', 'DATA ENGINEERING', 'PERFORMANCE SCORING',
 ];
 

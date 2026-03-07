@@ -160,6 +160,51 @@ if (overlinked.length > 0) {
   console.log('');
 }
 
-if (!hasErrors && overlinked.length === 0) console.log('All checks passed.');
+// ── Loop detection (2-3 page cycles without path to CTA) ──
+const CTA_ROUTES = new Set(['/', '/pricing', '/register', '/contact', '/demo', '/billing', '/free-report']);
+const loops = [];
+
+for (const [routeA, linksA] of outbound.entries()) {
+  for (const hrefB of linksA) {
+    if (!outbound.has(hrefB)) continue;
+    const linksB = outbound.get(hrefB);
+    // 2-node loop: A -> B -> A
+    if (linksB.includes(routeA)) {
+      // Check if either page links to a CTA route
+      const aHasCta = linksA.some(l => CTA_ROUTES.has(l) && l !== hrefB);
+      const bHasCta = linksB.some(l => CTA_ROUTES.has(l) && l !== routeA);
+      if (!aHasCta && !bHasCta) {
+        const key = [routeA, hrefB].sort().join(' <-> ');
+        if (!loops.some(l => l.key === key)) {
+          loops.push({ key, pages: [routeA, hrefB] });
+        }
+      }
+    }
+    // 3-node loop: A -> B -> C -> A
+    for (const hrefC of linksB) {
+      if (hrefC === routeA || hrefC === hrefB) continue;
+      if (!outbound.has(hrefC)) continue;
+      if (outbound.get(hrefC).includes(routeA)) {
+        const aHasCta = linksA.some(l => CTA_ROUTES.has(l));
+        const bHasCta = linksB.some(l => CTA_ROUTES.has(l));
+        const cHasCta = outbound.get(hrefC).some(l => CTA_ROUTES.has(l));
+        if (!aHasCta && !bHasCta && !cHasCta) {
+          const key = [routeA, hrefB, hrefC].sort().join(' -> ');
+          if (!loops.some(l => l.key === key)) {
+            loops.push({ key, pages: [routeA, hrefB, hrefC] });
+          }
+        }
+      }
+    }
+  }
+}
+
+if (loops.length > 0) {
+  console.log(`LINK LOOPS without CTA exit (${loops.length}):`);
+  for (const l of loops) console.log(`  ${l.pages.join(' -> ')}`);
+  console.log('');
+}
+
+if (!hasErrors && overlinked.length === 0 && loops.length === 0) console.log('All checks passed.');
 
 process.exit(hasErrors ? 1 : 0);

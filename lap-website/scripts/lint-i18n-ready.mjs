@@ -22,6 +22,23 @@ const SCAN_DIRS = [
   path.resolve(process.cwd(), 'src/components'),
 ];
 
+// Pages/files excluded from i18n checks
+const ALLOWLIST = new Set([
+  'src/app/app/development',          // Dev-only page
+]);
+
+function rel(filePath) {
+  return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
+}
+
+function isAllowlisted(filePath) {
+  const r = rel(filePath);
+  for (const prefix of ALLOWLIST) {
+    if (r.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
 function walk(dir) {
   const results = [];
   if (!fs.existsSync(dir)) return results;
@@ -33,10 +50,6 @@ function walk(dir) {
   return results;
 }
 
-function rel(filePath) {
-  return path.relative(process.cwd(), filePath).replace(/\\/g, '/');
-}
-
 const violations = [];
 
 // Rules
@@ -46,7 +59,7 @@ const RULES = [
     description: 'String concatenation in user-facing text (use i18n interpolation)',
     // Matches: "text" + variable or variable + "text" in JSX context
     pattern: /["'][A-Z][a-z].*?["']\s*\+\s*\w|\w\s*\+\s*["'][A-Z][a-z]/,
-    skipIf: (line) => line.includes('className') || line.includes('import') || line.includes('path'),
+    skipIf: (line) => line.includes('className') || line.includes('import') || line.includes('path') || line.includes('// i18n-ok') || line.includes('ctx.fillText') || line.includes('ctx.strokeText'),
   },
   {
     id: 'html-in-string',
@@ -65,6 +78,7 @@ const RULES = [
 
 for (const dir of SCAN_DIRS) {
   for (const filePath of walk(dir)) {
+    if (isAllowlisted(filePath)) continue;
     const source = fs.readFileSync(filePath, 'utf-8');
     const lines = source.split('\n');
     const relPath = rel(filePath);
@@ -107,8 +121,5 @@ if (violations.length === 0) {
     }
     console.error('');
   }
-  // Warnings only for now — enable blocking by uncommenting:
-  // process.exit(1);
-  console.error('  (i18n-ready warnings — not blocking CI yet)\n');
-  process.exit(0);
+  process.exit(1);
 }

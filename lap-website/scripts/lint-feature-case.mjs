@@ -98,7 +98,5 @@ if (violations.length === 0) {
   for (const v of violations) {
     console.error(`  ${v.file}:${v.line} -- "${v.found}" -> use "${v.canonical}"`);
   }
-  // Warnings only — enable blocking after fixing existing violations
-  console.error('\n  (feature-case warnings — not blocking CI yet)\n');
-  process.exit(0);
+  process.exit(1);
 }

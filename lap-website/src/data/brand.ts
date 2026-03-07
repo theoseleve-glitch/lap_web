@@ -108,6 +108,25 @@ export const B2C_ALLOWED_PAGES = [
   'pricing', 'billing', 'demo', 'product', 'customers', 'waitlist',
 ] as const;
 
+/* ── Numbers Policy ────────────────────────────────────────── */
+
+/**
+ * Formatting rules for numbers in marketing content.
+ * Enforced by lint-copy-standards.mjs + src/lib/format-numbers.ts helper.
+ */
+export const NUMBERS_POLICY = {
+  speed: 'km/h (not kph/kmh/KPH). No space before unit.',
+  lapTime: '1:23.45 (mm:ss.cc) for display; 83.45s for inline prose.',
+  deltas: '+0.32s or -0.15s (always sign, 2 decimal places, 0.01s precision).',
+  percentages: 'No decimal unless < 1%. E.g., 36%, 0.8%.',
+  grip: '1% increments. E.g., 87%.',
+  currency: 'EUR with symbol prefix. E.g., \u20ac8.99.',
+  decimalSeparator: '"." for EN, "," for FR. Enforced per page locale.',
+  thousandsSeparator: 'None for < 10,000. Thin space (\u2009) for >= 10,000.',
+  marketingRule: 'Max 2 decimal places for time/speed. 0 decimals for percentages.',
+  msRule: '"ms" only in engineering/sub-second contexts. Marketing uses "seconds".',
+} as const;
+
 /* ── Tone Policy ──────────────────────────────────────────── */
 
 /**

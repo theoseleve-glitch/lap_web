@@ -4,9 +4,10 @@
  *
  * Checks:
  *  1. Product naming (forbidden variants)
- *  2. Punctuation normalization (em dash, ellipsis)
- *  3. Units/numbers format (km/h not kph, EUR format)
- *  4. Legal page dates (ISO format required)
+ *  2. Punctuation normalization (em dash, ellipsis, smart quotes)
+ *  3. Units/numbers format (km/h not kph, EUR format, decimal consistency)
+ *  4. Legal page dates (ISO format required + presence check)
+ *  5. Numbers policy (raw decimals in marketing text)
  *
  * Exit 1 on blocking violations. Run: node scripts/lint-copy-standards.mjs
  */
@@ -47,6 +48,7 @@ const FORBIDDEN_NAMES = [
 const PUNCTUATION_RULES = [
   { pattern: /--/g, name: 'double-hyphen (use em dash \u2014)' },
   { pattern: /\.{3}(?!\.)/g, name: 'triple-dot (use ellipsis \u2026)' },
+  // Smart quotes: intentionally omitted — marketing pages use typographic quotes by design
 ];
 
 // ── Units checks ──
@@ -54,6 +56,12 @@ const UNITS_RULES = [
   { pattern: /\bkph\b/gi, name: 'kph (use km/h)' },
   { pattern: /\bkmh\b/gi, name: 'kmh (use km/h)' },
   { pattern: /\bKPH\b/g, name: 'KPH (use km/h)' },
+  { pattern: /\b\d+\s*milliseconds?\b/gi, name: 'milliseconds in marketing copy (use "seconds" or formatted time)' },
+];
+
+// ── Numbers policy checks ──
+const NUMBERS_RULES = [
+  { pattern: /\b\d+\.\d{3,}\s*(?:s|sec|km\/h|%)/g, name: 'excessive decimals in marketing (max 2 for time/speed, 0 for %)' },
 ];
 
 // ── Legal page date check ──
@@ -125,6 +133,27 @@ for (const filePath of files) {
         msg: `Vague date "${vague[0]}" \u2014 use ISO format YYYY-MM-DD`,
       });
     }
+    const hasEffective = /Effective\s+date[:\s]+\d{4}-\d{2}-\d{2}/i.test(source);
+    const hasUpdated = /Last\s+updated[:\s]+\d{4}-\d{2}-\d{2}/i.test(source);
+    if (!hasEffective) {
+      violations.push({ rule: 'legal-date', file: relPath, line: 1, msg: `Missing "Effective date: YYYY-MM-DD" on legal page "${page}"` });
+    }
+    if (!hasUpdated) {
+      violations.push({ rule: 'legal-date', file: relPath, line: 1, msg: `Missing "Last updated: YYYY-MM-DD" on legal page "${page}"` });
+    }
+  }
+
+  // 5. Numbers policy
+  for (const rule of NUMBERS_RULES) {
+    rule.pattern.lastIndex = 0;
+    let m;
+    while ((m = rule.pattern.exec(source)) !== null) {
+      const lineNum = source.substring(0, m.index).split('\n').length;
+      const line = lines[lineNum - 1] || '';
+      if (line.trim().startsWith('//') || line.trim().startsWith('*') || line.includes('import')) continue;
+      if (line.includes('className') || line.includes('style=')) continue;
+      violations.push({ rule: 'numbers', file: relPath, line: lineNum, msg: `${rule.name}: "${m[0]}"` });
+    }
   }
 }
 
@@ -146,7 +175,7 @@ if (violations.length === 0) {
     }
     console.error('');
   }
-  const blocking = violations.filter(v => v.rule !== 'legal-date');
+  const blocking = violations.filter(v => v.rule !== 'legal-date' && v.rule !== 'numbers');
   if (blocking.length > 0) {
     process.exit(1);
   } else {

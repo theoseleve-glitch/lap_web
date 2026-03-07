@@ -70,7 +70,7 @@ export default function PrivacyPage() {
       <Section title="Your Rights (GDPR)">
         <p>You have the right to:</p>
         <ul className="list-disc list-inside space-y-1 ml-2">
-          <li>Access your data (data export)</li>
+          <li>Access your data (Data Export)</li>
           <li>Rectification (update profile)</li>
           <li>Erasure (delete account)</li>
           <li>Data portability (ZIP export with GPS precision reduction)</li>

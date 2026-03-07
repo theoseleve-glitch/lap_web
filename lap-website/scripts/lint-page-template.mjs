@@ -98,8 +98,5 @@ if (warnings.length === 0) {
   for (const w of warnings) {
     console.error(`  ${w.file} (/${w.page}) — ${w.msg}`);
   }
-  // Warnings only — enable blocking by uncommenting:
-  // process.exit(1);
-  console.error('\n  (template order warnings — not blocking CI yet)\n');
-  process.exit(0);
+  process.exit(1);
 }

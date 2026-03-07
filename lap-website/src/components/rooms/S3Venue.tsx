@@ -55,7 +55,7 @@ const CHANNELS = [
     title: 'DEEP COACHING',
     eyebrow: 'PREMIUM UPSELL',
     description:
-      'Serious drivers unlock the full report. Corner-by-corner coaching, score breakdown, improvement plan. Same quality as individual plans.',
+      'Serious drivers unlock the full report. Corner-by-corner Coaching, score breakdown, improvement plan. Same quality as individual plans.',
     icon: <ChartIcon />,
     stamp: 'FULL GRADE',
     stampDetail: 'SAME ENGINE',

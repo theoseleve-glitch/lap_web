@@ -26,16 +26,16 @@ const defaultPanels: ScrubberPanel[] = [
     alt: 'Session score overview showing four performance pillars',
   },
   {
-    label: 'CORNER COACHING',
+    label: 'Corner Coaching',
     description: 'Corner-by-corner analysis with brake point, apex speed, and exit drive breakdowns.',
     image: '/images/screenshots/corner-replay.png',
-    alt: 'Corner replay with cockpit gauges and track map',
+    alt: 'Corner Replay with cockpit gauges and Track Map',
   },
   {
     label: 'LAP DATA',
     description: 'Full lap-by-lap telemetry table. Best lap highlighted. Speed, braking, line distance tracked.',
     image: '/images/screenshots/lap-table.png',
-    alt: 'Lap data table with best lap highlighted',
+    alt: 'Lap Data table with best lap highlighted',
   },
 ];
 

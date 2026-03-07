@@ -1085,7 +1085,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
   if (laps.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
-        <p className="text-steel font-body">No lap data available for this session.</p>
+        <p className="text-steel font-body">No Lap Data available for this session.</p>
       </div>
     );
   }

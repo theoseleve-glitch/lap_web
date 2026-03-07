@@ -45,7 +45,7 @@ const TOOLS: Tool[] = [
   },
   {
     id: 'gg-diagram',
-    label: 'GG Diagram',
+    label: 'G-G Diagram',
     shortcut: 3,
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
