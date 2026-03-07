@@ -88,7 +88,7 @@ def _build_meta(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     """Build the ``meta`` section, always including ``request_id`` and ``version``."""
     meta: dict[str, Any] = {
         "request_id": getattr(g, "request_id", None),
-        "version": os.environ.get("APP_VERSION", "dev"),
+        "version": os.environ.get("APP_VERSION", "1.4.0"),
     }
     if extra:
         meta.update(extra)

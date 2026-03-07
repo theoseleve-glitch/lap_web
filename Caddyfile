@@ -16,7 +16,12 @@ api.lap-coach.racing {
 		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 		Content-Security-Policy "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'"
 		-Server
+		-Via
 	}
+
+	# Block Prometheus metrics from public access (H-01)
+	@metrics path /metrics
+	respond @metrics 404
 
 	# Allow large file uploads (telemetry CSVs can be 10+ GB)
 	request_body {

@@ -476,6 +476,14 @@ def create_app(config: Config | None = None) -> Flask:
     # All API paths use api_error() so responses include meta.request_id.
     from .api_utils import api_error as _api_error, ErrorCode as _EC
 
+    # Catch-all: API root and unknown non-API paths should not serve desktop HTML
+    @app.route("/", defaults={"path": ""})
+    def _catch_root(path):
+        accept = request.headers.get("Accept", "")
+        if "text/html" in accept:
+            return render_template("dashboard.html"), 200
+        return _api_error(_EC.NOT_FOUND, "Not found. API endpoints are under /api/v1/", status=404)
+
     @app.errorhandler(404)
     def page_not_found(e):
         if request.path.startswith("/api/"):

@@ -82,7 +82,7 @@ class JsonFormatter(logging.Formatter):
             "request_id": getattr(record, "request_id", "-"),
             "workspace_id": getattr(record, "workspace_id", "-"),
             "user_id": getattr(record, "user_id", "-"),
-            "version": os.environ.get("APP_VERSION", "dev"),
+            "version": os.environ.get("APP_VERSION", "1.4.0"),
         }
         return json.dumps(log_obj, default=str)
 

@@ -22,12 +22,6 @@ function parseAttribution(request: NextRequest): Record<string, string> {
   return result;
 }
 
-function detectPersona(request: NextRequest): string {
-  const explicitPersona = request.nextUrl.searchParams.get('persona');
-  if (explicitPersona) return explicitPersona;
-  return request.cookies.get('lap_persona')?.value ?? 'drivers';
-}
-
 function chooseVariant(cookieName: string, persona: string, attribution: Record<string, string>): string {
   const source = (attribution.utm_source ?? '').toLowerCase();
   const isPaid = !!attribution.gclid || !!attribution.fbclid || source.includes('ads') || source.includes('google');
@@ -62,7 +56,7 @@ export function middleware(request: NextRequest) {
     url.host = CANONICAL_HOST;
     url.port = '';
     const redirect = NextResponse.redirect(url, 301);
-    redirect.headers.set('Strict-Transport-Security', 'max-age=300');
+    redirect.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     return redirect;
   }
 
@@ -76,9 +70,12 @@ export function middleware(request: NextRequest) {
 
   const response = NextResponse.next();
 
+  // M-01: HSTS with 1-year max-age + includeSubDomains
+  response.headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+
   if (!request.cookies.get('lap_session_id')?.value) {
     response.cookies.set('lap_session_id', crypto.randomUUID(), {
-      httpOnly: false,
+      httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',
       path: '/',
@@ -106,14 +103,21 @@ export function middleware(request: NextRequest) {
     });
   }
 
-  const persona = detectPersona(request);
-  response.cookies.set('lap_persona', persona, {
-    httpOnly: false,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    path: '/',
-    maxAge: 60 * 60 * 24 * 90,
-  });
+  // L-04: Only set lap_persona when user explicitly chose one (query param)
+  // or already has the cookie. Don't set on first visit before interaction.
+  const explicitPersona = request.nextUrl.searchParams.get('persona');
+  const existingPersona = request.cookies.get('lap_persona')?.value;
+  if (explicitPersona || existingPersona) {
+    const persona = explicitPersona || existingPersona || 'drivers';
+    response.cookies.set('lap_persona', persona, {
+      httpOnly: false,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 90,
+    });
+  }
+  const persona = explicitPersona || existingPersona || 'drivers';
 
   const consent = request.cookies.get('lap_cookie_consent')?.value;
   const consentGranted = consent === 'granted';

@@ -117,7 +117,43 @@ def healthz():
     except Exception:
         checks["celery"] = "unavailable"
 
-    # Include DB stats when running on PG
+    status_code = 200 if checks["status"] == "ok" else 503
+    return jsonify({"status": checks["status"]}), status_code
+
+
+@bp.route("/healthz/detail")
+def healthz_detail():
+    """Return detailed health with DB stats. Requires auth in production."""
+    if current_app.config.get("AUTH_REQUIRED"):
+        from flask import request as req
+        from web.middleware.auth import _extract_token, _decode_token
+        token = _extract_token(req)
+        if not token:
+            return jsonify({"error": "Authentication required"}), 401
+        try:
+            _decode_token(token)
+        except Exception:
+            return jsonify({"error": "Invalid token"}), 401
+
+    checks: dict = {"status": "ok", "db": "unknown", "redis": "unknown", "celery": "unknown"}
+
+    try:
+        checks["db"] = _check_db()
+    except Exception as exc:
+        logger.warning("Health check DB failure: %s", exc)
+        checks["db"] = "error"
+        checks["status"] = "degraded"
+
+    try:
+        checks["redis"] = _check_redis()
+    except Exception:
+        checks["redis"] = "unavailable"
+
+    try:
+        checks["celery"] = _check_celery()
+    except Exception:
+        checks["celery"] = "unavailable"
+
     try:
         db_stats = _get_db_stats()
         if db_stats:
