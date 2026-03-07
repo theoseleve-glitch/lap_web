@@ -476,29 +476,36 @@ def create_app(config: Config | None = None) -> Flask:
     # All API paths use api_error() so responses include meta.request_id.
     from .api_utils import api_error as _api_error, ErrorCode as _EC
 
-    # Catch-all: API root and unknown non-API paths should not serve desktop HTML
+    def _wants_html() -> bool:
+        """True only for desktop/browser requests that explicitly want HTML."""
+        if app.config.get("AUTH_REQUIRED"):
+            # Production API server — always return JSON
+            return False
+        accept = request.headers.get("Accept", "")
+        return "text/html" in accept and "application/json" not in accept
+
+    # Catch-all: API root returns JSON
     @app.route("/", defaults={"path": ""})
     def _catch_root(path):
-        accept = request.headers.get("Accept", "")
-        if "text/html" in accept:
+        if _wants_html():
             return render_template("dashboard.html"), 200
         return _api_error(_EC.NOT_FOUND, "Not found. API endpoints are under /api/v1/", status=404)
 
     @app.errorhandler(404)
     def page_not_found(e):
-        if request.path.startswith("/api/"):
+        if not _wants_html():
             return _api_error(_EC.NOT_FOUND, "Resource not found", status=404)
         return render_template("404.html"), 404
 
     @app.errorhandler(405)
     def method_not_allowed(e):
-        if request.path.startswith("/api/"):
+        if not _wants_html():
             return _api_error(_EC.VALIDATION_ERROR, "Method not allowed", status=405)
         return render_template("404.html"), 405
 
     @app.errorhandler(413)
     def request_entity_too_large(e):
-        if request.path.startswith("/api/"):
+        if not _wants_html():
             return _api_error(_EC.FILE_TOO_LARGE,
                               "File too large. Maximum upload size is 12 GB.",
                               status=413)
@@ -507,14 +514,14 @@ def create_app(config: Config | None = None) -> Flask:
     @app.errorhandler(500)
     def internal_error(e):
         logger.exception("Unhandled 500 error on %s %s", request.method, request.path)
-        if request.path.startswith("/api/"):
+        if not _wants_html():
             return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
         return render_template("500.html"), 500
 
     @app.errorhandler(Exception)
     def unhandled_exception(e):
         logger.exception("Unhandled exception on %s %s", request.method, request.path)
-        if request.path.startswith("/api/"):
+        if not _wants_html():
             return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
         return render_template("500.html"), 500
 
