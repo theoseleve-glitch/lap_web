@@ -6,6 +6,10 @@
  *     <SectionHeader eyebrow="S3" title="Product" />
  *     ...content...
  *   </Section>
+ *
+ *   <Section heading="Features" id="features">
+ *     <p>Simple heading variant</p>
+ *   </Section>
  */
 
 import { type ReactNode } from 'react';
@@ -26,9 +30,30 @@ interface SectionProps {
   className?: string;
   /** Use grid-lap 12-column layout inside */
   grid?: boolean;
+  /** Optional heading text — renders h2 (default) or h3 */
+  heading?: string;
+  /** Heading level: 2 or 3 (default 2) */
+  level?: 2 | 3;
 }
 
-export function Section({ children, size = 'lg', id, className = '', grid = false }: SectionProps) {
+export function Section({ children, size, id, className = '', grid = false, heading, level = 2 }: SectionProps) {
+  const Tag = `h${level}` as const;
+
+  // When heading prop is used, apply the simpler token-based layout
+  if (heading !== undefined || size === undefined) {
+    const sectionClass = size ? `${PADDING[size]} ${className}` : `pt-[var(--space-8)] ${className}`.trim();
+    return (
+      <section id={id} className={sectionClass}>
+        {heading && (
+          <Tag className="font-monument text-[var(--text-h2)] leading-[var(--lh-heading)] tracking-[var(--ls-display)] mb-[var(--space-3)]">
+            {heading}
+          </Tag>
+        )}
+        <div className="max-w-[70ch]">{children}</div>
+      </section>
+    );
+  }
+
   return (
     <section id={id} className={`${PADDING[size]} ${className}`}>
       {grid ? (
