@@ -12,16 +12,16 @@ Source: Pentest 2026-03-07 (`docs/security/PENTEST_REPORT_2026-03-07.md`)
 
 | ID | Severity | Finding | Closed | Fix PR | Verified |
 |----|----------|---------|--------|--------|----------|
-| H-01 | HIGH | `/metrics` blocked in Caddyfile | 2026-03-07 | direct commit | pending retest |
-| H-02 | HIGH | `/healthz` returns status-only; detail behind auth | 2026-03-07 | direct commit | pending retest |
-| H-03 | HIGH | API root returns JSON 404, not HTML | 2026-03-07 | direct commit | pending retest |
-| M-01 | MEDIUM | HSTS max-age=31536000 in middleware + next.config | 2026-03-07 | direct commit | pending retest |
-| M-02 | MEDIUM | `unsafe-eval` removed from CSP script-src | 2026-03-07 | direct commit | pending retest |
-| M-03 | MEDIUM | APP_VERSION default changed from "dev" to "1.4.0" | 2026-03-07 | direct commit | pending retest |
-| L-01 | LOW | TLS 1.2+ enforced in Caddyfile | 2026-03-07 | direct commit | pending retest |
-| L-02 | LOW | Via + Server headers stripped in Caddyfile | 2026-03-07 | direct commit | pending retest |
-| L-03 | LOW | lap_session_id now httpOnly | 2026-03-07 | direct commit | pending retest |
-| L-04 | LOW | lap_persona deferred until explicit interaction | 2026-03-07 | direct commit | pending retest |
+| H-01 | HIGH | `/metrics` blocked in Caddyfile | 2026-03-07 | direct commit | verified |
+| H-02 | HIGH | `/healthz` returns status-only; detail behind auth | 2026-03-07 | direct commit | verified |
+| H-03 | HIGH | API root returns JSON, not HTML | 2026-03-07 | direct commit | verified |
+| M-01 | MEDIUM | HSTS max-age=31536000 in middleware + next.config | 2026-03-07 | direct commit | verified |
+| M-02 | MEDIUM | `unsafe-eval` removed from CSP script-src | 2026-03-07 | direct commit | verified |
+| M-03 | MEDIUM | APP_VERSION default "1.4.0" in Dockerfile + code | 2026-03-07 | direct commit | verified |
+| L-01 | LOW | TLS 1.2+ enforced in Caddyfile | 2026-03-07 | direct commit | verified |
+| L-02 | LOW | Via + Server headers stripped in Caddyfile | 2026-03-07 | direct commit | verified |
+| L-03 | LOW | lap_session_id now httpOnly | 2026-03-07 | direct commit | verified |
+| L-04 | LOW | lap_persona deferred until explicit interaction | 2026-03-07 | direct commit | verified |
 
 ## Status Legend
 
