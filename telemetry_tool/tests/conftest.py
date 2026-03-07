@@ -14,6 +14,21 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--update-snapshots",
+        action="store_true",
+        default=False,
+        help="Update snapshot baselines instead of comparing",
+    )
+
+
+@pytest.fixture
+def update_snapshots(request):
+    """Return True when --update-snapshots was passed on the CLI."""
+    return request.config.getoption("--update-snapshots")
+
+
 @pytest.fixture
 def test_db():
     """Create an in-memory SQLite database with full schema."""
