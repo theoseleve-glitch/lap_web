@@ -86,46 +86,74 @@ function authHeaders(): Record<string, string> {
   return headers;
 }
 
-async function uploadSession(file: File, metadata: {
-  driver_name: string;
-  session_type: string;
-  track_state: string;
-  lap_range?: string;
-  exclude_laps?: string;
-  kart_id?: string;
-  session_date?: string;
-}): Promise<UploadResponse> {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('driver_name', metadata.driver_name);
-  formData.append('session_type', metadata.session_type);
-  formData.append('track_state', metadata.track_state);
-  if (metadata.lap_range) formData.append('lap_range', metadata.lap_range);
-  if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
-  if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
-  if (metadata.session_date) formData.append('session_date', metadata.session_date);
+function uploadSession(
+  file: File,
+  metadata: {
+    driver_name: string;
+    session_type: string;
+    track_state: string;
+    lap_range?: string;
+    exclude_laps?: string;
+    kart_id?: string;
+    session_date?: string;
+  },
+  onProgress?: (pct: number) => void,
+  signal?: AbortSignal,
+): Promise<UploadResponse> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('driver_name', metadata.driver_name);
+    formData.append('session_type', metadata.session_type);
+    formData.append('track_state', metadata.track_state);
+    if (metadata.lap_range) formData.append('lap_range', metadata.lap_range);
+    if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
+    if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
+    if (metadata.session_date) formData.append('session_date', metadata.session_date);
 
-  const res = await fetch(`${BACKEND_URL}/api/v1/sessions/upload`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: formData,
-    credentials: 'include',
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${BACKEND_URL}/api/v1/sessions/upload`);
+    xhr.withCredentials = true;
+
+    const hdrs = authHeaders();
+    for (const [k, v] of Object.entries(hdrs)) xhr.setRequestHeader(k, v);
+
+    if (signal) {
+      signal.addEventListener('abort', () => {
+        xhr.abort();
+        reject(new Error('Upload cancelled'));
+      });
+    }
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      const contentType = xhr.getResponseHeader('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        reject(new Error(`Server returned non-JSON response (${xhr.status})`));
+        return;
+      }
+      const envelope = JSON.parse(xhr.responseText);
+      if (envelope.ok && envelope.data) {
+        resolve(envelope.data as UploadResponse);
+      } else {
+        reject(new ApiError(
+          envelope.error?.code ?? 'UPLOAD_FAILED',
+          envelope.error?.message ?? `Upload failed (${xhr.status})`,
+          xhr.status,
+          envelope.error?.details,
+        ));
+      }
+    };
+
+    xhr.onerror = () => reject(new Error('Network error during upload'));
+    xhr.onabort = () => reject(new Error('Upload cancelled'));
+    xhr.send(formData);
   });
-
-  const contentType = res.headers.get('content-type') || '';
-  if (!contentType.includes('application/json')) {
-    throw new Error(`Server returned non-JSON response (${res.status})`);
-  }
-
-  const envelope = await res.json();
-  if (envelope.ok && envelope.data) return envelope.data as UploadResponse;
-
-  throw new ApiError(
-    envelope.error?.code ?? 'UPLOAD_FAILED',
-    envelope.error?.message ?? `Upload failed (${res.status})`,
-    res.status,
-    envelope.error?.details,
-  );
 }
 
 async function fetchTrackLayout(jobId: string): Promise<TrackLayout> {
@@ -191,6 +219,7 @@ export default function UploadPage() {
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sseRef = useRef<EventSource | null>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   // Resume support: ?resume=<jobId>
   const resumeJobId = searchParams.get('resume');
@@ -218,6 +247,7 @@ export default function UploadPage() {
   const [trackLayout, setTrackLayout] = useState<TrackLayout | null>(null);
   const [isSubmittingCorners, setIsSubmittingCorners] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [uploadPct, setUploadPct] = useState(0);
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -386,6 +416,10 @@ export default function UploadPage() {
 
     setPageState('uploading');
     setErrorMessage('');
+    setUploadPct(0);
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
       const result = await uploadSession(file, {
@@ -396,12 +430,14 @@ export default function UploadPage() {
         exclude_laps: excludeLaps.trim() || undefined,
         kart_id: kartId || undefined,
         session_date: sessionDate || undefined,
-      });
+      }, setUploadPct, controller.signal);
 
       setJobId(result.job_id);
       setPageState('tracking');
       connectSSE(result.job_id);
     } catch (err) {
+      // Don't show error if user cancelled
+      if (err instanceof Error && err.message === 'Upload cancelled') return;
       setPageState('error');
       if (err instanceof ApiError) {
         setErrorMessage(err.message);
@@ -432,6 +468,26 @@ export default function UploadPage() {
       setIsSubmittingCorners(false);
     }
   }, [jobId, connectSSE]);
+
+  const handleCancel = useCallback(() => {
+    // Abort in-flight upload
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    // Close SSE stream
+    if (sseRef.current) {
+      sseRef.current.close();
+      sseRef.current = null;
+    }
+    setPageState('idle');
+    setProgressPct(0);
+    setUploadPct(0);
+    setStageName(null);
+    setSseStatus('');
+    setJobId(null);
+    setErrorMessage('');
+  }, []);
 
   const isFormDisabled = pageState !== 'idle' && pageState !== 'error';
   const showForm = pageState === 'idle' || pageState === 'error';
@@ -641,12 +697,20 @@ export default function UploadPage() {
       {showProgress && (
         <div className="max-w-2xl">
           {pageState === 'uploading' && (
-            <div className="mb-4 p-4 rounded-lg bg-pit-orange/5 border border-pit-orange/20" role="status">
-              <div className="flex items-center gap-3">
-                <div className="w-5 h-5 border-2 border-pit-orange/30 border-t-pit-orange rounded-full animate-spin" />
-                <div>
-                  <p className="text-chalk font-body text-sm">Uploading telemetry file...</p>
-                  <p className="text-steel text-xs font-body mt-0.5">Starting analysis pipeline.</p>
+            <div className="mb-4">
+              <div className="rounded-lg bg-concrete border border-steel/20 p-4 mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 border-2 border-pit-orange/30 border-t-pit-orange rounded-full animate-spin" />
+                    <span className="font-telemetry text-chalk text-sm">Uploading file...</span>
+                  </div>
+                  <span className="font-telemetry text-steel text-xs">{uploadPct}%</span>
+                </div>
+                <div className="h-2 rounded-full bg-steel/10 overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-pit-orange transition-all duration-300 ease-out"
+                    style={{ width: `${uploadPct}%` }}
+                  />
                 </div>
               </div>
             </div>
@@ -654,6 +718,13 @@ export default function UploadPage() {
           {(pageState === 'tracking' || pageState === 'resuming') && (
             <PipelineProgress pct={progressPct} stageName={stageName} status={sseStatus} />
           )}
+          <button
+            type="button"
+            onClick={handleCancel}
+            className="mt-2 px-4 py-2 text-sm font-body text-steel hover:text-safety-red border border-steel/20 hover:border-safety-red/30 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
         </div>
       )}
 
