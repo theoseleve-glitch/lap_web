@@ -2443,6 +2443,58 @@ def run_full_analysis(
         theo_metrics["confidence"] = _confidence.to_dict()
         summary["theoretical_metrics"] = theo_metrics
 
+    # ── 10b-iii: Unified optimal solver (feature flag) ──
+    _opt_mod = _import("optimal_solver")
+
+    def _compute_optimal_v2():
+        import os as _os
+        if _opt_mod is None:
+            return None
+        if _os.environ.get("OPTIMAL_V2", "0") not in ("1", "true", "yes"):
+            return None
+        if theoretical_lap is None:
+            return None
+
+        # Build OptimalCaps from whichever path produced the theoretical lap
+        caps = None
+
+        # Try percentile envelope caps (most common path)
+        if theo_mod is not None and resampled_laps:
+            try:
+                curv_arr = np.zeros(len(theoretical_lap))
+                if curvature_profile is not None and "curvature_1pm" in curvature_profile.columns:
+                    cp_dist = curvature_profile["distance_m"].values
+                    cp_curv = curvature_profile["curvature_1pm"].values
+                    theo_dist = theoretical_lap["distance_m"].values
+                    curv_arr = np.interp(theo_dist, cp_dist, cp_curv)
+
+                laps_list = [resampled_laps[k] for k in sorted(resampled_laps.keys())]
+                if hasattr(theo_mod, "caps_from_percentile_envelope"):
+                    caps = theo_mod.caps_from_percentile_envelope(
+                        laps_list, curv_arr,
+                        speed_percentile=speed_pct,
+                    )
+            except Exception as exc:
+                logger.debug("caps_from_percentile_envelope failed: %s", exc)
+
+        if caps is None:
+            return None
+
+        # Apply grip map override
+        if _grip_map is not None and not _grip_map.is_global_fallback and caps.mu is None:
+            mu_arr = np.array([
+                _grip_map.mu_at(float(d), "p95") for d in caps.distance_m
+            ])
+            caps.mu = mu_arr
+
+        return _opt_mod.solve_optimal_speed(caps)
+
+    _optimal_result, err = _safe_step("10b_optimal_v2", _compute_optimal_v2)
+    _record("10b_optimal_v2", _optimal_result, err)
+
+    if _optimal_result is not None:
+        summary["optimal_v2"] = _optimal_result.to_dict()
+
     summary["corner_coaching"] = _corner_coaching
     summary["delta_map"] = _delta_map
     summary["session_scalars"] = _session_scalars
