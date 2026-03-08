@@ -775,6 +775,138 @@ def _run_tests() -> None:
         raise AssertionError(f"{len(failed)} test(s) failed.")
 
 
+# ============================================================================
+# Endurance Analytics
+# ============================================================================
+
+
+def detect_traffic_losses(
+    lap_df,
+    reference_df,
+    corners: list,
+    accel_dip_threshold: float = -0.5,
+    max_dip_duration_s: float = 1.0,
+) -> list[dict]:
+    """Detect micro-lifts outside braking zones and delta spikes."""
+    losses = []
+    col_dist = "Distance (m)"
+    col_accel = "accel_long (m/s2)"
+    col_time = "Time (s)"
+
+    if col_accel not in lap_df.columns or col_dist not in lap_df.columns:
+        return losses
+
+    # Build braking zone ranges
+    braking_ranges = []
+    for c in corners:
+        entry = c.get("entry_s", 0)
+        exit_ = c.get("exit_s", 0)
+        braking_ranges.append((entry, exit_))
+
+    def _in_braking_zone(s):
+        return any(e <= s <= x for e, x in braking_ranges)
+
+    accel = lap_df[col_accel].values
+    dist = lap_df[col_dist].values
+    time_arr = lap_df[col_time].values if col_time in lap_df.columns else None
+
+    i = 0
+    while i < len(accel):
+        if accel[i] < accel_dip_threshold and not _in_braking_zone(dist[i]):
+            j = i
+            while j < len(accel) and accel[j] < accel_dip_threshold:
+                j += 1
+            if time_arr is not None:
+                duration_s = time_arr[min(j, len(time_arr) - 1)] - time_arr[i]
+            else:
+                duration_s = 0
+            if 0 < duration_s < max_dip_duration_s:
+                losses.append({
+                    "type": "micro_lift",
+                    "s_start": float(dist[i]),
+                    "s_end": float(dist[min(j, len(dist) - 1)]),
+                    "duration_s": float(duration_s),
+                    "peak_decel": float(np.min(accel[i:j])),
+                })
+            i = j
+        else:
+            i += 1
+
+    return losses
+
+
+def classify_risk_reward_passes(
+    corner_performances: list,
+    all_lap_dfs: list,
+    corners: list,
+    variance_threshold: float = 0.1,
+) -> list[dict]:
+    """Classify corners where attempted gains increase variance/risk."""
+    results = []
+    for perf in corner_performances:
+        if isinstance(perf, dict):
+            cid = perf.get("corner_id")
+            loss = perf.get("time_loss_s", 0)
+            std = perf.get("time_loss_std", 0)
+        else:
+            continue
+        if std > variance_threshold:
+            classification = "risky" if abs(loss) < std else "rewarding"
+            results.append({
+                "corner_id": cid,
+                "classification": classification,
+                "time_loss_s": loss,
+                "time_loss_std": std,
+            })
+    return results
+
+
+def generate_team_coaching(
+    stint_metrics: list,
+    driver_style_per_stint: list | None = None,
+) -> list[dict]:
+    """Identify weakest stint, generate up to 3 objectives."""
+    if not stint_metrics:
+        return []
+
+    sorted_stints = sorted(
+        stint_metrics, key=lambda s: s.get("mean_pace_s", 999), reverse=True
+    )
+    weakest = sorted_stints[0]
+
+    objectives = []
+    objectives.append({
+        "rank": 1,
+        "text": f"Improve pace consistency in stint {weakest.get('stint_id', '?')} "
+                f"(CV={weakest.get('consistency_cv', 0):.1%})",
+        "stint_id": weakest.get("stint_id"),
+        "metric": "consistency_cv",
+    })
+
+    if weakest.get("pace_fade_s", 0) > 0.3:
+        objectives.append({
+            "rank": 2,
+            "text": f"Reduce pace fade in stint {weakest.get('stint_id', '?')} "
+                    f"(fade={weakest.get('pace_fade_s', 0):.2f}s)",
+            "stint_id": weakest.get("stint_id"),
+            "metric": "pace_fade_s",
+        })
+
+    if len(stint_metrics) > 1:
+        best = sorted_stints[-1]
+        gap = weakest.get("mean_pace_s", 0) - best.get("mean_pace_s", 0)
+        if gap > 0.5:
+            objectives.append({
+                "rank": len(objectives) + 1,
+                "text": f"Close {gap:.2f}s gap between stint {weakest.get('stint_id')} "
+                        f"and stint {best.get('stint_id')}",
+                "stint_id": weakest.get("stint_id"),
+                "metric": "mean_pace_gap_s",
+            })
+
+    return objectives[:3]
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
