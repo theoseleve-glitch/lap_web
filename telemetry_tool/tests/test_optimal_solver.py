@@ -396,3 +396,88 @@ def test_caps_from_vehicle_model_with_bands():
     corner_cap_high = np.mean(caps_high.v_cap[90:110])
     assert corner_cap_low <= corner_cap_nom + 0.1
     assert corner_cap_nom <= corner_cap_high + 0.1
+
+
+def test_solve_with_bands_produces_interval():
+    """Bands solver produces low/high traces and lap time interval."""
+    from optimal_solver import OptimalCaps, solve_optimal_speed_with_bands
+
+    n = 100
+    dist = np.linspace(0, 500, n)
+    curvature = np.zeros(n)
+    curvature[40:60] = 0.03
+
+    def _make_caps(mu_val, ax_accel, ax_brake):
+        return OptimalCaps(
+            distance_m=dist,
+            v_cap=np.full(n, 40.0),
+            ax_accel=np.full(n, ax_accel),
+            ax_brake=np.full(n, ax_brake),
+            curvature=curvature,
+            mu=np.full(n, mu_val),
+            cap_source=["test"] * n,
+            solver_version="test",
+        )
+
+    caps = _make_caps(1.0, 5.0, 8.0)
+    caps_low = _make_caps(0.8, 4.0, 6.5)
+    caps_high = _make_caps(1.15, 6.0, 9.5)
+
+    result = solve_optimal_speed_with_bands(caps, caps_low, caps_high)
+
+    assert hasattr(result, "v_opt_low_mps")
+    assert hasattr(result, "v_opt_high_mps")
+    assert len(result.v_opt_low_mps) == n
+    assert len(result.v_opt_high_mps) == n
+
+    # Low bound should be <= nominal <= high bound (within tolerance)
+    assert np.all(result.v_opt_low_mps <= result.v_opt_mps + 0.5)
+    assert np.all(result.v_opt_mps <= result.v_opt_high_mps + 0.5)
+
+    # Lap time interval
+    assert result.lap_time_low_s <= result.lap_time_s + 0.1
+    assert result.lap_time_s <= result.lap_time_high_s + 0.1
+
+    d = result.to_dict()
+    assert "v_opt_low_mps" in d
+    assert "v_opt_high_mps" in d
+    assert "lap_time_low_s" in d
+    assert "lap_time_high_s" in d
+
+
+def test_bands_wider_with_worse_mu():
+    """Lower-quality mu (wider range) → wider bands."""
+    from optimal_solver import OptimalCaps, solve_optimal_speed_with_bands
+
+    n = 100
+    dist = np.linspace(0, 500, n)
+    curvature = np.full(n, 0.02)
+
+    def _make_caps(mu_val, ax_accel, ax_brake):
+        return OptimalCaps(
+            distance_m=dist,
+            v_cap=np.full(n, 40.0),
+            ax_accel=np.full(n, ax_accel),
+            ax_brake=np.full(n, ax_brake),
+            curvature=curvature,
+            mu=np.full(n, mu_val),
+            cap_source=["test"] * n,
+            solver_version="test",
+        )
+
+    # Narrow uncertainty
+    caps_n = _make_caps(1.0, 5.0, 8.0)
+    caps_n_lo = _make_caps(0.95, 4.8, 7.8)
+    caps_n_hi = _make_caps(1.05, 5.2, 8.2)
+    r_narrow = solve_optimal_speed_with_bands(caps_n, caps_n_lo, caps_n_hi)
+
+    # Wide uncertainty
+    caps_w = _make_caps(1.0, 5.0, 8.0)
+    caps_w_lo = _make_caps(0.7, 3.5, 5.5)
+    caps_w_hi = _make_caps(1.3, 6.5, 10.5)
+    r_wide = solve_optimal_speed_with_bands(caps_w, caps_w_lo, caps_w_hi)
+
+    # Wide bands should be wider
+    narrow_width = np.mean(r_narrow.v_opt_high_mps - r_narrow.v_opt_low_mps)
+    wide_width = np.mean(r_wide.v_opt_high_mps - r_wide.v_opt_low_mps)
+    assert wide_width > narrow_width

@@ -334,3 +334,60 @@ def compute_corner_saturation(
         ))
 
     return saturations
+
+
+@dataclass
+class OptimalResultWithBands(OptimalResult):
+    """OptimalResult extended with uncertainty bands."""
+    v_opt_low_mps: np.ndarray = field(default_factory=lambda: np.array([]))
+    v_opt_high_mps: np.ndarray = field(default_factory=lambda: np.array([]))
+    lap_time_low_s: float = 0.0
+    lap_time_high_s: float = 0.0
+
+    def to_dict(self) -> dict:
+        d = super().to_dict()
+        d["v_opt_low_mps"] = np.round(self.v_opt_low_mps, 4).tolist()
+        d["v_opt_high_mps"] = np.round(self.v_opt_high_mps, 4).tolist()
+        d["lap_time_low_s"] = round(self.lap_time_low_s, 4)
+        d["lap_time_high_s"] = round(self.lap_time_high_s, 4)
+        return d
+
+
+def solve_optimal_speed_with_bands(
+    caps: OptimalCaps,
+    caps_low: OptimalCaps,
+    caps_high: OptimalCaps,
+) -> OptimalResultWithBands:
+    """Run solver 3x to produce nominal + uncertainty bands.
+
+    Parameters
+    ----------
+    caps : nominal OptimalCaps
+    caps_low : pessimistic caps (lower mu, lower accel)
+    caps_high : optimistic caps (higher mu, higher accel)
+
+    Returns
+    -------
+    OptimalResultWithBands with v_opt_low_mps, v_opt_high_mps, lap_time interval.
+    """
+    r_nom = solve_optimal_speed(caps)
+    r_low = solve_optimal_speed(caps_low)
+    r_high = solve_optimal_speed(caps_high)
+
+    return OptimalResultWithBands(
+        distance_m=r_nom.distance_m,
+        v_opt_mps=r_nom.v_opt_mps,
+        accel_profile_mps2=r_nom.accel_profile_mps2,
+        lap_time_s=r_nom.lap_time_s,
+        cornering_limited=r_nom.cornering_limited,
+        accel_limited=r_nom.accel_limited,
+        brake_limited=r_nom.brake_limited,
+        limiting_factor=r_nom.limiting_factor,
+        cap_source=r_nom.cap_source,
+        solver_version=r_nom.solver_version,
+        n_iterations=r_nom.n_iterations,
+        v_opt_low_mps=r_low.v_opt_mps,
+        v_opt_high_mps=r_high.v_opt_mps,
+        lap_time_low_s=r_high.lap_time_s,   # faster lap = optimistic caps
+        lap_time_high_s=r_low.lap_time_s,    # slower lap = pessimistic caps
+    )
