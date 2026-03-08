@@ -67,6 +67,7 @@ class OptimalResult:
     cornering_limited: np.ndarray   # bool per point
     accel_limited: np.ndarray       # bool per point
     brake_limited: np.ndarray       # bool per point
+    limiting_factor: np.ndarray     # per-point string: "cornering"|"traction"|"braking"|"cap"
     cap_source: list[str]           # from OptimalCaps
     solver_version: str
     n_iterations: int
@@ -86,6 +87,8 @@ class OptimalResult:
                 if n > 0 else 0.0,
             "brake_limited_frac": round(float(self.brake_limited.mean()), 4)
                 if n > 0 else 0.0,
+            "limiting_factor": self.limiting_factor.tolist(),
+            "limiting_factor_summary": dict(Counter(self.limiting_factor.tolist())),
             "n_iterations": self.n_iterations,
         }
 
@@ -126,6 +129,7 @@ def solve_optimal_speed(caps: OptimalCaps) -> OptimalResult:
             cornering_limited=np.ones(n, dtype=bool),
             accel_limited=np.zeros(n, dtype=bool),
             brake_limited=np.zeros(n, dtype=bool),
+            limiting_factor=np.full(n, "cornering", dtype=object),
             cap_source=caps.cap_source,
             solver_version=caps.solver_version,
             n_iterations=0,
@@ -195,6 +199,16 @@ def solve_optimal_speed(caps: OptimalCaps) -> OptimalResult:
     accel_limited = np.abs(v_opt - v_fwd) < tol
     brake_limited = np.abs(v_opt - v_bwd) < tol
 
+    # Per-point limiting factor (priority: cornering > braking > traction > cap)
+    limiting_factor = np.full(n, "cap", dtype=object)
+    for i in range(n):
+        if cornering_limited[i]:
+            limiting_factor[i] = "cornering"
+        elif brake_limited[i]:
+            limiting_factor[i] = "braking"
+        elif accel_limited[i]:
+            limiting_factor[i] = "traction"
+
     # Lap time via trapezoidal integration
     inv_v = 1.0 / np.clip(v_opt, _MIN_SPEED_MPS, None)
     dt = 0.5 * (inv_v[:-1] + inv_v[1:]) * np.abs(ds)
@@ -217,6 +231,7 @@ def solve_optimal_speed(caps: OptimalCaps) -> OptimalResult:
         cornering_limited=cornering_limited,
         accel_limited=accel_limited,
         brake_limited=brake_limited,
+        limiting_factor=limiting_factor,
         cap_source=caps.cap_source,
         solver_version=caps.solver_version,
         n_iterations=n_iter,

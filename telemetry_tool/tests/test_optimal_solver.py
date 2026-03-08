@@ -40,6 +40,7 @@ def test_optimal_result_fields():
         cornering_limited=np.zeros(n, dtype=bool),
         accel_limited=np.zeros(n, dtype=bool),
         brake_limited=np.zeros(n, dtype=bool),
+        limiting_factor=np.full(n, "cap", dtype=object),
         cap_source=["envelope_p98"] * n,
         solver_version="optimal_v2_1.0",
         n_iterations=3,
@@ -236,3 +237,66 @@ def test_caps_from_kart_envelope_fallback():
         curvature_profile=None,
     )
     assert result is None
+
+
+def test_limiting_factor_cornering_dominated():
+    """Track with tight corners -> most points cornering-limited."""
+    from optimal_solver import OptimalCaps, solve_optimal_speed
+
+    n = 200
+    dist = np.linspace(0, 500, n)
+    curvature = np.full(n, 0.04)  # tight everywhere
+
+    caps = OptimalCaps(
+        distance_m=dist,
+        v_cap=np.full(n, 60.0),
+        ax_accel=np.full(n, 8.0),
+        ax_brake=np.full(n, 12.0),
+        curvature=curvature,
+        mu=np.full(n, 1.0),
+        cap_source=["test"] * n,
+        solver_version="test",
+    )
+    result = solve_optimal_speed(caps)
+
+    assert hasattr(result, "limiting_factor")
+    assert len(result.limiting_factor) == n
+
+    factor_counts = {}
+    for f in result.limiting_factor:
+        factor_counts[f] = factor_counts.get(f, 0) + 1
+    assert factor_counts.get("cornering", 0) > n * 0.5
+
+    d = result.to_dict()
+    assert "limiting_factor" in d
+    assert "limiting_factor_summary" in d
+
+
+def test_limiting_factor_straight_track():
+    """Straight track with a slow start -> traction/braking points present."""
+    from optimal_solver import OptimalCaps, solve_optimal_speed
+
+    n = 200
+    dist = np.linspace(0, 500, n)
+    # High v_cap but low accel so the solver can't reach v_cap everywhere.
+    # Start slow by putting a tight corner at the beginning.
+    v_cap = np.full(n, 60.0)
+    v_cap[0] = 5.0  # force slow start
+    caps = OptimalCaps(
+        distance_m=dist,
+        v_cap=v_cap,
+        ax_accel=np.full(n, 3.0),
+        ax_brake=np.full(n, 5.0),
+        curvature=np.zeros(n),
+        mu=None,
+        cap_source=["test"] * n,
+        solver_version="test",
+    )
+    result = solve_optimal_speed(caps)
+
+    # With a forced slow start and moderate accel, early points must be
+    # traction-limited (accelerating away from the slow start).
+    traction_or_brake = sum(
+        1 for f in result.limiting_factor if f in ("traction", "braking")
+    )
+    assert traction_or_brake > 0, "Should have some traction/braking limited points"
