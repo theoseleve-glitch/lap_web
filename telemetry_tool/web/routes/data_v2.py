@@ -23,6 +23,8 @@ Endpoints:
     GET    /api/v1/sessions/<id>/compare/sectors     - Sector/corner compare
     GET    /api/v1/sessions/<id>/report?format=html  - Report download
     PATCH  /api/v1/sessions/<id>                    - Update session fields
+    GET    /api/v1/sessions/<id>/grip-map           - Distance-binned grip map
+    GET    /api/v1/sessions/<id>/friction-envelope   - Speed-binned friction envelope
 """
 from __future__ import annotations
 
@@ -595,6 +597,21 @@ def get_scores(session_id: str):
             session_id,
             exc_info=True,
         )
+
+    # ── grip / friction availability ──
+    try:
+        analysis = models.get_analysis_json(conn, session_id)
+        if analysis and isinstance(analysis, dict):
+            scores["grip_map_available"] = analysis.get("grip_map") is not None
+            scores["friction_envelope_available"] = (
+                analysis.get("friction_envelope") is not None
+            )
+        else:
+            scores["grip_map_available"] = False
+            scores["friction_envelope_available"] = False
+    except Exception:
+        scores["grip_map_available"] = False
+        scores["friction_envelope_available"] = False
 
     return api_response(scores)
 
@@ -3458,6 +3475,67 @@ def get_distance_quality(session_id: str):
     return api_error(
         ErrorCode.NOT_FOUND,
         "No distance quality data available for this session",
+        status=404,
+    )
+
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/grip-map
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/grip-map", methods=["GET"])
+@_safe_api
+def get_grip_map(session_id: str):
+    """Return distance-binned grip map for a session.
+
+    Read from analysis_json['grip_map'].
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        gm = analysis.get("grip_map")
+        if gm:
+            return api_response(gm)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Grip map not available for this session",
+        status=404,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/friction-envelope
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/friction-envelope", methods=["GET"])
+@_safe_api
+def get_friction_envelope(session_id: str):
+    """Return speed-binned friction envelope for a session.
+
+    Read from analysis_json['friction_envelope'].
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        fe = analysis.get("friction_envelope")
+        if fe:
+            return api_response(fe)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Friction envelope not available for this session",
         status=404,
     )
 

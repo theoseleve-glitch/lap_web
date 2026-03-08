@@ -246,6 +246,16 @@ def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
     if cp and isinstance(cp, list):
         blob["corner_performances"] = cp
 
+    # Grip map (distance-binned friction coefficients)
+    gm = summary.get("grip_map")
+    if gm and isinstance(gm, dict):
+        blob["grip_map"] = gm
+
+    # Friction envelope (speed-binned combined G limits)
+    fe = summary.get("friction_envelope")
+    if fe and isinstance(fe, dict):
+        blob["friction_envelope"] = fe
+
     if blob:
         insert_analysis_json(conn, session_id, blob)
         logger.info("Persisted analysis_json (%d keys) for session %s",
