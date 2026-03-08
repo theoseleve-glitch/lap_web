@@ -1464,6 +1464,70 @@ def _run_tests() -> None:
         raise AssertionError(f"{len(failed)} test(s) failed.")
 
 
+def caps_from_percentile_envelope(
+    laps: list["pd.DataFrame"],
+    curvature: "np.ndarray",
+    speed_percentile: float = 98.0,
+    accel_percentile: float = 99.0,
+    smooth_window: int = 5,
+) -> "OptimalCaps":
+    """Build OptimalCaps from percentile envelope extraction.
+
+    Parameters
+    ----------
+    laps : list of lap DataFrames
+    curvature : curvature array [1/m] aligned with distance grid
+    speed_percentile : percentile for speed envelope
+    accel_percentile : percentile for accel envelope
+
+    Returns
+    -------
+    OptimalCaps ready for solve_optimal_speed().
+    """
+    from optimal_solver import OptimalCaps
+
+    # Speed envelope
+    env_df = compute_speed_percentile_envelope(
+        laps, percentile=speed_percentile, smooth_window=smooth_window,
+    )
+    distance = env_df["distance_m"].values
+    v_cap = env_df["v_env_mps"].values
+    n = len(distance)
+
+    # Ensure curvature aligns
+    if len(curvature) != n:
+        curv_aligned = np.interp(
+            distance,
+            np.linspace(distance[0], distance[-1], len(curvature)),
+            curvature,
+        )
+    else:
+        curv_aligned = curvature
+
+    # Accel envelope
+    accel_env = compute_accel_envelope(
+        laps, percentile=accel_percentile, smooth_window=smooth_window,
+    )
+    # Sample at each speed point
+    ax_accel = np.abs(accel_env.accel_func(v_cap))
+    ax_brake = np.abs(accel_env.brake_func(v_cap))
+
+    # Ensure positive
+    ax_accel = np.clip(ax_accel, 0.5, 20.0)
+    ax_brake = np.clip(ax_brake, 0.5, 30.0)
+
+    return OptimalCaps(
+        distance_m=distance,
+        v_cap=np.clip(v_cap, 1.0, 100.0),
+        ax_accel=ax_accel,
+        ax_brake=ax_brake,
+        curvature=np.abs(curv_aligned),
+        mu=None,  # percentile envelope already bakes in grip
+        cap_source=[f"envelope_p{int(speed_percentile)}"] * n,
+        solver_version="optimal_v2_1.0",
+    )
+
+
 # -- -
 
 # Entry point
