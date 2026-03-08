@@ -1195,6 +1195,92 @@ def _run_tests() -> None:
 # -- -
 
 
+# =============================================================================
+# Corner Taxonomy
+# =============================================================================
+
+def classify_corner_type(
+    corner: dict,
+    lap_df: pd.DataFrame,
+) -> str:
+    """
+    Classify a corner as hairpin/medium/fast/kink based on curvature, length, speed.
+
+    Returns one of: "hairpin", "medium", "fast", "kink", "chicane", "compound_member", "setup"
+    """
+    s_start = float(corner.get("s_start", 0))
+    s_end = float(corner.get("s_end", 0))
+    corner_length = s_end - s_start
+
+    if corner_length <= 0:
+        return "medium"
+
+    # Get speed and curvature within corner
+    dist_col = "Distance (m)"
+    speed_col = "Speed (m/s)"
+
+    if dist_col not in lap_df.columns or speed_col not in lap_df.columns:
+        return "medium"
+
+    dist = lap_df[dist_col].values.astype(float)
+    speed = lap_df[speed_col].values.astype(float)
+
+    mask = (dist >= s_start) & (dist <= s_end)
+    if mask.sum() < 3:
+        return "medium"
+
+    corner_speed = speed[mask]
+    finite = np.isfinite(corner_speed)
+    if finite.sum() == 0:
+        return "medium"
+
+    min_speed_mps = float(np.min(corner_speed[finite]))
+    min_speed_kmh = min_speed_mps * 3.6
+
+    # Get approach speed (before corner)
+    approach_mask = (dist >= max(0, s_start - 30)) & (dist < s_start)
+    if approach_mask.sum() > 0:
+        approach_speed = float(np.nanmean(speed[approach_mask]))
+    else:
+        approach_speed = float(np.nanmean(corner_speed[finite]))
+
+    speed_loss_pct = (1.0 - min_speed_mps / max(approach_speed, 1.0)) * 100 if approach_speed > 0 else 0
+
+    # Get mean yaw rate as curvature proxy
+    mean_yaw = 0.0
+    if "yaw_rate_dps" in lap_df.columns:
+        yaw = np.abs(lap_df["yaw_rate_dps"].values.astype(float))
+        corner_yaw = yaw[mask]
+        yaw_finite = np.isfinite(corner_yaw)
+        if yaw_finite.sum() > 0:
+            mean_yaw = float(np.nanmean(corner_yaw[yaw_finite]))
+
+    # Classification rules
+    # Kink: very short, very low speed loss, low curvature
+    if corner_length < 40 and speed_loss_pct < 12 and mean_yaw < 8:
+        return "kink"
+
+    # Hairpin: short, very slow, high curvature
+    if min_speed_kmh < 45 and corner_length < 80 and (mean_yaw > 15 or speed_loss_pct > 50):
+        return "hairpin"
+
+    # Fast: long, high speed, low curvature
+    if min_speed_kmh > 70 and corner_length > 60 and mean_yaw < 10:
+        return "fast"
+
+    # Medium: everything else
+    return "medium"
+
+
+def classify_corner_types(
+    corners: list[dict],
+    lap_df: pd.DataFrame,
+) -> None:
+    """Classify all corners in-place, adding 'corner_type' field."""
+    for corner in corners:
+        corner["corner_type"] = classify_corner_type(corner, lap_df)
+
+
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
