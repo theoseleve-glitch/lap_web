@@ -2619,3 +2619,74 @@ def compute_brake_yaw_coupling(
         coaching_action=coaching,
         confidence=confidence,
     )
+
+
+# =============================================================================
+
+# Compound Corner Metrics
+
+# =============================================================================
+
+
+@dataclass
+class CompoundCornerMetrics:
+    """Metrics for a compound corner sequence."""
+    compound_id: int
+    corner_ids: list[int]
+    blame_attribution: dict[int, float]    # corner_id -> fraction of total loss
+    leverage_corner_id: int                # earliest high-impact corner
+    coaching: str
+
+    def to_dict(self) -> dict:
+        return {
+            "compound_id": self.compound_id,
+            "corner_ids": self.corner_ids,
+            "blame_attribution": {k: round(v, 3) for k, v in self.blame_attribution.items()},
+            "leverage_corner_id": self.leverage_corner_id,
+            "coaching": self.coaching,
+        }
+
+
+def compute_compound_metrics(
+    compound: dict,
+    corner_performances: list[CornerPerformance],
+    corners: list[dict],
+) -> Optional[CompoundCornerMetrics]:
+    """Compute compound corner metrics with blame attribution."""
+    corner_ids = compound.get("corner_ids", [])
+    comp_id = compound.get("compound_id", 0)
+
+    if len(corner_ids) < 2:
+        return None
+
+    # Get performances for compound members
+    perf_map = {p.corner_id: p for p in corner_performances}
+    member_perfs = [perf_map[cid] for cid in corner_ids if cid in perf_map]
+
+    if not member_perfs:
+        return None
+
+    # Blame attribution: proportion of total time loss
+    total_loss = sum(p.time_loss_s for p in member_perfs)
+    if total_loss <= 0:
+        blame = {p.corner_id: 1.0 / len(member_perfs) for p in member_perfs}
+    else:
+        blame = {p.corner_id: p.time_loss_s / total_loss for p in member_perfs}
+
+    # Leverage corner: earliest with >= average blame
+    avg_blame = 1.0 / len(member_perfs)
+    leverage_id = corner_ids[0]
+    for cid in corner_ids:
+        if blame.get(cid, 0) >= avg_blame:
+            leverage_id = cid
+            break
+
+    coaching = f"Focus on C{leverage_id} first — fixing it improves the whole {len(corner_ids)}-corner sequence"
+
+    return CompoundCornerMetrics(
+        compound_id=comp_id,
+        corner_ids=corner_ids,
+        blame_attribution=blame,
+        leverage_corner_id=leverage_id,
+        coaching=coaching,
+    )

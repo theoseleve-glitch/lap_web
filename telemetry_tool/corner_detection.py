@@ -1281,6 +1281,55 @@ def classify_corner_types(
         corner["corner_type"] = classify_corner_type(corner, lap_df)
 
 
+def detect_compound_corners(
+    corners: list[dict],
+    lap_df: pd.DataFrame,
+    compound_gap_m: float = 50.0,
+) -> list[dict]:
+    """
+    Group consecutive corners with short gaps into compounds.
+
+    Marks each member corner with 'compound_id' and 'corner_type'='compound_member'.
+    Returns list of compound dicts: {compound_id, corner_ids}.
+    """
+    if len(corners) < 2:
+        return []
+
+    sorted_corners = sorted(corners, key=lambda c: c.get("s_start", 0))
+
+    compounds = []
+    current_group = [sorted_corners[0]]
+
+    for i in range(1, len(sorted_corners)):
+        prev = current_group[-1]
+        curr = sorted_corners[i]
+        gap = curr.get("s_start", 0) - prev.get("s_end", 0)
+
+        if gap <= compound_gap_m:
+            current_group.append(curr)
+        else:
+            if len(current_group) >= 2:
+                compounds.append(current_group)
+            current_group = [curr]
+
+    if len(current_group) >= 2:
+        compounds.append(current_group)
+
+    result = []
+    for comp_id, group in enumerate(compounds, start=1):
+        corner_ids = [c.get("corner_id", 0) for c in group]
+        for c in group:
+            c["compound_id"] = comp_id
+            if c.get("corner_type") not in ("setup",):
+                c["corner_type"] = "compound_member"
+        result.append({
+            "compound_id": comp_id,
+            "corner_ids": corner_ids,
+        })
+
+    return result
+
+
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
