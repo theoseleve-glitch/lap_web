@@ -1571,6 +1571,74 @@ def caps_from_percentile_envelope_with_bands(
 
 # -- -
 
+# 8. Cross-validation plausibility
+
+# -- -
+
+
+def split_laps_train_holdout(
+    laps: list[pd.DataFrame],
+    holdout_fraction: float = 0.3,
+) -> tuple[list[pd.DataFrame], list[pd.DataFrame], list[int]]:
+    """Deterministic train/holdout split for cross-validation.
+
+    Uses modular selection (every Nth lap) for determinism — no randomness.
+    Requires at least 4 laps; below that returns all laps as train.
+
+    Parameters
+    ----------
+    laps : list of DataFrames (distance-resampled)
+    holdout_fraction : target fraction for holdout (default 0.3)
+
+    Returns
+    -------
+    (train_laps, holdout_laps, holdout_indices)
+    """
+    n = len(laps)
+    if n < 4:
+        return laps, [], []
+
+    # Every Nth lap goes to holdout (deterministic)
+    step = max(2, round(1.0 / holdout_fraction))
+    holdout_indices = [i for i in range(n) if (i + 1) % step == 0]
+
+    # Ensure at least 1 holdout and at least 3 train
+    if not holdout_indices:
+        holdout_indices = [n - 1]
+    while n - len(holdout_indices) < 3 and len(holdout_indices) > 1:
+        holdout_indices.pop()
+
+    holdout_set = set(holdout_indices)
+    train = [laps[i] for i in range(n) if i not in holdout_set]
+    holdout = [laps[i] for i in holdout_indices]
+
+    return train, holdout, holdout_indices
+
+
+@dataclass
+class PlausibilityResult:
+    """Result of theoretical plausibility cross-validation."""
+    segment_approach_ratios: np.ndarray   # (n_holdout, n_segments)
+    mean_approach_ratio: float            # overall mean across holdout
+    best_approach_ratio: float            # best holdout lap's mean ratio
+    all_segments_exceeded: bool           # theoretical > all holdout everywhere
+    segments_never_approached: int        # segments where no holdout reaches threshold
+    plausibility_score: float             # 0-1 composite
+    overfit_suspected: bool               # True if score < 0.5
+
+    def to_dict(self) -> dict:
+        return {
+            "mean_approach_ratio": round(self.mean_approach_ratio, 4),
+            "best_approach_ratio": round(self.best_approach_ratio, 4),
+            "all_segments_exceeded": self.all_segments_exceeded,
+            "segments_never_approached": self.segments_never_approached,
+            "plausibility_score": round(self.plausibility_score, 4),
+            "overfit_suspected": self.overfit_suspected,
+        }
+
+
+# -- -
+
 # Entry point
 
 # -- -
