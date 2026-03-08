@@ -240,3 +240,121 @@ def repair_distance_isotonic(distance: np.ndarray) -> np.ndarray:
     ir = IsotonicRegression(increasing=True)
     indices = np.arange(len(d), dtype=np.float64)
     return ir.fit_transform(indices, d)
+
+
+def run_distance_integrity(
+    lap_dict: dict[int, "pd.DataFrame"],
+    *,
+    dist_col: str = "Distance (m)",
+    config: Optional[dict] = None,
+) -> tuple[dict[int, "pd.DataFrame"], DistanceQuality]:
+    """Full distance integrity check: assess -> repair -> re-assess -> gate.
+
+    Parameters
+    ----------
+    lap_dict : {lap_number: DataFrame} with distance column.
+    dist_col : Name of distance column.
+    config : Optional overrides for thresholds.
+
+    Returns
+    -------
+    (repaired_lap_dict, DistanceQuality)
+    """
+    import pandas as pd
+
+    cfg = config or {}
+    mono_repair = cfg.get("mono_ratio_repair", MONO_RATIO_REPAIR)
+    jump_repair = cfg.get("jump_count_repair", JUMP_COUNT_REPAIR)
+    mono_gate = cfg.get("mono_ratio_gate", MONO_RATIO_GATE)
+
+    # Phase 1: Assess
+    quality = assess_all_laps(lap_dict, dist_col=dist_col)
+
+    # Identify laps needing repair
+    needs_repair = []
+    for m_dict in quality.metrics:
+        if m_dict["monotonic_ratio"] < mono_repair or m_dict["jump_count"] > jump_repair:
+            needs_repair.append(m_dict["lap_number"])
+
+    if not needs_repair:
+        quality.status = "ok"
+        quality.gate_advanced = False
+        quality.message = "Distance data is clean across all laps."
+        return lap_dict, quality
+
+    # Phase 2: Repair
+    repaired_dict = dict(lap_dict)  # shallow copy
+    repair_method = None
+    actually_repaired = []
+    still_degraded = []
+
+    for lap_num in needs_repair:
+        df = lap_dict[lap_num]
+
+        # Try XY rebuild first
+        rebuilt = rebuild_distance_from_xy(df, dist_col=dist_col)
+        if rebuilt is not None:
+            repaired_dict[lap_num] = rebuilt
+            repair_method = "xy_rebuild"
+            actually_repaired.append(lap_num)
+            continue
+
+        # Fallback: isotonic regression
+        if dist_col in df.columns:
+            d = pd.to_numeric(df[dist_col], errors="coerce").values.astype(np.float64)
+            repaired_d = repair_distance_isotonic(d)
+            new_df = df.copy()
+            new_df[dist_col] = repaired_d
+            repaired_dict[lap_num] = new_df
+            if repair_method is None:
+                repair_method = "isotonic_regression"
+            actually_repaired.append(lap_num)
+        else:
+            still_degraded.append(lap_num)
+
+    # Phase 3: Re-assess repaired laps
+    re_quality = assess_all_laps(repaired_dict, dist_col=dist_col)
+
+    for m_dict in re_quality.metrics:
+        if m_dict["lap_number"] in actually_repaired:
+            # Gate fails if:
+            #   - still has backward jumps, OR
+            #   - distance is degenerate (zero length, e.g. all-zeros)
+            # Isotonic repair may produce plateaus (zero diffs) giving
+            # low monotonic_ratio but jump_count==0, which is acceptable
+            # as long as the lap has non-zero length.
+            ratio_bad = m_dict["monotonic_ratio"] < mono_gate
+            has_jumps = m_dict["jump_count"] > 0
+            no_distance = m_dict["lap_length"] < 1e-6
+            if (ratio_bad and has_jumps) or no_distance:
+                if m_dict["lap_number"] not in still_degraded:
+                    still_degraded.append(m_dict["lap_number"])
+                    actually_repaired.remove(m_dict["lap_number"])
+
+    # Phase 4: Determine final status
+    gate = len(still_degraded) > 0
+    if still_degraded:
+        status = "degraded"
+        msg = (
+            f"Distance repair failed for laps {still_degraded}. "
+            "Advanced analysis (theoretical, coaching) disabled."
+        )
+    elif actually_repaired:
+        status = "repaired"
+        msg = (
+            f"Distance repaired for laps {actually_repaired} "
+            f"via {repair_method}."
+        )
+    else:
+        status = "ok"
+        msg = "Distance data is clean across all laps."
+
+    return repaired_dict, DistanceQuality(
+        status=status,
+        repair_method=repair_method,
+        laps_repaired=actually_repaired,
+        laps_degraded=still_degraded,
+        metrics=re_quality.metrics,
+        gate_advanced=gate,
+        message=msg,
+    )

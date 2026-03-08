@@ -175,3 +175,69 @@ def test_isotonic_preserves_monotonic():
     d = np.linspace(0, 500, 100)
     result = repair_distance_isotonic(d)
     np.testing.assert_allclose(result, d, atol=1e-6)
+
+
+def test_run_integrity_ok_laps():
+    """Clean laps -> status='ok', no repair, no gate."""
+    from distance_integrity import run_distance_integrity
+
+    laps = _make_lap_dict({
+        1: np.linspace(0, 500, 200),
+        2: np.linspace(0, 498, 200),
+    })
+    result_laps, dq = run_distance_integrity(laps)
+    assert dq.status == "ok"
+    assert dq.gate_advanced is False
+    assert dq.repair_method is None
+    assert len(result_laps) == 2
+
+
+def test_run_integrity_repairs_with_xy():
+    """Non-monotonic lap with XY columns -> repaired via xy_rebuild."""
+    from distance_integrity import run_distance_integrity
+
+    d_bad = np.linspace(0, 500, 100)
+    for i in range(10, 100, 8):
+        d_bad[i] = d_bad[i] - 80  # severe backward jumps
+    x = np.linspace(0, 500, 100)
+    y = np.zeros(100)
+    df = pd.DataFrame({"Distance (m)": d_bad, "x": x, "y": y, "Speed (m/s)": np.ones(100)})
+    laps = {1: pd.DataFrame({"Distance (m)": np.linspace(0, 500, 100), "x": x, "y": y, "Speed (m/s)": np.ones(100)}), 2: df}
+
+    result_laps, dq = run_distance_integrity(laps)
+    assert dq.status == "repaired"
+    assert dq.repair_method == "xy_rebuild"
+    assert 2 in dq.laps_repaired
+    # Repaired lap should now be monotonic
+    repaired_d = result_laps[2]["Distance (m)"].values
+    assert np.all(np.diff(repaired_d) >= 0)
+
+
+def test_run_integrity_isotonic_fallback():
+    """Non-monotonic lap without XY -> repaired via isotonic_regression."""
+    from distance_integrity import run_distance_integrity
+
+    d_bad = np.linspace(0, 500, 100)
+    for i in range(10, 100, 8):
+        d_bad[i] = d_bad[i] - 80
+    df = pd.DataFrame({"Distance (m)": d_bad, "Speed (m/s)": np.ones(100)})
+    laps = {1: pd.DataFrame({"Distance (m)": np.linspace(0, 500, 100), "Speed (m/s)": np.ones(100)}), 2: df}
+
+    result_laps, dq = run_distance_integrity(laps)
+    assert dq.status == "repaired"
+    assert dq.repair_method == "isotonic_regression"
+    assert 2 in dq.laps_repaired
+
+
+def test_run_integrity_gate_on_severe_damage():
+    """Distance so corrupted that even repair fails -> gate_advanced=True."""
+    from distance_integrity import run_distance_integrity
+
+    # All-zeros distance can't be repaired without coordinates
+    d_bad = np.zeros(100)
+    df = pd.DataFrame({"Distance (m)": d_bad, "Speed (m/s)": np.ones(100)})
+    laps = {1: df}
+
+    result_laps, dq = run_distance_integrity(laps)
+    assert dq.gate_advanced is True
+    assert dq.status == "degraded"
