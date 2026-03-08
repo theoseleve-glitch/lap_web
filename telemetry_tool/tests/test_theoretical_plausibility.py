@@ -43,3 +43,80 @@ def test_split_few_laps_skips():
     assert len(train) == 3
     assert len(hold) == 0
     assert idx == []
+
+
+def test_healthy_envelope_passes():
+    """8 realistic laps with achievable theoretical → no overfit flag."""
+    from theoretical_engine import (
+        build_theoretical_lap, split_laps_train_holdout,
+        compute_theoretical_plausibility,
+    )
+
+    rng = np.random.default_rng(42)
+    n_points = 200
+    laps = []
+    for i in range(8):
+        dist = np.linspace(0, 500, n_points)
+        # All laps centered around 20 m/s with small variation
+        speed = np.full(n_points, 20.0) + rng.normal(0, 0.8, n_points)
+        speed = np.clip(speed, 5.0, 40.0)
+        laps.append(pd.DataFrame({
+            "distance_m": dist,
+            "speed_mps": speed,
+            "accel_long_mps2": rng.normal(0, 1.0, n_points),
+        }))
+
+    train, holdout, _ = split_laps_train_holdout(laps)
+    theo = build_theoretical_lap(laps, n_points=n_points)
+
+    result = compute_theoretical_plausibility(theo, holdout)
+
+    assert not result.overfit_suspected
+    assert result.plausibility_score > 0.5
+    assert result.best_approach_ratio > 0.80
+    assert result.segments_never_approached < 5  # most segments reachable
+
+    d = result.to_dict()
+    assert "plausibility_score" in d
+    assert "overfit_suspected" in d
+
+
+def test_outlier_inflates_envelope():
+    """7 normal laps + 1 outlier at 2x speed → overfit detected."""
+    from theoretical_engine import (
+        build_theoretical_lap, split_laps_train_holdout,
+        compute_theoretical_plausibility,
+    )
+
+    rng = np.random.default_rng(42)
+    n_points = 200
+    laps = []
+    for i in range(7):
+        dist = np.linspace(0, 500, n_points)
+        speed = np.full(n_points, 20.0) + rng.normal(0, 0.5, n_points)
+        speed = np.clip(speed, 5.0, 40.0)
+        laps.append(pd.DataFrame({
+            "distance_m": dist,
+            "speed_mps": speed,
+            "accel_long_mps2": rng.normal(0, 1.0, n_points),
+        }))
+
+    # Outlier lap: 2x the normal speed
+    dist = np.linspace(0, 500, n_points)
+    speed = np.full(n_points, 40.0) + rng.normal(0, 0.5, n_points)
+    speed = np.clip(speed, 5.0, 80.0)
+    laps.append(pd.DataFrame({
+        "distance_m": dist,
+        "speed_mps": speed,
+        "accel_long_mps2": rng.normal(0, 1.0, n_points),
+    }))
+
+    _, holdout, _ = split_laps_train_holdout(laps)
+    # Build theoretical on ALL laps (including outlier) — this inflates envelope
+    theo = build_theoretical_lap(laps, n_points=n_points)
+
+    result = compute_theoretical_plausibility(theo, holdout)
+
+    assert result.overfit_suspected
+    assert result.plausibility_score < 0.5
+    assert result.best_approach_ratio < 0.85

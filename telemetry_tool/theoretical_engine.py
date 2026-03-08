@@ -1637,6 +1637,105 @@ class PlausibilityResult:
         }
 
 
+def compute_theoretical_plausibility(
+    theoretical_df: pd.DataFrame,
+    holdout_laps: list[pd.DataFrame],
+    n_segments: int = 10,
+    approach_threshold: float = 0.85,
+) -> PlausibilityResult:
+    """Score how plausible the theoretical lap is using holdout laps.
+
+    Splits the track into equal-distance segments and checks whether
+    holdout laps can approach the theoretical speed in each segment.
+
+    Parameters
+    ----------
+    theoretical_df : DataFrame with distance_m and v_env_mps columns
+    holdout_laps : list of DataFrames with distance_m and speed_mps
+    n_segments : number of equal-distance segments to check
+    approach_threshold : ratio below which a segment is "never approached"
+
+    Returns
+    -------
+    PlausibilityResult with overfit_suspected flag.
+    """
+    if not holdout_laps or theoretical_df is None or len(theoretical_df) == 0:
+        return PlausibilityResult(
+            segment_approach_ratios=np.array([]),
+            mean_approach_ratio=1.0,
+            best_approach_ratio=1.0,
+            all_segments_exceeded=False,
+            segments_never_approached=0,
+            plausibility_score=1.0,
+            overfit_suspected=False,
+        )
+
+    theo_dist = theoretical_df["distance_m"].values
+    theo_speed = theoretical_df["v_env_mps"].values
+    d_min, d_max = theo_dist[0], theo_dist[-1]
+    seg_edges = np.linspace(d_min, d_max, n_segments + 1)
+
+    # Compute mean theoretical speed per segment
+    theo_seg_speeds = np.zeros(n_segments)
+    for s in range(n_segments):
+        mask = (theo_dist >= seg_edges[s]) & (theo_dist < seg_edges[s + 1])
+        if s == n_segments - 1:
+            mask = (theo_dist >= seg_edges[s]) & (theo_dist <= seg_edges[s + 1])
+        if mask.any():
+            theo_seg_speeds[s] = np.mean(theo_speed[mask])
+        else:
+            theo_seg_speeds[s] = np.mean(theo_speed)
+
+    # Compute approach ratios for each holdout lap
+    n_holdout = len(holdout_laps)
+    ratios = np.zeros((n_holdout, n_segments))
+
+    for h, lap in enumerate(holdout_laps):
+        lap_dist = lap["distance_m"].values
+        lap_speed = lap["speed_mps"].values
+
+        # Normalize lap distance to start at 0
+        if len(lap_dist) > 0 and lap_dist[0] > 1.0:
+            lap_dist = lap_dist - lap_dist[0]
+
+        for s in range(n_segments):
+            mask = (lap_dist >= seg_edges[s]) & (lap_dist < seg_edges[s + 1])
+            if s == n_segments - 1:
+                mask = (lap_dist >= seg_edges[s]) & (lap_dist <= seg_edges[s + 1])
+            if mask.any() and theo_seg_speeds[s] > 0:
+                ratios[h, s] = np.mean(lap_speed[mask]) / theo_seg_speeds[s]
+            else:
+                ratios[h, s] = 1.0  # no data = assume OK
+
+    # Aggregate metrics
+    mean_approach = float(np.mean(ratios))
+    best_approach = float(np.max(np.mean(ratios, axis=1))) if n_holdout > 0 else 1.0
+
+    # Best holdout per segment
+    best_per_seg = np.max(ratios, axis=0) if n_holdout > 0 else np.ones(n_segments)
+    all_exceeded = bool(np.all(best_per_seg < 1.0))
+    never_approached = int(np.sum(best_per_seg < approach_threshold))
+
+    # Plausibility score
+    score = 1.0
+    score -= (never_approached / n_segments) * 0.5
+    if all_exceeded:
+        score -= 0.3
+    if best_approach < 0.80:
+        score -= 0.2
+    score = max(0.0, score)
+
+    return PlausibilityResult(
+        segment_approach_ratios=ratios,
+        mean_approach_ratio=mean_approach,
+        best_approach_ratio=best_approach,
+        all_segments_exceeded=all_exceeded,
+        segments_never_approached=never_approached,
+        plausibility_score=score,
+        overfit_suspected=score < 0.5,
+    )
+
+
 # -- -
 
 # Entry point
