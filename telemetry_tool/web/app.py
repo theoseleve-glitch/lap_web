@@ -531,6 +531,10 @@ def create_app(config: Config | None = None) -> Flask:
         if request.path.startswith("/static/"):
             response.cache_control.max_age = 86400
             response.cache_control.public = True
+        # Add API version header for client diagnostics
+        if request.path.startswith("/api/"):
+            from pipeline_version import PIPELINE_VERSION
+            response.headers["X-API-Version"] = PIPELINE_VERSION
         return response
 
     # Guard: ensure /api/* never returns HTML to JSON consumers.

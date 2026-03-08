@@ -34,7 +34,7 @@ import math
 from functools import wraps
 from pathlib import Path
 
-from flask import Blueprint, request, send_file
+from flask import Blueprint, g, request, send_file
 
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
@@ -886,7 +886,15 @@ def get_corners(session_id: str):
 @bp.route("/sessions/<session_id>", methods=["DELETE"])
 @_safe_api
 def delete_session(session_id: str):
-    """Delete a session and all related data."""
+    """Delete a session and all related data.
+
+    Requires at least 'member' role in the workspace (viewers cannot delete).
+    """
+    # RBAC: viewers should not be able to delete sessions.
+    workspace_role = getattr(g, "workspace_role", None)
+    if workspace_role == "viewer":
+        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions to delete sessions", status=403)
+
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
@@ -1374,7 +1382,13 @@ def update_session(session_id: str):
     driver_name, driver_id, track_id, kart_id, session_date,
     display_name, notes.  Unknown fields are silently ignored.
     Validation is performed before any writes.
+
+    Requires at least 'member' role (viewers cannot edit sessions).
     """
+    workspace_role = getattr(g, "workspace_role", None)
+    if workspace_role == "viewer":
+        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions to update sessions", status=403)
+
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
