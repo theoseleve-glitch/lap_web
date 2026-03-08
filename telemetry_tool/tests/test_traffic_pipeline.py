@@ -59,3 +59,53 @@ def test_pipeline_has_traffic_and_inclusion(tmp_path):
     inclusion = summary["lap_inclusion"]
     assert "learning_laps" in inclusion
     assert "display_laps" in inclusion
+
+
+def test_theoretical_not_slower_with_traffic(tmp_path):
+    """Envelope from learning set >= envelope from all laps at every point.
+
+    When traffic laps are excluded, the theoretical should never be slower
+    than when they're included.
+    """
+    import theoretical_engine
+
+    rng = np.random.default_rng(42)
+    n = 200
+    base_speed = 25.0
+
+    # 5 clean laps
+    laps = []
+    for i in range(5):
+        laps.append(pd.DataFrame({
+            "distance_m": np.linspace(0, 500, n),
+            "speed_mps": np.full(n, base_speed) + rng.normal(0, 0.3, n),
+        }))
+
+    # Add 2 traffic-contaminated laps (speed drops on 100-300m)
+    for i in range(2):
+        df = pd.DataFrame({
+            "distance_m": np.linspace(0, 500, n),
+            "speed_mps": np.full(n, base_speed) + rng.normal(0, 0.3, n),
+        })
+        dist = df["distance_m"].values
+        mask = (dist >= 100) & (dist <= 300)
+        df.loc[mask, "speed_mps"] = df.loc[mask, "speed_mps"] * 0.6
+        laps.append(df)
+
+    # Envelope with all laps (contaminated)
+    env_all = theoretical_engine.compute_speed_percentile_envelope(
+        laps, percentile=90.0,
+    )
+
+    # Envelope with only clean laps (first 5)
+    env_clean = theoretical_engine.compute_speed_percentile_envelope(
+        laps[:5], percentile=90.0,
+    )
+
+    # Clean envelope should be >= contaminated at every point
+    # (within smoothing tolerance)
+    diff = env_clean["v_env_mps"].values - env_all["v_env_mps"].values
+    assert np.all(diff >= -0.5), (
+        f"Clean envelope should not be slower than contaminated. "
+        f"Min diff: {diff.min():.2f} m/s"
+    )
