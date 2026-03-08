@@ -1989,6 +1989,37 @@ def run_full_analysis(
         summary["lap_inclusion"] = None
 
     # ====================================================================
+    # STEP 09h -- Condition clustering
+    # ====================================================================
+
+    _cc_mod = _import("condition_clustering")
+    _clustering_result = None
+
+    def _condition_clustering():
+        if _cc_mod is None or not resampled_laps:
+            return None
+        _traffic_scores = {}
+        if _traffic_result is not None:
+            _traffic_scores = _traffic_result.per_lap_score
+        _learning = None
+        if _inclusion_policy is not None:
+            _learning = _inclusion_policy.learning_laps
+        return _cc_mod.cluster_laps(
+            resampled_laps, lap_times, _traffic_scores,
+            learning_laps=_learning,
+        )
+
+    _clustering_raw, err = _safe_step("09h_condition_clustering", _condition_clustering)
+    _record("09h_condition_clustering", _clustering_raw, err)
+    _fire_progress("09h_condition_clustering")
+
+    if _clustering_raw is not None:
+        _clustering_result = _clustering_raw
+        summary["clustering"] = _clustering_result.to_dict()
+    else:
+        summary["clustering"] = None
+
+    # ====================================================================
 
     # STEP 10 -- Theoretical lap (cascading: physics -> percentile)
 
