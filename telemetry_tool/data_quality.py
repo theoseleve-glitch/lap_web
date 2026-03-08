@@ -139,6 +139,7 @@ class DataQualityReport:
     recommended_speed_percentile: float
     recommended_accel_percentile: float
     warnings:                     list[str] = field(default_factory=list)
+    fusion_confidence:            float = -1.0  # -1 = not computed
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -152,6 +153,7 @@ class DataQualityReport:
             "recommended_speed_percentile": round(self.recommended_speed_percentile, 1),
             "recommended_accel_percentile": round(self.recommended_accel_percentile, 1),
             "warnings":                     list(self.warnings),
+            "fusion_confidence":            round(self.fusion_confidence, 3),
         }
 
     @property

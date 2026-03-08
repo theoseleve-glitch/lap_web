@@ -115,3 +115,25 @@ def test_slope_correction_downhill():
     result = compute_longitudinal_accel(df, correct_for_slope=True)
     accel = result["accel_long_mps2"].values
     assert np.nanmean(np.abs(accel)) < 0.3
+
+
+def test_data_quality_has_fusion_confidence():
+    """DataQualityReport includes fusion_confidence field."""
+    from data_quality import DataQualityReport
+
+    report = DataQualityReport(
+        n_laps=5,
+        gps_quality=0.9,
+        accel_quality=0.8,
+        yaw_quality=0.7,
+        sample_rate_hz=25.0,
+        lap_time_consistency=0.95,
+        overall_confidence=0.85,
+        recommended_speed_percentile=90.0,
+        recommended_accel_percentile=91.0,
+        fusion_confidence=0.75,
+    )
+    assert report.fusion_confidence == 0.75
+    d = report.to_dict()
+    assert "fusion_confidence" in d
+    assert d["fusion_confidence"] == 0.75
