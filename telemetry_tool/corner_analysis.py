@@ -2067,3 +2067,117 @@ def compute_event_stability(
         result[cid] = stability
 
     return result
+
+
+def detect_corner_mistakes(
+    timeline: CornerTimeline,
+    lap_df: pd.DataFrame,
+    corner: dict,
+) -> list[dict]:
+    """
+    Classify mistakes from a CornerTimeline.
+
+    Returns a list of mistake dicts, each with keys:
+        type     — one of 6 classifier names
+        severity — float in [0, 1]
+        evidence — dict with supporting data
+    """
+    mistakes: list[dict] = []
+
+    mrp_ev = timeline.get_event("MRP")
+    eob_ev = timeline.get_event("EOB")
+    min_speed_ev = timeline.get_event("MIN_SPEED")
+    throttle_ev = timeline.get_event("THROTTLE_ON")
+
+    # --- 1. no_clear_mrp ---
+    if mrp_ev is None or not mrp_ev.available or mrp_ev.confidence < 0.3:
+        mistakes.append({
+            "type": "no_clear_mrp",
+            "severity": 0.5,
+            "evidence": {
+                "mrp_confidence": mrp_ev.confidence if mrp_ev else 0.0,
+                "mrp_available": mrp_ev.available if mrp_ev else False,
+            },
+        })
+
+    # --- 2. mrp_plateau ---
+    if (mrp_ev is not None and mrp_ev.available
+            and timeline.mrp_strength < 1.0):
+        mistakes.append({
+            "type": "mrp_plateau",
+            "severity": round(1.0 - timeline.mrp_strength, 4),
+            "evidence": {"mrp_strength": timeline.mrp_strength},
+        })
+
+    # --- 3. mrp_drift ---
+    mrp_std = timeline.event_stability.get("MRP", 0.0)
+    if mrp_std > 10.0:
+        mistakes.append({
+            "type": "mrp_drift",
+            "severity": round(min(1.0, mrp_std / 20.0), 4),
+            "evidence": {"mrp_stability_std_m": mrp_std},
+        })
+
+    # --- 4. mrp_after_apex ---
+    if (mrp_ev is not None and mrp_ev.available
+            and min_speed_ev is not None and min_speed_ev.available):
+        delta = mrp_ev.s_position - min_speed_ev.s_position
+        if delta > 5.0:
+            mistakes.append({
+                "type": "mrp_after_apex",
+                "severity": round(min(1.0, delta / 15.0), 4),
+                "evidence": {
+                    "mrp_s": mrp_ev.s_position,
+                    "min_speed_s": min_speed_ev.s_position,
+                    "delta_m": round(delta, 2),
+                },
+            })
+
+    # --- 5. power_before_rotation ---
+    if (throttle_ev is not None and throttle_ev.available
+            and mrp_ev is not None and mrp_ev.available
+            and throttle_ev.s_position < mrp_ev.s_position):
+        yaw_ratio = 0.0
+        if _COL_YAW in lap_df.columns:
+            dist_arr = _resolve_dist(lap_df)
+            yaw_arr = np.abs(lap_df[_COL_YAW].to_numpy(dtype=float))
+            peak_yaw = float(np.nanmax(yaw_arr))
+            if peak_yaw > 0:
+                yaw_at_throttle = float(np.interp(
+                    throttle_ev.s_position, dist_arr, yaw_arr,
+                ))
+                yaw_ratio = yaw_at_throttle / peak_yaw
+
+        if yaw_ratio > 0.5:
+            mistakes.append({
+                "type": "power_before_rotation",
+                "severity": round(min(1.0, yaw_ratio * 0.8), 4),
+                "evidence": {
+                    "throttle_on_s": throttle_ev.s_position,
+                    "mrp_s": mrp_ev.s_position,
+                    "yaw_ratio": round(yaw_ratio, 4),
+                },
+            })
+
+    # --- 6. rotation_too_late ---
+    if (mrp_ev is not None and mrp_ev.available
+            and eob_ev is not None and eob_ev.available):
+        s_start = float(corner.get("s_start", 0.0))
+        s_end = float(corner.get("s_end", 0.0))
+        corner_len = s_end - s_start
+        if corner_len > 0:
+            delta = mrp_ev.s_position - eob_ev.s_position
+            delta_pct = delta / corner_len
+            if delta_pct > 0.3:
+                mistakes.append({
+                    "type": "rotation_too_late",
+                    "severity": round(min(1.0, delta_pct / 0.5), 4),
+                    "evidence": {
+                        "mrp_s": mrp_ev.s_position,
+                        "eob_s": eob_ev.s_position,
+                        "delta_pct": round(delta_pct, 4),
+                        "corner_length_m": round(corner_len, 2),
+                    },
+                })
+
+    return mistakes

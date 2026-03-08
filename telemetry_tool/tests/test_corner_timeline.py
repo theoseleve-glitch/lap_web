@@ -331,3 +331,71 @@ class TestEventStability:
         df = _make_braking_lap_df()
         stability = compute_event_stability(corners, [df, df])
         assert stability == {} or 1 not in stability or stability[1] == {}
+
+
+# ── detect_corner_mistakes tests ───────────────────────────────────────────
+
+from telemetry_tool.corner_analysis import detect_corner_mistakes
+
+
+class TestMistakeDetection:
+    def test_power_before_rotation(self):
+        """THROTTLE_ON before MRP with high yaw → mistake detected."""
+        events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 110.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 160.0, 0.8, "yaw_rate", 12.0, True),
+            CornerEvent("MIN_SPEED", 130.0, 1.0, "speed", 15.0, True),
+            CornerEvent("THROTTLE_ON", 140.0, 0.9, "accel_long", 0.5, True),
+            CornerEvent("TRACK_OUT", 200.0, 0.5, "position", 0.0, True),
+        ]
+        tl = CornerTimeline(
+            corner_id=1, events=events,
+            segment_losses_s={}, segment_confidences={},
+            mistakes=[], mrp_strength=12.0,
+            mrp_stability_std_m=0.0, event_stability={},
+        )
+
+        n = 300
+        dist = np.linspace(0, 300, n)
+        # Wide Gaussian so yaw at throttle_on (140m) is >50% of peak at 160m
+        yaw = 12.0 * np.exp(-0.5 * ((dist - 160.0) / 30.0) ** 2)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n), "yaw_rate_dps": yaw,
+        })
+        corner = _make_corner(1, 100.0, 200.0)
+        mistakes = detect_corner_mistakes(tl, df, corner)
+        types = [m["type"] for m in mistakes]
+        assert "power_before_rotation" in types
+
+    def test_no_mistakes_clean_corner(self):
+        """Clean corner with proper ordering → no rotation mistakes."""
+        events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 110.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 130.0, 0.85, "yaw_rate", 12.0, True),
+            CornerEvent("MIN_SPEED", 135.0, 1.0, "speed", 15.0, True),
+            CornerEvent("THROTTLE_ON", 160.0, 0.9, "accel_long", 0.5, True),
+            CornerEvent("TRACK_OUT", 200.0, 0.5, "position", 0.0, True),
+        ]
+        tl = CornerTimeline(
+            corner_id=1, events=events,
+            segment_losses_s={}, segment_confidences={},
+            mistakes=[], mrp_strength=12.0,
+            mrp_stability_std_m=0.0, event_stability={},
+        )
+
+        n = 300
+        dist = np.linspace(0, 300, n)
+        yaw = 12.0 * np.exp(-0.5 * ((dist - 130.0) / 10.0) ** 2)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n), "yaw_rate_dps": yaw,
+        })
+        corner = _make_corner(1, 100.0, 200.0)
+        mistakes = detect_corner_mistakes(tl, df, corner)
+        rot_mistakes = [m for m in mistakes if m["type"] in (
+            "power_before_rotation", "rotation_too_late",
+        )]
+        assert len(rot_mistakes) == 0
