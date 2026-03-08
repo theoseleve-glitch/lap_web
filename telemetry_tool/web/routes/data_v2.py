@@ -399,8 +399,12 @@ def get_speed_trace(session_id: str):
                     "available": True,
                     "distances": opt.get("distance_m", []),
                     "speeds": opt["v_opt_mps"],
+                    "speeds_low": opt.get("v_opt_low_mps", []),
+                    "speeds_high": opt.get("v_opt_high_mps", []),
                     "lap_number": lap_num,
                     "lap_time_s": opt.get("lap_time_s"),
+                    "lap_time_low_s": opt.get("lap_time_low_s"),
+                    "lap_time_high_s": opt.get("lap_time_high_s"),
                     "solver_version": opt.get("solver_version"),
                     "version": "v2",
                 })
@@ -643,6 +647,30 @@ def get_scores(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
+def _merge_coaching_labels(conn, session_id: str, corners: list[dict]) -> None:
+    """Merge corner coaching labels from optimal_v2 into corner dicts (in-place)."""
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return
+    opt = analysis.get("optimal_v2")
+    if not opt or not isinstance(opt, dict):
+        return
+    coaching_labels: dict = {}
+    for label in opt.get("corner_coaching_labels", []):
+        cid = label.get("corner_id")
+        if cid is not None:
+            coaching_labels[cid] = label
+    if not coaching_labels:
+        return
+    for corner in corners:
+        cid = corner.get("corner_id")
+        if cid in coaching_labels:
+            cl = coaching_labels[cid]
+            corner["limiting_factor"] = cl.get("limiting_factor", "")
+            corner["corner_priority"] = cl.get("corner_priority", "")
+            corner["coaching_text"] = cl.get("coaching_text", "")
+
+
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
 @_safe_api
 def get_corners(session_id: str):
@@ -732,6 +760,9 @@ def get_corners(session_id: str):
                         corner[field] = None
             corners.append(corner)
 
+        # -- Merge coaching labels from optimal_v2 ---
+        _merge_coaching_labels(conn, session_id, corners)
+
         return api_response({
             "corners": corners,
             "available": True,
@@ -751,6 +782,9 @@ def get_corners(session_id: str):
             }
             corner.update(_extract_coaching(cc))
             corners.append(corner)
+
+        # -- Merge coaching labels from optimal_v2 ---
+        _merge_coaching_labels(conn, session_id, corners)
 
         return api_response({
             "corners": corners,
