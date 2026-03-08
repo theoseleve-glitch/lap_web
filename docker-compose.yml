@@ -19,10 +19,11 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: redis-server --requirepass redisdev --maxmemory 128mb --maxmemory-policy allkeys-lru
     ports:
       - "6379:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "redisdev", "ping"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -33,7 +34,7 @@ services:
     environment:
       USE_PG: "1"
       TELEMETRY_PG_URL: postgresql://telemetry:telemetry@postgres:5432/telemetry
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:redisdev@redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,7 +47,7 @@ services:
     environment:
       USE_PG: "1"
       TELEMETRY_PG_URL: postgresql://telemetry:telemetry@postgres:5432/telemetry
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://:redisdev@redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy

@@ -8,10 +8,17 @@ All checks fail open — alerting failures never affect production.
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Outbound notification webhook (Slack, Discord, generic HTTP POST).
+# Set ALERT_WEBHOOK_URL to enable. Payload follows Slack's format:
+#   {"text": "ALERT: ...", "blocks": [...]}
+ALERT_WEBHOOK_URL = os.environ.get("ALERT_WEBHOOK_URL", "")
 
 # ---------------------------------------------------------------------------
 # Celery app import (graceful fallback for testing)
@@ -188,6 +195,48 @@ def _check_webhook_failures(r) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Outbound notification
+# ---------------------------------------------------------------------------
+
+
+def _send_webhook_notification(
+    alert_names: list[str],
+    checks: dict[str, Any],
+) -> None:
+    """POST alert payload to ALERT_WEBHOOK_URL (Slack/Discord/generic)."""
+    if not ALERT_WEBHOOK_URL:
+        return
+
+    try:
+        import urllib.request
+
+        summary = ", ".join(alert_names)
+        details = []
+        for name in alert_names:
+            info = checks.get(name, {})
+            details.append(f"• *{name}*: {json.dumps(info, default=str)}")
+
+        payload = json.dumps({
+            "text": f":rotating_light: LAP Alert: {summary}",
+            "blocks": [
+                {"type": "header", "text": {"type": "plain_text", "text": f"LAP Alert: {len(alert_names)} check(s) firing"}},
+                {"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(details)}},
+            ],
+        }).encode()
+
+        req = urllib.request.Request(
+            ALERT_WEBHOOK_URL,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+        logger.info("Alert webhook sent to %s", ALERT_WEBHOOK_URL[:40])
+    except Exception:
+        logger.warning("Failed to send alert webhook", exc_info=True)
+
+
+# ---------------------------------------------------------------------------
 # Main check runner
 # ---------------------------------------------------------------------------
 
@@ -212,11 +261,12 @@ def _run_alerting_checks_impl() -> dict[str, Any]:
     alerts_fired = sum(1 for c in checks.values() if c.get("status") == "alert")
 
     if alerts_fired:
+        alert_names = [k for k, v in checks.items() if v.get("status") == "alert"]
         logger.warning(
             "Alerting: %d alert(s) fired — %s",
-            alerts_fired,
-            [k for k, v in checks.items() if v.get("status") == "alert"],
+            alerts_fired, alert_names,
         )
+        _send_webhook_notification(alert_names, checks)
     else:
         logger.debug("Alerting: all checks passed")
 

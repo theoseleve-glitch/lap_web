@@ -1,6 +1,6 @@
 """Subscription state machine — validates and executes state transitions.
 
-States: free → trialing → active → past_due/canceled/paused
+States: free → trialing → active → past_due/canceled/paused/expired
 Each transition is validated, recorded in audit_log, and triggers
 appropriate email notifications.
 
@@ -22,8 +22,9 @@ SUBSCRIPTION_STATES: dict[str, dict] = {
     "active": {"allowed_transitions": ["past_due", "canceled", "paused", "unpaid"], "grace_days": 0},
     "past_due": {"allowed_transitions": ["active", "canceled", "unpaid"], "grace_days": 7},
     "unpaid": {"allowed_transitions": ["active", "canceled"], "grace_days": 0},
-    "canceled": {"allowed_transitions": ["active", "free"], "grace_days": 30},
+    "canceled": {"allowed_transitions": ["active", "free", "expired"], "grace_days": 30},
     "paused": {"allowed_transitions": ["active", "canceled"], "grace_days": 0},
+    "expired": {"allowed_transitions": ["free", "active"], "grace_days": 0},
 }
 
 # Map Stripe subscription.status values to our billing states.
@@ -52,6 +53,7 @@ _TRANSITION_EMAILS: dict[str, str] = {
     "canceled": "subscription_canceled",
     "paused": "subscription_paused",
     "trialing": "trial_started",
+    "expired": "subscription_expired",
 }
 
 

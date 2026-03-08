@@ -9,6 +9,8 @@ import logging
 import os
 from typing import Any
 
+from billing.state_machine import map_stripe_status, transition_subscription
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -89,18 +91,23 @@ def _reconcile_stripe_impl() -> dict[str, Any]:
             )
             stripe_status = "canceled"
 
-        if local_status != stripe_status:
-            conn.execute(
-                "UPDATE users SET subscription_status = %(status)s "
-                "WHERE id = %(uid)s",
-                {"status": stripe_status, "uid": uid},
+        mapped_status = map_stripe_status(stripe_status)
+        if local_status != mapped_status:
+            ok = transition_subscription(
+                conn, uid, mapped_status,
+                metadata={"source": "reconciliation", "stripe_raw": stripe_status},
             )
-            conn.commit()
-            healed += 1
-            logger.warning(
-                "Stripe reconciliation healed user %s: %s -> %s",
-                uid, local_status, stripe_status,
-            )
+            if ok:
+                healed += 1
+                logger.warning(
+                    "Stripe reconciliation healed user %s: %s -> %s",
+                    uid, local_status, mapped_status,
+                )
+            else:
+                logger.error(
+                    "Stripe reconciliation: invalid transition for user %s: %s -> %s",
+                    uid, local_status, mapped_status,
+                )
 
     logger.info(
         "Stripe reconciliation complete: checked=%d, healed=%d",
@@ -143,18 +150,24 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
     canceled_users = [dict(r) if not isinstance(r, dict) else r for r in rows]
 
     for user in canceled_users:
-        conn.execute(
-            "UPDATE users SET plan_tier = 'demo', subscription_status = 'free', "
-            "grace_period_end = NULL, stripe_subscription_id = NULL "
-            "WHERE id = %(uid)s",
-            {"uid": user["id"]},
+        ok = transition_subscription(
+            conn, user["id"], "expired",
+            metadata={"source": "grace_enforcement", "previous_tier": user.get("plan_tier")},
         )
-        conn.commit()
-        downgraded += 1
-        logger.info(
-            "Grace period expired: user %s downgraded from %s to demo",
-            user["id"], user.get("plan_tier"),
-        )
+        if ok:
+            # Also reset tier and clear Stripe subscription
+            conn.execute(
+                "UPDATE users SET plan_tier = 'demo', "
+                "stripe_subscription_id = NULL "
+                "WHERE id = %(uid)s",
+                {"uid": user["id"]},
+            )
+            conn.commit()
+            downgraded += 1
+            logger.info(
+                "Grace period expired: user %s downgraded from %s to demo",
+                user["id"], user.get("plan_tier"),
+            )
         if user.get("email"):
             try:
                 from auth.email import _send, FRONTEND_URL

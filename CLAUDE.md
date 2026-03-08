@@ -189,7 +189,7 @@ Handles 10GB+ files with <1GB peak memory. Modules in `telemetry_tool/ingest/`:
 | `TELEMETRY_INGEST_V2` | `"1"` (ON) | Streaming ingest feature flag |
 | `REDIS_URL` | `redis://localhost:6379/0` | Redis connection |
 | `CELERY_BROKER_URL` | (from REDIS_URL) | Celery broker |
-| `CORS_ALLOWED_ORIGINS` | `*` | Allowed CORS origins |
+| `CORS_ALLOWED_ORIGINS` | `""` (empty) | Comma-separated allowlist; explicit origins required in production |
 | `RATE_LIMIT_ENABLED` | `"1"` | Redis-based rate limiting |
 | `STRIPE_SECRET_KEY` | — | Stripe API key |
 | `STRIPE_WEBHOOK_SECRET` | — | Stripe webhook signature |
