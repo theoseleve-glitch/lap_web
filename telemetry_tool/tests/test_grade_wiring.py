@@ -68,3 +68,50 @@ def test_grade_unavailable_no_altitude_col():
     })
     grade, status = compute_elevation_profile_with_quality(df)
     assert status == "grade_unavailable"
+
+
+def test_slope_correction_uphill():
+    """Synthetic 5% uphill: corrected accel removes gravity bias."""
+    from derived_channels import compute_longitudinal_accel
+
+    n = 200
+    grade_pct = 5.0  # 5% uphill
+    grade_rad = np.arctan(grade_pct / 100.0)
+    gravity_bias = 9.80665 * np.sin(grade_rad)  # ~0.49 m/s^2
+
+    df = pd.DataFrame({
+        "Longitudinal acceleration (G) *calc": np.full(n, gravity_bias / 9.80665),  # biased reading
+        "Speed (m/s)": np.full(n, 20.0),
+        "Time (s)": np.linspace(0, 10, n),
+        "Distance (m)": np.linspace(0, 200, n),
+        "Altitude (m)": np.linspace(0, 10, n),  # 10m rise over 200m = 5%
+    })
+
+    result = compute_longitudinal_accel(df, correct_for_slope=True)
+    accel = result["accel_long_mps2"].values
+    # After correction, accel should be near zero (bias removed)
+    assert np.nanmean(np.abs(accel)) < 0.3, (
+        f"Slope correction should remove gravity bias, got mean |accel|={np.nanmean(np.abs(accel)):.3f}"
+    )
+
+
+def test_slope_correction_downhill():
+    """Synthetic -5% downhill: corrected accel removes negative bias."""
+    from derived_channels import compute_longitudinal_accel
+
+    n = 200
+    grade_pct = -5.0
+    grade_rad = np.arctan(grade_pct / 100.0)
+    gravity_bias = 9.80665 * np.sin(grade_rad)  # ~-0.49 m/s^2
+
+    df = pd.DataFrame({
+        "Longitudinal acceleration (G) *calc": np.full(n, gravity_bias / 9.80665),
+        "Speed (m/s)": np.full(n, 20.0),
+        "Time (s)": np.linspace(0, 10, n),
+        "Distance (m)": np.linspace(0, 200, n),
+        "Altitude (m)": np.linspace(10, 0, n),  # 10m drop
+    })
+
+    result = compute_longitudinal_accel(df, correct_for_slope=True)
+    accel = result["accel_long_mps2"].values
+    assert np.nanmean(np.abs(accel)) < 0.3

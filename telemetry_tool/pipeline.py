@@ -844,12 +844,28 @@ def run_full_analysis(
         dc_mod = _import("derived_channels")
 
         def _derived() -> pd.DataFrame:
-            # Work directly on filtered_df to avoid a full copy (~8 GB for 10 GB
-            # CSV files).  The local var is not used after this step.
             if dc_mod is None:
                 logger.info("Derived channels skipped (module absent).")
                 return filtered_df
-            df = dc_mod.compute_longitudinal_accel(filtered_df)
+
+            # Grade quality check + elevation profile
+            _grade_status = "grade_unavailable"
+            _do_slope_correct = False
+            if hasattr(dc_mod, "compute_elevation_profile_with_quality"):
+                try:
+                    _grade_series, _grade_status = dc_mod.compute_elevation_profile_with_quality(filtered_df)
+                    if _grade_status == "grade_used":
+                        filtered_df[dc_mod.OUT_GRADE_PCT] = _grade_series.values
+                        _do_slope_correct = True
+                    elif _grade_status == "grade_low_confidence":
+                        filtered_df[dc_mod.OUT_GRADE_PCT] = _grade_series.values
+                        # Still compute grade but don't use for correction
+                except Exception as _ge:
+                    logger.warning("Grade estimation failed: %s", _ge)
+            summary["grade_status"] = _grade_status
+
+            df = dc_mod.compute_longitudinal_accel(
+                filtered_df, correct_for_slope=_do_slope_correct)
             df = dc_mod.compute_lateral_accel_from_xy(df)
             df = dc_mod.compute_yaw_rate_from_heading(df)
             return df
