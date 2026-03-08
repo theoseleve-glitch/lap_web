@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import math
+from dataclasses import dataclass
 from typing import Any, Final
 
 import numpy as np
@@ -1381,3 +1382,105 @@ def _run_tests() -> None:
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
+
+
+# ---------------------------------------------------------------------------
+# Track boundary estimation
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TrackBoundaries:
+    distance_m: np.ndarray
+    left_offset_m: np.ndarray
+    right_offset_m: np.ndarray
+    confidence: np.ndarray
+    sample_count: np.ndarray
+
+    def to_dict(self) -> dict:
+        return {
+            "distance_m": self.distance_m.tolist(),
+            "left_offset_m": self.left_offset_m.tolist(),
+            "right_offset_m": self.right_offset_m.tolist(),
+            "confidence": self.confidence.tolist(),
+            "sample_count": self.sample_count.tolist(),
+        }
+
+
+def estimate_track_boundaries(
+    resampled_laps: dict,
+    ref_line: pd.DataFrame,
+    percentile: float = 95,
+    min_width_m: float = 4.0,
+    max_width_m: float = 20.0,
+    smooth_window: int = 15,
+) -> TrackBoundaries | None:
+    """Estimate L/R boundaries from perpendicular offsets of all lap XY traces."""
+    if not resampled_laps:
+        return None
+
+    ref_dist = ref_line[_COL_DIST].values
+    ref_x = ref_line[_COL_X].values
+    ref_y = ref_line[_COL_Y].values
+
+    if "heading_rad" in ref_line.columns:
+        heading = ref_line["heading_rad"].values
+    else:
+        dx = np.gradient(ref_x)
+        dy = np.gradient(ref_y)
+        heading = np.arctan2(dy, dx)
+
+    n_bins = len(ref_dist)
+    all_offsets: list[list[float]] = [[] for _ in range(n_bins)]
+
+    for lap_df in resampled_laps.values():
+        if lap_df is None or lap_df.empty:
+            continue
+        if _COL_X not in lap_df.columns or _COL_Y not in lap_df.columns:
+            continue
+        if _COL_DIST not in lap_df.columns:
+            continue
+        lap_x = np.interp(ref_dist, lap_df[_COL_DIST].values, lap_df[_COL_X].values)
+        lap_y = np.interp(ref_dist, lap_df[_COL_DIST].values, lap_df[_COL_Y].values)
+        dx = lap_x - ref_x
+        dy = lap_y - ref_y
+        perp = -dx * np.sin(heading) + dy * np.cos(heading)
+        for i in range(n_bins):
+            if np.isfinite(perp[i]):
+                all_offsets[i].append(perp[i])
+
+    left = np.zeros(n_bins)
+    right = np.zeros(n_bins)
+    counts = np.zeros(n_bins, dtype=int)
+    for i in range(n_bins):
+        if all_offsets[i]:
+            arr = np.array(all_offsets[i])
+            left[i] = np.percentile(arr, percentile)
+            right[i] = np.percentile(arr, 100 - percentile)
+            counts[i] = len(arr)
+
+    for i in range(n_bins):
+        width = left[i] - right[i]
+        if width < min_width_m:
+            center = (left[i] + right[i]) / 2
+            left[i] = center + min_width_m / 2
+            right[i] = center - min_width_m / 2
+        elif width > max_width_m:
+            center = (left[i] + right[i]) / 2
+            left[i] = center + max_width_m / 2
+            right[i] = center - max_width_m / 2
+
+    if smooth_window > 1 and n_bins > smooth_window:
+        kernel = np.ones(smooth_window) / smooth_window
+        left = np.convolve(left, kernel, mode="same")
+        right = np.convolve(right, kernel, mode="same")
+
+    confidence = np.minimum(1.0, counts / 5.0)
+
+    return TrackBoundaries(
+        distance_m=ref_dist.copy(),
+        left_offset_m=left,
+        right_offset_m=right,
+        confidence=confidence,
+        sample_count=counts,
+    )
