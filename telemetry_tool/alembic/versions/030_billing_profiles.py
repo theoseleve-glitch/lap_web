@@ -17,7 +17,7 @@ depends_on = None
 
 
 def upgrade():
-    op.execute("""
+    op.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS billing_profiles (
             id SERIAL PRIMARY KEY,
             workspace_id INTEGER NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -33,22 +33,22 @@ def upgrade():
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
-    """)
+    """))
 
     # RLS policy (idempotent)
-    op.execute(
+    op.execute(sa.text(
         "ALTER TABLE billing_profiles ENABLE ROW LEVEL SECURITY"
-    )
-    op.execute(
+    ))
+    op.execute(sa.text(
         "DROP POLICY IF EXISTS billing_profiles_workspace_policy ON billing_profiles"
-    )
-    op.execute(
+    ))
+    op.execute(sa.text(
         "CREATE POLICY billing_profiles_workspace_policy ON billing_profiles "
         "USING (workspace_id = current_setting('app.workspace_id', true)::int)"
-    )
+    ))
 
 
 def downgrade():
-    op.execute("DROP POLICY IF EXISTS billing_profiles_workspace_policy ON billing_profiles")
-    op.execute("ALTER TABLE billing_profiles DISABLE ROW LEVEL SECURITY")
+    op.execute(sa.text("DROP POLICY IF EXISTS billing_profiles_workspace_policy ON billing_profiles"))
+    op.execute(sa.text("ALTER TABLE billing_profiles DISABLE ROW LEVEL SECURITY"))
     op.drop_table("billing_profiles")

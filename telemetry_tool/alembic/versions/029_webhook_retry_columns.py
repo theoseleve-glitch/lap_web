@@ -32,13 +32,13 @@ def upgrade():
                               "BOOLEAN DEFAULT true NOT NULL")
 
     # Index for retry worker: find retryable events efficiently
-    op.execute(
+    op.execute(sa.text(
         "CREATE INDEX IF NOT EXISTS idx_stripe_wh_retry "
         "ON stripe_webhook_log (processing_status, next_retry_at)"
-    )
+    ))
 
     # ── 2. billing_idempotency: endpoint-level dedup ────────────────
-    op.execute("""
+    op.execute(sa.text("""
         CREATE TABLE IF NOT EXISTS billing_idempotency (
             id BIGSERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -53,11 +53,11 @@ def upgrade():
             CONSTRAINT uq_billing_idemp_user_op_key
                 UNIQUE (user_id, operation, idempotency_key)
         )
-    """)
-    op.execute(
+    """))
+    op.execute(sa.text(
         "CREATE INDEX IF NOT EXISTS idx_billing_idemp_expires "
         "ON billing_idempotency (expires_at)"
-    )
+    ))
 
 
 def _add_column_if_not_exists(conn, table, column, col_type):
@@ -67,7 +67,7 @@ def _add_column_if_not_exists(conn, table, column, col_type):
         "WHERE table_name = :table AND column_name = :column"
     ), {"table": table, "column": column})
     if result.fetchone() is None:
-        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        op.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
 
 
 def downgrade():

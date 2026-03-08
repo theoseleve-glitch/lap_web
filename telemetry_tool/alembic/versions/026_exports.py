@@ -31,15 +31,15 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True)),
     )
     # RLS policy for workspace isolation
-    op.execute("""
+    op.execute(sa.text("""
         ALTER TABLE exports ENABLE ROW LEVEL SECURITY;
         CREATE POLICY exports_workspace_isolation ON exports
             USING (workspace_id = current_setting('app.workspace_id')::integer);
-    """)
+    """))
     op.create_index("ix_exports_workspace_user", "exports", ["workspace_id", "user_id"])
 
 
 def downgrade() -> None:
-    op.execute("DROP POLICY IF EXISTS exports_workspace_isolation ON exports")
+    op.execute(sa.text("DROP POLICY IF EXISTS exports_workspace_isolation ON exports"))
     op.drop_index("ix_exports_workspace_user")
     op.drop_table("exports")

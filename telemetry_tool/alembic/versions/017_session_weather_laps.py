@@ -30,15 +30,15 @@ def upgrade():
         sa.Column("workspace_id", sa.Text()),
         sa.PrimaryKeyConstraint("session_id", "lap_number"),
     )
-    op.execute("ALTER TABLE session_weather_laps ENABLE ROW LEVEL SECURITY")
-    op.execute(
+    op.execute(sa.text("ALTER TABLE session_weather_laps ENABLE ROW LEVEL SECURITY"))
+    op.execute(sa.text(
         "CREATE POLICY session_weather_laps_tenant ON session_weather_laps "
         "USING (workspace_id = current_setting('app.workspace_id', true))"
-    )
+    ))
     op.add_column("sessions", sa.Column("session_datetime", sa.Text()))
 
 
 def downgrade():
     op.drop_column("sessions", "session_datetime")
-    op.execute("DROP POLICY IF EXISTS session_weather_laps_tenant ON session_weather_laps")
+    op.execute(sa.text("DROP POLICY IF EXISTS session_weather_laps_tenant ON session_weather_laps"))
     op.drop_table("session_weather_laps")

@@ -76,25 +76,25 @@ def upgrade():
     )
 
     # Stripe customer index
-    op.execute("""
+    op.execute(sa.text("""
         CREATE INDEX IF NOT EXISTS idx_users_stripe_customer
         ON users (stripe_customer_id) WHERE stripe_customer_id IS NOT NULL
-    """)
+    """))
 
     # ── 2. Sessions: retention tracking columns ───────────────────────────
-    op.execute("""
+    op.execute(sa.text("""
         ALTER TABLE sessions
         ADD COLUMN IF NOT EXISTS retention_expired BOOLEAN DEFAULT FALSE
-    """)
-    op.execute("""
+    """))
+    op.execute(sa.text("""
         ALTER TABLE sessions
         ADD COLUMN IF NOT EXISTS retention_warning_sent BOOLEAN DEFAULT FALSE
-    """)
-    op.execute("""
+    """))
+    op.execute(sa.text("""
         CREATE INDEX IF NOT EXISTS idx_sessions_retention
         ON sessions (workspace_id, created_at)
         WHERE retention_expired IS NOT TRUE
-    """)
+    """))
 
     # ── 3. plan_definitions (global, NOT workspace-scoped) ────────────────
     op.create_table(
@@ -247,12 +247,12 @@ def downgrade():
     op.drop_table("plan_definitions")
 
     # Revert sessions columns
-    op.execute("DROP INDEX IF EXISTS idx_sessions_retention")
-    op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS retention_warning_sent")
-    op.execute("ALTER TABLE sessions DROP COLUMN IF EXISTS retention_expired")
+    op.execute(sa.text("DROP INDEX IF EXISTS idx_sessions_retention"))
+    op.execute(sa.text("ALTER TABLE sessions DROP COLUMN IF EXISTS retention_warning_sent"))
+    op.execute(sa.text("ALTER TABLE sessions DROP COLUMN IF EXISTS retention_expired"))
 
     # Revert users columns
-    op.execute("DROP INDEX IF EXISTS idx_users_stripe_customer")
+    op.execute(sa.text("DROP INDEX IF EXISTS idx_users_stripe_customer"))
     op.drop_column("users", "is_platform_admin")
     op.drop_column("users", "grace_period_end")
     op.drop_column("users", "suspension_reason")
