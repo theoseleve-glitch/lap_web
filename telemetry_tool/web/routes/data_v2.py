@@ -327,6 +327,9 @@ def get_session(session_id: str):
         pipeline = analysis.get("pipeline")
         if pipeline:
             result["pipeline"] = pipeline
+        dq = analysis.get("distance_quality")
+        if dq:
+            result["distance_quality"] = dq
     return api_response(result)
 
 
@@ -3403,6 +3406,36 @@ def get_provenance(session_id: str):
     return api_error(
         ErrorCode.NOT_FOUND,
         "No provenance available for this session",
+        status=404,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 45. GET /api/v1/sessions/<id>/distance-quality — Distance quality
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/distance-quality", methods=["GET"])
+@_safe_api
+def get_distance_quality(session_id: str):
+    """Return the distance quality assessment for a session.
+
+    Read from analysis_json['distance_quality'].
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        dq = analysis.get("distance_quality")
+        if dq:
+            return api_response(dq)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "No distance quality data available for this session",
         status=404,
     )
 
