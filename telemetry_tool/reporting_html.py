@@ -1823,6 +1823,9 @@ def _build_corner_table_html(
         theo_entry = _get(p, "theoretical_entry_speed_mps", 0)
         actual_entry = _get(p, "actual_entry_speed_mps", 0)
         bp_delta = _get(p, "braking_point_delta_m", 0)
+        lf = _get(p, "limiting_factor", "")
+        priority = _get(p, "corner_priority", "")
+        coaching_txt = _get(p, "coaching_text", "")
 
         apex_class = _speed_class(actual_apex, theo_apex) if theo_apex > 0 else ""
         entry_class = _speed_class(actual_entry, theo_entry) if theo_entry > 0 else ""
@@ -1854,6 +1857,8 @@ def _build_corner_table_html(
           <td>{bp_delta:+.0f}m</td>
           <td {loss_class}>{loss:.3f}s</td>
           <td style="font-size:0.75rem;color:#9a9a9a;max-width:250px;white-space:normal;">{hint}</td>
+          <td>{priority}</td>
+          <td style="font-size:0.75rem;color:#9a9a9a;max-width:250px;white-space:normal;">{coaching_txt}</td>
         </tr>"""
         rows.append(row)
 
@@ -1864,6 +1869,7 @@ def _build_corner_table_html(
         <th>Entry (km/h)</th><th>Apex (km/h)</th>
         <th>Grip</th><th>Brake Pt</th>
         <th>Time Loss</th><th>Coaching</th>
+        <th>Priority</th><th>Why</th>
       </tr></thead>
       <tbody>{"".join(rows)}</tbody>
     </table></div>"""
@@ -2430,6 +2436,16 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 <!-- ====== Grip Map ====== -->
 {% if grip_map_html %}
 {{ grip_map_html }}
+{% endif %}
+
+<!-- ====== Explainability Panel ====== -->
+{% if explainability_html %}
+{{ explainability_html }}
+{% endif %}
+
+<!-- ====== Uncertainty Bands ====== -->
+{% if uncertainty_html %}
+{{ uncertainty_html }}
 {% endif %}
 
 <!-- ====== Distance Quality Debug ====== -->
@@ -3328,6 +3344,162 @@ def _build_grip_map_html(grip_data: Optional[dict]) -> str:
     return "\n".join(parts)
 
 
+def _build_explainability_html(optimal_v2: Optional[dict]) -> str:
+    """Build HTML panel showing solver limiting factor breakdown."""
+    if optimal_v2 is None:
+        return ""
+
+    lf_summary = optimal_v2.get("limiting_factor_summary", {})
+    if not lf_summary:
+        return ""
+
+    total = sum(lf_summary.values())
+    if total == 0:
+        return ""
+
+    colors = {
+        "cornering": "#ef4444",   # red
+        "braking": "#f59e0b",     # amber
+        "traction": "#22c55e",    # green
+        "cap": "#3b82f6",         # blue
+    }
+
+    # Stacked bar
+    width = 500
+    height = 30
+    parts = [
+        '<div class="section explainability-panel" style="margin: 16px 0;">',
+        '<h3>Solver Limiting Factors</h3>',
+        f'<svg viewBox="0 0 {width} {height}" '
+        f'style="width: 100%; max-width: {width}px; height: {height}px;">',
+    ]
+
+    x = 0
+    for factor in ("cornering", "braking", "traction", "cap"):
+        count = lf_summary.get(factor, 0)
+        w = (count / total) * width
+        if w > 0:
+            color = colors.get(factor, "#9ca3af")
+            pct = round(100 * count / total)
+            parts.append(
+                f'<rect x="{x:.1f}" y="0" width="{w:.1f}" height="{height}" '
+                f'fill="{color}" />'
+            )
+            if w > 30:
+                parts.append(
+                    f'<text x="{x + w / 2:.1f}" y="{height / 2 + 4}" '
+                    f'text-anchor="middle" fill="white" font-size="11">'
+                    f'{factor} {pct}%</text>'
+                )
+            x += w
+
+    parts.append('</svg>')
+
+    # Legend
+    parts.append('<div style="margin-top: 8px; font-size: 0.85em;">')
+    for factor in ("cornering", "braking", "traction", "cap"):
+        count = lf_summary.get(factor, 0)
+        pct = round(100 * count / total)
+        if pct > 0:
+            color = colors.get(factor, "#9ca3af")
+            parts.append(
+                f'<span style="display: inline-block; margin-right: 12px;">'
+                f'<span style="display: inline-block; width: 10px; height: 10px; '
+                f'background: {color}; margin-right: 4px;"></span>'
+                f'{factor}: {pct}%</span>'
+            )
+    parts.append('</div>')
+
+    # Corner saturation table
+    sat_list = optimal_v2.get("corner_saturation", [])
+    if sat_list:
+        parts.append('<h4 style="margin-top: 12px;">Per-Corner Saturation</h4>')
+        parts.append(
+            '<table class="data-table" style="font-size: 0.85em;">'
+            '<tr><th>Corner</th><th>Cornering</th><th>Traction</th>'
+            '<th>Braking</th><th>Dominant</th><th>Sat. &gt;98%</th></tr>'
+        )
+        for sat in sat_list:
+            parts.append(
+                f'<tr><td>{sat.get("corner_id", "?")}</td>'
+                f'<td>{sat.get("cornering_pct", 0) * 100:.0f}%</td>'
+                f'<td>{sat.get("traction_pct", 0) * 100:.0f}%</td>'
+                f'<td>{sat.get("braking_pct", 0) * 100:.0f}%</td>'
+                f'<td><strong>{sat.get("dominant_factor", "?")}</strong></td>'
+                f'<td>{sat.get("saturation_98pct", 0) * 100:.0f}%</td></tr>'
+            )
+        parts.append('</table>')
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
+def _build_uncertainty_html(optimal_v2: Optional[dict]) -> str:
+    """Build HTML panel showing uncertainty bands."""
+    if optimal_v2 is None:
+        return ""
+
+    v_low = optimal_v2.get("v_opt_low_mps", [])
+    v_high = optimal_v2.get("v_opt_high_mps", [])
+    v_opt = optimal_v2.get("v_opt_mps", [])
+    distances = optimal_v2.get("distance_m", [])
+
+    if not v_low or not v_high or not distances:
+        return ""
+
+    lap_time = optimal_v2.get("lap_time_s", 0)
+    lap_low = optimal_v2.get("lap_time_low_s", 0)
+    lap_high = optimal_v2.get("lap_time_high_s", 0)
+
+    parts = [
+        '<div class="section uncertainty-panel" style="margin: 16px 0;">',
+        '<h3>Uncertainty Bands</h3>',
+        f'<p>Lap time: <strong>{lap_time:.2f}s</strong> '
+        f'[{lap_low:.2f} \u2013 {lap_high:.2f}]</p>',
+    ]
+
+    # SVG sparkline with shaded band
+    n = len(distances)
+    width = 600
+    height = 100
+    d_min, d_max = distances[0], distances[-1]
+    all_v = v_low + v_opt + v_high
+    v_min = max(0, min(all_v) - 1)
+    v_max_val = max(all_v) + 1
+
+    def _sx(d):
+        return (d - d_min) / max(1, d_max - d_min) * width
+
+    def _sy(v):
+        return height - (v - v_min) / max(0.01, v_max_val - v_min) * height
+
+    # Band polygon (low -> high, reversed)
+    band_pts_fwd = " ".join(
+        f"{_sx(distances[i]):.1f},{_sy(v_high[i]):.1f}" for i in range(n)
+    )
+    band_pts_rev = " ".join(
+        f"{_sx(distances[n - 1 - i]):.1f},{_sy(v_low[n - 1 - i]):.1f}" for i in range(n)
+    )
+    band_polygon = f"{band_pts_fwd} {band_pts_rev}"
+
+    # Nominal line
+    nom_pts = " ".join(
+        f"{_sx(distances[i]):.1f},{_sy(v_opt[i]):.1f}" for i in range(n)
+    )
+
+    parts.append(
+        f'<svg viewBox="0 0 {width} {height}" '
+        f'style="width: 100%; max-width: {width}px; height: {height}px; '
+        f'background: rgba(0,0,0,0.02);">'
+        f'<polygon points="{band_polygon}" fill="rgba(59,130,246,0.15)" />'
+        f'<polyline points="{nom_pts}" fill="none" stroke="#3b82f6" stroke-width="1.5" />'
+        f'</svg>'
+    )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 def generate_report(
     *,
     score_result:         Optional[dict[str, Any]]        = None,
@@ -3366,6 +3538,8 @@ def generate_report(
     theoretical_metrics:  Optional[dict[str, Any]]         = None,
     # --- Grip map (all optional) -
     grip_map:             Optional[dict[str, Any]]         = None,
+    # --- Optimal v2 solver output (explainability + uncertainty) -
+    optimal_v2:           Optional[dict[str, Any]]         = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3592,6 +3766,8 @@ def generate_report(
     traffic_html = _build_traffic_html(traffic, lap_inclusion)
     confidence_html = _build_confidence_html(theoretical_metrics)
     grip_map_html = _build_grip_map_html(grip_map)
+    explainability_html = _build_explainability_html(optimal_v2)
+    uncertainty_html = _build_uncertainty_html(optimal_v2)
     sim_method_badge = _build_sim_method_badge_html(
         score_result, using_data_theoretical=_using_data_theoretical,
     )
@@ -3666,6 +3842,8 @@ def generate_report(
         traffic_html=traffic_html,
         confidence_html=confidence_html,
         grip_map_html=grip_map_html,
+        explainability_html=explainability_html,
+        uncertainty_html=uncertainty_html,
         # Colour variables for CSS
 
         bg_dark=_BG_DARK,
