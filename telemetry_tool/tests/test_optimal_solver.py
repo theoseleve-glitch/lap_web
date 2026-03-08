@@ -300,3 +300,41 @@ def test_limiting_factor_straight_track():
         1 for f in result.limiting_factor if f in ("traction", "braking")
     )
     assert traction_or_brake > 0, "Should have some traction/braking limited points"
+
+
+def test_corner_saturation_cornering_dominated():
+    """Corner with tight curvature -> high cornering saturation."""
+    from optimal_solver import (
+        OptimalCaps, solve_optimal_speed, compute_corner_saturation,
+    )
+
+    n = 200
+    dist = np.linspace(0, 500, n)
+    curvature = np.zeros(n)
+    curvature[80:120] = 0.05  # tight corner
+
+    caps = OptimalCaps(
+        distance_m=dist,
+        v_cap=np.full(n, 50.0),
+        ax_accel=np.full(n, 5.0),
+        ax_brake=np.full(n, 8.0),
+        curvature=curvature,
+        mu=np.full(n, 1.0),
+        cap_source=["test"] * n,
+        solver_version="test",
+    )
+    result = solve_optimal_speed(caps)
+
+    corners = [{"corner_id": 1, "s_start": dist[80], "s_end": dist[120]}]
+    saturations = compute_corner_saturation(result, corners)
+
+    assert len(saturations) == 1
+    sat = saturations[0]
+    assert sat.corner_id == 1
+    assert sat.cornering_pct > 0.3  # majority cornering-limited
+    assert sat.dominant_factor == "cornering"
+    assert 0.0 <= sat.saturation_98pct <= 1.0
+
+    d = sat.to_dict()
+    assert "dominant_factor" in d
+    assert "saturation_98pct" in d

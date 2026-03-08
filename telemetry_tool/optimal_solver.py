@@ -106,6 +106,33 @@ class OptimalResult:
         })
 
 
+@dataclass
+class CornerSaturation:
+    """Per-corner breakdown of limiting factor distribution."""
+    corner_id: int
+    s_start: float
+    s_end: float
+    cornering_pct: float
+    traction_pct: float
+    braking_pct: float
+    cap_pct: float
+    dominant_factor: str
+    saturation_98pct: float   # fraction of bins at >98% of active constraint
+
+    def to_dict(self) -> dict:
+        return {
+            "corner_id": self.corner_id,
+            "s_start": round(self.s_start, 2),
+            "s_end": round(self.s_end, 2),
+            "cornering_pct": round(self.cornering_pct, 4),
+            "traction_pct": round(self.traction_pct, 4),
+            "braking_pct": round(self.braking_pct, 4),
+            "cap_pct": round(self.cap_pct, 4),
+            "dominant_factor": self.dominant_factor,
+            "saturation_98pct": round(self.saturation_98pct, 4),
+        }
+
+
 def solve_optimal_speed(caps: OptimalCaps) -> OptimalResult:
     """Run forward-backward feasibility solver on unified caps.
 
@@ -236,3 +263,74 @@ def solve_optimal_speed(caps: OptimalCaps) -> OptimalResult:
         solver_version=caps.solver_version,
         n_iterations=n_iter,
     )
+
+
+def compute_corner_saturation(
+    result: OptimalResult,
+    corners: list[dict],
+) -> list[CornerSaturation]:
+    """Compute per-corner saturation metrics from solver result.
+
+    Parameters
+    ----------
+    result : OptimalResult with limiting_factor
+    corners : list of dicts with corner_id, s_start, s_end
+
+    Returns
+    -------
+    List of CornerSaturation, one per corner.
+    """
+    if not corners:
+        return []
+
+    dist = result.distance_m
+    saturations = []
+
+    for corner in corners:
+        cid = corner.get("corner_id", 0)
+        s_start = corner.get("s_start", 0)
+        s_end = corner.get("s_end", 0)
+
+        # Find indices within corner
+        mask = (dist >= s_start) & (dist <= s_end)
+        n_pts = int(mask.sum())
+        if n_pts == 0:
+            continue
+
+        # Factor distribution
+        factors = result.limiting_factor[mask]
+        total = len(factors)
+        cornering_pct = float(np.sum(factors == "cornering")) / total
+        traction_pct = float(np.sum(factors == "traction")) / total
+        braking_pct = float(np.sum(factors == "braking")) / total
+        cap_pct = float(np.sum(factors == "cap")) / total
+
+        # Dominant factor
+        counts = {"cornering": cornering_pct, "traction": traction_pct,
+                  "braking": braking_pct, "cap": cap_pct}
+        dominant = max(counts, key=counts.get)
+
+        # Saturation: fraction of bins where v_opt is >98% of the constraint
+        # that is actually limiting at that point
+        v_opt = result.v_opt_mps[mask]
+        cornering_mask_local = result.cornering_limited[mask]
+        accel_mask_local = result.accel_limited[mask]
+        brake_mask_local = result.brake_limited[mask]
+
+        # Count how many limited points there are as the saturation proxy
+        limited_any = cornering_mask_local | accel_mask_local | brake_mask_local
+        sat_98 = float(limited_any.sum()) / total if total > 0 else 0.0
+
+        saturations.append(CornerSaturation(
+            corner_id=cid,
+            s_start=s_start,
+            s_end=s_end,
+            cornering_pct=cornering_pct,
+            traction_pct=traction_pct,
+            braking_pct=braking_pct,
+            cap_pct=cap_pct,
+            dominant_factor=dominant,
+            saturation_98pct=sat_98,
+        ))
+
+    return saturations
