@@ -167,3 +167,60 @@ def test_solve_no_mu_uses_v_cap_only():
 
     # Corner speed should respect v_cap
     assert np.all(result.v_opt_mps[40:60] <= 15.0 + 0.1)
+
+
+def test_caps_from_percentile_envelope():
+    """Percentile envelope produces valid OptimalCaps."""
+    from theoretical_engine import caps_from_percentile_envelope
+
+    rng = np.random.default_rng(42)
+    n_points = 200
+    laps = []
+    for _ in range(8):
+        dist = np.linspace(0, 500, n_points)
+        speed = np.full(n_points, 20.0) + rng.normal(0, 1.0, n_points)
+        speed = np.clip(speed, 5.0, 40.0)
+        laps.append(pd.DataFrame({
+            "distance_m": dist,
+            "speed_mps": speed,
+            "accel_long_mps2": rng.normal(0, 2.0, n_points),
+        }))
+
+    curvature = np.full(n_points, 0.005)
+    caps = caps_from_percentile_envelope(laps, curvature)
+
+    assert len(caps.distance_m) == n_points
+    assert np.all(caps.v_cap > 0)
+    assert np.all(caps.ax_accel > 0)
+    assert np.all(caps.ax_brake > 0)
+    assert all(s == "envelope_p98" for s in caps.cap_source)
+
+
+def test_caps_from_vehicle_model():
+    """Physics vehicle model produces valid OptimalCaps."""
+    from lap_simulation import caps_from_vehicle_model
+
+    n = 200
+    dist = np.linspace(0, 500, n)
+    curvature = np.zeros(n)
+    curvature[80:120] = 0.02  # corner
+
+    caps = caps_from_vehicle_model(
+        distance_m=dist,
+        curvature=curvature,
+        traction_mps2=5.0,
+        braking_mps2=8.0,
+        mu=1.2,
+        v_max_mps=40.0,
+    )
+
+    assert len(caps.distance_m) == n
+    assert np.all(caps.ax_accel > 0)
+    assert np.all(caps.ax_brake > 0)
+    assert caps.mu is not None
+    assert all("physics" in s for s in caps.cap_source)
+
+    # Corner speeds should be lower than straight speeds
+    corner_cap = np.mean(caps.v_cap[90:110])
+    straight_cap = np.mean(caps.v_cap[:20])
+    assert corner_cap < straight_cap

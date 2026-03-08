@@ -2129,6 +2129,62 @@ def _run_tests() -> None:
         raise AssertionError(f"{len(failed)} test(s) failed.")
 
 
+def caps_from_vehicle_model(
+    *,
+    distance_m: "np.ndarray",
+    curvature: "np.ndarray",
+    traction_mps2: float,
+    braking_mps2: float,
+    mu: float,
+    v_max_mps: float = 80.0,
+    grip_map: Any = None,
+) -> "OptimalCaps":
+    """Build OptimalCaps from physics vehicle model parameters.
+
+    Parameters
+    ----------
+    distance_m : distance grid [m]
+    curvature : curvature [1/m] at each point
+    traction_mps2 : max traction accel [m/s^2]
+    braking_mps2 : max braking decel [m/s^2]
+    mu : global friction coefficient
+    v_max_mps : max vehicle speed [m/s]
+    grip_map : optional per-distance grip map (overrides mu)
+
+    Returns
+    -------
+    OptimalCaps ready for solve_optimal_speed().
+    """
+    from optimal_solver import OptimalCaps
+
+    n = len(distance_m)
+
+    # Per-point mu
+    mu_arr = np.full(n, mu)
+    if grip_map is not None and hasattr(grip_map, 'is_global_fallback') and not grip_map.is_global_fallback:
+        for i in range(n):
+            mu_arr[i] = grip_map.mu_at(float(distance_m[i]), "p95")
+
+    # Cornering speed cap: v = sqrt(mu * g / |curvature|)
+    v_cap = np.full(n, v_max_mps)
+    for i in range(n):
+        kappa = abs(curvature[i])
+        if kappa > 1e-6:
+            v_corner = math.sqrt(mu_arr[i] * _G / kappa)
+            v_cap[i] = min(v_cap[i], v_corner)
+
+    return OptimalCaps(
+        distance_m=distance_m,
+        v_cap=np.clip(v_cap, 1.0, v_max_mps),
+        ax_accel=np.full(n, traction_mps2),
+        ax_brake=np.full(n, braking_mps2),
+        curvature=np.abs(curvature),
+        mu=mu_arr,
+        cap_source=["physics_model"] * n,
+        solver_version="optimal_v2_1.0",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
