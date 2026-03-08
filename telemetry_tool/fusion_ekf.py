@@ -153,3 +153,33 @@ def ekf_update(state: EKFState, z: np.ndarray,
     P_new = (np.eye(len(state.x)) - K @ H) @ state.P
 
     return EKFState(x=x_new, P=P_new), y
+
+
+# ── Coordinate conversion ──────────────────────────────────────────
+_R_EARTH = 6_371_000.0  # metres
+
+
+def latlon_to_local(lat: float, lon: float,
+                    lat0: float, lon0: float) -> tuple[float, float]:
+    """Convert lat/lon to local x,y (metres) relative to reference point.
+
+    Uses equirectangular approximation (accurate within ~10km).
+    x = east, y = north.
+    """
+    lat_r = np.radians(lat)
+    lat0_r = np.radians(lat0)
+    lon_r = np.radians(lon)
+    lon0_r = np.radians(lon0)
+
+    x = _R_EARTH * (lon_r - lon0_r) * np.cos((lat0_r + lat_r) / 2)
+    y = _R_EARTH * (lat_r - lat0_r)
+    return float(x), float(y)
+
+
+def local_to_latlon(x: float, y: float,
+                    lat0: float, lon0: float) -> tuple[float, float]:
+    """Convert local x,y (metres) back to lat/lon."""
+    lat0_r = np.radians(lat0)
+    lat = lat0 + np.degrees(y / _R_EARTH)
+    lon = lon0 + np.degrees(x / (_R_EARTH * np.cos(lat0_r)))
+    return float(lat), float(lon)

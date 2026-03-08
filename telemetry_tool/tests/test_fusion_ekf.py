@@ -121,3 +121,20 @@ def test_ekf_update_corrects_position():
     # State should move toward (1, 0)
     assert new_state.x[0] > 0.5  # pulled toward GPS
     assert abs(innovation[0]) > 0  # innovation is nonzero
+
+
+def test_latlon_to_local_roundtrip():
+    """lat/lon → local x,y → back to lat/lon preserves values."""
+    from fusion_ekf import latlon_to_local, local_to_latlon
+
+    lat0, lon0 = 45.0, 9.0
+    # Point 100m north, 50m east
+    lat1, lon1 = 45.0009, 9.0006
+
+    x, y = latlon_to_local(lat1, lon1, lat0, lon0)
+    assert x == pytest.approx(50.0, abs=5.0)  # ~50m east
+    assert y == pytest.approx(100.0, abs=5.0)  # ~100m north
+
+    lat_back, lon_back = local_to_latlon(x, y, lat0, lon0)
+    assert lat_back == pytest.approx(lat1, abs=1e-4)
+    assert lon_back == pytest.approx(lon1, abs=1e-4)
