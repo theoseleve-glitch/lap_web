@@ -13,6 +13,15 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
+
+@bp.after_request
+def _no_cache_auth(response):
+    """Prevent caching of auth responses (tokens, user info)."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+
 # Password max — Argon2 DoS prevention (still checked on non-schema routes).
 _PASSWORD_MAX = 1024
 
