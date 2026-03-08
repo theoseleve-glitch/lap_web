@@ -138,3 +138,88 @@ def test_latlon_to_local_roundtrip():
     lat_back, lon_back = local_to_latlon(x, y, lat0, lon0)
     assert lat_back == pytest.approx(lat1, abs=1e-4)
     assert lon_back == pytest.approx(lon1, abs=1e-4)
+
+
+def _make_straight_line_df(n=200, speed=20.0, dt=0.1, noise_m=2.0):
+    """Synthetic straight-line GPS+IMU data with configurable noise."""
+    rng = np.random.default_rng(42)
+    t = np.arange(n) * dt
+    x_true = speed * t
+    y_true = np.zeros(n)
+
+    df = pd.DataFrame({
+        "Time (s)": t,
+        "Latitude (deg)": 45.0 + (y_true + rng.normal(0, noise_m, n)) / 111_320,
+        "Longitude (deg)": 9.0 + (x_true + rng.normal(0, noise_m, n)) / (111_320 * np.cos(np.radians(45))),
+        "Speed (m/s)": speed + rng.normal(0, 0.3, n),
+        "Bearing (deg)": 90.0 + rng.normal(0, 3.0, n),  # heading east
+        "Longitudinal acceleration (G) *calc": rng.normal(0, 0.02, n),
+        "Lateral acceleration (G) *calc": rng.normal(0, 0.02, n),
+        "Yaw rate (deg/s)": rng.normal(0, 1.0, n),
+    })
+    return df
+
+
+def test_run_sensor_fusion_ekf():
+    """Full GPS+IMU → EKF fusion produces stable output."""
+    from fusion_ekf import run_sensor_fusion
+
+    df = _make_straight_line_df()
+    result_df, fusion_result = run_sensor_fusion(df)
+
+    assert fusion_result.method == "ekf"
+    assert fusion_result.confidence > 0.0
+    assert "gps_pos" in fusion_result.sensors_used
+    assert "imu_gyro" in fusion_result.sensors_used
+
+    # Fused yaw_rate should be smoother than raw
+    raw_yaw_std = df["Yaw rate (deg/s)"].std()
+    fused_yaw_std = result_df["Yaw rate (deg/s)"].std()
+    assert fused_yaw_std < raw_yaw_std
+
+
+def test_run_sensor_fusion_gps_only():
+    """GPS only (no IMU) → smoothing_only fallback."""
+    from fusion_ekf import run_sensor_fusion
+
+    df = pd.DataFrame({
+        "Time (s)": np.linspace(0, 10, 100),
+        "Latitude (deg)": np.linspace(45, 45.001, 100),
+        "Longitude (deg)": np.linspace(9, 9.001, 100),
+        "Speed (m/s)": np.full(100, 20.0),
+    })
+    result_df, fusion_result = run_sensor_fusion(df)
+
+    assert fusion_result.method == "smoothing_only"
+    assert "imu_accel" not in fusion_result.sensors_used
+    assert "imu_gyro" not in fusion_result.sensors_used
+
+
+def test_run_sensor_fusion_passthrough():
+    """No usable sensors → passthrough, no modification."""
+    from fusion_ekf import run_sensor_fusion
+
+    df = pd.DataFrame({
+        "Time (s)": np.linspace(0, 10, 100),
+        "Speed (m/s)": np.full(100, 20.0),
+    })
+    result_df, fusion_result = run_sensor_fusion(df)
+
+    assert fusion_result.method == "passthrough"
+    assert fusion_result.confidence == 0.0
+
+
+def test_noise_reduction():
+    """EKF reduces yaw_rate noise compared to raw input."""
+    from fusion_ekf import run_sensor_fusion
+
+    df = _make_straight_line_df(n=500, noise_m=5.0)
+    result_df, _ = run_sensor_fusion(df)
+
+    raw_yaw_std = df["Yaw rate (deg/s)"].std()
+    fused_yaw_std = result_df["Yaw rate (deg/s)"].std()
+    # EKF should reduce noise by at least 30%
+    assert fused_yaw_std < raw_yaw_std * 0.7, (
+        f"EKF noise reduction insufficient: raw={raw_yaw_std:.2f}, "
+        f"fused={fused_yaw_std:.2f}"
+    )
