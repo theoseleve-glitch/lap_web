@@ -1941,6 +1941,127 @@ def _build_corner_table_html(
     </table></div>"""
 
 
+def _build_practice_plan_html(practice_plan: Optional[dict] = None) -> str:
+    """Render practice plan section: warmup, drills, evaluation."""
+    if not practice_plan:
+        return ""
+    warmup = practice_plan.get("warmup", {})
+    drills = practice_plan.get("drills", [])
+    evaluation = practice_plan.get("evaluation", {})
+    reflection = practice_plan.get("reflection", "")
+    warnings = practice_plan.get("channel_warnings", [])
+
+    parts = ["""<div class="card" style="margin-top:1.5rem;">
+    <h3 style="margin-bottom:0.5rem;">Practice Plan</h3>"""]
+
+    parts.append(f"""<div style="background:#1a1a2e;padding:0.75rem;border-radius:6px;margin-bottom:0.75rem;">
+      <strong>Warmup:</strong> {warmup.get('laps', 3)} laps &mdash; {warmup.get('focus', 'baseline pace')}
+    </div>""")
+
+    if drills:
+        parts.append("<table class='data-table' style='margin-bottom:0.75rem;'><thead><tr>"
+                      "<th>#</th><th>Drill</th><th>Corner</th><th>Reps</th><th>Target</th>"
+                      "</tr></thead><tbody>")
+        for i, d in enumerate(drills, 1):
+            cids = ", ".join(str(c) for c in (d.get("corner_ids") or []) if c is not None)
+            parts.append(f"<tr><td>{i}</td><td>{d.get('title', '')}</td>"
+                         f"<td>{cids}</td><td>{d.get('reps', 5)}</td>"
+                         f"<td><code>{d.get('target_metric', '')}</code></td></tr>")
+        parts.append("</tbody></table>")
+    else:
+        parts.append("<p style='opacity:0.6;'>No drills selected — no corrections detected.</p>")
+
+    parts.append(f"""<div style="background:#1a1a2e;padding:0.75rem;border-radius:6px;margin-bottom:0.75rem;">
+      <strong>Evaluation:</strong> {evaluation.get('laps', 2)} laps &mdash; compare to {evaluation.get('compare_to', 'baseline')}
+    </div>""")
+
+    if reflection:
+        parts.append(f"<p style='font-style:italic;opacity:0.8;'>{reflection}</p>")
+
+    if warnings:
+        parts.append("<div style='margin-top:0.5rem;'>")
+        for w in warnings:
+            parts.append(f"<span class='badge' style='background:#555;margin-right:4px;'>{w}</span>")
+        parts.append("</div>")
+
+    parts.append("</div>")
+    return "\n".join(parts)
+
+
+def _build_endurance_html(endurance: Optional[dict] = None) -> str:
+    """Render endurance analytics section: team coaching objectives."""
+    if not endurance:
+        return ""
+    team_coaching = endurance.get("team_coaching", [])
+    if not team_coaching:
+        return ""
+
+    parts = ["""<div class="card" style="margin-top:1.5rem;">
+    <h3 style="margin-bottom:0.5rem;">Endurance Analytics</h3>
+    <ul style="list-style:none;padding:0;">"""]
+
+    for obj in team_coaching:
+        parts.append(f"""<li style="margin-bottom:0.5rem;padding:0.5rem;background:#1a1a2e;border-radius:4px;">
+          <strong>#{obj.get('rank', '')}</strong> {obj.get('text', '')}
+        </li>""")
+
+    parts.append("</ul></div>")
+    return "\n".join(parts)
+
+
+def _build_boundaries_html(boundaries: Optional[dict] = None) -> str:
+    """Render track boundaries summary."""
+    if not boundaries:
+        return ""
+    left = boundaries.get("left_offset_m", [])
+    right = boundaries.get("right_offset_m", [])
+    confidence = boundaries.get("confidence", [])
+    if not left or not right:
+        return ""
+    widths = [l - r for l, r in zip(left, right)]
+    avg_width = sum(widths) / len(widths) if widths else 0
+    avg_conf = sum(confidence) / len(confidence) if confidence else 0
+
+    return f"""<div class="card" style="margin-top:1.5rem;">
+    <h3 style="margin-bottom:0.5rem;">Track Boundaries</h3>
+    <div style="display:flex;gap:2rem;">
+      <div><strong>Avg Width:</strong> {avg_width:.1f} m</div>
+      <div><strong>Avg Confidence:</strong> {avg_conf:.0%}</div>
+      <div><strong>Bins:</strong> {len(left)}</div>
+    </div>
+  </div>"""
+
+
+def _build_raceline_html(raceline: Optional[dict] = None) -> str:
+    """Render raceline optimization results."""
+    if not raceline:
+        return ""
+    corner_results = raceline.get("corner_results", {})
+    total_delta = raceline.get("total_delta_s", 0)
+    n_evaluated = raceline.get("n_variants_evaluated", 0)
+    if not corner_results:
+        return ""
+
+    parts = [f"""<div class="card" style="margin-top:1.5rem;">
+    <h3 style="margin-bottom:0.5rem;">Raceline Optimization</h3>
+    <p>Evaluated {n_evaluated} variants. Total delta: <strong>{total_delta:+.3f}s</strong></p>
+    <table class="data-table"><thead><tr>
+      <th>Corner</th><th>Best Apex</th><th>Time</th><th>Delta</th>
+    </tr></thead><tbody>"""]
+
+    for cid, variant in sorted(corner_results.items(), key=lambda x: str(x[0])):
+        v = variant if isinstance(variant, dict) else {}
+        parts.append(f"""<tr>
+          <td>C{cid}</td>
+          <td>{v.get('apex_type', '?')}</td>
+          <td>{v.get('estimated_time_s', 0):.3f}s</td>
+          <td>{v.get('delta_vs_baseline_s', 0):+.3f}s</td>
+        </tr>""")
+
+    parts.append("</tbody></table></div>")
+    return "\n".join(parts)
+
+
 def _build_coaching_v2_html(coaching_v2: Optional[dict] = None) -> str:
     """Build HTML section for Coaching V2 evidence-based coaching."""
     if not coaching_v2:
@@ -2595,6 +2716,26 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 <!-- ====== Coaching V2 (evidence-based) ====== -->
 {% if coaching_v2_html %}
 {{ coaching_v2_html }}
+{% endif %}
+
+<!-- ====== Practice Plan ====== -->
+{% if practice_plan_html %}
+{{ practice_plan_html }}
+{% endif %}
+
+<!-- ====== Endurance Analytics ====== -->
+{% if endurance_html %}
+{{ endurance_html }}
+{% endif %}
+
+<!-- ====== Track Boundaries ====== -->
+{% if boundaries_html %}
+{{ boundaries_html }}
+{% endif %}
+
+<!-- ====== Raceline Optimization ====== -->
+{% if raceline_html %}
+{{ raceline_html }}
 {% endif %}
 
 <!-- ====== Traffic Detection & Lap Inclusion ====== -->
@@ -3718,6 +3859,11 @@ def generate_report(
     driver_style:         Optional[dict[str, Any]]         = None,
     # --- Coaching V2 (evidence-based, confidence-gated) -
     coaching_v2:          Optional[dict[str, Any]]         = None,
+    # --- Batch features (practice plan, endurance, boundaries, raceline) -
+    practice_plan:        Optional[dict[str, Any]]         = None,
+    endurance:            Optional[dict[str, Any]]         = None,
+    track_boundaries:     Optional[dict[str, Any]]         = None,
+    raceline_optimization: Optional[dict[str, Any]]        = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3951,6 +4097,10 @@ def generate_report(
     )
     driver_style_badge = _build_driver_style_badge_html(driver_style)
     coaching_v2_html = _build_coaching_v2_html(coaching_v2)
+    practice_plan_html = _build_practice_plan_html(practice_plan)
+    endurance_html = _build_endurance_html(endurance)
+    boundaries_html = _build_boundaries_html(track_boundaries)
+    raceline_html = _build_raceline_html(raceline_optimization)
 
     # --- Build driver comparison rows
 
@@ -4009,6 +4159,10 @@ def generate_report(
         sim_method_badge=sim_method_badge,
         driver_style_badge=driver_style_badge,
         coaching_v2_html=coaching_v2_html,
+        practice_plan_html=practice_plan_html,
+        endurance_html=endurance_html,
+        boundaries_html=boundaries_html,
+        raceline_html=raceline_html,
         has_cornering_zones=(cornering_mask is not None),
         using_data_theoretical=_using_data_theoretical,
         data_theoretical_time=(

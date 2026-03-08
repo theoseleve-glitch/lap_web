@@ -3704,4 +3704,70 @@ def get_optimal_v2(session_id: str):
     )
 
 
+@bp.route("/sessions/<session_id>/boundaries", methods=["GET"])
+@_safe_api
+def get_boundaries(session_id: str):
+    """Return estimated track boundaries for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        boundaries = analysis.get("track_boundaries")
+        if boundaries:
+            return api_response(boundaries)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Boundary data not available — session may lack XY position data",
+        status=404,
+    )
+
+
+@bp.route("/sessions/<session_id>/practice-plan", methods=["GET"])
+@_safe_api
+def get_practice_plan(session_id: str):
+    """Return generated practice plan for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        plan = analysis.get("practice_plan")
+        if plan:
+            return api_response(plan)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Practice plan not available — requires coaching_v2 data",
+        status=404,
+    )
+
+
+@bp.route("/sessions/<session_id>/endurance", methods=["GET"])
+@_safe_api
+def get_endurance(session_id: str):
+    """Return endurance analytics for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        endurance = analysis.get("endurance")
+        if endurance:
+            return api_response(endurance)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Endurance data not available",
+        status=404,
+    )
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

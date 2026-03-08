@@ -1518,6 +1518,23 @@ def run_full_analysis(
     _fire_progress("09a_reference_line")
     summary["reference_line"] = reference_line
 
+    # STEP 09a2 -- Track boundaries (after reference line)
+
+    track_boundaries = None
+
+    def _track_boundaries():
+        rl_mod = _import("reference_line")
+        if rl_mod is None or not hasattr(rl_mod, "estimate_track_boundaries"):
+            return None
+        if reference_line is None or not resampled_laps:
+            return None
+        return rl_mod.estimate_track_boundaries(resampled_laps, reference_line)
+
+    track_boundaries, err = _safe_step("09a2_track_boundaries", _track_boundaries)
+    _record("09a2_track_boundaries", track_boundaries, err)
+    if track_boundaries is not None:
+        summary["track_boundaries"] = track_boundaries.to_dict() if hasattr(track_boundaries, "to_dict") else track_boundaries
+
     # -- 08h: Line deviation detection (deferred from earlier — needs reference_line)
 
     def _line_deviation_detection():
@@ -2838,6 +2855,49 @@ def run_full_analysis(
         summary["advanced_corner_intelligence"] = aci_result
         logger.info("Advanced corner intelligence computed")
 
+    # STEP 10e -- Endurance analytics
+
+    def _endurance_analytics():
+        sa_mod = _import("stint_analysis")
+        if sa_mod is None or not hasattr(sa_mod, "generate_team_coaching"):
+            return None
+        result = {}
+        stint_data = summary.get("stint_analysis", {})
+        stint_metrics = stint_data.get("stint_metrics", []) if isinstance(stint_data, dict) else []
+        if stint_metrics:
+            team_coaching = sa_mod.generate_team_coaching(stint_metrics)
+            result["team_coaching"] = team_coaching
+        return result if result else None
+
+    endurance_result, err = _safe_step("10e_endurance", _endurance_analytics)
+    _record("10e_endurance", endurance_result, err)
+    if endurance_result is not None:
+        summary["endurance"] = endurance_result
+
+    # STEP 10f -- Raceline optimizer (gated by enable_raceline_optimizer)
+
+    _enable_raceline = config.get("enable_raceline_optimizer", False) if config else False
+    if _enable_raceline and track_boundaries is not None and reference_line is not None:
+        def _raceline_optimize():
+            rl_mod = _import("raceline_optimizer")
+            if rl_mod is None:
+                return None
+            ref_dict = {
+                "distance_m": reference_line[_COL_DIST].values if isinstance(reference_line, pd.DataFrame) else np.array([]),
+                "curvature": curvature_profile.get("curvature", np.array([])) if isinstance(curvature_profile, dict) else np.array([]),
+            }
+            bounds_dict = track_boundaries.to_dict() if hasattr(track_boundaries, "to_dict") else track_boundaries
+            _friction_val = corrected_friction if corrected_friction else 1.2
+            friction = {"mu": _friction_val if isinstance(_friction_val, (int, float)) else 1.2}
+            return rl_mod.optimize_corner_lines(
+                corners or [], ref_dict, bounds_dict, friction,
+            )
+
+        raceline_result, err = _safe_step("10f_raceline", _raceline_optimize)
+        _record("10f_raceline", raceline_result, err)
+        if raceline_result is not None:
+            summary["raceline_optimization"] = raceline_result.to_dict() if hasattr(raceline_result, "to_dict") else raceline_result
+
     # STEP 10d -- Per-lap corner metrics (for DB storage & dashboard)
 
     per_lap_corner_metrics: list[dict[str, Any]] = []
@@ -3239,6 +3299,30 @@ def run_full_analysis(
         if cv2_result is not None:
             summary["coaching_v2"] = cv2_result.to_dict() if hasattr(cv2_result, "to_dict") else cv2_result
 
+    # STEP 13d -- Drills + practice plan
+
+    def _practice_plan():
+        drills_mod = _import("drills")
+        if drills_mod is None or not hasattr(drills_mod, "generate_practice_plan"):
+            return None
+        cv2 = summary.get("coaching_v2")
+        if not cv2:
+            return None
+        available_channels = list(enriched_df.columns) if enriched_df is not None else []
+        return drills_mod.generate_practice_plan(cv2, available_channels)
+
+    plan_result, err = _safe_step("13d_practice_plan", _practice_plan)
+    _record("13d_practice_plan", plan_result, err)
+    if plan_result is not None:
+        plan_dict = plan_result.to_dict() if hasattr(plan_result, "to_dict") else plan_result
+        prov = summary.get("provenance", {})
+        if prov:
+            plan_dict["provenance_ref"] = {
+                "analysis_run_id": prov.get("analysis_run_id"),
+                "pipeline_version": prov.get("pipeline_version"),
+            }
+        summary["practice_plan"] = plan_dict
+
     html_path: Optional[Path] = None
     pdf_path:  Optional[Path] = None
 
@@ -3318,6 +3402,10 @@ def run_full_analysis(
                 grip_map=summary.get("grip_map"),
                 driver_style=summary.get("driver_style"),
                 coaching_v2=summary.get("coaching_v2"),
+                practice_plan=summary.get("practice_plan"),
+                endurance=summary.get("endurance"),
+                track_boundaries=summary.get("track_boundaries"),
+                raceline_optimization=summary.get("raceline_optimization"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)
