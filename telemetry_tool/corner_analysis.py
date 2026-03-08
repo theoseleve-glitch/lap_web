@@ -2434,3 +2434,188 @@ def compute_brake_release_metrics(
         source=source,
         confidence=confidence,
     )
+
+
+# =============================================================================
+
+# Brake-Yaw Coupling Scores
+
+# =============================================================================
+
+
+@dataclass
+class BrakeYawCoupling:
+    """Correlation between brake release and yaw response."""
+    coupling_score: float           # correlation magnitude (0-1)
+    lag_m: float                    # distance lag: +ve = yaw lags brake release
+    pattern: str                    # "well_coupled"|"under_rotation"|"over_rotation"|"unavailable"
+    terminal_trail_pct: float       # T% at first positive accel
+    coaching_action: str            # specific coaching string
+    confidence: float               # 0-1
+
+    def to_dict(self) -> dict:
+        return {
+            "coupling_score": round(self.coupling_score, 3),
+            "lag_m": round(self.lag_m, 1),
+            "pattern": self.pattern,
+            "terminal_trail_pct": round(self.terminal_trail_pct, 1),
+            "coaching_action": self.coaching_action,
+            "confidence": round(self.confidence, 2),
+        }
+
+
+def compute_brake_yaw_coupling(
+    timeline: CornerTimeline,
+    lap_df: pd.DataFrame,
+    corner: dict,
+    data_quality: float = 1.0,
+) -> BrakeYawCoupling:
+    """Compute coupling score between brake release and yaw response.
+
+    Analyses the correlation between the rate of brake release and the rate
+    of yaw growth in the EOB → THROTTLE_ON window.  Returns a pattern
+    classification (well_coupled / under_rotation / over_rotation /
+    unavailable) together with a numeric coupling score (0-1) and
+    distance-domain lag estimate.
+
+    Parameters
+    ----------
+    timeline : CornerTimeline
+        Must contain at least an EOB event.
+    lap_df : pd.DataFrame
+        Lap data with distance, speed, accel, and (optionally) yaw columns.
+    corner : dict
+        Corner definition with ``s_start`` and ``s_end``.
+    data_quality : float
+        Overall data quality multiplier (0-1).
+
+    Returns
+    -------
+    BrakeYawCoupling — always non-None; ``pattern="unavailable"`` when data
+    is insufficient.
+    """
+    _UNAVAILABLE = BrakeYawCoupling(0.0, 0.0, "unavailable", 0.0, "", 0.0)
+
+    eob = timeline.get_event("EOB")
+    throttle_on = timeline.get_event("THROTTLE_ON")
+    mrp = timeline.get_event("MRP")
+
+    if eob is None or not eob.available:
+        return _UNAVAILABLE
+
+    # Need yaw channel
+    if _COL_YAW not in lap_df.columns:
+        return _UNAVAILABLE
+
+    dist = _resolve_dist(lap_df)
+    accel = _resolve_accel_long(lap_df)
+    yaw = np.abs(pd.to_numeric(lap_df[_COL_YAW], errors="coerce").values.astype(float))
+
+    # Analysis window: EOB → THROTTLE_ON (or EOB + 50m)
+    window_end = (
+        throttle_on.s_position
+        if (throttle_on and throttle_on.available)
+        else eob.s_position + 50.0
+    )
+    mask = (dist >= eob.s_position) & (dist <= window_end)
+
+    if mask.sum() < 10:
+        return _UNAVAILABLE
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    a_seg = accel[idx]
+    y_seg = yaw[idx]
+
+    # Brake release signal: negative accel becoming less negative
+    brake_intensity = np.clip(-a_seg, 0, None)  # positive = braking
+
+    # Compute derivatives (rate of change w.r.t. distance)
+    ds = np.gradient(d_seg)
+    ds[ds == 0] = 1e-6
+    d_brake = np.gradient(brake_intensity) / ds  # brake release rate
+    d_yaw = np.gradient(y_seg) / ds              # yaw growth rate
+
+    # Replace NaN / Inf
+    d_brake = np.where(np.isfinite(d_brake), d_brake, 0.0)
+    d_yaw = np.where(np.isfinite(d_yaw), d_yaw, 0.0)
+
+    # Cross-correlation for coupling score
+    if np.std(d_brake) > 1e-6 and np.std(d_yaw) > 1e-6:
+        corr = np.corrcoef(d_brake, d_yaw)[0, 1]
+        coupling_score = abs(float(corr)) if np.isfinite(corr) else 0.0
+    else:
+        coupling_score = 0.0
+
+    # Lag: find peak cross-correlation offset
+    lag_m = 0.0
+    if len(d_brake) > 5:
+        try:
+            cross_corr = np.correlate(
+                d_brake - np.mean(d_brake),
+                d_yaw - np.mean(d_yaw),
+                mode="full",
+            )
+            lags = np.arange(-len(d_brake) + 1, len(d_brake))
+            if len(cross_corr) > 0:
+                peak_lag_idx = int(np.argmax(np.abs(cross_corr)))
+                lag_samples = lags[peak_lag_idx]
+                avg_ds = float(np.mean(np.abs(np.diff(d_seg))))
+                lag_m = float(lag_samples * avg_ds)
+        except Exception:
+            lag_m = 0.0
+
+    # Detect pattern --------------------------------------------------------
+    # Over-rotation: yaw spikes while brake still high
+    peak_yaw_in_window = float(np.nanmax(y_seg))
+    peak_yaw_idx = int(np.nanargmax(y_seg))
+    brake_at_peak_yaw = (
+        brake_intensity[peak_yaw_idx]
+        if peak_yaw_idx < len(brake_intensity)
+        else 0.0
+    )
+    peak_brake = (
+        float(np.nanmax(brake_intensity))
+        if len(brake_intensity) > 0
+        else 1.0
+    )
+
+    if (
+        peak_brake > 0
+        and brake_at_peak_yaw / peak_brake > 0.5
+        and peak_yaw_in_window > 5.0
+    ):
+        pattern = "over_rotation"
+        coaching = (
+            f"Release brake {abs(lag_m):.0f}m earlier; "
+            "reduce trail to avoid yaw spike under braking"
+        )
+    elif coupling_score < 0.3 and peak_yaw_in_window < 5.0:
+        pattern = "under_rotation"
+        coaching = (
+            "Hold trail brake longer to build yaw; "
+            "delay throttle until rotation established"
+        )
+    else:
+        pattern = "well_coupled"
+        coaching = "Rotation timing is well matched to brake release"
+
+    # Terminal trail T%
+    terminal_trail = 0.0
+    if throttle_on and throttle_on.available:
+        to_idx = int(np.argmin(np.abs(dist - throttle_on.s_position)))
+        if to_idx < len(accel):
+            brake_at_to = max(0.0, -float(accel[to_idx]))
+            if peak_brake > 0:
+                terminal_trail = brake_at_to / peak_brake * 100.0
+
+    confidence = min(1.0, data_quality * (0.5 + coupling_score * 0.5))
+
+    return BrakeYawCoupling(
+        coupling_score=coupling_score,
+        lag_m=lag_m,
+        pattern=pattern,
+        terminal_trail_pct=terminal_trail,
+        coaching_action=coaching,
+        confidence=confidence,
+    )
