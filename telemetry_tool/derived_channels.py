@@ -751,6 +751,67 @@ def compute_elevation_profile(
     return result
 
 
+_ALT_RANGE_THRESHOLD = 0.5     # metres — below this, altitude is flat/useless
+_ALT_NOISE_THRESHOLD = 5.0     # metres — rolling std above this is too noisy
+
+
+def compute_elevation_profile_with_quality(
+    df: pd.DataFrame,
+    *,
+    smoothing_window: int = 15,
+) -> tuple[pd.Series, str]:
+    """Compute grade with altitude quality assessment.
+
+    Returns
+    -------
+    (grade_pct, grade_status)
+        grade_status is one of:
+        - "grade_used": clean altitude, grade computed normally
+        - "grade_low_confidence": noisy altitude, grade computed but unreliable
+        - "grade_unavailable": no altitude or flat terrain, returns zeros
+    """
+    alt_col = _find_altitude_col(df)
+
+    if alt_col is None:
+        logger.info("Grade quality: no altitude column — grade_unavailable.")
+        return (pd.Series(np.zeros(len(df)), index=df.index, name=OUT_GRADE_PCT),
+                "grade_unavailable")
+
+    alt = pd.to_numeric(df[alt_col], errors="coerce").values.astype(float)
+    finite_alt = alt[np.isfinite(alt)]
+
+    if len(finite_alt) < 10:
+        return (pd.Series(np.zeros(len(df)), index=df.index, name=OUT_GRADE_PCT),
+                "grade_unavailable")
+
+    alt_range = float(np.ptp(finite_alt))
+
+    if alt_range < _ALT_RANGE_THRESHOLD:
+        logger.info("Grade quality: altitude range %.2fm < %.1fm — grade_unavailable.",
+                     alt_range, _ALT_RANGE_THRESHOLD)
+        return (pd.Series(np.zeros(len(df)), index=df.index, name=OUT_GRADE_PCT),
+                "grade_unavailable")
+
+    # Check noise via rolling std (window = 20 samples)
+    window = min(20, len(finite_alt) // 3)
+    if window >= 3:
+        rolling_std = pd.Series(finite_alt).rolling(window, center=True).std()
+        median_noise = float(rolling_std.median())
+    else:
+        median_noise = 0.0
+
+    grade = compute_elevation_profile(df, smoothing_window=smoothing_window)
+
+    if median_noise > _ALT_NOISE_THRESHOLD:
+        logger.info("Grade quality: altitude noise %.2fm > %.1fm — grade_low_confidence.",
+                     median_noise, _ALT_NOISE_THRESHOLD)
+        return grade, "grade_low_confidence"
+
+    logger.info("Grade quality: clean altitude (range=%.1fm, noise=%.2fm) — grade_used.",
+                alt_range, median_noise)
+    return grade, "grade_used"
+
+
 # -- -
 
 # Public API -- Bank angle estimate
