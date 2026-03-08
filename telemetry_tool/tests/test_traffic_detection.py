@@ -134,3 +134,44 @@ def test_detect_straights_circle():
     })
     straights = detect_straights(df)
     assert len(straights) == 0
+
+
+def test_traffic_flag_injected_lift():
+    """Lap with injected speed lift on straight → flagged as traffic."""
+    from traffic_detection import run_traffic_detection
+
+    # Create 5 identical laps on an oval
+    base = _make_oval_lap(speed=25.0)
+    laps = {}
+    for i in range(1, 6):
+        laps[i] = base.copy()
+
+    # Inject traffic lift on lap 3: drop speed by 30% on first straight (50-150m)
+    lap3 = laps[3].copy()
+    dist = lap3["Distance (m)"].values
+    mask = (dist >= 50) & (dist <= 150)
+    lap3.loc[mask, "Speed (m/s)"] = lap3.loc[mask, "Speed (m/s)"] * 0.7
+    lap3.loc[mask, "accel_long_mps2"] = -2.0  # hard decel
+    laps[3] = lap3
+
+    result = run_traffic_detection(laps)
+    assert result.n_laps_affected >= 1
+    assert 3 in result.per_lap_score
+    assert result.per_lap_score[3] > 0.0
+
+    # Other laps should have low/zero traffic scores
+    for lap_num in [1, 2, 4, 5]:
+        assert result.per_lap_score.get(lap_num, 0.0) < 0.1
+
+
+def test_clean_laps_no_traffic():
+    """All identical laps → zero traffic on all."""
+    from traffic_detection import run_traffic_detection
+
+    base = _make_oval_lap(speed=20.0)
+    laps = {i: base.copy() for i in range(1, 6)}
+
+    result = run_traffic_detection(laps)
+    assert result.n_laps_affected == 0
+    for score in result.per_lap_score.values():
+        assert score == 0.0
