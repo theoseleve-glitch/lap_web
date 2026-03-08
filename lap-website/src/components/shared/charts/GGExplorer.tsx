@@ -196,12 +196,16 @@ export function GGExplorer({
           <div className="flex-1 min-w-0">
             <canvas
               id="gg-explorer-canvas"
+              role="img"
+              aria-label="G-G diagram showing lateral versus longitudinal acceleration"
               style={{ width: '100%', height: '300px', display: 'block' }}
             />
           </div>
           <div style={{ width: '250px', flexShrink: 0 }}>
             <canvas
               id="gg-explorer-minimap"
+              role="img"
+              aria-label="Track minimap with selected segment highlight"
               style={{ width: '100%', height: '300px', display: 'block' }}
             />
           </div>

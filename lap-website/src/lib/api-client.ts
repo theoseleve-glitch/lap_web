@@ -56,6 +56,11 @@ function buildHeaders(): Record<string, string> {
     'Content-Type': 'application/json',
   };
 
+  // Generate client-side request ID for distributed tracing
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    headers['X-Request-Id'] = crypto.randomUUID();
+  }
+
   if (typeof window !== 'undefined') {
     const token = getAccessToken();
     if (token) {

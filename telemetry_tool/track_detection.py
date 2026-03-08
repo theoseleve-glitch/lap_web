@@ -174,6 +174,7 @@ class MatchResult:
     lap_length_m: float           # matched (or newly registered) lap length
     iou:          float           # bbox IoU with the matched entry (0 if new)
     length_ratio: float           # |new/stored - 1|; 0 if new
+    confidence:   float = 0.0     # composite match confidence 0-1 (0 if new)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -511,6 +512,7 @@ def match_track(
             lap_length_m = best_entry["fingerprint"]["lap_length_m"],
             iou          = round(best_iou, 4),
             length_ratio = round(best_ratio, 4),
+            confidence   = round(best_composite, 4),
         )
 
     # No match -- suggest a new track entry
@@ -624,6 +626,7 @@ def register_or_match_track(
             lap_length_m = result.lap_length_m,
             iou          = result.iou,
             length_ratio = result.length_ratio,
+            confidence   = result.confidence,
         )
     else:
         logger.debug("Existing track matched; database not modified.")

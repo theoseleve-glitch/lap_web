@@ -456,6 +456,8 @@ export function TrackMap(props: TrackMapProps) {
 
         <canvas
           ref={canvasRef}
+          role="img"
+          aria-label="Track map showing GPS trace colored by speed"
           className="w-full h-full cursor-crosshair"
           onMouseMove={handleCanvasMove}
           onMouseLeave={handleCanvasLeave}

@@ -159,11 +159,13 @@ export function SpeedTraceChart(props: SpeedTraceChartProps) {
   // ── Vanilla JS render ────────────────────────────────────────
   if (shouldUseVanilla) {
     return (
-      <div ref={containerRef} className={className}>
+      <div ref={containerRef} className={className} role="img" aria-label="Speed trace chart showing speed versus distance for the selected lap">
         {/* Speed chart (overview) */}
         <div className="relative" style={{ width: '100%' }}>
           <canvas
             id="speed-chart"
+            role="img"
+            aria-label="Speed versus distance overview chart"
             style={{ width: '100%', height: '250px', display: 'block' }}
           />
           <div id="chart-crosshair" className="chart-crosshair" />
@@ -207,6 +209,8 @@ export function SpeedTraceChart(props: SpeedTraceChartProps) {
           <div className="relative" style={{ width: '100%' }}>
             <canvas
               id="speed-zoom-canvas"
+              role="img"
+              aria-label="Zoomed speed trace detail"
               style={{ width: '100%', height: '280px', display: 'block' }}
             />
             <div
@@ -225,6 +229,8 @@ export function SpeedTraceChart(props: SpeedTraceChartProps) {
         <div className="relative mt-4" style={{ width: '100%' }}>
           <canvas
             id="lap-times-chart"
+            role="img"
+            aria-label="Lap times bar chart"
             style={{ width: '100%', height: '250px', display: 'block' }}
           />
           <div
