@@ -3614,6 +3614,15 @@ def run_full_analysis(
 
     # ── Provenance ─────────────────────────────────────────────────
     try:
+        _training_data_hash = None
+        _laps = _laps_for_theo_ref[0]
+        if _laps and len(_laps) > 0:
+            try:
+                from provenance.fingerprint import compute_data_fingerprint as _cdf
+                _training_data_hash = _cdf(pd.concat(_laps, ignore_index=True))
+            except Exception:
+                pass
+
         _provenance_record = build_provenance(
             input_df=raw_df if raw_df is not None else pd.DataFrame(),
             config=meta,
@@ -3622,8 +3631,17 @@ def run_full_analysis(
             pipeline_version=_pipeline_status.pipeline_version,
             model_version=_pipeline_status.model_version,
             deterministic=deterministic,
+            training_data_hash=_training_data_hash,
         )
         summary["provenance"] = _provenance_record.to_dict()
+
+        # Attach lightweight provenance ref to sub-outputs
+        _prov_ref = {
+            "analysis_run_id": _provenance_record.analysis_run_id,
+            "pipeline_version": _provenance_record.pipeline_version,
+        }
+        if summary.get("coaching_guide") and isinstance(summary["coaching_guide"], dict):
+            summary["coaching_guide"]["provenance_ref"] = _prov_ref
 
         # ── Write provenance to table (silently skipped if table missing) ──
         if db_session_id is not None:

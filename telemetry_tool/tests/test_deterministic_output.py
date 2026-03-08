@@ -46,3 +46,54 @@ class TestDeterministicProvenance:
         p1 = build_provenance(df, cfg, method_used="test", deterministic=False)
         p2 = build_provenance(df, cfg, method_used="test", deterministic=False)
         assert p1.analysis_run_id != p2.analysis_run_id
+
+
+class TestTrainingDataHash:
+    """training_data_hash is computed from laps_for_theo."""
+
+    def test_training_data_hash_from_laps(self):
+        from provenance.run_context import build_provenance
+        from provenance.fingerprint import compute_data_fingerprint
+
+        df = pd.DataFrame({
+            "Distance (m)": np.linspace(0, 500, 100),
+            "Speed (m/s)": np.random.default_rng(42).uniform(10, 30, 100),
+        })
+        expected_hash = compute_data_fingerprint(df)
+
+        p = build_provenance(
+            pd.DataFrame(), {},
+            method_used="test",
+            training_data_hash=expected_hash,
+        )
+        assert p.training_data_hash == expected_hash
+        assert len(p.training_data_hash) == 64  # SHA-256 hex digest
+
+    def test_training_data_hash_none_when_no_laps(self):
+        from provenance.run_context import build_provenance
+
+        p = build_provenance(
+            pd.DataFrame(), {},
+            method_used="test",
+        )
+        assert p.training_data_hash is None
+
+
+class TestProvenanceRef:
+    """Lightweight provenance ref attached to sub-outputs."""
+
+    def test_provenance_ref_structure(self):
+        ref = {
+            "analysis_run_id": "abc123",
+            "pipeline_version": "v2-deadbeef",
+        }
+        assert "analysis_run_id" in ref
+        assert "pipeline_version" in ref
+
+    def test_provenance_ref_not_full_record(self):
+        """Ref should have exactly 2 keys, not the full provenance record."""
+        ref = {
+            "analysis_run_id": "abc123",
+            "pipeline_version": "v2-deadbeef",
+        }
+        assert len(ref) == 2
