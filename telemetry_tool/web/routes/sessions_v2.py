@@ -25,6 +25,7 @@ from flask import Blueprint, g, request
 
 from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
+from web.rate_limit import rate_limit
 from web.models import (
     insert_analysis_json,
     insert_condition_phases,
@@ -263,6 +264,7 @@ def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
 
 
 @bp.route("/sessions/upload", methods=["POST"])
+@rate_limit(tier="upload")
 def upload_session():
     """Upload a CSV telemetry file and dispatch async analysis.
 
@@ -338,21 +340,31 @@ def upload_session():
                      tmp_path, tmp_path.stat().st_size)
 
         # ── 4. Build session metadata ─────────────────────────────
+        _VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance"}
+        _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed"}
+
+        raw_session_type = request.form.get("session_type", "practice")
+        raw_track_state = request.form.get("track_state", "dry")
+        raw_driver_name = (request.form.get("driver_name") or "Unknown").strip()[:100]
+
         session_meta: dict = {
-            "session_type": request.form.get("session_type", "practice"),
-            "track_state": request.form.get("track_state", "dry"),
-            "driver_name": request.form.get("driver_name", "Unknown"),
+            "session_type": raw_session_type if raw_session_type in _VALID_SESSION_TYPES else "practice",
+            "track_state": raw_track_state if raw_track_state in _VALID_TRACK_STATES else "dry",
+            "driver_name": raw_driver_name or "Unknown",
             "source_filename": safe_name,
-            "display_name": Path(safe_name).stem,
+            "display_name": Path(safe_name).stem[:200],
         }
         # Pass user-provided session_date to the pipeline
         _sd = request.form.get("session_date")
         if _sd:
-            session_meta["session_date"] = _sd
+            session_meta["session_date"] = _sd[:30]
 
         kart_id_str = request.form.get("kart_id")
         if kart_id_str:
-            session_meta["kart_id"] = int(kart_id_str)
+            try:
+                session_meta["kart_id"] = int(kart_id_str)
+            except (ValueError, TypeError):
+                pass  # Ignore invalid kart_id
 
         exclude_laps = _parse_exclude_laps(request.form.get("exclude_laps"))
         if exclude_laps:

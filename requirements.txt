@@ -36,6 +36,15 @@ pytest>=7.0
 # CORS
 flask-cors>=4.0
 
+# WSGI server (production)
+gunicorn>=22.0
+
+# Email (transactional)
+resend>=2.0
+
+# System monitoring (streaming ingest memory tracking)
+psutil>=5.9
+
 # Billing
 stripe>=8.0
 
