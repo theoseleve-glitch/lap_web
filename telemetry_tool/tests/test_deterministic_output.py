@@ -97,3 +97,103 @@ class TestProvenanceRef:
             "pipeline_version": "v2-deadbeef",
         }
         assert len(ref) == 2
+
+
+class TestProvenanceFieldsPresent:
+    """All required provenance fields are present and non-empty."""
+
+    REQUIRED_FIELDS = [
+        "analysis_run_id",
+        "input_fingerprint",
+        "params_hash",
+        "pipeline_version",
+        "model_version",
+        "method_used",
+        "generated_at",
+    ]
+
+    def test_all_required_fields_present(self):
+        from provenance.run_context import build_provenance
+
+        df = pd.DataFrame({
+            "Distance (m)": np.linspace(0, 100, 20),
+            "Speed (m/s)": np.full(20, 15.0),
+        })
+        p = build_provenance(df, {"track_id": "t"}, method_used="test")
+        d = p.to_dict()
+        for field in self.REQUIRED_FIELDS:
+            assert field in d, f"Missing field: {field}"
+            assert d[field], f"Empty field: {field}"
+
+    def test_optional_fields_exist_as_keys(self):
+        from provenance.run_context import build_provenance
+
+        df = pd.DataFrame({"x": [1, 2]})
+        p = build_provenance(df, {}, method_used="test")
+        d = p.to_dict()
+        for field in ["file_hash", "solver_version", "training_data_hash"]:
+            assert field in d, f"Missing optional field key: {field}"
+
+    def test_to_dict_is_json_serializable(self):
+        from provenance.run_context import build_provenance
+
+        df = pd.DataFrame({"x": [1.0, 2.0]})
+        p = build_provenance(df, {"a": 1}, method_used="test")
+        result = json.dumps(p.to_dict(), sort_keys=True)
+        assert isinstance(result, str)
+        assert len(result) > 50
+
+
+class TestSelfConsistency:
+    """Identical inputs produce identical JSON output."""
+
+    def _make_inputs(self):
+        rng = np.random.default_rng(42)
+        df = pd.DataFrame({
+            "Distance (m)": np.linspace(0, 500, 100),
+            "Speed (m/s)": rng.uniform(10, 30, 100),
+            "Accel (m/s2)": rng.normal(0, 2, 100),
+        })
+        config = {
+            "track_id": "monza",
+            "session_type": "practice",
+            "driver_name": "TestDriver",
+        }
+        return df, config
+
+    def test_byte_stable_json(self):
+        from provenance.run_context import build_provenance
+
+        df, config = self._make_inputs()
+
+        p1 = build_provenance(
+            df, config,
+            method_used="test_v2",
+            pipeline_version="v2-test",
+            model_version="none",
+            deterministic=True,
+        )
+        p2 = build_provenance(
+            df, config,
+            method_used="test_v2",
+            pipeline_version="v2-test",
+            model_version="none",
+            deterministic=True,
+        )
+
+        j1 = json.dumps(p1.to_dict(), sort_keys=True)
+        j2 = json.dumps(p2.to_dict(), sort_keys=True)
+        assert j1 == j2, "Provenance JSON is not byte-stable"
+
+    def test_different_inputs_produce_different_output(self):
+        from provenance.run_context import build_provenance
+
+        df1 = pd.DataFrame({"x": [1.0, 2.0, 3.0]})
+        df2 = pd.DataFrame({"x": [4.0, 5.0, 6.0]})
+        config = {"track_id": "t"}
+
+        p1 = build_provenance(df1, config, method_used="test", deterministic=True)
+        p2 = build_provenance(df2, config, method_used="test", deterministic=True)
+
+        assert p1.analysis_run_id != p2.analysis_run_id
+        assert p1.input_fingerprint != p2.input_fingerprint
