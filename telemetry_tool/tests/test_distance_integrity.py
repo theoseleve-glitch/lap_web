@@ -108,3 +108,49 @@ def test_assess_flags_non_monotonic():
     })
     dq = assess_all_laps(laps)
     assert 2 in dq.laps_repaired or 2 in dq.laps_degraded or dq.status != "ok"
+
+
+def test_rebuild_distance_from_xy_euclidean():
+    """Rebuild distance from x/y columns using Euclidean method."""
+    from distance_integrity import rebuild_distance_from_xy
+
+    # Simple right-angle path: 100m east then 100m north
+    n = 50
+    x = np.concatenate([np.linspace(0, 100, n), np.full(n, 100)])
+    y = np.concatenate([np.zeros(n), np.linspace(0, 100, n)])
+    df = pd.DataFrame({"x": x, "y": y, "Distance (m)": np.zeros(2 * n)})
+
+    result = rebuild_distance_from_xy(df)
+    assert "Distance (m)" in result.columns
+    # Total distance should be ~200m
+    total = result["Distance (m)"].iloc[-1]
+    assert total == pytest.approx(200.0, rel=0.01)
+    # Must be monotonically increasing
+    diffs = np.diff(result["Distance (m)"].values)
+    assert np.all(diffs >= 0)
+
+
+def test_rebuild_distance_from_latlon():
+    """Rebuild distance from Latitude/Longitude columns using Haversine."""
+    from distance_integrity import rebuild_distance_from_xy
+
+    # ~111m per degree at equator for latitude
+    lat = np.linspace(0.0, 0.001, 100)  # ~111m
+    lon = np.zeros(100)
+    df = pd.DataFrame({
+        "Latitude (deg)": lat,
+        "Longitude (deg)": lon,
+        "Distance (m)": np.zeros(100),
+    })
+    result = rebuild_distance_from_xy(df)
+    total = result["Distance (m)"].iloc[-1]
+    assert 100 < total < 120  # Haversine ~111m for 0.001 deg
+
+
+def test_rebuild_returns_none_no_coords():
+    """No coordinate columns → returns None."""
+    from distance_integrity import rebuild_distance_from_xy
+
+    df = pd.DataFrame({"Distance (m)": np.linspace(0, 100, 50)})
+    result = rebuild_distance_from_xy(df)
+    assert result is None

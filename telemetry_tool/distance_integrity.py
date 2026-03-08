@@ -153,3 +153,76 @@ def assess_all_laps(
         metrics=metrics_dicts,
         message=f"Laps needing repair: {needs_repair}",
     )
+
+
+# ── Coordinate column detection ───────────────────────────────────
+_XY_PAIRS = [
+    ("x", "y"),
+    ("X (m)", "Y (m)"),
+    ("x_m", "y_m"),
+]
+_LATLON_PAIRS = [
+    ("Latitude (deg)", "Longitude (deg)"),
+    ("latitude", "longitude"),
+    ("Latitude (°)", "Longitude (°)"),
+    ("lat", "lon"),
+]
+
+
+def _haversine_cumulative(lat: np.ndarray, lon: np.ndarray) -> np.ndarray:
+    """Cumulative Haversine distance in metres."""
+    R = 6_371_000.0  # Earth radius in metres
+    lat_r = np.radians(lat)
+    lon_r = np.radians(lon)
+
+    dlat = np.diff(lat_r)
+    dlon = np.diff(lon_r)
+
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat_r[:-1]) * np.cos(lat_r[1:]) * np.sin(dlon / 2) ** 2
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))
+    seg = R * c
+
+    return np.concatenate([[0.0], np.cumsum(seg)])
+
+
+def rebuild_distance_from_xy(
+    df: "pd.DataFrame",
+    *,
+    dist_col: str = "Distance (m)",
+) -> "Optional[pd.DataFrame]":
+    """Rebuild distance_m from coordinate columns if available.
+
+    Tries XY (Euclidean) first, then lat/lon (Haversine).
+    Returns a copy with repaired distance column, or None if no
+    coordinate columns are found.
+    """
+    import pandas as pd
+
+    cols = set(df.columns)
+
+    # Try Euclidean XY pairs
+    for x_col, y_col in _XY_PAIRS:
+        if x_col in cols and y_col in cols:
+            x = pd.to_numeric(df[x_col], errors="coerce").values.astype(np.float64)
+            y = pd.to_numeric(df[y_col], errors="coerce").values.astype(np.float64)
+            dx = np.diff(x)
+            dy = np.diff(y)
+            seg = np.sqrt(dx ** 2 + dy ** 2)
+            dist = np.concatenate([[0.0], np.cumsum(seg)])
+            result = df.copy()
+            result[dist_col] = dist
+            logger.info("Distance rebuilt from XY columns (%s, %s)", x_col, y_col)
+            return result
+
+    # Try lat/lon pairs (Haversine)
+    for lat_col, lon_col in _LATLON_PAIRS:
+        if lat_col in cols and lon_col in cols:
+            lat = pd.to_numeric(df[lat_col], errors="coerce").values.astype(np.float64)
+            lon = pd.to_numeric(df[lon_col], errors="coerce").values.astype(np.float64)
+            dist = _haversine_cumulative(lat, lon)
+            result = df.copy()
+            result[dist_col] = dist
+            logger.info("Distance rebuilt from lat/lon (%s, %s)", lat_col, lon_col)
+            return result
+
+    return None
