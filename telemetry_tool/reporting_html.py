@@ -2422,6 +2422,11 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 {{ traffic_html }}
 {% endif %}
 
+<!-- ====== Confidence Assessment ====== -->
+{% if confidence_html %}
+{{ confidence_html }}
+{% endif %}
+
 <!-- ====== Distance Quality Debug ====== -->
 {% if distance_quality_html %}
 {{ distance_quality_html }}
@@ -3198,6 +3203,47 @@ def _build_traffic_html(traffic: Optional[dict], lap_inclusion: Optional[dict]) 
     return "\n".join(parts)
 
 
+def _build_confidence_html(theo_metrics: Optional[dict]) -> str:
+    """Build HTML for confidence assessment panel."""
+    if theo_metrics is None:
+        return ""
+    confidence = theo_metrics.get("confidence")
+    if confidence is None:
+        return ""
+
+    score = confidence.get("confidence_score", 0)
+    level = confidence.get("confidence_level", "unknown")
+    reasons = confidence.get("confidence_reasons", [])
+    action = confidence.get("recommended_next_action", "")
+
+    # Color based on level
+    color_map = {"high": "#22c55e", "medium": "#f59e0b", "low": "#ef4444"}
+    color = color_map.get(level, "#9ca3af")
+
+    parts = [
+        '<div class="section confidence-panel" '
+        f'style="border-left: 4px solid {color}; padding: 12px; '
+        'margin: 16px 0; background: rgba(0,0,0,0.02);">',
+        f'<h3>Confidence: {score}/100 '
+        f'<span style="color: {color}; text-transform: capitalize;">'
+        f'({level})</span></h3>',
+    ]
+
+    if reasons:
+        parts.append('<p><strong>Top blockers:</strong></p><ol>')
+        for reason in reasons[:3]:
+            parts.append(f'<li>{reason}</li>')
+        parts.append('</ol>')
+
+    if action:
+        parts.append(
+            f'<p style="margin-top: 8px;"><strong>&rarr;</strong> {action}</p>'
+        )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 def generate_report(
     *,
     score_result:         Optional[dict[str, Any]]        = None,
@@ -3232,6 +3278,8 @@ def generate_report(
     # --- Traffic detection & lap inclusion (all optional) -
     traffic:              Optional[dict[str, Any]]         = None,
     lap_inclusion:        Optional[dict[str, Any]]         = None,
+    # --- Confidence assessment (all optional) -
+    theoretical_metrics:  Optional[dict[str, Any]]         = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3456,6 +3504,7 @@ def generate_report(
     quality_badge = _build_quality_badge_html(score_result, data_quality, session_meta)
     distance_quality_html = _build_distance_quality_html(distance_quality)
     traffic_html = _build_traffic_html(traffic, lap_inclusion)
+    confidence_html = _build_confidence_html(theoretical_metrics)
     sim_method_badge = _build_sim_method_badge_html(
         score_result, using_data_theoretical=_using_data_theoretical,
     )
@@ -3528,6 +3577,7 @@ def generate_report(
         weather_coaching_html=weather_coaching_html,
         distance_quality_html=distance_quality_html,
         traffic_html=traffic_html,
+        confidence_html=confidence_html,
         # Colour variables for CSS
 
         bg_dark=_BG_DARK,

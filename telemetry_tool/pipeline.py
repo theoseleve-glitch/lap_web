@@ -2851,6 +2851,7 @@ def run_full_analysis(
                 distance_quality=summary.get("distance_quality"),
                 traffic=summary.get("traffic"),
                 lap_inclusion=summary.get("lap_inclusion"),
+                theoretical_metrics=summary.get("theoretical_metrics"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)
