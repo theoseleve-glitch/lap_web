@@ -2029,3 +2029,41 @@ def compute_segment_losses(
     timeline.segment_losses_s = losses
     timeline.segment_confidences = confidences
     return losses
+
+
+def compute_event_stability(
+    corners: list[dict],
+    all_lap_dfs: list[pd.DataFrame],
+    data_quality: float = 1.0,
+) -> dict[int, dict[str, float]]:
+    """
+    Compute std-dev of each event's s_position across multiple laps.
+    Skips if fewer than 3 laps.
+    Returns: corner_id -> {event_type -> std_dev_m}
+    """
+    if len(all_lap_dfs) < 3:
+        return {}
+
+    result = {}
+    for corner in corners:
+        cid = int(corner.get("corner_id", 0))
+        event_positions: dict[str, list[float]] = {}
+
+        for lap_df in all_lap_dfs:
+            if lap_df is None or len(lap_df) < 10:
+                continue
+            try:
+                tl = detect_corner_events(corner, lap_df, data_quality=data_quality)
+                for ev in tl.events:
+                    if ev.available and ev.s_position > 0:
+                        event_positions.setdefault(ev.event_type, []).append(ev.s_position)
+            except Exception:
+                continue
+
+        stability: dict[str, float] = {}
+        for ev_type, positions in event_positions.items():
+            if len(positions) >= 3:
+                stability[ev_type] = float(np.std(positions))
+        result[cid] = stability
+
+    return result

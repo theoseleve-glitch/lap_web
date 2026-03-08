@@ -85,7 +85,7 @@ class TestCornerTimelineDataclass:
 
 # ── detect_corner_events tests ──────────────────────────────────────────────
 
-from telemetry_tool.corner_analysis import detect_corner_events, compute_segment_losses
+from telemetry_tool.corner_analysis import detect_corner_events, compute_segment_losses, compute_event_stability
 
 
 def _make_corner(cid=1, s_start=100.0, s_end=200.0):
@@ -292,3 +292,42 @@ class TestSegmentLosses:
         assert losses.get("MRP_THROTTLE_ON", 0.0) == 0.0
         # BP_EOB should have a loss (both available)
         assert losses.get("BP_EOB", 0.0) >= 0.0
+
+
+class TestEventStability:
+    def test_five_laps_varying_bp(self):
+        corners = [_make_corner(1, 100.0, 200.0)]
+        bp_positions = [70, 72, 68, 74, 71]
+        all_lap_dfs = []
+        for bp_pos in bp_positions:
+            n = 500
+            dist = np.linspace(0, 300, n)
+            speed = np.ones(n) * 30.0
+            brake_mask = (dist >= bp_pos) & (dist <= 100)
+            speed[brake_mask] = np.interp(dist[brake_mask], [bp_pos, 100], [30, 15])
+            mid_mask = (dist > 100) & (dist <= 150)
+            speed[mid_mask] = 15.0
+            accel_mask = (dist > 150) & (dist <= 200)
+            speed[accel_mask] = np.interp(dist[accel_mask], [150, 200], [15, 28])
+            speed[dist > 200] = 28.0
+            ds = np.gradient(dist)
+            ds[ds == 0] = 1e-6
+            dv = np.gradient(speed)
+            accel = speed * dv / ds
+            df = pd.DataFrame({
+                "Distance (m)": dist, "Speed (m/s)": speed,
+                "accel_long_mps2": accel,
+            })
+            all_lap_dfs.append(df)
+
+        stability = compute_event_stability(corners, all_lap_dfs)
+        assert 1 in stability
+        bp_std = stability[1].get("BP", 0.0)
+        assert bp_std > 0.5
+        assert bp_std < 10.0
+
+    def test_fewer_than_3_laps_skipped(self):
+        corners = [_make_corner(1, 100.0, 200.0)]
+        df = _make_braking_lap_df()
+        stability = compute_event_stability(corners, [df, df])
+        assert stability == {} or 1 not in stability or stability[1] == {}
