@@ -2487,6 +2487,29 @@ def run_full_analysis(
             ])
             caps.mu = mu_arr
 
+        # Try solve with uncertainty bands first
+        result_with_bands = None
+        if hasattr(theo_mod, "caps_from_percentile_envelope_with_bands"):
+            try:
+                caps_nom, caps_low, caps_high = theo_mod.caps_from_percentile_envelope_with_bands(
+                    laps_list, curv_arr,
+                    speed_percentile=speed_pct,
+                )
+                # Apply grip map to all three
+                for c in (caps_nom, caps_low, caps_high):
+                    if _grip_map is not None and not _grip_map.is_global_fallback and c.mu is None:
+                        c.mu = np.array([
+                            _grip_map.mu_at(float(d), "p95") for d in c.distance_m
+                        ])
+                result_with_bands = _opt_mod.solve_optimal_speed_with_bands(
+                    caps_nom, caps_low, caps_high,
+                )
+            except Exception as exc:
+                logger.debug("solve_optimal_speed_with_bands failed: %s", exc)
+
+        if result_with_bands is not None:
+            return result_with_bands
+
         return _opt_mod.solve_optimal_speed(caps)
 
     _optimal_result, err = _safe_step("10b_optimal_v2", _compute_optimal_v2)
@@ -2494,6 +2517,32 @@ def run_full_analysis(
 
     if _optimal_result is not None:
         summary["optimal_v2"] = _optimal_result.to_dict()
+
+        # Corner saturation
+        if corners and hasattr(_opt_mod, "compute_corner_saturation"):
+            try:
+                corner_dicts = [c if isinstance(c, dict) else c.to_dict()
+                                for c in corners]
+                sats = _opt_mod.compute_corner_saturation(_optimal_result, corner_dicts)
+                summary["optimal_v2"]["corner_saturation"] = [s.to_dict() for s in sats]
+            except Exception:
+                logger.debug("Corner saturation failed", exc_info=True)
+
+        # Corner coaching labels
+        _ca_mod = _import("corner_analysis")
+        if _ca_mod is not None and corners and hasattr(_ca_mod, "compute_corner_coaching_labels"):
+            try:
+                corner_dicts = [c if isinstance(c, dict) else c.to_dict()
+                                for c in corners]
+                coaching_labels = _ca_mod.compute_corner_coaching_labels(
+                    corners=corner_dicts,
+                    limiting_factors=_optimal_result.limiting_factor,
+                    distance_m=_optimal_result.distance_m,
+                    lap_length_m=float(_optimal_result.distance_m[-1]),
+                )
+                summary["optimal_v2"]["corner_coaching_labels"] = coaching_labels
+            except Exception:
+                logger.debug("Corner coaching labels failed", exc_info=True)
 
     summary["corner_coaching"] = _corner_coaching
     summary["delta_map"] = _delta_map
