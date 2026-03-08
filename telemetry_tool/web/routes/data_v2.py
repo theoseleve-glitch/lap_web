@@ -574,6 +574,28 @@ def get_scores(session_id: str):
         logger.warning("Badge evaluation failed for session %s", session_id, exc_info=True)
         scores["badges"] = []
 
+    # ── confidence: from theoretical_metrics ──
+    try:
+        theo_data = models.get_theoretical_data(conn, session_id)
+        if theo_data and isinstance(theo_data, dict):
+            metrics = theo_data.get("theoretical_metrics", {})
+            if metrics and "confidence" in metrics:
+                conf = metrics["confidence"]
+                scores["confidence_score"] = conf.get("confidence_score")
+                scores["confidence_level"] = conf.get("confidence_level")
+                scores["confidence_reasons"] = conf.get(
+                    "confidence_reasons", []
+                )
+                scores["recommended_next_action"] = conf.get(
+                    "recommended_next_action", ""
+                )
+    except Exception:
+        logger.warning(
+            "Confidence data unavailable for session %s",
+            session_id,
+            exc_info=True,
+        )
+
     return api_response(scores)
 
 
