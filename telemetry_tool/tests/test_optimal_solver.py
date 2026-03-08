@@ -338,3 +338,61 @@ def test_corner_saturation_cornering_dominated():
     d = sat.to_dict()
     assert "dominant_factor" in d
     assert "saturation_98pct" in d
+
+
+def test_caps_from_percentile_envelope_with_bands():
+    """Percentile envelope produces low/high cap variants."""
+    from theoretical_engine import caps_from_percentile_envelope_with_bands
+
+    rng = np.random.default_rng(42)
+    n_points = 200
+    laps = []
+    for _ in range(8):
+        dist = np.linspace(0, 500, n_points)
+        speed = np.full(n_points, 20.0) + rng.normal(0, 1.5, n_points)
+        speed = np.clip(speed, 5.0, 40.0)
+        laps.append(pd.DataFrame({
+            "distance_m": dist,
+            "speed_mps": speed,
+            "accel_long_mps2": rng.normal(0, 2.0, n_points),
+        }))
+
+    curvature = np.full(n_points, 0.005)
+    caps, caps_low, caps_high = caps_from_percentile_envelope_with_bands(
+        laps, curvature,
+    )
+
+    assert len(caps.distance_m) == n_points
+    # Low caps should have lower v_cap on average
+    assert np.mean(caps_low.v_cap) <= np.mean(caps.v_cap) + 0.1
+    # High caps should have higher v_cap on average
+    assert np.mean(caps_high.v_cap) >= np.mean(caps.v_cap) - 0.1
+
+
+def test_caps_from_vehicle_model_with_bands():
+    """Vehicle model produces low/high cap variants via mu range."""
+    from lap_simulation import caps_from_vehicle_model_with_bands
+
+    n = 200
+    dist = np.linspace(0, 500, n)
+    curvature = np.zeros(n)
+    curvature[80:120] = 0.02
+
+    caps, caps_low, caps_high = caps_from_vehicle_model_with_bands(
+        distance_m=dist,
+        curvature=curvature,
+        traction_mps2=5.0,
+        braking_mps2=8.0,
+        mu=1.2,
+        mu_low=1.0,
+        mu_high=1.35,
+        v_max_mps=40.0,
+    )
+
+    assert len(caps.distance_m) == n
+    # Low mu → lower corner speed caps
+    corner_cap_low = np.mean(caps_low.v_cap[90:110])
+    corner_cap_nom = np.mean(caps.v_cap[90:110])
+    corner_cap_high = np.mean(caps_high.v_cap[90:110])
+    assert corner_cap_low <= corner_cap_nom + 0.1
+    assert corner_cap_nom <= corner_cap_high + 0.1

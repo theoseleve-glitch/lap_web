@@ -2185,6 +2185,52 @@ def caps_from_vehicle_model(
     )
 
 
+def caps_from_vehicle_model_with_bands(
+    *,
+    distance_m: "np.ndarray",
+    curvature: "np.ndarray",
+    traction_mps2: float,
+    braking_mps2: float,
+    mu: float,
+    mu_low: float | None = None,
+    mu_high: float | None = None,
+    v_max_mps: float = 80.0,
+    grip_map: Any = None,
+) -> tuple["OptimalCaps", "OptimalCaps", "OptimalCaps"]:
+    """Build nominal + low + high OptimalCaps from vehicle model.
+
+    Returns (caps_nominal, caps_low, caps_high).
+    """
+    if mu_low is None:
+        mu_low = mu * 0.85
+    if mu_high is None:
+        mu_high = mu * 1.05
+
+    caps_nom = caps_from_vehicle_model(
+        distance_m=distance_m, curvature=curvature,
+        traction_mps2=traction_mps2, braking_mps2=braking_mps2,
+        mu=mu, v_max_mps=v_max_mps, grip_map=grip_map,
+    )
+    caps_low = caps_from_vehicle_model(
+        distance_m=distance_m, curvature=curvature,
+        traction_mps2=traction_mps2 * 0.8,
+        braking_mps2=braking_mps2 * 0.8,
+        mu=mu_low, v_max_mps=v_max_mps,
+    )
+    caps_high = caps_from_vehicle_model(
+        distance_m=distance_m, curvature=curvature,
+        traction_mps2=traction_mps2 * 1.1,
+        braking_mps2=braking_mps2 * 1.1,
+        mu=mu_high, v_max_mps=v_max_mps,
+    )
+
+    n = len(distance_m)
+    caps_low.cap_source = ["physics_model_low"] * n
+    caps_high.cap_source = ["physics_model_high"] * n
+
+    return caps_nom, caps_low, caps_high
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------

@@ -1528,6 +1528,47 @@ def caps_from_percentile_envelope(
     )
 
 
+def caps_from_percentile_envelope_with_bands(
+    laps: list["pd.DataFrame"],
+    curvature: "np.ndarray",
+    speed_percentile: float = 98.0,
+    speed_percentile_low: float = 90.0,
+    speed_percentile_high: float = 99.5,
+    accel_percentile: float = 99.0,
+    accel_percentile_low: float = 90.0,
+    accel_percentile_high: float = 99.9,
+    smooth_window: int = 5,
+) -> tuple["OptimalCaps", "OptimalCaps", "OptimalCaps"]:
+    """Build nominal + low + high OptimalCaps from percentile envelope.
+
+    Returns (caps_nominal, caps_low, caps_high).
+    """
+    caps_nom = caps_from_percentile_envelope(
+        laps, curvature,
+        speed_percentile=speed_percentile,
+        accel_percentile=accel_percentile,
+        smooth_window=smooth_window,
+    )
+    caps_low = caps_from_percentile_envelope(
+        laps, curvature,
+        speed_percentile=speed_percentile_low,
+        accel_percentile=accel_percentile_low,
+        smooth_window=smooth_window,
+    )
+    caps_high = caps_from_percentile_envelope(
+        laps, curvature,
+        speed_percentile=speed_percentile_high,
+        accel_percentile=accel_percentile_high,
+        smooth_window=smooth_window,
+    )
+    # Override source tags
+    n = len(caps_low.distance_m)
+    caps_low.cap_source = [f"envelope_p{int(speed_percentile_low)}"] * n
+    caps_high.cap_source = [f"envelope_p{int(speed_percentile_high)}"] * n
+
+    return caps_nom, caps_low, caps_high
+
+
 # -- -
 
 # Entry point
