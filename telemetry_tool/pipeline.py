@@ -2108,10 +2108,20 @@ def run_full_analysis(
             "theoretical_engine are unavailable."
         )
 
-    theoretical_lap, err = _safe_step("10_theoretical", _theoretical)
-    _record("10_theoretical", theoretical_lap, err)
-    _fire_progress("10_theoretical")
-    summary["theoretical_lap"] = theoretical_lap
+    # Gate: skip theoretical if distance quality is degraded
+    if _distance_quality is not None and hasattr(_distance_quality, 'gate_advanced') and _distance_quality.gate_advanced:
+        logger.warning("Theoretical lap SKIPPED: distance quality gate active (status=%s).",
+                       getattr(_distance_quality, 'status', 'unknown'))
+        theoretical_lap = None
+        err = "distance_quality_gate"
+        _record("10_theoretical", None, err)
+        _fire_progress("10_theoretical")
+        summary["theoretical_lap"] = None
+    else:
+        theoretical_lap, err = _safe_step("10_theoretical", _theoretical)
+        _record("10_theoretical", theoretical_lap, err)
+        _fire_progress("10_theoretical")
+        summary["theoretical_lap"] = theoretical_lap
 
     def _compute_theo_metrics() -> dict[str, Any]:
         if theoretical_lap is None:
@@ -2535,8 +2545,13 @@ def run_full_analysis(
             session_type=meta.get("session_type", "practice"),
         )
 
-    cg_result, err = _safe_step("13b_coaching_guide", _coaching_guide)
-    _record("13b_coaching_guide", cg_result, err)
+    if _distance_quality is not None and hasattr(_distance_quality, 'gate_advanced') and _distance_quality.gate_advanced:
+        logger.warning("Coaching guide SKIPPED: distance quality gate active.")
+        cg_result = None
+        _record("13b_coaching_guide", None, "distance_quality_gate")
+    else:
+        cg_result, err = _safe_step("13b_coaching_guide", _coaching_guide)
+        _record("13b_coaching_guide", cg_result, err)
     if cg_result:
         coaching_guide = cg_result
         n_focus = len(cg_result.get("focus_areas", []))

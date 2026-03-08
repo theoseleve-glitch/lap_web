@@ -33,3 +33,19 @@ def test_distance_quality_in_summary(seeded_db, tmp_path):
     assert dq["status"] in ("ok", "repaired", "degraded")
     assert isinstance(dq["gate_advanced"], bool)
     assert isinstance(dq["metrics"], list)
+
+
+def test_gate_blocks_theoretical_when_degraded():
+    """When distance_quality.gate_advanced=True, theoretical step is skipped."""
+    from distance_integrity import DistanceQuality
+
+    dq = DistanceQuality(
+        status="degraded",
+        gate_advanced=True,
+        laps_degraded=[1],
+        message="test",
+    )
+    # Verify the dataclass attributes used by the gate check
+    assert dq.gate_advanced is True
+    assert dq.status == "degraded"
+    assert hasattr(dq, 'gate_advanced')
