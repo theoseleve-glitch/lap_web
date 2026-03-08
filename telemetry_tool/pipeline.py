@@ -943,6 +943,26 @@ def run_full_analysis(
         # -- Safety net: validate & repair distance data before resampling
         lap_dict = validate_lap_consistency(lap_dict)
 
+        # STEP 6.5 -- Distance integrity preflight
+        #
+        _di_mod = _import("distance_integrity")
+
+        def _distance_integrity():
+            if _di_mod is None:
+                logger.info("distance_integrity module absent; skipping preflight.")
+                return lap_dict, None
+            return _di_mod.run_distance_integrity(lap_dict)
+
+        _di_result, err = _safe_step("06b_distance_integrity", _distance_integrity)
+        _record("06b_distance_integrity", _di_result, err)
+        _fire_progress("06b_distance_integrity")
+        if _di_result is not None:
+            lap_dict, _distance_quality = _di_result
+            summary["distance_quality"] = _distance_quality.to_dict() if hasattr(_distance_quality, "to_dict") else _distance_quality
+        else:
+            _distance_quality = None
+            summary["distance_quality"] = None
+
         # STEP 7 --  Normalise (resample to uniform distance grid)
 
         #
