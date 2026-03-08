@@ -53,3 +53,84 @@ def test_traffic_result_empty():
     d = result.to_dict()
     assert d["n_laps_affected"] == 0
     assert len(d["events"]) == 0
+
+
+def _make_oval_lap(n=500, straight_len=200.0, corner_radius=30.0, speed=20.0):
+    """Synthetic oval: two straights + two corners.
+
+    Layout: straight1 (0–200m) → corner1 (200–294m) → straight2 (294–494m)
+    → corner2 (494–588m). Total ~588m.
+    """
+    rng = np.random.default_rng(42)
+
+    # Straight 1: heading = 0 (east)
+    s1_dist = np.linspace(0, straight_len, n // 4)
+    s1_hdg = np.zeros(len(s1_dist))
+
+    # Corner 1: 180° turn (pi radians over semi-circle)
+    arc_len = np.pi * corner_radius
+    c1_dist = np.linspace(0, arc_len, n // 4) + straight_len
+    c1_hdg = np.linspace(0, np.pi, len(c1_dist))
+
+    # Straight 2: heading = pi (west)
+    s2_start = straight_len + arc_len
+    s2_dist = np.linspace(0, straight_len, n // 4) + s2_start
+    s2_hdg = np.full(len(s2_dist), np.pi)
+
+    # Corner 2: 180° turn back
+    c2_start = s2_start + straight_len
+    c2_dist = np.linspace(0, arc_len, n // 4) + c2_start
+    c2_hdg = np.linspace(np.pi, 2 * np.pi, len(c2_dist))
+
+    all_dist = np.concatenate([s1_dist, c1_dist, s2_dist, c2_dist])
+    all_hdg = np.concatenate([s1_hdg, c1_hdg, s2_hdg, c2_hdg])
+
+    df = pd.DataFrame({
+        "Distance (m)": all_dist,
+        "Speed (m/s)": np.full(len(all_dist), speed) + rng.normal(0, 0.2, len(all_dist)),
+        "Bearing (deg)": np.degrees(all_hdg) % 360,
+        "accel_long_mps2": rng.normal(0, 0.1, len(all_dist)),
+        "yaw_rate_dps": np.zeros(len(all_dist)),
+    })
+    # Compute yaw_rate from heading changes
+    dt = np.diff(all_dist) / speed
+    dhdg = np.diff(all_hdg)
+    yr = np.concatenate([[0], dhdg / np.where(dt > 0, dt, 0.01)])
+    df["yaw_rate_dps"] = np.degrees(yr)
+
+    return df
+
+
+def test_detect_straights_oval():
+    """Oval track with 2 straights → detects 2 straight segments."""
+    from traffic_detection import detect_straights
+
+    df = _make_oval_lap()
+    straights = detect_straights(df)
+    assert len(straights) >= 2
+    for s in straights:
+        assert s["length_m"] >= 30.0
+        assert s["s_end"] > s["s_start"]
+
+
+def test_detect_straights_circle():
+    """Constant-radius circle → no straights detected."""
+    from traffic_detection import detect_straights
+
+    n = 300
+    radius = 50.0
+    speed = 15.0
+    omega = speed / radius
+    t = np.arange(n) * 0.1
+    theta = omega * t
+    dist = speed * t
+
+    df = pd.DataFrame({
+        "Distance (m)": dist,
+        "Speed (m/s)": np.full(n, speed),
+        "Bearing (deg)": np.degrees(theta) % 360,
+        "accel_long_mps2": np.zeros(n),
+        "yaw_rate_dps": np.full(n, np.degrees(omega)),
+    })
+    straights = detect_straights(df)
+    assert len(straights) == 0

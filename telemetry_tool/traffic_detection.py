@@ -62,3 +62,92 @@ class TrafficResult:
             "per_lap_score": dict(self.per_lap_score),
             "n_laps_affected": self.n_laps_affected,
         }
+
+
+def _compute_curvature(df: "pd.DataFrame") -> np.ndarray:
+    """Compute curvature from heading derivative w.r.t. distance.
+
+    curvature = dheading/ds (rad/m).
+    Uses Bearing (deg) and Distance (m) columns.
+    """
+    import pandas as pd
+
+    bearing = pd.to_numeric(df[_COL_BEARING], errors="coerce").values.astype(float)
+    dist = pd.to_numeric(df[_COL_DIST], errors="coerce").values.astype(float)
+
+    # Convert bearing to radians, unwrap to remove 0/360 jumps
+    hdg_rad = np.unwrap(np.radians(bearing))
+
+    # dheading / ds
+    ds = np.diff(dist)
+    dh = np.diff(hdg_rad)
+    ds = np.where(ds > 0, ds, np.nan)
+
+    curvature = np.concatenate([[0.0], dh / ds])
+    curvature = np.where(np.isfinite(curvature), curvature, 0.0)
+
+    # Smooth with a small window to reduce noise
+    if len(curvature) > 7:
+        kernel = np.ones(7) / 7
+        curvature = np.convolve(curvature, kernel, mode="same")
+
+    return curvature
+
+
+def detect_straights(
+    df: "pd.DataFrame",
+    *,
+    curvature_threshold: float = _CURVATURE_STRAIGHT_THRESHOLD,
+    min_length_m: float = _MIN_STRAIGHT_LENGTH_M,
+) -> list[dict]:
+    """Detect straight segments from curvature.
+
+    Returns list of dicts with keys: s_start, s_end, length_m.
+    """
+    import pandas as pd
+
+    if _COL_BEARING not in df.columns or _COL_DIST not in df.columns:
+        logger.warning("detect_straights: missing Bearing or Distance column.")
+        return []
+
+    dist = pd.to_numeric(df[_COL_DIST], errors="coerce").values.astype(float)
+    curvature = _compute_curvature(df)
+
+    # Identify low-curvature regions
+    is_straight = np.abs(curvature) < curvature_threshold
+
+    # Find contiguous runs of True
+    straights = []
+    in_straight = False
+    start_idx = 0
+
+    for i in range(len(is_straight)):
+        if is_straight[i] and not in_straight:
+            start_idx = i
+            in_straight = True
+        elif not is_straight[i] and in_straight:
+            s_start = float(dist[start_idx])
+            s_end = float(dist[i - 1])
+            length = s_end - s_start
+            if length >= min_length_m:
+                straights.append({
+                    "s_start": round(s_start, 1),
+                    "s_end": round(s_end, 1),
+                    "length_m": round(length, 1),
+                })
+            in_straight = False
+
+    # Handle straight that extends to end
+    if in_straight:
+        s_start = float(dist[start_idx])
+        s_end = float(dist[-1])
+        length = s_end - s_start
+        if length >= min_length_m:
+            straights.append({
+                "s_start": round(s_start, 1),
+                "s_end": round(s_end, 1),
+                "length_m": round(length, 1),
+            })
+
+    logger.info("detect_straights: found %d straight segments.", len(straights))
+    return straights
