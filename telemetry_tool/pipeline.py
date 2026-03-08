@@ -818,6 +818,26 @@ def run_full_analysis(
         summary["filtered_df"] = None  # Not consumed downstream; avoid holding ~8 GB
         raw_df = None  # Allow GC of ingest DataFrame
 
+        # STEP 2.5 -- Sensor fusion (EKF)
+        #
+        _fusion_mod = _import("fusion_ekf")
+
+        def _fusion():
+            if _fusion_mod is None:
+                logger.info("fusion_ekf module absent; skipping sensor fusion.")
+                return filtered_df, None
+            return _fusion_mod.run_sensor_fusion(filtered_df)
+
+        _fusion_result, err = _safe_step("02b_sensor_fusion", _fusion)
+        _record("02b_sensor_fusion", _fusion_result, err)
+        _fire_progress("02b_sensor_fusion")
+        if _fusion_result is not None:
+            filtered_df, _fusion_meta = _fusion_result
+            summary["sensor_fusion"] = _fusion_meta.to_dict() if hasattr(_fusion_meta, "to_dict") else _fusion_meta
+        else:
+            _fusion_meta = None
+            summary["sensor_fusion"] = None
+
         # STEP 3 --  Derived channels
 
         #
