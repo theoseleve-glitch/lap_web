@@ -2158,6 +2158,28 @@ def run_full_analysis(
                 laps_for_theo = laps_list
                 keys_for_theo = sorted_keys
 
+            # Filter by inclusion policy (if available)
+            if _inclusion_policy is not None and hasattr(_inclusion_policy, 'learning_laps'):
+                _learning_set = set(_inclusion_policy.learning_laps)
+                _filtered = [
+                    (lap, key) for lap, key in zip(laps_for_theo, keys_for_theo)
+                    if key in _learning_set
+                ]
+                if len(_filtered) >= 3:
+                    laps_for_theo = [x[0] for x in _filtered]
+                    keys_for_theo = [x[1] for x in _filtered]
+                    logger.info(
+                        "Theoretical envelope: filtered to %d learning laps "
+                        "(excluded %d by inclusion policy).",
+                        len(laps_for_theo),
+                        len(sorted_keys) - len(laps_for_theo),
+                    )
+                else:
+                    logger.warning(
+                        "Inclusion policy leaves only %d laps — using all %d.",
+                        len(_filtered), len(laps_for_theo),
+                    )
+
             # Adaptive percentile from data quality
 
             speed_pct = 98.0
@@ -2165,6 +2187,14 @@ def run_full_analysis(
             if data_quality_rpt is not None:
                 speed_pct = data_quality_rpt.recommended_speed_percentile
                 accel_pct = data_quality_rpt.recommended_accel_percentile
+
+            # Traffic masks from inclusion policy (if available)
+            _traffic_masks = (
+                _inclusion_policy.traffic_masks
+                if _inclusion_policy is not None
+                   and hasattr(_inclusion_policy, 'traffic_masks')
+                else None
+            )
 
             # Use phase-aware version if available
 
@@ -2177,6 +2207,7 @@ def run_full_analysis(
                     lap_keys=keys_for_theo,
                     speed_percentile=speed_pct,
                     accel_percentile=accel_pct,
+                    masks=_traffic_masks,
                 )
 
             _sim_method = "percentile_envelope"
@@ -2187,9 +2218,10 @@ def run_full_analysis(
                     laps_for_theo, n_points=n_resample_points,
                     speed_percentile=speed_pct,
                     accel_percentile=accel_pct,
+                    masks=_traffic_masks,
                 )
             except TypeError:
-                # Older theoretical_engine without percentile kwargs
+                # Older theoretical_engine without percentile/masks kwargs
 
                 return theo_mod.build_theoretical_lap(
                     laps_for_theo, n_points=n_resample_points,

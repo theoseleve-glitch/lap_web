@@ -738,6 +738,7 @@ def build_theoretical_lap(
     accel_percentile:  float = 99.0,
     *,
     smooth_window:     int   = 5,
+    masks: "dict[int, list[tuple[float, float]]] | None" = None,
 ) -> pd.DataFrame:
     """
     Compose speed and acceleration envelopes into a full theoretical lap.
@@ -771,6 +772,7 @@ def build_theoretical_lap(
     speed_env = compute_speed_percentile_envelope(
         laps, percentile=speed_percentile,
         n_bins=n_points, smooth_window=smooth_window,
+        masks=masks,
     )
     accel_env = compute_accel_envelope(
         laps, percentile=accel_percentile,
@@ -816,6 +818,7 @@ def build_theoretical_lap_phase_aware(
     *,
     smooth_window: int = 5,
     lap_keys: "list[int] | None" = None,
+    masks: "dict[int, list[tuple[float, float]]] | None" = None,
 ) -> pd.DataFrame:
     """
     Phase-aware wrapper around :func:`build_theoretical_lap`.
@@ -853,6 +856,7 @@ def build_theoretical_lap_phase_aware(
             speed_percentile=speed_percentile,
             accel_percentile=accel_percentile,
             smooth_window=smooth_window,
+            masks=masks,
         )
 
     # --- Choose phase
@@ -886,6 +890,7 @@ def build_theoretical_lap_phase_aware(
         speed_percentile=speed_percentile,
         accel_percentile=accel_percentile,
         smooth_window=smooth_window,
+        masks=masks,
     )
 
 
