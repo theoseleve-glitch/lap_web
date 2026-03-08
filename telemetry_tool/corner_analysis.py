@@ -712,17 +712,46 @@ def _analyze_single_corner(
 
 def rank_improvement_opportunities(
     corner_performances: list[CornerPerformance],
+    corner_timelines: Optional[list] = None,
 ) -> list[CornerPerformance]:
     """
-    Sort corners by total time loss (descending).
+    Sort corners by composite priority (descending).
 
-    The top items are where the driver has the most to gain.
+    Weights: time_loss_s (0.6), mistake_severities (0.2),
+    mrp_stability (0.1, inverted), max_segment_loss (0.1).
+
+    When *corner_timelines* is ``None`` (legacy callers), falls back
+    to simple time-loss sorting.
     """
-    return sorted(
-        corner_performances,
-        key=lambda p: p.time_loss_s,
-        reverse=True,
-    )
+    if corner_timelines is None:
+        return sorted(corner_performances, key=lambda p: p.time_loss_s, reverse=True)
+
+    # Build lookup: corner_id -> timeline (dict or CornerTimeline)
+    tl_map: dict = {}
+    for tl in corner_timelines:
+        cid = tl.corner_id if hasattr(tl, "corner_id") else tl.get("corner_id")
+        if cid is not None:
+            tl_map[cid] = tl
+
+    def _score(p: CornerPerformance) -> float:
+        score = p.time_loss_s * 0.6
+        tl = tl_map.get(p.corner_id)
+        if tl is not None:
+            mistakes = tl.mistakes if hasattr(tl, "mistakes") else tl.get("mistakes", [])
+            mistake_sum = sum(m.get("severity", 0) for m in mistakes)
+            score += mistake_sum * 0.2
+
+            mrp_std = (tl.mrp_stability_std_m if hasattr(tl, "mrp_stability_std_m")
+                       else tl.get("mrp_stability_std_m", 0.0))
+            score += min(mrp_std / 20.0, 1.0) * 0.1
+
+            seg_losses = (tl.segment_losses_s if hasattr(tl, "segment_losses_s")
+                          else tl.get("segment_losses_s", {}))
+            if seg_losses:
+                score += max(seg_losses.values()) * 0.1
+        return score
+
+    return sorted(corner_performances, key=_score, reverse=True)
 
 
 def summarize_corner_performances(

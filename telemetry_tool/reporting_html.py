@@ -1827,6 +1827,22 @@ def _build_corner_table_html(
         priority = _get(p, "corner_priority", "")
         coaching_txt = _get(p, "coaching_text", "")
 
+        # Timeline mistakes
+        mistakes_html = ""
+        if isinstance(p, dict):
+            timeline = p.get("timeline", {})
+            if timeline:
+                mistake_list = timeline.get("mistakes", [])
+                if mistake_list:
+                    top = mistake_list[0]
+                    sev = top.get("severity", 0)
+                    sev_color = "#ff4444" if sev > 0.6 else ("#ffd600" if sev > 0.3 else "#88ff88")
+                    mistakes_html = (
+                        f'<span style="color:{sev_color};font-size:0.75rem;">'
+                        f'{top.get("type", "").replace("_", " ")}'
+                        f' ({sev:.0%})</span>'
+                    )
+
         apex_class = _speed_class(actual_apex, theo_apex) if theo_apex > 0 else ""
         entry_class = _speed_class(actual_entry, theo_entry) if theo_entry > 0 else ""
 
@@ -1857,6 +1873,7 @@ def _build_corner_table_html(
           <td>{bp_delta:+.0f}m</td>
           <td {loss_class}>{loss:.3f}s</td>
           <td style="font-size:0.75rem;color:#9a9a9a;max-width:250px;white-space:normal;">{hint}</td>
+          <td>{mistakes_html}</td>
           <td>{priority}</td>
           <td style="font-size:0.75rem;color:#9a9a9a;max-width:250px;white-space:normal;">{coaching_txt}</td>
         </tr>"""
@@ -1869,7 +1886,7 @@ def _build_corner_table_html(
         <th>Entry (km/h)</th><th>Apex (km/h)</th>
         <th>Grip</th><th>Brake Pt</th>
         <th>Time Loss</th><th>Coaching</th>
-        <th>Priority</th><th>Why</th>
+        <th>Mistakes</th><th>Priority</th><th>Why</th>
       </tr></thead>
       <tbody>{"".join(rows)}</tbody>
     </table></div>"""

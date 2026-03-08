@@ -763,6 +763,21 @@ def get_corners(session_id: str):
         # -- Merge coaching labels from optimal_v2 ---
         _merge_coaching_labels(conn, session_id, corners)
 
+        # -- 4b. Merge timeline data if available --
+        if theo:
+            timeline_list = theo.get("corner_timelines", [])
+            tl_map = {}
+            for tl in (timeline_list or []):
+                tid = tl.get("corner_id")
+                if tid is not None:
+                    tl_map[tid] = tl
+
+            if corners and tl_map:
+                for corner in corners:
+                    cid = corner.get("corner_id")
+                    if cid in tl_map:
+                        corner["timeline"] = tl_map[cid]
+
         return api_response({
             "corners": corners,
             "available": True,
@@ -785,6 +800,21 @@ def get_corners(session_id: str):
 
         # -- Merge coaching labels from optimal_v2 ---
         _merge_coaching_labels(conn, session_id, corners)
+
+        # -- 5b. Merge timeline data if available --
+        if theo:
+            timeline_list = theo.get("corner_timelines", [])
+            tl_map = {}
+            for tl in (timeline_list or []):
+                tid = tl.get("corner_id")
+                if tid is not None:
+                    tl_map[tid] = tl
+
+            if corners and tl_map:
+                for corner in corners:
+                    cid = corner.get("corner_id")
+                    if cid in tl_map:
+                        corner["timeline"] = tl_map[cid]
 
         return api_response({
             "corners": corners,
