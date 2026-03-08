@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -196,13 +197,15 @@ export default function VisualizeSessionPage() {
             </h3>
           </div>
           <div className="flex-1 p-2 overflow-hidden">
-            <GpsTrace
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={activeLap}
-              className="w-full h-full"
-            />
+            <ChartErrorBoundary chartName="GpsTrace" minHeight="300px">
+              <GpsTrace
+                sessionId={sessionId}
+                apiBase={apiBase}
+                gpsLaps={gpsLaps}
+                bestLap={activeLap}
+                className="w-full h-full"
+              />
+            </ChartErrorBoundary>
           </div>
         </div>
 
@@ -216,13 +219,15 @@ export default function VisualizeSessionPage() {
               </h3>
             </div>
             <div className="flex-1 p-2 overflow-hidden">
-              <SpeedTraceZoom
-                sessionId={sessionId}
-                apiBase={apiBase}
-                gpsLaps={gpsLaps}
-                bestLap={activeLap}
-                className="w-full h-full"
-              />
+              <ChartErrorBoundary chartName="SpeedTrace" minHeight="200px">
+                <SpeedTraceZoom
+                  sessionId={sessionId}
+                  apiBase={apiBase}
+                  gpsLaps={gpsLaps}
+                  bestLap={activeLap}
+                  className="w-full h-full"
+                />
+              </ChartErrorBoundary>
             </div>
           </div>
 
@@ -234,13 +239,15 @@ export default function VisualizeSessionPage() {
               </h3>
             </div>
             <div className="flex-1 p-2 overflow-hidden">
-              <GGExplorer
-                sessionId={sessionId}
-                apiBase={apiBase}
-                gpsLaps={gpsLaps}
-                bestLap={activeLap}
-                className="w-full h-full"
-              />
+              <ChartErrorBoundary chartName="GGExplorer" minHeight="200px">
+                <GGExplorer
+                  sessionId={sessionId}
+                  apiBase={apiBase}
+                  gpsLaps={gpsLaps}
+                  bestLap={activeLap}
+                  className="w-full h-full"
+                />
+              </ChartErrorBoundary>
             </div>
           </div>
         </div>

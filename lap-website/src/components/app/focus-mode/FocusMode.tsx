@@ -2,6 +2,7 @@
 
 import { useEffect, useCallback, useMemo } from 'react';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 import { BACKEND_URL } from '@/lib/api-client';
 import { SplitPane } from './SplitPane';
 import { ToolDock, useToolDock, type ToolId } from './ToolDock';
@@ -34,33 +35,39 @@ function ToolRenderer({
   switch (toolId) {
     case 'speed-trace':
       return (
-        <SpeedTraceZoom
-          sessionId={sessionId}
-          apiBase={apiBase}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-          className="w-full h-full"
-        />
+        <ChartErrorBoundary chartName="SpeedTrace" minHeight="200px">
+          <SpeedTraceZoom
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
       );
     case 'track-map':
       return (
-        <GpsTrace
-          sessionId={sessionId}
-          apiBase={apiBase}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-          className="w-full h-full"
-        />
+        <ChartErrorBoundary chartName="GpsTrace" minHeight="200px">
+          <GpsTrace
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
       );
     case 'gg-diagram':
       return (
-        <GGExplorer
-          sessionId={sessionId}
-          apiBase={apiBase}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-          className="w-full h-full"
-        />
+        <ChartErrorBoundary chartName="GGExplorer" minHeight="200px">
+          <GGExplorer
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
       );
     default:
       return (
