@@ -6,7 +6,7 @@ api.lap-coach.racing {
 		protocols tls1.2 tls1.3
 	}
 
-	encode zstd br gzip
+	encode zstd gzip
 
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
