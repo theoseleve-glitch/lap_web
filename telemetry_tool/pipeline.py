@@ -2211,6 +2211,35 @@ def run_full_analysis(
                         len(_filtered), len(laps_for_theo),
                     )
 
+            # Filter by selected cluster (if available)
+            if _clustering_result is not None and not _clustering_result.fallback:
+                _selected = [
+                    c for c in _clustering_result.clusters
+                    if c.cluster_id == _clustering_result.selected_cluster_id
+                ]
+                if _selected:
+                    _cluster_laps = set(_selected[0].lap_numbers)
+                    _cluster_filtered = [
+                        (lap, key) for lap, key in zip(laps_for_theo, keys_for_theo)
+                        if key in _cluster_laps
+                    ]
+                    if len(_cluster_filtered) >= 3:
+                        laps_for_theo = [x[0] for x in _cluster_filtered]
+                        keys_for_theo = [x[1] for x in _cluster_filtered]
+                        logger.info(
+                            "Theoretical envelope: filtered to %d laps from "
+                            "cluster %d (purity=%.2f).",
+                            len(laps_for_theo),
+                            _clustering_result.selected_cluster_id,
+                            _clustering_result.purity_score,
+                        )
+                    else:
+                        logger.warning(
+                            "Cluster filtering leaves only %d laps — "
+                            "using all %d learning laps.",
+                            len(_cluster_filtered), len(laps_for_theo),
+                        )
+
             # Adaptive percentile from data quality
 
             speed_pct = 98.0
@@ -2295,6 +2324,72 @@ def run_full_analysis(
     _record("10b_theoretical_metrics", theo_metrics, err)
     theo_metrics = theo_metrics or {}
     summary["theoretical_metrics"] = theo_metrics
+
+    # ── 10b-ii: Attach confidence assessment ──
+    _conf_mod = _import("confidence")
+
+    def _compute_confidence():
+        if _conf_mod is None:
+            return None
+
+        # Gather inputs
+        n_learn = 0
+        if _inclusion_policy is not None:
+            n_learn = len(_inclusion_policy.learning_laps)
+        else:
+            n_learn = len(resampled_laps)
+
+        dq_conf = 0.5
+        if data_quality_rpt is not None:
+            dq_conf = data_quality_rpt.overall_confidence
+
+        dist_status = "good"
+        dq = summary.get("distance_quality")
+        if dq and isinstance(dq, dict):
+            dist_status = dq.get("status", "good")
+        elif _distance_quality is not None and hasattr(_distance_quality, 'status'):
+            dist_status = _distance_quality.status
+
+        c_purity = 1.0
+        if _clustering_result is not None:
+            c_purity = _clustering_result.purity_score
+
+        # Channel coverage from data quality or compute
+        ch_cov = 0.5
+        if data_quality_rpt is not None:
+            # Use accel_quality as proxy for coverage
+            ch_cov = max(data_quality_rpt.gps_quality, data_quality_rpt.accel_quality)
+
+        solver = _sim_method or "percentile_envelope"
+
+        curv_rel = 0.5
+        cq = summary.get("curvature_quality")
+        if cq and isinstance(cq, dict):
+            curv_rel = cq.get("quality_score", 0.5)
+
+        fuse_conf = -1.0
+        sf = summary.get("sensor_fusion")
+        if sf and isinstance(sf, dict):
+            fuse_conf = sf.get("confidence", -1.0)
+
+        return _conf_mod.compute_confidence(
+            n_learning_laps=n_learn,
+            data_quality_confidence=dq_conf,
+            distance_quality_status=dist_status,
+            cluster_purity=c_purity,
+            channel_coverage=ch_cov,
+            solver_method=solver,
+            curvature_reliability=curv_rel,
+            fusion_confidence=fuse_conf,
+        )
+
+    _confidence, err = _safe_step("10b_confidence", _compute_confidence)
+    _record("10b_confidence", _confidence, err)
+
+    if _confidence is not None and theo_metrics is not None:
+        theo_metrics["confidence"] = _confidence.to_dict()
+        summary["theoretical_metrics"] = theo_metrics
+
     summary["corner_coaching"] = _corner_coaching
     summary["delta_map"] = _delta_map
     summary["session_scalars"] = _session_scalars
