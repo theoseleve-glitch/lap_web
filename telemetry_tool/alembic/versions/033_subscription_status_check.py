@@ -35,11 +35,11 @@ def upgrade() -> None:
 
     if result is None:
         values_sql = ", ".join(f"'{s}'" for s in _VALID_STATES)
-        op.execute(
+        op.execute(text(
             f"ALTER TABLE users ADD CONSTRAINT {_CONSTRAINT_NAME} "
             f"CHECK (subscription_status IN ({values_sql}))"
-        )
+        ))
 
 
 def downgrade() -> None:
-    op.execute(f"ALTER TABLE users DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}")
+    op.execute(text(f"ALTER TABLE users DROP CONSTRAINT IF EXISTS {_CONSTRAINT_NAME}"))

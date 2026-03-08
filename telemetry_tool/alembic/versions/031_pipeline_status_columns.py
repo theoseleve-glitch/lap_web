@@ -25,14 +25,14 @@ def upgrade() -> None:
     _add_col(conn, "sessions", "model_version", "TEXT DEFAULT 'none'")
 
     # Backfill existing sessions
-    op.execute(
+    op.execute(sa.text(
         "UPDATE sessions SET pipeline_version_hash = 'unknown' "
         "WHERE pipeline_version_hash IS NULL"
-    )
-    op.execute(
+    ))
+    op.execute(sa.text(
         "UPDATE sessions SET model_version = 'none' "
         "WHERE model_version IS NULL"
-    )
+    ))
 
 
 def _add_col(conn, table, column, col_type):
@@ -41,7 +41,7 @@ def _add_col(conn, table, column, col_type):
         "WHERE table_name = :table AND column_name = :column"
     ), {"table": table, "column": column})
     if result.fetchone() is None:
-        op.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        op.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}"))
 
 
 def downgrade() -> None:
