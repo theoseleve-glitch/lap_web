@@ -37,6 +37,9 @@ class ProvenanceRecord:
         return asdict(self)
 
 
+_FROZEN_TIMESTAMP = "2000-01-01T00:00:00+00:00"
+
+
 def _hash_config(config: Any) -> str:
     """SHA-256 of the JSON-serialised config."""
     payload = json.dumps(config, sort_keys=True, default=str)
@@ -53,8 +56,18 @@ def build_provenance(
     model_version: Optional[str] = None,
     solver_version: Optional[str] = None,
     training_data_hash: Optional[str] = None,
+    deterministic: bool = False,
 ) -> ProvenanceRecord:
-    """Build a ProvenanceRecord for the current analysis run."""
+    """Build a ProvenanceRecord for the current analysis run.
+
+    Parameters
+    ----------
+    deterministic : bool
+        When ``True``, the ``analysis_run_id`` is derived from a SHA-256
+        hash of the input fingerprint, params hash, and pipeline version,
+        and ``generated_at`` is set to a fixed epoch timestamp.  This
+        makes outputs reproducible for the same inputs.
+    """
     if pipeline_version is None:
         try:
             from pipeline_status import compute_pipeline_version_string
@@ -71,15 +84,26 @@ def build_provenance(
         except ImportError:
             model_version = "none"
 
+    input_fingerprint = compute_data_fingerprint(input_df)
+    params_hash = _hash_config(config)
+
+    if deterministic:
+        seed = f"{input_fingerprint}|{params_hash}|{pipeline_version}"
+        analysis_run_id = hashlib.sha256(seed.encode()).hexdigest()[:16]
+        generated_at = _FROZEN_TIMESTAMP
+    else:
+        analysis_run_id = str(uuid.uuid4())
+        generated_at = datetime.now(timezone.utc).isoformat()
+
     return ProvenanceRecord(
-        analysis_run_id=str(uuid.uuid4()),
-        input_fingerprint=compute_data_fingerprint(input_df),
+        analysis_run_id=analysis_run_id,
+        input_fingerprint=input_fingerprint,
         file_hash=compute_file_hash(file_path) if file_path else None,
-        params_hash=_hash_config(config),
+        params_hash=params_hash,
         pipeline_version=pipeline_version,
         model_version=model_version,
         solver_version=solver_version,
         method_used=method_used,
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=generated_at,
         training_data_hash=training_data_hash,
     )
