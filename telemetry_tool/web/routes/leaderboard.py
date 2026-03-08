@@ -1,6 +1,8 @@
-"""Leaderboard route — ranked drivers with track filtering."""
+"""Leaderboard route — ranked drivers with track filtering and privacy opt-out."""
 
 from __future__ import annotations
+
+import os
 
 from flask import Blueprint, render_template, request
 
@@ -9,9 +11,17 @@ from web.db import get_db_connection
 bp = Blueprint("leaderboard", __name__, url_prefix="/leaderboard")
 
 
+def _is_pg_mode() -> bool:
+    return os.environ.get("USE_PG", "0") == "1"
+
+
 @bp.route("/")
 def leaderboard():
-    """Driver leaderboard ranked by best time or score, with track filter."""
+    """Driver leaderboard ranked by best time or score, with track filter.
+
+    In PG mode, users who set ``leaderboard_visible: false`` in their
+    preferences are excluded from results (privacy opt-out).
+    """
     conn = get_db_connection()
     track_id = request.args.get("track", "")
     sort_by = request.args.get("sort", "best_time")  # best_time | avg_score | sessions
@@ -25,11 +35,29 @@ def leaderboard():
     tracks = [dict(r) for r in tracks]
 
     # Build leaderboard query.
-    where = ""
+    # In PG mode, join with users to respect leaderboard_visible preference.
+    where_clauses = []
     params = {}
     if track_id:
-        where = "WHERE s.track_id = :track_id"
+        where_clauses.append("s.track_id = :track_id")
         params["track_id"] = track_id
+
+    # Privacy filter: exclude workspaces whose owners opted out.
+    # In PG mode, sessions have workspace_id; join through workspace_members
+    # to find the owner and check their leaderboard_visible preference.
+    privacy_join = ""
+    if _is_pg_mode():
+        privacy_join = (
+            "LEFT JOIN workspace_members wm ON s.workspace_id = wm.workspace_id "
+            "  AND wm.role = 'owner' "
+            "LEFT JOIN users u ON wm.user_id = u.id"
+        )
+        where_clauses.append(
+            "(u.id IS NULL OR "
+            "COALESCE(u.preferences::jsonb->>'leaderboard_visible', 'true') != 'false')"
+        )
+
+    where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
     rows = conn.execute(f"""
         SELECT d.driver_id, d.driver_name,
@@ -41,6 +69,7 @@ def leaderboard():
                AVG(s.best_lap_time_s) AS avg_best_time_s
         FROM drivers d
         JOIN sessions s ON d.driver_id = s.driver_id
+        {privacy_join}
         {where}
         GROUP BY d.driver_id
         HAVING session_count > 0

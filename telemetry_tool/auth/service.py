@@ -166,16 +166,30 @@ def login_user(
     )
     user = cur.fetchone()
 
+    # Account lockout — check before attempting password verification
+    from auth.lockout import check_lockout, record_failed_attempt, clear_attempts
+    lockout_remaining = check_lockout(email)
+    if lockout_remaining is not None:
+        log_security_event(conn, "login_locked_out",
+                           ip_address=ip_address,
+                           details={"email": email, "remaining_s": lockout_remaining})
+        raise AuthError(
+            f"Account temporarily locked. Try again in {lockout_remaining // 60 + 1} minutes.",
+            "ACCOUNT_LOCKED",
+        )
+
     # Constant-time check: always run the hasher to prevent timing-based
     # user enumeration.  Also guards against NULL password_hash (OAuth-only
     # accounts where password_hash column is intentionally nullable).
     if user is None:
         verify_password(password, _DUMMY_HASH)
+        record_failed_attempt(email)
         log_security_event(conn, "login_failed",
                            ip_address=ip_address, details={"email": email, "reason": "user_not_found"})
         raise AuthError("Invalid credentials", "INVALID_CREDENTIALS")
 
     if not user["password_hash"] or not verify_password(password, user["password_hash"]):
+        record_failed_attempt(email)
         log_security_event(conn, "login_failed",
                            user_id=user["id"], ip_address=ip_address,
                            details={"email": email, "reason": "wrong_password"})
@@ -197,6 +211,7 @@ def login_user(
         user_agent=user_agent,
         ip_address=ip_address,
     )
+    clear_attempts(email)
     log_security_event(conn, "login_success",
                        user_id=user["id"], ip_address=ip_address,
                        user_agent=user_agent, details={"email": email})

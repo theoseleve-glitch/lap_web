@@ -967,6 +967,7 @@ def regenerate_backup_codes():
 
 _VALID_PREFERENCE_KEYS = {
     "units", "speed_unit", "timezone", "language", "notifications",
+    "leaderboard_visible",
 }
 
 
