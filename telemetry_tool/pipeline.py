@@ -2598,6 +2598,7 @@ def run_full_analysis(
                 data_quality=data_quality_rpt,
                 theoretical_result=_sim_result,
                 weather_timeline=weather_timeline,
+                distance_quality=summary.get("distance_quality"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)

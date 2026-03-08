@@ -135,3 +135,35 @@ def test_session_detail_includes_distance_quality():
     data = resp.get_json()["data"]
     assert "distance_quality" in data
     assert data["distance_quality"]["status"] == "repaired"
+
+
+def test_report_includes_distance_debug_section():
+    """generate_report() with distance_quality renders debug section."""
+    pytest.importorskip("matplotlib")
+    from reporting_html import generate_report
+    import tempfile, os
+
+    dq = {
+        "status": "repaired",
+        "repair_method": "xy_rebuild",
+        "gate_advanced": False,
+        "laps_repaired": [2],
+        "laps_degraded": [],
+        "message": "Distance repaired for laps [2] via xy_rebuild.",
+        "metrics": [
+            {"lap_number": 1, "monotonic_ratio": 1.0, "jump_count": 0,
+             "compression_ratio": 0.01, "lap_length": 500.0, "lap_length_zscore": 0.1},
+            {"lap_number": 2, "monotonic_ratio": 0.98, "jump_count": 2,
+             "compression_ratio": 0.05, "lap_length": 502.0, "lap_length_zscore": 0.3},
+        ],
+    }
+    with tempfile.TemporaryDirectory() as td:
+        out = os.path.join(td, "test_dq_report.html")
+        path = generate_report(
+            session_meta={"session_id": "test", "track_id": "test_track"},
+            distance_quality=dq,
+            output_path=out,
+        )
+        html = path.read_text(encoding="utf-8")
+        assert "Distance Quality" in html
+        assert "xy_rebuild" in html
