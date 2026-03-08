@@ -731,6 +731,8 @@ def adaptive_percentile(
 def score_data_quality(
     resampled_laps: dict[int, pd.DataFrame],
     lap_times: list[float],
+    *,
+    fusion_confidence: float = -1.0,
 ) -> DataQualityReport:
     """
     Comprehensive telemetry data quality assessment.
@@ -855,6 +857,7 @@ def score_data_quality(
         recommended_speed_percentile=round(speed_pct, 1),
         recommended_accel_percentile=round(accel_pct, 1),
         warnings=warnings,
+        fusion_confidence=round(fusion_confidence, 3),
     )
 
     logger.info(

@@ -1845,9 +1845,14 @@ def run_full_analysis(
     def _data_quality() -> Any:
         if dq_mod is None:
             raise ImportError("data_quality unavailable")
+        _fc = -1.0
+        _sf = summary.get("sensor_fusion")
+        if isinstance(_sf, dict):
+            _fc = _sf.get("confidence", -1.0)
         return dq_mod.score_data_quality(
             _clean_resampled or resampled_laps,
             _clean_lap_times or lap_times,
+            fusion_confidence=_fc,
         )
 
     data_quality_rpt, err = _safe_step("09e_data_quality", _data_quality)
