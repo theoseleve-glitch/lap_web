@@ -1797,6 +1797,76 @@ def _detect_throttle_on(
     return CornerEvent("THROTTLE_ON", 0.0, 0.0, "accel_long", 0.0, False)
 
 
+def _detect_mrp(
+    dist: np.ndarray,
+    df: pd.DataFrame,
+    s_start: float,
+    s_end: float,
+    min_prominence_dps: float = 0.5,
+    data_quality: float = 1.0,
+) -> tuple[CornerEvent, float]:
+    """Detect Maximum Rate Point — peak yaw rate within the corner region.
+
+    Falls back to heading-derived yaw rate if ``yaw_rate_dps`` is absent.
+    Returns ``(CornerEvent, prominence_value)``.
+    """
+    # --- resolve yaw channel ---
+    if "yaw_rate_dps" in df.columns:
+        yaw = df["yaw_rate_dps"].values.astype(float)
+        channel_conf = 1.0
+        source = "yaw_rate"
+    elif "heading_deg" in df.columns:
+        heading = df["heading_deg"].values.astype(float)
+        dd = np.gradient(dist)
+        dd[dd == 0] = 1e-6
+        yaw = np.gradient(heading) / dd  # deg / m  (rough proxy)
+        channel_conf = 0.6
+        source = "heading_derived"
+    else:
+        return (CornerEvent("MRP", 0.0, 0.0, "yaw_rate", 0.0, False), 0.0)
+
+    # --- slice to corner region ---
+    mask = (dist >= s_start) & (dist <= s_end)
+    if mask.sum() < 3:
+        return (CornerEvent("MRP", 0.0, 0.0, source, 0.0, False), 0.0)
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    y_seg = np.abs(yaw[idx])
+
+    # --- find dominant peak ---
+    prominence = 0.0
+    peak_i = None
+    try:
+        from scipy.signal import find_peaks as _find_peaks
+
+        peaks, props = _find_peaks(y_seg, prominence=min_prominence_dps)
+        if len(peaks) > 0:
+            best = int(np.argmax(props["prominences"]))
+            peak_i = peaks[best]
+            prominence = float(props["prominences"][best])
+    except ImportError:
+        pass
+
+    if peak_i is None:
+        # fallback: simple argmax
+        finite = np.isfinite(y_seg)
+        if not finite.any():
+            return (CornerEvent("MRP", 0.0, 0.0, source, 0.0, False), 0.0)
+        peak_i = int(np.argmax(np.where(finite, y_seg, -np.inf)))
+        prominence = float(y_seg[peak_i]) - float(np.nanmin(y_seg))
+        if prominence < min_prominence_dps:
+            return (CornerEvent("MRP", 0.0, 0.0, source, 0.0, False), 0.0)
+
+    pos = float(d_seg[peak_i])
+    val = float(y_seg[peak_i])
+
+    det_conf = min(1.0, prominence / 5.0)
+    conf = channel_conf * det_conf * data_quality
+
+    return (CornerEvent("MRP", pos, conf, source, val, True), prominence)
+
+
 def _detect_track_out(
     dist: np.ndarray,
     s_end: float,
@@ -1853,8 +1923,8 @@ def detect_corner_events(
     bp_s = bp.s_position if bp.available else float("nan")
     eob = _detect_eob(dist, accel, bp_s, s_end)
 
-    # 3. MRP — placeholder (Task 3)
-    mrp = CornerEvent("MRP", 0.0, 0.0, "yaw_rate", 0.0, False)
+    # 3. MRP — Maximum Rate Point (peak yaw rate)
+    mrp, mrp_strength = _detect_mrp(dist, lap_df, s_start, s_end, data_quality=data_quality)
 
     # 4. Minimum Speed
     ms = _detect_min_speed(dist, speed, s_start, s_end)
@@ -1886,7 +1956,76 @@ def detect_corner_events(
         segment_losses_s={},
         segment_confidences={},
         mistakes=[],
-        mrp_strength=0.0,
+        mrp_strength=mrp_strength,
         mrp_stability_std_m=0.0,
         event_stability={},
     )
+
+
+def compute_segment_losses(
+    timeline: CornerTimeline,
+    driver_df: pd.DataFrame,
+    theoretical_df: pd.DataFrame,
+) -> dict[str, float]:
+    """
+    Compute per-segment time losses between consecutive events.
+    Segments: BP->EOB, EOB->MRP, MRP->ThrottleOn, ThrottleOn->TrackOut.
+    """
+    segment_pairs = [
+        ("BP_EOB", "BP", "EOB"),
+        ("EOB_MRP", "EOB", "MRP"),
+        ("MRP_THROTTLE_ON", "MRP", "THROTTLE_ON"),
+        ("THROTTLE_ON_TRACK_OUT", "THROTTLE_ON", "TRACK_OUT"),
+    ]
+
+    drv_dist = _resolve_dist(driver_df)
+    drv_speed = _resolve_speed(driver_df)
+
+    theo_dist = None
+    theo_speed = None
+    for dcol in ("distance_m", "Distance (m)"):
+        if dcol in theoretical_df.columns:
+            theo_dist = theoretical_df[dcol].to_numpy(dtype=float)
+            break
+    for scol in ("v_env_mps", "speed_mps", "Speed (m/s)"):
+        if scol in theoretical_df.columns:
+            theo_speed = theoretical_df[scol].to_numpy(dtype=float)
+            break
+
+    if theo_dist is None or theo_speed is None:
+        return {}
+
+    losses = {}
+    confidences = {}
+
+    for seg_name, start_type, end_type in segment_pairs:
+        ev_start = timeline.get_event(start_type)
+        ev_end = timeline.get_event(end_type)
+
+        if (ev_start is None or ev_end is None or
+                not ev_start.available or not ev_end.available):
+            losses[seg_name] = 0.0
+            confidences[seg_name] = 0.0
+            continue
+
+        s0 = ev_start.s_position
+        s1 = ev_end.s_position
+        if s1 <= s0:
+            losses[seg_name] = 0.0
+            confidences[seg_name] = 0.0
+            continue
+
+        t_drv = _integrate_time(
+            drv_dist[_slice_range(drv_dist, s0, s1)],
+            drv_speed[_slice_range(drv_dist, s0, s1)],
+        )
+        t_theo = _integrate_time(
+            theo_dist[_slice_range(theo_dist, s0, s1)],
+            theo_speed[_slice_range(theo_dist, s0, s1)],
+        )
+        losses[seg_name] = max(0.0, round(t_drv - t_theo, 4))
+        confidences[seg_name] = min(ev_start.confidence, ev_end.confidence)
+
+    timeline.segment_losses_s = losses
+    timeline.segment_confidences = confidences
+    return losses

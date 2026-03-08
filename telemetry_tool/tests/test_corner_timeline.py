@@ -85,7 +85,7 @@ class TestCornerTimelineDataclass:
 
 # ── detect_corner_events tests ──────────────────────────────────────────────
 
-from telemetry_tool.corner_analysis import detect_corner_events
+from telemetry_tool.corner_analysis import detect_corner_events, compute_segment_losses
 
 
 def _make_corner(cid=1, s_start=100.0, s_end=200.0):
@@ -163,3 +163,61 @@ class TestDetectCornerEvents:
         tl = detect_corner_events(corner, df)
         positions = [e.s_position for e in tl.events if e.available]
         assert positions == sorted(positions)
+
+
+class TestMRPDetection:
+    def test_clean_yaw_peak(self):
+        n = 500
+        dist = np.linspace(0, 300, n)
+        speed = np.ones(n) * 20.0
+        accel = np.zeros(n)
+        yaw = 15.0 * np.exp(-0.5 * ((dist - 150.0) / 10.0) ** 2)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": speed,
+            "accel_long_mps2": accel, "yaw_rate_dps": yaw,
+        })
+        corner = _make_corner(1, 100.0, 200.0)
+        tl = detect_corner_events(corner, df)
+        mrp = tl.get_event("MRP")
+        assert mrp is not None and mrp.available
+        assert 140.0 <= mrp.s_position <= 160.0
+        assert mrp.value == pytest.approx(15.0, abs=1.0)
+        assert mrp.confidence >= 0.7
+
+    def test_noisy_yaw_still_detects(self):
+        rng = np.random.RandomState(42)
+        n = 500
+        dist = np.linspace(0, 300, n)
+        yaw = 12.0 * np.exp(-0.5 * ((dist - 150.0) / 10.0) ** 2) + rng.normal(0, 2.0, n)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n), "yaw_rate_dps": yaw,
+        })
+        corner = _make_corner(1, 100.0, 200.0)
+        tl = detect_corner_events(corner, df)
+        mrp = tl.get_event("MRP")
+        assert mrp is not None and mrp.available
+        assert 130.0 <= mrp.s_position <= 170.0
+
+    def test_missing_yaw_channel(self):
+        df = _make_braking_lap_df()
+        corner = _make_corner(1, 100.0, 200.0)
+        tl = detect_corner_events(corner, df)
+        mrp = tl.get_event("MRP")
+        assert mrp is not None
+        assert mrp.available is False
+
+    def test_multiple_yaw_peaks_selects_dominant(self):
+        n = 500
+        dist = np.linspace(0, 300, n)
+        yaw = (5.0 * np.exp(-0.5 * ((dist - 120.0) / 5.0) ** 2) +
+               12.0 * np.exp(-0.5 * ((dist - 160.0) / 8.0) ** 2))
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n), "yaw_rate_dps": yaw,
+        })
+        corner = _make_corner(1, 100.0, 200.0)
+        tl = detect_corner_events(corner, df)
+        mrp = tl.get_event("MRP")
+        assert mrp is not None and mrp.available
+        assert 150.0 <= mrp.s_position <= 170.0
