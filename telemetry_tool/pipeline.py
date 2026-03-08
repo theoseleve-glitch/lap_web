@@ -2020,6 +2020,57 @@ def run_full_analysis(
         summary["clustering"] = None
 
     # ====================================================================
+    # STEP 09i -- Grip map + friction envelope
+    # ====================================================================
+
+    _gm_mod = _import("grip_map")
+    _fe_mod = _import("friction_envelope")
+    _grip_map = None
+    _friction_envelope_result = None
+
+    def _compute_grip_map():
+        if _gm_mod is None or not resampled_laps:
+            return None
+        _learning = None
+        if _inclusion_policy is not None:
+            _learning = _inclusion_policy.learning_laps
+        return _gm_mod.compute_grip_map(
+            resampled_laps,
+            curvature_profile=curvature_profile,
+            learning_laps=_learning,
+        )
+
+    _grip_raw, err = _safe_step("09i_grip_map", _compute_grip_map)
+    _record("09i_grip_map", _grip_raw, err)
+    _fire_progress("09i_grip_map")
+
+    if _grip_raw is not None:
+        _grip_map = _grip_raw
+        summary["grip_map"] = _grip_map.to_dict()
+    else:
+        summary["grip_map"] = None
+
+    def _compute_friction_envelope():
+        if _fe_mod is None or not resampled_laps:
+            return None
+        _learning = None
+        if _inclusion_policy is not None:
+            _learning = _inclusion_policy.learning_laps
+        return _fe_mod.compute_friction_envelope(
+            resampled_laps,
+            learning_laps=_learning,
+        )
+
+    _fe_raw, err = _safe_step("09i_friction_envelope", _compute_friction_envelope)
+    _record("09i_friction_envelope", _fe_raw, err)
+
+    if _fe_raw is not None:
+        _friction_envelope_result = _fe_raw
+        summary["friction_envelope"] = _friction_envelope_result.to_dict()
+    else:
+        summary["friction_envelope"] = None
+
+    # ====================================================================
 
     # STEP 10 -- Theoretical lap (cascading: physics -> percentile)
 
@@ -2135,6 +2186,8 @@ def run_full_analysis(
                     rolling_resistance=rr,
                     aero_drag_factor=aero,
                     speed_percentile=sp_pct,
+                    grip_map=_grip_map,
+                    friction_envelope=_friction_envelope_result,
                 )
 
                 _sim_method = result.method   # "hybrid", "physics", or "percentile_envelope"

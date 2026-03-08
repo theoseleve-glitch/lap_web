@@ -89,7 +89,11 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
-from typing import Any, Final, Optional, Protocol
+from typing import TYPE_CHECKING, Any, Final, Optional, Protocol
+
+if TYPE_CHECKING:
+    from grip_map import GripMap
+    from friction_envelope import FrictionEnvelope
 
 import numpy as np
 import pandas as pd
@@ -979,6 +983,8 @@ def simulate_theoretical_lap(
     mass_kg: float = 1.0,
     max_speed_mps: float = _MAX_SPEED_MPS,
     closed_loop: bool = True,
+    grip_map: GripMap | None = None,
+    friction_envelope: FrictionEnvelope | None = None,
 ) -> TheoreticalLapResult:
     """
     Simulate the fastest physically possible lap time.
@@ -1056,6 +1062,16 @@ def simulate_theoretical_lap(
         max_speed=max_speed_mps,
     )
 
+    # --- STEP 1b: Grip-map override (per-distance mu) ---
+    if grip_map is not None and not grip_map.is_global_fallback:
+        for i in range(n):
+            k = float(curvature[i])
+            if k > 1e-6:
+                mu_at_dist = grip_map.mu_at(float(distance[i]), "p95")
+                v_grip = math.sqrt(mu_at_dist * _G / k)
+                v_grip = min(max(v_grip, _MIN_SPEED_MPS), max_speed_mps)
+                v_corner[i] = min(v_corner[i], v_grip)
+
     # --- Find apex points ---
     apices = _find_apex_points(v_corner, curvature)
 
@@ -1119,6 +1135,25 @@ def simulate_theoretical_lap(
 
         # Damped update for stability
         v_start = 0.6 * v_start_new + 0.4 * v_start
+
+    # --- STEP 4b: Friction envelope clamp ---
+    if friction_envelope is not None and friction_envelope.is_reliable:
+        accel_pre = _compute_accel_profile(distance, v_final)
+        for i in range(n):
+            k = float(curvature[i])
+            if k < 1e-6:
+                continue
+            a_lat_g = float(v_final[i]) ** 2 * k / _G
+            a_long_g = float(accel_pre[i]) / _G
+            if not friction_envelope.is_feasible(
+                float(v_final[i]), a_lat_g, a_long_g,
+            ):
+                max_lat_g = friction_envelope.max_lat_at_long(
+                    float(v_final[i]), a_long_g,
+                )
+                max_v = math.sqrt(max_lat_g * _G / k)
+                max_v = min(max(max_v, _MIN_SPEED_MPS), max_speed_mps)
+                v_final[i] = min(float(v_final[i]), max_v)
 
     # --- STEP 5: Classify limiting factor at each point ---
     tol = 0.05  # m/s tolerance for classification
@@ -1373,6 +1408,8 @@ def simulate_with_fallback(
     mass_kg: float = 1.0,
     speed_percentile: float = 98.0,
     max_speed_mps: float = _MAX_SPEED_MPS,
+    grip_map: GripMap | None = None,
+    friction_envelope: FrictionEnvelope | None = None,
 ) -> TheoreticalLapResult:
     """
     Try physics simulation; fall back to percentile envelope if it fails.
@@ -1425,6 +1462,8 @@ def simulate_with_fallback(
                 aero_drag_factor=aero_drag_factor,
                 mass_kg=mass_kg,
                 max_speed_mps=max_speed_mps,
+                grip_map=grip_map,
+                friction_envelope=friction_envelope,
             )
 
             # Sanity check against driver's best
