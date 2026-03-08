@@ -641,6 +641,34 @@ def _run_tests() -> None:
 # -- -
 
 
+def build_master_grid(resampled_laps: dict, n_points: int = 1000) -> np.ndarray:
+    """Canonical distance grid from median of all lap distance ranges."""
+    if not resampled_laps:
+        return np.linspace(0, 1000, n_points)
+    maxes = []
+    for lap_df in resampled_laps.values():
+        if lap_df is not None and not lap_df.empty and _COL_DIST in lap_df.columns:
+            maxes.append(float(lap_df[_COL_DIST].max()))
+    if not maxes:
+        return np.linspace(0, 1000, n_points)
+    median_max = float(np.median(maxes))
+    return np.linspace(0, median_max, n_points)
+
+
+def align_to_grid(data: np.ndarray, data_dist: np.ndarray, master_grid: np.ndarray) -> np.ndarray:
+    """Align any distance-indexed array to master grid via np.interp."""
+    return np.interp(master_grid, data_dist, data)
+
+
+def event_to_grid_index(s_position: float, master_grid: np.ndarray) -> int:
+    """Convert s_position to nearest grid index via searchsorted."""
+    idx = int(np.searchsorted(master_grid, s_position))
+    idx = max(0, min(idx, len(master_grid) - 1))
+    if idx > 0 and abs(master_grid[idx - 1] - s_position) < abs(master_grid[idx] - s_position):
+        idx -= 1
+    return idx
+
+
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
