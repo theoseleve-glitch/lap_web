@@ -1072,7 +1072,7 @@ def api_weather(race_id: int):
         })
     except Exception as exc:
         logger.warning("Weather fetch failed: %s", exc)
-        return jsonify({"error": str(exc)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ── Stint Plan Export / Import ────────────────────

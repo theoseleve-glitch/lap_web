@@ -144,7 +144,7 @@ def edit_profile(driver_id: int):
         conn.commit()
         return jsonify({"ok": True, "field": field_name, "value": value})
     except ValueError as exc:
-        return jsonify({"error": str(exc)}), 400
+        return jsonify({"error": "Invalid field or value"}), 400
 
 
 # ── API endpoints for chart data ────────────────────────────────

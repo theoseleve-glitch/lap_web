@@ -81,7 +81,7 @@ def list_races_endpoint():
         return api_response({"races": races})
     except Exception as exc:
         logger.exception("Failed to list races")
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ def create_race_endpoint():
         return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to create race")
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -154,7 +154,7 @@ def get_race_detail_endpoint(race_id: int):
         return api_response(detail)
     except Exception as exc:
         logger.exception("Failed to get race detail for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -211,7 +211,7 @@ def update_race_endpoint(race_id: int):
         return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to update race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -235,7 +235,7 @@ def delete_race_endpoint(race_id: int):
         return api_response({"ok": True})
     except Exception as exc:
         logger.exception("Failed to delete race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -260,7 +260,7 @@ def optimize_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("Optimization failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +288,7 @@ def go_live_endpoint(race_id: int):
         return api_response({"ok": True})
     except Exception as exc:
         logger.exception("go_live failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -316,7 +316,7 @@ def finish_race_endpoint(race_id: int):
         return api_response({"ok": True})
     except Exception as exc:
         logger.exception("finish_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ def get_live_state_endpoint(race_id: int):
         return api_response(state)
     except Exception as exc:
         logger.exception("get_live_state failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ def end_stint_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("end_stint failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +417,7 @@ def toggle_fuel_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("toggle_fuel failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -464,7 +464,7 @@ def set_pit_type_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("set_pit_type failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -491,7 +491,7 @@ def reoptimize_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("reoptimize failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -515,7 +515,7 @@ def export_race_endpoint(race_id: int):
         return api_response(data)
     except Exception as exc:
         logger.exception("export_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +568,7 @@ def import_race_endpoint():
         return api_error(ErrorCode.VALIDATION_ERROR, str(exc), status=400)
     except Exception as exc:
         logger.exception("import_race failed")
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -592,7 +592,7 @@ def duplicate_race_endpoint(race_id: int):
         return api_response({"race_id": new_race_id}, status=201)
     except Exception as exc:
         logger.exception("duplicate_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -616,4 +616,4 @@ def get_summary_endpoint(race_id: int):
         return api_response(summary)
     except Exception as exc:
         logger.exception("get_summary failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, str(exc), status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)

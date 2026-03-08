@@ -50,6 +50,18 @@ def _safe_api(f):
 bp = Blueprint("data_v2_channels", __name__, url_prefix="/api/v1")
 
 
+@bp.before_request
+def _apply_rate_limit():
+    from web.rate_limit import rate_limit as _rl_decorator
+    tier = "write" if request.method in ("DELETE", "PATCH", "POST", "PUT") else "read"
+    @_rl_decorator(tier=tier)
+    def _check():
+        return None
+    result = _check()
+    if result is not None:
+        return result
+
+
 # ── Helpers ───────────────────────────────────────────────────────
 
 

@@ -51,7 +51,6 @@ def _safe_api(f):
         try:
             return f(*args, **kwargs)
         except Exception:
-            from flask import g
             req_id = getattr(g, "request_id", "?")
             logger.exception(
                 "Unhandled error in %s [%s %s] request_id=%s",
@@ -62,6 +61,24 @@ def _safe_api(f):
     return wrapper
 
 bp = Blueprint("data_v2", __name__, url_prefix="/api/v1")
+
+
+# ── Blueprint-level rate limiting ─────────────────────────────────
+# Apply rate limits to all data endpoints without decorating each one.
+# GET → "read" tier (300/min), mutating methods → "write" tier (60/min).
+
+@bp.before_request
+def _apply_rate_limit():
+    from web.rate_limit import rate_limit as _rl_decorator
+    tier = "write" if request.method in ("DELETE", "PATCH", "POST", "PUT") else "read"
+    # Build a no-op function, wrap it with the decorator, and call it.
+    # If rate-limited, the wrapper returns a 429 response tuple.
+    @_rl_decorator(tier=tier)
+    def _check():
+        return None
+    result = _check()
+    if result is not None:
+        return result
 
 
 # ── Helpers ───────────────────────────────────────────────────────
@@ -931,7 +948,6 @@ def delete_session(session_id: str):
     conn.commit()
 
     try:
-        from flask import g
         from telemetry_tool.web.rollups import refresh_rollups
         refresh_rollups(conn, int(g.workspace_id))
     except Exception:
