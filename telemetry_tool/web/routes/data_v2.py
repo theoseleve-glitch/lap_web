@@ -778,6 +778,25 @@ def get_corners(session_id: str):
                     if cid in tl_map:
                         corner["timeline"] = tl_map[cid]
 
+        # -- 4c. Merge advanced corner intelligence --
+        if theo:
+            aci = theo.get("advanced_corner_intelligence", {})
+            if aci and corners:
+                br_map = {br["corner_id"]: br for br in aci.get("brake_release", [])}
+                coup_map = {c["corner_id"]: c for c in aci.get("brake_yaw_coupling", [])}
+                tgt_map = {t["corner_id"]: t for t in aci.get("corner_targets", [])}
+                risk_map = {r["corner_id"]: r for r in aci.get("corner_risk_scores", [])}
+                for corner in corners:
+                    cid = corner.get("corner_id")
+                    if cid in br_map:
+                        corner["brake_release"] = br_map[cid]
+                    if cid in coup_map:
+                        corner["brake_yaw_coupling"] = coup_map[cid]
+                    if cid in tgt_map:
+                        corner["targets"] = tgt_map[cid]
+                    if cid in risk_map:
+                        corner["risk_index"] = risk_map[cid].get("risk_index", 0)
+
         return api_response({
             "corners": corners,
             "available": True,
@@ -815,6 +834,25 @@ def get_corners(session_id: str):
                     cid = corner.get("corner_id")
                     if cid in tl_map:
                         corner["timeline"] = tl_map[cid]
+
+        # -- 5c. Merge advanced corner intelligence --
+        if theo:
+            aci = theo.get("advanced_corner_intelligence", {})
+            if aci and corners:
+                br_map = {br["corner_id"]: br for br in aci.get("brake_release", [])}
+                coup_map = {c["corner_id"]: c for c in aci.get("brake_yaw_coupling", [])}
+                tgt_map = {t["corner_id"]: t for t in aci.get("corner_targets", [])}
+                risk_map = {r["corner_id"]: r for r in aci.get("corner_risk_scores", [])}
+                for corner in corners:
+                    cid = corner.get("corner_id")
+                    if cid in br_map:
+                        corner["brake_release"] = br_map[cid]
+                    if cid in coup_map:
+                        corner["brake_yaw_coupling"] = coup_map[cid]
+                    if cid in tgt_map:
+                        corner["targets"] = tgt_map[cid]
+                    if cid in risk_map:
+                        corner["risk_index"] = risk_map[cid].get("risk_index", 0)
 
         return api_response({
             "corners": corners,

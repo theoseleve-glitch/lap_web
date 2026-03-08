@@ -1033,6 +1033,20 @@ def run_full_analysis(
         _fire_progress("06b_detect_corners")
         summary["corners"] = corners or []
 
+        # Classify corner types + detect compounds + setup corners
+        try:
+            if corners and resampled_laps:
+                first_key = sorted(resampled_laps.keys())[0]
+                if hasattr(corner_mod, "classify_corner_types"):
+                    corner_mod.classify_corner_types(corners, resampled_laps[first_key])
+                if hasattr(corner_mod, "detect_compound_corners"):
+                    compound_groups = corner_mod.detect_compound_corners(corners, resampled_laps[first_key])
+                    summary["compound_corners_raw"] = compound_groups
+                if hasattr(corner_mod, "identify_setup_corners"):
+                    corner_mod.identify_setup_corners(corners, resampled_laps[first_key])
+        except Exception:
+            logger.debug("Corner taxonomy/compound/setup failed", exc_info=True)
+
         # ── Corner callback: notify caller with track layout for corner picker ──
         # The picker allows clicking anywhere on the track, so we show it even
         # when auto-detection found no corners (they are just reference guides).
@@ -2691,6 +2705,136 @@ def run_full_analysis(
         corner_timelines = tl_result
         logger.info("Corner timelines: %d corners with events", len(tl_result))
     summary["corner_timelines"] = corner_timelines
+
+    # -- 10c-iii: Advanced corner intelligence --
+
+    def _advanced_corner_intelligence():
+        ca_mod = _import("corner_analysis")
+        feat_mod = _import("features")
+        if ca_mod is None:
+            return None
+        if not corner_timelines or best_lap_df is None:
+            return None
+
+        dq = summary.get("data_quality")
+        dq_score = getattr(dq, "overall_confidence", 1.0) if dq else 1.0
+
+        result = {}
+
+        # Rebuild CornerTimeline objects from dicts for functions that need them
+        tl_objects = []
+        for tl_dict in corner_timelines:
+            events = []
+            for ed in tl_dict.get("events", []):
+                events.append(ca_mod.CornerEvent(
+                    ed["event_type"], ed["s_position"], ed["confidence"],
+                    ed["source_channel"], ed["value"], ed["available"],
+                ))
+            tl_obj = ca_mod.CornerTimeline(
+                corner_id=tl_dict["corner_id"], events=events,
+                segment_losses_s=tl_dict.get("segment_losses_s", {}),
+                segment_confidences=tl_dict.get("segment_confidences", {}),
+                mistakes=tl_dict.get("mistakes", []),
+                mrp_strength=tl_dict.get("mrp_strength", 0),
+                mrp_stability_std_m=tl_dict.get("mrp_stability_std_m", 0),
+                event_stability=tl_dict.get("event_stability", {}),
+            )
+            tl_objects.append(tl_obj)
+
+        # Brake release + coupling per corner
+        brake_release_data = []
+        coupling_data = []
+        for tl_obj, c in zip(tl_objects, corners):
+            try:
+                if hasattr(ca_mod, "compute_brake_release_metrics"):
+                    br = ca_mod.compute_brake_release_metrics(tl_obj, best_lap_df, c, dq_score)
+                    if br is not None:
+                        brake_release_data.append({"corner_id": c.get("corner_id"), **br.to_dict()})
+            except Exception:
+                pass
+            try:
+                if hasattr(ca_mod, "compute_brake_yaw_coupling"):
+                    coup = ca_mod.compute_brake_yaw_coupling(tl_obj, best_lap_df, c, dq_score)
+                    if coup is not None:
+                        coupling_data.append({"corner_id": c.get("corner_id"), **coup.to_dict()})
+            except Exception:
+                pass
+
+        result["brake_release"] = brake_release_data
+        result["brake_yaw_coupling"] = coupling_data
+
+        # Corner targets (needs theoretical)
+        theo_df = summary.get("theoretical_lap")
+        if theo_df is not None and isinstance(theo_df, pd.DataFrame) and hasattr(ca_mod, "compute_corner_targets"):
+            targets_data = []
+            for tl_obj, c in zip(tl_objects, corners):
+                try:
+                    theo_tl = ca_mod.detect_corner_events(c, theo_df, data_quality=dq_score)
+                    tgt = ca_mod.compute_corner_targets(c, tl_obj, theo_tl, theo_df, best_lap_df, dq_score)
+                    if tgt is not None:
+                        if hasattr(ca_mod, "validate_corner_targets"):
+                            ca_mod.validate_corner_targets(tgt, c)
+                        targets_data.append(tgt.to_dict())
+                except Exception:
+                    pass
+            result["corner_targets"] = targets_data
+
+        # Compound metrics
+        compound_groups = summary.get("compound_corners_raw", [])
+        if compound_groups and corner_performances and hasattr(ca_mod, "compute_compound_metrics"):
+            # Rebuild CornerPerformance objects
+            perf_objs = []
+            for cp in corner_performances:
+                if isinstance(cp, dict):
+                    perf_objs.append(ca_mod.CornerPerformance(
+                        corner_id=cp.get("corner_id", 0),
+                        s_start=cp.get("s_start", 0),
+                        s_end=cp.get("s_end", 0),
+                        time_loss_s=cp.get("time_loss_s", 0),
+                    ))
+                else:
+                    perf_objs.append(cp)
+
+            compound_data = []
+            for cg in compound_groups:
+                try:
+                    cm = ca_mod.compute_compound_metrics(cg, perf_objs, corners)
+                    if cm is not None:
+                        compound_data.append(cm.to_dict())
+                except Exception:
+                    pass
+            result["compound_metrics"] = compound_data
+
+        # Risk scores
+        if hasattr(ca_mod, "compute_corner_risk") and resampled_laps:
+            all_dfs = [
+                resampled_laps[k] for k in sorted(resampled_laps.keys())
+                if k not in excluded_laps and resampled_laps[k] is not None and len(resampled_laps[k]) >= 10
+            ]
+            risk_data = []
+            for tl_obj, c in zip(tl_objects, corners):
+                try:
+                    risk = ca_mod.compute_corner_risk(tl_obj, all_dfs, c, dq_score)
+                    risk_data.append(risk.to_dict())
+                except Exception:
+                    pass
+            result["corner_risk_scores"] = risk_data
+
+        # Driver style
+        if feat_mod is not None and hasattr(feat_mod, "compute_driver_style"):
+            try:
+                style = feat_mod.compute_driver_style(corner_performances, data_quality=dq_score)
+                result["driver_style"] = style.to_dict()
+            except Exception:
+                pass
+
+        return result
+
+    aci_result, aci_err = _safe_step("10c_advanced_corner_intelligence", _advanced_corner_intelligence)
+    _record("10c_advanced_corner_intelligence", aci_result, aci_err)
+    if aci_result is not None:
+        summary["advanced_corner_intelligence"] = aci_result
+        logger.info("Advanced corner intelligence computed")
 
     # STEP 10d -- Per-lap corner metrics (for DB storage & dashboard)
 
