@@ -2905,6 +2905,7 @@ def run_full_analysis(
                 traffic=summary.get("traffic"),
                 lap_inclusion=summary.get("lap_inclusion"),
                 theoretical_metrics=summary.get("theoretical_metrics"),
+                grip_map=summary.get("grip_map"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)

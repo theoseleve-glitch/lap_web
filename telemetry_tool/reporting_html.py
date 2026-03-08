@@ -2427,6 +2427,11 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 {{ confidence_html }}
 {% endif %}
 
+<!-- ====== Grip Map ====== -->
+{% if grip_map_html %}
+{{ grip_map_html }}
+{% endif %}
+
 <!-- ====== Distance Quality Debug ====== -->
 {% if distance_quality_html %}
 {{ distance_quality_html }}
@@ -3244,6 +3249,85 @@ def _build_confidence_html(theo_metrics: Optional[dict]) -> str:
     return "\n".join(parts)
 
 
+def _build_grip_map_html(grip_data: Optional[dict]) -> str:
+    """Build HTML for grip map visualization."""
+    if grip_data is None:
+        return ""
+
+    is_fallback = grip_data.get("is_global_fallback", True)
+    global_mu = grip_data.get("global_mu", 1.0)
+    source = grip_data.get("source", "unknown")
+    warning = grip_data.get("warning")
+    n_laps = grip_data.get("n_laps_used", 0)
+
+    parts = [
+        '<div class="section grip-map-panel" style="margin: 16px 0;">',
+        f'<h3>Grip Map <span style="color: #9ca3af; font-size: 0.8em;">'
+        f'({source}, {n_laps} laps)</span></h3>',
+    ]
+
+    if warning:
+        parts.append(
+            f'<p style="color: #f59e0b; margin: 4px 0;">'
+            f'<strong>Warning:</strong> {warning}</p>'
+        )
+
+    if is_fallback:
+        parts.append(
+            f'<p>Global grip coefficient: <strong>{global_mu:.2f} G</strong></p>'
+        )
+    else:
+        distances = grip_data.get("distance_bins", [])
+        mu_mean = grip_data.get("mu_mean", [])
+        mu_p95 = grip_data.get("mu_p95", [])
+        if distances and mu_mean:
+            n = len(distances)
+            width = 600
+            height = 120
+            d_min, d_max = distances[0], distances[-1]
+            mu_all = mu_mean + mu_p95
+            mu_min = max(0, min(mu_all) - 0.1)
+            mu_max = max(mu_all) + 0.1
+
+            def _sx(d):
+                return (d - d_min) / max(1, d_max - d_min) * width
+
+            def _sy(mu):
+                return height - (mu - mu_min) / max(0.01, mu_max - mu_min) * height
+
+            mean_pts = " ".join(
+                f"{_sx(distances[i]):.1f},{_sy(mu_mean[i]):.1f}"
+                for i in range(n)
+            )
+            p95_pts = " ".join(
+                f"{_sx(distances[i]):.1f},{_sy(mu_p95[i]):.1f}"
+                for i in range(n)
+            )
+
+            parts.append(
+                f'<svg viewBox="0 0 {width} {height}" '
+                f'style="width: 100%; max-width: 600px; height: {height}px; '
+                f'background: rgba(0,0,0,0.03); border-radius: 4px;">'
+                f'<polyline points="{p95_pts}" fill="none" '
+                f'stroke="#22c55e" stroke-width="1" stroke-dasharray="4,2" '
+                f'opacity="0.6"/>'
+                f'<polyline points="{mean_pts}" fill="none" '
+                f'stroke="#3b82f6" stroke-width="2"/>'
+                f'<text x="5" y="12" font-size="10" fill="#9ca3af">'
+                f'mu (G) — blue: mean, green dashed: p95</text>'
+                f'</svg>'
+            )
+
+        parts.append(
+            f'<p style="font-size: 0.85em; color: #9ca3af;">'
+            f'Global mu: {global_mu:.2f} G | '
+            f'{len(distances)} bins</p>'
+        )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 def generate_report(
     *,
     score_result:         Optional[dict[str, Any]]        = None,
@@ -3280,6 +3364,8 @@ def generate_report(
     lap_inclusion:        Optional[dict[str, Any]]         = None,
     # --- Confidence assessment (all optional) -
     theoretical_metrics:  Optional[dict[str, Any]]         = None,
+    # --- Grip map (all optional) -
+    grip_map:             Optional[dict[str, Any]]         = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3505,6 +3591,7 @@ def generate_report(
     distance_quality_html = _build_distance_quality_html(distance_quality)
     traffic_html = _build_traffic_html(traffic, lap_inclusion)
     confidence_html = _build_confidence_html(theoretical_metrics)
+    grip_map_html = _build_grip_map_html(grip_map)
     sim_method_badge = _build_sim_method_badge_html(
         score_result, using_data_theoretical=_using_data_theoretical,
     )
@@ -3578,6 +3665,7 @@ def generate_report(
         distance_quality_html=distance_quality_html,
         traffic_html=traffic_html,
         confidence_html=confidence_html,
+        grip_map_html=grip_map_html,
         # Colour variables for CSS
 
         bg_dark=_BG_DARK,
