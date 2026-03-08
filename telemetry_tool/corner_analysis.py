@@ -2690,3 +2690,172 @@ def compute_compound_metrics(
         leverage_corner_id=leverage_id,
         coaching=coaching,
     )
+
+
+# =============================================================================
+
+# Theoretical Per-Corner Targets (Feature 6)
+
+# =============================================================================
+
+
+@dataclass
+class CornerTargets:
+    """Theoretical target event positions and speeds for a corner."""
+
+    corner_id: int
+    target_events: list[CornerEvent]      # theoretical event positions
+    target_speeds: dict[str, float]       # event_type -> target speed_mps
+    priority: str                         # "entry"|"exit"|"balanced"
+    priority_reason: str                  # e.g. "long straight follows"
+    recommended_changes: list[dict]       # [{"event": "BP", "delta_m": -3.2, ...}]
+    confidence: float
+
+    def to_dict(self) -> dict:
+        return {
+            "corner_id": self.corner_id,
+            "target_events": [e.to_dict() for e in self.target_events],
+            "target_speeds": {k: round(v, 2) for k, v in self.target_speeds.items()},
+            "priority": self.priority,
+            "priority_reason": self.priority_reason,
+            "recommended_changes": self.recommended_changes,
+            "confidence": round(self.confidence, 2),
+        }
+
+
+def compute_corner_targets(
+    corner: dict,
+    driver_timeline: CornerTimeline,
+    theoretical_timeline: CornerTimeline,
+    theoretical_df: pd.DataFrame,
+    driver_df: pd.DataFrame,
+    data_quality: float = 1.0,
+) -> Optional[CornerTargets]:
+    """
+    Compute theoretical target positions and recommended changes for a corner.
+
+    Compares the driver's actual corner events (braking point, throttle-on, etc.)
+    against the theoretical optimal events to produce actionable deltas.
+
+    Parameters
+    ----------
+    corner : dict
+        Corner definition with ``corner_id``, ``s_start``, ``s_end``.
+        Optional keys: ``next_straight_m``, ``prev_straight_m``, ``corner_type``.
+    driver_timeline : CornerTimeline
+        Events detected from the driver's actual lap.
+    theoretical_timeline : CornerTimeline
+        Events detected from the theoretical optimal lap.
+    theoretical_df : pd.DataFrame
+        Theoretical lap telemetry (distance + speed columns).
+    driver_df : pd.DataFrame
+        Driver lap telemetry (distance + speed columns).
+    data_quality : float
+        Overall data quality score 0-1 (scales confidence).
+
+    Returns
+    -------
+    CornerTargets or None
+        Target events, speeds, priority, and recommended changes.
+    """
+    cid = int(corner.get("corner_id", 0))
+
+    # ------------------------------------------------------------------
+    # Determine priority from corner context
+    # ------------------------------------------------------------------
+    next_straight = corner.get("next_straight_m", 0)
+    prev_straight = corner.get("prev_straight_m", 0)
+    corner_type = corner.get("corner_type", "medium")
+
+    if next_straight > 200:
+        priority = "exit"
+        priority_reason = "long straight follows — maximize exit speed"
+    elif prev_straight > 200:
+        priority = "entry"
+        priority_reason = "long straight precedes — maximize entry speed"
+    elif corner_type == "hairpin":
+        priority = "entry"
+        priority_reason = "hairpin requires full rotation commitment"
+    else:
+        priority = "balanced"
+        priority_reason = "balanced entry and exit importance"
+
+    # ------------------------------------------------------------------
+    # Target events from theoretical timeline
+    # ------------------------------------------------------------------
+    target_events = [e for e in theoretical_timeline.events if e.available]
+
+    # ------------------------------------------------------------------
+    # Target speeds at each event position
+    # ------------------------------------------------------------------
+    try:
+        theo_dist = _resolve_dist(theoretical_df)
+        theo_speed = _resolve_speed(theoretical_df)
+    except CornerAnalysisError:
+        theo_dist = None
+        theo_speed = None
+
+    target_speeds: dict[str, float] = {}
+    if theo_dist is not None and theo_speed is not None:
+        for ev in target_events:
+            idx = int(np.argmin(np.abs(theo_dist - ev.s_position)))
+            if idx < len(theo_speed) and np.isfinite(theo_speed[idx]):
+                target_speeds[ev.event_type] = float(theo_speed[idx])
+
+    # ------------------------------------------------------------------
+    # Recommended changes: compare driver vs theoretical events
+    # ------------------------------------------------------------------
+    recommended: list[dict] = []
+
+    try:
+        drv_dist_arr = _resolve_dist(driver_df)
+        drv_speed_arr = _resolve_speed(driver_df)
+    except CornerAnalysisError:
+        drv_dist_arr = None
+        drv_speed_arr = None
+
+    for theo_ev in target_events:
+        drv_ev = driver_timeline.get_event(theo_ev.event_type)
+        if drv_ev is None or not drv_ev.available:
+            continue
+
+        delta_m = round(theo_ev.s_position - drv_ev.s_position, 1)
+
+        # Speed delta at event position
+        drv_speed_val = 0.0
+        if drv_dist_arr is not None and drv_speed_arr is not None:
+            drv_idx = int(np.argmin(np.abs(drv_dist_arr - drv_ev.s_position)))
+            if drv_idx < len(drv_speed_arr):
+                drv_speed_val = float(drv_speed_arr[drv_idx])
+
+        theo_spd = target_speeds.get(theo_ev.event_type, 0)
+        delta_kmh = round((theo_spd - drv_speed_val) * 3.6, 1)
+
+        if abs(delta_m) > 1.0 or abs(delta_kmh) > 1.0:
+            if theo_ev.event_type == "BP":
+                action = f"Brake {abs(delta_m):.0f}m {'later' if delta_m > 0 else 'earlier'}"
+            elif theo_ev.event_type == "THROTTLE_ON":
+                action = f"Throttle {abs(delta_m):.0f}m {'earlier' if delta_m > 0 else 'later'}"
+            elif theo_ev.event_type == "EOB":
+                action = f"Release brakes {abs(delta_m):.0f}m {'later' if delta_m > 0 else 'earlier'}"
+            else:
+                action = f"Adjust {theo_ev.event_type} by {delta_m:+.0f}m"
+
+            recommended.append({
+                "event": theo_ev.event_type,
+                "delta_m": delta_m,
+                "delta_kmh": delta_kmh,
+                "action": action,
+            })
+
+    confidence = data_quality * 0.9
+
+    return CornerTargets(
+        corner_id=cid,
+        target_events=target_events,
+        target_speeds=target_speeds,
+        priority=priority,
+        priority_reason=priority_reason,
+        recommended_changes=recommended,
+        confidence=confidence,
+    )
