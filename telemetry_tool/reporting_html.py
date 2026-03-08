@@ -2417,6 +2417,11 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 
 {% endif %}
 
+<!-- ====== Traffic Detection & Lap Inclusion ====== -->
+{% if traffic_html %}
+{{ traffic_html }}
+{% endif %}
+
 <!-- ====== Distance Quality Debug ====== -->
 {% if distance_quality_html %}
 {{ distance_quality_html }}
@@ -3139,6 +3144,60 @@ def _build_distance_quality_html(distance_quality: Optional[dict]) -> str:
     return "\n".join(parts)
 
 
+def _build_traffic_html(traffic: Optional[dict], lap_inclusion: Optional[dict]) -> str:
+    """Build HTML for traffic detection and lap inclusion summary."""
+    if traffic is None and lap_inclusion is None:
+        return ""
+
+    parts = [
+        '<div style="margin-top:2em; padding:1.5em; background:#1a1d26; border-radius:12px;">',
+        '<h3 style="color:#e6e9ef; margin-bottom:0.5em;">Traffic Detection &amp; Lap Inclusion</h3>',
+    ]
+
+    if lap_inclusion:
+        n_learn = len(lap_inclusion.get("learning_laps", []))
+        n_display = len(lap_inclusion.get("display_laps", []))
+        n_excluded = len(lap_inclusion.get("exclusions", []))
+        parts.append(
+            f'<p style="color:#a0a4b0;"><strong style="color:#e6e9ef;">{n_learn}</strong> laps used for learning, '
+            f'<strong style="color:#e6e9ef;">{n_display}</strong> displayed, '
+            f'<strong style="color:#e6e9ef;">{n_excluded}</strong> excluded.</p>'
+        )
+
+        exclusions = lap_inclusion.get("exclusions", [])
+        if exclusions:
+            parts.append(
+                '<table style="width:100%; border-collapse:collapse; margin-top:1em; font-size:0.9em;">'
+                '<thead><tr style="border-bottom:1px solid #333;">'
+                '<th style="text-align:left; padding:4px 8px; color:#a0a4b0;">Lap</th>'
+                '<th style="text-align:left; padding:4px 8px; color:#a0a4b0;">Reason</th>'
+                '<th style="text-align:left; padding:4px 8px; color:#a0a4b0;">Label</th>'
+                '</tr></thead><tbody>'
+            )
+            for exc in exclusions:
+                reasons = ", ".join(exc.get("reasons", []))
+                parts.append(
+                    f'<tr style="border-bottom:1px solid #222;">'
+                    f'<td style="padding:4px 8px; color:#e6e9ef;">Lap {exc.get("lap_number", "?")}</td>'
+                    f'<td style="padding:4px 8px; color:#a0a4b0;">{reasons}</td>'
+                    f'<td style="padding:4px 8px;">'
+                    f'<span style="display:inline-block; padding:2px 10px; border-radius:6px; '
+                    f'background:#ffd93d; color:#0e1117; font-weight:600;">{reasons}</span></td></tr>'
+                )
+            parts.append('</tbody></table>')
+
+    if traffic:
+        n_affected = traffic.get("n_laps_affected", 0)
+        if n_affected > 0:
+            parts.append(
+                f'<p style="color:#a0a4b0; margin-top:0.8em;">Traffic detected on '
+                f'<strong style="color:#ff6b6b;">{n_affected}</strong> lap(s).</p>'
+            )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 def generate_report(
     *,
     score_result:         Optional[dict[str, Any]]        = None,
@@ -3170,6 +3229,9 @@ def generate_report(
     phase_theoreticals:   Optional[dict]                   = None,
     # --- Distance quality debug section (all optional) -
     distance_quality:     Optional[dict[str, Any]]         = None,
+    # --- Traffic detection & lap inclusion (all optional) -
+    traffic:              Optional[dict[str, Any]]         = None,
+    lap_inclusion:        Optional[dict[str, Any]]         = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3393,6 +3455,7 @@ def generate_report(
 
     quality_badge = _build_quality_badge_html(score_result, data_quality, session_meta)
     distance_quality_html = _build_distance_quality_html(distance_quality)
+    traffic_html = _build_traffic_html(traffic, lap_inclusion)
     sim_method_badge = _build_sim_method_badge_html(
         score_result, using_data_theoretical=_using_data_theoretical,
     )
@@ -3464,6 +3527,7 @@ def generate_report(
         adaptation_score_html=adaptation_score_html,
         weather_coaching_html=weather_coaching_html,
         distance_quality_html=distance_quality_html,
+        traffic_html=traffic_html,
         # Colour variables for CSS
 
         bg_dark=_BG_DARK,

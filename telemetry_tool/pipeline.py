@@ -2723,6 +2723,8 @@ def run_full_analysis(
                 theoretical_result=_sim_result,
                 weather_timeline=weather_timeline,
                 distance_quality=summary.get("distance_quality"),
+                traffic=summary.get("traffic"),
+                lap_inclusion=summary.get("lap_inclusion"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)
