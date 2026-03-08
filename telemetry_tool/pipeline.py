@@ -487,6 +487,7 @@ def run_full_analysis(
     preloaded_corners: Optional[list] = None,
     filter_profile_name: Optional[str] = None,
     vehicle_overrides: Optional[dict[str, Any]] = None,
+    deterministic: bool = False,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -711,7 +712,8 @@ def run_full_analysis(
         # Without this, trimmed_df=None causes all validation steps to bail.
         if resampled_laps:
             trimmed_df = pd.concat(
-                [df for df in resampled_laps.values() if df is not None and not df.empty],
+                [resampled_laps[k] for k in sorted(resampled_laps.keys())
+                 if resampled_laps[k] is not None and not resampled_laps[k].empty],
                 ignore_index=True,
             )
         else:
@@ -3228,6 +3230,38 @@ def run_full_analysis(
         rpt_html = _import("reporting_html")
         rpt_pdf  = _import("reporting_pdf")
 
+        # Enrich corner_performances with advanced intelligence data for HTML report
+        _enriched_corner_perfs = corner_performances
+        if corner_performances and corners:
+            try:
+                aci = summary.get("advanced_corner_intelligence", {})
+                risk_scores = aci.get("corner_risk_scores", [])
+                risk_map = {r.get("corner_id"): r.get("risk_index", 0) for r in risk_scores}
+                tl_data = summary.get("corner_timelines", [])
+                tl_map = {t.get("corner_id") if isinstance(t, dict) else getattr(t, "corner_id", None): t for t in tl_data}
+                corner_type_map = {c.get("corner_id", i): c.get("corner_type", "") for i, c in enumerate(corners)}
+                compound_map = {c.get("corner_id", i): c.get("compound_id") for i, c in enumerate(corners)}
+                setup_map = {c.get("corner_id", i): c.get("is_setup_corner", False) for i, c in enumerate(corners)}
+                br_data = aci.get("brake_release_metrics", [])
+                br_map = {b.get("corner_id"): b for b in br_data} if br_data else {}
+
+                enriched = []
+                for p in corner_performances:
+                    d = p.to_dict() if hasattr(p, "to_dict") else dict(p) if isinstance(p, dict) else {"corner_id": 0}
+                    cid = d.get("corner_id", 0)
+                    d["corner_type"] = corner_type_map.get(cid, "")
+                    d["risk_index"] = risk_map.get(cid, 0.0)
+                    d["compound_id"] = compound_map.get(cid)
+                    d["is_setup_corner"] = setup_map.get(cid, False)
+                    d["brake_release"] = br_map.get(cid, {})
+                    tl = tl_map.get(cid)
+                    if tl:
+                        d["timeline"] = tl if isinstance(tl, dict) else (tl.to_dict() if hasattr(tl, "to_dict") else {})
+                    enriched.append(d)
+                _enriched_corner_perfs = enriched
+            except Exception:
+                logger.debug("Corner perf enrichment failed, using raw data", exc_info=True)
+
         def _html_report() -> Path:
             if rpt_html is None:
                 raise ImportError("reporting_html unavailable")
@@ -3248,7 +3282,7 @@ def run_full_analysis(
 
                 resampled_laps=resampled_laps,
                 friction_circle=friction_circle,
-                corner_performances=corner_performances,
+                corner_performances=_enriched_corner_perfs,
                 grip_evolution=grip_evolution_result,
                 data_quality=data_quality_rpt,
                 theoretical_result=_sim_result,
@@ -3258,6 +3292,7 @@ def run_full_analysis(
                 lap_inclusion=summary.get("lap_inclusion"),
                 theoretical_metrics=summary.get("theoretical_metrics"),
                 grip_map=summary.get("grip_map"),
+                driver_style=summary.get("driver_style"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)
@@ -3586,6 +3621,7 @@ def run_full_analysis(
             file_path=str(csv_path) if csv_path else None,
             pipeline_version=_pipeline_status.pipeline_version,
             model_version=_pipeline_status.model_version,
+            deterministic=deterministic,
         )
         summary["provenance"] = _provenance_record.to_dict()
 
