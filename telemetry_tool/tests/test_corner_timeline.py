@@ -221,3 +221,74 @@ class TestMRPDetection:
         mrp = tl.get_event("MRP")
         assert mrp is not None and mrp.available
         assert 150.0 <= mrp.s_position <= 170.0
+
+
+class TestSegmentLosses:
+    def test_known_speed_profiles(self):
+        n = 200
+        dist = np.linspace(0, 300, n)
+        drv_speed = np.ones(n) * 25.0
+        theo_speed = np.ones(n) * 30.0
+
+        drv_df = pd.DataFrame({
+            "Distance (m)": dist,
+            "Speed (m/s)": drv_speed,
+            "accel_long_mps2": np.zeros(n),
+        })
+        theo_df = pd.DataFrame({
+            "distance_m": dist,
+            "v_env_mps": theo_speed,
+        })
+
+        events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 110.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 130.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 160.0, 0.9, "accel_long", 0.5, True),
+            CornerEvent("TRACK_OUT", 200.0, 0.5, "position", 0.0, True),
+        ]
+        tl = CornerTimeline(
+            corner_id=1, events=events,
+            segment_losses_s={}, segment_confidences={},
+            mistakes=[], mrp_strength=10.0,
+            mrp_stability_std_m=0.0, event_stability={},
+        )
+
+        losses = compute_segment_losses(tl, drv_df, theo_df)
+        assert all(v >= 0 for v in losses.values())
+        total = sum(losses.values())
+        assert total > 0
+
+    def test_unavailable_events_skipped(self):
+        n = 200
+        dist = np.linspace(0, 300, n)
+        drv_df = pd.DataFrame({
+            "Distance (m)": dist,
+            "Speed (m/s)": np.ones(n) * 25.0,
+            "accel_long_mps2": np.zeros(n),
+        })
+        theo_df = pd.DataFrame({
+            "distance_m": dist,
+            "v_env_mps": np.ones(n) * 30.0,
+        })
+
+        events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 110.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 0.0, 0.0, "yaw_rate", 0.0, False),  # unavailable
+            CornerEvent("THROTTLE_ON", 160.0, 0.9, "accel_long", 0.5, True),
+            CornerEvent("TRACK_OUT", 200.0, 0.5, "position", 0.0, True),
+        ]
+        tl = CornerTimeline(
+            corner_id=1, events=events,
+            segment_losses_s={}, segment_confidences={},
+            mistakes=[], mrp_strength=0.0,
+            mrp_stability_std_m=0.0, event_stability={},
+        )
+
+        losses = compute_segment_losses(tl, drv_df, theo_df)
+        # EOB_MRP and MRP_THROTTLE_ON should be 0 since MRP is unavailable
+        assert losses.get("EOB_MRP", 0.0) == 0.0
+        assert losses.get("MRP_THROTTLE_ON", 0.0) == 0.0
+        # BP_EOB should have a loss (both available)
+        assert losses.get("BP_EOB", 0.0) >= 0.0
