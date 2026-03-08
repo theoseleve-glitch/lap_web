@@ -167,3 +167,46 @@ def test_report_includes_distance_debug_section():
         html = path.read_text(encoding="utf-8")
         assert "Distance Quality" in html
         assert "xy_rebuild" in html
+
+
+def test_non_monotonic_csv_gets_repaired(tmp_path):
+    """End-to-end: CSV with non-monotonic distance → repaired + summary has distance_quality."""
+    import pipeline
+
+    n = 400
+    laps = np.repeat([1, 2], n // 2)
+    time = np.linspace(0, 60, n)
+    speed = np.full(n, 20.0)
+
+    # Create non-monotonic distance for lap 2
+    d1 = np.linspace(0, 500, n // 2)
+    d2 = np.linspace(0, 500, n // 2)
+    # Inject backward jumps in lap 2
+    for i in range(10, n // 2, 15):
+        d2[i] = d2[i] - 50
+    dist = np.concatenate([d1, d2])
+
+    # Include lat/lon so the generic CSV adapter reaches confidence >= 0.5
+    lat = np.linspace(45.0, 45.001, n)
+    lon = np.linspace(9.0, 9.001, n)
+
+    df = pd.DataFrame({
+        "Lap #": laps,
+        "Time (s)": time,
+        "Speed (m/s)": speed,
+        "Distance (m)": dist,
+        "Latitude (deg)": lat,
+        "Longitude (deg)": lon,
+    })
+
+    csv_path = tmp_path / "nonmono.csv"
+    df.to_csv(csv_path, index=False)
+
+    summary = pipeline.run_full_analysis(str(csv_path), {})
+
+    dq = summary.get("distance_quality")
+    assert dq is not None
+    assert dq["status"] in ("ok", "repaired", "degraded")
+    # Lap 2 should have been flagged
+    if dq["status"] == "repaired":
+        assert 2 in dq["laps_repaired"]
