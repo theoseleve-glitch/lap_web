@@ -37,6 +37,7 @@ Design principles
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Final
 
 import numpy as np
@@ -636,6 +637,125 @@ def _gaussian_smooth_1d(signal: np.ndarray, half_window: int) -> np.ndarray:
     padded = np.pad(signal, half_window, mode="reflect")
     out    = np.convolve(padded, w, mode="valid")
     return out[:len(signal)]
+
+
+# -- -
+
+# 6. Driver Style Profile
+
+# -- -
+
+
+@dataclass
+class DriverStyleProfile:
+    """Per-session driver style vector."""
+
+    brake_aggressiveness: float     # mean peak_decel ratio (0-1)
+    trail_length_score: float       # mean terminal trail % (0-100)
+    mrp_timing: float               # mean MRP position relative to corner (0=early, 1=late)
+    exit_priority_score: float      # fraction of corners where exit loss < entry loss
+    line_variance: float            # std-dev of braking point deltas across corners
+    style_labels: list              # ["late braker", "exit-focused", "smooth"]
+    confidence: float
+
+    def to_dict(self) -> dict:
+        return {
+            "brake_aggressiveness": round(self.brake_aggressiveness, 3),
+            "trail_length_score": round(self.trail_length_score, 1),
+            "mrp_timing": round(self.mrp_timing, 3),
+            "exit_priority_score": round(self.exit_priority_score, 3),
+            "line_variance": round(self.line_variance, 2),
+            "style_labels": self.style_labels,
+            "confidence": round(self.confidence, 2),
+        }
+
+
+def compute_driver_style(
+    corner_performances: list,
+    timelines: list = None,
+    data_quality: float = 1.0,
+) -> DriverStyleProfile:
+    """
+    Compute driver style profile from corner analysis data.
+
+    Uses CornerPerformance fields: braking_point_delta_m, time_loss_braking_s,
+    time_loss_exit_s, grip_utilisation_pct.
+    """
+    if not corner_performances:
+        return DriverStyleProfile(0.0, 0.0, 0.5, 0.5, 0.0, [], 0.0)
+
+    # Brake aggressiveness: how late they brake (negative delta = later than theoretical)
+    bp_deltas: list[float] = []
+    for p in corner_performances:
+        if isinstance(p, dict):
+            delta = p.get("braking_point_delta_m", 0.0)
+        else:
+            delta = getattr(p, "braking_point_delta_m", 0.0)
+        if isinstance(delta, (int, float)) and np.isfinite(delta):
+            bp_deltas.append(float(delta))
+
+    # Negative delta = braked later than theoretical = more aggressive
+    if bp_deltas:
+        mean_delta = float(np.mean(bp_deltas))
+        # Map: -10m (very late) -> 1.0, +10m (very early) -> 0.0
+        brake_aggressiveness = max(0.0, min(1.0, 0.5 - mean_delta / 20.0))
+    else:
+        brake_aggressiveness = 0.5
+
+    # Trail length score (placeholder -- needs BrakeReleaseMetrics data)
+    trail_length = 0.0
+
+    # MRP timing (placeholder -- needs timeline data)
+    mrp_timing = 0.5
+
+    # Exit priority: fraction of corners where exit loss < braking loss
+    exit_better = 0
+    total_compared = 0
+    for p in corner_performances:
+        if isinstance(p, dict):
+            bl = p.get("time_loss_braking_s", 0)
+            el = p.get("time_loss_exit_s", 0)
+        else:
+            bl = getattr(p, "time_loss_braking_s", 0)
+            el = getattr(p, "time_loss_exit_s", 0)
+        if bl > 0 or el > 0:
+            total_compared += 1
+            if el < bl:
+                exit_better += 1
+
+    exit_priority = exit_better / max(total_compared, 1)
+
+    # Line variance: std-dev of braking deltas
+    line_variance = float(np.std(bp_deltas)) if len(bp_deltas) >= 2 else 0.0
+
+    # Labels
+    labels: list[str] = []
+    if brake_aggressiveness > 0.7:
+        labels.append("aggressive braker")
+    elif brake_aggressiveness < 0.3:
+        labels.append("conservative braker")
+
+    if exit_priority > 0.6:
+        labels.append("exit-focused")
+    elif exit_priority < 0.4 and total_compared > 0:
+        labels.append("entry-focused")
+
+    if line_variance < 1.5 and len(bp_deltas) >= 3:
+        labels.append("consistent")
+    elif line_variance > 4.0:
+        labels.append("variable line")
+
+    confidence = min(1.0, len(corner_performances) / 5.0) * data_quality
+
+    return DriverStyleProfile(
+        brake_aggressiveness=brake_aggressiveness,
+        trail_length_score=trail_length,
+        mrp_timing=mrp_timing,
+        exit_priority_score=exit_priority,
+        line_variance=line_variance,
+        style_labels=labels,
+        confidence=confidence,
+    )
 
 
 # -- -
