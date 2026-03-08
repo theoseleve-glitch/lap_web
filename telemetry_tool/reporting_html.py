@@ -1827,6 +1827,52 @@ def _build_corner_table_html(
         priority = _get(p, "corner_priority", "")
         coaching_txt = _get(p, "coaching_text", "")
 
+        # Corner type + compound + risk
+        corner_type = _get(p, "corner_type", "")
+        risk_index = _get(p, "risk_index", 0.0)
+        compound_id = _get(p, "compound_id", None)
+        is_setup = _get(p, "is_setup_corner", False)
+
+        # Type badge
+        type_html = ""
+        if corner_type:
+            type_colors = {
+                "hairpin": "#ff6b6b", "medium": "#ffd600", "fast": "#4ecdc4",
+                "chicane": "#a29bfe", "kink": "#9a9a9a",
+                "compound_member": "#fd79a8", "setup": "#74b9ff",
+            }
+            tc = type_colors.get(corner_type, "#9a9a9a")
+            label = corner_type.replace("_", " ")
+            if is_setup:
+                label = "setup"
+                tc = type_colors["setup"]
+            type_html = f'<span style="color:{tc};font-size:0.7rem;font-weight:600;">{label}</span>'
+
+        # Compound bracket
+        compound_html = ""
+        if compound_id is not None:
+            compound_html = f'<span style="color:#fd79a8;font-size:0.65rem;" title="Compound group {compound_id}"> [G{compound_id}]</span>'
+
+        # Risk badge
+        risk_html = ""
+        if risk_index > 0:
+            risk_color = "#ff4444" if risk_index > 0.6 else ("#ffd600" if risk_index > 0.3 else "#88ff88")
+            risk_html = f'<span style="color:{risk_color};font-size:0.75rem;">{risk_index:.0%}</span>'
+
+        # Brake release quality
+        brake_rel_html = ""
+        if isinstance(p, dict):
+            br = p.get("brake_release", {})
+            if br:
+                linearity = br.get("release_linearity", 0)
+                over_drop = br.get("over_drop", False)
+                if over_drop:
+                    brake_rel_html = '<span style="color:#ff4444;font-size:0.7rem;">over-drop</span>'
+                elif linearity >= 0.8:
+                    brake_rel_html = f'<span style="color:#88ff88;font-size:0.7rem;">R\u00b2={linearity:.2f}</span>'
+                elif linearity > 0:
+                    brake_rel_html = f'<span style="color:#ffd600;font-size:0.7rem;">R\u00b2={linearity:.2f}</span>'
+
         # Timeline mistakes
         mistakes_html = ""
         if isinstance(p, dict):
@@ -1865,13 +1911,16 @@ def _build_corner_table_html(
             loss_class = 'class="worst-val"'
 
         row = f"""<tr>
-          <td><b>C{cid}</b></td>
+          <td><b>C{cid}</b>{compound_html}</td>
+          <td>{type_html}</td>
           <td>{s_start:.0f}m</td>
           <td {entry_class}>{actual_entry*3.6:.1f} / {theo_entry*3.6:.1f}</td>
           <td {apex_class}>{actual_apex*3.6:.1f} / {theo_apex*3.6:.1f}</td>
           <td {grip_class}>{grip:.0f}%</td>
           <td>{bp_delta:+.0f}m</td>
           <td {loss_class}>{loss:.3f}s</td>
+          <td>{brake_rel_html}</td>
+          <td>{risk_html}</td>
           <td style="font-size:0.75rem;color:#9a9a9a;max-width:250px;white-space:normal;">{hint}</td>
           <td>{mistakes_html}</td>
           <td>{priority}</td>
@@ -1882,14 +1931,114 @@ def _build_corner_table_html(
     return f"""<div style="overflow-x:auto;">
     <table class="cmp-table">
       <thead><tr>
-        <th>Corner</th><th>Location</th>
+        <th>Corner</th><th>Type</th><th>Location</th>
         <th>Entry (km/h)</th><th>Apex (km/h)</th>
         <th>Grip</th><th>Brake Pt</th>
-        <th>Time Loss</th><th>Coaching</th>
+        <th>Time Loss</th><th>Brake Rel.</th><th>Risk</th><th>Coaching</th>
         <th>Mistakes</th><th>Priority</th><th>Why</th>
       </tr></thead>
       <tbody>{"".join(rows)}</tbody>
     </table></div>"""
+
+
+def _build_coaching_v2_html(coaching_v2: Optional[dict] = None) -> str:
+    """Build HTML section for Coaching V2 evidence-based coaching."""
+    if not coaching_v2:
+        return ""
+
+    parts = ['<div style="margin-top:24px;"><h3 style="color:#e0e0e0;">Coaching Summary</h3>']
+
+    # Confirmations (green badges)
+    confirmations = coaching_v2.get("confirmations", [])
+    if confirmations:
+        parts.append('<div style="margin-bottom:12px;">')
+        parts.append(
+            '<span style="color:#88ff88;font-weight:600;font-size:0.85rem;">'
+            'What you did well:</span><br>'
+        )
+        for c in confirmations:
+            parts.append(
+                f'<span style="display:inline-block;background:#1a3a1a;color:#88ff88;'
+                f'padding:4px 10px;border-radius:6px;margin:3px 2px;font-size:0.75rem;">'
+                f'{c.get("text", "")}</span>'
+            )
+        parts.append('</div>')
+
+    # Corrections (orange cards)
+    corrections = coaching_v2.get("corrections", [])
+    if corrections:
+        parts.append('<div style="margin-bottom:12px;">')
+        parts.append(
+            '<span style="color:#ffd600;font-weight:600;font-size:0.85rem;">'
+            'Key corrections:</span>'
+        )
+        for c in corrections:
+            conf = c.get("confidence", 0)
+            ev = c.get("evidence", {})
+            delta = ev.get("delta_time_s", 0)
+            parts.append(
+                f'<div style="background:#2a2a1a;border-left:3px solid #ffd600;'
+                f'padding:6px 10px;margin:4px 0;border-radius:4px;">'
+                f'<span style="color:#ffd600;font-size:0.8rem;">{c.get("text", "")}</span>'
+                f'<span style="color:#666;font-size:0.65rem;margin-left:8px;">'
+                f'({conf:.0%} conf, {delta*1000:.0f}ms est.)</span></div>'
+            )
+        parts.append('</div>')
+
+    # Objectives (numbered checklist)
+    objectives = coaching_v2.get("objectives", [])
+    if objectives:
+        parts.append('<div style="margin-bottom:12px;">')
+        parts.append(
+            '<span style="color:#4ecdc4;font-weight:600;font-size:0.85rem;">'
+            'Next session objectives:</span>'
+        )
+        parts.append('<ol style="margin:6px 0;padding-left:20px;">')
+        for obj in objectives:
+            parts.append(
+                f'<li style="color:#e0e0e0;font-size:0.8rem;margin:4px 0;">'
+                f'{obj.get("text", "")} '
+                f'<span style="color:#666;font-size:0.65rem;">'
+                f'[{obj.get("event_target", "")} → {obj.get("change_direction", "")}, '
+                f'current: {obj.get("current_value", 0):.1f}, '
+                f'target: {obj.get("target_value", 0):.1f}]'
+                f'</span></li>'
+            )
+        parts.append('</ol></div>')
+
+    # Suppression notice
+    suppressed = coaching_v2.get("suppressed_count", 0)
+    if suppressed:
+        parts.append(
+            f'<div style="color:#666;font-size:0.65rem;margin-top:4px;">'
+            f'{suppressed} item(s) suppressed due to low confidence or instability</div>'
+        )
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
+def _build_driver_style_badge_html(driver_style: Optional[dict] = None) -> str:
+    """Build a compact driver style badge for the report header."""
+    if not driver_style:
+        return ""
+    labels = driver_style.get("style_labels", [])
+    confidence = driver_style.get("confidence", 0.0)
+    if not labels or confidence < 0.3:
+        return ""
+    label_spans = " ".join(
+        f'<span style="background:#333;padding:2px 8px;border-radius:4px;'
+        f'font-size:0.75rem;color:#4ecdc4;margin-right:4px;">{lb}</span>'
+        for lb in labels
+    )
+    return (
+        f'<div style="margin-top:8px;">'
+        f'<span style="color:#9a9a9a;font-size:0.75rem;">Driver Style:</span> '
+        f'{label_spans}'
+        f'<span style="color:#666;font-size:0.65rem;margin-left:6px;">'
+        f'({confidence:.0%} confidence)</span>'
+        f'</div>'
+    )
 
 
 def _build_quality_badge_html(
@@ -2173,6 +2322,9 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
   {% if quality_badge %}
     <div class="badge-row">{{ quality_badge }}</div>
   {% endif %}
+  {% if driver_style_badge %}
+    {{ driver_style_badge }}
+  {% endif %}
   {% if score_result.strengths %}
     <p style="margin-top:10px;">Strengths:
       {% for s in score_result.strengths %}
@@ -2438,6 +2590,11 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 </div>
 {% endif %}
 
+{% endif %}
+
+<!-- ====== Coaching V2 (evidence-based) ====== -->
+{% if coaching_v2_html %}
+{{ coaching_v2_html }}
 {% endif %}
 
 <!-- ====== Traffic Detection & Lap Inclusion ====== -->
@@ -3557,6 +3714,10 @@ def generate_report(
     grip_map:             Optional[dict[str, Any]]         = None,
     # --- Optimal v2 solver output (explainability + uncertainty) -
     optimal_v2:           Optional[dict[str, Any]]         = None,
+    # --- Driver style profile (from advanced corner intelligence) -
+    driver_style:         Optional[dict[str, Any]]         = None,
+    # --- Coaching V2 (evidence-based, confidence-gated) -
+    coaching_v2:          Optional[dict[str, Any]]         = None,
 ) -> Path:
     """
     Generate a self-contained HTML report and write it to *output_path*.
@@ -3788,6 +3949,8 @@ def generate_report(
     sim_method_badge = _build_sim_method_badge_html(
         score_result, using_data_theoretical=_using_data_theoretical,
     )
+    driver_style_badge = _build_driver_style_badge_html(driver_style)
+    coaching_v2_html = _build_coaching_v2_html(coaching_v2)
 
     # --- Build driver comparison rows
 
@@ -3844,6 +4007,8 @@ def generate_report(
         grip_evolution_img=grip_evolution_img,
         quality_badge=quality_badge,
         sim_method_badge=sim_method_badge,
+        driver_style_badge=driver_style_badge,
+        coaching_v2_html=coaching_v2_html,
         has_cornering_zones=(cornering_mask is not None),
         using_data_theoretical=_using_data_theoretical,
         data_theoretical_time=(

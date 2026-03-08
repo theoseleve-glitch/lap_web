@@ -3215,6 +3215,30 @@ def run_full_analysis(
         logger.info("Coaching guide: %d focus areas", n_focus)
     summary["coaching_guide"] = coaching_guide
 
+    # STEP 13c -- Coaching V2 (evidence-based, confidence-gated)
+
+    def _coaching_v2():
+        ca_mod = _import("corner_analysis")
+        if ca_mod is None or not hasattr(ca_mod, "generate_coaching_v2"):
+            return None
+        if not corner_performances:
+            return None
+        return ca_mod.generate_coaching_v2(
+            corner_performances,
+            corner_timelines=corner_timelines,
+            corners=corners,
+            data_quality=dq_score,
+        )
+
+    # Gate on distance quality (same as coaching_guide)
+    if _distance_quality is not None and hasattr(_distance_quality, 'gate_advanced') and _distance_quality.gate_advanced:
+        _record("13c_coaching_v2", None, "distance_quality_gate")
+    else:
+        cv2_result, err = _safe_step("13c_coaching_v2", _coaching_v2)
+        _record("13c_coaching_v2", cv2_result, err)
+        if cv2_result is not None:
+            summary["coaching_v2"] = cv2_result.to_dict() if hasattr(cv2_result, "to_dict") else cv2_result
+
     html_path: Optional[Path] = None
     pdf_path:  Optional[Path] = None
 
@@ -3293,6 +3317,7 @@ def run_full_analysis(
                 theoretical_metrics=summary.get("theoretical_metrics"),
                 grip_map=summary.get("grip_map"),
                 driver_style=summary.get("driver_style"),
+                coaching_v2=summary.get("coaching_v2"),
             )
 
         html_path, err = _safe_step("14b_html_report", _html_report)

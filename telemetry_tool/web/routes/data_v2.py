@@ -691,6 +691,10 @@ def get_corners(session_id: str):
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
+    # -- 0. Coaching V2 from analysis_json (if available) ----------------
+    _analysis = models.get_analysis_json(conn, session_id)
+    _coaching_v2 = _analysis.get("coaching_v2") if _analysis else None
+
     # -- 1. Corner boundaries from corner_metrics_summary ----------------
     boundary_rows = models.get_corner_metrics_summary(conn, session_id)
 
@@ -797,10 +801,13 @@ def get_corners(session_id: str):
                     if cid in risk_map:
                         corner["risk_index"] = risk_map[cid].get("risk_index", 0)
 
-        return api_response({
+        resp = {
             "corners": corners,
             "available": True,
-        })
+        }
+        if _coaching_v2:
+            resp["coaching_v2"] = _coaching_v2
+        return api_response(resp)
 
     # -- 5. Fallback: no boundaries but coaching exists ------------------
     if coaching_list:
@@ -854,10 +861,13 @@ def get_corners(session_id: str):
                     if cid in risk_map:
                         corner["risk_index"] = risk_map[cid].get("risk_index", 0)
 
-        return api_response({
+        resp = {
             "corners": corners,
             "available": True,
-        })
+        }
+        if _coaching_v2:
+            resp["coaching_v2"] = _coaching_v2
+        return api_response(resp)
 
     # -- 6. No data at all -----------------------------------------------
     return api_response({
