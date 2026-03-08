@@ -226,3 +226,17 @@ def rebuild_distance_from_xy(
             return result
 
     return None
+
+
+def repair_distance_isotonic(distance: np.ndarray) -> np.ndarray:
+    """Force distance array to be monotonically non-decreasing.
+
+    Uses sklearn's IsotonicRegression which finds the best
+    non-decreasing fit in a least-squares sense.
+    """
+    from sklearn.isotonic import IsotonicRegression
+
+    d = np.asarray(distance, dtype=np.float64).copy()
+    ir = IsotonicRegression(increasing=True)
+    indices = np.arange(len(d), dtype=np.float64)
+    return ir.fit_transform(indices, d)

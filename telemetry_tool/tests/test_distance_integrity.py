@@ -154,3 +154,24 @@ def test_rebuild_returns_none_no_coords():
     df = pd.DataFrame({"Distance (m)": np.linspace(0, 100, 50)})
     result = rebuild_distance_from_xy(df)
     assert result is None
+
+
+def test_isotonic_repair():
+    """Isotonic regression forces monotonicity."""
+    from distance_integrity import repair_distance_isotonic
+
+    d = np.array([0, 10, 20, 15, 30, 25, 40, 50])  # two backward jumps
+    result = repair_distance_isotonic(d)
+    diffs = np.diff(result)
+    assert np.all(diffs >= 0), "Must be non-decreasing after repair"
+    assert result[0] == pytest.approx(0.0, abs=1.0)
+    assert result[-1] == pytest.approx(50.0, abs=5.0)
+
+
+def test_isotonic_preserves_monotonic():
+    """Already-monotonic input is unchanged (within tolerance)."""
+    from distance_integrity import repair_distance_isotonic
+
+    d = np.linspace(0, 500, 100)
+    result = repair_distance_isotonic(d)
+    np.testing.assert_allclose(result, d, atol=1e-6)
