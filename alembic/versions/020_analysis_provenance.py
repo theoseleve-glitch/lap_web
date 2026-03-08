@@ -40,18 +40,18 @@ def upgrade() -> None:
 
     # RLS policy (PG only, silently skipped on SQLite)
     try:
-        op.execute("ALTER TABLE analysis_provenance ENABLE ROW LEVEL SECURITY")
-        op.execute(
+        op.execute(sa.text("ALTER TABLE analysis_provenance ENABLE ROW LEVEL SECURITY"))
+        op.execute(sa.text(
             "CREATE POLICY workspace_isolation ON analysis_provenance "
             "USING (workspace_id = current_setting('app.workspace_id')::INTEGER)"
-        )
+        ))
     except Exception:
         pass  # SQLite — no RLS support
 
 
 def downgrade() -> None:
     try:
-        op.execute("DROP POLICY IF EXISTS workspace_isolation ON analysis_provenance")
+        op.execute(sa.text("DROP POLICY IF EXISTS workspace_isolation ON analysis_provenance"))
     except Exception:
         pass
     op.drop_index("idx_provenance_pipeline_ver")
