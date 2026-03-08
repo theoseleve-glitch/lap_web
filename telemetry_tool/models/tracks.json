@@ -185,5 +185,73 @@
       "sample_count": 11990,
       "lap_count": 12
     }
+  },
+  {
+    "track_id": "359159be-647c-4f62-9a0b-ce813c480952",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 595.7,
+      "bbox": {
+        "lat_min": 45.0,
+        "lat_max": 45.001,
+        "lon_min": 9.0,
+        "lon_max": 9.001
+      },
+      "start_lat": 45.000027,
+      "start_lon": 9.000027,
+      "sample_count": 265,
+      "lap_count": 2
+    }
+  },
+  {
+    "track_id": "a85bb3c3-25cd-456d-965e-0aff8836c8d7",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 512.4,
+      "bbox": {
+        "lat_min": 45.0,
+        "lat_max": 45.001,
+        "lon_min": 9.0,
+        "lon_max": 9.001
+      },
+      "start_lat": 45.000024,
+      "start_lon": 9.000024,
+      "sample_count": 400,
+      "lap_count": 2
+    }
+  },
+  {
+    "track_id": "91c4dc41-2f49-4c26-a9ab-1d9ce6033c09",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 597.0,
+      "bbox": {
+        "lat_min": 44.99999694909095,
+        "lat_max": 45.00200293801769,
+        "lon_min": 8.999999200790683,
+        "lon_max": 9.00199630351649
+      },
+      "start_lat": 45.000046,
+      "start_lon": 9.000046,
+      "sample_count": 374,
+      "lap_count": 2
+    }
+  },
+  {
+    "track_id": "0ec6b076-dba6-4517-a231-fe27aea36ade",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 500.0,
+      "bbox": {
+        "lat_min": 44.99999456217196,
+        "lat_max": 45.0020057274308,
+        "lon_min": 8.999997403859686,
+        "lon_max": 9.002011883365384
+      },
+      "start_lat": 45.000245,
+      "start_lon": 9.000245,
+      "sample_count": 1000,
+      "lap_count": 5
+    }
   }
 ]
