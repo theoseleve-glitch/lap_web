@@ -223,3 +223,51 @@ def test_noise_reduction():
         f"EKF noise reduction insufficient: raw={raw_yaw_std:.2f}, "
         f"fused={fused_yaw_std:.2f}"
     )
+
+
+def _make_circular_motion_df(n=300, radius=50.0, speed=15.0, dt=0.1, noise_m=2.0):
+    """Synthetic circular motion with GPS+IMU noise."""
+    rng = np.random.default_rng(42)
+    t = np.arange(n) * dt
+    omega = speed / radius  # rad/s
+    theta = omega * t
+
+    x_true = radius * np.cos(theta)
+    y_true = radius * np.sin(theta)
+    heading_true = theta + np.pi / 2  # tangent direction
+
+    lat0, lon0 = 45.0, 9.0
+    scale_lat = 1.0 / 111_320
+    scale_lon = 1.0 / (111_320 * np.cos(np.radians(lat0)))
+
+    df = pd.DataFrame({
+        "Time (s)": t,
+        "Latitude (deg)": lat0 + (y_true + rng.normal(0, noise_m, n)) * scale_lat,
+        "Longitude (deg)": lon0 + (x_true + rng.normal(0, noise_m, n)) * scale_lon,
+        "Speed (m/s)": speed + rng.normal(0, 0.3, n),
+        "Bearing (deg)": (np.degrees(heading_true) + rng.normal(0, 3, n)) % 360,
+        "Longitudinal acceleration (G) *calc": rng.normal(0, 0.02, n),
+        "Lateral acceleration (G) *calc": (speed ** 2 / radius / 9.80665) + rng.normal(0, 0.03, n),
+        "Yaw rate (deg/s)": np.degrees(omega) + rng.normal(0, 1.5, n),
+    })
+    return df
+
+
+def test_circular_motion_yaw_rate():
+    """EKF recovers correct yaw_rate from noisy circular motion data."""
+    from fusion_ekf import run_sensor_fusion
+
+    radius = 50.0
+    speed = 15.0
+    expected_yaw_dps = np.degrees(speed / radius)  # ~17.2 deg/s
+
+    df = _make_circular_motion_df(radius=radius, speed=speed)
+    result_df, fusion_result = run_sensor_fusion(df)
+
+    assert fusion_result.method == "ekf"
+    fused_yaw = result_df["Yaw rate (deg/s)"].values
+    # Trim first 50 samples (EKF convergence)
+    mean_yaw = np.mean(fused_yaw[50:])
+    assert mean_yaw == pytest.approx(expected_yaw_dps, abs=3.0), (
+        f"Expected yaw ~{expected_yaw_dps:.1f} deg/s, got {mean_yaw:.1f}"
+    )
