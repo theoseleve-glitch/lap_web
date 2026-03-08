@@ -152,6 +152,41 @@ class CornerTimeline:
         return None
 
 
+@dataclass
+class BrakeReleaseMetrics:
+    """Per-corner brake release quality metrics."""
+    peak_decel_mps2: float          # peak longitudinal deceleration
+    peak_brake_pressure: float      # raw brake pressure if available (0 if inferred)
+    brake_zone_length_m: float      # BP -> EOB distance
+    brake_zone_time_s: float        # time in brake zone
+    release_slope: float            # rate of brake release (units/m)
+    release_linearity: float        # R^2 of release curve (1.0 = perfectly linear)
+    over_drop: bool                 # pressure drops > 40% before EOB
+    over_drop_severity: float       # 0-1
+    late_release_risk: bool         # high brake retained into low-speed region
+    late_release_severity: float    # 0-1
+    terminal_trail_pct: float       # brake value at THROTTLE_ON as % of peak
+    source: str                     # "brake_pressure" | "accel_inferred"
+    confidence: float               # 1.0 for pressure, 0.6 for inferred
+
+    def to_dict(self) -> dict:
+        return {
+            "peak_decel_mps2": round(self.peak_decel_mps2, 3),
+            "peak_brake_pressure": round(self.peak_brake_pressure, 1),
+            "brake_zone_length_m": round(self.brake_zone_length_m, 1),
+            "brake_zone_time_s": round(self.brake_zone_time_s, 3),
+            "release_slope": round(self.release_slope, 4),
+            "release_linearity": round(self.release_linearity, 3),
+            "over_drop": self.over_drop,
+            "over_drop_severity": round(self.over_drop_severity, 2),
+            "late_release_risk": self.late_release_risk,
+            "late_release_severity": round(self.late_release_severity, 2),
+            "terminal_trail_pct": round(self.terminal_trail_pct, 1),
+            "source": self.source,
+            "confidence": round(self.confidence, 2),
+        }
+
+
 class CornerAnalysisError(ValueError):
     """Raised when analysis encounters invalid data."""
 
@@ -2210,3 +2245,192 @@ def detect_corner_mistakes(
                 })
 
     return mistakes
+
+
+# =============================================================================
+
+# Brake Release Quality Metrics
+
+# =============================================================================
+
+
+_BRAKE_PRESSURE_COLS = ["Brake (%)", "Brake Pressure (bar)", "brake_pct", "brake_pressure"]
+
+
+def compute_brake_release_metrics(
+    timeline: CornerTimeline,
+    lap_df: pd.DataFrame,
+    corner: dict,
+    data_quality: float = 1.0,
+) -> Optional[BrakeReleaseMetrics]:
+    """Compute brake release quality metrics for a corner.
+
+    Uses brake pressure channel if available (high confidence), otherwise
+    falls back to longitudinal acceleration as a proxy (lower confidence).
+
+    Parameters
+    ----------
+    timeline : CornerTimeline
+        Must contain at least BP and EOB events.
+    lap_df : pd.DataFrame
+        Lap data with distance, speed, and accel columns.
+    corner : dict
+        Corner definition with ``s_start`` and ``s_end``.
+    data_quality : float
+        Overall data quality multiplier (0-1).
+
+    Returns
+    -------
+    BrakeReleaseMetrics or None if BP/EOB events are missing.
+    """
+    bp = timeline.get_event("BP")
+    eob = timeline.get_event("EOB")
+    throttle_on = timeline.get_event("THROTTLE_ON")
+
+    if bp is None or not bp.available or eob is None or not eob.available:
+        return None
+
+    dist = _resolve_dist(lap_df)
+    speed = _resolve_speed(lap_df)
+    accel = _resolve_accel_long(lap_df)
+
+    # Detect brake channel
+    brake_col = None
+    for col in _BRAKE_PRESSURE_COLS:
+        if col in lap_df.columns:
+            brake_col = col
+            break
+
+    source = "brake_pressure" if brake_col else "accel_inferred"
+    base_confidence = 1.0 if brake_col else 0.6
+
+    # Get brake signal in BP -> EOB+margin zone
+    zone_end = eob.s_position + 20.0  # margin past EOB for trail analysis
+    if throttle_on and throttle_on.available:
+        zone_end = max(zone_end, throttle_on.s_position + 5.0)
+
+    mask = (dist >= bp.s_position) & (dist <= zone_end)
+    if mask.sum() < 3:
+        return None
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    s_seg = speed[idx]
+    a_seg = accel[idx]
+
+    if brake_col:
+        brake_signal = pd.to_numeric(lap_df[brake_col], errors="coerce").values[idx].astype(float)
+    else:
+        # Infer: use negative accel as proxy (flip sign so braking = positive)
+        brake_signal = np.clip(-a_seg, 0, None)
+
+    # Peak decel
+    peak_decel = float(np.nanmin(a_seg))
+
+    # Peak brake pressure
+    finite_brake = np.isfinite(brake_signal)
+    peak_brake = float(np.nanmax(brake_signal[finite_brake])) if finite_brake.sum() > 0 else 0.0
+
+    # Brake zone length and time
+    bz_length = eob.s_position - bp.s_position
+    bz_mask = (dist >= bp.s_position) & (dist <= eob.s_position)
+    bz_speed = speed[bz_mask]
+    if bz_mask.sum() > 1 and np.all(bz_speed > 0.1):
+        bz_dist = dist[bz_mask]
+        ds = np.diff(bz_dist)
+        inv_v = 1.0 / bz_speed[:-1]
+        bz_time = float(np.sum(ds * inv_v))
+    else:
+        bz_time = 0.0
+
+    # Release slope: rate of brake signal decrease from peak to EOB
+    eob_mask_local = d_seg <= eob.s_position
+    if eob_mask_local.sum() > 2:
+        peak_local_idx = int(np.nanargmax(brake_signal[:eob_mask_local.sum()]))
+        release_segment = brake_signal[peak_local_idx:eob_mask_local.sum()]
+        release_dist = d_seg[peak_local_idx:eob_mask_local.sum()]
+        if len(release_segment) > 1 and (release_dist[-1] - release_dist[0]) > 0:
+            release_slope = float(
+                (release_segment[-1] - release_segment[0])
+                / (release_dist[-1] - release_dist[0])
+            )
+        else:
+            release_slope = 0.0
+    else:
+        release_slope = 0.0
+
+    # Release linearity: R^2 of linear fit from peak to EOB
+    release_linearity = 0.0
+    if eob_mask_local.sum() > 3:
+        peak_local_idx2 = int(np.nanargmax(brake_signal[:eob_mask_local.sum()]))
+        rel_brake = brake_signal[peak_local_idx2:eob_mask_local.sum()]
+        rel_dist = d_seg[peak_local_idx2:eob_mask_local.sum()]
+        if len(rel_brake) > 2:
+            fin = np.isfinite(rel_brake)
+            if fin.sum() > 2:
+                coeffs = np.polyfit(rel_dist[fin], rel_brake[fin], 1)
+                predicted = np.polyval(coeffs, rel_dist[fin])
+                ss_res = np.sum((rel_brake[fin] - predicted) ** 2)
+                ss_tot = np.sum((rel_brake[fin] - np.mean(rel_brake[fin])) ** 2)
+                if ss_tot > 0:
+                    release_linearity = max(0.0, 1.0 - ss_res / ss_tot)
+
+    # Over-drop: brake drops > 40% of peak before EOB
+    over_drop = False
+    over_drop_severity = 0.0
+    if peak_brake > 0 and eob_mask_local.sum() > 3:
+        mid_mask = d_seg < (bp.s_position + bz_length * 0.5)
+        eob_local = d_seg <= eob.s_position
+        early_zone = mid_mask & eob_local
+        if early_zone.sum() > 0:
+            min_early = float(np.nanmin(brake_signal[early_zone]))
+            drop_pct = (peak_brake - min_early) / peak_brake
+            if drop_pct > 0.4:
+                over_drop = True
+                over_drop_severity = min(1.0, drop_pct)
+
+    # Late release risk: high brake retained when speed < 50% of entry
+    late_release = False
+    late_release_severity = 0.0
+    entry_speed = float(s_seg[0]) if len(s_seg) > 0 else 1.0
+    if entry_speed > 0:
+        low_speed_mask = s_seg < (entry_speed * 0.5)
+        if low_speed_mask.sum() > 0:
+            brake_at_low_speed = brake_signal[low_speed_mask]
+            if np.isfinite(brake_at_low_speed).sum() > 0:
+                mean_brake_low = float(np.nanmean(brake_at_low_speed))
+                if peak_brake > 0 and mean_brake_low / peak_brake > 0.6:
+                    late_release = True
+                    late_release_severity = min(1.0, mean_brake_low / peak_brake)
+
+    # Terminal trail T%: brake at THROTTLE_ON as % of peak
+    terminal_trail = 0.0
+    if throttle_on and throttle_on.available and peak_brake > 0:
+        to_idx = int(np.argmin(np.abs(dist - throttle_on.s_position)))
+        if brake_col:
+            brake_vals = pd.to_numeric(
+                lap_df[brake_col], errors="coerce"
+            ).values.astype(float)
+        else:
+            brake_vals = np.clip(-accel, 0, None)
+        if to_idx < len(brake_vals) and np.isfinite(brake_vals[to_idx]):
+            terminal_trail = float(brake_vals[to_idx] / peak_brake * 100.0)
+            terminal_trail = max(0.0, min(100.0, terminal_trail))
+
+    confidence = base_confidence * data_quality
+
+    return BrakeReleaseMetrics(
+        peak_decel_mps2=peak_decel,
+        peak_brake_pressure=peak_brake if brake_col else 0.0,
+        brake_zone_length_m=max(0.0, bz_length),
+        brake_zone_time_s=bz_time,
+        release_slope=release_slope,
+        release_linearity=release_linearity,
+        over_drop=over_drop,
+        over_drop_severity=over_drop_severity,
+        late_release_risk=late_release,
+        late_release_severity=late_release_severity,
+        terminal_trail_pct=terminal_trail,
+        source=source,
+        confidence=confidence,
+    )
