@@ -748,12 +748,14 @@ def _analyze_single_corner(
 def rank_improvement_opportunities(
     corner_performances: list[CornerPerformance],
     corner_timelines: Optional[list] = None,
+    corner_risk_scores: Optional[list] = None,
 ) -> list[CornerPerformance]:
     """
     Sort corners by composite priority (descending).
 
-    Weights: time_loss_s (0.6), mistake_severities (0.2),
-    mrp_stability (0.1, inverted), max_segment_loss (0.1).
+    Weights: time_loss_s (0.5), mistake_severities (0.15),
+    mrp_stability (0.05), max_segment_loss (0.1),
+    (1 - risk_index) (0.2) — prefer stable gains.
 
     When *corner_timelines* is ``None`` (legacy callers), falls back
     to simple time-loss sorting.
@@ -768,22 +770,35 @@ def rank_improvement_opportunities(
         if cid is not None:
             tl_map[cid] = tl
 
+    # Build lookup: corner_id -> risk_index
+    risk_map: dict[int, float] = {}
+    if corner_risk_scores:
+        for rs in corner_risk_scores:
+            cid = rs.corner_id if hasattr(rs, "corner_id") else rs.get("corner_id")
+            ri = rs.risk_index if hasattr(rs, "risk_index") else rs.get("risk_index", 0.0)
+            if cid is not None:
+                risk_map[cid] = ri
+
     def _score(p: CornerPerformance) -> float:
-        score = p.time_loss_s * 0.6
+        score = p.time_loss_s * 0.5
         tl = tl_map.get(p.corner_id)
         if tl is not None:
             mistakes = tl.mistakes if hasattr(tl, "mistakes") else tl.get("mistakes", [])
             mistake_sum = sum(m.get("severity", 0) for m in mistakes)
-            score += mistake_sum * 0.2
+            score += mistake_sum * 0.15
 
             mrp_std = (tl.mrp_stability_std_m if hasattr(tl, "mrp_stability_std_m")
                        else tl.get("mrp_stability_std_m", 0.0))
-            score += min(mrp_std / 20.0, 1.0) * 0.1
+            score += min(mrp_std / 20.0, 1.0) * 0.05
 
             seg_losses = (tl.segment_losses_s if hasattr(tl, "segment_losses_s")
                           else tl.get("segment_losses_s", {}))
             if seg_losses:
                 score += max(seg_losses.values()) * 0.1
+
+        # Prefer stable gains: high risk_index → lower priority
+        risk_idx = risk_map.get(p.corner_id, 0.0)
+        score += (1.0 - risk_idx) * 0.2
         return score
 
     return sorted(corner_performances, key=_score, reverse=True)
@@ -3061,4 +3076,319 @@ def compute_corner_risk(
         accel_oscillation_risk=accel_osc,
         brake_release_instability=brake_instab,
         confidence=confidence,
+    )
+
+
+# =============================================================================
+
+# Coaching V2 — evidence-based coaching dataclasses + generator
+
+# =============================================================================
+
+
+@dataclass
+class CoachingEvidence:
+    """Evidence backing a coaching recommendation."""
+
+    delta_time_s: float
+    s_offset_m: float
+    metric_values: dict
+    source_events: list
+    confidence: float
+
+    def to_dict(self) -> dict:
+        return {
+            "delta_time_s": self.delta_time_s,
+            "s_offset_m": self.s_offset_m,
+            "metric_values": self.metric_values,
+            "source_events": list(self.source_events),
+            "confidence": self.confidence,
+        }
+
+
+@dataclass
+class CoachingItem:
+    """Single coaching recommendation (confirming or corrective)."""
+
+    corner_id: int
+    category: str          # "confirming" | "corrective"
+    text: str
+    evidence: CoachingEvidence
+    confidence: float
+    stability_score: float
+    reason_code: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "corner_id": self.corner_id,
+            "category": self.category,
+            "text": self.text,
+            "evidence": self.evidence.to_dict(),
+            "confidence": self.confidence,
+            "stability_score": self.stability_score,
+            "reason_code": self.reason_code,
+        }
+
+
+@dataclass
+class CoachingObjective:
+    """Measurable objective for next session."""
+
+    rank: int
+    text: str
+    event_target: str          # "BP" | "EOB" | "MRP" | "THROTTLE_ON"
+    change_direction: str      # "later" | "earlier" | "more" | "less"
+    measurable_metric: str
+    target_value: float
+    current_value: float
+    evidence: CoachingEvidence
+
+    def to_dict(self) -> dict:
+        return {
+            "rank": self.rank,
+            "text": self.text,
+            "event_target": self.event_target,
+            "change_direction": self.change_direction,
+            "measurable_metric": self.measurable_metric,
+            "target_value": self.target_value,
+            "current_value": self.current_value,
+            "evidence": self.evidence.to_dict(),
+        }
+
+
+@dataclass
+class CoachingV2:
+    """Structured coaching output with confirming/corrective items and objectives."""
+
+    confirmations: list
+    corrections: list
+    objectives: list
+    ratio_target: float
+    actual_ratio: float
+    suppressed_count: int
+
+    def to_dict(self) -> dict:
+        return {
+            "confirmations": [c.to_dict() for c in self.confirmations],
+            "corrections": [c.to_dict() for c in self.corrections],
+            "objectives": [o.to_dict() for o in self.objectives],
+            "ratio_target": self.ratio_target,
+            "actual_ratio": round(self.actual_ratio, 2),
+            "suppressed_count": self.suppressed_count,
+        }
+
+
+# ── Confidence thresholds for coaching features ──
+
+_COACHING_CONFIDENCE = {
+    "bp_eob": 0.5,
+    "mrp": 0.6,
+    "brake_release": 0.4,
+    "brake_yaw_coupling": 0.6,
+    "corner_targets": 0.5,
+}
+
+_CONFIRMING_LOSS_THRESHOLD = 0.05      # seconds
+_CONFIRMING_GRIP_THRESHOLD = 85.0      # percent
+_CORRECTIVE_LOSS_THRESHOLD = 0.1       # seconds
+_STABILITY_THRESHOLD = 0.5
+_MIN_TIME_IMPACT_S = 0.03              # 30ms minimum
+_BORDERLINE_LOSS_THRESHOLD = 0.1       # for ratio promotion
+_BORDERLINE_GRIP_THRESHOLD = 75.0
+
+
+def generate_coaching_v2(
+    corner_performances: list,
+    *,
+    corner_timelines: Optional[list] = None,
+    corners: Optional[list] = None,
+    data_quality: float = 1.0,
+    ratio_target: float = 2.0,
+) -> CoachingV2:
+    """Generate structured, evidence-based coaching with confidence gating.
+
+    Returns a CoachingV2 with confirming items, corrective items (max 1 per
+    corner), and up to 3 measurable objectives for the next session.
+    """
+    confirmations: list[CoachingItem] = []
+    corrections: list[CoachingItem] = []
+    suppressed = 0
+
+    # Quality multiplier
+    q_mult = 0.5 if data_quality < 0.3 else 1.0
+
+    # Build timeline lookup
+    tl_map: dict = {}
+    if corner_timelines:
+        for tl in corner_timelines:
+            cid = tl.get("corner_id") if isinstance(tl, dict) else getattr(tl, "corner_id", None)
+            if cid is not None:
+                tl_map[cid] = tl
+
+    for p in corner_performances:
+        cid = p.corner_id if hasattr(p, "corner_id") else p.get("corner_id", 0)
+        loss = p.time_loss_s if hasattr(p, "time_loss_s") else p.get("time_loss_s", 0)
+        grip = p.grip_utilisation_pct if hasattr(p, "grip_utilisation_pct") else p.get("grip_utilisation_pct", 0)
+        s_start = p.s_start if hasattr(p, "s_start") else p.get("s_start", 0)
+        bp_delta = p.braking_point_delta_m if hasattr(p, "braking_point_delta_m") else p.get("braking_point_delta_m", 0)
+
+        tl = tl_map.get(cid)
+        base_confidence = min(1.0, q_mult * 0.9)
+
+        # ── Confirming feedback ──
+        if loss < _CONFIRMING_LOSS_THRESHOLD and grip >= _CONFIRMING_GRIP_THRESHOLD:
+            ev = CoachingEvidence(
+                delta_time_s=loss,
+                s_offset_m=float(s_start),
+                metric_values={"grip_pct": float(grip), "time_loss_s": float(loss)},
+                source_events=["MIN_SPEED"],
+                confidence=base_confidence,
+            )
+            confirmations.append(CoachingItem(
+                corner_id=cid,
+                category="confirming",
+                text=f"C{cid}: Excellent execution — {loss*1000:.0f}ms of theoretical, {grip:.0f}% grip",
+                evidence=ev,
+                confidence=base_confidence,
+                stability_score=1.0,
+            ))
+            continue
+
+        # ── Corrective feedback (max 1 per corner) ──
+        if loss < _CORRECTIVE_LOSS_THRESHOLD:
+            continue
+
+        # Collect candidate corrections for this corner
+        candidates: list[tuple[float, CoachingItem]] = []
+
+        # From timeline mistakes
+        if tl:
+            mistakes = tl.get("mistakes", []) if isinstance(tl, dict) else getattr(tl, "mistakes", [])
+            for m in mistakes:
+                m_type = m.get("type", "")
+                sev = m.get("severity", 0)
+                est_cost = m.get("evidence", {}).get("estimated_time_cost_s", loss * sev)
+                if abs(est_cost) < _MIN_TIME_IMPACT_S:
+                    suppressed += 1
+                    continue
+
+                # Stability from event_stability
+                event_stab = tl.get("event_stability", {}) if isinstance(tl, dict) else getattr(tl, "event_stability", {})
+                mrp_std = tl.get("mrp_stability_std_m", 0) if isinstance(tl, dict) else getattr(tl, "mrp_stability_std_m", 0)
+                stab = 1.0 - min(1.0, mrp_std / 15.0)
+
+                if stab < _STABILITY_THRESHOLD:
+                    suppressed += 1
+                    continue
+
+                conf = min(1.0, sev * q_mult)
+                # MRP confidence gate
+                if m_type in ("power_before_rotation", "rotation_too_late", "mrp_plateau", "mrp_drift", "mrp_after_apex"):
+                    if conf < _COACHING_CONFIDENCE["mrp"]:
+                        suppressed += 1
+                        continue
+
+                ev = CoachingEvidence(
+                    delta_time_s=float(est_cost),
+                    s_offset_m=float(s_start),
+                    metric_values={"severity": float(sev)},
+                    source_events=["MRP"] if "mrp" in m_type or "rotation" in m_type else ["BP", "EOB"],
+                    confidence=conf,
+                )
+                candidates.append((abs(est_cost) * conf * stab, CoachingItem(
+                    corner_id=cid,
+                    category="corrective",
+                    text=f"C{cid}: {m_type.replace('_', ' ').title()} — est. {est_cost*1000:.0f}ms cost",
+                    evidence=ev,
+                    confidence=conf,
+                    stability_score=stab,
+                )))
+
+        # Braking point correction (always available)
+        if abs(bp_delta) > 2.0 and abs(loss) >= _MIN_TIME_IMPACT_S:
+            direction = "later" if bp_delta > 0 else "earlier"
+            bp_conf = min(1.0, q_mult * 0.85)
+            ev = CoachingEvidence(
+                delta_time_s=float(loss * 0.4),  # estimate: BP accounts for ~40% of loss
+                s_offset_m=float(s_start),
+                metric_values={"bp_delta_m": float(bp_delta)},
+                source_events=["BP"],
+                confidence=bp_conf,
+            )
+            candidates.append((abs(loss * 0.4) * bp_conf, CoachingItem(
+                corner_id=cid,
+                category="corrective",
+                text=f"C{cid}: Brake {abs(bp_delta):.0f}m {direction} — est. {loss*400:.0f}ms gain",
+                evidence=ev,
+                confidence=bp_conf,
+                stability_score=0.8,  # BP is generally stable
+            )))
+
+        # Select highest-impact correction
+        if candidates:
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            corrections.append(candidates[0][1])
+
+    # ── Ratio enforcement ──
+    if corrections and len(confirmations) / max(len(corrections), 1) < ratio_target:
+        # Promote borderline corners
+        for p in corner_performances:
+            cid = p.corner_id if hasattr(p, "corner_id") else p.get("corner_id", 0)
+            loss = p.time_loss_s if hasattr(p, "time_loss_s") else p.get("time_loss_s", 0)
+            grip = p.grip_utilisation_pct if hasattr(p, "grip_utilisation_pct") else p.get("grip_utilisation_pct", 0)
+            s_start = p.s_start if hasattr(p, "s_start") else p.get("s_start", 0)
+            if any(c.corner_id == cid for c in confirmations):
+                continue
+            if any(c.corner_id == cid for c in corrections):
+                continue
+            if loss < _BORDERLINE_LOSS_THRESHOLD and grip >= _BORDERLINE_GRIP_THRESHOLD:
+                ev = CoachingEvidence(
+                    delta_time_s=float(loss), s_offset_m=float(s_start),
+                    metric_values={"grip_pct": float(grip)},
+                    source_events=["MIN_SPEED"], confidence=q_mult * 0.7,
+                )
+                confirmations.append(CoachingItem(
+                    corner_id=cid, category="confirming",
+                    text=f"C{cid}: Solid execution — {loss*1000:.0f}ms loss, {grip:.0f}% grip",
+                    evidence=ev, confidence=q_mult * 0.7, stability_score=0.7,
+                ))
+                if len(confirmations) / max(len(corrections), 1) >= ratio_target:
+                    break
+
+    actual_ratio = len(confirmations) / max(len(corrections), 1)
+
+    # ── Top 3 objectives ──
+    objectives: list[CoachingObjective] = []
+    ranked = sorted(
+        corrections,
+        key=lambda c: abs(c.evidence.delta_time_s) * c.stability_score * c.confidence,
+        reverse=True,
+    )
+    for rank_idx, corr in enumerate(ranked[:3]):
+        # Determine event target and direction from evidence
+        src = corr.evidence.source_events[0] if corr.evidence.source_events else "BP"
+        bp_delta_val = corr.evidence.metric_values.get("bp_delta_m", 0)
+        direction = "later" if bp_delta_val > 0 else "earlier"
+        metric = "braking_point_delta_m" if src == "BP" else "time_loss_s"
+        target_val = 0.0 if src == "BP" else corr.evidence.delta_time_s * 0.5
+        current_val = bp_delta_val if src == "BP" else corr.evidence.delta_time_s
+
+        objectives.append(CoachingObjective(
+            rank=rank_idx + 1,
+            text=corr.text,
+            event_target=src,
+            change_direction=direction,
+            measurable_metric=metric,
+            target_value=float(target_val),
+            current_value=float(current_val),
+            evidence=corr.evidence,
+        ))
+
+    return CoachingV2(
+        confirmations=confirmations,
+        corrections=corrections,
+        objectives=objectives,
+        ratio_target=ratio_target,
+        actual_ratio=round(actual_ratio, 2),
+        suppressed_count=suppressed,
     )
