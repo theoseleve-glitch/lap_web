@@ -8,6 +8,7 @@ Revises: 032
 Create Date: 2026-03-08
 """
 from alembic import op
+from sqlalchemy import text
 
 revision = "033"
 down_revision = "032"
@@ -26,11 +27,11 @@ def upgrade() -> None:
     conn = op.get_bind()
 
     # Check if constraint already exists
-    result = conn.execute(
+    result = conn.execute(text(
         "SELECT 1 FROM information_schema.table_constraints "
         "WHERE constraint_name = 'chk_subscription_status' "
         "AND table_name = 'users'"
-    ).fetchone()
+    )).fetchone()
 
     if result is None:
         values_sql = ", ".join(f"'{s}'" for s in _VALID_STATES)
