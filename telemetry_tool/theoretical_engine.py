@@ -411,6 +411,7 @@ def compute_speed_percentile_envelope(
     *,
     n_bins:     int   = 0,     # 0 = infer from first lap
     smooth_window: int = 5,
+    masks: "dict[int, list[tuple[float, float]]] | None" = None,
 ) -> pd.DataFrame:
     """
     Compute the per-distance-bin speed envelope across all laps.
@@ -541,6 +542,14 @@ def compute_speed_percentile_envelope(
         order     = np.argsort(d_c, kind="stable")
         _, ui     = np.unique(d_c[order], return_index=True)
         speed_matrix[i] = np.interp(grid, d_c[order][ui], s_c[order][ui])
+
+    # Apply traffic masks: NaN out masked distance ranges
+    if masks is not None:
+        for lap_idx, mask_ranges in masks.items():
+            if 0 <= lap_idx < speed_matrix.shape[0]:
+                for m_start, m_end in mask_ranges:
+                    mask_bins = (grid >= m_start) & (grid <= m_end)
+                    speed_matrix[lap_idx, mask_bins] = np.nan
 
     # Per-bin percentile
 

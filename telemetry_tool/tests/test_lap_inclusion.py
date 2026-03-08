@@ -140,3 +140,40 @@ def test_low_channel_coverage_excluded():
     policy = build_inclusion_policy(laps, lap_times, traffic)
     assert 4 not in policy.learning_laps
     assert policy.label(4) == "low_coverage"
+
+
+def test_envelope_ignores_masked_segments():
+    """Speed matrix samples within masked ranges are NaN'd before percentile."""
+    from theoretical_engine import compute_speed_percentile_envelope
+
+    n = 200
+    base_speed = 25.0
+
+    # 5 identical laps
+    laps = []
+    for i in range(5):
+        laps.append(pd.DataFrame({
+            "distance_m": np.linspace(0, 500, n),
+            "speed_mps": np.full(n, base_speed),
+        }))
+
+    # Lap 2: traffic dip at 100-200m (speed drops to 15)
+    laps[2] = laps[2].copy()
+    dist = laps[2]["distance_m"].values
+    mask = (dist >= 100) & (dist <= 200)
+    laps[2].loc[mask, "speed_mps"] = 15.0
+
+    # Without mask: envelope at 100-200m will be lower
+    env_no_mask = compute_speed_percentile_envelope(laps, percentile=90.0)
+
+    # With mask: NaN out lap 2's traffic zone
+    masks = {2: [(100.0, 200.0)]}
+    env_masked = compute_speed_percentile_envelope(laps, percentile=90.0, masks=masks)
+
+    # Masked envelope should be >= unmasked at traffic zone
+    d = env_masked["distance_m"].values
+    traffic_zone = (d >= 100) & (d <= 200)
+    assert np.all(
+        env_masked.loc[traffic_zone, "v_env_mps"].values
+        >= env_no_mask.loc[traffic_zone, "v_env_mps"].values - 0.5
+    ), "Masked envelope should not be dragged down by traffic"
