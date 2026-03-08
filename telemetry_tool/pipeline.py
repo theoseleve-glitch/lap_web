@@ -2636,6 +2636,62 @@ def run_full_analysis(
     if _corner_coaching is None and corner_performances:
         summary["corner_coaching"] = corner_performances
 
+    # -- 10c-ii: Corner Timeline detection (event-based) --
+
+    corner_timelines: list[dict[str, Any]] = []
+
+    def _corner_timelines():
+        ca_mod = _import("corner_analysis")
+        if ca_mod is None or not hasattr(ca_mod, "detect_corner_events"):
+            return None
+        if not corners or best_lap_df is None:
+            return None
+
+        dq = summary.get("data_quality")
+        dq_score = getattr(dq, "overall_confidence", 1.0) if dq else 1.0
+
+        theo_df = None
+        theo_result = summary.get("theoretical_lap")
+        if theo_result is not None and isinstance(theo_result, pd.DataFrame):
+            theo_df = theo_result
+
+        timelines = []
+        for c in corners:
+            try:
+                tl = ca_mod.detect_corner_events(c, best_lap_df, theo_df, dq_score)
+                if theo_df is not None and hasattr(ca_mod, "compute_segment_losses"):
+                    ca_mod.compute_segment_losses(tl, best_lap_df, theo_df)
+                if hasattr(ca_mod, "detect_corner_mistakes"):
+                    tl.mistakes = ca_mod.detect_corner_mistakes(tl, best_lap_df, c)
+                timelines.append(tl)
+            except Exception:
+                logger.debug("Corner timeline failed for corner %s", c.get("corner_id"), exc_info=True)
+
+        # Multi-lap stability
+        if hasattr(ca_mod, "compute_event_stability") and resampled_laps:
+            all_dfs = [
+                resampled_laps[k] for k in sorted(resampled_laps.keys())
+                if k not in excluded_laps and resampled_laps[k] is not None and len(resampled_laps[k]) >= 10
+            ]
+            if len(all_dfs) >= 3:
+                try:
+                    stability = ca_mod.compute_event_stability(corners, all_dfs, dq_score)
+                    for tl in timelines:
+                        cid_stab = stability.get(tl.corner_id, {})
+                        tl.mrp_stability_std_m = cid_stab.get("MRP", 0.0)
+                        tl.event_stability = cid_stab
+                except Exception:
+                    logger.debug("Event stability failed", exc_info=True)
+
+        return [tl.to_dict() for tl in timelines]
+
+    tl_result, tl_err = _safe_step("10c_corner_timelines", _corner_timelines)
+    _record("10c_corner_timelines", tl_result, tl_err)
+    if tl_result is not None:
+        corner_timelines = tl_result
+        logger.info("Corner timelines: %d corners with events", len(tl_result))
+    summary["corner_timelines"] = corner_timelines
+
     # STEP 10d -- Per-lap corner metrics (for DB storage & dashboard)
 
     per_lap_corner_metrics: list[dict[str, Any]] = []

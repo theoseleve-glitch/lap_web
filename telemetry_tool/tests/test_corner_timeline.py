@@ -399,3 +399,20 @@ class TestMistakeDetection:
             "power_before_rotation", "rotation_too_late",
         )]
         assert len(rot_mistakes) == 0
+
+
+class TestPipelineIntegration:
+    def test_corner_timelines_serializable(self):
+        """Smoke test: detect_corner_events produces JSON-serializable timelines."""
+        df = _make_braking_lap_df()
+        corners = [_make_corner(1, 100.0, 200.0)]
+        timelines = []
+        for c in corners:
+            tl = detect_corner_events(c, df)
+            tl.mistakes = detect_corner_mistakes(tl, df, c)
+            timelines.append(tl.to_dict())
+        assert len(timelines) == 1
+        assert "events" in timelines[0]
+        assert "mistakes" in timelines[0]
+        import json
+        json.dumps(timelines)
