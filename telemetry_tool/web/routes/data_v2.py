@@ -388,6 +388,23 @@ def get_speed_trace(session_id: str):
             "message": f"No speed trace data for lap {lap_num}",
         })
 
+    # Check for v2 version parameter
+    version = request.args.get("version", "v1")
+    if version == "v2":
+        analysis = models.get_analysis_json(conn, session_id)
+        if analysis and isinstance(analysis, dict):
+            opt = analysis.get("optimal_v2")
+            if opt and "v_opt_mps" in opt:
+                return api_response({
+                    "available": True,
+                    "distances": opt.get("distance_m", []),
+                    "speeds": opt["v_opt_mps"],
+                    "lap_number": lap_num,
+                    "lap_time_s": opt.get("lap_time_s"),
+                    "solver_version": opt.get("solver_version"),
+                    "version": "v2",
+                })
+
     result = {
         "distances": trace.get("distances", []),
         "speeds": trace.get("speeds", []),
@@ -598,7 +615,7 @@ def get_scores(session_id: str):
             exc_info=True,
         )
 
-    # ── grip / friction availability ──
+    # ── grip / friction / optimal_v2 availability ──
     try:
         analysis = models.get_analysis_json(conn, session_id)
         if analysis and isinstance(analysis, dict):
@@ -606,12 +623,17 @@ def get_scores(session_id: str):
             scores["friction_envelope_available"] = (
                 analysis.get("friction_envelope") is not None
             )
+            scores["optimal_v2_available"] = (
+                analysis.get("optimal_v2") is not None
+            )
         else:
             scores["grip_map_available"] = False
             scores["friction_envelope_available"] = False
+            scores["optimal_v2_available"] = False
     except Exception:
         scores["grip_map_available"] = False
         scores["friction_envelope_available"] = False
+        scores["optimal_v2_available"] = False
 
     return api_response(scores)
 
@@ -3536,6 +3558,36 @@ def get_friction_envelope(session_id: str):
     return api_error(
         ErrorCode.NOT_FOUND,
         "Friction envelope not available for this session",
+        status=404,
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/optimal-v2
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/optimal-v2", methods=["GET"])
+@_safe_api
+def get_optimal_v2(session_id: str):
+    """Return unified optimal speed trace (v2 solver).
+
+    Read from analysis_json['optimal_v2'].
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if analysis and isinstance(analysis, dict):
+        opt = analysis.get("optimal_v2")
+        if opt:
+            return api_response(opt)
+
+    return api_error(
+        ErrorCode.NOT_FOUND,
+        "Optimal V2 not available — enable OPTIMAL_V2 flag and re-process",
         status=404,
     )
 
