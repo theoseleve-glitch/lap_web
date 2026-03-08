@@ -2859,3 +2859,72 @@ def compute_corner_targets(
         recommended_changes=recommended,
         confidence=confidence,
     )
+
+
+def validate_corner_targets(
+    targets: CornerTargets,
+    corner: dict,
+    confidence_penalty: float = 0.3,
+) -> list[str]:
+    """
+    Validate corner targets against physics feasibility constraints.
+
+    Rules:
+    1. THROTTLE_ON must not be before MRP
+    2. EOB must not be after MRP
+    3. BP should be before or near corner entry
+    4. Event order must be: BP < EOB < MRP < THROTTLE_ON
+
+    Modifies targets.confidence on violation.
+    Returns list of warning strings.
+    """
+    warnings: list[str] = []
+
+    # Build event position lookup
+    ev_map: dict[str, float] = {}
+    for ev in targets.target_events:
+        if ev.available:
+            ev_map[ev.event_type] = ev.s_position
+
+    s_start = float(corner.get("s_start", 0))
+
+    # Rule 1: THROTTLE_ON must not be before MRP
+    if "THROTTLE_ON" in ev_map and "MRP" in ev_map:
+        if ev_map["THROTTLE_ON"] < ev_map["MRP"]:
+            warnings.append(
+                f"THROTTLE_ON ({ev_map['THROTTLE_ON']:.0f}m) before MRP "
+                f"({ev_map['MRP']:.0f}m) — can't power out while still rotating"
+            )
+            targets.confidence = max(0.0, targets.confidence - confidence_penalty)
+
+    # Rule 2: EOB must not be after MRP
+    if "EOB" in ev_map and "MRP" in ev_map:
+        if ev_map["EOB"] > ev_map["MRP"]:
+            warnings.append(
+                f"EOB ({ev_map['EOB']:.0f}m) after MRP "
+                f"({ev_map['MRP']:.0f}m) — still braking at max rotation"
+            )
+            targets.confidence = max(0.0, targets.confidence - confidence_penalty)
+
+    # Rule 3: BP should be before corner entry (with 15m tolerance)
+    if "BP" in ev_map:
+        if ev_map["BP"] > s_start + 15.0:
+            warnings.append(
+                f"BP ({ev_map['BP']:.0f}m) well inside corner entry "
+                f"({s_start:.0f}m) — braking too late for this corner"
+            )
+            targets.confidence = max(0.0, targets.confidence - confidence_penalty * 0.5)
+
+    # Rule 4: Overall ordering check
+    order = ["BP", "EOB", "MRP", "THROTTLE_ON"]
+    positions = [(t, ev_map[t]) for t in order if t in ev_map]
+    for i in range(len(positions) - 1):
+        if positions[i][1] > positions[i + 1][1]:
+            warnings.append(
+                f"Event ordering violation: {positions[i][0]} ({positions[i][1]:.0f}m) "
+                f"after {positions[i + 1][0]} ({positions[i + 1][1]:.0f}m)"
+            )
+            targets.confidence = max(0.0, targets.confidence - confidence_penalty)
+            break  # only report first ordering violation
+
+    return warnings

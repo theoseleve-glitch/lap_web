@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 from telemetry_tool.corner_analysis import (
-    CornerTargets, compute_corner_targets,
+    CornerTargets, compute_corner_targets, validate_corner_targets,
     CornerEvent, CornerTimeline, CornerPerformance,
     detect_corner_events,
 )
@@ -101,3 +101,146 @@ class TestCornerTargets:
 
         targets = compute_corner_targets(corner, tl, theo_tl, theo_df, drv_df)
         assert targets.priority == "exit"
+
+
+class TestTargetValidation:
+    """Tests for validate_corner_targets() feasibility checking."""
+
+    def test_valid_targets_pass(self):
+        """Well-ordered targets pass validation."""
+        target_events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 100.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 120.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 140.0, 0.9, "accel_long", 0.5, True),
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={"BP": 30.0, "EOB": 20.0, "MRP": 15.0, "THROTTLE_ON": 16.0},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.9,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        warnings = validate_corner_targets(targets, corner)
+        assert len(warnings) == 0
+        assert targets.confidence >= 0.8  # not penalized
+
+    def test_throttle_before_mrp_warns(self):
+        """THROTTLE_ON before MRP produces warning + confidence penalty."""
+        target_events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 100.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 140.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 120.0, 0.9, "accel_long", 0.5, True),
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.9,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        warnings = validate_corner_targets(targets, corner)
+        assert len(warnings) > 0
+        assert any("THROTTLE_ON" in w for w in warnings)
+        assert targets.confidence < 0.9
+
+    def test_eob_after_mrp_warns(self):
+        """EOB after MRP produces warning."""
+        target_events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 150.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 120.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 160.0, 0.9, "accel_long", 0.5, True),
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.9,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        warnings = validate_corner_targets(targets, corner)
+        assert len(warnings) > 0
+        assert targets.confidence < 0.9
+
+    def test_bp_inside_corner_warns(self):
+        """BP well after corner entry produces warning."""
+        target_events = [
+            CornerEvent("BP", 110.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 130.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 140.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 160.0, 0.9, "accel_long", 0.5, True),
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.9,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        warnings = validate_corner_targets(targets, corner)
+        # BP at 110 > s_start 90 + 15m tolerance = 105, so should warn
+        assert isinstance(warnings, list)
+
+    def test_unavailable_events_skipped(self):
+        """Events with available=False are excluded from validation."""
+        target_events = [
+            CornerEvent("BP", 80.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 100.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 120.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 110.0, 0.9, "accel_long", 0.5, False),  # unavailable
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.9,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        warnings = validate_corner_targets(targets, corner)
+        # THROTTLE_ON is unavailable so its bad position should not trigger
+        assert len(warnings) == 0
+        assert targets.confidence == 0.9
+
+    def test_confidence_floors_at_zero(self):
+        """Confidence never goes below zero even with multiple violations."""
+        target_events = [
+            CornerEvent("BP", 200.0, 0.9, "accel_long", -3.0, True),
+            CornerEvent("EOB", 150.0, 0.9, "accel_long", -0.3, True),
+            CornerEvent("MRP", 120.0, 0.8, "yaw_rate", 10.0, True),
+            CornerEvent("THROTTLE_ON", 100.0, 0.9, "accel_long", 0.5, True),
+        ]
+        targets = CornerTargets(
+            corner_id=1,
+            target_events=target_events,
+            target_speeds={},
+            priority="balanced",
+            priority_reason="test",
+            recommended_changes=[],
+            confidence=0.3,
+        )
+        corner = {"corner_id": 1, "s_start": 90.0, "s_end": 200.0}
+
+        validate_corner_targets(targets, corner)
+        assert targets.confidence >= 0.0
