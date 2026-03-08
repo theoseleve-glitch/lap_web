@@ -1938,6 +1938,57 @@ def run_full_analysis(
     summary["progressive_physics"] = _progressive_physics or {}
 
     # ====================================================================
+    # STEP 09g -- Traffic detection + Lap inclusion policy
+    # ====================================================================
+
+    _td_mod = _import("traffic_detection")
+    _li_mod = _import("lap_inclusion")
+
+    def _traffic_and_inclusion():
+        _traffic_result_inner = None
+        _inclusion_policy_inner = None
+
+        if _td_mod is not None and resampled_laps:
+            _traffic_result_inner = _td_mod.run_traffic_detection(
+                resampled_laps, summary.get("corners"),
+            )
+
+        if _li_mod is not None:
+            if _traffic_result_inner is not None:
+                _inclusion_policy_inner = _li_mod.build_inclusion_policy(
+                    resampled_laps,
+                    lap_times,
+                    _traffic_result_inner,
+                    distance_quality=summary.get("distance_quality"),
+                )
+            else:
+                from traffic_detection import TrafficResult
+                empty_traffic = TrafficResult([], [], {k: 0.0 for k in resampled_laps}, 0)
+                _inclusion_policy_inner = _li_mod.build_inclusion_policy(
+                    resampled_laps, lap_times, empty_traffic,
+                    distance_quality=summary.get("distance_quality"),
+                )
+
+        return _traffic_result_inner, _inclusion_policy_inner
+
+    _traffic_incl, err = _safe_step("09g_traffic_inclusion", _traffic_and_inclusion)
+    _record("09g_traffic_inclusion", _traffic_incl, err)
+    _fire_progress("09g_traffic_inclusion")
+
+    _traffic_result = None
+    _inclusion_policy = None
+    if _traffic_incl is not None:
+        _traffic_result, _inclusion_policy = _traffic_incl
+    if _traffic_result is not None:
+        summary["traffic"] = _traffic_result.to_dict()
+    else:
+        summary["traffic"] = None
+    if _inclusion_policy is not None:
+        summary["lap_inclusion"] = _inclusion_policy.to_dict()
+    else:
+        summary["lap_inclusion"] = None
+
+    # ====================================================================
 
     # STEP 10 -- Theoretical lap (cascading: physics -> percentile)
 
