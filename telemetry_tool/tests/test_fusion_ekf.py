@@ -69,3 +69,55 @@ def test_detect_sensors_empty():
     df = pd.DataFrame({"foo": [1, 2, 3]})
     sensors = detect_available_sensors(df)
     assert len(sensors) == 0
+
+
+def test_ekf_predict_straight_line():
+    """Predict step on straight line: x advances, heading unchanged."""
+    from fusion_ekf import EKFState, ekf_predict
+
+    state = EKFState(
+        x=np.array([0.0, 0.0, 20.0, 0.0, 0.0]),  # x,y,v,heading,yaw_rate
+        P=np.eye(5) * 0.1,
+    )
+    dt = 0.1
+    a_long = 0.0
+    new_state = ekf_predict(state, dt, a_long)
+    assert new_state.x[0] == pytest.approx(2.0, abs=0.01)  # 20 m/s * 0.1s
+    assert new_state.x[1] == pytest.approx(0.0, abs=0.01)  # heading=0 → no y motion
+    assert new_state.x[2] == pytest.approx(20.0, abs=0.01)  # constant speed
+    assert new_state.x[3] == pytest.approx(0.0, abs=0.01)  # heading unchanged
+
+
+def test_ekf_predict_turning():
+    """Predict step with yaw_rate: heading changes."""
+    from fusion_ekf import EKFState, ekf_predict
+
+    state = EKFState(
+        x=np.array([0.0, 0.0, 20.0, 0.0, np.radians(90.0)]),  # 90 deg/s yaw
+        P=np.eye(5) * 0.1,
+    )
+    dt = 1.0
+    new_state = ekf_predict(state, dt, 0.0)
+    # After 1s at 90 deg/s, heading should be ~pi/2
+    assert new_state.x[3] == pytest.approx(np.radians(90.0), abs=0.1)
+
+
+def test_ekf_update_corrects_position():
+    """Update step: GPS measurement pulls state toward measurement."""
+    from fusion_ekf import EKFState, ekf_update
+
+    # State thinks we're at (0,0), GPS says (1, 0)
+    state = EKFState(
+        x=np.array([0.0, 0.0, 20.0, 0.0, 0.0]),
+        P=np.eye(5) * 10.0,  # high uncertainty
+    )
+    z = np.array([1.0, 0.0])  # GPS position measurement
+    H = np.zeros((2, 5))
+    H[0, 0] = 1.0  # x
+    H[1, 1] = 1.0  # y
+    R = np.eye(2) * 1.0  # measurement noise
+
+    new_state, innovation = ekf_update(state, z, H, R)
+    # State should move toward (1, 0)
+    assert new_state.x[0] > 0.5  # pulled toward GPS
+    assert abs(innovation[0]) > 0  # innovation is nonzero
