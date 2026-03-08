@@ -20,6 +20,8 @@ export default {
       headers: {
         'Content-Type': 'image/svg+xml',
         'Cache-Control': 'public, max-age=86400, s-maxage=604800',
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
       },
     });
   },

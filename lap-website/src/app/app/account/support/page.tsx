@@ -88,6 +88,7 @@ export default function SupportPage() {
           <Link
             href="https://status.lap-coach.racing"
             target="_blank"
+            rel="noopener noreferrer"
             className="text-acid-green text-xs font-telemetry hover:underline ml-auto"
           >
             Status Page
