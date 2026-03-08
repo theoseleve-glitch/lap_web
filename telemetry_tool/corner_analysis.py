@@ -2928,3 +2928,137 @@ def validate_corner_targets(
             break  # only report first ordering violation
 
     return warnings
+
+
+# =============================================================================
+#   Feature 9: Corner Risk Score
+# =============================================================================
+
+
+@dataclass
+class CornerRiskScore:
+    """Risk assessment for a corner's improvement potential."""
+    corner_id: int
+    risk_index: float               # 0-1 composite
+    yaw_spike_risk: float           # std of peak yaw / mean
+    mrp_plateau_risk: float         # 1.0 - mrp_strength_normalized
+    line_deviation_risk: float      # std of apex s-position across laps
+    accel_oscillation_risk: float   # sign changes in accel during corner
+    brake_release_instability: float  # std of release quality across laps
+    confidence: float
+
+    def to_dict(self) -> dict:
+        return {
+            "corner_id": self.corner_id,
+            "risk_index": round(self.risk_index, 3),
+            "yaw_spike_risk": round(self.yaw_spike_risk, 3),
+            "mrp_plateau_risk": round(self.mrp_plateau_risk, 3),
+            "line_deviation_risk": round(self.line_deviation_risk, 3),
+            "accel_oscillation_risk": round(self.accel_oscillation_risk, 3),
+            "brake_release_instability": round(self.brake_release_instability, 3),
+            "confidence": round(self.confidence, 2),
+        }
+
+
+def compute_corner_risk(
+    timeline: CornerTimeline,
+    all_lap_dfs: list[pd.DataFrame],
+    corner: dict,
+    data_quality: float = 1.0,
+) -> CornerRiskScore:
+    """Compute risk score for a corner based on multi-lap stability signals."""
+    cid = int(corner.get("corner_id", 0))
+    s_start = float(corner.get("s_start", 0))
+    s_end = float(corner.get("s_end", 0))
+
+    # MRP plateau risk: inversely proportional to mrp_strength
+    mrp_plateau = max(0.0, min(1.0, 1.0 - timeline.mrp_strength / 5.0))
+
+    # Multi-lap signals
+    yaw_peaks: list[float] = []
+    accel_osc_scores: list[float] = []
+    min_speed_positions: list[float] = []
+
+    for lap_df in all_lap_dfs:
+        if lap_df is None or len(lap_df) < 10:
+            continue
+
+        try:
+            dist = _resolve_dist(lap_df)
+            mask = (dist >= s_start) & (dist <= s_end)
+            if mask.sum() < 5:
+                continue
+
+            # Yaw peak
+            if _COL_YAW in lap_df.columns:
+                yaw = np.abs(
+                    pd.to_numeric(lap_df[_COL_YAW], errors="coerce")
+                    .values[mask].astype(float)
+                )
+                finite = np.isfinite(yaw)
+                if finite.sum() > 0:
+                    yaw_peaks.append(float(np.nanmax(yaw[finite])))
+
+            # Accel oscillation: count sign changes
+            accel = _resolve_accel_long(lap_df)
+            a_corner = accel[mask]
+            finite_a = np.isfinite(a_corner)
+            if finite_a.sum() > 3:
+                signs = np.sign(a_corner[finite_a])
+                sign_changes = np.sum(np.abs(np.diff(signs)) > 0)
+                osc_score = sign_changes / max(len(signs) - 1, 1)
+                accel_osc_scores.append(osc_score)
+
+            # Min speed position
+            speed = _resolve_speed(lap_df)
+            s_corner = speed[mask]
+            d_corner = dist[mask]
+            finite_s = np.isfinite(s_corner)
+            if finite_s.sum() > 0:
+                min_idx = np.argmin(s_corner[finite_s])
+                finite_indices = np.where(finite_s)[0]
+                min_speed_positions.append(float(d_corner[finite_indices[min_idx]]))
+        except Exception:
+            continue
+
+    # Yaw spike risk: coefficient of variation of peak yaw
+    yaw_spike = 0.0
+    if len(yaw_peaks) >= 3:
+        mean_yaw = float(np.mean(yaw_peaks))
+        if mean_yaw > 0:
+            yaw_spike = min(1.0, float(np.std(yaw_peaks)) / mean_yaw)
+
+    # Line deviation risk: std of min-speed positions
+    line_dev = 0.0
+    if len(min_speed_positions) >= 3:
+        line_dev = min(1.0, float(np.std(min_speed_positions)) / 10.0)
+
+    # Accel oscillation: mean oscillation score
+    accel_osc = float(np.mean(accel_osc_scores)) if accel_osc_scores else 0.0
+    accel_osc = min(1.0, accel_osc)
+
+    # Brake release instability (placeholder — needs multi-lap BrakeReleaseMetrics)
+    brake_instab = 0.0
+
+    # Composite risk index
+    risk_index = (
+        0.25 * yaw_spike
+        + 0.20 * line_dev
+        + 0.20 * brake_instab
+        + 0.20 * accel_osc
+        + 0.15 * mrp_plateau
+    )
+
+    # Confidence based on lap count
+    confidence = min(1.0, len(all_lap_dfs) / 5.0) * data_quality
+
+    return CornerRiskScore(
+        corner_id=cid,
+        risk_index=risk_index,
+        yaw_spike_risk=yaw_spike,
+        mrp_plateau_risk=mrp_plateau,
+        line_deviation_risk=line_dev,
+        accel_oscillation_risk=accel_osc,
+        brake_release_instability=brake_instab,
+        confidence=confidence,
+    )
