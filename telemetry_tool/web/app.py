@@ -187,6 +187,25 @@ def create_app(config: Config | None = None) -> Flask:
             resp.content_type = "application/json"
             return resp
 
+    # Guard: reject oversized JSON bodies on non-upload API endpoints.
+    # The global MAX_CONTENT_LENGTH is 12 GB for file uploads, but JSON
+    # API bodies (PATCH, POST with application/json) should never exceed 1 MB.
+    _MAX_JSON_BODY = 1 * 1024 * 1024  # 1 MB
+
+    @app.before_request
+    def _json_body_size_guard():
+        if request.method in ("POST", "PUT", "PATCH") and request.path.startswith("/api/v1/"):
+            ct = request.content_type or ""
+            # Skip file uploads (multipart form data)
+            if "multipart/form-data" in ct:
+                return
+            content_length = request.content_length
+            if content_length and content_length > _MAX_JSON_BODY:
+                from .api_utils import api_error as _ae, ErrorCode as _EC
+                return _ae(_EC.VALIDATION_ERROR,
+                           "Request body too large (max 1 MB for JSON endpoints)",
+                           status=413)
+
     # Redis client for rate limiting + caching.
     # The rate_limit module's get_redis() reads from app.extensions["redis"].
     redis_url = cfg.REDIS_URL
