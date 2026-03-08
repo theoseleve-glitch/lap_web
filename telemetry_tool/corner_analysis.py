@@ -92,6 +92,66 @@ class FrictionLike(Protocol):
 # =============================================================================
 
 
+# =============================================================================
+
+# Corner Timeline data structures
+
+# =============================================================================
+
+
+@dataclass
+class CornerEvent:
+    """A single physics-defined event within a corner."""
+    event_type: str           # "BP"|"EOB"|"MRP"|"MIN_SPEED"|"APEX"|"THROTTLE_ON"|"TRACK_OUT"
+    s_position: float         # distance along lap [m]
+    confidence: float         # 0-1 (channel quality × detection quality)
+    source_channel: str       # which channel detected it
+    value: float              # the signal value at that point
+    available: bool           # False if channel missing
+
+    def to_dict(self) -> dict:
+        return {
+            "event_type": self.event_type,
+            "s_position": round(self.s_position, 2),
+            "confidence": round(self.confidence, 3),
+            "source_channel": self.source_channel,
+            "value": round(self.value, 4),
+            "available": self.available,
+        }
+
+
+@dataclass
+class CornerTimeline:
+    """Event-based timeline for a single corner across the lap."""
+    corner_id: int
+    events: list[CornerEvent]          # ordered by s_position
+    segment_losses_s: dict[str, float] # "BP_EOB", "EOB_MRP", etc.
+    segment_confidences: dict[str, float]
+    mistakes: list[dict]               # [{"type": str, "severity": float, "evidence": dict}]
+    mrp_strength: float                # peak prominence of yaw_rate
+    mrp_stability_std_m: float         # lap-to-lap std-dev of MRP s-position
+    event_stability: dict[str, float]  # std-dev per event type across laps
+
+    def to_dict(self) -> dict:
+        return {
+            "corner_id": self.corner_id,
+            "events": [e.to_dict() for e in self.events],
+            "segment_losses_s": {k: round(v, 4) for k, v in self.segment_losses_s.items()},
+            "segment_confidences": {k: round(v, 3) for k, v in self.segment_confidences.items()},
+            "mistakes": self.mistakes,
+            "mrp_strength": round(self.mrp_strength, 2),
+            "mrp_stability_std_m": round(self.mrp_stability_std_m, 2),
+            "event_stability": {k: round(v, 2) for k, v in self.event_stability.items()},
+        }
+
+    def get_event(self, event_type: str) -> Optional[CornerEvent]:
+        """Return the first event of the given type, or None."""
+        for e in self.events:
+            if e.event_type == event_type:
+                return e
+        return None
+
+
 class CornerAnalysisError(ValueError):
     """Raised when analysis encounters invalid data."""
 
