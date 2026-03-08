@@ -2103,6 +2103,8 @@ def run_full_analysis(
     _delta_map: pd.DataFrame | None = None
     _session_scalars: dict[str, Any] | None = None
 
+    _laps_for_theo_ref = [None]  # mutable container to capture laps_for_theo from nested function
+
     def _theoretical() -> pd.DataFrame:
         nonlocal _sim_method, _sim_result
         nonlocal _corner_coaching, _delta_map, _session_scalars
@@ -2313,6 +2315,7 @@ def run_full_analysis(
 
             if hasattr(theo_mod, 'build_theoretical_lap_phase_aware') and phases_df is not None:
                 _sim_method = "percentile_envelope_phase_aware"
+                _laps_for_theo_ref[0] = laps_for_theo
                 return theo_mod.build_theoretical_lap_phase_aware(
                     laps_for_theo, phases_df=phases_df,
                     lap_to_phase=lap_to_phase,
@@ -2324,6 +2327,7 @@ def run_full_analysis(
                 )
 
             _sim_method = "percentile_envelope"
+            _laps_for_theo_ref[0] = laps_for_theo
             # Try adaptive percentile first, fall back to default
 
             try:
@@ -2377,6 +2381,36 @@ def run_full_analysis(
     _record("10b_theoretical_metrics", theo_metrics, err)
     theo_metrics = theo_metrics or {}
     summary["theoretical_metrics"] = theo_metrics
+
+    # ── 10b-i½: Theoretical plausibility cross-validation ──
+    _plausibility = None
+
+    def _compute_plausibility():
+        if theoretical_lap is None or theo_mod is None:
+            return None
+        if not hasattr(theo_mod, "split_laps_train_holdout"):
+            return None
+        if not hasattr(theo_mod, "compute_theoretical_plausibility"):
+            return None
+
+        _laps = _laps_for_theo_ref[0]
+        if _laps is None or len(_laps) < 4:
+            return None
+
+        _, holdout, _ = theo_mod.split_laps_train_holdout(_laps)
+        if not holdout:
+            return None
+
+        return theo_mod.compute_theoretical_plausibility(
+            theoretical_lap, holdout,
+        )
+
+    _plausibility, err = _safe_step("10b_plausibility", _compute_plausibility)
+    _record("10b_plausibility", _plausibility, err)
+
+    if _plausibility is not None and theo_metrics is not None:
+        theo_metrics["plausibility"] = _plausibility.to_dict()
+        summary["theoretical_metrics"] = theo_metrics
 
     # ── 10b-ii: Attach confidence assessment ──
     _conf_mod = _import("confidence")
@@ -2440,7 +2474,24 @@ def run_full_analysis(
     _record("10b_confidence", _confidence, err)
 
     if _confidence is not None and theo_metrics is not None:
-        theo_metrics["confidence"] = _confidence.to_dict()
+        conf_dict = _confidence.to_dict()
+        # Inject plausibility penalty if overfit suspected
+        if _plausibility is not None and _plausibility.overfit_suspected:
+            reasons = conf_dict.get("confidence_reasons", [])
+            reasons.insert(0, "overfit_suspected: theoretical may be unreachable")
+            conf_dict["confidence_reasons"] = reasons
+            # Apply penalty
+            raw_score = conf_dict.get("confidence_score", 100)
+            penalized = int(raw_score * _plausibility.plausibility_score)
+            conf_dict["confidence_score"] = max(0, penalized)
+            # Recompute level
+            if penalized >= 75:
+                conf_dict["confidence_level"] = "high"
+            elif penalized >= 45:
+                conf_dict["confidence_level"] = "medium"
+            else:
+                conf_dict["confidence_level"] = "low"
+        theo_metrics["confidence"] = conf_dict
         summary["theoretical_metrics"] = theo_metrics
 
     # ── 10b-iii: Unified optimal solver (feature flag) ──
