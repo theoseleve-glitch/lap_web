@@ -512,3 +512,90 @@ def compute_theoretical_via_envelope(
         delta_map=delta_map,
         session_scalars=scalars,
     )
+
+
+def caps_from_kart_envelope(
+    resampled_laps: dict[int, "pd.DataFrame"],
+    curvature_profile: "pd.DataFrame | None",
+    *,
+    vehicle_params: Any = None,
+    config: Any = None,
+) -> "OptimalCaps | None":
+    """Build OptimalCaps from kart_envelope training.
+
+    Returns None if kart_envelope is not available or curvature_profile is missing.
+
+    Parameters
+    ----------
+    resampled_laps : lap data
+    curvature_profile : curvature from reference line
+    vehicle_params : optional vehicle parameters
+    config : optional KartEnvelopeConfig
+
+    Returns
+    -------
+    OptimalCaps or None if unavailable.
+    """
+    if curvature_profile is None or not resampled_laps:
+        return None
+
+    try:
+        from kart_envelope.config import default_config as _default_config
+        from kart_envelope.envelope.capability import train_capability_envelope
+        from kart_envelope.inference.session_scalars import infer_session_scalars
+    except ImportError:
+        logger.debug("kart_envelope not installed; caps_from_kart_envelope unavailable.")
+        return None
+
+    try:
+        from optimal_solver import OptimalCaps
+
+        cfg = config if config is not None else _default_config()
+
+        # Map columns
+        mapped_laps = {k: _map_columns_to_canonical(v) for k, v in resampled_laps.items()}
+
+        # Build geometry
+        geometry = _build_geometry_from_curvature(curvature_profile)
+
+        # Train envelope
+        envelope = train_capability_envelope(sessions=[mapped_laps], config=cfg)
+
+        # Infer session scalars
+        scalars = infer_session_scalars(
+            resampled_laps=mapped_laps, envelope=envelope, config=cfg,
+        )
+
+        # Extract caps from envelope
+        dist = geometry.distance_m
+        n = len(dist)
+        curvature = geometry.curvature_1pm
+
+        # Speed cap from envelope + geometry
+        v_cap = np.full(n, 80.0)
+        mu = scalars.mu_session
+        for i in range(n):
+            kappa = abs(curvature[i])
+            if kappa > 1e-6:
+                v_cap[i] = min(v_cap[i], math.sqrt(mu * _G / kappa))
+
+        # Accel/brake from envelope
+        v_sample = np.clip(v_cap, 1.0, 80.0)
+        ax_accel = np.abs(envelope.traction_max(v_sample))
+        ax_brake = np.abs(envelope.braking_max(v_sample))
+        ax_accel = np.clip(ax_accel, 0.5, 20.0)
+        ax_brake = np.clip(ax_brake, 0.5, 30.0)
+
+        return OptimalCaps(
+            distance_m=dist,
+            v_cap=np.clip(v_cap, 1.0, 80.0),
+            ax_accel=ax_accel,
+            ax_brake=ax_brake,
+            curvature=np.abs(curvature),
+            mu=np.full(n, mu),
+            cap_source=["kart_qss"] * n,
+            solver_version="optimal_v2_1.0",
+        )
+    except Exception as exc:
+        logger.warning("caps_from_kart_envelope failed: %s", exc)
+        return None

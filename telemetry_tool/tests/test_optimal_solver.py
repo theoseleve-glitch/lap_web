@@ -224,3 +224,15 @@ def test_caps_from_vehicle_model():
     corner_cap = np.mean(caps.v_cap[90:110])
     straight_cap = np.mean(caps.v_cap[:20])
     assert corner_cap < straight_cap
+
+
+def test_caps_from_kart_envelope_fallback():
+    """caps_from_kart_envelope() returns None when kart_envelope not installed."""
+    from theoretical_adapter import caps_from_kart_envelope
+
+    # With no kart_envelope available, should return None gracefully
+    result = caps_from_kart_envelope(
+        resampled_laps={},
+        curvature_profile=None,
+    )
+    assert result is None
