@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from telemetry_tool.corner_detection import detect_compound_corners
+from telemetry_tool.corner_detection import detect_compound_corners, identify_setup_corners
 from telemetry_tool.corner_analysis import CompoundCornerMetrics, compute_compound_metrics
 
 
@@ -89,3 +89,71 @@ class TestCompoundMetrics:
         assert len(metrics.corner_ids) == 2
         assert metrics.leverage_corner_id in [1, 2]
         assert sum(metrics.blame_attribution.values()) == pytest.approx(1.0, abs=0.01)
+
+
+class TestSetupCorners:
+    def test_kink_before_heavy_braking_is_setup(self):
+        """Kink followed by heavy braking corner within 80m -> setup corner."""
+        corners = [
+            {"corner_id": 1, "s_start": 100.0, "s_end": 120.0, "s_apex": 110.0, "corner_type": "kink"},
+            {"corner_id": 2, "s_start": 160.0, "s_end": 220.0, "s_apex": 190.0, "corner_type": "hairpin"},
+        ]
+        n = 500
+        dist = np.linspace(0, 400, n)
+        speed = np.ones(n) * 30.0
+        # Kink: minimal speed loss
+        kink_mask = (dist >= 100) & (dist <= 120)
+        speed[kink_mask] = 28.0
+        # Hairpin: heavy braking
+        hp_mask = (dist >= 140) & (dist <= 160)
+        speed[hp_mask] = np.interp(dist[hp_mask], [140, 160], [30, 10])
+        hp_mid = (dist > 160) & (dist <= 220)
+        speed[hp_mid] = 10.0
+
+        ds = np.gradient(dist)
+        ds[ds == 0] = 1e-6
+        dv = np.gradient(speed)
+        accel = speed * dv / ds
+
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": speed,
+            "accel_long_mps2": accel,
+        })
+
+        identify_setup_corners(corners, df)
+        assert corners[0].get("corner_type") == "setup"
+        assert corners[0].get("is_setup_corner") is True
+        assert corners[0].get("target_corner_id") == 2
+
+    def test_normal_corner_not_setup(self):
+        """Normal medium corner not tagged as setup even near another corner."""
+        corners = [
+            {"corner_id": 1, "s_start": 100.0, "s_end": 160.0, "s_apex": 130.0, "corner_type": "medium"},
+            {"corner_id": 2, "s_start": 200.0, "s_end": 260.0, "s_apex": 230.0, "corner_type": "medium"},
+        ]
+        n = 500
+        dist = np.linspace(0, 400, n)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n),
+        })
+
+        identify_setup_corners(corners, df)
+        assert corners[0].get("is_setup_corner", False) is False
+        assert corners[0].get("corner_type") == "medium"
+
+    def test_kink_far_from_braking_not_setup(self):
+        """Kink with next corner > 100m away -> not setup."""
+        corners = [
+            {"corner_id": 1, "s_start": 50.0, "s_end": 70.0, "s_apex": 60.0, "corner_type": "kink"},
+            {"corner_id": 2, "s_start": 250.0, "s_end": 310.0, "s_apex": 280.0, "corner_type": "hairpin"},
+        ]
+        n = 500
+        dist = np.linspace(0, 400, n)
+        df = pd.DataFrame({
+            "Distance (m)": dist, "Speed (m/s)": np.ones(n) * 20.0,
+            "accel_long_mps2": np.zeros(n),
+        })
+
+        identify_setup_corners(corners, df)
+        assert corners[0].get("is_setup_corner", False) is False

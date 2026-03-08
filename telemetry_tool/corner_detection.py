@@ -1330,6 +1330,75 @@ def detect_compound_corners(
     return result
 
 
+def identify_setup_corners(
+    corners: list[dict],
+    lap_df: pd.DataFrame,
+    setup_gap_m: float = 80.0,
+) -> None:
+    """
+    Identify kinks that exist to position the car for the next heavy braking zone.
+    Modifies corners in-place: sets corner_type='setup', is_setup_corner=True, target_corner_id.
+
+    Criteria:
+    - Corner is classified as 'kink'
+    - Next corner's start is within setup_gap_m of kink s_end
+    - Next corner has significantly heavier braking (peak decel > 1.5x kink or > 3 m/s^2)
+    """
+    if len(corners) < 2:
+        return
+
+    dist_col = "Distance (m)"
+    accel_col = "accel_long_mps2"
+
+    if dist_col not in lap_df.columns or accel_col not in lap_df.columns:
+        return
+
+    dist = lap_df[dist_col].values.astype(float)
+    accel = lap_df[accel_col].values.astype(float)
+
+    sorted_corners = sorted(corners, key=lambda c: c.get("s_start", 0))
+
+    for i in range(len(sorted_corners) - 1):
+        c = sorted_corners[i]
+        c_next = sorted_corners[i + 1]
+
+        if c.get("corner_type") != "kink":
+            continue
+
+        gap = c_next.get("s_start", 0) - c.get("s_end", 0)
+        if gap > setup_gap_m or gap < 0:
+            continue
+
+        # Compare peak deceleration in each corner's approach zone
+        kink_zone = (dist >= c.get("s_start", 0) - 20) & (dist <= c.get("s_end", 0))
+        next_zone = (dist >= c_next.get("s_start", 0) - 30) & (dist <= c_next.get("s_end", 0))
+
+        kink_decel = 0.0
+        next_decel = 0.0
+
+        if kink_zone.sum() > 0:
+            kink_accel = accel[kink_zone]
+            finite = np.isfinite(kink_accel)
+            if finite.sum() > 0:
+                kink_decel = abs(float(np.nanmin(kink_accel[finite])))
+
+        if next_zone.sum() > 0:
+            next_accel = accel[next_zone]
+            finite = np.isfinite(next_accel)
+            if finite.sum() > 0:
+                next_decel = abs(float(np.nanmin(next_accel[finite])))
+
+        # Setup condition: next corner has significantly heavier braking
+        if next_decel > kink_decel * 1.5 or next_decel > 3.0:
+            c["corner_type"] = "setup"
+            c["is_setup_corner"] = True
+            c["target_corner_id"] = c_next.get("corner_id")
+            c["coaching"] = (
+                f"Do not apex this kink — prioritize outside placement "
+                f"for C{c_next.get('corner_id')} braking zone"
+            )
+
+
 if __name__ == "__main__":  # pragma: no cover
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
