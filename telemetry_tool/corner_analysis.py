@@ -133,6 +133,9 @@ class CornerPerformance:
     # Coaching
 
     coaching_hint: str = ""
+    limiting_factor: str = ""       # "cornering"|"traction"|"braking"|"cap"
+    corner_priority: str = ""       # "entry"|"exit"|"balanced"
+    coaching_text: str = ""         # physics-aware coaching sentence
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -154,6 +157,9 @@ class CornerPerformance:
             "time_loss_apex_speed_s":        round(self.time_loss_apex_speed_s, 3),
             "time_loss_exit_s":              round(self.time_loss_exit_s, 3),
             "coaching_hint":                 self.coaching_hint,
+            "limiting_factor":               self.limiting_factor,
+            "corner_priority":               self.corner_priority,
+            "coaching_text":                 self.coaching_text,
         }
 
 
@@ -915,6 +921,119 @@ def update_best_practices(
 
     conn.commit()
     return updated
+
+
+# =============================================================================
+
+# Corner coaching labels
+
+# =============================================================================
+
+
+_COACHING_TEMPLATES: dict[tuple[str, str], str] = {
+    ("cornering", "balanced"): (
+        "Grip-limited through corner {cid}. Focus on racing line "
+        "to increase minimum speed."
+    ),
+    ("cornering", "exit"): (
+        "Grip-limited through corner {cid}. Smooth throttle application "
+        "after apex — the {straight_m:.0f}m straight rewards exit speed."
+    ),
+    ("traction", "exit"): (
+        "Traction-limited on exit of corner {cid}. Prioritize rotation "
+        "before throttle — the {straight_m:.0f}m straight amplifies "
+        "exit speed gain."
+    ),
+    ("traction", "balanced"): (
+        "Traction-limited through corner {cid}. Progressive throttle "
+        "to manage wheelspin."
+    ),
+    ("braking", "entry"): (
+        "Braking-limited into corner {cid}. You can brake later — "
+        "entry speed directly feeds the {straight_m:.0f}m straight."
+    ),
+    ("braking", "balanced"): (
+        "Braking-limited into corner {cid}. Trail-braking deeper "
+        "may unlock more rotation."
+    ),
+    ("cap", "exit"): (
+        "Near vehicle limit through corner {cid}. Focus on consistency."
+    ),
+    ("cap", "balanced"): (
+        "At speed cap through corner {cid}. You are driving near "
+        "the vehicle's maximum capability."
+    ),
+}
+
+
+def compute_corner_coaching_labels(
+    *,
+    corners: list[dict],
+    limiting_factors: "np.ndarray",
+    distance_m: "np.ndarray",
+    lap_length_m: float,
+) -> list[dict]:
+    """Compute per-corner coaching labels from solver limiting factors."""
+    if not corners or len(limiting_factors) == 0:
+        return []
+
+    sorted_corners = sorted(corners, key=lambda c: c.get("s_start", 0))
+    results = []
+
+    for idx, corner in enumerate(sorted_corners):
+        cid = corner.get("corner_id", idx + 1)
+        s_start = corner.get("s_start", 0)
+        s_end = corner.get("s_end", 0)
+
+        if idx + 1 < len(sorted_corners):
+            next_s_start = sorted_corners[idx + 1].get("s_start", lap_length_m)
+        else:
+            next_s_start = lap_length_m
+        next_straight_m = max(0, next_s_start - s_end)
+
+        mask = (distance_m >= s_start) & (distance_m <= s_end)
+        if not mask.any():
+            results.append({
+                "corner_id": cid,
+                "limiting_factor": "cap",
+                "corner_priority": "balanced",
+                "coaching_text": f"No data for corner {cid}.",
+            })
+            continue
+
+        factors = limiting_factors[mask]
+        counts = {}
+        for f in factors:
+            counts[f] = counts.get(f, 0) + 1
+        dominant = max(counts, key=counts.get)
+
+        if dominant == "braking" and next_straight_m > 100:
+            priority = "entry"
+        elif dominant == "traction" and next_straight_m > 80:
+            priority = "exit"
+        elif dominant == "cornering":
+            priority = "balanced"
+        else:
+            priority = "exit"
+
+        template_key = (dominant, priority)
+        template = _COACHING_TEMPLATES.get(
+            template_key,
+            _COACHING_TEMPLATES.get(
+                (dominant, "balanced"),
+                "Focus on corner {cid} technique.",
+            ),
+        )
+        coaching_text = template.format(cid=cid, straight_m=next_straight_m)
+
+        results.append({
+            "corner_id": cid,
+            "limiting_factor": dominant,
+            "corner_priority": priority,
+            "coaching_text": coaching_text,
+        })
+
+    return results
 
 
 # =============================================================================
