@@ -1613,3 +1613,280 @@ def _run_tests() -> None:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     _run_tests()
+
+
+# =============================================================================
+
+# Corner Timeline — Hysteresis parameters
+
+# =============================================================================
+
+_BP_THRESHOLD_MPS2: float = -1.0
+_EOB_THRESHOLD_MPS2: float = -0.5
+_TRACTION_THRESHOLD_MPS2_TL: float = 0.5
+_MIN_SUSTAINED_M: float = 5.0
+_TL_SEARCH_MARGIN_M: float = 50.0
+_COL_YAW: str = "yaw_rate_dps"
+_COL_HEADING: str = "heading_deg"
+_COL_X: str = "X (m)"
+_COL_Y: str = "Y (m)"
+
+
+# =============================================================================
+
+# Corner Timeline — Private detectors
+
+# =============================================================================
+
+
+def _detect_bp(
+    dist: np.ndarray,
+    accel: np.ndarray,
+    s_start: float,
+    search_margin_m: float = _TL_SEARCH_MARGIN_M,
+    threshold: float = _BP_THRESHOLD_MPS2,
+    min_sustained_m: float = _MIN_SUSTAINED_M,
+) -> CornerEvent:
+    """Detect Braking Point by scanning backward from s_start for sustained deceleration."""
+    search_start = s_start - search_margin_m
+    mask = (dist >= search_start) & (dist <= s_start)
+    if mask.sum() < 3:
+        # Fallback to existing helper
+        bp_s = _find_braking_point(dist, accel, s_start, search_margin_m, threshold)
+        if np.isfinite(bp_s):
+            return CornerEvent("BP", float(bp_s), 0.7, "accel_long", float(threshold), True)
+        return CornerEvent("BP", 0.0, 0.0, "accel_long", 0.0, False)
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    a_seg = accel[idx]
+
+    # Scan backward from corner entry looking for sustained braking
+    bp_pos = float("nan")
+    for i in range(len(d_seg) - 1, -1, -1):
+        if not np.isfinite(a_seg[i]) or a_seg[i] >= threshold:
+            continue
+        # Found a point below threshold — check if sustained for min_sustained_m
+        start_d = d_seg[i]
+        sustained = True
+        for j in range(i, len(d_seg)):
+            if d_seg[j] - start_d > min_sustained_m:
+                break
+            if np.isfinite(a_seg[j]) and a_seg[j] >= threshold:
+                sustained = False
+                break
+        if sustained:
+            bp_pos = float(d_seg[i])
+
+    if np.isfinite(bp_pos):
+        # Interpolate the accel value at BP
+        val = float(np.interp(bp_pos, dist, accel))
+        return CornerEvent("BP", bp_pos, 0.9, "accel_long", val, True)
+
+    # Fallback to existing helper
+    bp_s = _find_braking_point(dist, accel, s_start, search_margin_m, threshold)
+    if np.isfinite(bp_s):
+        return CornerEvent("BP", float(bp_s), 0.7, "accel_long", float(threshold), True)
+    return CornerEvent("BP", 0.0, 0.0, "accel_long", 0.0, False)
+
+
+def _detect_eob(
+    dist: np.ndarray,
+    accel: np.ndarray,
+    bp_s: float,
+    s_end: float,
+    threshold: float = _EOB_THRESHOLD_MPS2,
+    min_sustained_m: float = _MIN_SUSTAINED_M,
+) -> CornerEvent:
+    """Detect End-Of-Braking: first point after BP where accel rises above threshold, sustained."""
+    if not np.isfinite(bp_s):
+        return CornerEvent("EOB", 0.0, 0.0, "accel_long", 0.0, False)
+
+    mask = (dist >= bp_s) & (dist <= s_end)
+    if mask.sum() < 2:
+        return CornerEvent("EOB", 0.0, 0.0, "accel_long", 0.0, False)
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    a_seg = accel[idx]
+
+    for i in range(len(d_seg)):
+        if not np.isfinite(a_seg[i]):
+            continue
+        if a_seg[i] > threshold:
+            # Check sustained
+            start_d = d_seg[i]
+            sustained = True
+            for j in range(i, len(d_seg)):
+                if d_seg[j] - start_d > min_sustained_m:
+                    break
+                if np.isfinite(a_seg[j]) and a_seg[j] <= threshold:
+                    sustained = False
+                    break
+            if sustained:
+                val = float(a_seg[i])
+                return CornerEvent("EOB", float(d_seg[i]), 0.85, "accel_long", val, True)
+
+    return CornerEvent("EOB", 0.0, 0.0, "accel_long", 0.0, False)
+
+
+def _detect_min_speed(
+    dist: np.ndarray,
+    speed: np.ndarray,
+    s_start: float,
+    s_end: float,
+    margin_m: float = 5.0,
+) -> CornerEvent:
+    """Detect minimum speed point within the corner region."""
+    mask = (dist >= s_start - margin_m) & (dist <= s_end + margin_m)
+    if mask.sum() < 1:
+        return CornerEvent("MIN_SPEED", 0.0, 0.0, "speed", 0.0, False)
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    v_seg = speed[idx]
+
+    finite_mask = np.isfinite(v_seg)
+    if not finite_mask.any():
+        return CornerEvent("MIN_SPEED", 0.0, 0.0, "speed", 0.0, False)
+
+    min_i = np.argmin(v_seg[finite_mask])
+    finite_idx = np.where(finite_mask)[0]
+    pos = float(d_seg[finite_idx[min_i]])
+    val = float(v_seg[finite_idx[min_i]])
+    return CornerEvent("MIN_SPEED", pos, 1.0, "speed", val, True)
+
+
+def _detect_throttle_on(
+    dist: np.ndarray,
+    accel: np.ndarray,
+    min_speed_s: float,
+    s_end: float,
+    threshold: float = _TRACTION_THRESHOLD_MPS2_TL,
+    min_sustained_m: float = _MIN_SUSTAINED_M,
+) -> CornerEvent:
+    """Detect Throttle-On: first point after min-speed where accel exceeds threshold, sustained."""
+    if not np.isfinite(min_speed_s):
+        return CornerEvent("THROTTLE_ON", 0.0, 0.0, "accel_long", 0.0, False)
+
+    search_end = s_end + _TL_SEARCH_MARGIN_M
+    mask = (dist >= min_speed_s) & (dist <= search_end)
+    if mask.sum() < 2:
+        return CornerEvent("THROTTLE_ON", 0.0, 0.0, "accel_long", 0.0, False)
+
+    idx = np.where(mask)[0]
+    d_seg = dist[idx]
+    a_seg = accel[idx]
+
+    for i in range(len(d_seg)):
+        if not np.isfinite(a_seg[i]):
+            continue
+        if a_seg[i] > threshold:
+            start_d = d_seg[i]
+            sustained = True
+            for j in range(i, len(d_seg)):
+                if d_seg[j] - start_d > min_sustained_m:
+                    break
+                if np.isfinite(a_seg[j]) and a_seg[j] <= threshold:
+                    sustained = False
+                    break
+            if sustained:
+                val = float(a_seg[i])
+                return CornerEvent("THROTTLE_ON", float(d_seg[i]), 0.85, "accel_long", val, True)
+
+    return CornerEvent("THROTTLE_ON", 0.0, 0.0, "accel_long", 0.0, False)
+
+
+def _detect_track_out(
+    dist: np.ndarray,
+    s_end: float,
+    df: pd.DataFrame,
+) -> CornerEvent:
+    """Detect Track-Out point. Falls back to s_end (XY analysis deferred)."""
+    return CornerEvent("TRACK_OUT", s_end, 0.5, "position", 0.0, True)
+
+
+# =============================================================================
+
+# Corner Timeline — Public API
+
+# =============================================================================
+
+
+def detect_corner_events(
+    corner: dict,
+    lap_df: pd.DataFrame,
+    theoretical_df: Optional[pd.DataFrame] = None,
+    data_quality: float = 1.0,
+) -> CornerTimeline:
+    """
+    Detect physics-defined events within a single corner.
+
+    Parameters
+    ----------
+    corner : dict
+        Must contain ``corner_id``, ``s_start``, ``s_end``.
+    lap_df : pd.DataFrame
+        Lap telemetry with distance, speed, and longitudinal acceleration.
+    theoretical_df : pd.DataFrame, optional
+        Theoretical lap data (unused for now — reserved for delta).
+    data_quality : float
+        Overall data quality score 0-1 (scales confidence).
+
+    Returns
+    -------
+    CornerTimeline
+        Timeline with detected events sorted by s_position.
+    """
+    cid = corner.get("corner_id", 0)
+    s_start = float(corner["s_start"])
+    s_end = float(corner["s_end"])
+
+    dist = _resolve_dist(lap_df)
+    speed = _resolve_speed(lap_df)
+    accel = _resolve_accel_long(lap_df)
+
+    # 1. Braking Point
+    bp = _detect_bp(dist, accel, s_start)
+
+    # 2. End of Braking
+    bp_s = bp.s_position if bp.available else float("nan")
+    eob = _detect_eob(dist, accel, bp_s, s_end)
+
+    # 3. MRP — placeholder (Task 3)
+    mrp = CornerEvent("MRP", 0.0, 0.0, "yaw_rate", 0.0, False)
+
+    # 4. Minimum Speed
+    ms = _detect_min_speed(dist, speed, s_start, s_end)
+
+    # 5. APEX — placeholder using MIN_SPEED position as proxy
+    apex = CornerEvent(
+        "APEX",
+        ms.s_position if ms.available else 0.0,
+        0.0,
+        "position",
+        0.0,
+        False,
+    )
+
+    # 6. Throttle On
+    ms_s = ms.s_position if ms.available else s_start
+    thr_on = _detect_throttle_on(dist, accel, ms_s, s_end)
+
+    # 7. Track Out
+    t_out = _detect_track_out(dist, s_end, lap_df)
+
+    # Collect and sort: unavailable events go last, then by s_position
+    events = [bp, eob, mrp, ms, apex, thr_on, t_out]
+    events.sort(key=lambda e: (not e.available, e.s_position))
+
+    return CornerTimeline(
+        corner_id=cid,
+        events=events,
+        segment_losses_s={},
+        segment_confidences={},
+        mistakes=[],
+        mrp_strength=0.0,
+        mrp_stability_std_m=0.0,
+        event_stability={},
+    )
