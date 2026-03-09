@@ -1,8 +1,11 @@
 /**
- * TrackMap.tsx — Canvas-based speed-colored track map.
+ * TrackMap.tsx — 2.5D isometric speed-colored track map.
  *
- * Renders GPS trace as a colored polyline where hue = speed.
+ * Renders GPS trace as a speed-colored polyline with an isometric
+ * camera tilt (~25°) giving a racing-game overhead view.
  * Dark background (#0B0C0F) — pure racing line, no map tiles.
+ * Depth cues: shadow underneath, line width varies with depth,
+ * subtle ground grid for spatial reference.
  *
  * Dual-mode:
  *   - `sessionId` → fetches GPS data from API
@@ -46,38 +49,44 @@ interface TrackMapProps {
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
 
 function speedToColor(t: number): string {
-  // t is 0..1 (fraction of min→max speed)
-  const clamped = Math.max(0, Math.min(1, t));
+  const c = Math.max(0, Math.min(1, t));
 
   let r: number, g: number, b: number;
-  if (clamped < 0.25) {
-    // blue → cyan
-    const s = clamped / 0.25;
+  if (c < 0.25) {
+    const s = c / 0.25;
     r = 0; g = Math.round(180 * s); b = 220;
-  } else if (clamped < 0.5) {
-    // cyan → green
-    const s = (clamped - 0.25) / 0.25;
+  } else if (c < 0.5) {
+    const s = (c - 0.25) / 0.25;
     r = 0; g = 180 + Math.round(40 * s); b = Math.round(220 * (1 - s));
-  } else if (clamped < 0.75) {
-    // green → yellow
-    const s = (clamped - 0.5) / 0.25;
+  } else if (c < 0.75) {
+    const s = (c - 0.5) / 0.25;
     r = Math.round(240 * s); g = 220; b = 0;
   } else {
-    // yellow → red
-    const s = (clamped - 0.75) / 0.25;
+    const s = (c - 0.75) / 0.25;
     r = 240; g = Math.round(220 * (1 - s)); b = 0;
   }
 
   return `rgb(${r},${g},${b})`;
 }
 
-/* ── Projection: lat/lon → canvas px ──────────────────── */
+/* ── 2.5D Isometric projection ──────────────────────────── */
+
+const TILT = 0.42; // ~25° tilt angle (radians)
+const COS_TILT = Math.cos(TILT);
+const SIN_TILT = Math.sin(TILT);
 
 interface Projection {
+  /** Screen X from lon */
   toX: (lon: number) => number;
+  /** Screen Y from lat (with isometric foreshortening) */
   toY: (lat: number) => number;
+  /** Shadow Y — slightly offset below the track */
+  toShadowY: (lat: number) => number;
   /** Find closest point index to canvas coords */
   closestIndex: (cx: number, cy: number) => number;
+  /** Pre-computed screen coords */
+  pxs: Float64Array;
+  pys: Float64Array;
 }
 
 function buildProjection(
@@ -97,7 +106,7 @@ function buildProjection(
     if (lons[i] > maxLon) maxLon = lons[i];
   }
 
-  // Aspect-ratio correction for latitude (Mercator-ish)
+  // Aspect-ratio correction for latitude
   const midLat = (minLat + maxLat) / 2;
   const cosLat = Math.cos((midLat * Math.PI) / 180);
 
@@ -107,14 +116,17 @@ function buildProjection(
   const drawW = width - padding * 2;
   const drawH = height - padding * 2;
 
+  // The isometric tilt foreshortens the Y axis
+  const effectiveSpanY = spanLat * COS_TILT;
+
   // Fit with uniform scale
-  const scale = Math.min(drawW / spanLon, drawH / spanLat);
+  const scale = Math.min(drawW / spanLon, drawH / effectiveSpanY);
   const offsetX = padding + (drawW - spanLon * scale) / 2;
-  const offsetY = padding + (drawH - spanLat * scale) / 2;
+  const offsetY = padding + (drawH - effectiveSpanY * scale) / 2;
 
   const toX = (lon: number) => offsetX + (lon - minLon) * cosLat * scale;
-  // Flip Y: higher lat = higher on screen
-  const toY = (lat: number) => offsetY + (maxLat - lat) * scale;
+  const toY = (lat: number) => offsetY + (maxLat - lat) * COS_TILT * scale;
+  const toShadowY = (lat: number) => toY(lat) + 6; // shadow offset
 
   // Pre-compute projected points for hit-testing
   const pxs = new Float64Array(lats.length);
@@ -136,7 +148,7 @@ function buildProjection(
     return best;
   };
 
-  return { toX, toY, closestIndex };
+  return { toX, toY, toShadowY, closestIndex, pxs, pys };
 }
 
 /* ── Drawing ──────────────────────────────────────────── */
@@ -160,14 +172,14 @@ function drawTrack(
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, w, h);
 
-  // Dark background — pure racing line, no map tiles
+  // Dark background
   ctx.fillStyle = '#0B0C0F';
   ctx.fillRect(0, 0, w, h);
 
   const { latitudes: lats, longitudes: lons, speeds } = trace;
   if (lats.length < 2) return;
 
-  const proj = buildProjection(lats, lons, w, h, 24);
+  const proj = buildProjection(lats, lons, w, h, 30);
 
   // Speed normalization
   let minSpd = Infinity, maxSpd = -Infinity;
@@ -179,22 +191,71 @@ function drawTrack(
   }
   const spdRange = maxSpd - minSpd || 1;
 
-  // Draw speed-colored segments
+  // ── Ground grid for spatial reference ──
+  const gridAlpha = 0.06;
+  ctx.strokeStyle = `rgba(240, 237, 229, ${gridAlpha})`;
+  ctx.lineWidth = 0.5;
+
+  // Find grid bounds from projected points
+  let pMinX = Infinity, pMaxX = -Infinity;
+  let pMinY = Infinity, pMaxY = -Infinity;
+  for (let i = 0; i < proj.pxs.length; i++) {
+    if (proj.pxs[i] < pMinX) pMinX = proj.pxs[i];
+    if (proj.pxs[i] > pMaxX) pMaxX = proj.pxs[i];
+    if (proj.pys[i] < pMinY) pMinY = proj.pys[i];
+    if (proj.pys[i] > pMaxY) pMaxY = proj.pys[i];
+  }
+  const gridPad = 30;
+  const gx0 = pMinX - gridPad, gx1 = pMaxX + gridPad;
+  const gy0 = pMinY - gridPad, gy1 = pMaxY + gridPad;
+  const gridStep = Math.max(20, (gx1 - gx0) / 12);
+
+  for (let x = gx0; x <= gx1; x += gridStep) {
+    ctx.beginPath();
+    ctx.moveTo(x, gy0);
+    ctx.lineTo(x, gy1);
+    ctx.stroke();
+  }
+  for (let y = gy0; y <= gy1; y += gridStep) {
+    ctx.beginPath();
+    ctx.moveTo(gx0, y);
+    ctx.lineTo(gx1, y);
+    ctx.stroke();
+  }
+
+  // ── Shadow pass (dark, blurred, offset below track) ──
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.beginPath();
+  for (let i = 0; i < lats.length; i++) {
+    const x = proj.pxs[i];
+    const y = proj.pys[i] + 5; // shadow offset
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // ── Main track (speed-colored segments) ──
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
 
   for (let i = 0; i < lats.length - 1; i++) {
-    const x0 = proj.toX(lons[i]);
-    const y0 = proj.toY(lats[i]);
-    const x1 = proj.toX(lons[i + 1]);
-    const y1 = proj.toY(lats[i + 1]);
+    const x0 = proj.pxs[i];
+    const y0 = proj.pys[i];
+    const x1 = proj.pxs[i + 1];
+    const y1 = proj.pys[i + 1];
+
+    // Depth-varying line width: thicker when "closer" (higher Y)
+    const depthT = (y0 - gy0) / (gy1 - gy0 || 1);
+    ctx.lineWidth = 2 + depthT * 1.5;
 
     if (speeds && speeds.length === lats.length) {
       const t = (speeds[i] - minSpd) / spdRange;
       ctx.strokeStyle = speedToColor(t);
     } else {
-      ctx.strokeStyle = '#F0EDE5'; // off-white fallback
+      ctx.strokeStyle = '#F0EDE5';
     }
 
     ctx.beginPath();
@@ -203,9 +264,15 @@ function drawTrack(
     ctx.stroke();
   }
 
-  // Draw start/finish marker (small circle at first point)
-  const sx = proj.toX(lons[0]);
-  const sy = proj.toY(lats[0]);
+  // ── Start/finish marker ──
+  const sx = proj.pxs[0];
+  const sy = proj.pys[0];
+  // Outer glow
+  ctx.fillStyle = 'rgba(240, 237, 229, 0.15)';
+  ctx.beginPath();
+  ctx.arc(sx, sy, 8, 0, Math.PI * 2);
+  ctx.fill();
+  // Inner dot
   ctx.fillStyle = '#F0EDE5';
   ctx.beginPath();
   ctx.arc(sx, sy, 4, 0, Math.PI * 2);
@@ -213,8 +280,14 @@ function drawTrack(
   ctx.strokeStyle = 'rgba(243,240,232,0.4)';
   ctx.lineWidth = 1;
   ctx.stroke();
+  // "S/F" label
+  ctx.font = '600 9px "Space Mono", monospace';
+  ctx.fillStyle = 'rgba(240, 237, 229, 0.7)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText('S/F', sx, sy - 10);
 
-  // Corner labels with speed annotations
+  // ── Corner labels ──
   if (corners && corners.length > 0) {
     ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
@@ -230,7 +303,7 @@ function drawTrack(
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Find min speed near this corner (closest GPS point)
+      // Find min speed near this corner
       let cornerSpeed: number | null = null;
       if (speeds && speeds.length === lats.length) {
         let minDist = Infinity;
@@ -241,7 +314,6 @@ function drawTrack(
           const d = dLat * dLat + dLon * dLon;
           if (d < minDist) { minDist = d; nearIdx = i; }
         }
-        // Find local minimum speed within +-10 points of closest
         let localMin = speeds[nearIdx];
         const lo = Math.max(0, nearIdx - 10);
         const hi = Math.min(speeds.length - 1, nearIdx + 10);
@@ -251,25 +323,34 @@ function drawTrack(
         cornerSpeed = localMin;
       }
 
-      // Label + speed annotation
       const labelText = c.label || `C${c.corner_id}`;
       ctx.fillStyle = 'rgba(201,168,76,0.9)';
       ctx.fillText(labelText, cx, cy - 10);
 
       if (cornerSpeed != null) {
         const spdKmh = Math.round(cornerSpeed * 3.6);
-        ctx.font = '500 8px "Space Mono", "IBM Plex Mono", monospace';
+        ctx.font = '500 8px "Space Mono", monospace';
         ctx.fillStyle = 'rgba(240,237,229,0.6)';
         ctx.fillText(`${spdKmh}`, cx, cy - 20);
-        ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
+        ctx.font = '600 10px "Space Mono", monospace';
       }
     }
   }
 
-  // Hover marker
+  // ── Hover marker ──
   if (hoverIndex != null && hoverIndex >= 0 && hoverIndex < lats.length) {
-    const hx = proj.toX(lons[hoverIndex]);
-    const hy = proj.toY(lats[hoverIndex]);
+    const hx = proj.pxs[hoverIndex];
+    const hy = proj.pys[hoverIndex];
+
+    // Vertical "pin" line from shadow to point
+    ctx.strokeStyle = 'rgba(201,168,76,0.25)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(hx, hy);
+    ctx.lineTo(hx, hy + 5);
+    ctx.stroke();
+    ctx.setLineDash([]);
 
     // Outer glow
     ctx.fillStyle = 'rgba(201,168,76,0.3)';
@@ -295,7 +376,7 @@ function SpeedLegend({ min, max }: { min: number; max: number }) {
   const gradient = `linear-gradient(to right, ${stops.join(', ')})`;
 
   return (
-    <div className="flex items-center gap-2 mt-2">
+    <div className="flex items-center gap-2">
       <span className="font-telemetry text-[10px] text-steel tabular-nums">
         {min.toFixed(0)}
       </span>
@@ -321,7 +402,6 @@ export function TrackMap(props: TrackMapProps) {
     className = '',
     gpsLaps = [],
     bestLap = null,
-    apiBase,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -331,7 +411,6 @@ export function TrackMap(props: TrackMapProps) {
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
-  // Effective lap (selected or best)
   const activeLap = selectedLap ?? bestLap ?? gpsLaps[0] ?? null;
 
   // ── Fetch GPS data ──────────────────────────────────────
@@ -426,7 +505,6 @@ export function TrackMap(props: TrackMapProps) {
       if (state.hoverSource === 'track-map') return;
 
       if (state.hoverDistance !== null) {
-        // Binary search for closest distance index
         const dists = trace.distances;
         let lo = 0, hi = dists.length - 1;
         while (lo < hi) {
@@ -452,7 +530,6 @@ export function TrackMap(props: TrackMapProps) {
       if (s < minSpd) minSpd = s;
       if (s > maxSpd) maxSpd = s;
     }
-    // Convert m/s → km/h if values look like m/s (< 100)
     if (maxSpd < 100) {
       minSpd *= 3.6;
       maxSpd *= 3.6;
@@ -467,7 +544,7 @@ export function TrackMap(props: TrackMapProps) {
         style={{ width: '100%', minHeight: '300px', background: '#0B0C0F' }}
       >
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="absolute inset-0 flex items-center justify-center z-10">
             <div className="w-5 h-5 border-2 border-steel/30 border-t-chalk rounded-full animate-spin" />
           </div>
         )}
@@ -496,7 +573,7 @@ export function TrackMap(props: TrackMapProps) {
         {/* Hover tooltip */}
         {hoverIdx != null && trace?.speeds && trace.speeds[hoverIdx] != null && (
           <div
-            className="absolute top-2 right-2 bg-concrete/90 border border-steel/20 px-2 py-1 pointer-events-none"
+            className="absolute top-2 right-2 bg-concrete/90 border border-steel/20 rounded px-2.5 py-1.5 pointer-events-none"
           >
             <span className="font-telemetry text-[11px] text-chalk tabular-nums">
               {(trace.speeds[hoverIdx] < 100
@@ -514,7 +591,7 @@ export function TrackMap(props: TrackMapProps) {
       </div>
 
       {/* Lap selector + speed legend */}
-      <div className="flex items-center gap-3 mt-2 flex-wrap">
+      <div className="flex items-center gap-3 mt-2 flex-wrap shrink-0">
         {gpsLaps.length > 0 && (
           <>
             <label className="font-telemetry text-[10px] text-steel uppercase tracking-wider">Lap</label>
