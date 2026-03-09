@@ -542,7 +542,13 @@
         deltaCache = {};
         selectedLaps = [];
         chartBounds = null;
+        lapColourMap = {};
+        _pendingDelta = null;
         if (canvas) { canvas.width = 0; canvas.height = 0; }
+        // Reset DOM refs so init() can re-acquire them
+        canvas = null;
+        ctx = null;
+        legendEl = null;
     }
 
     window.ModuleManager.register('lap_overlay', {

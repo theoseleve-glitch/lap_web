@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+from html import escape as _html_escape
 from typing import Callable
 
 logger = logging.getLogger(__name__)
@@ -45,11 +46,16 @@ _WRAPPER_CLOSE = (
 ).replace("{frontend}", FRONTEND_URL)
 
 
+def _esc(s: str) -> str:
+    """HTML-escape user-supplied text for safe embedding in email HTML."""
+    return _html_escape(str(s), quote=True)
+
+
 def _btn(url: str, label: str, color: str = "#B6FF2E", text_color: str = "#0B0C0F") -> str:
     return (
-        f'<a href="{url}" style="display: inline-block; background: {color}; '
+        f'<a href="{_esc(url)}" style="display: inline-block; background: {color}; '
         f'color: {text_color}; padding: 12px 24px; border-radius: 6px; '
-        f'text-decoration: none; font-weight: 600; margin: 16px 0;">{label}</a>'
+        f'text-decoration: none; font-weight: 600; margin: 16px 0;">{_esc(label)}</a>'
     )
 
 
@@ -80,7 +86,7 @@ def _verification(v: dict) -> tuple[str, str]:
         _h2("Verify your email")
         + _p("Click the button below to verify your LAP account:")
         + _btn(url, "Verify Email")
-        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{url}</code>')
+        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{_esc(url)}</code>')
         + _small("If you didn't create an account, ignore this email.")
     )
     return "Verify your LAP account", _wrap(body)
@@ -102,7 +108,7 @@ def _verification_reminder(v: dict) -> tuple[str, str]:
 
 
 def _welcome(v: dict) -> tuple[str, str]:
-    name = v.get("display_name", "racer")
+    name = _esc(v.get("display_name", "racer"))
     body = (
         _h2(f"Welcome to LAP, {name}!")
         + _p("Your account is ready. Upload your first telemetry session:")
@@ -118,7 +124,7 @@ def _password_reset(v: dict) -> tuple[str, str]:
         _h2("Reset your password")
         + _p("We received a request to reset your LAP account password.")
         + _btn(url, "Reset Password")
-        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{url}</code>')
+        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{_esc(url)}</code>')
         + _small("This link expires in 1 hour. If you didn't request this, ignore it.")
     )
     return "Reset your LAP password", _wrap(body)
@@ -138,22 +144,22 @@ def _password_changed(v: dict) -> tuple[str, str]:
 
 def _team_invitation(v: dict) -> tuple[str, str]:
     url = v["accept_url"]
-    team = v["team_name"]
-    inviter = v["inviter_name"]
+    team = _esc(v["team_name"])
+    inviter = _esc(v["inviter_name"])
     body = (
         _h2(f"You've been invited to join {team}")
         + _p(f'<strong style="color: #F3F0E8;">{inviter}</strong> has invited you '
               f'to join <strong style="color: #F3F0E8;">{team}</strong> on LAP.')
         + _btn(url, "Accept Invitation")
-        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{url}</code>')
+        + _small(f'Or copy this link: <code style="color: #F3F0E8;">{_esc(url)}</code>')
         + _small("This invitation expires in 7 days.")
     )
     return f"You're invited to join {team} on LAP", _wrap(body)
 
 
 def _team_joined(v: dict) -> tuple[str, str]:
-    member = v.get("member_name", "A new member")
-    team = v["team_name"]
+    member = _esc(v.get("member_name", "A new member"))
+    team = _esc(v["team_name"])
     body = (
         _h2(f"{member} joined {team}")
         + _p(f'{member} has accepted the invitation and joined your team.')
@@ -163,7 +169,7 @@ def _team_joined(v: dict) -> tuple[str, str]:
 
 
 def _report_ready(v: dict) -> tuple[str, str]:
-    session = v.get("session_name", "your session")
+    session = _esc(v.get("session_name", "your session"))
     url = v.get("report_url", f"{FRONTEND_URL}/app/sessions")
     body = (
         _h2("Your analysis is ready")
@@ -179,7 +185,7 @@ def _retention_warning(v: dict) -> tuple[str, str]:
     sessions = v.get("sessions", [])
     rows = ""
     for s in sessions[:10]:
-        name = s.get("file_name", s.get("session_id", "Unknown"))
+        name = _esc(s.get("file_name", s.get("session_id", "Unknown")))
         rows += f'<li style="color: #F3F0E8; padding: 2px 0;">{name}</li>'
     extra = f"<p>...and {len(sessions) - 10} more.</p>" if len(sessions) > 10 else ""
     body = (
@@ -198,7 +204,7 @@ def _retention_deleted(v: dict) -> tuple[str, str]:
     sessions = v.get("sessions", [])
     rows = ""
     for s in sessions[:10]:
-        name = s.get("file_name", s.get("session_id", "Unknown"))
+        name = _esc(s.get("file_name", s.get("session_id", "Unknown")))
         rows += f'<li style="color: #F3F0E8; padding: 2px 0;">{name}</li>'
     body = (
         _h2("Raw telemetry data deleted")
@@ -212,7 +218,7 @@ def _retention_deleted(v: dict) -> tuple[str, str]:
 
 
 def _trial_ending(v: dict) -> tuple[str, str]:
-    plan = v.get("plan_name", "your plan")
+    plan = _esc(v.get("plan_name", "your plan"))
     days = v.get("days_remaining", 3)
     body = (
         _h2(f"Your trial ends in {days} days")
@@ -226,8 +232,8 @@ def _trial_ending(v: dict) -> tuple[str, str]:
 
 
 def _payment_failed(v: dict) -> tuple[str, str]:
-    amount = v.get("amount", "your subscription")
-    retry_date = v.get("retry_date", "soon")
+    amount = _esc(v.get("amount", "your subscription"))
+    retry_date = _esc(v.get("retry_date", "soon"))
     body = (
         _h2("Payment failed")
         + _p(f"We were unable to process your payment of {amount}. "
@@ -240,7 +246,7 @@ def _payment_failed(v: dict) -> tuple[str, str]:
 
 
 def _subscription_canceled(v: dict) -> tuple[str, str]:
-    plan = v.get("plan_name", "your plan")
+    plan = _esc(v.get("plan_name", "your plan"))
     body = (
         _h2("Your subscription has been canceled")
         + _p(f"Your {plan} subscription has been canceled. You'll continue to have "
@@ -252,7 +258,7 @@ def _subscription_canceled(v: dict) -> tuple[str, str]:
 
 
 def _payment_recovered(v: dict) -> tuple[str, str]:
-    plan = v.get("plan_name", "your plan")
+    plan = _esc(v.get("plan_name", "your plan"))
     body = (
         _h2("Payment successful — you're back on track")
         + _p(f"Your payment for {plan} has been successfully processed. "
@@ -263,8 +269,8 @@ def _payment_recovered(v: dict) -> tuple[str, str]:
 
 
 def _new_login_location(v: dict) -> tuple[str, str]:
-    ip = v.get("ip", "unknown")
-    device = v.get("device_info", v.get("country", "unknown device"))
+    ip = _esc(v.get("ip", "unknown"))
+    device = _esc(v.get("device_info", v.get("country", "unknown device")))
     body = (
         _h2("New login detected")
         + _p("A new login to your LAP account was detected:")
@@ -299,7 +305,7 @@ def _weekly_summary(v: dict) -> tuple[str, str]:
 
 
 def _quota_warning(v: dict) -> tuple[str, str]:
-    feature = v.get("feature", "reports")
+    feature = _esc(v.get("feature", "reports"))
     used = v.get("used", 0)
     limit = v.get("limit", 0)
     body = (

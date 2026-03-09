@@ -994,6 +994,14 @@ def billing_portal():
     body = request.get_json(silent=True) or {}
     return_url = body.get("return_url", f"{FRONTEND_URL}/app/account/billing")
 
+    # Validate return_url to prevent open redirect via Stripe portal.
+    # Only allow URLs under our own frontend domain.
+    from urllib.parse import urlparse
+    parsed = urlparse(return_url)
+    frontend_parsed = urlparse(FRONTEND_URL)
+    if parsed.scheme not in ("https", "http") or parsed.netloc != frontend_parsed.netloc:
+        return_url = f"{FRONTEND_URL}/app/account/billing"
+
     try:
         session = stripe.billing_portal.Session.create(
             customer=customer_id,
@@ -1114,12 +1122,24 @@ def create_checkout_session():
     customer_id = user.get("stripe_customer_id")
     email = user.get("email")
 
+    # Validate redirect URLs to prevent open redirect via Stripe checkout.
+    from urllib.parse import urlparse as _urlparse
+    _frontend_host = _urlparse(FRONTEND_URL).netloc
+    _success = body.get("success_url", f"{FRONTEND_URL}/thank-you/book")
+    _cancel = body.get("cancel_url", f"{FRONTEND_URL}/pricing?checkout=cancelled")
+    _sp = _urlparse(_success)
+    if _sp.scheme not in ("https", "http") or _sp.netloc != _frontend_host:
+        _success = f"{FRONTEND_URL}/thank-you/book"
+    _cp = _urlparse(_cancel)
+    if _cp.scheme not in ("https", "http") or _cp.netloc != _frontend_host:
+        _cancel = f"{FRONTEND_URL}/pricing?checkout=cancelled"
+
     # Build checkout session params
     session_params = {
         "mode": "subscription",
         "line_items": [{"price": price_id, "quantity": 1}],
-        "success_url": body.get("success_url", f"{FRONTEND_URL}/thank-you/book"),
-        "cancel_url": body.get("cancel_url", f"{FRONTEND_URL}/pricing?checkout=cancelled"),
+        "success_url": _success,
+        "cancel_url": _cancel,
         "metadata": {"plan_tier": plan, "plan": plan.upper()},
         "allow_promotion_codes": True,
         "tax_id_collection": {"enabled": True},

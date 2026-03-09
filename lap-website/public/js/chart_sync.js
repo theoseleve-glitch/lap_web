@@ -39,8 +39,20 @@
     };
 
     document.addEventListener('DOMContentLoaded', function () {
-        // Guard: already initialized (React may re-fire DOMContentLoaded).
-        if (speedCanvas) return;
+        // Guard: already initialized AND still in the DOM.
+        // On SPA re-navigation React removes the old canvas, so we detect
+        // stale references via isConnected and allow re-init.
+        if (speedCanvas && speedCanvas.isConnected) return;
+
+        // Clean up old event listeners if re-initializing
+        if (speedCanvas && !speedCanvas.isConnected) {
+            _lc.destroyAll();
+            _lc = window.LifecycleHelpers.create();
+            chartData = null;
+            chartBounds = null;
+            theoreticalData = null;
+            averagePaceData = null;
+        }
 
         speedCanvas = document.getElementById('speed-chart');
         lapCanvas = document.getElementById('lap-times-chart');
@@ -736,6 +748,7 @@
         chartData = null;
         chartBounds = null;
         theoreticalData = null;
+        averagePaceData = null;
         _lastLaps = null;
         if (speedCanvas) {
             speedCanvas.width = 0;
@@ -745,6 +758,13 @@
             lapCanvas.width = 0;
             lapCanvas.height = 0;
         }
+        // Reset DOM references so DOMContentLoaded guard allows re-init
+        speedCanvas = null;
+        speedCtx = null;
+        lapCanvas = null;
+        lapCtx = null;
+        crosshairEl = null;
+        tooltipEl = null;
     }
 
     window.ModuleManager.register('chart_sync', {

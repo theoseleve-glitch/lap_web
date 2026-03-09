@@ -59,14 +59,32 @@
 
     // ── Init ────────────────────────────────────────
     document.addEventListener('DOMContentLoaded', function () {
-        // Guard: already initialized or Leaflet not yet loaded.
-        if (map) return;
+        // Guard: already initialized AND still in the DOM.
+        // On SPA re-navigation React removes the old map container,
+        // so detect stale references via isConnected and allow re-init.
+        var mapEl = document.getElementById('gps-map');
+        if (map && mapEl && map.getContainer() === mapEl) return;
+
+        // Clean up stale map if re-initializing
+        if (map) {
+            _lc.destroyAll();
+            _lc = window.LifecycleHelpers.create();
+            try { map.remove(); } catch (e) { /* already detached */ }
+            map = null;
+            traceLayer = null;
+            marker = null;
+            referenceLayer = null;
+            bestLapLayer = null;
+            cornerMarkersLayer = null;
+            allLapsLayer = null;
+            currentData = null;
+        }
+
         if (typeof L === 'undefined' || !L.map) return;
 
         var T = window.TELEMETRY;
         if (!T || !T.gpsLaps || T.gpsLaps.length === 0) return;
 
-        var mapEl = document.getElementById('gps-map');
         if (!mapEl) return;
 
         map = L.map('gps-map', { zoomControl: true });

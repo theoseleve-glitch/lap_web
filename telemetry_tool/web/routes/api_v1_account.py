@@ -199,6 +199,21 @@ def export_download(export_id: str):
     if data["status"] != "completed" or not data.get("file_path"):
         return api_error(ErrorCode.NOT_FOUND, "Export not yet completed", status=404)
 
+    # Path traversal guard: export files must live under known export dirs.
+    import os as _os
+    _ALLOWED_EXPORT_DIRS = [
+        _os.path.realpath(
+            _os.path.join(_os.path.dirname(__file__), "..", "..", "data", "exports")
+        ),
+        _os.path.realpath(
+            _os.environ.get("TELEMETRY_EXPORT_DIR", "/tmp/telemetry_exports")
+        ),
+    ]
+    _resolved = _os.path.realpath(data["file_path"])
+    if not any(_resolved.startswith(d) for d in _ALLOWED_EXPORT_DIRS):
+        logger.warning("Export path traversal attempt: %s", data["file_path"])
+        return api_error(ErrorCode.NOT_FOUND, "Export not found", status=404)
+
     return send_file(
         data["file_path"],
         mimetype="application/zip",

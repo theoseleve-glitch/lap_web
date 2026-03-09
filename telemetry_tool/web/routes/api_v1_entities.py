@@ -444,7 +444,7 @@ def leaderboard():
     conn = _get_conn()
     track_id = request.args.get("track_id")
     driver_id = request.args.get("driver_id")
-    limit = request.args.get("limit", 50, type=int)
+    limit = min(request.args.get("limit", 50, type=int), 200)
 
     where_clauses = ["s.best_lap_time_s IS NOT NULL"]
     params = []

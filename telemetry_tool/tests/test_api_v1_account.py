@@ -177,9 +177,12 @@ class TestExportDownload:
     def test_returns_file_when_completed(self, mock_db, mock_send, client):
         """GET /export/<id>/download returns file if completed."""
         conn = _mock_conn()
+        # Path must be under TELEMETRY_EXPORT_DIR for the path traversal guard.
+        import os
+        export_dir = os.environ.get("TELEMETRY_EXPORT_DIR", "/tmp/telemetry_exports")
         conn.execute.return_value.fetchone.return_value = {
             "id": "exp_001", "status": "completed", "user_id": 1,
-            "file_path": "/tmp/export.zip",
+            "file_path": os.path.join(export_dir, "export.zip"),
         }
         mock_db.return_value = conn
         mock_send.return_value = MagicMock(status_code=200)

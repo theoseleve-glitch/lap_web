@@ -55,7 +55,15 @@
 
     // ── Init ─────────────────────────────────────────
     function init() {
-        if (_state.initialized) return;
+        // Allow re-init if old canvas was removed from DOM (SPA navigation)
+        if (_state.initialized && _overviewCanvas && _overviewCanvas.isConnected) return;
+        if (_state.initialized) {
+            // Stale — clean up before re-init
+            _lc.destroyAll();
+            _lc = window.LifecycleHelpers.create();
+            _state.initialized = false;
+            _state.lapDataCache = {};
+        }
 
         _overviewCanvas = document.getElementById('speed-chart');
         _selectionRect = document.getElementById('speed-chart-selection-rect');
@@ -915,9 +923,11 @@
     }
 
     // ── DOMContentLoaded auto-init ───────────────────
-    _lc.addListener(document, 'DOMContentLoaded', function () {
+    // Use document.addEventListener directly (not via _lc) so the listener
+    // survives destroy() and fires again on SPA re-navigation.
+    document.addEventListener('DOMContentLoaded', function () {
         // Delay init to ensure ChartSync has loaded
-        _lc.addTimer(function () {
+        setTimeout(function () {
             if (document.getElementById('speed-chart')) {
                 init();
             }
@@ -926,6 +936,28 @@
 
     function destroy() {
         _lc.destroyAll();
+        // Reset state so init() guard allows re-initialization
+        _state.initialized = false;
+        _state.selection = null;
+        _state.isDragging = false;
+        _state.dragStartX = null;
+        _state.primaryLap = null;
+        _state.comparisonLaps = [];
+        _state.lapDataCache = {};
+        _state.activeCorner = null;
+        // Reset DOM refs
+        _overviewCanvas = null;
+        _selectionRect = null;
+        _zoomPanel = null;
+        _zoomCanvas = null;
+        _zoomCtx = null;
+        _zoomTooltip = null;
+        _primarySelect = null;
+        _compareSelect = null;
+        _cornerPills = null;
+        _legendEl = null;
+        _cornerMarkersEl = null;
+        _dragHint = null;
     }
 
     window.ModuleManager.register('speed_trace_zoom', {

@@ -24,6 +24,8 @@ _LEGACY_PREFIXES = (
     "/dev-plans",
     "/karts",
     "/analytics",
+    "/leaderboard",
+    "/tracks",
 )
 
 

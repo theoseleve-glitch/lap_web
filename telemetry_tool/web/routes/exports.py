@@ -241,6 +241,15 @@ def download_export(export_id: str):
         return api_error(ErrorCode.NOT_FOUND,
                          "Export file not found on disk", status=404)
 
+    # Path traversal guard: export files must live under data/exports/
+    _EXPORT_DIR = os.path.realpath(
+        os.path.join(os.path.dirname(__file__), "..", "..", "data", "exports")
+    )
+    if not os.path.realpath(file_path).startswith(_EXPORT_DIR):
+        logger.warning("Export path traversal attempt: %s", file_path)
+        return api_error(ErrorCode.NOT_FOUND,
+                         "Export file not found on disk", status=404)
+
     file_format = export.get("format", "csv")
     data_type = export.get("data_type", "export")
     mimetype = _FORMAT_MIMETYPES.get(file_format, "application/octet-stream")

@@ -364,6 +364,10 @@ def create_portal():
     body = request.get_json(silent=True) or {}
     return_url = body.get("return_url", f"{FRONTEND_URL}/app/account/billing")
 
+    # Open-redirect guard: return_url must start with our frontend origin.
+    if not return_url.startswith(FRONTEND_URL):
+        return_url = f"{FRONTEND_URL}/app/account/billing"
+
     try:
         session = stripe.billing_portal.Session.create(
             customer=customer_id,

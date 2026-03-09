@@ -48,6 +48,12 @@ class TestDataSummary:
 # Test 2-step delete token
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _jwt_secret_env(monkeypatch):
+    """Ensure TELEMETRY_JWT_SECRET is set for delete-token tests."""
+    monkeypatch.setenv("TELEMETRY_JWT_SECRET", "test-secret-for-delete-tokens-32b!")
+
+
 class TestDeleteSessionToken:
     def test_make_and_verify_token(self):
         """Token round-trips correctly."""
@@ -75,7 +81,7 @@ class TestDeleteSessionToken:
 
         from web.routes.api_v1_account import _verify_delete_token
 
-        secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
+        secret = os.environ.get("TELEMETRY_JWT_SECRET", "")
         # Create a manually expired token
         expired_ts = int((datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp())
         payload = f"42:1,2:{expired_ts}"
