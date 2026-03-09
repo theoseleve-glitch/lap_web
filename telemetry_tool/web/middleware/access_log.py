@@ -38,10 +38,7 @@ _SECRET_PATTERN = re.compile(
 
 
 def _safe_ip() -> str:
-    """Return the client IP, preferring X-Forwarded-For (Caddy sets it)."""
-    forwarded = request.headers.get("X-Forwarded-For", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    """Return the client IP from request.remote_addr (corrected by ProxyFix)."""
     return request.remote_addr or "-"
 
 

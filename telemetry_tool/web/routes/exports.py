@@ -188,6 +188,10 @@ def list_exports():
         for key in ("created_at", "completed_at"):
             if r.get(key) is not None and hasattr(r[key], "isoformat"):
                 r[key] = r[key].isoformat()
+        # Sanitize error_message — don't leak internal details (stack traces,
+        # connection strings, SQL errors) to end users.
+        if r.get("error_message"):
+            r["error_message"] = "Export failed — contact support if this persists."
         exports.append(r)
 
     return api_response({"exports": exports})

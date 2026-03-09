@@ -16,13 +16,13 @@ logger = logging.getLogger(__name__)
 def audit_log(conn, action: str, details: dict | None = None):
     """Log an auditable action for the current request context.
 
-    Pulls user_id from ``g.current_user_id``, IP from X-Forwarded-For
-    (or remote_addr), User-Agent from request headers.  Gracefully
+    Pulls user_id from ``g.current_user_id``, IP from request.remote_addr
+    (already corrected by ProxyFix), User-Agent from request headers.  Gracefully
     handles missing request context (e.g. Celery tasks, direct calls).
     """
     if has_request_context():
         user_id = getattr(g, "current_user_id", None)
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        ip = request.remote_addr or ""
         ua = request.headers.get("User-Agent", "")
     else:
         user_id = None

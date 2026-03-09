@@ -22,10 +22,11 @@ class TestAuditLog(unittest.TestCase):
         from web.middleware.audit import audit_log
 
         app = self._make_app()
-        with app.test_request_context("/api/v1/test", headers={
-            "X-Forwarded-For": "1.2.3.4",
-            "User-Agent": "TestAgent/1.0",
-        }):
+        with app.test_request_context(
+            "/api/v1/test",
+            environ_base={"REMOTE_ADDR": "1.2.3.4"},
+            headers={"User-Agent": "TestAgent/1.0"},
+        ):
             g.current_user_id = 42
             mock_conn = MagicMock()
             audit_log(mock_conn, "team_created", {"team_id": 1})
@@ -59,10 +60,11 @@ class TestAuditLog(unittest.TestCase):
         app = self._make_app()
         long_ip = "x" * 100
         long_ua = "y" * 1000
-        with app.test_request_context("/api/v1/test", headers={
-            "X-Forwarded-For": long_ip,
-            "User-Agent": long_ua,
-        }):
+        with app.test_request_context(
+            "/api/v1/test",
+            environ_base={"REMOTE_ADDR": long_ip},
+            headers={"User-Agent": long_ua},
+        ):
             g.current_user_id = 1
             mock_conn = MagicMock()
             audit_log(mock_conn, "test", {})

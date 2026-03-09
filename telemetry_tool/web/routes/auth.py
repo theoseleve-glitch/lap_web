@@ -252,7 +252,7 @@ def login():
     conn = _get_conn()
     secret = current_app.config["JWT_SECRET"]
     ua = request.headers.get("User-Agent", "")
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    ip = request.remote_addr or ""
     try:
         result = login_user(
             conn, email, password, secret,
@@ -391,7 +391,7 @@ def refresh():
         old_token_id = row["id"]
 
         ua = request.headers.get("User-Agent", "")
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        ip = request.remote_addr or ""
 
         # Revoke the old refresh token (single-use rotation)
         conn.execute(
@@ -510,7 +510,7 @@ def oauth_callback(provider):
 
         # Log OAuth login in audit
         ua = request.headers.get("User-Agent", "")
-        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+        ip = request.remote_addr or ""
         from auth.service import _log_audit
         _log_audit(
             conn, result["user"]["id"], f"login_oauth_{provider}",
@@ -668,7 +668,7 @@ def verify_2fa():
 
     # Log successful 2FA
     ua = request.headers.get("User-Agent", "")
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+    ip = request.remote_addr or ""
     _log_audit(conn, user_id, "login_2fa", {"ip": ip}, ip_address=ip, user_agent=ua)
 
     result = complete_2fa_login(
