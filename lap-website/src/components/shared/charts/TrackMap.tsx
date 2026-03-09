@@ -76,15 +76,12 @@ const COS_TILT = Math.cos(TILT);
 const SIN_TILT = Math.sin(TILT);
 
 interface Projection {
-  /** Screen X from lon */
   toX: (lon: number) => number;
-  /** Screen Y from lat (with isometric foreshortening) */
   toY: (lat: number) => number;
-  /** Shadow Y — slightly offset below the track */
   toShadowY: (lat: number) => number;
-  /** Find closest point index to canvas coords */
+  /** Project a (lat, lon) pair to screen coords */
+  toXY?: (lat: number, lon: number) => [number, number];
   closestIndex: (cx: number, cy: number) => number;
-  /** Pre-computed screen coords */
   pxs: Float64Array;
   pys: Float64Array;
 }
@@ -96,45 +93,117 @@ function buildProjection(
   height: number,
   padding: number,
 ): Projection {
-  let minLat = Infinity, maxLat = -Infinity;
-  let minLon = Infinity, maxLon = -Infinity;
-
-  for (let i = 0; i < lats.length; i++) {
-    if (lats[i] < minLat) minLat = lats[i];
-    if (lats[i] > maxLat) maxLat = lats[i];
-    if (lons[i] < minLon) minLon = lons[i];
-    if (lons[i] > maxLon) maxLon = lons[i];
-  }
-
-  // Aspect-ratio correction for latitude
-  const midLat = (minLat + maxLat) / 2;
+  // Convert to metric-ish local coordinates first
+  const midLat = (lats.reduce((a, b) => a + b, 0)) / lats.length;
+  const midLon = (lons.reduce((a, b) => a + b, 0)) / lons.length;
   const cosLat = Math.cos((midLat * Math.PI) / 180);
 
-  const spanLat = maxLat - minLat || 0.0001;
-  const spanLon = (maxLon - minLon) * cosLat || 0.0001;
+  // Local X/Y in approximate metres (for PCA + rotation)
+  const xs = new Float64Array(lats.length);
+  const ys = new Float64Array(lats.length);
+  for (let i = 0; i < lats.length; i++) {
+    xs[i] = (lons[i] - midLon) * cosLat;
+    ys[i] = lats[i] - midLat;
+  }
 
+  // PCA: find principal axis angle to auto-rotate track for best fit
+  let cxx = 0, cyy = 0, cxy = 0;
+  for (let i = 0; i < xs.length; i++) {
+    cxx += xs[i] * xs[i];
+    cyy += ys[i] * ys[i];
+    cxy += xs[i] * ys[i];
+  }
+  // Angle of principal axis
+  const pcaAngle = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
+
+  // Try 4 candidate rotations: PCA angle + 0°, 90° and the isometric tilt
+  // Pick the one that gives the best fill ratio for this canvas
   const drawW = width - padding * 2;
   const drawH = height - padding * 2;
 
-  // The isometric tilt foreshortens the Y axis
-  const effectiveSpanY = spanLat * COS_TILT;
+  let bestAngle = 0;
+  let bestScale = 0;
 
-  // Fit with uniform scale
-  const scale = Math.min(drawW / spanLon, drawH / effectiveSpanY);
-  const offsetX = padding + (drawW - spanLon * scale) / 2;
-  const offsetY = padding + (drawH - effectiveSpanY * scale) / 2;
+  for (const candidate of [pcaAngle, pcaAngle + Math.PI / 2]) {
+    const cosA = Math.cos(candidate);
+    const sinA = Math.sin(candidate);
 
-  const toX = (lon: number) => offsetX + (lon - minLon) * cosLat * scale;
-  const toY = (lat: number) => offsetY + (maxLat - lat) * COS_TILT * scale;
-  const toShadowY = (lat: number) => toY(lat) + 6; // shadow offset
+    let rMinX = Infinity, rMaxX = -Infinity;
+    let rMinY = Infinity, rMaxY = -Infinity;
+    for (let i = 0; i < xs.length; i++) {
+      const rx = xs[i] * cosA - ys[i] * sinA;
+      const ry = (xs[i] * sinA + ys[i] * cosA) * COS_TILT; // apply tilt
+      if (rx < rMinX) rMinX = rx;
+      if (rx > rMaxX) rMaxX = rx;
+      if (ry < rMinY) rMinY = ry;
+      if (ry > rMaxY) rMaxY = ry;
+    }
 
-  // Pre-compute projected points for hit-testing
+    const spanX = rMaxX - rMinX || 0.0001;
+    const spanY = rMaxY - rMinY || 0.0001;
+    const s = Math.min(drawW / spanX, drawH / spanY);
+    if (s > bestScale) {
+      bestScale = s;
+      bestAngle = candidate;
+    }
+  }
+
+  // Apply best rotation + isometric tilt
+  const cosR = Math.cos(bestAngle);
+  const sinR = Math.sin(bestAngle);
+
   const pxs = new Float64Array(lats.length);
   const pys = new Float64Array(lats.length);
-  for (let i = 0; i < lats.length; i++) {
-    pxs[i] = toX(lons[i]);
-    pys[i] = toY(lats[i]);
+
+  // Compute rotated + tilted coordinates
+  const rxs = new Float64Array(lats.length);
+  const rys = new Float64Array(lats.length);
+  let rMinX = Infinity, rMaxX = -Infinity;
+  let rMinY = Infinity, rMaxY = -Infinity;
+
+  for (let i = 0; i < xs.length; i++) {
+    rxs[i] = xs[i] * cosR - ys[i] * sinR;
+    rys[i] = (xs[i] * sinR + ys[i] * cosR) * COS_TILT;
+    if (rxs[i] < rMinX) rMinX = rxs[i];
+    if (rxs[i] > rMaxX) rMaxX = rxs[i];
+    if (rys[i] < rMinY) rMinY = rys[i];
+    if (rys[i] > rMaxY) rMaxY = rys[i];
   }
+
+  const spanX = rMaxX - rMinX || 0.0001;
+  const spanY = rMaxY - rMinY || 0.0001;
+  const scale = Math.min(drawW / spanX, drawH / spanY);
+  const offsetX = padding + (drawW - spanX * scale) / 2;
+  const offsetY = padding + (drawH - spanY * scale) / 2;
+
+  for (let i = 0; i < lats.length; i++) {
+    pxs[i] = offsetX + (rxs[i] - rMinX) * scale;
+    pys[i] = offsetY + (rMaxY - rys[i]) * scale; // flip Y
+  }
+
+  // toX/toY for ad-hoc points (corners, etc.)
+  const toX = (lon: number) => {
+    const lx = (lon - midLon) * cosLat;
+    const ly = 0; // approximate — corners also have lat
+    return offsetX + (lx * cosR - ly * sinR - rMinX) * scale;
+  };
+  const toY = (lat: number) => {
+    const ly = lat - midLat;
+    const lx = 0;
+    return offsetY + (rMaxY - (lx * sinR + ly * cosR) * COS_TILT) * scale;
+  };
+  // Full projection for a (lat, lon) pair
+  const toXY = (lat: number, lon: number): [number, number] => {
+    const lx = (lon - midLon) * cosLat;
+    const ly = lat - midLat;
+    const rx = lx * cosR - ly * sinR;
+    const ry = (lx * sinR + ly * cosR) * COS_TILT;
+    return [
+      offsetX + (rx - rMinX) * scale,
+      offsetY + (rMaxY - ry) * scale,
+    ];
+  };
+  const toShadowY = (lat: number) => toY(lat) + 6;
 
   const closestIndex = (cx: number, cy: number): number => {
     let best = 0;
@@ -148,7 +217,7 @@ function buildProjection(
     return best;
   };
 
-  return { toX, toY, toShadowY, closestIndex, pxs, pys };
+  return { toX, toY, toShadowY, closestIndex, pxs, pys, toXY } as Projection & { toXY: (lat: number, lon: number) => [number, number] };
 }
 
 /* ── Drawing ──────────────────────────────────────────── */
@@ -294,8 +363,7 @@ function drawTrack(
     ctx.textBaseline = 'middle';
 
     for (const c of corners) {
-      const cx = proj.toX(c.lon);
-      const cy = proj.toY(c.lat);
+      const [cx, cy] = proj.toXY ? proj.toXY(c.lat, c.lon) : [proj.toX(c.lon), proj.toY(c.lat)];
 
       // Small dot
       ctx.fillStyle = 'rgba(201,168,76,0.6)';
