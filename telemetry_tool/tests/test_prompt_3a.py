@@ -438,7 +438,7 @@ class TestSubscriptionStateMachine:
     def test_states_defined(self):
         """All expected states should be defined."""
         from billing.state_machine import SUBSCRIPTION_STATES
-        expected = {"free", "trialing", "active", "past_due", "canceled", "paused"}
+        expected = {"free", "trialing", "active", "past_due", "canceled", "paused", "unpaid", "expired"}
         assert set(SUBSCRIPTION_STATES.keys()) == expected
 
     def test_valid_transitions(self):
@@ -562,6 +562,9 @@ class TestGracePeriodEnforcement:
                 {"id": 1, "email": "user@test.com", "plan_tier": "racer"},
             ],
             "WHERE subscription_status = 'past_due'": [],
+            # transition_subscription looks up user by id before transitioning
+            "WHERE id =": [{"id": 1, "email": "user@test.com",
+                            "subscription_status": "canceled", "plan_tier": "racer"}],
         })
         mock_get_conn.return_value = conn
 

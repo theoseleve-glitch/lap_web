@@ -660,14 +660,14 @@ class TestJobStatusPage:
     def test_jobs_page_has_status_badges(self):
         """Job page includes status badges for all states."""
         jobs_page = _PROJECT_ROOT.parent / "lap-website" / "src" / "app" / "app" / "jobs" / "page.tsx"
-        source = jobs_page.read_text()
+        source = jobs_page.read_text(encoding="utf-8")
         for status in ["queued", "running", "processing", "paused", "completed", "failed", "cancelled"]:
             assert status in source, f"Missing status badge for: {status}"
 
     def test_jobs_page_has_cancel_and_retry(self):
         """Job page supports cancel and retry mutations."""
         jobs_page = _PROJECT_ROOT.parent / "lap-website" / "src" / "app" / "app" / "jobs" / "page.tsx"
-        source = jobs_page.read_text()
+        source = jobs_page.read_text(encoding="utf-8")
         assert "cancel" in source.lower()
         assert "retry" in source.lower()
         assert "useMutation" in source
@@ -675,6 +675,6 @@ class TestJobStatusPage:
     def test_jobs_page_auto_refresh(self):
         """Job page auto-refreshes every 5 seconds."""
         jobs_page = _PROJECT_ROOT.parent / "lap-website" / "src" / "app" / "app" / "jobs" / "page.tsx"
-        source = jobs_page.read_text()
+        source = jobs_page.read_text(encoding="utf-8")
         assert "refetchInterval" in source
         assert "5000" in source
