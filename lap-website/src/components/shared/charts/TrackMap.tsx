@@ -461,10 +461,10 @@ export function TrackMap(props: TrackMapProps) {
 
   // ── Render ──────────────────────────────────────────────
   return (
-    <div className={className}>
+    <div className={`flex flex-col ${className}`}>
       <div
-        className="relative rounded-lg border border-steel/10"
-        style={{ width: '100%', height: '400px', background: '#0B0C0F' }}
+        className="relative flex-1 min-h-0 rounded-lg border border-steel/10"
+        style={{ width: '100%', minHeight: '300px', background: '#0B0C0F' }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center">

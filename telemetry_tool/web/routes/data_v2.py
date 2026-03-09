@@ -575,10 +575,35 @@ def get_gps_trace(session_id: str) -> tuple[dict, int]:
             "message": f"No GPS trace for lap {lap_num}",
         })
 
+    distances = trace.get("distances", [])
+    lats = trace.get("latitudes", [])
+    lons = trace.get("longitudes", [])
+
+    # Reconstruct real distances from GPS if stored values are row indices
+    if (
+        distances
+        and len(distances) > 2
+        and distances[0] == 0
+        and abs(distances[-1] - (len(distances) - 1)) < 1.0
+        and lats and lons and len(lats) == len(distances)
+    ):
+        import math
+        _R = 6_371_000
+        cum = [0.0]
+        for i in range(1, len(lats)):
+            lat1, lat2 = math.radians(lats[i - 1]), math.radians(lats[i])
+            dlat = lat2 - lat1
+            dlon = math.radians(lons[i] - lons[i - 1])
+            a = (math.sin(dlat / 2) ** 2
+                 + math.cos(lat1) * math.cos(lat2)
+                 * math.sin(dlon / 2) ** 2)
+            cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+        distances = cum
+
     return api_response({
-        "latitudes": trace.get("latitudes", []),
-        "longitudes": trace.get("longitudes", []),
-        "distances": trace.get("distances", []),
+        "latitudes": lats,
+        "longitudes": lons,
+        "distances": distances,
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
         "available": True,
