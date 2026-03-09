@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     pipeline_version_hash TEXT DEFAULT 'unknown',
     model_version     TEXT    DEFAULT 'none',
     is_favorite       INTEGER NOT NULL DEFAULT 0,
+    archived          INTEGER NOT NULL DEFAULT 0,
     created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
     deleted_at        TEXT
 );

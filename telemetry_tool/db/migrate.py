@@ -591,6 +591,19 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (32, "Phase 32 schema — soft delete (deleted_at), favorite (is_favorite) on sessions"),
     )
 
+    # Phase 33 migration: archived column on sessions (idempotent).
+    try:
+        cur.execute("ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;")
+        logger.debug("Added column sessions.archived.")
+    except sqlite3.OperationalError:
+        pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (33, "Phase 33 schema — archived column on sessions"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)
