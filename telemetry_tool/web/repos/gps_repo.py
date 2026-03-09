@@ -46,7 +46,7 @@ def insert_gps_traces(
                 lat_col = c
             elif "longitude" in cl and "deg" in cl:
                 lon_col = c
-            elif cl in ("distance_m", "distance"):
+            elif cl in ("distance_m", "distance", "distance (m)"):
                 dist_col = c
             elif cl in ("speed_mps", "speed (m/s)", "speed"):
                 spd_col = c

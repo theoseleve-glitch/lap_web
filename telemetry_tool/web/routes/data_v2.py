@@ -460,8 +460,33 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
                     "version": "v2",
                 })
 
+    distances = trace.get("distances", [])
+    # Detect row-index distances (0,1,2,...N-1) from legacy bug and
+    # reconstruct real distances from GPS coordinates via haversine.
+    if (
+        distances
+        and len(distances) > 2
+        and distances[0] == 0
+        and abs(distances[-1] - (len(distances) - 1)) < 1.0
+    ):
+        lats = trace.get("latitudes", [])
+        lons = trace.get("longitudes", [])
+        if lats and lons and len(lats) == len(distances):
+            import math
+            _R = 6_371_000  # Earth radius in metres
+            cum = [0.0]
+            for i in range(1, len(lats)):
+                lat1, lat2 = math.radians(lats[i - 1]), math.radians(lats[i])
+                dlat = lat2 - lat1
+                dlon = math.radians(lons[i] - lons[i - 1])
+                a = (math.sin(dlat / 2) ** 2
+                     + math.cos(lat1) * math.cos(lat2)
+                     * math.sin(dlon / 2) ** 2)
+                cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+            distances = cum
+
     result = {
-        "distances": trace.get("distances", []),
+        "distances": distances,
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
     }

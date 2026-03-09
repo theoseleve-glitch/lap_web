@@ -126,7 +126,7 @@ function drawSpeedTrace(
     return null;
   }
 
-  const pad = { top: 20, right: 20, bottom: 40, left: 60 };
+  const pad = { top: 20, right: 20, bottom: 50, left: 60 };
   const pW = w - pad.left - pad.right;
   const pH = h - pad.top - pad.bottom;
 
@@ -340,7 +340,6 @@ export function SpeedTraceChart({
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
-  const hoverSource = useChartHoverStore((s) => s.hoverSource);
   const setHover = useChartHoverStore((s) => s.setHover);
   const clearHover = useChartHoverStore((s) => s.clearHover);
 
@@ -405,16 +404,14 @@ export function SpeedTraceChart({
       return;
     }
 
-    const externalHover = hoverSource !== 'speed-trace' ? hoverDistance : null;
-
     boundsRef.current = drawSpeedTrace(ctx, rect.width, rect.height, {
       distances: chartData.distances,
       speeds: chartData.speeds,
       refSpeeds: chartData.ref_speeds,
       avgSpeeds: avgSpeeds ?? chartData.avg_speeds,
-      hoverDistanceM: externalHover,
+      hoverDistanceM: hoverDistance,
     });
-  }, [chartData, avgSpeeds, hoverDistance, hoverSource]);
+  }, [chartData, avgSpeeds, hoverDistance]);
 
   useEffect(() => {
     render();
@@ -453,10 +450,9 @@ export function SpeedTraceChart({
     clearHover();
   }, [clearHover]);
 
-  // ── Hover from OTHER charts → redraw crosshair ─────────────
-  // This is handled by the hoverDistance/hoverSource in the render
-  // callback above — when another chart sets hover, React re-renders
-  // and the draw function draws the crosshair.
+  // ── Hover from ANY chart → redraw crosshair ────────────────
+  // Handled by hoverDistance in the render callback — any chart
+  // (including self) setting hover triggers a React re-render.
 
   // ── Lap selector ───────────────────────────────────────────
   const showLapSelector = !!sessionId && gpsLaps.length > 1;
@@ -511,7 +507,7 @@ export function SpeedTraceChart({
         <canvas
           ref={canvasRef}
           className="w-full cursor-crosshair"
-          style={{ height: '250px', display: 'block' }}
+          style={{ height: '280px', display: 'block' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           role="img"
