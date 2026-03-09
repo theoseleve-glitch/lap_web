@@ -80,8 +80,9 @@ def _mock_conn():
 # ---------------------------------------------------------------------------
 
 class TestChangePassword:
+    @patch("auth.password_policy.check_breached_password", return_value=False)
     @patch("web.routes.api_v1_account.get_pg_connection")
-    def test_rejects_wrong_current_password(self, mock_db, account_client):
+    def test_rejects_wrong_current_password(self, mock_db, mock_breach, account_client):
         """POST /change-password returns 401 for wrong current password."""
         from auth.service import AuthError
 
@@ -106,9 +107,10 @@ class TestChangePassword:
             assert body["ok"] is False
             assert body["error"]["code"] == "INVALID_CREDENTIALS"
 
+    @patch("auth.password_policy.check_breached_password", return_value=False)
     @patch("auth.service.change_password")
     @patch("web.routes.api_v1_account.get_pg_connection")
-    def test_accepts_correct_password(self, mock_db, mock_change, account_client):
+    def test_accepts_correct_password(self, mock_db, mock_change, mock_breach, account_client):
         """POST /change-password returns 200 for correct password."""
         conn = _mock_conn()
         mock_db.return_value = conn
@@ -233,9 +235,10 @@ class TestForgotPassword:
 # ---------------------------------------------------------------------------
 
 class TestResetPassword:
+    @patch("auth.password_policy.check_breached_password", return_value=False)
     @patch("auth.service.reset_password")
     @patch("web.routes.auth._get_conn")
-    def test_resets_password_with_valid_token(self, mock_get_conn, mock_reset, auth_client):
+    def test_resets_password_with_valid_token(self, mock_get_conn, mock_reset, mock_breach, auth_client):
         """POST /reset-password returns 200 with valid token."""
         conn = _mock_conn()
         mock_get_conn.return_value = conn
@@ -253,9 +256,10 @@ class TestResetPassword:
         body = resp.get_json()
         assert body["ok"] is True
 
+    @patch("auth.password_policy.check_breached_password", return_value=False)
     @patch("auth.service.reset_password")
     @patch("web.routes.auth._get_conn")
-    def test_returns_400_for_invalid_token(self, mock_get_conn, mock_reset, auth_client):
+    def test_returns_400_for_invalid_token(self, mock_get_conn, mock_reset, mock_breach, auth_client):
         """POST /reset-password returns 400 for invalid/expired token."""
         conn = _mock_conn()
         mock_get_conn.return_value = conn

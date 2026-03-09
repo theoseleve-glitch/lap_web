@@ -81,7 +81,7 @@ def _get_training_status() -> dict:
         return {"status": "ok", "latest": data, "manifest_file": manifests[0]}
     except Exception as exc:
         logger.warning("Failed to read audit manifest %s", latest_path, exc_info=True)
-        return {"status": "error", "error": str(exc)}
+        return {"status": "error", "error": "Failed to read audit manifest"}
 
 
 def _get_training_config() -> dict:
@@ -147,7 +147,7 @@ def training_trigger():
         logger.exception("Failed to dispatch training task")
         return api_error(
             ErrorCode.SERVICE_UNAVAILABLE,
-            f"Failed to dispatch training task: {exc}",
+            "Failed to dispatch training task",
             status=503,
         )
 

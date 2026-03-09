@@ -511,10 +511,15 @@ def change_password_route():
     if len(new_password) > _PASSWORD_MAX:
         return api_error(ErrorCode.VALIDATION_ERROR, "Password too long", status=400)
 
-    if len(new_password) < 8:
+    # Enforce same NIST SP 800-63B policy as registration
+    from auth.password_policy import check_breached_password, validate_password
+    policy_errors = validate_password(new_password)
+    if policy_errors:
+        return api_error(ErrorCode.VALIDATION_ERROR, "; ".join(policy_errors), status=400)
+    if check_breached_password(new_password):
         return api_error(
             ErrorCode.VALIDATION_ERROR,
-            "Password must be at least 8 characters",
+            "This password has appeared in a data breach. Please choose a different password.",
             status=400,
         )
 
