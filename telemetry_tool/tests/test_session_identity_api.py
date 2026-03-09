@@ -41,25 +41,20 @@ def test_db(tmp_path):
 
 @pytest.fixture
 def client(test_db):
-    # Set env var BEFORE importing create_app so Config picks it up.
-    old_val = os.environ.get("TELEMETRY_DB_PATH")
-    os.environ["TELEMETRY_DB_PATH"] = test_db
-    os.environ.pop("USE_PG", None)
-
-    # Import fresh — config reads env at class body time.
     from web.app import create_app
-    app = create_app()
+    from web.config import Config
+
+    cfg = Config()
+    cfg.ENV = "development"
+    cfg.USE_PG = False
+    cfg.AUTH_REQUIRED = False
+    cfg.DB_PATH = Path(test_db)
+
+    app = create_app(cfg)
     app.config["TESTING"] = True
-    # Also override DB_PATH in app config directly.
     app.config["DB_PATH"] = test_db
 
     yield app.test_client()
-
-    # Restore
-    if old_val is None:
-        os.environ.pop("TELEMETRY_DB_PATH", None)
-    else:
-        os.environ["TELEMETRY_DB_PATH"] = old_val
 
 
 def test_session_detail_never_exposes_source_path(client):

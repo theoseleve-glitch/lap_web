@@ -40,6 +40,22 @@ def _load_config_with_env(monkeypatch, env: dict[str, str]):
     return web.config.Config()
 
 
+@pytest.fixture(autouse=True, scope="module")
+def _restore_config_module():
+    """Reload web.config after this module to undo importlib.reload() side effects.
+
+    Tests here reload web.config with production env vars.  monkeypatch restores
+    env vars per-test, but the *class-level attributes* on Config stay baked
+    from the last reload.  Re-reloading at module teardown picks up clean defaults.
+    """
+    yield
+    import importlib
+
+    import web.config
+
+    importlib.reload(web.config)
+
+
 class TestConfigHardening:
     def test_dev_defaults_validate(self, monkeypatch):
         """Dev mode with no env vars should validate (no auth, no pg)."""

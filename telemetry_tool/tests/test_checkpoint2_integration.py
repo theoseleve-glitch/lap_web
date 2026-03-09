@@ -65,6 +65,7 @@ def client(seeded_db):
     # Wire all connection paths to the seeded in-memory DB.
     _orig_ent_get_conn = ent_mod._get_conn
     _orig_db_get_conn = db_mod.get_db_connection
+    _orig_dv2_get_conn = dv2_mod.get_db_connection
 
     ent_mod._get_conn = lambda: seeded_db
     db_mod.get_db_connection = lambda *a, **kw: seeded_db
@@ -78,6 +79,7 @@ def client(seeded_db):
     # Restore originals (good hygiene for test isolation).
     ent_mod._get_conn = _orig_ent_get_conn
     db_mod.get_db_connection = _orig_db_get_conn
+    dv2_mod.get_db_connection = _orig_dv2_get_conn
 
 
 # ══════════════════════════════════════════════════════════════════

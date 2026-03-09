@@ -14,6 +14,7 @@ def app_with_guard():
     """Flask app with legacy guard active (AUTH_REQUIRED=True)."""
     from web.config import Config
     cfg = Config()
+    cfg.ENV = "development"  # Guard against module-reload pollution from other tests
     cfg.USE_PG = False
     cfg.AUTH_REQUIRED = True
     cfg.JWT_SECRET = "a" * 64  # 64-char strong secret for validation
