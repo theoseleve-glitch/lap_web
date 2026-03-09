@@ -209,11 +209,38 @@ class TestGracePeriodEnforcement:
         """Users with expired grace period get downgraded to demo."""
         conn = _mock_conn()
         mock_db.return_value = conn
-        # First fetchall (canceled users): one expired user
-        # Second fetchall (past_due users): empty
-        conn.execute.return_value.fetchall.side_effect = [
-            [{"id": 1, "email": "test@x.com", "plan_tier": "racer"}],
-            [],
+
+        # Build per-call result mocks: the impl calls execute() multiple
+        # times: (1) fetchall for canceled users, (2) fetchone for user
+        # lookup inside transition_subscription, (3) execute for audit
+        # inserts / updates / grace_period, (4) fetchall for past_due.
+        canceled_result = MagicMock()
+        canceled_result.fetchall.return_value = [
+            {"id": 1, "email": "test@x.com", "plan_tier": "racer"},
+        ]
+
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "test@x.com",
+            "subscription_status": "canceled",
+            "plan_tier": "racer",
+        }
+
+        past_due_result = MagicMock()
+        past_due_result.fetchall.return_value = []
+
+        # Default for audit / update / commit calls
+        default_result = MagicMock()
+        default_result.fetchone.return_value = None
+        default_result.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            canceled_result,   # SELECT canceled users (fetchall)
+            user_lookup,       # SELECT user in transition_subscription (fetchone)
+            default_result,    # INSERT audit_log
+            default_result,    # UPDATE grace_period_end
+            default_result,    # UPDATE users SET plan_tier='demo'
+            past_due_result,   # SELECT past_due users (fetchall)
         ]
 
         with patch("auth.email._send"):
