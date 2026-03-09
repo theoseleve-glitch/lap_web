@@ -80,8 +80,8 @@ def list_users():
     search = request.args.get("search", "").strip()
     plan_tier = request.args.get("plan_tier", "").strip()
     status = request.args.get("status", "").strip()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    offset = request.args.get("offset", 0, type=int)
 
     conditions = []
     params: dict = {"limit": limit, "offset": offset}
@@ -307,8 +307,8 @@ def impersonate_user(user_id: int):
 def list_workspaces():
     """List all workspaces with owner info."""
     conn = _get_conn()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    offset = request.args.get("offset", 0, type=int)
 
     rows = conn.execute(
         "SELECT w.id, w.name, w.slug, w.type, w.owner_user_id, "
@@ -344,8 +344,8 @@ def list_audit_log():
     user_filter = request.args.get("user_id", "").strip()
     start = request.args.get("start_date", "").strip()
     end = request.args.get("end_date", "").strip()
-    limit = min(int(request.args.get("limit", 50)), 200)
-    offset = int(request.args.get("offset", 0))
+    limit = min(request.args.get("limit", 50, type=int), 200)
+    offset = request.args.get("offset", 0, type=int)
 
     conditions = []
     params: dict = {"limit": limit, "offset": offset}

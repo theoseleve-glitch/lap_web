@@ -67,6 +67,8 @@ def _sanitize_job(job: dict) -> dict:
       full server paths).
     - Removes ``file_path`` from the output.
     - Adds ``session_id`` (equal to ``job_id`` — set at upload time).
+    - Sanitises ``error_message`` to avoid leaking internal details
+      (file paths, connection strings, module names).
     """
     out = dict(job)
     fp = out.pop("file_path", None)
@@ -76,6 +78,20 @@ def _sanitize_job(job: dict) -> dict:
         out.setdefault("file_name", None)
     # session_id is the same as job_id (set in sessions_v2.py upload).
     out.setdefault("session_id", out.get("job_id"))
+    # Sanitise error_message: map known error classes to user-safe messages,
+    # fall back to a generic message for unrecognised errors.
+    raw_err = out.get("error_message")
+    if raw_err:
+        err_class = out.get("error_class", "")
+        _USER_MESSAGES = {
+            "fatal": "Analysis failed. The file may be corrupted or in an unsupported format.",
+            "transient": "A temporary error occurred. Please retry.",
+            "entitlement": "Your plan does not allow this operation.",
+        }
+        out["error_message"] = _USER_MESSAGES.get(
+            err_class,
+            "Processing failed. Please retry or contact support.",
+        )
     return out
 
 
@@ -357,11 +373,23 @@ def stream(job_id: str):
                 stage_total = job.get("stage_total") or 15
                 progress_pct = round((stage_index / stage_total) * 100, 1) if stage_total > 0 else 0
 
+                # Sanitise error_message for SSE: don't leak internals
+                raw_err = job.get("error_message")
+                safe_err = None
+                if raw_err:
+                    err_class = job.get("error_class", "")
+                    _SSE_MSGS = {
+                        "fatal": "Analysis failed. The file may be corrupted or unsupported.",
+                        "transient": "A temporary error occurred. Retrying...",
+                        "entitlement": "Plan limit reached.",
+                    }
+                    safe_err = _SSE_MSGS.get(err_class, "Processing failed.")
+
                 event = {
                     "status": job.get("status"),
                     "stage_name": job.get("stage_name"),
                     "progress_pct": progress_pct,
-                    "error_message": job.get("error_message"),
+                    "error_message": safe_err,
                     "session_id": job.get("session_id") or job.get("job_id"),
                 }
                 yield f"data: {json.dumps(event)}\n\n"

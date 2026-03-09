@@ -11,6 +11,14 @@ from .middleware import admin_before_request  # noqa: E402
 admin_bp = Blueprint("admin", __name__, url_prefix="/api/v1/admin")
 admin_bp.before_request(admin_before_request)
 
+
+@admin_bp.after_request
+def _no_cache_admin(response):
+    """Prevent caching of admin responses — sensitive operational data."""
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
 # Re-export as `bp` for backward compat with app.py registration
 bp = admin_bp
 

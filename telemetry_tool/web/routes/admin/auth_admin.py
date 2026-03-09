@@ -22,6 +22,7 @@ from admin.totp import (
     verify_totp,
 )
 from web.api_utils import ErrorCode, api_error, api_response
+from web.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ def _get_admin_key() -> str:
 
 
 @bp.route("/2fa/setup", methods=["POST"])
+@rate_limit(tier="auth")
 def setup_2fa():
     """Generate TOTP secret and recovery codes for admin user.
 
@@ -115,6 +117,7 @@ def setup_2fa():
 
 
 @bp.route("/2fa/verify", methods=["POST"])
+@rate_limit(tier="auth")
 def verify_2fa_setup():
     """Verify TOTP setup with a valid code.
 
@@ -182,6 +185,7 @@ def verify_2fa_setup():
 
 
 @bp.route("/2fa/challenge", methods=["POST"])
+@rate_limit(tier="auth")
 def challenge_2fa():
     """Verify TOTP code and issue new JWT with admin_verified=True."""
     user_id = getattr(g, "current_user_id", None)
@@ -257,6 +261,7 @@ def challenge_2fa():
 
 
 @bp.route("/2fa", methods=["DELETE"])
+@rate_limit(tier="auth")
 def disable_2fa():
     """Disable 2FA for an admin user. root_admin only.
 

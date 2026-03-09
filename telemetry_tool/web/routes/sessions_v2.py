@@ -502,11 +502,14 @@ def upload_session() -> tuple[Response, int]:
 
     except Exception as exc:
         logger.exception("Upload dispatch failed: %s", exc)
+        # Clean up temp dir on error — Celery won't run to do it
+        import shutil
+        try:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
         return api_error(
             ErrorCode.ANALYSIS_FAILED,
             "Failed to accept upload. Please try again or contact support.",
             status=500,
         )
-
-    finally:
-        pass  # Cleanup handled by Celery finalize task
