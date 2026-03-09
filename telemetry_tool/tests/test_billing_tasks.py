@@ -33,8 +33,30 @@ class TestReconcileStripe:
         """Reconciliation fixes local state when it differs from Stripe."""
         conn = _mock_conn()
         mock_db.return_value = conn
-        conn.execute.return_value.fetchall.return_value = [
+
+        # First execute().fetchall() returns user list;
+        # subsequent execute().fetchone() returns user lookup for transition_subscription;
+        # remaining calls are UPDATE/INSERT statements.
+        users_result = MagicMock()
+        users_result.fetchall.return_value = [
             _user_row(1, "sub_abc", "active"),
+        ]
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "test@x.com",
+            "subscription_status": "active",
+            "plan_tier": "racer",
+        }
+        default_result = MagicMock()
+        default_result.fetchone.return_value = None
+        default_result.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            users_result,    # SELECT users with stripe subs
+            user_lookup,     # SELECT user in transition_subscription
+            default_result,  # INSERT audit_log
+            default_result,  # UPDATE users SET plan_tier/status
+            default_result,  # extra safety
         ]
         mock_stripe.Subscription.retrieve.return_value = MagicMock(status="canceled")
 
@@ -67,8 +89,27 @@ class TestReconcileStripe:
         """Reconciliation handles subscription not found in Stripe."""
         conn = _mock_conn()
         mock_db.return_value = conn
-        conn.execute.return_value.fetchall.return_value = [
+
+        users_result = MagicMock()
+        users_result.fetchall.return_value = [
             _user_row(1, "sub_gone", "active"),
+        ]
+        user_lookup = MagicMock()
+        user_lookup.fetchone.return_value = {
+            "email": "test@x.com",
+            "subscription_status": "active",
+            "plan_tier": "racer",
+        }
+        default_result = MagicMock()
+        default_result.fetchone.return_value = None
+        default_result.fetchall.return_value = []
+
+        conn.execute.side_effect = [
+            users_result,    # SELECT users with stripe subs
+            user_lookup,     # SELECT user in transition_subscription
+            default_result,  # INSERT audit_log
+            default_result,  # UPDATE users
+            default_result,  # extra safety
         ]
         mock_stripe.Subscription.retrieve.side_effect = Exception("No such subscription")
 
