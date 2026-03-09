@@ -20,7 +20,7 @@ services:
   grafana:
     image: grafana/grafana:10.4.0
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
       GF_SERVER_ROOT_URL: https://grafana.lap-coach.racing
     volumes:
       - grafana_data:/var/lib/grafana
@@ -99,8 +99,9 @@ services:
     image: louislam/uptime-kuma:1
     volumes:
       - uptime_data:/app/data
-    ports:
-      - "3001:3001"
+    # No public ports — access via SSH tunnel: ssh -L 3001:localhost:3001 root@<host>
+    expose:
+      - "3001"
     restart: unless-stopped
     networks:
       - internal

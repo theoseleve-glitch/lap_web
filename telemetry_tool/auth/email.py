@@ -17,6 +17,12 @@ FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "https://www.lap-coach.racing
 EMAIL_SUPPRESS: bool = os.environ.get("EMAIL_SUPPRESS", "0") == "1"
 
 
+def _esc(s: str) -> str:
+    """Escape user-controlled values for safe HTML embedding in emails."""
+    import html
+    return html.escape(str(s), quote=True)
+
+
 def _send(to: str, subject: str, html: str) -> bool:
     """Send an email via Resend.  Returns True on success.
 
@@ -74,7 +80,7 @@ def send_welcome_email(to: str, display_name: str) -> bool:
     """Send a welcome email after successful verification."""
     html = f"""\
 <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-  <h2 style="color: #F3F0E8;">Welcome to LAP, {display_name}!</h2>
+  <h2 style="color: #F3F0E8;">Welcome to LAP, {_esc(display_name)}!</h2>
   <p style="color: #8A8F98;">Your account is ready. Upload your first telemetry session:</p>
   <a href="{FRONTEND_URL}/free-report/analyze"
      style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
@@ -86,7 +92,7 @@ def send_welcome_email(to: str, display_name: str) -> bool:
     Need help? Reply to this email or visit our docs.
   </p>
 </div>"""
-    return _send(to, f"Welcome to LAP, {display_name}!", html)
+    return _send(to, f"Welcome to LAP, {_esc(display_name)}!", html)
 
 
 def send_password_reset_email(to: str, token: str) -> bool:
@@ -127,8 +133,8 @@ def send_retention_warning(to: str, sessions: list[dict], days_remaining: int) -
         name = s.get("file_name", s.get("session_id", "Unknown"))
         created = s.get("created_at", "")
         session_rows += (
-            f'<tr><td style="color: #F3F0E8; padding: 4px 8px;">{name}</td>'
-            f'<td style="color: #8A8F98; padding: 4px 8px;">{created}</td></tr>'
+            f'<tr><td style="color: #F3F0E8; padding: 4px 8px;">{_esc(name)}</td>'
+            f'<td style="color: #8A8F98; padding: 4px 8px;">{_esc(created)}</td></tr>'
         )
 
     extra = ""
@@ -174,7 +180,7 @@ def send_retention_deleted(to: str, sessions: list[dict]) -> bool:
     for s in sessions[:10]:
         name = s.get("file_name", s.get("session_id", "Unknown"))
         session_rows += (
-            f'<li style="color: #F3F0E8; padding: 2px 0;">{name}</li>'
+            f'<li style="color: #F3F0E8; padding: 2px 0;">{_esc(name)}</li>'
         )
 
     extra = ""
@@ -289,11 +295,11 @@ def send_new_login_email(to: str, device_info: str, ip_address: str) -> bool:
   <table style="margin: 12px 0; border-collapse: collapse;">
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Device:</td>
-      <td style="color: #F3F0E8; padding: 4px 0;">{device_info}</td>
+      <td style="color: #F3F0E8; padding: 4px 0;">{_esc(device_info)}</td>
     </tr>
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">IP Address:</td>
-      <td style="color: #F3F0E8; padding: 4px 0;">{ip_address}</td>
+      <td style="color: #F3F0E8; padding: 4px 0;">{_esc(ip_address)}</td>
     </tr>
   </table>
   <p style="color: #8A8F98;">
@@ -371,10 +377,10 @@ def send_team_invite_email(
     accept_url = f"{FRONTEND_URL}/invitations/accept?token={token}"
     html = f"""\
 <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
-  <h2 style="color: #F3F0E8;">You've been invited to join {team_name}</h2>
+  <h2 style="color: #F3F0E8;">You've been invited to join {_esc(team_name)}</h2>
   <p style="color: #8A8F98;">
-    <strong style="color: #F3F0E8;">{inviter_name}</strong> has invited you to
-    join <strong style="color: #F3F0E8;">{team_name}</strong> on LAP.
+    <strong style="color: #F3F0E8;">{_esc(inviter_name)}</strong> has invited you to
+    join <strong style="color: #F3F0E8;">{_esc(team_name)}</strong> on LAP.
   </p>
   <a href="{accept_url}"
      style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
@@ -391,7 +397,7 @@ def send_team_invite_email(
     you'll be asked to create one first.
   </p>
 </div>"""
-    return _send(to, f"You're invited to join {team_name} on LAP", html)
+    return _send(to, f"You're invited to join {_esc(team_name)} on LAP", html)
 
 
 def send_verification_reminder_email(to: str, token: str) -> bool:
@@ -424,9 +430,9 @@ def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -
   <h2 style="color: #F3F0E8;">Data retention notice</h2>
   <p style="color: #8A8F98;">
     The raw telemetry data for your session
-    <strong style="color: #F3F0E8;">{session_name}</strong> will be
+    <strong style="color: #F3F0E8;">{_esc(session_name)}</strong> will be
     automatically deleted on
-    <strong style="color: #F3F0E8;">{expiry_date}</strong> based on
+    <strong style="color: #F3F0E8;">{_esc(expiry_date)}</strong> based on
     your plan's retention policy.
   </p>
   <p style="color: #8A8F98;">
@@ -444,4 +450,4 @@ def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -
     <a href="{FRONTEND_URL}/pricing" style="color: #B6FF2E;">Upgrade your plan</a>.
   </p>
 </div>"""
-    return _send(to, f"Data retention notice: {session_name}", html)
+    return _send(to, f"Data retention notice: {_esc(session_name)}", html)
