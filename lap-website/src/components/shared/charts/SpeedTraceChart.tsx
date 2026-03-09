@@ -202,7 +202,7 @@ function drawSpeedTrace(
   ctx.fillStyle = COLORS.text;
   ctx.font = '12px "Space Mono", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Distance (m)', pad.left + pW / 2, h - 5);
+  ctx.fillText('Distance (m)', pad.left + pW / 2, pad.top + pH + 30);
   ctx.save();
   ctx.translate(14, pad.top + pH / 2);
   ctx.rotate(-Math.PI / 2);

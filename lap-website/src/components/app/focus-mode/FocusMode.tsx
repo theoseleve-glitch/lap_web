@@ -170,7 +170,7 @@ export function FocusMode({
   const toolIds = activeToolIds.length > 0 ? activeToolIds : ['speed-trace' as ToolId];
 
   const renderToolPanel = (toolId: ToolId) => (
-    <div key={toolId} className="h-full bg-concrete rounded-lg border border-steel/10 p-3 overflow-hidden flex flex-col">
+    <div key={toolId} className="h-full bg-concrete rounded-lg border border-steel/10 p-3 flex flex-col">
       <h3 className="text-[10px] font-monument text-steel mb-1.5 uppercase tracking-wider shrink-0">
         {toolId.replace(/-/g, ' ')}
       </h3>
