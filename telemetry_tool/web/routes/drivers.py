@@ -6,9 +6,9 @@ import json
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
+from web.api_utils import api_error, api_response, ErrorCode
 from web.db import get_db_connection
 from web.models import (
-from web.api_utils import api_error, api_response, ErrorCode
     compute_best_ever_relative,
     delete_driver_cascade,
     get_all_drivers,
