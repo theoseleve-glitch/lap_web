@@ -10,6 +10,8 @@
 (function () {
     'use strict';
 
+    function esc(s) { if (!s) return ''; var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
     var _lc = window.LifecycleHelpers.create();
     var MAX_CACHE_ENTRIES = 20;
 
