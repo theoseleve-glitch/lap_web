@@ -88,9 +88,9 @@ class TestPipelineTrackLayout:
         layout = _extract_track_layout_for_picker(df, [])
         assert layout is not None, "Should return layout even with no corners"
         assert layout["corners"] == []
-        assert len(layout["latitudes"]) == 4
-        assert len(layout["longitudes"]) == 4
-        assert len(layout["speeds"]) == 4
+        assert len(layout["lat"]) == 4
+        assert len(layout["lon"]) == 4
+        assert layout["n_points"] == 4
 
     def test_layout_with_corners(self):
         import pandas as pd
@@ -218,6 +218,7 @@ class TestPersistKeyCorners:
 # 4. Flask route tests (if Flask test client is available)
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="key-corners routes removed in re-port to SaaS; endpoints no longer exist")
 class TestFlaskRoutes:
     """Test the API endpoints for key corners."""
 

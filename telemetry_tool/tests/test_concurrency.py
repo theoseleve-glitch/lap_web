@@ -27,19 +27,40 @@ from tasks.concurrency import (
 # ---------------------------------------------------------------------------
 
 def _make_mock_redis():
-    """Return a MagicMock that behaves like a minimal redis.Redis client."""
+    """Return a MagicMock that behaves like a minimal redis.Redis client.
+
+    acquire/release_workspace_lock now use redis server-side Lua scripts
+    via redis.eval() for atomic operations. This mock simulates the Lua
+    behaviour in Python.  (redis.eval sends Lua to the server — it is NOT
+    Python's built-in eval.)
+    """
     store: dict[str, str] = {}
     mock = MagicMock()
 
-    def _set(key, value, nx=False, ex=None):
-        if nx and key in store:
-            return False
-        store[key] = value
-        return True
+    def _lua_handler(script, numkeys, *args):
+        """Simulate Redis server-side Lua for the two scripts in concurrency.py."""
+        key = args[0]
+        value = args[1] if len(args) > 1 else None
+        # Detect which script by checking for "set" (acquire) vs "del" (release)
+        if "set" in script and "expire" in script:
+            # _ACQUIRE_LOCK_LUA: set-if-absent or refresh-if-same-owner
+            current = store.get(key)
+            if current is None:
+                store[key] = value
+                return 1
+            elif current == value:
+                return 1  # re-entrant
+            else:
+                return 0
+        else:
+            # _RELEASE_LOCK_LUA: compare-and-delete
+            if store.get(key) == value:
+                store.pop(key, None)
+                return 1
+            return 0
 
     def _get(key):
-        val = store.get(key)
-        return val
+        return store.get(key)
 
     def _delete(key):
         store.pop(key, None)
@@ -47,7 +68,8 @@ def _make_mock_redis():
     def _llen(key):
         return store.get(key, 0)
 
-    mock.set = MagicMock(side_effect=_set)
+    # redis.eval() sends Lua to Redis server (NOT Python eval)
+    mock.eval = MagicMock(side_effect=_lua_handler)
     mock.get = MagicMock(side_effect=_get)
     mock.delete = MagicMock(side_effect=_delete)
     mock.llen = MagicMock(side_effect=_llen)
@@ -67,12 +89,13 @@ class TestAcquireWorkspaceLock:
         redis = _make_mock_redis()
         result = acquire_workspace_lock(redis, workspace_id=1, job_id="job-1")
         assert result is True
-        redis.set.assert_called_once()
-        # Verify the key pattern
-        call_args = redis.set.call_args
-        assert call_args[0][0] == "pipeline:lock:1"
-        assert call_args[0][1] == "job-1"
-        assert call_args[1]["nx"] is True
+        # redis.eval sends Lua to Redis server (NOT Python eval)
+        redis.eval.assert_called_once()
+        # Verify the key and value passed to the Lua script
+        call_args = redis.eval.call_args
+        assert call_args[0][1] == 1  # numkeys
+        assert call_args[0][2] == "pipeline:lock:1"  # key
+        assert call_args[0][3] == "job-1"  # value
 
     def test_acquire_failure_already_locked(self):
         redis = _make_mock_redis()
@@ -94,12 +117,12 @@ class TestReleaseWorkspaceLock:
     def test_release_calls_redis_eval_with_lua_script(self):
         """release uses redis server-side Lua for atomicity."""
         r = _make_mock_redis()
-        # redis.eval sends Lua to the Redis server (NOT Python eval)
-        r.eval = MagicMock(return_value=1)  # noqa: S307
         acquire_workspace_lock(r, workspace_id=5, job_id="job-abc")
+        # Reset mock call count so we only track the release call
+        r.eval.reset_mock()
         release_workspace_lock(r, workspace_id=5, job_id="job-abc")
-        r.eval.assert_called_once()  # noqa: S307
-        call_args = r.eval.call_args  # noqa: S307
+        r.eval.assert_called_once()
+        call_args = r.eval.call_args
         # Args: lua_script, 1, key, job_id
         assert call_args[0][1] == 1  # numkeys
         assert call_args[0][2] == "pipeline:lock:5"  # key
@@ -108,18 +131,17 @@ class TestReleaseWorkspaceLock:
     def test_release_passes_correct_job_id(self):
         """Different job_id is passed to the Lua script for comparison."""
         r = _make_mock_redis()
-        r.eval = MagicMock(return_value=0)  # noqa: S307
         acquire_workspace_lock(r, workspace_id=5, job_id="job-abc")
+        r.eval.reset_mock()
         release_workspace_lock(r, workspace_id=5, job_id="job-OTHER")
-        call_args = r.eval.call_args  # noqa: S307
+        call_args = r.eval.call_args
         assert call_args[0][3] == "job-OTHER"
 
     def test_release_noop_if_no_lock(self):
         """Release on non-existent lock still calls server-side Lua (handles nil)."""
         r = _make_mock_redis()
-        r.eval = MagicMock(return_value=0)  # noqa: S307
         release_workspace_lock(r, workspace_id=99, job_id="job-xyz")
-        r.eval.assert_called_once()  # noqa: S307
+        r.eval.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

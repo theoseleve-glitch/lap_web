@@ -40,8 +40,8 @@ class TestIntegration:
         from web.app import create_app
         app = create_app()
         rules = {r.rule for r in app.url_map.iter_rules()}
-        # Check key API routes exist
-        assert any("/api/annotations/" in r for r in rules)
+        # Check key API routes exist (sessions upload, data endpoints)
+        assert any("/api/v1/sessions/upload" in r for r in rules)
 
     def test_annotation_to_tag_roundtrip(self, seeded_db):
         """Create annotation, auto-tag, verify tags."""

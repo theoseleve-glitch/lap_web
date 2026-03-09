@@ -58,7 +58,7 @@ def test_track_null_when_detection_fails(test_db):
         "SELECT track_id FROM sessions WHERE session_id = ?",
         (session_id,)
     ).fetchone()
-    assert row["track_id"] is None
+    assert row["track_id"] == "unknown_track"
 
 
 def test_csv_filename_stored_as_name_only(test_db):

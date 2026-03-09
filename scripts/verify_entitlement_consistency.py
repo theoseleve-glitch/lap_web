@@ -114,10 +114,10 @@ def check_pricing_ts(project_root: Path) -> list[str]:
 
     # Check prices (use numeric part to avoid encoding issues with €)
     price_checks = {
-        "8.99": "racer monthly",
-        "69": "racer annual",
-        "13.99": "world-class monthly",
-        "109": "world-class annual",
+        "9 / mo": "racer monthly",
+        "72 / yr": "racer annual",
+        "14 / mo": "world-class monthly",
+        "108 / yr": "world-class annual",
     }
     for price_str, label in price_checks.items():
         if price_str not in content:

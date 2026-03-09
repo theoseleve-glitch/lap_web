@@ -498,7 +498,7 @@ class TestRequireFeatureDecorator:
                     data = resp.get_json()
                     assert status == 403
                     assert data["error"]["code"] == "PLAN_REQUIRED"
-                    assert data["error"]["upgrade_tier"] == "world-class"
+                    assert data["error"]["required_plan"] == "world-class"
 
     def test_requires_auth(self):
         from auth.entitlements import require_feature

@@ -16,8 +16,8 @@ def app_with_guard():
     cfg = Config()
     cfg.USE_PG = False
     cfg.AUTH_REQUIRED = True
-    cfg.JWT_SECRET = "test-secret-that-is-not-the-default-value"
-    cfg.SECRET_KEY = "test-flask-secret-not-default"
+    cfg.JWT_SECRET = "a" * 64  # 64-char strong secret for validation
+    cfg.SECRET_KEY = "b" * 64
     from web.app import create_app
     app = create_app(cfg)
     # Since USE_PG=False, the guard isn't auto-registered. Register manually.

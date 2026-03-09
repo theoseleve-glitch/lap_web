@@ -60,7 +60,7 @@ def test_unlimited_quota():
 
 def _make_app():
     app = Flask(__name__)
-    app.config.update(USE_PG=False, DEFAULT_WORKSPACE_ID=1)
+    app.config.update(USE_PG=True, AUTH_REQUIRED=True, DEFAULT_WORKSPACE_ID=1)
 
     @app.before_request
     def _inject_user():
@@ -83,27 +83,34 @@ def _make_app():
 
 def test_demo_blocks_feature_and_racer_allows():
     app = _make_app()
+    conn = MagicMock()
+    conn.execute.return_value.fetchone.return_value = {"cnt": 0}
     with app.test_client() as client:
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": False, "plan_tier": "demo", "max_upload_size_mb": 200}):
+        # Demo tier: authorize_feature returns (False, ctx) → 403
+        with patch("web.middleware.entitlements._get_conn", return_value=conn), \
+             patch("auth.entitlements.authorize_feature", return_value=(False, {"reason": "Requires racer", "current_tier": "demo", "upgrade_tier": "racer"})):
             resp = client.post("/exports")
             assert resp.status_code == 403
 
-        conn = MagicMock()
-        conn.execute.return_value.fetchone.return_value = {"cnt": 0}
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}), \
-             patch("web.middleware.entitlements._get_conn", return_value=conn):
+        # Racer tier: authorize_feature returns (True, snapshot) → passes to require_report_quota
+        snapshot = {"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}
+        with patch("web.middleware.entitlements._get_conn", return_value=conn), \
+             patch("auth.entitlements.authorize_feature", return_value=(True, snapshot)), \
+             patch("web.middleware.entitlements.entitlement_snapshot", return_value=snapshot):
             resp = client.post("/exports")
             assert resp.status_code == 200
 
 
 def test_quota_boundary_blocks_at_limit():
     app = _make_app()
+    conn = MagicMock()
+    # racer has 10 reports/month — at limit should block
+    conn.execute.return_value.fetchone.return_value = {"cnt": 10}
+    snapshot = {"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}
     with app.test_client() as client:
-        conn = MagicMock()
-        # racer has 10 reports/month — at limit should block
-        conn.execute.return_value.fetchone.return_value = {"cnt": 10}
-        with patch("web.middleware.entitlements.entitlement_snapshot", return_value={"exports": True, "plan_tier": "racer", "max_upload_size_mb": 1024}), \
-             patch("web.middleware.entitlements._get_conn", return_value=conn):
+        with patch("web.middleware.entitlements._get_conn", return_value=conn), \
+             patch("auth.entitlements.authorize_feature", return_value=(True, snapshot)), \
+             patch("web.middleware.entitlements.entitlement_snapshot", return_value=snapshot):
             resp = client.post("/exports")
             assert resp.status_code == 429
 

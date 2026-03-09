@@ -116,16 +116,28 @@ class TestConcurrencyIntegration:
 
         store = {}
         r = MagicMock()
-        r.set.side_effect = lambda k, v, **kw: (
-            store.__setitem__(k, v) or True if k not in store else False
-        )
-        # Simulate atomic Lua compare-and-delete via eval mock
-        def _eval_lua(script, numkeys, key, value):  # noqa: S307
-            if store.get(key) == value:
-                store.pop(key, None)
-                return 1
-            return 0
-        r.eval = MagicMock(side_effect=_eval_lua)  # noqa: S307
+
+        # Both acquire and release now use redis server-side Lua via
+        # redis_client.eval() — this is NOT Python's built-in eval.
+        def _lua_handler(script, numkeys, *args):
+            key = args[0]
+            value = args[1] if len(args) > 1 else None
+            if "set" in script and "expire" in script:
+                # Acquire: set-if-absent or refresh-if-same-owner
+                current = store.get(key)
+                if current is None:
+                    store[key] = value
+                    return 1
+                elif current == value:
+                    return 1
+                return 0
+            else:
+                # Release: compare-and-delete
+                if store.get(key) == value:
+                    store.pop(key, None)
+                    return 1
+                return 0
+        r.eval = MagicMock(side_effect=_lua_handler)
 
         # Acquire
         assert acquire_workspace_lock(r, workspace_id=1, job_id="j1") is True

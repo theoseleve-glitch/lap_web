@@ -268,16 +268,20 @@ class TestPricingTsConsistency:
         assert "Free" in pricing
 
     def test_racer_monthly_price(self):
-        assert "8.99" in self._pricing()
+        pricing = self._pricing()
+        assert "€9" in pricing or "9 / mo" in pricing
 
     def test_racer_annual_price(self):
-        assert "69" in self._pricing()
+        pricing = self._pricing()
+        assert "€72" in pricing or "72 / yr" in pricing
 
     def test_worldclass_monthly_price(self):
-        assert "13.99" in self._pricing()
+        pricing = self._pricing()
+        assert "€14" in pricing or "14 / mo" in pricing
 
     def test_worldclass_annual_price(self):
-        assert "109" in self._pricing()
+        pricing = self._pricing()
+        assert "€108" in pricing or "108 / yr" in pricing
 
     def test_demo_1_report(self):
         pricing = self._pricing()

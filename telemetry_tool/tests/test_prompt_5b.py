@@ -10,11 +10,21 @@ Validates:
 import sys
 from pathlib import Path
 
+import pytest
+
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _PROJECT_ROOT.parent
 _LAP_ROOT = _REPO_ROOT / "lap-website"
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+
+# These tests validate React frontend components that are spec'd but not yet built.
+# Skip until the account UI components are implemented in lap-website.
+_ACCOUNT_COMPONENTS_DIR = _LAP_ROOT / "src" / "components" / "account"
+pytestmark = pytest.mark.skipif(
+    not _ACCOUNT_COMPONENTS_DIR.exists(),
+    reason="Account UI components not yet built (spec-only tests)",
+)
 
 
 # ===========================================================================

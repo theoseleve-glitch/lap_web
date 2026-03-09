@@ -177,18 +177,18 @@ class TestVersioning:
 
 class TestSafeStepIntegration:
     def test_safe_step_ok_sets_status(self):
-        import pipeline as p
+        import pipeline.helpers as ph
 
-        r, e = p._safe_step("test_ok", lambda: 42)
+        r, e = ph._safe_step("test_ok", lambda: 42)
         assert r == 42
         assert e is None
-        assert p._last_step_status is not None
-        assert p._last_step_status.name == "test_ok"
-        assert p._last_step_status.status == StepState.OK
-        assert p._last_step_status.duration_ms >= 0
+        assert ph._last_step_status is not None
+        assert ph._last_step_status.name == "test_ok"
+        assert ph._last_step_status.status == StepState.OK
+        assert ph._last_step_status.duration_ms >= 0
 
     def test_safe_step_fail_sets_status(self):
-        import pipeline as p
+        import pipeline.helpers as p
 
         def _boom():
             raise ValueError("test boom")
@@ -203,7 +203,7 @@ class TestSafeStepIntegration:
         assert "test boom" in p._last_step_status.message
 
     def test_safe_step_captures_timing(self):
-        import pipeline as p
+        import pipeline.helpers as p
 
         def _slow():
             time.sleep(0.01)
@@ -215,7 +215,7 @@ class TestSafeStepIntegration:
         assert p._last_step_status.duration_ms >= 5.0
 
     def test_safe_step_started_at_is_epoch(self):
-        import pipeline as p
+        import pipeline.helpers as p
 
         before = time.time()
         r, e = p._safe_step("test_epoch", lambda: 1)
