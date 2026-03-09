@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+
 from flask import Blueprint, render_template, request
+
 from web.db import get_db_connection
 
 logger = logging.getLogger(__name__)

@@ -5,11 +5,10 @@ import pandas as pd
 import pytest
 
 from telemetry_tool.stint_analysis import (
-    detect_traffic_losses,
     classify_risk_reward_passes,
+    detect_traffic_losses,
     generate_team_coaching,
 )
-
 
 # ── detect_traffic_losses ────────────────────────────────────────────────
 

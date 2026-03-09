@@ -13,7 +13,7 @@ to global mu with a warning.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 

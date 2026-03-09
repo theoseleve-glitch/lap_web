@@ -3,7 +3,7 @@ import os
 import sys
 import time
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from flask import Flask
 
@@ -62,7 +62,7 @@ class TestMetricsWithPrometheus(unittest.TestCase):
 
     def test_request_counter_increments(self):
         """After a request, the counter has observations."""
-        from web.middleware.metrics import init_metrics, REQUEST_COUNT
+        from web.middleware.metrics import REQUEST_COUNT, init_metrics
         app = Flask(__name__)
         app.config["TESTING"] = True
 
@@ -82,7 +82,7 @@ class TestMetricsWithPrometheus(unittest.TestCase):
 
     def test_latency_histogram_recorded(self):
         """After a request, the latency histogram has observations."""
-        from web.middleware.metrics import init_metrics, REQUEST_LATENCY
+        from web.middleware.metrics import REQUEST_LATENCY, init_metrics
         app = Flask(__name__)
         app.config["TESTING"] = True
 

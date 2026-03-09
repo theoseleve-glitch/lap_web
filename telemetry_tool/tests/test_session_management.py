@@ -3,7 +3,7 @@ import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -15,7 +15,6 @@ from flask import Flask, g
 
 from web.api_utils import init_request_id
 from web.routes.api_v1_account import bp as api_v1_account_bp
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -7,7 +7,7 @@ import json
 import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 from flask import Flask, g
@@ -169,6 +169,7 @@ class TestGetUserEntitlements:
     def test_expired_override_ignored(self):
         """Expired overrides should not be returned by _get_active_overrides."""
         from auth.entitlements import get_user_entitlements
+
         # The query has WHERE expires_at > now(), so expired rows won't be returned
         conn = _mock_conn([
             [{"plan_tier": "demo"}],
@@ -577,7 +578,8 @@ class TestStripePriceMapping:
         assert tier == "racer"  # default fallback
 
     def test_resolve_from_line_items(self):
-        from web.routes.billing import _resolve_tier_from_checkout, STRIPE_PRICE_TO_TIER
+        from web.routes.billing import STRIPE_PRICE_TO_TIER, _resolve_tier_from_checkout
+
         # Temporarily add a test price mapping
         STRIPE_PRICE_TO_TIER["price_test_123"] = "world-class"
         try:
@@ -677,7 +679,7 @@ class TestPlanEntitlements:
         assert ent == get_plan_entitlements("free")
 
     def test_all_plans_have_required_keys(self):
-        from auth.entitlements import PLAN_ENTITLEMENTS, KNOWN_PLANS
+        from auth.entitlements import KNOWN_PLANS, PLAN_ENTITLEMENTS
         required = {
             "reports_per_month", "uploads_per_month", "raw_retention_days",
             "report_retention", "comparison_progress", "coaching_drills",

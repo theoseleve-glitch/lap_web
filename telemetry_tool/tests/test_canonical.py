@@ -8,7 +8,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from provenance.canonical import canonicalize, canonical_hash
+from provenance.canonical import canonical_hash, canonicalize
 
 
 class TestCanonicalize:

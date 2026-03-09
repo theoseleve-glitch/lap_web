@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
+import kart_envelope.optimizer.sensitivity as sensitivity
 from kart_envelope.coaching.corner_coaching import detect_corners_from_curvature
+from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.ingest.acd_parser import ACDEngineData
 from kart_envelope.ingest.metadata import SessionMetadata
-from kart_envelope.inference.session_scalars import SessionScalars
-import kart_envelope.optimizer.sensitivity as sensitivity
 
 
 def _make_suboptimal_best_lap(distance_m: np.ndarray, curvature_1pm: np.ndarray) -> pd.DataFrame:

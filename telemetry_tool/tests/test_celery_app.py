@@ -48,6 +48,7 @@ class TestConfigRedisAndCelery:
         with patch.dict("os.environ", {"REDIS_URL": "redis://custom:6380/1"}, clear=False):
             # Force reimport to pick up env
             import importlib
+
             import web.config as cfg_mod
             importlib.reload(cfg_mod)
             assert cfg_mod.Config.REDIS_URL == "redis://custom:6380/1"
@@ -127,9 +128,10 @@ class TestMakeCelery:
 
     def test_with_flask_app_context(self):
         """When passed a Flask app, tasks should run inside app context."""
-        from celery_app import make_celery
         # Minimal mock app
         from unittest.mock import MagicMock
+
+        from celery_app import make_celery
         mock_app = MagicMock()
         mock_app.config = {
             "CELERY_BROKER_URL": "redis://localhost:6379/0",

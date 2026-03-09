@@ -345,7 +345,7 @@ export function LiveFrictionCircle({
   }, [draw]);
 
   return (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} role="img" aria-label="Live friction circle showing real-time G-force utilization">
       <div className="flex items-center gap-3 mb-2">
         <select
           value={selectedLap}

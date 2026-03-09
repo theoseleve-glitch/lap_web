@@ -27,7 +27,7 @@ class TestCoachingDataclasses:
         assert json.dumps(d)  # serializable
 
     def test_coaching_item_to_dict(self):
-        from corner_analysis import CoachingItem, CoachingEvidence
+        from corner_analysis import CoachingEvidence, CoachingItem
         ev = CoachingEvidence(0.05, 100.0, {}, ["BP"], 0.9)
         item = CoachingItem(
             corner_id=3,
@@ -44,7 +44,7 @@ class TestCoachingDataclasses:
         assert isinstance(d["evidence"], dict)
 
     def test_coaching_objective_to_dict(self):
-        from corner_analysis import CoachingObjective, CoachingEvidence
+        from corner_analysis import CoachingEvidence, CoachingObjective
         ev = CoachingEvidence(0.08, 200.0, {"bp_delta": -3.0}, ["BP"], 0.85)
         obj = CoachingObjective(
             rank=1,
@@ -81,7 +81,7 @@ class TestConfirmingFeedback:
     """Confirming feedback generation."""
 
     def test_corner_within_threshold_is_confirming(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -98,7 +98,7 @@ class TestConfirmingFeedback:
         assert result.confirmations[0].evidence.confidence > 0
 
     def test_high_loss_corner_not_confirming(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -114,7 +114,7 @@ class TestCorrectiveFeedback:
     """Corrective feedback with max 1 per corner."""
 
     def test_high_loss_corner_gets_correction(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -129,7 +129,8 @@ class TestCorrectiveFeedback:
         assert result.corrections[0].category == "corrective"
 
     def test_max_one_correction_per_corner(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
+
         # Corner with multiple issues
         perfs = [
             CornerPerformance(
@@ -162,7 +163,7 @@ class TestConfidenceGating:
     """Confidence gating suppresses low-confidence advice."""
 
     def test_low_confidence_correction_unavailable(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -181,7 +182,7 @@ class TestStabilityFiltering:
     """Stability filtering suppresses noisy advice."""
 
     def test_high_noise_suppresses_correction(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -209,7 +210,7 @@ class TestObjectives:
     """Top 3 objectives selection."""
 
     def test_objectives_capped_at_3(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=i, s_start=i*100, s_end=i*100+80,
@@ -223,7 +224,7 @@ class TestObjectives:
         assert len(result.objectives) <= 3
 
     def test_objectives_ordered_by_impact(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,
@@ -246,7 +247,7 @@ class TestRatioEnforcement:
     """Confirming:corrective ratio enforcement."""
 
     def test_ratio_enforcement_promotes_borderline(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             # Borderline corner (loss < 0.1, grip > 75%)
             CornerPerformance(
@@ -270,7 +271,7 @@ class TestSnapshotDeterminism:
     """Deterministic outputs for fixed inputs."""
 
     def test_identical_inputs_same_output(self):
-        from corner_analysis import generate_coaching_v2, CornerPerformance
+        from corner_analysis import CornerPerformance, generate_coaching_v2
         perfs = [
             CornerPerformance(
                 corner_id=1, s_start=100, s_end=200,

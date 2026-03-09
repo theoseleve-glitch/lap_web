@@ -412,6 +412,7 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
     corners). Returns empty dict if no corners detected (flat track / poor GPS).
     """
     import json as _json
+
     from pipeline import run_full_analysis
 
     session_meta = _build_session_meta(ctx)
@@ -462,8 +463,8 @@ def _load_intermediate_state(ctx: PipelineContext) -> tuple[dict | None, list | 
     Returns (resampled_laps, corners) or (None, None) if state is missing
     (e.g. Redis TTL expired).
     """
-    import json as _json
     import glob as _glob
+    import json as _json
 
     # Load resampled laps from Parquet files in temp dir
     resampled_laps = {}
@@ -924,8 +925,8 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
 
         # Update sessions.processing_version + pipeline version hash + model version
         try:
-            from pipeline_version import full_version_string
             from pipeline_status import get_model_version
+            from pipeline_version import full_version_string
 
             conn = _get_pg_connection()
             conn.execute(

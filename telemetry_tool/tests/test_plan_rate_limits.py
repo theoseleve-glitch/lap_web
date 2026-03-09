@@ -116,6 +116,7 @@ class TestPlanRateMultiplierConstants:
     def test_multipliers_match_plan_definitions(self):
         """PLAN_RATE_MULTIPLIERS should match plan_definitions.rate_multiplier."""
         from web.rate_limit import PLAN_RATE_MULTIPLIERS
+
         # These must match the seed data in migration 019
         assert PLAN_RATE_MULTIPLIERS["demo"] == 1.0
         assert PLAN_RATE_MULTIPLIERS["racer"] == 2.0

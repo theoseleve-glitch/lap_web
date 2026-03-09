@@ -11,6 +11,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 
 from web.db import get_db_connection
 from web.middleware.entitlements import require_feature
+from web.api_utils import api_error, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ def _check_weather_alerts(race_id: int, lat: float, lon: float, conn) -> Optiona
     if _root not in _sys.path:
         _sys.path.insert(0, _root)
 
-    from meteo_service import get_weather_forecast, estimate_track_conditions
+    from meteo_service import estimate_track_conditions, get_weather_forecast
 
     # 1. Check cache
     now = time.time()
@@ -610,8 +611,8 @@ def optimize(race_id: int):
     """Run optimizer and save planned stints with fuel-aware ballast."""
     import sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
-    from race_strategy_v2 import optimize_stints
     from race_state_engine import RaceStateEngine
+    from race_strategy_v2 import optimize_stints
 
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
@@ -760,7 +761,7 @@ def api_state(race_id: int):
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
     if not race:
-        return jsonify({"error": "not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "not found", status=404)
 
     drivers = _rows_to_list(conn.execute(
         "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)
@@ -793,8 +794,8 @@ def api_state(race_id: int):
     try:
         import sys
         sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
-        from race_state_engine import RaceStateEngine
         from race_intelligence import analyze_race
+        from race_state_engine import RaceStateEngine
         engine = RaceStateEngine.load(conn, race_id)
         elapsed = _compute_elapsed_s(race.get("race_start_ts"))
         snapshot = engine.snapshot()
@@ -887,7 +888,7 @@ def api_stint_end(race_id: int):
         "SELECT * FROM race_stints WHERE race_id = ? AND status = 'active'", (race_id,)
     ).fetchone()
     if not active:
-        return jsonify({"error": "no active stint"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "no active stint", status=400)
 
     # Compute elapsed since race start
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
@@ -942,8 +943,8 @@ def api_reoptimize(race_id: int):
     """Re-optimize remaining stints mid-race."""
     import sys
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
-    from race_strategy_v2 import reoptimize_remaining
     from race_state_engine import RaceStateEngine
+    from race_strategy_v2 import reoptimize_remaining
 
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
@@ -995,7 +996,7 @@ def api_messages(race_id: int):
         message = data.get("message", "").strip()
         category = data.get("category", "general")
         if not author or not message:
-            return jsonify({"error": "author and message required"}), 400
+            return api_error(ErrorCode.VALIDATION_ERROR, "author and message required", status=400)
         conn.execute(
             "INSERT INTO race_messages (race_id, author, message, category) VALUES (?,?,?,?)",
             (race_id, author, message, category),
@@ -1018,11 +1019,11 @@ def api_weather(race_id: int):
         conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
     )
     if not race:
-        return jsonify({"error": "not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "not found", status=404)
 
     track_name = race.get("track_name")
     if not track_name:
-        return jsonify({"error": "no track configured"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "no track configured", status=400)
 
     try:
         import sys as _sys
@@ -1032,8 +1033,10 @@ def api_weather(race_id: int):
             _sys.path.insert(0, _root)
 
         from meteo_service import (
-            get_known_tracks, fetch_current_weather,
-            get_weather_forecast, estimate_track_conditions,
+            estimate_track_conditions,
+            fetch_current_weather,
+            get_known_tracks,
+            get_weather_forecast,
         )
 
         tracks = get_known_tracks(conn)
@@ -1042,7 +1045,7 @@ def api_weather(race_id: int):
             None,
         )
         if not track or not track.get("lat") or not track.get("lon"):
-            return jsonify({"error": "track coordinates not found"}), 400
+            return api_error(ErrorCode.VALIDATION_ERROR, "track coordinates not found", status=400)
 
         lat, lon = track["lat"], track["lon"]
 
@@ -1072,7 +1075,7 @@ def api_weather(race_id: int):
         })
     except Exception as exc:
         logger.warning("Weather fetch failed: %s", exc)
-        return jsonify({"error": "Internal server error"}), 500
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
 # ── Stint Plan Export / Import ────────────────────
@@ -1083,6 +1086,7 @@ def export_plan(race_id: int):
     """Export stint plan only (lightweight) as JSON download."""
     import re
     import sys
+
     from flask import Response
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
     from race_state_engine import RaceStateEngine
@@ -1107,6 +1111,7 @@ def export_plan(race_id: int):
 def import_plan(race_id: int):
     """Import stint plan into existing race. Matches drivers by name."""
     import sys
+
     from flask import flash
     sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
     from race_state_engine import RaceStateEngine
@@ -1201,7 +1206,7 @@ def api_toggle_fuel(race_id: int):
     data = request.get_json(silent=True) or {}
     stint_order = data.get("stint_order")
     if not stint_order:
-        return jsonify({"error": "stint_order required"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order required", status=400)
     engine = RaceStateEngine.load(conn, race_id)
     engine.toggle_fuel(stint_order)
     engine.save(conn, race_id)
@@ -1219,7 +1224,7 @@ def api_set_pit_type(race_id: int):
     stint_order = data.get("stint_order")
     pit_type = data.get("pit_type", "full")
     if not stint_order or pit_type not in ("full", "quick"):
-        return jsonify({"error": "stint_order and valid pit_type required"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and valid pit_type required", status=400)
     engine = RaceStateEngine.load(conn, race_id)
     engine.set_pit_type(stint_order, pit_type)
     engine.save(conn, race_id)
@@ -1237,7 +1242,7 @@ def api_set_driver(race_id: int):
     stint_order = data.get("stint_order")
     driver_id = data.get("driver_id")
     if not stint_order or not driver_id:
-        return jsonify({"error": "stint_order and driver_id required"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and driver_id required", status=400)
     engine = RaceStateEngine.load(conn, race_id)
     engine.set_driver(stint_order, driver_id)
     engine.save(conn, race_id)
@@ -1255,7 +1260,7 @@ def api_set_duration(race_id: int):
     stint_order = data.get("stint_order")
     duration_s = data.get("duration_s")
     if not stint_order or duration_s is None:
-        return jsonify({"error": "stint_order and duration_s required"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and duration_s required", status=400)
     engine = RaceStateEngine.load(conn, race_id)
     engine.set_duration(stint_order, int(duration_s))
     engine.save(conn, race_id)
@@ -1287,7 +1292,7 @@ def api_add_rival(race_id: int):
     data = request.get_json(silent=True) or {}
     team_name = (data.get("team_name") or "").strip()
     if not team_name:
-        return jsonify({"error": "team_name required"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "team_name required", status=400)
     car_number = (data.get("car_number") or "").strip()
     notes = (data.get("notes") or "").strip()
     conn = get_db_connection()
@@ -1307,7 +1312,7 @@ def api_add_rival_event(race_id: int, rival_id: int):
     data = request.get_json(silent=True) or {}
     event_type = data.get("event_type", "note")
     if event_type not in _VALID_EVENT_TYPES:
-        return jsonify({"error": f"event_type must be one of: {', '.join(sorted(_VALID_EVENT_TYPES))}"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, f"event_type must be one of: {', '.join(sorted(_VALID_EVENT_TYPES))}", status=400)
     detail = data.get("detail")
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
@@ -1345,7 +1350,7 @@ def api_neutralization_start(race_id: int):
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
     if not race:
-        return jsonify({"error": "not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "not found", status=404)
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     engine = RaceStateEngine.load(conn, race_id)
     engine.start_neutralization(elapsed, reason)
@@ -1362,7 +1367,7 @@ def api_neutralization_end(race_id: int):
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
     if not race:
-        return jsonify({"error": "not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "not found", status=404)
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     engine = RaceStateEngine.load(conn, race_id)
     engine.end_neutralization(elapsed)

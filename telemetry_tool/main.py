@@ -497,18 +497,22 @@ def run(
     # -- Construct SessionContext if available
     _context = None
     try:
-        from session_context import (
-            SessionContext, normalize_session_type, normalize_track_state,
-            load_last_session_context,
-        )
         from path_manager import get_base_dir as _get_base
+        from session_context import (
+            SessionContext,
+            load_last_session_context,
+            normalize_session_type,
+            normalize_track_state,
+        )
         _last = load_last_session_context(_get_base() / 'results')
     except (ImportError, Exception):
         _last = None
 
     try:
         from session_context import (
-            SessionContext, normalize_session_type, normalize_track_state,
+            SessionContext,
+            normalize_session_type,
+            normalize_track_state,
         )
         _stype = normalize_session_type(session_info.get('session_type', 'practice'))
         _tstate = normalize_track_state(session_info.get('track_state', 'dry'))

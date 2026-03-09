@@ -2,6 +2,7 @@ import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { changelog } from '@/data/changelog';
 import { generateSeoMetadata } from '@/lib/seo';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
 
 const TAG_STYLES: Record<string, string> = {
   feature: 'border-acid-green/40 text-acid-green',
@@ -56,6 +57,8 @@ export default function ChangelogPage() {
           </li>
         ))}
       </ol>
+
+      <RelatedPages pathname="/changelog" />
     </main>
     </>
   );

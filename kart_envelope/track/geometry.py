@@ -22,13 +22,12 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+from kart_envelope.config import KartEnvelopeConfig  # noqa: E402
+from kart_envelope.ingest.columns import CANONICAL_TO_RAW  # noqa: E402
 from telemetry_tool.reference_line import (  # noqa: E402
     compute_curvature_profile,
     compute_reference_line,
 )
-
-from kart_envelope.config import KartEnvelopeConfig  # noqa: E402
-from kart_envelope.ingest.columns import CANONICAL_TO_RAW  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

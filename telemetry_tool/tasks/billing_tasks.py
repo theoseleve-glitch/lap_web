@@ -170,7 +170,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
             )
         if user.get("email"):
             try:
-                from auth.email import _send, FRONTEND_URL
+                from auth.email import FRONTEND_URL, _send
                 _send(
                     user["email"],
                     "Your LAP plan has been downgraded",
@@ -216,7 +216,7 @@ def _enforce_grace_periods_impl() -> dict[str, Any]:
             # Grace period just expired → send final warning
             if user.get("email"):
                 try:
-                    from auth.email import _send, FRONTEND_URL
+                    from auth.email import FRONTEND_URL, _send
                     _send(
                         user["email"],
                         "Final warning: update your payment method",
@@ -317,13 +317,13 @@ def _retry_failed_webhooks_impl() -> dict[str, Any]:
 
             from web.routes.billing import (
                 _handle_checkout_completed,
+                _handle_payment_failed,
+                _handle_payment_succeeded,
                 _handle_subscription_created,
-                _handle_subscription_updated,
                 _handle_subscription_deleted,
                 _handle_subscription_paused,
                 _handle_subscription_resumed,
-                _handle_payment_failed,
-                _handle_payment_succeeded,
+                _handle_subscription_updated,
             )
 
             handlers = {

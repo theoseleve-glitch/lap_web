@@ -77,7 +77,7 @@ export default function SubprocessorsPage() {
               <a
                 href={sp.url}
                 target="_blank"
-                rel="noopener noreferrer"
+                rel="noopener noreferrer nofollow"
                 className="mt-2 inline-block text-xs text-lap-green hover:underline"
               >
                 Privacy Policy →

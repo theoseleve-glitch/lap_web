@@ -1,5 +1,6 @@
 """Tests for API JSON contract enforcement."""
 import pytest
+
 from web.app import create_app
 
 
@@ -63,8 +64,9 @@ def test_options_preflight_not_intercepted_by_guard(client):
 
 def test_html_guard_allows_attachment_downloads(app):
     """Report download (Content-Disposition: attachment) is exempt from guard."""
-    from flask import send_file
     import io
+
+    from flask import send_file
 
     @app.route("/api/v1/_test_attachment")
     def _attachment():

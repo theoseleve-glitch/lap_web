@@ -1,6 +1,8 @@
 """Tests for session_date derivation and driver/track resolution."""
 import sqlite3
+
 import pytest
+
 from db.migrate import ensure_schema
 
 
@@ -13,7 +15,7 @@ def test_db():
 
 
 def test_session_date_from_telemetry_timestamps(test_db):
-    from web.models import upsert_session, upsert_driver
+    from web.models import upsert_driver, upsert_session
     driver_id = upsert_driver(test_db, "Test Driver")
     summary = {
         "csv_path": "/tmp/test.csv",
@@ -39,7 +41,7 @@ def test_session_date_from_telemetry_timestamps(test_db):
 
 
 def test_track_null_when_detection_fails(test_db):
-    from web.models import upsert_session, upsert_driver
+    from web.models import upsert_driver, upsert_session
     driver_id = upsert_driver(test_db, "Test Driver")
     summary = {
         "csv_path": "/tmp/test.csv",
@@ -60,7 +62,7 @@ def test_track_null_when_detection_fails(test_db):
 
 
 def test_csv_filename_stored_as_name_only(test_db):
-    from web.models import upsert_session, upsert_driver
+    from web.models import upsert_driver, upsert_session
     driver_id = upsert_driver(test_db, "Test Driver")
     summary = {
         "csv_path": "/tmp/telemetry_upload_xyz/OK_R3.csv",

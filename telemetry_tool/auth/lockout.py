@@ -22,7 +22,7 @@ LOCKOUT_SECONDS = 1800     # 30 minutes
 def _get_redis():
     """Return the application's Redis client, or None."""
     try:
-        from flask import g, current_app
+        from flask import current_app, g
         r = getattr(g, "_redis", None)
         if r is not None:
             return r

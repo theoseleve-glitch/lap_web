@@ -1,13 +1,18 @@
 """Tests for raceline optimizer: line variants and point-mass simulation."""
+import os
+import sys
+
 import numpy as np
 import pytest
 
-import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from raceline_optimizer import (
-    LineVariant, RacelineResult,
-    generate_line_variants, simulate_variant_time, optimize_corner_lines,
+    LineVariant,
+    RacelineResult,
+    generate_line_variants,
+    optimize_corner_lines,
+    simulate_variant_time,
 )
 
 

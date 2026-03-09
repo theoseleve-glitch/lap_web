@@ -18,7 +18,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from provenance.canonical import canonical_hash
-from provenance.run_context import build_provenance, ProvenanceRecord
+from provenance.run_context import ProvenanceRecord, build_provenance
 
 
 class TestProvenanceDeterminism:

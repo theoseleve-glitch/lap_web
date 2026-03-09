@@ -39,8 +39,8 @@ from typing import Any
 
 import joblib
 
-from path_manager import get_models_dir
 from feature_schema import FEATURE_COLUMNS
+from path_manager import get_models_dir
 
 logger = logging.getLogger(__name__)
 
@@ -468,6 +468,7 @@ def should_retrain(
 if __name__ == "__main__":  # pragma: no cover
     import tempfile
     import unittest.mock as mock
+
     from sklearn.linear_model import Ridge
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")

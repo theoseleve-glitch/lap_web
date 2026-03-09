@@ -11,9 +11,9 @@ Validates:
 from __future__ import annotations
 
 import sys
-from pathlib import Path
 from datetime import date, timedelta
-from unittest.mock import MagicMock, patch, call
+from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 

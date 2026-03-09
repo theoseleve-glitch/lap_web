@@ -13,8 +13,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 from flask import Flask, g
 
 from web.api_utils import ErrorCode, api_response, init_request_id
-from web.rate_limit import RATE_TIERS, _SLIDING_WINDOW_LUA, rate_limit
-
+from web.rate_limit import _SLIDING_WINDOW_LUA, RATE_TIERS, rate_limit
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -195,6 +195,7 @@ def _collect_and_store():
         redis_client = None
         try:
             import redis as redis_lib
+
             from web.config import Config
             redis_client = redis_lib.Redis.from_url(
                 Config.REDIS_URL, socket_timeout=2, decode_responses=True

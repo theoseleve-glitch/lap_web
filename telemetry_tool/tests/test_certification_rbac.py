@@ -4,18 +4,19 @@
 Tests that entitlement definitions correctly map features to tiers,
 independent of frontend UI.
 """
-import sys
 import os
+import sys
+
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from auth.entitlements import (
-    get_plan_entitlements,
-    check_usage_limit,
-    PLAN_ENTITLEMENTS,
     KNOWN_PLANS,
+    PLAN_ENTITLEMENTS,
+    check_usage_limit,
+    get_plan_entitlements,
 )
 
 

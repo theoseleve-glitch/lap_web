@@ -15,13 +15,12 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from tasks.concurrency import (
+    QueueFullError,
     acquire_workspace_lock,
-    release_workspace_lock,
     check_queue_depth,
     check_worker_memory,
-    QueueFullError,
+    release_workspace_lock,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers: mock Redis

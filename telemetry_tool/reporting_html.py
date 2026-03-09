@@ -58,18 +58,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Final, Optional
 
+import matplotlib
 import numpy as np
 import pandas as pd
 
 # Matplotlib  --  use non-interactive backend (no display required)
 
-import matplotlib
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt          # noqa: E402
-import matplotlib.colors as mcolors      # noqa: E402
-from matplotlib.figure import Figure     # noqa: E402
-
-from jinja2 import Environment, BaseLoader  # noqa: E402
+import matplotlib.colors as mcolors  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+from jinja2 import BaseLoader, Environment  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

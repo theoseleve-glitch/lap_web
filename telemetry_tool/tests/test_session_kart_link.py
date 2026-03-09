@@ -1,6 +1,8 @@
 """Tests for session-kart linking via kart_id column."""
 import sqlite3
+
 import pytest
+
 from db.migrate import ensure_schema
 
 

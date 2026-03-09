@@ -7,6 +7,7 @@ import time
 import pytest
 
 from pipeline_status import (
+    PIPELINE_STEP_NAMES,
     PipelineState,
     PipelineStatus,
     StepState,
@@ -14,9 +15,7 @@ from pipeline_status import (
     compute_pipeline_hash,
     compute_pipeline_version_string,
     get_model_version,
-    PIPELINE_STEP_NAMES,
 )
-
 
 # ---------------------------------------------------------------------------
 # StepStatus

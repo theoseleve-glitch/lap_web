@@ -1,14 +1,18 @@
 """Tenant middleware — resolves workspace_id and sets RLS context."""
-import logging
+from __future__ import annotations
 
-from flask import request, g, current_app, jsonify
+import logging
+from typing import Any
+
+from flask import current_app, g, jsonify, request
+from flask.wrappers import Response
 
 from auth.workspace import get_default_workspace_id
 
 logger = logging.getLogger(__name__)
 
 
-def tenant_middleware():
+def tenant_middleware() -> Response | tuple | None:
     """Before-request hook: resolve workspace and set RLS context.
 
     When AUTH_REQUIRED is False (legacy mode), uses DEFAULT_WORKSPACE_ID
@@ -16,26 +20,26 @@ def tenant_middleware():
     user's default workspace.
     """
     if not current_app.config.get("USE_PG"):
-        return  # SQLite mode — no tenancy
+        return None  # SQLite mode — no tenancy
 
     # Only apply to API routes
     if not request.path.startswith("/api/v1/"):
-        return
+        return None
 
     # Legacy mode: use system default workspace
     if not current_app.config.get("AUTH_REQUIRED"):
         g.workspace_id = current_app.config.get("DEFAULT_WORKSPACE_ID", 1)
         g.workspace_role = "owner"
         _set_rls_context(g.workspace_id)
-        return
+        return None
 
     # Auth mode: resolve workspace for authenticated user
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
-        return  # Auth middleware will handle the 401
+        return None  # Auth middleware will handle the 401
 
     # Check for explicit workspace header
-    from web.api_utils import api_error, ErrorCode
+    from web.api_utils import ErrorCode, api_error
     ws_header = request.headers.get("X-Workspace-Id")
     if ws_header:
         try:
@@ -81,6 +85,8 @@ def tenant_middleware():
         )
         g.plan_tier = "demo"
 
+    return None
+
 
 def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:
     """Check if user has access to the given workspace."""
@@ -98,13 +104,13 @@ def _verify_workspace_access(user_id: int, workspace_id: int) -> bool:
 
 def _set_rls_context(workspace_id: int) -> None:
     """Set the PostgreSQL session variable for RLS filtering."""
-    from web.db_pg import get_pg_connection
     from auth.workspace import set_workspace_context
+    from web.db_pg import get_pg_connection
     conn = get_pg_connection()
     set_workspace_context(conn, workspace_id)
 
 
-def _resolve_workspace_role(conn, user_id: int, workspace_id: int) -> str | None:
+def _resolve_workspace_role(conn: Any, user_id: int, workspace_id: int) -> str | None:
     """Determine the user's role in a workspace.
 
     Personal workspace owner -> 'owner'.

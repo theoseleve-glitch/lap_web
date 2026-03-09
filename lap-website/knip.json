@@ -1,0 +1,21 @@
+{
+  "$schema": "https://unpkg.com/knip@latest/schema.json",
+  "entry": ["src/app/**/page.tsx", "src/app/**/layout.tsx", "src/middleware.ts"],
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": [
+    "src/**/*.test.{ts,tsx}",
+    "src/**/*.spec.{ts,tsx}",
+    "src/__tests__/**"
+  ],
+  "ignoreDependencies": [
+    "@opennextjs/cloudflare",
+    "wrangler",
+    "eslint-config-next",
+    "postcss",
+    "autoprefixer",
+    "cspell"
+  ],
+  "next": {
+    "entry": ["src/app/**/page.tsx", "src/app/**/layout.tsx", "next.config.mjs"]
+  }
+}

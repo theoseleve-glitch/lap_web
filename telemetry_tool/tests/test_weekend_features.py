@@ -8,7 +8,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.migrate import ensure_schema
-from web.models import create_weekend, add_session_to_weekend
+from web.models import add_session_to_weekend, create_weekend
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def db():
 
 class TestSessionReorder:
     def test_swap_down(self, db):
-        from web.models import swap_weekend_session_order, get_weekend_sessions
+        from web.models import get_weekend_sessions, swap_weekend_session_order
 
         wid = create_weekend(db, name="W1")
         add_session_to_weekend(db, wid, "s1", 0)
@@ -50,7 +50,7 @@ class TestSessionReorder:
         assert sessions[2]["session_id"] == "s3"
 
     def test_swap_up(self, db):
-        from web.models import swap_weekend_session_order, get_weekend_sessions
+        from web.models import get_weekend_sessions, swap_weekend_session_order
 
         wid = create_weekend(db, name="W1")
         add_session_to_weekend(db, wid, "s1", 0)
@@ -67,7 +67,7 @@ class TestSessionReorder:
         assert sessions[2]["session_id"] == "s2"
 
     def test_swap_at_boundary_noop(self, db):
-        from web.models import swap_weekend_session_order, get_weekend_sessions
+        from web.models import get_weekend_sessions, swap_weekend_session_order
 
         wid = create_weekend(db, name="W1")
         add_session_to_weekend(db, wid, "s1", 0)
@@ -83,7 +83,7 @@ class TestSessionReorder:
         assert sessions[1]["session_id"] == "s2"
 
     def test_reorder_all(self, db):
-        from web.models import reorder_weekend_sessions, get_weekend_sessions
+        from web.models import get_weekend_sessions, reorder_weekend_sessions
 
         wid = create_weekend(db, name="W1")
         add_session_to_weekend(db, wid, "s1", 0)

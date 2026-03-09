@@ -16,7 +16,6 @@ import pytest
 
 from telemetry_tool.adapters.iracing_adapter import IRacingAdapter
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -8,8 +8,8 @@ Validates:
 - pricing.ts consistency with canonical matrix
 - Migration seed data consistency
 """
-import sys
 import re
+import sys
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent

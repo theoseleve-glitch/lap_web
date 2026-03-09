@@ -5,8 +5,8 @@ multi-tenant middleware are blocked with 404. These routes are only used
 by the desktop/CLI Jinja2 frontend, not the Next.js production UI.
 """
 from flask import request
-from web.api_utils import api_error, ErrorCode
 
+from web.api_utils import ErrorCode, api_error
 
 # Routes used ONLY by the legacy Jinja2 frontend.
 # These bypass tenant middleware and RLS — must not be exposed in production.

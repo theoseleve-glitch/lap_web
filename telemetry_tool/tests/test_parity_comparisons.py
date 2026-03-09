@@ -25,7 +25,6 @@ from scripts.parity_harness import (
     compare_sectors,
 )
 
-
 # ── Scores ────────────────────────────────────────────────────────────
 
 

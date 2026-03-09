@@ -18,9 +18,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from telemetry_tool.io_racechrono import read_racechrono_csv  # noqa: E402
-
 from kart_envelope.ingest.columns import REQUIRED_COLUMNS, normalize_columns  # noqa: E402
+from telemetry_tool.io_racechrono import read_racechrono_csv  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

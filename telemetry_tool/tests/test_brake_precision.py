@@ -1,7 +1,9 @@
 """Test brake precision module."""
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from brake_precision import compute_brake_precision, compute_overall_brake_score

@@ -7,6 +7,7 @@ import { PerformanceProvider } from '@/lib/performance-context';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SectionTabs } from '@/components/ui/SectionTabs';
 import { SiteFooter } from '@/components/site/SiteFooter';
+import { Breadcrumb } from '@/components/ui/Breadcrumb';
 
 export function ChromeLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
@@ -23,6 +24,9 @@ export function ChromeLayout({ children }: { children: ReactNode }) {
       <GsapProvider>
         <SiteHeader />
         <SectionTabs />
+        <div className="mx-auto max-w-6xl px-4 pt-4">
+          <Breadcrumb />
+        </div>
         {children}
         <SiteFooter />
       </GsapProvider>

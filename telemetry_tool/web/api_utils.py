@@ -17,6 +17,7 @@ Usage::
 """
 from __future__ import annotations
 
+import functools
 import logging
 import os
 import time
@@ -81,6 +82,37 @@ class ReasonCode:
 
 
 # ---------------------------------------------------------------------------
+# Error catalog — maps each error code to its default HTTP status and
+# a terse, user-safe default message.  Callers can override the message
+# in api_error(); this catalog ensures consistency when they don't.
+# ---------------------------------------------------------------------------
+
+ERROR_CATALOG: dict[str, dict[str, Any]] = {
+    ErrorCode.UNAUTHORIZED:         {"status": 401, "message": "Authentication required"},
+    ErrorCode.INVALID_CREDENTIALS:  {"status": 401, "message": "Invalid email or password"},
+    ErrorCode.TOKEN_EXPIRED:        {"status": 401, "message": "Token has expired"},
+    ErrorCode.FORBIDDEN:            {"status": 403, "message": "Access denied"},
+    ErrorCode.INSUFFICIENT_ROLE:    {"status": 403, "message": "Insufficient permissions"},
+    ErrorCode.PLAN_REQUIRED:        {"status": 403, "message": "Upgrade required for this feature"},
+    ErrorCode.VALIDATION_ERROR:     {"status": 422, "message": "Request validation failed"},
+    ErrorCode.NOT_FOUND:            {"status": 404, "message": "Resource not found"},
+    ErrorCode.CONFLICT:             {"status": 409, "message": "Resource conflict"},
+    ErrorCode.IDEMPOTENCY_CONFLICT: {"status": 409, "message": "Duplicate request detected"},
+    ErrorCode.QUOTA_EXCEEDED:       {"status": 429, "message": "Usage quota exceeded"},
+    ErrorCode.RATE_LIMITED:         {"status": 429, "message": "Too many requests"},
+    ErrorCode.FILE_TOO_LARGE:       {"status": 413, "message": "File exceeds size limit"},
+    ErrorCode.UNSUPPORTED_FORMAT:   {"status": 415, "message": "Unsupported file format"},
+    ErrorCode.ANALYSIS_FAILED:      {"status": 500, "message": "Analysis failed"},
+    ErrorCode.INTERNAL_ERROR:       {"status": 500, "message": "Internal server error"},
+    ErrorCode.API_HTML_RESPONSE:    {"status": 502, "message": "Upstream returned unexpected format"},
+    ErrorCode.SERVICE_UNAVAILABLE:  {"status": 503, "message": "Service temporarily unavailable"},
+    ErrorCode.NOT_READY:            {"status": 503, "message": "Service is starting up"},
+    ErrorCode.NOT_IMPLEMENTED:      {"status": 501, "message": "Not implemented"},
+    ErrorCode.DATA_UNAVAILABLE:     {"status": 404, "message": "Requested data is not available"},
+}
+
+
+# ---------------------------------------------------------------------------
 # Envelope builders
 # ---------------------------------------------------------------------------
 
@@ -95,6 +127,32 @@ def _build_meta(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     return meta
 
 
+def _filter_fields(data: Any, fields: set[str] | None) -> Any:
+    """Filter response data to only include requested fields.
+
+    Supports dicts and lists of dicts. Passes through non-dict types unchanged.
+    """
+    if fields is None or not fields:
+        return data
+    if isinstance(data, dict):
+        return {k: v for k, v in data.items() if k in fields}
+    if isinstance(data, list):
+        return [
+            {k: v for k, v in item.items() if k in fields}
+            if isinstance(item, dict) else item
+            for item in data
+        ]
+    return data
+
+
+def _parse_fields_param() -> set[str] | None:
+    """Parse ``?fields=id,name,score`` query parameter into a set."""
+    raw = request.args.get("fields", "")
+    if not raw:
+        return None
+    return {f.strip() for f in raw.split(",") if f.strip()}
+
+
 def api_response(
     data: Any = None,
     status: int = 200,
@@ -103,14 +161,16 @@ def api_response(
     """Return a success envelope.
 
     Returns a ``(Response, status)`` tuple suitable for Flask route returns.
+    Supports ``?fields=a,b,c`` query param for sparse field selection.
 
     Example response body::
 
         {"ok": true, "data": {...}, "meta": {"request_id": "..."}}
     """
+    fields = _parse_fields_param()
     body = {
         "ok": True,
-        "data": data,
+        "data": _filter_fields(data, fields),
         "meta": _build_meta(meta),
     }
     return jsonify(body), status
@@ -205,6 +265,58 @@ def billing_error(
 
 
 # ---------------------------------------------------------------------------
+# Deprecation decorator
+# ---------------------------------------------------------------------------
+
+def deprecated(sunset: str, *, alternative: str | None = None):
+    """Mark a route as deprecated with standard Deprecation + Sunset headers.
+
+    Usage::
+
+        @bp.route("/old-endpoint")
+        @deprecated("2026-06-01", alternative="/api/v1/new-endpoint")
+        def old_endpoint():
+            ...
+
+    Produces headers::
+
+        Deprecation: true
+        Sunset: Sun, 01 Jun 2026 00:00:00 GMT
+        Link: </api/v1/new-endpoint>; rel="successor-version"
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            result = fn(*args, **kwargs)
+
+            # result is (Response, status) or a Response — normalize
+            if isinstance(result, tuple):
+                response, status = result[0], result[1]
+            else:
+                response, status = result, 200
+
+            response.headers["Deprecation"] = "true"
+
+            # Convert ISO date to HTTP-date format for Sunset header
+            try:
+                from datetime import datetime, timezone
+                dt = datetime.fromisoformat(sunset).replace(tzinfo=timezone.utc)
+                response.headers["Sunset"] = dt.strftime("%a, %d %b %Y %H:%M:%S GMT")
+            except (ValueError, TypeError):
+                response.headers["Sunset"] = sunset
+
+            if alternative:
+                response.headers["Link"] = f"<{alternative}>; rel=\"successor-version\""
+
+            return (response, status) if isinstance(result, tuple) else response
+
+        return wrapper
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
 # Request ID middleware
 # ---------------------------------------------------------------------------
 
@@ -230,10 +342,11 @@ def init_request_id(app: Flask) -> None:
         if req_id:
             response.headers["X-Request-Id"] = req_id
 
-        # Log request duration
+        # Log request duration and expose as Server-Timing header
         start = getattr(g, "_request_start_time", None)
         if start is not None:
             duration_ms = (time.monotonic() - start) * 1000
+            response.headers["Server-Timing"] = f"total;dur={duration_ms:.1f}"
             logger.info(
                 "%s %s %s %.1fms",
                 request.method,
@@ -241,5 +354,28 @@ def init_request_id(app: Flask) -> None:
                 response.status_code,
                 duration_ms,
             )
+
+        # Cache-Control headers — policy by method and path
+        if "Cache-Control" not in response.headers:
+            if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+                # Mutating requests: never cache
+                response.headers["Cache-Control"] = "no-store"
+            elif request.path.startswith("/api/"):
+                if "/healthz" in request.path:
+                    response.headers["Cache-Control"] = "no-cache, max-age=0"
+                elif any(seg in request.path for seg in (
+                    "/speed-trace", "/gps-trace", "/gg-data", "/corners",
+                    "/grip-map", "/friction-envelope",
+                )):
+                    # Chart data: immutable once generated, cache 1 hour
+                    response.headers["Cache-Control"] = "private, max-age=3600"
+                elif "/sessions" in request.path and request.path.endswith("/scores"):
+                    # Scores: cache 5 minutes
+                    response.headers["Cache-Control"] = "private, max-age=300"
+                else:
+                    # Default API: private, short cache (60s) + stale-while-revalidate
+                    response.headers["Cache-Control"] = (
+                        "private, max-age=60, stale-while-revalidate=120"
+                    )
 
         return response

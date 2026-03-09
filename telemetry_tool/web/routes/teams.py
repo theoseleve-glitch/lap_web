@@ -1,14 +1,15 @@
 """Team management API routes — CRUD + invitation flow."""
 import logging
+
 from flask import Blueprint, g, request
+
 from auth.rbac import require_role
 from auth.service import AuthError
-
-from web.api_utils import api_response, api_error, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.middleware.audit import audit_log
 from web.rate_limit import rate_limit
-from web.validation import validate_body
 from web.schemas.teams import CreateTeamSchema, InviteMemberSchema
+from web.validation import validate_body
 
 logger = logging.getLogger(__name__)
 

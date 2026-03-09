@@ -4,7 +4,19 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+class StrictSchema(BaseModel):
+    """Base schema that forbids extra fields (prevents silent typos)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class LenientSchema(BaseModel):
+    """Base schema that ignores extra fields (for external/user input)."""
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class PaginationParams(BaseModel):

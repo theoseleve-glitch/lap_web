@@ -48,6 +48,13 @@
     var _dragStartX = 0, _dragStartY = 0;
     var _dragStartPanX = 0, _dragStartPanY = 0;
 
+    /* ── Time animation state ──────────────────── */
+    var _animFrame = null;
+    var _animIdx = 0;
+    var _animPlaying = false;
+    var _animSpeed = 3;   // points per frame
+    var _animBtn = null;
+
     /* ── init ──────────────────────────────────── */
     function init(containerId, sessionId) {
         var container = document.getElementById(containerId);
@@ -73,6 +80,7 @@
         _setupModeButtons();
         _setupDropdowns();
         _setupGGEvents();
+        _setupAnimButton();
 
         /* Lazy-init on tab activate */
         var panel = container.closest('.tab-panel');
@@ -651,6 +659,146 @@
         }
     }
 
+    /* ── time animation ─────────────────────────── */
+    function _startAnimation() {
+        if (_state.mode !== 'single' || !_state.perLap) return;
+        var lapData = _state.lapDataCache[_state.primaryLap];
+        if (!lapData) return;
+        _animPlaying = true;
+        _animIdx = 0;
+        if (_animBtn) _animBtn.textContent = '\u25A0'; // stop icon
+        _animTick(lapData);
+    }
+
+    function _stopAnimation() {
+        _animPlaying = false;
+        if (_animFrame) { cancelAnimationFrame(_animFrame); _animFrame = null; }
+        if (_animBtn) _animBtn.textContent = '\u25B6'; // play icon
+        _drawAll(); // redraw full
+    }
+
+    function _animTick(lapData) {
+        if (!_animPlaying || !_ggCtx) return;
+        var aLat = lapData.a_lat;
+        var aLong = lapData.a_long;
+        if (!aLat || !aLong) return;
+        var total = Math.min(aLat.length, aLong.length);
+        _animIdx = Math.min(_animIdx + _animSpeed, total);
+
+        // Redraw base
+        _drawGG_base();
+
+        // Draw animated subset
+        var ctx = _ggCtx;
+        var axisMax = _getAxisMax();
+        var pW = _ggPW(), pH = _ggPH();
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(_ggPad.left, _ggPad.top, pW, pH);
+        ctx.clip();
+        for (var i = 0; i < _animIdx; i++) {
+            var lat = aLat[i] / 9.81;
+            var lng = aLong[i] / 9.81;
+            var t = i / total;
+            ctx.fillStyle = window.Theme ? window.Theme.heatColor(t) : 'rgba(255,255,255,0.7)';
+            ctx.beginPath();
+            ctx.arc(_xToPixel(lat), _yToPixel(lng), 2.5, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        ctx.restore();
+
+        // Time progress bar
+        var barY = _ggH() - 8;
+        var barW = _ggW() - _ggPad.left - _ggPad.right;
+        var progress = _animIdx / total;
+        ctx.fillStyle = C.border || '#30363d';
+        ctx.fillRect(_ggPad.left, barY, barW, 4);
+        ctx.fillStyle = C.accent || '#ff6b35';
+        ctx.fillRect(_ggPad.left, barY, barW * progress, 4);
+
+        if (_animIdx < total) {
+            _animFrame = requestAnimationFrame(function () { _animTick(lapData); });
+        } else {
+            _animPlaying = false;
+            if (_animBtn) _animBtn.textContent = '\u25B6';
+        }
+    }
+
+    /** Draw GG background without scatter points (for animation base) */
+    function _drawGG_base() {
+        if (!_state.allGGData || !_ggCtx) return;
+        var w = _ggW(), h = _ggH();
+        var ctx = _ggCtx;
+        var pW = _ggPW(), pH = _ggPH();
+        var axisMax = _getAxisMax();
+        ctx.clearRect(0, 0, w, h);
+        ctx.fillStyle = C.bgCard || '#1a1f2e';
+        ctx.fillRect(0, 0, w, h);
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(_ggPad.left, _ggPad.top, pW, pH);
+        ctx.clip();
+        // Grid
+        ctx.strokeStyle = C.border || '#30363d';
+        ctx.lineWidth = 0.5;
+        var step = axisMax <= 0.3 ? 0.05 : axisMax <= 0.6 ? 0.1 : axisMax <= 1.2 ? 0.25 : 0.5;
+        var gMin = -_state.baseAxisMax * 2, gMax = _state.baseAxisMax * 2;
+        for (var g = Math.ceil(gMin / step) * step; g <= gMax; g += step) {
+            var yy = _yToPixel(g);
+            if (yy >= _ggPad.top && yy <= _ggPad.top + pH) {
+                ctx.beginPath(); ctx.moveTo(_ggPad.left, yy); ctx.lineTo(_ggPad.left + pW, yy); ctx.stroke();
+            }
+            var xx = _xToPixel(g);
+            if (xx >= _ggPad.left && xx <= _ggPad.left + pW) {
+                ctx.beginPath(); ctx.moveTo(xx, _ggPad.top); ctx.lineTo(xx, _ggPad.top + pH); ctx.stroke();
+            }
+        }
+        // Axes
+        ctx.strokeStyle = C.textMuted || '#484f58';
+        ctx.lineWidth = 1;
+        var ox = _xToPixel(0), oy = _yToPixel(0);
+        ctx.beginPath(); ctx.moveTo(ox, _ggPad.top); ctx.lineTo(ox, _ggPad.top + pH); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(_ggPad.left, oy); ctx.lineTo(_ggPad.left + pW, oy); ctx.stroke();
+        // Friction circle
+        var cx = _xToPixel(0), cy = _yToPixel(0);
+        var rPx = axisMax > 0 ? (_state.frictionR / axisMax) * (pW / 2) : 0;
+        if (rPx > 0) {
+            ctx.strokeStyle = 'rgba(139, 148, 158, 0.8)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.beginPath(); ctx.arc(cx, cy, rPx, 0, 2 * Math.PI); ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        ctx.restore();
+    }
+
+    function _setupAnimButton() {
+        if (!_modeGroup) return;
+        _animBtn = document.createElement('button');
+        _animBtn.textContent = '\u25B6'; // play icon
+        _animBtn.title = 'Animate GG trace over time';
+        _animBtn.className = 'gg-mode-btn';
+        _animBtn.style.cssText = 'margin-left:6px;padding:2px 8px;cursor:pointer;font-size:11px;border:1px solid rgba(148,148,148,0.3);border-radius:4px;background:transparent;color:#949494;';
+        _modeGroup.appendChild(_animBtn);
+        _lc.addListener(_animBtn, 'click', function () {
+            if (_animPlaying) {
+                _stopAnimation();
+            } else {
+                // Switch to single mode if not already
+                if (_state.mode !== 'single') {
+                    var btns = _modeGroup.querySelectorAll('.gg-mode-btn[data-mode]');
+                    for (var j = 0; j < btns.length; j++) {
+                        btns[j].classList.remove('active');
+                        if (btns[j].getAttribute('data-mode') === 'single') btns[j].classList.add('active');
+                    }
+                    _state.mode = 'single';
+                    _updateDropdownVisibility();
+                }
+                _ensureLapData(_state.primaryLap, function () { _startAnimation(); });
+            }
+        });
+    }
+
     /* ── mode buttons ──────────────────────────── */
     function _setupModeButtons() {
         if (!_modeGroup) return;
@@ -658,7 +806,8 @@
         for (var i = 0; i < btns.length; i++) {
             _lc.addListener(btns[i], 'click', function () {
                 var mode = this.getAttribute('data-mode');
-                if (mode === _state.mode) return;
+                if (!mode || mode === _state.mode) return;
+                if (_animPlaying) _stopAnimation();
                 /* Update active button */
                 for (var j = 0; j < btns.length; j++) btns[j].classList.remove('active');
                 this.classList.add('active');

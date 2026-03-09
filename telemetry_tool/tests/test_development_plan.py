@@ -1,12 +1,20 @@
 """Test development plan module."""
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from development_plan import (
-    get_plan_templates, create_plan_from_template, create_custom_plan,
-    get_plans, get_plan, update_plan_progress, delete_plan, get_plan_completion_pct,
+    create_custom_plan,
+    create_plan_from_template,
+    delete_plan,
+    get_plan,
+    get_plan_completion_pct,
+    get_plan_templates,
+    get_plans,
+    update_plan_progress,
 )
 
 

@@ -394,6 +394,29 @@ def send_team_invite_email(
     return _send(to, f"You're invited to join {team_name} on LAP", html)
 
 
+def send_verification_reminder_email(to: str, token: str) -> bool:
+    """Send a reminder to verify email address (sent ~24h after registration)."""
+    verify_url = f"{FRONTEND_URL}/verify-email?token={token}"
+    html = f"""\
+<div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto;">
+  <h2 style="color: #F3F0E8;">Don't forget to verify your email</h2>
+  <p style="color: #8A8F98;">
+    You registered for LAP recently but haven't verified your email address yet.
+    Verify now to unlock all features and ensure you can recover your account.
+  </p>
+  <a href="{verify_url}"
+     style="display: inline-block; background: #B6FF2E; color: #0B0C0F;
+            padding: 12px 24px; border-radius: 6px; text-decoration: none;
+            font-weight: 600; margin: 16px 0;">
+    Verify My Email
+  </a>
+  <p style="color: #8A8F98; font-size: 13px;">
+    If you didn't create this account, you can safely ignore this email.
+  </p>
+</div>"""
+    return _send(to, "Reminder: Verify your LAP email address", html)
+
+
 def send_retention_warning_email(to: str, session_name: str, expiry_date: str) -> bool:
     """Send data retention notice for a specific session nearing expiry."""
     html = f"""\

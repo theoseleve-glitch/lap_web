@@ -214,7 +214,7 @@ function drawTrack(
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Corner labels
+  // Corner labels with speed annotations
   if (corners && corners.length > 0) {
     ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
     ctx.textAlign = 'center';
@@ -230,9 +230,39 @@ function drawTrack(
       ctx.arc(cx, cy, 3, 0, Math.PI * 2);
       ctx.fill();
 
-      // Label
+      // Find min speed near this corner (closest GPS point)
+      let cornerSpeed: number | null = null;
+      if (speeds && speeds.length === lats.length) {
+        let minDist = Infinity;
+        let nearIdx = 0;
+        for (let i = 0; i < lats.length; i++) {
+          const dLat = lats[i] - c.lat;
+          const dLon = lons[i] - c.lon;
+          const d = dLat * dLat + dLon * dLon;
+          if (d < minDist) { minDist = d; nearIdx = i; }
+        }
+        // Find local minimum speed within +-10 points of closest
+        let localMin = speeds[nearIdx];
+        const lo = Math.max(0, nearIdx - 10);
+        const hi = Math.min(speeds.length - 1, nearIdx + 10);
+        for (let i = lo; i <= hi; i++) {
+          if (speeds[i] < localMin) localMin = speeds[i];
+        }
+        cornerSpeed = localMin;
+      }
+
+      // Label + speed annotation
+      const labelText = c.label || `C${c.corner_id}`;
       ctx.fillStyle = 'rgba(201,168,76,0.9)';
-      ctx.fillText(c.label || `C${c.corner_id}`, cx, cy - 10);
+      ctx.fillText(labelText, cx, cy - 10);
+
+      if (cornerSpeed != null) {
+        const spdKmh = Math.round(cornerSpeed * 3.6);
+        ctx.font = '500 8px "Space Mono", "IBM Plex Mono", monospace';
+        ctx.fillStyle = 'rgba(240,237,229,0.6)';
+        ctx.fillText(`${spdKmh}`, cx, cy - 20);
+        ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
+      }
     }
   }
 

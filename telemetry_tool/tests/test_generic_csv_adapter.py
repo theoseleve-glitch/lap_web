@@ -16,7 +16,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from telemetry_tool.adapters.generic_csv_adapter import GenericCSVAdapter
 
-
 # ---------------------------------------------------------------------------
 # CSV fixtures
 # ---------------------------------------------------------------------------

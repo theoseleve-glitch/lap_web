@@ -21,8 +21,8 @@ import numpy as np
 
 from kart_envelope.config import KartEnvelopeConfig, default_config
 from kart_envelope.envelope.capability import CapabilityEnvelope
-from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.inference.session_scalars import SessionScalars
+from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.solver.aero import AeroRuntime, build_aero_runtime
 from kart_envelope.solver.powertrain import PowertrainRuntime, build_powertrain_runtime
 from kart_envelope.track.geometry import TrackGeometry

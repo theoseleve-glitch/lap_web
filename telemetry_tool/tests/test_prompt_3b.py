@@ -8,12 +8,12 @@ Validates:
 - Metrics collection (counters, histograms, admin endpoint)
 - Alerting tasks (error rate, queue depth, stuck jobs, webhook failures)
 """
-import sys
 import json
+import sys
 import time
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, PropertyMock
+from pathlib import Path
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -381,8 +381,9 @@ class TestStructuredLogging:
 
     def test_setup_logging_attaches_filter(self):
         """setup_logging adds RequestIdFilter to app logger."""
-        from web.logging_setup import setup_logging, RequestIdFilter
         from flask import Flask
+
+        from web.logging_setup import RequestIdFilter, setup_logging
         app = Flask(__name__)
         setup_logging(app)
         filters = app.logger.filters
@@ -399,7 +400,7 @@ class TestMetricsModule:
 
     def test_incr_counter_increments(self):
         """incr_counter increases the value in the correct hourly bucket."""
-        from web.metrics import incr_counter, _bucket_key
+        from web.metrics import _bucket_key, incr_counter
         r = FakeRedis()
         incr_counter("test_counter", amount=3, redis_client=r)
         key = _bucket_key("test_counter")
@@ -408,12 +409,13 @@ class TestMetricsModule:
     def test_incr_counter_no_redis(self):
         """incr_counter silently does nothing without Redis."""
         from web.metrics import incr_counter
+
         # Should not raise
         incr_counter("test_counter", redis_client=None)
 
     def test_record_histogram(self):
         """record_histogram stores values in sorted set."""
-        from web.metrics import record_histogram, _bucket_key
+        from web.metrics import _bucket_key, record_histogram
         r = FakeRedis()
         record_histogram("latency", 42.5, redis_client=r)
         key = _bucket_key("hist:latency")
@@ -422,7 +424,7 @@ class TestMetricsModule:
 
     def test_get_counter_values_aggregates(self):
         """get_counter_values sums across hourly buckets."""
-        from web.metrics import get_counter_values, _bucket_key
+        from web.metrics import _bucket_key, get_counter_values
         r = FakeRedis()
         # Set a value in current hour bucket
         key = _bucket_key("test_metric")
@@ -446,7 +448,7 @@ class TestMetricsModule:
 
     def test_get_histogram_stats_with_data(self):
         """get_histogram_stats computes percentiles correctly."""
-        from web.metrics import record_histogram, get_histogram_stats, _bucket_key
+        from web.metrics import _bucket_key, get_histogram_stats, record_histogram
         r = FakeRedis()
         # Record 100 values
         for i in range(100):
@@ -606,8 +608,8 @@ class TestAlertingTasks:
         from tasks.alerting_tasks import (
             ERROR_RATE_THRESHOLD_PCT,
             QUEUE_DEPTH_THRESHOLD,
-            WEBHOOK_FAILURE_THRESHOLD,
             STUCK_JOB_MINUTES,
+            WEBHOOK_FAILURE_THRESHOLD,
         )
         assert ERROR_RATE_THRESHOLD_PCT == 5.0
         assert QUEUE_DEPTH_THRESHOLD == 20

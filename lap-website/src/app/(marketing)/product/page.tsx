@@ -6,6 +6,8 @@ import { PageIntro } from '@/components/ui/PageIntro';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
 import { ScreenshotGallery } from '@/components/site/ScreenshotGallery';
 import { useTranslation } from '@/i18n';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
+import { SocialShare } from '@/components/marketing/SocialShare';
 
 export default function ProductPage() {
   const { t } = useTranslation();
@@ -26,7 +28,7 @@ export default function ProductPage() {
 
   return (
     <>
-    <JsonLd pathname="/product" />
+    <JsonLd pathname="/product" softwareApp organization />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow={t('product.eyebrow')}
@@ -70,6 +72,9 @@ export default function ProductPage() {
           </Link>
         </div>
       </section>
+
+      <SocialShare title="LAP — Motorsport Telemetry Analysis" className="mb-8" />
+      <RelatedPages pathname="/product" />
     </main>
     </>
   );

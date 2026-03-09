@@ -1,13 +1,20 @@
 """Test dashboard builder module."""
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dashboard_builder import (
-    get_widget_registry, create_dashboard, get_dashboards,
-    get_dashboard, update_dashboard, delete_dashboard, get_widget_data,
+    create_dashboard,
+    delete_dashboard,
+    get_dashboard,
+    get_dashboards,
     get_default_layout,
+    get_widget_data,
+    get_widget_registry,
+    update_dashboard,
 )
 
 

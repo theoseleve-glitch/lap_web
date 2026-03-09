@@ -44,14 +44,51 @@ def _get_pg_url() -> str:
     return os.environ.get("TELEMETRY_PG_URL", _PG_URL_DEFAULT)
 
 
+_MAX_CONNECT_RETRIES = 2
+_CONNECT_RETRY_DELAY = 0.5  # seconds
+
+
 def _new_connection():
-    """Create a fresh psycopg2 connection with RealDictCursor."""
+    """Create a fresh psycopg2 connection with RealDictCursor.
+
+    Connection and statement timeouts are configurable via environment
+    variables to prevent indefinite hangs:
+      - TELEMETRY_PG_CONNECT_TIMEOUT: seconds to wait for connection (default 5)
+      - TELEMETRY_PG_STATEMENT_TIMEOUT: milliseconds for query timeout (default 30000)
+
+    Retries up to 2 times on transient connection failures (e.g. too many
+    connections, temporary network issues) with a short backoff.
+    """
     import psycopg2
     import psycopg2.extras
 
-    conn = psycopg2.connect(_get_pg_url())
-    conn.cursor_factory = psycopg2.extras.RealDictCursor
-    return conn
+    connect_timeout = int(os.environ.get("TELEMETRY_PG_CONNECT_TIMEOUT", "5"))
+    statement_timeout = os.environ.get("TELEMETRY_PG_STATEMENT_TIMEOUT", "30000")
+
+    last_exc: Exception | None = None
+    for attempt in range(_MAX_CONNECT_RETRIES + 1):
+        try:
+            conn = psycopg2.connect(
+                _get_pg_url(),
+                connect_timeout=connect_timeout,
+                options=f"-c statement_timeout={statement_timeout}",
+            )
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            return conn
+        except psycopg2.OperationalError as exc:
+            last_exc = exc
+            if attempt < _MAX_CONNECT_RETRIES:
+                logger.warning(
+                    "PG connection attempt %d/%d failed: %s — retrying in %.1fs",
+                    attempt + 1, _MAX_CONNECT_RETRIES + 1, exc, _CONNECT_RETRY_DELAY,
+                )
+                time.sleep(_CONNECT_RETRY_DELAY)
+            else:
+                logger.error(
+                    "PG connection exhausted after %d attempts: %s",
+                    _MAX_CONNECT_RETRIES + 1, exc,
+                )
+    raise last_exc  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +203,24 @@ class PgConnectionWrapper:
         raw_cur = self._conn.cursor(cursor_factory=psycopg2.extensions.cursor)
         return _PgCursorWrapper(raw_cur)
 
+    def commit(self):
+        """Commit and re-apply RLS context if inside a Flask request.
+
+        SET LOCAL is scoped to the transaction; committing ends the
+        transaction and clears the RLS workspace context.  This guard
+        automatically re-applies it so subsequent queries remain scoped.
+        """
+        self._conn.commit()
+        try:
+            from flask import g
+            ws_id = getattr(g, "workspace_id", None)
+            if ws_id is not None:
+                cur = self._conn.cursor()
+                cur.execute("SET LOCAL app.current_workspace_id = %s", (str(ws_id),))
+                logger.debug("Re-applied RLS context after commit (ws=%s)", ws_id)
+        except (ImportError, RuntimeError):
+            pass  # Outside Flask context — no RLS to re-apply
+
     # -- Forward everything else to the underlying connection -------------
 
     def __getattr__(self, name):
@@ -268,12 +323,12 @@ def init_pg() -> None:
 
     Call once at app startup (e.g. in the factory function).
     """
-    from alembic import command
-    from alembic.config import Config
-
     # Locate alembic.ini — try telemetry_tool/ first (Docker layout),
     # then project root (local dev layout).
     from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
 
     pkg_root = Path(__file__).resolve().parent.parent  # telemetry_tool/
     ini_path = pkg_root / "alembic.ini"

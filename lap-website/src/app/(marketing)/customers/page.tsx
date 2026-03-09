@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
+import { SocialShare } from '@/components/marketing/SocialShare';
 
 export const metadata = generateSeoMetadata('/customers');
 
@@ -56,7 +58,13 @@ const testimonials = [
 export default function CustomersPage() {
   return (
     <>
-    <JsonLd pathname="/customers" />
+    <JsonLd
+      pathname="/customers"
+      reviews={testimonials.map((t) => ({
+        author: t.role,
+        reviewBody: t.quote,
+      }))}
+    />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
         eyebrow="Results"
@@ -135,6 +143,9 @@ export default function CustomersPage() {
           See It In Action
         </Link>
       </div>
+
+      <SocialShare title="See how racing teams use LAP Coach" className="mb-8" />
+      <RelatedPages pathname="/customers" />
     </main>
     </>
   );

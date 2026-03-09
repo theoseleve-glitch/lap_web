@@ -22,7 +22,6 @@ from datetime import datetime, timezone
 
 from flask import Flask, g
 
-
 # ---------------------------------------------------------------------------
 # Filter — enriches records with request-scoped context
 # ---------------------------------------------------------------------------

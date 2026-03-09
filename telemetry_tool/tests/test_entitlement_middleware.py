@@ -58,7 +58,8 @@ def app():
 
     # Wire the middleware
     from web.middleware.entitlements import (
-        entitlement_middleware, record_successful_usage,
+        entitlement_middleware,
+        record_successful_usage,
     )
     app.before_request(entitlement_middleware)
     app.after_request(record_successful_usage)

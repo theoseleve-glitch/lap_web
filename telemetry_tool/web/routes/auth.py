@@ -1,13 +1,13 @@
 """Auth routes -- register, login, refresh, logout, me."""
 import logging
 
-from flask import Blueprint, make_response, request, current_app, g
+from flask import Blueprint, current_app, g, make_response, request
 
-from web.api_utils import api_response, api_error, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.middleware.csrf import generate_csrf_token, set_csrf_cookie
 from web.rate_limit import rate_limit
+from web.schemas.auth import LoginSchema, RegisterSchema
 from web.validation import validate_body
-from web.schemas.auth import RegisterSchema, LoginSchema
 
 logger = logging.getLogger(__name__)
 
@@ -144,16 +144,33 @@ def _check_login_anomaly(conn, user_id: int, ip: str, user_agent: str) -> None:
 @rate_limit(tier="auth")
 @validate_body(RegisterSchema)
 def register():
-    from auth.service import (
-        register_user, create_access_token, create_refresh_token,
-        hash_refresh_token, AuthError,
-    )
     from datetime import datetime, timedelta, timezone
+
+    from auth.service import (
+        AuthError,
+        create_access_token,
+        create_refresh_token,
+        hash_refresh_token,
+        register_user,
+    )
+
+    from auth.password_policy import check_breached_password, validate_password
 
     body = g.body  # validated RegisterSchema
     email = body.email
     password = body.password
     display_name = body.display_name
+
+    # NIST SP 800-63B password policy check
+    policy_errors = validate_password(password)
+    if policy_errors:
+        return api_error(ErrorCode.VALIDATION, "; ".join(policy_errors), status=400)
+    if check_breached_password(password):
+        return api_error(
+            ErrorCode.VALIDATION,
+            "This password has appeared in a data breach. Please choose a different password.",
+            status=400,
+        )
 
     conn = _get_conn()
     try:
@@ -174,9 +191,11 @@ def register():
 
         # Send verification email (non-blocking — failure doesn't stop registration)
         try:
-            from auth.email import send_verification_email
             import secrets
-            from datetime import datetime, timedelta, timezone as tz
+            from datetime import datetime, timedelta
+            from datetime import timezone as tz
+
+            from auth.email import send_verification_email
             verify_token = secrets.token_urlsafe(32)
             verify_expires = datetime.now(tz.utc) + timedelta(hours=24)
             conn.execute(
@@ -210,8 +229,8 @@ def register():
 @rate_limit(tier="auth")
 @validate_body(LoginSchema)
 def login():
-    from auth.service import login_user, AuthError
-    from auth.lockout import check_lockout, record_failed_attempt, clear_attempts
+    from auth.lockout import check_lockout, clear_attempts, record_failed_attempt
+    from auth.service import AuthError, login_user
 
     body = g.body  # validated LoginSchema
     email = body.email.strip().lower()
@@ -303,6 +322,23 @@ def logout():
     return resp
 
 
+@bp.route("/logout-all", methods=["POST"])
+@rate_limit(tier="auth")
+def logout_all():
+    """Revoke ALL refresh tokens — logs user out on every device."""
+    from auth.service import revoke_all_sessions
+
+    user = getattr(g, "user", None)
+    if not user:
+        return api_error(ErrorCode.AUTH_REQUIRED, "Not authenticated", status=401)
+
+    conn = _get_conn()
+    count = revoke_all_sessions(conn, user["id"])
+    resp = make_response(api_response({"message": f"Revoked {count} sessions"}))
+    _clear_refresh_cookie(resp)
+    return resp
+
+
 @bp.route("/refresh", methods=["POST"])
 @rate_limit(tier="auth")
 def refresh():
@@ -312,11 +348,14 @@ def refresh():
     new one is issued.  This limits the window of abuse if a refresh token
     is compromised.
     """
-    from auth.service import (
-        create_access_token, create_refresh_token,
-        hash_refresh_token, AuthError,
-    )
     from datetime import datetime, timedelta, timezone
+
+    from auth.service import (
+        AuthError,
+        create_access_token,
+        create_refresh_token,
+        hash_refresh_token,
+    )
 
     body = request.get_json(silent=True) or {}
     refresh_token = (
@@ -421,7 +460,9 @@ def oauth_callback(provider):
     server logs) and is read client-side by the OAuth callback page.
     """
     from flask import redirect as flask_redirect
-    from auth.oauth import oauth as oauth_registry, get_or_create_oauth_user
+
+    from auth.oauth import get_or_create_oauth_user
+    from auth.oauth import oauth as oauth_registry
 
     frontend_url = current_app.config.get("FRONTEND_URL", "http://localhost:3000")
 
@@ -560,7 +601,10 @@ def verify_2fa():
     Accepts temp_token (from login) + totp_code or backup_code.
     """
     from auth.service import (
-        verify_2fa_temp_token, complete_2fa_login, AuthError, _log_audit,
+        AuthError,
+        _log_audit,
+        complete_2fa_login,
+        verify_2fa_temp_token,
     )
 
     body = request.get_json(silent=True) or {}
@@ -597,6 +641,7 @@ def verify_2fa():
         verified = verify_totp(user["totp_secret"], totp_code)
     elif backup_code:
         import json
+
         from auth.totp import verify_backup_code
         hashed_codes = json.loads(user["totp_backup_codes"] or "[]")
         idx = verify_backup_code(backup_code, hashed_codes)

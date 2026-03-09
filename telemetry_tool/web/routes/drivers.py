@@ -8,6 +8,7 @@ from flask import Blueprint, abort, flash, jsonify, redirect, render_template, r
 
 from web.db import get_db_connection
 from web.models import (
+from web.api_utils import api_error, api_response, ErrorCode
     compute_best_ever_relative,
     delete_driver_cascade,
     get_all_drivers,
@@ -123,7 +124,7 @@ def edit_profile(driver_id: int):
     value = data.get("value")
 
     if not field_name:
-        return jsonify({"error": "missing field"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "missing field", status=400)
 
     try:
         # Verify the driver exists.
@@ -132,7 +133,7 @@ def edit_profile(driver_id: int):
             {"did": driver_id},
         ).fetchone()
         if driver is None:
-            return jsonify({"error": "driver not found"}), 404
+            return api_error(ErrorCode.NOT_FOUND, "driver not found", status=404)
 
         # Ensure profile exists.
         profile = get_driver_profile(conn, driver_id)
@@ -142,9 +143,9 @@ def edit_profile(driver_id: int):
 
         update_driver_profile_field(conn, driver_id, field_name, value)
         conn.commit()
-        return jsonify({"ok": True, "field": field_name, "value": value})
+        return api_response({"field": field_name, "value": value})
     except ValueError as exc:
-        return jsonify({"error": "Invalid field or value"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "Invalid field or value", status=400)
 
 
 # ── API endpoints for chart data ────────────────────────────────
@@ -154,7 +155,7 @@ def progression_api(driver_id: int):
     """Return driver progression data as JSON for charts."""
     conn = get_db_connection()
     prog = get_driver_progression(conn, driver_id)
-    return jsonify({"driver_id": driver_id, "progression": prog})
+    return api_response({"driver_id": driver_id, "progression": prog})
 
 
 @bp.route("/<int:driver_id>/api/style_history")
@@ -166,7 +167,7 @@ def style_history_api(driver_id: int):
     for h in history:
         h.pop("strengths_json", None)
         h.pop("weaknesses_json", None)
-    return jsonify({"driver_id": driver_id, "history": history})
+    return api_response({"driver_id": driver_id, "history": history})
 
 
 @bp.route("/<int:driver_id>/delete", methods=["POST"])

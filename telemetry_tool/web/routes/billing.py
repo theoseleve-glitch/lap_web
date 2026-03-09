@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 
-from flask import Blueprint, g, request, jsonify
+from flask import Blueprint, g, jsonify, request
 
 from web.api_utils import ErrorCode, api_error, api_response
 from web.idempotency import idempotent
@@ -177,6 +177,7 @@ def _schedule_webhook_retry(conn, stripe_event_id: str):
     """Schedule a failed webhook for retry with exponential backoff."""
     try:
         from datetime import datetime, timedelta, timezone
+
         # Read current attempt count
         cur = conn.execute(
             "SELECT attempt_count FROM stripe_webhook_log "
@@ -260,7 +261,7 @@ def stripe_webhook():
     """
     if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
         logger.warning("Stripe keys not configured — ignoring webhook")
-        return jsonify({"error": "Stripe not configured"}), 503
+        return api_error(ErrorCode.SERVICE_UNAVAILABLE, "Stripe not configured", status=503)
 
     stripe.api_key = STRIPE_SECRET_KEY
 
@@ -277,10 +278,10 @@ def stripe_webhook():
                            ip_address=request.remote_addr,
                            details={"sig_header_len": len(sig_header)},
                            severity="warning")
-        return jsonify({"error": "Invalid signature"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "Invalid signature", status=400)
     except Exception:
         logger.exception("Stripe webhook construction failed")
-        return jsonify({"error": "Bad request"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "Bad request", status=400)
 
     event_type = event["type"]
     event_id = event.get("id", "")
@@ -309,7 +310,7 @@ def stripe_webhook():
 
     # Log webhook to stripe_webhook_log (pending)
     try:
-        from admin.audit import log_stripe_webhook, _sanitize_payload
+        from admin.audit import _sanitize_payload, log_stripe_webhook
         sanitized = _sanitize_payload(event.get("data", {}).get("object", {}))
         log_stripe_webhook(conn, event_id, event_type, sanitized,
                            signature_valid=True, processing_status="pending")
@@ -586,6 +587,16 @@ def _handle_subscription_deleted(subscription: dict):
         metadata={"customer": customer_id, "subscription": subscription.get("id")},
     )
     audit_log(conn, "billing_subscription_deleted", {"user_id": uid})
+
+    # Send cancellation confirmation email
+    email_row = conn.execute(
+        "SELECT email FROM users WHERE id = %(uid)s", {"uid": uid},
+    ).fetchone()
+    if email_row:
+        _email = (dict(email_row) if not isinstance(email_row, dict) else email_row).get("email")
+        if _email:
+            _send_billing_email(_email, "subscription_canceled")
+
     logger.info("Subscription canceled for customer %s — grace period started", customer_id)
 
 
@@ -610,6 +621,16 @@ def _handle_payment_failed(invoice: dict):
         metadata={"invoice": invoice.get("id"), "customer": customer_id},
     )
     audit_log(conn, "billing_invoice_failed", {"user_id": uid})
+
+    # Send payment failed email
+    email_row = conn.execute(
+        "SELECT email FROM users WHERE id = %(uid)s", {"uid": uid},
+    ).fetchone()
+    if email_row:
+        _email = (dict(email_row) if not isinstance(email_row, dict) else email_row).get("email")
+        if _email:
+            _send_billing_email(_email, "payment_failed")
+
     logger.info("Payment failed for customer %s — marked past_due", customer_id)
 
 
@@ -640,6 +661,16 @@ def _handle_payment_succeeded(invoice: dict):
             conn, user["id"], "active",
             metadata={"invoice": invoice.get("id"), "customer": customer_id},
         )
+
+        # Send payment recovered email
+        email_row = conn.execute(
+            "SELECT email FROM users WHERE id = %(uid)s", {"uid": user["id"]},
+        ).fetchone()
+        if email_row:
+            _email = (dict(email_row) if not isinstance(email_row, dict) else email_row).get("email")
+            if _email:
+                _send_billing_email(_email, "payment_recovered")
+
         logger.info("Payment recovered for customer %s — active again", customer_id)
 
 
@@ -745,7 +776,7 @@ def _handle_charge_refunded(charge: dict):
 def _send_billing_email(email: str, event_type: str):
     """Send billing-related email notifications via Resend."""
     try:
-        from auth.email import _send, FRONTEND_URL
+        from auth.email import FRONTEND_URL, _send
     except ImportError:
         logger.warning("Email module not available — skipping billing email")
         return

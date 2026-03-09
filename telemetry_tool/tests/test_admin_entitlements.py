@@ -7,9 +7,9 @@ Verifies:
 - refresh_user_tier updates tier when needed
 """
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
-from datetime import datetime, timezone, timedelta
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -18,12 +18,12 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from admin.entitlements import (
-    get_workspace_usage_summary,
+    Anomaly,
     create_override,
     detect_anomalies,
-    refresh_user_tier,
     get_effective_entitlements,
-    Anomaly,
+    get_workspace_usage_summary,
+    refresh_user_tier,
 )
 
 

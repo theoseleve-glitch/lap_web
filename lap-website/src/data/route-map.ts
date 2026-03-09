@@ -23,14 +23,18 @@ export interface RouteEntry {
 export const routeMap: Record<string, RouteEntry> = {
   '/': {
     path: '/',
-    title: 'LAP',
+    title: 'LAP — Motorsport Telemetry Analysis',
     parent: null,
+    primaryKeyword: 'motorsport telemetry analysis',
+    metaDescription: 'Turn raw GPS and sensor data into actionable coaching insights. LAP analyses kart and car telemetry from RaceChrono, RaceBox, AiM, and MoTeC to score your driving and coach every corner.',
+    ogTitle: 'LAP — Motorsport Telemetry Analysis',
+    ogDescription: 'Upload your telemetry. Get coaching insights, corner-by-corner analysis, and a 4-pillar performance score — in seconds.',
   },
   '/product': {
     path: '/product',
     title: 'The Platform',
     eyebrow: 'Product',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'workflows', label: 'Workflows' },
       { id: 'coaching', label: 'Coaching' },
@@ -44,7 +48,7 @@ export const routeMap: Record<string, RouteEntry> = {
     path: '/pricing',
     title: 'Pricing',
     eyebrow: 'Plans',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'plans', label: 'Plans' },
       { id: 'features', label: 'Features' },
@@ -64,7 +68,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/demo': {
     path: '/demo',
     title: 'Demo',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'b2c', label: 'B2C' },
       { id: 'b2b', label: 'B2B' },
@@ -75,14 +79,14 @@ export const routeMap: Record<string, RouteEntry> = {
   '/contact': {
     path: '/contact',
     title: 'Contact',
-    parent: null,
+    parent: '/',
     primaryKeyword: 'contact lap racing',
     metaDescription: 'Get in touch with the LAP team. Reach out for sales enquiries, technical support, partnership opportunities, or general questions about our platform.',
   },
   '/customers': {
     path: '/customers',
     title: 'Customers',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'case-studies', label: 'Case Studies' },
       { id: 'testimonials', label: 'Testimonials' },
@@ -91,31 +95,38 @@ export const routeMap: Record<string, RouteEntry> = {
     primaryKeyword: 'racing telemetry case studies',
     metaDescription: 'Discover how kart and car racing teams use LAP to shave seconds off their lap times. Read case studies, testimonials, and performance benchmarks.',
   },
+  '/compare-tools': {
+    path: '/compare-tools',
+    title: 'LAP vs Spreadsheets',
+    parent: '/',
+    primaryKeyword: 'telemetry analysis vs spreadsheet',
+    metaDescription: 'Compare LAP Coach to spreadsheet analysis for motorsport telemetry. Automated corner coaching, GPS track detection, and scoring save hours per session.',
+  },
   '/changelog': {
     path: '/changelog',
     title: 'Changelog',
-    parent: null,
+    parent: '/',
     primaryKeyword: 'lap platform changelog',
     metaDescription: 'Stay up to date with every LAP release. Browse the full changelog for new telemetry features, pipeline improvements, and bug fixes.',
   },
   '/insights': {
     path: '/insights',
     title: 'Insights',
-    parent: null,
+    parent: '/',
     primaryKeyword: 'motorsport data insights',
     metaDescription: 'Read expert articles on racing telemetry analysis, driver coaching techniques, data engineering best practices, and performance optimisation strategies.',
   },
   '/waitlist': {
     path: '/waitlist',
     title: 'Waitlist',
-    parent: null,
+    parent: '/',
     primaryKeyword: 'lap early access',
     metaDescription: 'Join the LAP waitlist for early access to our motorsport telemetry platform. Be first to try new analysis features and coaching tools.',
   },
   '/help': {
     path: '/help',
     title: 'Help',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'getting-started', label: 'Getting Started' },
       { id: 'faq', label: 'FAQ' },
@@ -128,7 +139,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/billing': {
     path: '/billing',
     title: 'Billing',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'vat-currency', label: 'VAT & Currency' },
       { id: 'invoice-payment', label: 'Invoice & Payment' },
@@ -139,7 +150,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/status': {
     path: '/status',
     title: 'Status',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'live-status', label: 'Live Status' },
       { id: 'sla', label: 'SLA' },
@@ -151,14 +162,14 @@ export const routeMap: Record<string, RouteEntry> = {
   '/book': {
     path: '/book',
     title: 'Book a Call',
-    parent: null,
+    parent: '/',
     primaryKeyword: 'book telemetry consultation',
     metaDescription: 'Schedule a call with the LAP team to discuss your racing telemetry requirements. Get a personalised walkthrough of the platform and integration options.',
   },
   '/security': {
     path: '/security',
     title: 'Security',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'encryption', label: 'Encryption' },
       { id: 'isolation', label: 'Isolation' },
@@ -174,7 +185,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/privacy': {
     path: '/privacy',
     title: 'Privacy Policy',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'data-collect', label: 'Data Collection' },
       { id: 'data-use', label: 'Data Use' },
@@ -189,7 +200,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/terms': {
     path: '/terms',
     title: 'Terms of Service',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'account', label: 'Account' },
       { id: 'billing', label: 'Billing' },
@@ -203,7 +214,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/dpa': {
     path: '/dpa',
     title: 'Data Processing Agreement',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'definitions', label: 'Definitions' },
       { id: 'subject-matter', label: 'Subject Matter' },
@@ -217,7 +228,7 @@ export const routeMap: Record<string, RouteEntry> = {
   '/subprocessors': {
     path: '/subprocessors',
     title: 'Sub-processors',
-    parent: null,
+    parent: '/',
     sectionAnchors: [
       { id: 'list', label: 'List' },
       { id: 'residency', label: 'Residency' },
@@ -228,7 +239,107 @@ export const routeMap: Record<string, RouteEntry> = {
   '/sitemap': {
     path: '/sitemap',
     title: 'Sitemap',
+    parent: '/',
+    metaDescription: 'Browse the full LAP site map. Find pages for pricing, product features, security documentation, legal policies, and more.',
+  },
+  '/accessibility': {
+    path: '/accessibility',
+    title: 'Accessibility',
+    parent: '/',
+    primaryKeyword: 'lap accessibility statement',
+    metaDescription: 'Read the LAP accessibility statement. Learn about WCAG 2.2 AA compliance, keyboard navigation, screen reader support, and known limitations.',
+  },
+
+  /* ── App routes (breadcrumbs, noIndex) ── */
+  '/app/dashboard': {
+    path: '/app/dashboard',
+    title: 'Dashboard',
     parent: null,
+    noIndex: true,
+  },
+  '/app/sessions': {
+    path: '/app/sessions',
+    title: 'Sessions',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/compare': {
+    path: '/app/compare',
+    title: 'Compare',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/visualize': {
+    path: '/app/visualize',
+    title: 'Visualization',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/development': {
+    path: '/app/development',
+    title: 'Dev Plans',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/race-strategy': {
+    path: '/app/race-strategy',
+    title: 'Race Strategy',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/leaderboard': {
+    path: '/app/leaderboard',
+    title: 'Leaderboard',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/analytics': {
+    path: '/app/analytics',
+    title: 'Analytics Hub',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/exports': {
+    path: '/app/exports',
+    title: 'Exports',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/tracks': {
+    path: '/app/tracks',
+    title: 'Tracks',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/drivers': {
+    path: '/app/drivers',
+    title: 'Drivers',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/karts': {
+    path: '/app/karts',
+    title: 'Karts',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/weekends': {
+    path: '/app/weekends',
+    title: 'Weekends',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/analyze': {
+    path: '/app/analyze',
+    title: 'Upload & Analyze',
+    parent: '/app/dashboard',
+    noIndex: true,
+  },
+  '/app/account': {
+    path: '/app/account',
+    title: 'Account',
+    parent: '/app/dashboard',
+    noIndex: true,
   },
 };
 
@@ -251,7 +362,7 @@ export function buildBreadcrumbs(pathname: string): Breadcrumb[] {
     visited.add(current);
     const parentEntry = routeMap[current];
     if (!parentEntry) break;
-    crumbs.unshift({ label: parentEntry.title, href: parentEntry.path });
+    crumbs.unshift({ label: parentEntry.path === '/' ? 'Home' : parentEntry.title, href: parentEntry.path });
     current = parentEntry.parent;
   }
 

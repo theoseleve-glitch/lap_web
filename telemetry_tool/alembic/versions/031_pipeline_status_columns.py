@@ -10,8 +10,9 @@ Revision ID: 031
 Revises: 030
 Create Date: 2026-03-06
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "031"
 down_revision = "030"

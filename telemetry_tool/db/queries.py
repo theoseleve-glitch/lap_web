@@ -39,6 +39,7 @@ FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
 LEFT JOIN karts k ON s.kart_id = k.kart_id
+WHERE s.deleted_at IS NULL
 ORDER BY s.session_date DESC
 LIMIT :limit OFFSET :offset;
 """
@@ -53,7 +54,7 @@ WHERE s.session_id = :session_id;
 """
 
 COUNT_SESSIONS = """
-SELECT COUNT(*) FROM sessions;
+SELECT COUNT(*) FROM sessions WHERE deleted_at IS NULL;
 """
 
 # ------------------------------------------------------------------
@@ -78,7 +79,7 @@ SELECT d.driver_id, d.driver_name, d.created_at, d.notes,
        MIN(s.best_lap_time_s) AS personal_best_s,
        AVG(s.total_score) AS mean_score
 FROM drivers d
-LEFT JOIN sessions s ON d.driver_id = s.driver_id
+LEFT JOIN sessions s ON d.driver_id = s.driver_id AND s.deleted_at IS NULL
 GROUP BY d.driver_id
 ORDER BY d.driver_name;
 """
@@ -124,7 +125,7 @@ SELECT t.*,
        COUNT(s.session_id) AS session_count,
        MIN(s.best_lap_time_s) AS best_time_s
 FROM tracks t
-LEFT JOIN sessions s ON t.track_id = s.track_id
+LEFT JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL
 GROUP BY t.track_id
 ORDER BY t.track_name;
 """
@@ -268,7 +269,8 @@ SELECT
     AVG(s.total_score)            AS avg_score,
     MAX(s.total_score)            AS best_score,
     MIN(s.best_lap_time_s)        AS overall_best_time_s
-FROM sessions s;
+FROM sessions s
+WHERE s.deleted_at IS NULL;
 """
 
 # ------------------------------------------------------------------
@@ -392,7 +394,7 @@ SELECT_SESSIONS_FOR_TRACK = """
 SELECT s.*, d.driver_name
 FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
-WHERE s.track_id = :track_id
+WHERE s.track_id = :track_id AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC;
 """
 
@@ -400,7 +402,7 @@ SELECT_SESSIONS_FOR_DRIVER = """
 SELECT s.*, t.track_name
 FROM sessions s
 LEFT JOIN tracks t ON s.track_id = t.track_id
-WHERE s.driver_id = :driver_id
+WHERE s.driver_id = :driver_id AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC;
 """
 
@@ -410,6 +412,7 @@ FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_id != :session_id
+  AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC
 LIMIT :limit;
 """
@@ -421,6 +424,7 @@ FROM sessions s
 JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.best_lap_time_s IS NOT NULL
+  AND s.deleted_at IS NULL
 ORDER BY s.best_lap_time_s;
 """
 
@@ -671,7 +675,7 @@ FROM session_tags st
 JOIN sessions s ON st.session_id = s.session_id
 JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
-WHERE st.tag = :tag
+WHERE st.tag = :tag AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC;
 """
 
@@ -813,6 +817,7 @@ JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_id != :session_id
   AND s.session_type = :session_type
+  AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC
 LIMIT :limit;
 """
@@ -825,6 +830,7 @@ JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_type = :session_type
   AND s.best_lap_time_s IS NOT NULL
+  AND s.deleted_at IS NULL
 ORDER BY s.best_lap_time_s;
 """
 

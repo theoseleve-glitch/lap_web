@@ -10,8 +10,12 @@ Public API
 ``score_risk_reward(deviations, corner_metrics)``
 """
 from __future__ import annotations
-import logging, math, traceback
+
+import logging
+import math
+import traceback
 from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

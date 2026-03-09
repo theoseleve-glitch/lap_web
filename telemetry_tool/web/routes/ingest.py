@@ -25,6 +25,7 @@ import time
 from typing import Any, Optional
 
 from flask import Blueprint, Response, jsonify
+from web.api_utils import api_error, api_response, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,9 @@ def _check_flag():
     try:
         from telemetry_tool.ingest.config import INGEST_V2
         if not INGEST_V2:
-            return jsonify({"error": "INGEST_V2 feature flag is not enabled"}), 404
+            return api_error(ErrorCode.NOT_FOUND, "INGEST_V2 feature flag is not enabled", status=404)
     except ImportError:
-        return jsonify({"error": "ingest module not available"}), 404
+        return api_error(ErrorCode.NOT_FOUND, "ingest module not available", status=404)
     return None
 
 
@@ -259,7 +260,7 @@ def list_jobs():
     err = _check_flag()
     if err:
         return err
-    return jsonify({"jobs": _store.list_recent()})
+    return api_response({"jobs": _store.list_recent()})
 
 
 @bp.route("/<job_id>/status", methods=["GET"])
@@ -270,13 +271,13 @@ def get_status(job_id: str):
         return err
     job = _store.get(job_id)
     if not job:
-        return jsonify({"error": f"Job {job_id} not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, f"Job {job_id} not found", status=404)
     elapsed = (
         round(time.time() - job["started_at"], 2)
         if isinstance(job.get("started_at"), (int, float))
         else job.get("elapsed_s", 0)
     )
-    return jsonify({
+    return api_response({
         "job_id": job["job_id"],
         "status": job["status"],
         "progress": job.get("progress"),
@@ -292,7 +293,7 @@ def stream_progress(job_id: str):
         return err
     job = _store.get(job_id)
     if not job:
-        return jsonify({"error": f"Job {job_id} not found"}), 404
+        return api_error(ErrorCode.NOT_FOUND, f"Job {job_id} not found", status=404)
 
     def _generate():
         iterations = 0

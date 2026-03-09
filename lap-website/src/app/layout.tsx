@@ -5,6 +5,7 @@ import { ConsentGatedAnalytics } from '@/components/providers/ConsentGatedAnalyt
 import { SentryInit } from '@/components/providers/SentryInit';
 import { WebVitalsInit } from '@/components/providers/WebVitalsInit';
 import { TranslationProvider } from '@/i18n/TranslationProvider';
+import { NavigationProgress } from '@/components/providers/NavigationProgress';
 import { getSiteHostname, getSiteUrlAsUrl } from '@/lib/site-url';
 import { BRAND, BRAND_USAGE } from '@/data/brand';
 import './globals.css';
@@ -35,6 +36,14 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
+    ],
+    apple: '/icon.svg',
+  },
+  manifest: '/manifest.json',
 };
 
 const jsonLd = {
@@ -71,8 +80,17 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
+        {/* Critical CSS — inlined to prevent FOUC before stylesheet loads */}
+        <style dangerouslySetInnerHTML={{ __html: [
+          'html{background:#000;color:#F0EDE5;font-size:16px}',
+          'body{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased;margin:0;overflow-x:hidden}',
+          '.font-monument{font-family:"Space Grotesk","Arial Black",sans-serif;font-weight:700;text-transform:uppercase}',
+          '.room{position:relative;min-height:100vh;display:flex;flex-direction:column;justify-content:center;overflow:hidden}',
+          '.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}',
+        ].join('') }} />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link rel="preconnect" href="https://api.lap-coach.racing" crossOrigin="anonymous" />
         <link rel="dns-prefetch" href="https://api.lap-coach.racing" />
         <link
           rel="preload"
@@ -89,7 +107,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         />
       </head>
       <body className="relative bg-black text-chalk">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[9999] focus:bg-acid-green focus:text-black focus:px-4 focus:py-2 focus:rounded focus:font-body focus:text-sm"
+        >
+          Skip to main content
+        </a>
         <TranslationProvider>
+          <NavigationProgress />
           <SentryInit />
           <WebVitalsInit />
           <ChunkErrorRecovery />

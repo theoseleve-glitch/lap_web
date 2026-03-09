@@ -6,6 +6,9 @@ import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonTableRows, SkeletonBox } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { DriverAchievements } from '@/components/app/DriverAchievements';
+import { ActivationChecklist } from '@/components/app/ActivationChecklist';
+import { NpsSurvey } from '@/components/app/NpsSurvey';
 
 /** Inline Sparkline — lightweight SVG replacement for deleted chart component */
 function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
@@ -299,6 +302,28 @@ export default function DashboardPage() {
         />
       </div>
 
+      {/* Last session quick-access */}
+      {stats.recent_sessions.length > 0 && (() => {
+        const last = stats.recent_sessions[0];
+        return (
+          <Link
+            href={`/app/sessions/${last.id}`}
+            className="flex items-center gap-4 mb-4 px-4 py-3 bg-concrete border border-steel/20 rounded-lg hover:border-acid-green/40 transition-colors group"
+          >
+            <span className="text-acid-green font-telemetry text-xs uppercase tracking-wider shrink-0">Last session</span>
+            <span className="text-chalk text-sm font-body truncate">{last.track_name}</span>
+            <span className="text-steel text-xs font-body">{last.driver_name}</span>
+            {last.best_time != null && (
+              <span className="text-gold font-telemetry text-sm ml-auto shrink-0">{formatTime(last.best_time)}</span>
+            )}
+            <span className="text-steel/40 group-hover:text-steel transition-colors shrink-0">&rsaquo;</span>
+          </Link>
+        );
+      })()}
+
+      {/* Activation checklist for new users */}
+      {stats.total_sessions < 5 && <ActivationChecklist />}
+
       {/* Sparklines */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div className="bg-concrete rounded-lg border border-steel/20 p-4">
@@ -354,6 +379,15 @@ export default function DashboardPage() {
           Compare Sessions
         </Link>
       </div>
+
+      {/* Achievements */}
+      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+        <h2 className="font-monument text-sm text-chalk mb-3">Achievements</h2>
+        <DriverAchievements />
+      </div>
+
+      {/* NPS Survey */}
+      <NpsSurvey sessionCount={stats.total_sessions} />
 
       {/* Recent Sessions Table */}
       <div>

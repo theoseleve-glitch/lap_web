@@ -86,8 +86,9 @@ class TestDurationLimit:
 
     def test_create_race_rejects_over_limit(self):
         """create_race should raise ValueError when duration exceeds max."""
-        from services.race_strategy import create_race
         from unittest.mock import MagicMock
+
+        from services.race_strategy import create_race
 
         conn = MagicMock()
         data = {
@@ -99,8 +100,9 @@ class TestDurationLimit:
 
     def test_create_race_allows_within_limit(self):
         """create_race should succeed when duration is within max."""
-        from services.race_strategy import create_race
         from unittest.mock import MagicMock
+
+        from services.race_strategy import create_race
 
         conn = MagicMock()
         mock_cursor = MagicMock()
@@ -116,8 +118,9 @@ class TestDurationLimit:
 
     def test_create_race_no_limit(self):
         """create_race without max_duration_s should not check duration."""
-        from services.race_strategy import create_race
         from unittest.mock import MagicMock
+
+        from services.race_strategy import create_race
 
         conn = MagicMock()
         mock_cursor = MagicMock()

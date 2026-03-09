@@ -33,6 +33,7 @@ def _get_pg_connection():
 def _get_redis():
     """Create a Redis client from the app config."""
     import redis
+
     from web.config import Config
 
     return redis.Redis.from_url(Config.REDIS_URL)

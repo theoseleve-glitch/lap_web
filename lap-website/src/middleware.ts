@@ -149,23 +149,29 @@ export function middleware(request: NextRequest) {
     }
   }
 
-  // Prevent Cloudflare from caching HTML pages for too long.
+  // Cache control for Cloudflare Workers / CDN.
   // Static assets (/_next/static/) are excluded by the matcher and have
   // content-hashed filenames, so they can be cached indefinitely.
   // HTML pages must revalidate on each deploy to avoid stale chunk references.
-  const isPageRequest =
-    !request.nextUrl.pathname.startsWith('/_next/') &&
-    !request.nextUrl.pathname.startsWith('/api/');
-  if (isPageRequest) {
-    response.headers.set(
-      'Cache-Control',
-      'public, s-maxage=60, stale-while-revalidate=30'
-    );
+  const isApiRoute = pathname.startsWith('/api/');
+  if (!pathname.startsWith('/_next/') && !isApiRoute) {
+    // Browser sees short TTL; Cloudflare edge caches longer via CDN-Cache-Control
+    response.headers.set('Cache-Control', 'public, max-age=0, must-revalidate');
+    response.headers.set('CDN-Cache-Control', 'public, s-maxage=60, stale-while-revalidate=30');
   }
 
   return response;
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: [
+    /*
+     * Match all paths except:
+     * - _next/static (static assets)
+     * - _next/image (image optimization)
+     * - favicon.ico, robots.txt, sitemap.xml
+     * - Public static files (images, fonts, JS, CSS)
+     */
+    '/((?!_next/static|_next/image|favicon\\.ico|robots\\.txt|sitemap\\.xml|manifest\\.json|.*\\.(?:png|jpg|jpeg|gif|svg|ico|woff2?|ttf|eot|css|js|map|webp|avif)).*)',
+  ],
 };

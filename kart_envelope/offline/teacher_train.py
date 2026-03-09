@@ -13,7 +13,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
-from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import (
+    GradientBoostingRegressor,
+    RandomForestClassifier,
+    RandomForestRegressor,
+)
 from sklearn.metrics import accuracy_score, mean_absolute_error
 from sklearn.model_selection import GroupKFold, train_test_split
 from sklearn.pipeline import Pipeline

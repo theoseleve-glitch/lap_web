@@ -22,9 +22,9 @@ from functools import wraps
 
 from flask import Blueprint, request
 
-from web.api_utils import api_error, api_response, ErrorCode
-from web.db import get_db_connection
 from web import models
+from web.api_utils import ErrorCode, api_error, api_response
+from web.db import get_db_connection
 
 logger = logging.getLogger(__name__)
 

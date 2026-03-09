@@ -44,8 +44,7 @@ interface DataTableProps<T> {
   activeSortDir?: 'asc' | 'desc';
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function DataTable<T extends Record<string, any>>({
+export function DataTable<T extends Record<string, unknown>>({
   columns,
   data,
   keyField,
@@ -98,7 +97,9 @@ export function DataTable<T extends Record<string, any>>({
         const bVal = b[internalSortKey];
         if (aVal == null) return 1;
         if (bVal == null) return -1;
-        const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0;
+        const aStr = String(aVal);
+        const bStr = String(bVal);
+        const cmp = aStr < bStr ? -1 : aStr > bStr ? 1 : 0;
         return internalSortDir === 'asc' ? cmp : -cmp;
       })
     : data;

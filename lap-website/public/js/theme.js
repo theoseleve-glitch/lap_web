@@ -123,16 +123,58 @@ window.setLang = function(lang) {
         document.addEventListener('DOMContentLoaded', hydrate);
     }
 
-    /* ── Deterministic lap color palette ───────── */
-    var LAP_PALETTE = [
-        '#ff6b35', '#58a6ff', '#3fb950', '#d29922', '#bc8cff',
-        '#f85149', '#79c0ff', '#56d364', '#e3b341', '#d2a8ff',
-        '#ff7b72', '#a5d6ff', '#7ee787', '#f0c000', '#c792ea',
-    ];
+    /* ── Chart color themes ────────────────────── */
+    var CHART_THEMES = {
+        default: [
+            '#ff6b35', '#58a6ff', '#3fb950', '#d29922', '#bc8cff',
+            '#f85149', '#79c0ff', '#56d364', '#e3b341', '#d2a8ff',
+            '#ff7b72', '#a5d6ff', '#7ee787', '#f0c000', '#c792ea',
+        ],
+        neon: [
+            '#00ff87', '#f72585', '#4cc9f0', '#fee440', '#7209b7',
+            '#00f5d4', '#ff006e', '#3a86ff', '#fb5607', '#8338ec',
+            '#72efdd', '#ff477e', '#80ffdb', '#ffbe0b', '#560bad',
+        ],
+        pastel: [
+            '#ffadad', '#a0c4ff', '#bdb2ff', '#caffbf', '#ffd6a5',
+            '#fdffb6', '#9bf6ff', '#d0b4ff', '#ffc6ff', '#ffcfd2',
+            '#98f5e1', '#b8c0ff', '#fde4cf', '#c8e7ff', '#e4c1f9',
+        ],
+        highContrast: [
+            '#ffffff', '#ffff00', '#00ffff', '#ff00ff', '#ff0000',
+            '#00ff00', '#ff8800', '#0088ff', '#88ff00', '#ff0088',
+            '#00ff88', '#8800ff', '#ffcc00', '#00ccff', '#cc00ff',
+        ],
+        colorblind: [
+            '#0077BB', '#EE7733', '#009988', '#CC3311', '#33BBEE',
+            '#EE3377', '#BBBBBB', '#0077BB', '#EE7733', '#009988',
+            '#CC3311', '#33BBEE', '#EE3377', '#BBBBBB', '#0077BB',
+        ],
+    };
+
+    var activeThemeName = 'default';
+    try {
+        var stored = localStorage.getItem('chart_color_theme');
+        if (stored && CHART_THEMES[stored]) activeThemeName = stored;
+    } catch(e) {}
+
+    var LAP_PALETTE = CHART_THEMES[activeThemeName].slice();
 
     function lapColor(index) {
         return LAP_PALETTE[index % LAP_PALETTE.length];
     }
+
+    function setChartTheme(name) {
+        if (!CHART_THEMES[name]) return;
+        activeThemeName = name;
+        var pal = CHART_THEMES[name];
+        LAP_PALETTE.length = 0;
+        for (var i = 0; i < pal.length; i++) LAP_PALETTE.push(pal[i]);
+        try { localStorage.setItem('chart_color_theme', name); } catch(e) {}
+    }
+
+    function getChartThemeName() { return activeThemeName; }
+    function getChartThemeNames() { return Object.keys(CHART_THEMES); }
 
     /* ── Heat color interpolation (0=green, 0.5=yellow, 1=red) ── */
     function heatColor(t) {
@@ -172,11 +214,15 @@ window.setLang = function(lang) {
 
     /* ── Public API ────────────────────────────── */
     window.Theme = {
-        colors:     colors,
-        lapColor:   lapColor,
-        heatColor:  heatColor,
-        speedColor: speedColor,
-        hydrate:    hydrate,
+        colors:           colors,
+        lapColor:         lapColor,
+        heatColor:        heatColor,
+        speedColor:       speedColor,
+        hydrate:          hydrate,
+        setChartTheme:    setChartTheme,
+        getChartThemeName:  getChartThemeName,
+        getChartThemeNames: getChartThemeNames,
+        CHART_THEMES:     CHART_THEMES,
     };
 
     window.ModuleManager.register('theme', { init: function(){}, destroy: function(){} });

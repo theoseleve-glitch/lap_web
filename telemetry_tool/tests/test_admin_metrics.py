@@ -6,11 +6,11 @@ Verifies:
 - prune_old_snapshots removes old rows, keeps recent ones
 - Individual collectors return expected structure
 """
-import sys
 import json
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone, timedelta
 
 import pytest
 
@@ -19,14 +19,14 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from admin.metrics_collector import (
-    collect_snapshot,
-    store_snapshot,
-    prune_old_snapshots,
-    _collect_system_metrics,
+    _collect_celery_metrics,
     _collect_db_metrics,
     _collect_security_metrics,
+    _collect_system_metrics,
     _collect_upload_metrics,
-    _collect_celery_metrics,
+    collect_snapshot,
+    prune_old_snapshots,
+    store_snapshot,
 )
 
 

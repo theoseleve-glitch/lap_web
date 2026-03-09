@@ -43,7 +43,7 @@ const BASE_CLASSES = [
   'inline-flex items-center justify-center gap-2',
   'font-telemetry tracking-[0.12em] uppercase',
   'transition-all duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)]',
-  'active:scale-[0.98]',
+  'active:scale-[0.97] active:brightness-90 active:duration-75',
   'focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2',
   'disabled:opacity-40 disabled:pointer-events-none',
 ].join(' ');

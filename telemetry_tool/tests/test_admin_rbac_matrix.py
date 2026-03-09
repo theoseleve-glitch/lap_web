@@ -3,8 +3,8 @@
 Parametrized test covering all admin endpoints x roles.
 Verifies that each endpoint enforces the correct role restrictions.
 """
-import sys
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -69,14 +69,14 @@ def _make_app():
     app = Flask(__name__)
     app.config["TESTING"] = True
 
-    from web.routes.admin.health import bp as health_bp
-    from web.routes.admin.users import bp as users_bp
-    from web.routes.admin.jobs import bp as jobs_bp
     from web.routes.admin.billing import bp as billing_bp
-    from web.routes.admin.entitlements import bp as ent_bp
     from web.routes.admin.email import bp as email_bp
-    from web.routes.admin.security import bp as sec_bp
+    from web.routes.admin.entitlements import bp as ent_bp
+    from web.routes.admin.health import bp as health_bp
     from web.routes.admin.infra import bp as infra_bp
+    from web.routes.admin.jobs import bp as jobs_bp
+    from web.routes.admin.security import bp as sec_bp
+    from web.routes.admin.users import bp as users_bp
 
     for sub_bp in [health_bp, users_bp, jobs_bp, billing_bp, ent_bp,
                    email_bp, sec_bp, infra_bp]:

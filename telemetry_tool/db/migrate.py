@@ -577,6 +577,20 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (31, "Phase 31 schema — pipeline_version_hash, model_version on sessions"),
     )
 
+    # Phase 32 migration: soft-delete and favorite columns on sessions (idempotent).
+    for col in ("deleted_at TEXT", "is_favorite INTEGER NOT NULL DEFAULT 0"):
+        try:
+            cur.execute(f"ALTER TABLE sessions ADD COLUMN {col};")
+            logger.debug("Added column sessions.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (32, "Phase 32 schema — soft delete (deleted_at), favorite (is_favorite) on sessions"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

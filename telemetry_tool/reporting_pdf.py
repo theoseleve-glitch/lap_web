@@ -72,7 +72,7 @@ _HAS_PDFKIT:     bool = False
 _HAS_WKHTMLTOPDF: bool = False
 
 try:
-    import weasyprint as _weasyprint   # type: ignore[import-untyped]
+    import weasyprint as _weasyprint  # type: ignore[import-untyped]
     _HAS_WEASYPRINT = True
 except (ImportError, OSError):
     # OSError is raised when the Python package is installed but required

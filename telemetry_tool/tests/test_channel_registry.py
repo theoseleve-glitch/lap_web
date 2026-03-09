@@ -6,11 +6,11 @@ import pytest
 
 from channel_registry import (
     CHANNELS,
-    TIER_ESSENTIAL,
-    TIER_STANDARD,
-    TIER_CONTROLS,
     TIER_ADVANCED,
+    TIER_CONTROLS,
+    TIER_ESSENTIAL,
     TIER_PROFESSIONAL,
+    TIER_STANDARD,
     ChannelDef,
     detect_data_tier,
     get_channels_by_category,

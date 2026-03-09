@@ -24,7 +24,6 @@ from session_context import (
     save_session_context,
 )
 
-
 # ============================================================================
 
 # normalize_session_type

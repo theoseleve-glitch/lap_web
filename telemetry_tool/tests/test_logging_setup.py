@@ -14,7 +14,6 @@ from flask import Flask, g
 
 from web.logging_setup import JsonFormatter, RequestIdFilter, setup_logging
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
 import { api } from '@/lib/api-client';
+import { formatLapTime } from '@/lib/format-utils';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -15,11 +16,144 @@ interface SessionListItem {
   driver_name: string;
   track_name: string | null;
   session_date: string;
+  n_laps?: number;
+  best_lap_time_s?: number | null;
+  total_score?: number | null;
+  grade?: string | null;
+  session_type?: string | null;
 }
 
 interface DriverListItem {
   id: number;
   name: string;
+}
+
+// ── Searchable Session Picker ─────────────────────────────────────
+
+function SessionPicker({
+  sessions,
+  selectedId,
+  onSelect,
+  excludeId,
+  placeholder,
+}: {
+  sessions: SessionListItem[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  excludeId: string;
+  placeholder: string;
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const filtered = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    return sessions.filter((s) => {
+      if (s.session_id === excludeId) return false;
+      if (!q) return true;
+      return (
+        s.driver_name.toLowerCase().includes(q) ||
+        (s.track_name || '').toLowerCase().includes(q) ||
+        s.session_date.includes(q) ||
+        (s.session_type || '').toLowerCase().includes(q)
+      );
+    });
+  }, [sessions, query, excludeId]);
+
+  const selected = sessions.find((s) => s.session_id === selectedId);
+
+  // Close on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      {/* Selected display / trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="w-full text-left text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1.5 text-chalk font-body
+          focus:outline-none focus:ring-1 focus:ring-acid-green/50 cursor-pointer hover:border-zinc-600 transition-colors"
+      >
+        {selected ? (
+          <span>
+            <span className="text-acid-green">{selected.driver_name}</span>
+            {' — '}
+            {selected.track_name || 'Unknown'} ({selected.session_date})
+            {selected.best_lap_time_s != null && (
+              <span className="text-steel ml-1">{formatLapTime(selected.best_lap_time_s)}</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-steel">{placeholder}</span>
+        )}
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-zinc-900 border border-zinc-700 rounded shadow-xl max-h-64 overflow-hidden flex flex-col">
+          {/* Search input */}
+          <div className="p-1.5 border-b border-zinc-700">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search driver, track, date..."
+              className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-chalk font-body
+                focus:outline-none focus:ring-1 focus:ring-acid-green/50 placeholder:text-zinc-500"
+              autoFocus
+            />
+          </div>
+          {/* Results */}
+          <div className="overflow-y-auto max-h-52">
+            {filtered.length === 0 ? (
+              <div className="px-2 py-3 text-center text-zinc-500 text-xs font-body">No sessions match</div>
+            ) : (
+              filtered.map((s) => (
+                <button
+                  key={s.session_id}
+                  type="button"
+                  onClick={() => {
+                    onSelect(s.session_id);
+                    setOpen(false);
+                    setQuery('');
+                  }}
+                  className={`w-full text-left px-2 py-1.5 text-xs font-body hover:bg-zinc-800 transition-colors
+                    ${s.session_id === selectedId ? 'bg-zinc-800 text-acid-green' : 'text-chalk'}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate">
+                      <span className="font-medium">{s.driver_name}</span>
+                      {' — '}
+                      {s.track_name || 'Unknown'}
+                    </span>
+                    <span className="text-steel shrink-0">{s.session_date}</span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-0.5 text-steel">
+                    {s.n_laps != null && <span>{s.n_laps} laps</span>}
+                    {s.best_lap_time_s != null && (
+                      <span>Best: {formatLapTime(s.best_lap_time_s)}</span>
+                    )}
+                    {s.total_score != null && (
+                      <span>Score: {Math.round(s.total_score)}{s.grade ? ` (${s.grade})` : ''}</span>
+                    )}
+                    {s.session_type && <span className="capitalize">{s.session_type}</span>}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Quick Start: Sessions ────────────────────────────────────────
@@ -53,10 +187,10 @@ function SessionQuickStart({ disabled }: { disabled: boolean }) {
 
   const canCompare = sessionA !== '' && sessionB !== '' && sessionA !== sessionB;
 
-  function handleCompare() {
+  const handleCompare = useCallback(() => {
     if (!canCompare) return;
     router.push(`/app/compare/sessions?a=${encodeURIComponent(sessionA)}&b=${encodeURIComponent(sessionB)}`);
-  }
+  }, [canCompare, sessionA, sessionB, router]);
 
   if (disabled) return null;
 
@@ -70,32 +204,20 @@ function SessionQuickStart({ disabled }: { disabled: boolean }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <select
-            value={sessionA}
-            onChange={(e) => setSessionA(e.target.value)}
-            className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-chalk font-body
-              focus:outline-none focus:ring-1 focus:ring-acid-green/50 appearance-none cursor-pointer"
-          >
-            <option value="">Session A...</option>
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.driver_name} — {s.track_name || 'Unknown'} ({s.session_date})
-              </option>
-            ))}
-          </select>
-          <select
-            value={sessionB}
-            onChange={(e) => setSessionB(e.target.value)}
-            className="w-full text-xs bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-chalk font-body
-              focus:outline-none focus:ring-1 focus:ring-acid-green/50 appearance-none cursor-pointer"
-          >
-            <option value="">Session B...</option>
-            {sessions.map((s) => (
-              <option key={s.session_id} value={s.session_id}>
-                {s.driver_name} — {s.track_name || 'Unknown'} ({s.session_date})
-              </option>
-            ))}
-          </select>
+          <SessionPicker
+            sessions={sessions}
+            selectedId={sessionA}
+            onSelect={setSessionA}
+            excludeId={sessionB}
+            placeholder="Session A..."
+          />
+          <SessionPicker
+            sessions={sessions}
+            selectedId={sessionB}
+            onSelect={setSessionB}
+            excludeId={sessionA}
+            placeholder="Session B..."
+          />
           <button
             type="button"
             disabled={!canCompare}

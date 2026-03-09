@@ -6,11 +6,11 @@ Verifies:
 - GET /admin/users/:id/timeline returns activity timeline
 - POST /admin/users/:id/invalidate-sessions requires root_admin
 """
-import sys
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 import pytest
 

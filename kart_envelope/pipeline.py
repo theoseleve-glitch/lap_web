@@ -34,29 +34,29 @@ from kart_envelope.coaching.corner_coaching import (
     analyze_corner_performance,
     detect_corners_from_curvature,
 )
-from kart_envelope.coaching.driver_diagnostics import analyze_driver_dynamics
 from kart_envelope.coaching.delta_analysis import compute_delta_map
+from kart_envelope.coaching.driver_diagnostics import analyze_driver_dynamics
 from kart_envelope.config import KartEnvelopeConfig, default_config, load_config
 from kart_envelope.envelope.capability import (
     CapabilityEnvelope,
     train_capability_envelope,
 )
+from kart_envelope.envelope.grip_map import resolve_grip_scale_profile
 from kart_envelope.envelope.tire_stack import (
     apply_tire_runtime_to_envelope,
     build_tire_runtime_meta,
 )
-from kart_envelope.envelope.grip_map import resolve_grip_scale_profile
-from kart_envelope.inference.conditions import classify_conditions
-from kart_envelope.inference.calibration import build_calibration_report
-from kart_envelope.inference.validation import build_validation_report
-from kart_envelope.inference.policy import build_policy_attribution, select_driver_policy
 from kart_envelope.inference.bundle_v2 import (
     build_lap_feature_frame,
     estimate_optimal_speed_profile,
     resolve_bundle_path,
     run_bundle_inference,
 )
+from kart_envelope.inference.calibration import build_calibration_report
+from kart_envelope.inference.conditions import classify_conditions
+from kart_envelope.inference.policy import build_policy_attribution, select_driver_policy
 from kart_envelope.inference.session_scalars import SessionScalars, infer_session_scalars
+from kart_envelope.inference.validation import build_validation_report
 from kart_envelope.ingest.acd_parser import enrich_metadata_from_acd
 from kart_envelope.ingest.columns import (
     COL_ACCEL_LAT,
@@ -67,38 +67,35 @@ from kart_envelope.ingest.columns import (
 )
 from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.ingest.parser import parse_session_csv, parse_session_csv_raw
+from kart_envelope.optimizer.sensitivity import (
+    SensitivityRuntimeContext,
+    optimize_corner_sensitivity,
+    prepare_sensitivity_runtime,
+)
 from kart_envelope.output.csv_tables import (
-    write_corner_whatif_matrix,
     write_corner_recommendations,
     write_corner_sensitivity_table,
     write_corner_table,
+    write_corner_whatif_matrix,
     write_delta_map,
     write_driver_diagnostics,
     write_ideal_lap_profile,
     write_sector_summary,
 )
 from kart_envelope.output.json_summary import build_session_summary, write_session_summary
-from kart_envelope.optimizer.sensitivity import (
-    SensitivityRuntimeContext,
-    optimize_corner_sensitivity,
-    prepare_sensitivity_runtime,
-)
 from kart_envelope.processing.cleaning import clean_and_derive
 from kart_envelope.processing.lap_splitting import compute_lap_times, split_and_select_laps
 from kart_envelope.processing.outlier_filter import mad_filter_accel
 from kart_envelope.processing.resampler import resample_laps_by_ds
-from kart_envelope.solver.min_time import TheoreticalResult, compute_theoretical_lap
-from kart_envelope.solver.powertrain import build_powertrain_runtime
 from kart_envelope.solver.aero import build_aero_runtime
 from kart_envelope.solver.load_transfer_fe import resolve_load_transfer_scale_profile
+from kart_envelope.solver.min_time import TheoreticalResult, compute_theoretical_lap
+from kart_envelope.solver.powertrain import build_powertrain_runtime
 from kart_envelope.solver.record_cal import RecordCalibration, calibrate_to_record
 from kart_envelope.solver.vehicle_surrogate import (
     apply_vehicle_dynamics_to_envelope,
     build_vehicle_dynamics_meta,
 )
-from kart_envelope.track.detection import detect_or_register_track
-from kart_envelope.track.geometry import TrackGeometry, build_track_geometry
-from kart_envelope.track.lidar_profile import resolve_track_surface_profile
 from kart_envelope.tiering import (
     PRODUCT_TIER_B2B_BASIC,
     PRODUCT_TIER_B2B_PREMIUM,
@@ -106,6 +103,9 @@ from kart_envelope.tiering import (
     resolve_product_tier,
     validate_sensor_contract,
 )
+from kart_envelope.track.detection import detect_or_register_track
+from kart_envelope.track.geometry import TrackGeometry, build_track_geometry
+from kart_envelope.track.lidar_profile import resolve_track_surface_profile
 
 try:
     from provenance.run_context import build_provenance as _build_provenance

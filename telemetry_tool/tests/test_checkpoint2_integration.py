@@ -49,11 +49,12 @@ def seeded_db():
 def client(seeded_db):
     """Flask test client with seeded DB wired into all route modules."""
     from flask import Flask
-    from web.routes.data_v2 import bp as data_bp
-    from web.routes.api_v1_entities import bp as entities_bp
+
+    import web.db as db_mod
     import web.routes.api_v1_entities as ent_mod
     import web.routes.data_v2 as dv2_mod
-    import web.db as db_mod
+    from web.routes.api_v1_entities import bp as entities_bp
+    from web.routes.data_v2 import bp as data_bp
 
     app = Flask(__name__)
     app.config["TESTING"] = True

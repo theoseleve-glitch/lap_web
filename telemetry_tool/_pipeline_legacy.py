@@ -49,7 +49,6 @@ from typing import Any, Callable, Final, Optional, TypeVar
 import numpy as np
 import pandas as pd
 
-from provenance.run_context import build_provenance
 from pipeline_status import (
     PipelineState,
     PipelineStatus,
@@ -60,6 +59,7 @@ from pipeline_status import (
     now_epoch,
     now_monotonic,
 )
+from provenance.run_context import build_provenance
 
 logger = logging.getLogger(__name__)
 
@@ -83,9 +83,9 @@ _COL_DIST:  Final[str] = "Distance (m)"
 # Import is placed here at module level for clarity; the actual discovery
 # runs lazily during the pipeline orchestrator.
 try:
-    from telemetry_tool.column_discovery import discover_columns, apply_discovery
+    from telemetry_tool.column_discovery import apply_discovery, discover_columns
 except ImportError:
-    from column_discovery import discover_columns, apply_discovery
+    from column_discovery import apply_discovery, discover_columns
 
 
 # -- -
@@ -3438,8 +3438,8 @@ def run_full_analysis(
             from web.models import (
                 insert_condition_markers,
                 insert_condition_phases,
-                insert_driving_style_features,
                 insert_driver_progression,
+                insert_driving_style_features,
                 insert_gps_traces,
                 insert_laps,
                 insert_reference_line,
@@ -3759,8 +3759,9 @@ def run_full_analysis(
         # ── Write provenance to table (silently skipped if table missing) ──
         if db_session_id is not None:
             try:
-                from provenance.persistence import insert_provenance
                 import os as _prov_os
+
+                from provenance.persistence import insert_provenance
                 if _prov_os.environ.get("USE_PG", "0") != "1":
                     from web.db import get_db_connection as _prov_get_conn
                     _prov_conn = _prov_get_conn()

@@ -28,8 +28,9 @@ Revision ID: 019
 Revises: 018
 Create Date: 2026-02-27
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "019"
 down_revision = "018"

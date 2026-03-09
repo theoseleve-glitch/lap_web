@@ -67,8 +67,8 @@ def get_cached_coords(conn) -> list[dict[str, Any]]:
 
 def geocode_city(city: str, country_code: str = "FR") -> Optional[tuple[float, float]]:
     try:
-        import urllib.request
         import urllib.parse
+        import urllib.request
         url = (
             f"{_GEOCODING_BASE}"
             f"?name={urllib.parse.quote(city)}"

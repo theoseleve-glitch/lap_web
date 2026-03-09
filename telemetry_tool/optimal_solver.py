@@ -16,6 +16,7 @@ import logging
 import math
 from collections import Counter
 from dataclasses import dataclass, field
+from typing import Optional
 
 import numpy as np
 
@@ -71,6 +72,11 @@ class OptimalResult:
     cap_source: list[str]           # from OptimalCaps
     solver_version: str
     n_iterations: int
+    # Uncertainty bands (P56)
+    v_opt_low_mps: Optional[np.ndarray] = None   # conservative (tight mu)
+    v_opt_high_mps: Optional[np.ndarray] = None  # optimistic (wide mu)
+    lap_time_low_s: Optional[float] = None       # conservative lap time
+    lap_time_high_s: Optional[float] = None      # optimistic lap time
 
     def to_dict(self) -> dict:
         source_counts = dict(Counter(self.cap_source))

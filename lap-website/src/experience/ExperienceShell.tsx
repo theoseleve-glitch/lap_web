@@ -19,7 +19,12 @@ import { SiteFooter } from '@/components/site/SiteFooter';
 import { GsapProvider } from '@/components/providers/GsapProvider';
 import { PerformanceProvider } from '@/lib/performance-context';
 import { EXPERIENCE_V2 } from '@/lib/feature-flags';
-import { BackgroundCanvas } from './background/BackgroundCanvas';
+import dynamic from 'next/dynamic';
+
+const BackgroundCanvas = dynamic(
+  () => import('./background/BackgroundCanvas').then((m) => m.BackgroundCanvas),
+  { ssr: false },
+);
 
 function ExperienceContent({ children }: { children: ReactNode }) {
   const webglAvailable = useKernelStore((s) => s.webglAvailable);

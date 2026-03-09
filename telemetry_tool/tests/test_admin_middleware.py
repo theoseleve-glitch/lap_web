@@ -55,7 +55,7 @@ class FakeConn:
 
 def _make_app_with_admin_blueprint():
     """Create a minimal Flask app with admin middleware wired up."""
-    from flask import Flask, jsonify, Blueprint
+    from flask import Blueprint, Flask, jsonify
 
     app = Flask(__name__)
     app.config["TESTING"] = True

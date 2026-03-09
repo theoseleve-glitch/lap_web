@@ -48,8 +48,9 @@ def test_split_few_laps_skips():
 def test_healthy_envelope_passes():
     """8 realistic laps with achievable theoretical → no overfit flag."""
     from theoretical_engine import (
-        build_theoretical_lap, split_laps_train_holdout,
+        build_theoretical_lap,
         compute_theoretical_plausibility,
+        split_laps_train_holdout,
     )
 
     rng = np.random.default_rng(42)
@@ -84,8 +85,9 @@ def test_healthy_envelope_passes():
 def test_outlier_inflates_envelope():
     """7 normal laps + 1 outlier at 2x speed → overfit detected."""
     from theoretical_engine import (
-        build_theoretical_lap, split_laps_train_holdout,
+        build_theoretical_lap,
         compute_theoretical_plausibility,
+        split_laps_train_holdout,
     )
 
     rng = np.random.default_rng(42)

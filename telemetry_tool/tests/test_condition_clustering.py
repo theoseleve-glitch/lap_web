@@ -45,7 +45,9 @@ def test_condition_cluster_fields():
 def test_clustering_result_fields():
     """ClusteringResult has required fields and to_dict()."""
     from condition_clustering import (
-        ClusteringResult, ConditionCluster, LapConditionFeatures,
+        ClusteringResult,
+        ConditionCluster,
+        LapConditionFeatures,
     )
 
     feat = LapConditionFeatures(1, 1.0, "normal", 0.0, 0.9, 0.8, 0.5)

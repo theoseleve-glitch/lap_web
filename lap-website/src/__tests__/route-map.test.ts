@@ -36,11 +36,9 @@ describe('routeMap', () => {
   });
 });
 
-const SEO_EXEMPT = ['/', '/sitemap'];
-
 describe('SEO fields', () => {
   const nonExemptEntries = Object.entries(routeMap).filter(
-    ([key]) => !SEO_EXEMPT.includes(key),
+    ([key, entry]) => key !== '/' && key !== '/sitemap' && !key.startsWith('/app/') && !entry.noIndex,
   );
 
   it('every non-exempt entry has primaryKeyword', () => {
@@ -73,15 +71,23 @@ describe('SEO fields', () => {
 });
 
 describe('buildBreadcrumbs', () => {
-  it('returns empty array for top-level pages', () => {
+  it('returns empty array for the homepage', () => {
     expect(buildBreadcrumbs('/')).toEqual([]);
-    expect(buildBreadcrumbs('/pricing')).toEqual([]);
-    expect(buildBreadcrumbs('/product')).toEqual([]);
   });
 
-  it('returns trail for subpages', () => {
+  it('returns Home trail for marketing pages', () => {
+    expect(buildBreadcrumbs('/pricing')).toEqual([
+      { label: 'Home', href: '/' },
+    ]);
+    expect(buildBreadcrumbs('/product')).toEqual([
+      { label: 'Home', href: '/' },
+    ]);
+  });
+
+  it('returns full trail for subpages', () => {
     const crumbs = buildBreadcrumbs('/pricing/compare');
     expect(crumbs).toEqual([
+      { label: 'Home', href: '/' },
       { label: 'Pricing', href: '/pricing' },
     ]);
   });

@@ -54,6 +54,7 @@ def mock_client():
     exercise error paths and edge cases deterministically.
     """
     from flask import Flask
+
     from web.routes.data_v2 import bp
 
     app = Flask(__name__)

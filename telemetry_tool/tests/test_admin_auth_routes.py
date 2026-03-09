@@ -13,8 +13,8 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
 import pyotp
+import pytest
 from cryptography.fernet import Fernet
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -60,7 +60,7 @@ class FakeConn:
 
 def _make_app():
     """Create Flask app with admin auth blueprint."""
-    from flask import Flask, g, jsonify, Blueprint
+    from flask import Blueprint, Flask, g, jsonify
 
     app = Flask(__name__)
     app.config["TESTING"] = True

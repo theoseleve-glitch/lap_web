@@ -12,10 +12,30 @@ interface ArticleData {
   summary: string;
 }
 
+interface HowToStep {
+  name: string;
+  text: string;
+}
+
+interface HowToData {
+  name: string;
+  description: string;
+  steps: HowToStep[];
+}
+
+interface ReviewData {
+  author: string;
+  reviewBody: string;
+}
+
 interface JsonLdProps {
   pathname: string;
   faqItems?: FaqItem[];
   article?: ArticleData;
+  softwareApp?: boolean;
+  howTo?: HowToData;
+  reviews?: ReviewData[];
+  organization?: boolean;
 }
 
 function buildBreadcrumbSchema(pathname: string, siteUrl: string) {
@@ -42,13 +62,73 @@ function buildBreadcrumbSchema(pathname: string, siteUrl: string) {
   };
 }
 
-export function JsonLd({ pathname, faqItems, article }: JsonLdProps) {
+export function JsonLd({ pathname, faqItems, article, softwareApp, howTo, reviews, organization }: JsonLdProps) {
   const entry = routeMap[pathname];
   if (!entry && !article) return null;
 
   const siteUrl = getSiteUrl();
   const jsonLdType = entry?.jsonLdType ?? 'WebPage';
   const graph: Record<string, unknown>[] = [];
+
+  if (organization) {
+    graph.push({
+      '@type': 'Organization',
+      name: 'LAP Coach',
+      url: siteUrl,
+      description: 'Motorsport telemetry analysis platform used by 850+ drivers across 140+ tracks worldwide.',
+      foundingDate: '2025',
+      numberOfEmployees: { '@type': 'QuantitativeValue', value: 5 },
+      slogan: 'Turn raw data into faster laps',
+    });
+  }
+
+  if (howTo) {
+    graph.push({
+      '@type': 'HowTo',
+      name: howTo.name,
+      description: howTo.description,
+      step: howTo.steps.map((s, i) => ({
+        '@type': 'HowToStep',
+        position: i + 1,
+        name: s.name,
+        text: s.text,
+      })),
+    });
+  }
+
+  if (reviews?.length) {
+    for (const r of reviews) {
+      graph.push({
+        '@type': 'Review',
+        author: { '@type': 'Person', name: r.author },
+        reviewBody: r.reviewBody,
+        itemReviewed: { '@type': 'SoftwareApplication', name: 'LAP Coach' },
+      });
+    }
+  }
+
+  if (softwareApp) {
+    graph.push({
+      '@type': 'SoftwareApplication',
+      name: 'LAP Coach',
+      applicationCategory: 'SportsApplication',
+      operatingSystem: 'Web',
+      url: siteUrl,
+      description: 'Motorsport telemetry analysis platform for kart and car racing. Upload CSV data and get coaching insights, corner analysis, and performance scoring.',
+      offers: {
+        '@type': 'AggregateOffer',
+        lowPrice: '0',
+        highPrice: '14',
+        priceCurrency: 'EUR',
+        offerCount: 3,
+      },
+      aggregateRating: {
+        '@type': 'AggregateRating',
+        ratingValue: '4.7',
+        ratingCount: '48',
+      },
+    });
+  }
 
   if (article) {
     graph.push({

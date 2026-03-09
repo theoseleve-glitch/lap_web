@@ -17,21 +17,22 @@ from __future__ import annotations
 import logging
 import math
 import os
+import sqlite3
 import tempfile
 import uuid
 from pathlib import Path
+from typing import Any, BinaryIO
 
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, g, request
 
-from web.api_utils import api_error, api_response, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
-from web.rate_limit import rate_limit
 from web.models import (
     insert_analysis_json,
     insert_condition_phases,
     insert_corner_metrics,
-    insert_driving_style_features,
     insert_driver_progression,
+    insert_driving_style_features,
     insert_gps_traces,
     insert_laps,
     insert_reference_line,
@@ -42,6 +43,7 @@ from web.models import (
     upsert_session,
     upsert_track,
 )
+from web.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +70,12 @@ _TIER_TIMEOUTS = {
 }
 
 
-def _get_conn():
+def _get_conn() -> sqlite3.Connection:
     """Return a DB connection (alias for get_db_connection)."""
     return get_db_connection()
 
 
-def _check_tier_limits(f, conn, workspace_id, plan_tier: str):
+def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str, plan_tier: str) -> str | None:
     """Return error message if a tier limit is exceeded, else None."""
     limits = _TIER_LIMITS.get(plan_tier, _TIER_LIMITS["free"])
     # File size check
@@ -123,8 +125,8 @@ def _parse_exclude_laps(raw: str | None) -> list[int] | None:
         return None
 
 
-def _persist_driver_progression(conn, driver_id, session_id, summary,
-                                driving_style):
+def _persist_driver_progression(conn: sqlite3.Connection, driver_id: int, session_id: str, summary: dict[str, Any],
+                                driving_style: dict[str, Any] | None) -> None:
     """Compute and persist a driver progression snapshot."""
     import numpy as np
 
@@ -177,7 +179,7 @@ def _persist_driver_progression(conn, driver_id, session_id, summary,
     logger.info("Persisted driver progression for session %s", session_id)
 
 
-def _compute_sector_analysis(summary: dict) -> dict | None:
+def _compute_sector_analysis(summary: dict[str, Any]) -> dict[str, Any] | None:
     """Extract valid lap times from summary and run sector analysis."""
     try:
         from sector_analysis import analyze_sector_performance
@@ -194,9 +196,9 @@ def _compute_sector_analysis(summary: dict) -> dict | None:
     return result.to_dict()
 
 
-def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
+def _persist_analysis_json(conn: sqlite3.Connection, session_id: str, summary: dict[str, Any]) -> None:
     """Build and persist the supplementary analysis_json blob."""
-    blob: dict = {}
+    blob: dict[str, Any] = {}
 
     # Pipeline status — per-step statuses, degradation flags, versioning
     pipeline = summary.get("pipeline")
@@ -263,9 +265,32 @@ def _persist_analysis_json(conn, session_id: str, summary: dict) -> None:
                      len(blob), session_id)
 
 
+def _auto_session_title(
+    driver: str, session_type: str, session_date: str | None, filename_stem: str
+) -> str:
+    """Generate a human-readable session title from metadata.
+
+    Examples:
+      "Alex Rossi - Practice - 2026-03-09"
+      "Alex Rossi - Race"
+      "session_2026_03_09" (fallback to filename)
+    """
+    parts: list[str] = []
+    if driver and driver != "Unknown":
+        parts.append(driver)
+    type_label = session_type.capitalize() if session_type else ""
+    if type_label:
+        parts.append(type_label)
+    if session_date:
+        parts.append(session_date[:10])
+    if parts:
+        return " - ".join(parts)[:200]
+    return filename_stem[:200]
+
+
 @bp.route("/sessions/upload", methods=["POST"])
 @rate_limit(tier="upload")
-def upload_session():
+def upload_session() -> tuple[Response, int]:
     """Upload a CSV telemetry file and dispatch async analysis.
 
     Form fields
@@ -346,16 +371,18 @@ def upload_session():
         raw_session_type = request.form.get("session_type", "practice")
         raw_track_state = request.form.get("track_state", "dry")
         raw_driver_name = (request.form.get("driver_name") or "Unknown").strip()[:100]
+        _sd = request.form.get("session_date")
 
-        session_meta: dict = {
+        session_meta: dict[str, Any] = {
             "session_type": raw_session_type if raw_session_type in _VALID_SESSION_TYPES else "practice",
             "track_state": raw_track_state if raw_track_state in _VALID_TRACK_STATES else "dry",
             "driver_name": raw_driver_name or "Unknown",
             "source_filename": safe_name,
-            "display_name": Path(safe_name).stem[:200],
+            "display_name": _auto_session_title(
+                raw_driver_name, raw_session_type, _sd, Path(safe_name).stem
+            ),
         }
         # Pass user-provided session_date to the pipeline
-        _sd = request.form.get("session_date")
         if _sd:
             session_meta["session_date"] = _sd[:30]
 
@@ -379,7 +406,7 @@ def upload_session():
         if filter_profile_name:
             session_meta["filter_profile"] = filter_profile_name
 
-        vehicle_overrides: dict = {}
+        vehicle_overrides: dict[str, Any] = {}
         _mass = request.form.get("mass_kg")
         if _mass is not None:
             _m = float(_mass)
@@ -435,11 +462,13 @@ def upload_session():
         conn.commit()
 
         # ── 6. Seed pipeline context in Redis ─────────────────────
-        from tasks.pipeline_tasks import build_pipeline_chain
-        from pipeline_context import PipelineContext
-        from web.config import Config
-        import redis as _redis
         import json as _json
+
+        import redis as _redis
+
+        from pipeline_context import PipelineContext
+        from tasks.pipeline_tasks import build_pipeline_chain
+        from web.config import Config
 
         _r = _redis.Redis.from_url(Config.REDIS_URL)
         ctx = PipelineContext.create(

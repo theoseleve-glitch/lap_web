@@ -9,6 +9,8 @@ import { BrakePrecisionChart } from './BrakePrecisionChart';
 import { CornerMasteryCard } from './CornerMasteryCard';
 import { ThrottleOnsetMap } from './ThrottleOnsetMap';
 import { ConsistencyHeatmap } from './ConsistencyHeatmap';
+import { CornerGHistogram } from './CornerGHistogram';
+import { CornerSpeedTrend } from './CornerSpeedTrend';
 import 'leaflet/dist/leaflet.css';
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -362,11 +364,22 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
       )}
 
       {subTab === 'charts' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <BrakePrecisionChart sessionId={sessionId} />
-          <CornerMasteryCard sessionId={sessionId} />
-          <ThrottleOnsetMap sessionId={sessionId} />
-          <ConsistencyHeatmap sessionId={sessionId} />
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <BrakePrecisionChart sessionId={sessionId} />
+            <CornerMasteryCard sessionId={sessionId} />
+            <ThrottleOnsetMap sessionId={sessionId} />
+            <ConsistencyHeatmap sessionId={sessionId} />
+          </div>
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h3 className="text-sm font-monument text-chalk mb-3">Corner Lateral G Distribution</h3>
+            <CornerGHistogram sessionId={sessionId} corners={corners} />
+          </div>
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h3 className="text-sm font-monument text-chalk mb-3">Corner Apex Speed Trend</h3>
+            <p className="text-xs text-steel mb-3 font-body">Minimum speed per corner across laps — shows learning and consistency</p>
+            <CornerSpeedTrend sessionId={sessionId} />
+          </div>
         </div>
       )}
     </div>

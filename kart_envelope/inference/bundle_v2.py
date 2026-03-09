@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from kart_envelope.config import KartEnvelopeConfig
+from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.ingest.columns import (
     COL_ACCEL_LAT,
     COL_ACCEL_LONG,
@@ -29,7 +30,6 @@ from kart_envelope.ingest.columns import (
     COL_YAW_RATE,
 )
 from kart_envelope.ingest.metadata import SessionMetadata
-from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.tiering import PRODUCT_TIER_DEFAULT, normalize_product_tier
 
 logger = logging.getLogger(__name__)

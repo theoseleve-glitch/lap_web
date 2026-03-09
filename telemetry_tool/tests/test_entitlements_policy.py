@@ -7,13 +7,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from flask import Flask, jsonify, g
+from flask import Flask, g, jsonify
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from auth.entitlements import get_plan_entitlements, check_usage_limit
+from auth.entitlements import check_usage_limit, get_plan_entitlements
 from web.middleware.entitlements import require_feature, require_report_quota, require_upload_size
 
 

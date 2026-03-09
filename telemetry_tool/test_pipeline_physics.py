@@ -270,12 +270,13 @@ _test("metrics_no_sim_result", t_metrics_no_sim_result)
 
 def t_summary_keys_present():
     """Pipeline summary dict has all new physics keys pre-populated."""
+    import inspect
+
     import pipeline as p
+
     # We can't run the full pipeline without real data, but we can check
 
     # that the function signature references the new keys
-
-    import inspect
     source = inspect.getsource(p.run_full_analysis)
     for key in ["reference_line", "curvature_profile", "friction_model",
                 "vehicle_params", "data_quality"]:
@@ -287,8 +288,9 @@ _test("summary_keys_present", t_summary_keys_present)
 
 def t_step_names_in_source():
     """All new step names appear in the pipeline source."""
-    import pipeline as p
     import inspect
+
+    import pipeline as p
     source = inspect.getsource(p.run_full_analysis)
     for step in ["09a_reference_line", "09b_curvature_profile",
                  "09c_friction_model", "09d_vehicle_model",
@@ -301,8 +303,9 @@ _test("step_names_in_source", t_step_names_in_source)
 
 def t_cascading_logic_in_source():
     """The cascading theoretical lap logic is present."""
-    import pipeline as p
     import inspect
+
+    import pipeline as p
     source = inspect.getsource(p.run_full_analysis)
     # Priority 1: hybrid simulation with fallback
     assert "simulate_with_fallback" in source
@@ -349,7 +352,7 @@ _test("import_helper", t_import_helper)
 
 def t_column_discovery_replaces_old_mapping():
     """column_discovery module bridges raw RaceChrono names (replaces _map_to_internal_names)."""
-    from column_discovery import discover_columns, apply_discovery
+    from column_discovery import apply_discovery, discover_columns
     df = pd.DataFrame({
         "Distance (m)": [0, 1],
         "Speed (m/s)": [10, 20],

@@ -1,12 +1,18 @@
 """Test auto-tagging module."""
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from auto_tagging import (
-    auto_tag_session, get_session_tags, add_manual_tag,
-    remove_tag, get_all_unique_tags, get_sessions_by_tag,
+    add_manual_tag,
+    auto_tag_session,
+    get_all_unique_tags,
+    get_session_tags,
+    get_sessions_by_tag,
+    remove_tag,
 )
 
 

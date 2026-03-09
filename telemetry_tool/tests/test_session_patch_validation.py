@@ -8,8 +8,8 @@ Validates:
   - kart_id linking and unlinking
   - kart_name resolved in session response via LEFT JOIN
 """
-import sqlite3
 import json
+import sqlite3
 import sys
 from pathlib import Path
 

@@ -262,6 +262,7 @@ def _run_tests() -> None:
     # Test 2: non-existent sessions
     def t_missing():
         import sqlite3
+
         from db.migrate import ensure_schema
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row
@@ -277,6 +278,7 @@ def _run_tests() -> None:
     # Test 3: job status (non-empty batch stores job)
     def t_job_status():
         import sqlite3
+
         from db.migrate import ensure_schema
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

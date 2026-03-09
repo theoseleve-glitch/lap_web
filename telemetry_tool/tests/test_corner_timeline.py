@@ -1,6 +1,6 @@
 """Tests for the Corner Timeline event detection system."""
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
@@ -85,7 +85,11 @@ class TestCornerTimelineDataclass:
 
 # ── detect_corner_events tests ──────────────────────────────────────────────
 
-from telemetry_tool.corner_analysis import detect_corner_events, compute_segment_losses, compute_event_stability
+from telemetry_tool.corner_analysis import (
+    compute_event_stability,
+    compute_segment_losses,
+    detect_corner_events,
+)
 
 
 def _make_corner(cid=1, s_start=100.0, s_end=200.0):

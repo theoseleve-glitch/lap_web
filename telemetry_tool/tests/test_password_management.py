@@ -16,7 +16,6 @@ from web.api_utils import init_request_id
 from web.routes.api_v1_account import bp as api_v1_account_bp
 from web.routes.auth import bp as auth_bp
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -337,6 +336,7 @@ class TestSecuritySchemas:
 
     def test_password_change_schema_rejects_short_new_password(self):
         from pydantic import ValidationError
+
         from web.schemas.security import PasswordChangeSchema
         with pytest.raises(ValidationError):
             PasswordChangeSchema(current_password="current", new_password="short")
@@ -353,6 +353,7 @@ class TestSecuritySchemas:
 
     def test_reset_password_schema_rejects_short_password(self):
         from pydantic import ValidationError
+
         from web.schemas.security import ResetPasswordSchema
         with pytest.raises(ValidationError):
             ResetPasswordSchema(token="abc", new_password="short")
@@ -364,6 +365,7 @@ class TestSecuritySchemas:
 
     def test_totp_setup_verify_schema_rejects_non_digits(self):
         from pydantic import ValidationError
+
         from web.schemas.security import TotpSetupVerifySchema
         with pytest.raises(ValidationError):
             TotpSetupVerifySchema(code="abcdef")

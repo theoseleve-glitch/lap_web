@@ -20,7 +20,6 @@ from condition_tracking import (
     label_phases,
 )
 
-
 # ============================================================================
 
 # Fixtures

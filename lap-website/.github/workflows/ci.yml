@@ -14,6 +14,13 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - uses: actions/cache@v4
+        with:
+          path: lap-website/.next/cache
+          key: nextjs-${{ runner.os }}-${{ hashFiles('lap-website/package-lock.json') }}-${{ hashFiles('lap-website/src/**') }}
+          restore-keys: |
+            nextjs-${{ runner.os }}-${{ hashFiles('lap-website/package-lock.json') }}-
+            nextjs-${{ runner.os }}-
       - run: npm ci
       - run: npm run ci
       - run: npm run lint:feature-case && npm run lint:i18n-ready && npm run lint:page-template && npm run lint:faq && npm run lint:spelling

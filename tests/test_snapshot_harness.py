@@ -9,7 +9,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from tests.snapshot_harness import assert_snapshot_match, _deep_compare
+from tests.snapshot_harness import _deep_compare, assert_snapshot_match
 
 
 class TestDeepCompare:

@@ -16,10 +16,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 from auth.usage import (
     get_current_period,
     get_usage_count,
-    increment_usage,
     get_usage_snapshot,
+    increment_usage,
 )
-
 
 # ── Tests: get_current_period ──────────────────────────────────────────
 

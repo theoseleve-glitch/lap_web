@@ -3,13 +3,12 @@
 import pytest
 
 from pipeline_errors import (
-    PipelineError,
-    TransientError,
     FatalError,
     InteractionRequired,
+    PipelineError,
+    TransientError,
     classify_error,
 )
-
 
 # ── Hierarchy tests ──────────────────────────────────────────────────
 

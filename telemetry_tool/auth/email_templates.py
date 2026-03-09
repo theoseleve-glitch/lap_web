@@ -86,6 +86,21 @@ def _verification(v: dict) -> tuple[str, str]:
     return "Verify your LAP account", _wrap(body)
 
 
+def _verification_reminder(v: dict) -> tuple[str, str]:
+    url = v["verify_url"]
+    body = (
+        _h2("Don't forget to verify your email")
+        + _p(
+            "You registered for LAP recently but haven't verified your email "
+            "address yet. Verify now to unlock all features and ensure you can "
+            "recover your account."
+        )
+        + _btn(url, "Verify My Email")
+        + _small("If you didn't create this account, you can safely ignore this email.")
+    )
+    return "Reminder: Verify your LAP email address", _wrap(body)
+
+
 def _welcome(v: dict) -> tuple[str, str]:
     name = v.get("display_name", "racer")
     body = (
@@ -302,6 +317,7 @@ def _quota_warning(v: dict) -> tuple[str, str]:
 
 TEMPLATES: dict[str, Callable[[dict], tuple[str, str]]] = {
     "verification": _verification,
+    "verification_reminder": _verification_reminder,
     "welcome": _welcome,
     "password_reset": _password_reset,
     "password_changed": _password_changed,

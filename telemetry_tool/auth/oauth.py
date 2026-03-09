@@ -41,10 +41,14 @@ def get_or_create_oauth_user(conn, provider: str, profile: dict, secret: str) ->
     Raises ``AuthError`` if the provider has not verified the user's email
     and we would need to link to an existing account (prevents account takeover).
     """
-    from auth.service import (
-        create_access_token, create_refresh_token, hash_refresh_token, AuthError,
-    )
     from datetime import datetime, timedelta, timezone
+
+    from auth.service import (
+        AuthError,
+        create_access_token,
+        create_refresh_token,
+        hash_refresh_token,
+    )
 
     email = profile["email"]
     provider_user_id = str(profile["id"])

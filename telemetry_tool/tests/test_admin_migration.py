@@ -42,7 +42,7 @@ class TestMigration022Operations:
     """Verify that upgrade() calls the expected alembic ops by mocking."""
 
     def test_upgrade_adds_user_columns(self):
-        from unittest.mock import patch, call, MagicMock
+        from unittest.mock import MagicMock, call, patch
         mod = _load_migration()
 
         with patch("alembic.op.add_column") as mock_add, \
@@ -99,7 +99,7 @@ class TestMigration022Operations:
         assert "idx_incidents_status" in index_names
 
     def test_downgrade_drops_tables_in_order(self):
-        from unittest.mock import patch, call
+        from unittest.mock import call, patch
         mod = _load_migration()
 
         with patch("alembic.op.drop_table") as mock_dt, \
@@ -120,7 +120,7 @@ class TestMigration022Operations:
         assert "is_superadmin" in dropped_cols
 
     def test_admin_audit_log_has_expected_columns(self):
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
         mod = _load_migration()
 
         with patch("alembic.op.add_column"), \

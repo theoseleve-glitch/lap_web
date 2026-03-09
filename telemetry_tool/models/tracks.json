@@ -253,5 +253,22 @@
       "sample_count": 1000,
       "lap_count": 5
     }
+  },
+  {
+    "track_id": "64370d61-bdbd-43eb-ac9f-7a8e95ffaa39",
+    "track_name": "Synthetic Oval",
+    "fingerprint": {
+      "lap_length_m": 500.0,
+      "bbox": {
+        "lat_min": 45.0,
+        "lat_max": 45.0045045045045,
+        "lon_min": 8.9999675873266,
+        "lon_max": 9.000027201691665
+      },
+      "start_lat": 45.000276,
+      "start_lon": 9.000001,
+      "sample_count": 150,
+      "lap_count": 3
+    }
   }
 ]

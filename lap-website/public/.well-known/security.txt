@@ -1,0 +1,8 @@
+# Security Policy for Lap Coach Racing
+# https://securitytxt.org/
+
+Contact: mailto:security@lap-coach.racing
+Expires: 2027-03-09T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://lap-coach.racing/.well-known/security.txt
+Policy: https://lap-coach.racing/privacy

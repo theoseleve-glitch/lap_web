@@ -1,10 +1,12 @@
 """Test weather correlation module."""
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from weather_correlation import compute_weather_pace_correlation, compute_optimal_conditions
+from weather_correlation import compute_optimal_conditions, compute_weather_pace_correlation
 
 
 class TestWeatherCorrelation:

@@ -3,7 +3,7 @@
   --asphalt: #000000;
   --concrete: #141414;
   --chalk: #F0EDE5;
-  --steel: #888888;
+  --steel: #949494;
 
   /* ── Accent Colors ────────────────── */
   --acid-green: #22C55E;
@@ -25,7 +25,11 @@
   --text-h1: clamp(3rem, 6vw, 5.25rem);
   --text-h2: clamp(2.25rem, 4vw, 3.5rem);
   --text-h3: clamp(1.5rem, 2.5vw, 2rem);
+  --text-h4: clamp(1.25rem, 2vw, 1.5rem);
+  --text-h5: clamp(1.0625rem, 1.5vw, 1.25rem);
+  --text-h6: 1rem;
   --text-body: clamp(1.0625rem, 1.3vw, 1.25rem);
+  --text-overline: 0.6875rem;
   --text-caption: 0.8125rem;
   --text-telemetry: 0.6875rem;
   --text-tiny: 0.5625rem;
@@ -50,8 +54,11 @@
   /* ── Muted Text (WCAG AA: 4.58:1 on #000) ── */
   --text-muted: #9CA3AF;
 
-  /* ── Spacing (8px baseline) ───────── */
+  /* ── Spacing (4px base unit) ─────── */
+  --space-px: 1px;
+  --space-0-5: 4px;
   --space-1: 8px;
+  --space-1-5: 12px;
   --space-2: 16px;
   --space-3: 24px;
   --space-4: 32px;
@@ -170,3 +177,34 @@
 [data-accent="yellow"]  { --accent: var(--marshal-yellow); }
 [data-accent="orange"]  { --accent: var(--pit-orange); }
 [data-accent="purple"]  { --accent: var(--racing-purple); }
+
+/* ── High-Contrast Mode (outdoor/sunlight use) ── */
+@media (prefers-contrast: more) {
+  :root {
+    --asphalt: #000000;
+    --concrete: #0A0A0A;
+    --chalk: #FFFFFF;
+    --steel: #D4D4D4;
+    --text-muted: #BBBBBB;
+    --border-color-default: rgba(255, 255, 255, 0.4);
+    --border-color-muted: rgba(255, 255, 255, 0.25);
+    --chart-reference: rgba(255, 255, 255, 0.5);
+    --acid-green: #00FF66;
+    --safety-red: #FF3333;
+    --marshal-yellow: #FFE033;
+  }
+}
+
+.high-contrast {
+  --asphalt: #000000;
+  --concrete: #0A0A0A;
+  --chalk: #FFFFFF;
+  --steel: #D4D4D4;
+  --text-muted: #BBBBBB;
+  --border-color-default: rgba(255, 255, 255, 0.4);
+  --border-color-muted: rgba(255, 255, 255, 0.25);
+  --chart-reference: rgba(255, 255, 255, 0.5);
+  --acid-green: #00FF66;
+  --safety-red: #FF3333;
+  --marshal-yellow: #FFE033;
+}

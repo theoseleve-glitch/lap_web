@@ -196,7 +196,7 @@ export default function LeaderboardPage() {
 
   const hasFilters = !!(trackFilter || driverFilter);
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       key: '_rank',
       header: '#',
@@ -261,7 +261,7 @@ export default function LeaderboardPage() {
         <span className="text-steel">{formatDate(row.session_date)}</span>
       ),
     },
-  ];
+  ], []);
 
   return (
     <div>

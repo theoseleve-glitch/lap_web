@@ -131,6 +131,32 @@ export default function RaceStrategyListPage() {
         }
       />
 
+      {/* Quick-start guide — collapsible */}
+      <details className="mb-4 bg-concrete border border-steel/20 rounded-lg">
+        <summary className="px-5 py-3 cursor-pointer text-steel font-telemetry text-xs tracking-[0.08em] uppercase hover:text-chalk transition-colors select-none list-none flex items-center gap-2">
+          <svg className="w-4 h-4 shrink-0 transition-transform [[open]>&]:rotate-90" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clipRule="evenodd"/></svg>
+          How Race Strategy works
+        </summary>
+        <div className="px-5 pb-4 grid grid-cols-1 sm:grid-cols-4 gap-4 text-sm font-body">
+          <div>
+            <span className="text-steel/60 font-telemetry text-[10px] block mb-1">1. CREATE</span>
+            <p className="text-steel">Set track, race duration, driver lineup, and target stints.</p>
+          </div>
+          <div>
+            <span className="text-marshal-yellow font-telemetry text-[10px] block mb-1">2. PLAN</span>
+            <p className="text-steel">Assign stints, set fuel windows, and preview the strategy timeline.</p>
+          </div>
+          <div>
+            <span className="text-acid-green font-telemetry text-[10px] block mb-1">3. GO LIVE</span>
+            <p className="text-steel">During the race, track lap times, adjust stints in real time, and monitor fuel.</p>
+          </div>
+          <div>
+            <span className="text-chalk font-telemetry text-[10px] block mb-1">4. REVIEW</span>
+            <p className="text-steel">After the race, view stint summaries, actual vs planned, and lap-by-lap data.</p>
+          </div>
+        </div>
+      </details>
+
       <div className="mb-4">
         <UpgradeBanner
           feature="race_strategy_full"

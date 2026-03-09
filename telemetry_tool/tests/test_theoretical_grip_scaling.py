@@ -18,10 +18,9 @@ from theoretical_engine import (
     _OUT_BRAKE,
     _OUT_DIST,
     _OUT_SPEED,
-    scale_theoretical_by_grip,
     get_phase_theoreticals,
+    scale_theoretical_by_grip,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

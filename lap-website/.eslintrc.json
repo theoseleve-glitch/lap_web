@@ -7,6 +7,8 @@
     "jsx-a11y/aria-role": "error",
     "jsx-a11y/heading-has-content": "error",
     "jsx-a11y/label-has-associated-control": "warn",
-    "jsx-a11y/no-autofocus": "warn"
+    "jsx-a11y/no-autofocus": "warn",
+    "react-hooks/exhaustive-deps": "warn",
+    "react/no-array-index-key": "warn"
   }
 }

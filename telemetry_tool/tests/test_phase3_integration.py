@@ -29,7 +29,9 @@ class TestPipelineChainFlow:
         MockCtx, mock_redis, mock_pg, mock_batch_counter,
     ):
         from tasks.pipeline_tasks import (
-            pipeline_ingest, pipeline_analyze, pipeline_finalize,
+            pipeline_analyze,
+            pipeline_finalize,
+            pipeline_ingest,
         )
 
         ctx = MagicMock()
@@ -91,7 +93,10 @@ class TestErrorClassificationIntegration:
 
     def test_all_error_types(self):
         from pipeline_errors import (
-            TransientError, FatalError, InteractionRequired, classify_error,
+            FatalError,
+            InteractionRequired,
+            TransientError,
+            classify_error,
         )
 
         assert classify_error(TransientError("x")) == "transient"

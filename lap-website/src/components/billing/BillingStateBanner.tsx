@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { apiFetch } from '@/lib/api-client';
+import { formatDateFromTimestamp } from '@/lib/format-utils';
 
 interface SubscriptionStatus {
   plan_tier: string;
@@ -73,8 +74,7 @@ export function BillingStateBanner() {
   // For canceled: show period end date if available
   let message = config.message;
   if (sub.subscription_status === 'canceled' && sub.current_period_end) {
-    const endDate = new Date(sub.current_period_end).toLocaleDateString();
-    message = `Your subscription has been canceled. Access continues until ${endDate}.`;
+    message = `Your subscription has been canceled. Access continues until ${formatDateFromTimestamp(sub.current_period_end)}.`;
   }
 
   return (

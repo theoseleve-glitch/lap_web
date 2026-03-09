@@ -7,7 +7,6 @@ endurance / stint-based racing where fuel weight affects lap time.
 
 import numpy as np
 
-
 # ---------------------------------------------------------------------------
 # Fuel-corrected pace
 # ---------------------------------------------------------------------------

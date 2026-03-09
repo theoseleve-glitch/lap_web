@@ -13,9 +13,8 @@ if str(_PROJECT_ROOT) not in sys.path:
 from flask import Flask, g
 
 from web.api_utils import ErrorCode, api_response, init_request_id
-from web.validation import validate_body, validate_params
 from web.schemas.common import PaginationParams
-
+from web.validation import validate_body, validate_params
 
 # ---------------------------------------------------------------------------
 # Test schemas

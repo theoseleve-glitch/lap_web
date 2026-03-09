@@ -513,8 +513,8 @@ def _resolve_corners_impl(
 
 
 def _run_tests() -> None:
-    import traceback
     import tempfile
+    import traceback
 
     passed: list[str] = []
     failed: list[tuple[str, str]] = []

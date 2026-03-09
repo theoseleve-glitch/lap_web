@@ -9,9 +9,9 @@ Validates that:
 - Deletion notifications are sent on the day of deletion
 """
 import sys
-from pathlib import Path
 from datetime import date, timedelta
-from unittest.mock import MagicMock, patch, call
+from pathlib import Path
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -20,10 +20,10 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from tasks.retention_tasks import (
-    _get_workspace_retention,
+    _delete_raw_data,
     _find_expiring_sessions,
     _find_warning_sessions,
-    _delete_raw_data,
+    _get_workspace_retention,
     _mark_session_expired,
 )
 

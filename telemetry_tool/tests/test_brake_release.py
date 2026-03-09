@@ -1,5 +1,7 @@
 """Tests for brake release quality metrics."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
@@ -7,9 +9,12 @@ import pandas as pd
 import pytest
 
 from telemetry_tool.corner_analysis import (
-    BrakeReleaseMetrics, compute_brake_release_metrics,
-    BrakeYawCoupling, compute_brake_yaw_coupling,
-    CornerEvent, CornerTimeline,
+    BrakeReleaseMetrics,
+    BrakeYawCoupling,
+    CornerEvent,
+    CornerTimeline,
+    compute_brake_release_metrics,
+    compute_brake_yaw_coupling,
 )
 
 

@@ -30,7 +30,6 @@ from web.routes.admin.training import (
     _trigger_training,
 )
 
-
 # ---------------------------------------------------------------------------
 # _list_audit_manifests
 # ---------------------------------------------------------------------------
@@ -181,6 +180,7 @@ class TestTriggerTraining:
             # We need to patch the import inside the function
             with patch.dict("sys.modules", {"tasks.training_tasks": MagicMock()}) as _:
                 import importlib
+
                 import web.routes.admin.training as training_mod
 
                 # Directly mock the function behavior

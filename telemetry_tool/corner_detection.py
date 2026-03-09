@@ -79,7 +79,8 @@ _DEFAULT_MIN_LENGTH_M:  Final[float] = 20.0    # metres -- ignore micro-bumps
 _DEFAULT_SMOOTH_WINDOW: Final[int]   = 15      # samples (half-window)
 _DEFAULT_EXPAND_RATIO:  Final[float] = 0.50    # expansion threshold = peak_thresh x ratio
 _DEFAULT_MERGE_GAP_M:   Final[float] = 30.0    # metres -- merge corners closer than this
-_MIN_SPEED_MPS:         Final[float] = 3.0     # below this speed curvature is unreliable (~10.8 km/h)
+_MIN_SPEED_MPS:         Final[float] = 1.5     # below this speed curvature is unreliable (~5.4 km/h)
+                                                # lowered from 3.0 for slow hairpins on tight circuits
 
 # -- -
 
@@ -544,17 +545,43 @@ def detect_corners(
         )
 
     # 2c -- Scale merge_gap to track length to avoid over-merging on short tracks
+    #        For tight kart tracks (<1000m), use more aggressive scaling to
+    #        preserve chicanes where corners are 10-15m apart.
 
     effective_merge_gap = merge_gap_m
-    if lap_length > 0 and lap_length < 2000:
+    if lap_length > 0 and lap_length < 1000:
+        # Kart tracks: ~500m laps → merge_gap ≈ 10m (preserves chicanes)
+        effective_merge_gap = min(merge_gap_m, max(8.0, lap_length / 50.0))
+    elif lap_length > 0 and lap_length < 2000:
         effective_merge_gap = min(merge_gap_m, lap_length / 30.0)
+
+    # 2d -- Adaptive min_corner_length for tight tracks
+    #        Default 20m is too aggressive for short hairpins on kart tracks.
+    #        Scale down proportionally: 500m track → 5m minimum, 1500m → 15m.
+    effective_min_length = min_corner_length_m
+    if lap_length > 0 and lap_length < 1500:
+        effective_min_length = max(5.0, min(min_corner_length_m, lap_length / 100.0))
+        logger.debug(
+            "Tight circuit: min_corner_length scaled %.1fm → %.1fm (lap=%.0fm).",
+            min_corner_length_m, effective_min_length, lap_length,
+        )
+
+    # 2e -- Adaptive min_peak_separation for tight tracks
+    #        15m default can miss closely-spaced chicane apexes on short tracks.
+    effective_peak_sep = min_peak_separation_m
+    if lap_length > 0 and lap_length < 1000:
+        effective_peak_sep = max(5.0, min(min_peak_separation_m, lap_length / 80.0))
+        logger.debug(
+            "Tight circuit: min_peak_separation scaled %.1fm → %.1fm.",
+            min_peak_separation_m, effective_peak_sep,
+        )
 
     # 3 -- Detect peaks
 
     # Convert min_peak_separation_m to samples using median distance step
 
     d_step     = float(np.nanmedian(np.diff(dist)))
-    min_sep_samples = max(1, int(min_peak_separation_m / d_step)) if d_step > 0 else 5
+    min_sep_samples = max(1, int(effective_peak_sep / d_step)) if d_step > 0 else 5
 
     peaks = _find_peaks(curv_smooth, curvature_threshold, min_sep_samples)
 
@@ -567,11 +594,11 @@ def detect_corners(
             )
             return detect_corners(
                 resampled_lap, curvature_threshold=relaxed,
-                min_corner_length_m=min(min_corner_length_m, 10.0),
+                min_corner_length_m=min(effective_min_length, 5.0),
                 smooth_window=max(3, effective_smooth // 2),
                 expand_ratio=expand_ratio,
                 merge_gap_m=effective_merge_gap,
-                min_peak_separation_m=min_peak_separation_m,
+                min_peak_separation_m=effective_peak_sep,
                 adaptive_percentile=adaptive_percentile,
                 adaptive_min_corners=adaptive_min_corners,
             )
@@ -579,20 +606,37 @@ def detect_corners(
         return []
 
     # 4 -- Expand each peak into a region
+    #      For tight circuits, use adaptive expansion: sharp corners (high peak
+    #      curvature) get a tighter expansion ratio to capture short entry/exit
+    #      zones accurately, while gentle bends keep the default.
 
-    expand_threshold = curvature_threshold * expand_ratio
-    regions: list[CornerRegion] = [
-        _expand_peak(p, curv_smooth, expand_threshold)
-        for p in peaks
-    ]
+    if lap_length > 0 and lap_length < 1500:
+        # Per-peak adaptive expansion for tight tracks
+        regions: list[CornerRegion] = []
+        for p in peaks:
+            peak_curv = curv_smooth[p]
+            # Sharp corners (>0.05 1/m, R<20m): lower ratio to capture tight zones
+            if peak_curv > 0.05:
+                eff_ratio = max(0.3, expand_ratio * 0.6)
+            elif peak_curv > 0.02:
+                eff_ratio = max(0.35, expand_ratio * 0.8)
+            else:
+                eff_ratio = expand_ratio
+            regions.append(_expand_peak(p, curv_smooth, curvature_threshold * eff_ratio))
+    else:
+        expand_threshold = curvature_threshold * expand_ratio
+        regions: list[CornerRegion] = [
+            _expand_peak(p, curv_smooth, expand_threshold)
+            for p in peaks
+        ]
 
     # 5 -- Merge close regions (chicanes / linked sequences)
 
     regions = _merge_regions(regions, dist, effective_merge_gap)
 
-    # 6 -- Filter by minimum length
+    # 6 -- Filter by minimum length (using adaptive value for tight tracks)
 
-    regions = [r for r in regions if r.length_m(dist) >= min_corner_length_m]
+    regions = [r for r in regions if r.length_m(dist) >= effective_min_length]
 
     # 6b -- Wrap-around merge for closed circuits: if the first and last
     #        regions are within merge_gap_m of each other (accounting for
@@ -683,19 +727,33 @@ def detect_corners(
         )
         return detect_corners(
             resampled_lap, curvature_threshold=relaxed,
-            min_corner_length_m=min(min_corner_length_m, 10.0),
+            min_corner_length_m=min(effective_min_length, 5.0),
             smooth_window=max(3, effective_smooth // 2),
             expand_ratio=expand_ratio,
             merge_gap_m=effective_merge_gap,
-            min_peak_separation_m=min_peak_separation_m,
+            min_peak_separation_m=effective_peak_sep,
             adaptive_percentile=adaptive_percentile,
             adaptive_min_corners=adaptive_min_corners,
         )
 
+    # 7c -- Chicane annotation: detect alternating-direction sequences
+    #        A chicane is 2+ consecutive corners with alternating L/R within 80m.
+    if len(corners) >= 2:
+        for i in range(len(corners) - 1):
+            c1, c2 = corners[i], corners[i + 1]
+            gap = c2["s_start"] - c1["s_end"]
+            if gap < 80 and c1["direction"] != c2["direction"]:
+                c1.setdefault("chicane_group", i + 1)
+                c2.setdefault("chicane_group", i + 1)
+                c1["is_chicane_entry"] = True
+                c2["is_chicane_exit"] = True
+
     logger.info(
-        "Detected %d corner(s)  [threshold=%.4f 1/m, min_length=%.1f m%s].",
-        len(corners), curvature_threshold, min_corner_length_m,
-        ", adaptive" if _is_adaptive else "",
+        "Detected %d corner(s)  [threshold=%.4f 1/m, min_length=%.1f m, "
+        "merge_gap=%.1f m, peak_sep=%.1f m%s, lap=%.0f m].",
+        len(corners), curvature_threshold, effective_min_length,
+        effective_merge_gap, effective_peak_sep,
+        ", adaptive" if _is_adaptive else "", lap_length,
     )
     return corners
 

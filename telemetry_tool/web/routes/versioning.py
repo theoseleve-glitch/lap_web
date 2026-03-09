@@ -13,11 +13,10 @@ from flask import Blueprint, g
 from sqlalchemy import text
 
 from pipeline_version import PIPELINE_VERSION
-
 from web.api_utils import api_response
 from web.rate_limit import rate_limit
-from web.validation import validate_params
 from web.schemas.common import PaginationParams
+from web.validation import validate_params
 
 logger = logging.getLogger(__name__)
 

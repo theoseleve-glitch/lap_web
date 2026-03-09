@@ -22,32 +22,36 @@ Endpoints:
     GET    /api/v1/compare/drivers?a=X&b=Y          - Driver comparison
     GET    /api/v1/sessions/<id>/compare/sectors     - Sector/corner compare
     GET    /api/v1/sessions/<id>/report?format=html  - Report download
+    GET    /api/v1/export/scores                    - Scoring history CSV export
     PATCH  /api/v1/sessions/<id>                    - Update session fields
     GET    /api/v1/sessions/<id>/grip-map           - Distance-binned grip map
     GET    /api/v1/sessions/<id>/friction-envelope   - Speed-binned friction envelope
 """
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import math
 from functools import wraps
 from pathlib import Path
+from typing import Any, Callable
 
-from flask import Blueprint, g, request, send_file
+from flask import Blueprint, Response, g, request, send_file
 
-from web.api_utils import api_error, api_response, ErrorCode
+from web import models
+from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
-from web import models
 
 logger = logging.getLogger(__name__)
 
 
-def _safe_api(f):
+def _safe_api(f: Callable) -> Callable:
     """Catch unhandled exceptions in API routes — log + return structured error."""
     @wraps(f)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> tuple:
         try:
             return f(*args, **kwargs)
         except Exception:
@@ -68,13 +72,13 @@ bp = Blueprint("data_v2", __name__, url_prefix="/api/v1")
 # GET → "read" tier (300/min), mutating methods → "write" tier (60/min).
 
 @bp.before_request
-def _apply_rate_limit():
+def _apply_rate_limit() -> tuple | None:
     from web.rate_limit import rate_limit as _rl_decorator
     tier = "write" if request.method in ("DELETE", "PATCH", "POST", "PUT") else "read"
     # Build a no-op function, wrap it with the decorator, and call it.
     # If rate-limited, the wrapper returns a 429 response tuple.
     @_rl_decorator(tier=tier)
-    def _check():
+    def _check() -> None:
         return None
     result = _check()
     if result is not None:
@@ -84,7 +88,7 @@ def _apply_rate_limit():
 # ── Helpers ───────────────────────────────────────────────────────
 
 
-def _resolve_lap_number(conn, session_id: str) -> int | None:
+def _resolve_lap_number(conn: Any, session_id: str) -> int | None:
     """Determine the lap number to use when ?lap= is not provided.
 
     Strategy: find the first lap with is_best=True; otherwise fall back
@@ -99,7 +103,7 @@ def _resolve_lap_number(conn, session_id: str) -> int | None:
     return laps[0]["lap_number"]
 
 
-def _get_lap_param(conn, session_id: str) -> int | None:
+def _get_lap_param(conn: Any, session_id: str) -> int | None:
     """Read the ?lap= query parameter or fall back to best/first lap."""
     raw = request.args.get("lap")
     if raw is not None:
@@ -143,13 +147,24 @@ _ALLOWED_DELETE_TABLES = frozenset(_DELETE_RELATED_TABLES)
 
 @bp.route("/dashboard/stats", methods=["GET"])
 @_safe_api
-def dashboard_stats():
+def dashboard_stats() -> tuple[dict, int]:
     """Return aggregate dashboard statistics.
 
     Returns total_sessions, total_drivers, total_tracks, total_laps,
     pb_time, avg_score, best_score, plus recent_scores, recent_times,
     and recent_sessions for sparkline and table display.
     """
+    # Check cache first (keyed by workspace for multi-tenant)
+    ws_id = getattr(g, "workspace_id", "default")
+    cache_key = f"dashboard:stats:{ws_id}"
+    try:
+        from web.cache import api_cache
+        cached = api_cache.get(cache_key)
+        if cached is not None:
+            return api_response(cached)
+    except ImportError:
+        pass
+
     conn = get_db_connection()
     stats = models.get_dashboard_stats(conn)
 
@@ -190,7 +205,7 @@ def dashboard_stats():
                 pb_session_id = s.get("session_id")
                 break
 
-    return api_response({
+    result = {
         "total_sessions": stats.get("total_sessions", 0),
         "total_drivers": stats.get("total_drivers", 0),
         "total_tracks": stats.get("total_tracks", 0),
@@ -202,7 +217,16 @@ def dashboard_stats():
         "recent_scores": recent_scores,
         "recent_times": recent_times,
         "recent_sessions": recent_sessions,
-    })
+    }
+
+    # Cache for 60s, tagged by workspace for targeted invalidation
+    try:
+        from web.cache import api_cache
+        api_cache.set(cache_key, result, ttl=60, tags=[f"ws:{ws_id}", "dashboard"])
+    except ImportError:
+        pass
+
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -212,7 +236,7 @@ def dashboard_stats():
 
 @bp.route("/sessions", methods=["GET"])
 @_safe_api
-def list_sessions():
+def list_sessions() -> tuple[dict, int]:
     """List sessions with pagination, filtering, and sorting.
 
     Query params:
@@ -257,6 +281,16 @@ def list_sessions():
                 filters[key] = float(val)
             except (ValueError, TypeError):
                 pass
+    if request.args.get("favorite", "").lower() in ("true", "1"):
+        filters["favorite"] = True
+    # Archive filter: by default hide archived sessions unless explicitly requested
+    archived_param = request.args.get("archived", "").lower()
+    if archived_param in ("true", "1"):
+        filters["archived"] = True
+    elif archived_param in ("all",):
+        pass  # show all — don't filter on archived
+    else:
+        filters["archived"] = False  # default: hide archived
 
     sort_by = request.args.get("sort_by")
     sort_dir = request.args.get("sort_dir", "desc")
@@ -294,7 +328,7 @@ def list_sessions():
 
 @bp.route("/sessions/filter-options", methods=["GET"])
 @_safe_api
-def session_filter_options():
+def session_filter_options() -> tuple[dict, int]:
     """Return distinct values for filter dropdowns."""
     conn = get_db_connection()
     drivers = [r["driver_name"] for r in conn.execute(
@@ -318,7 +352,7 @@ def session_filter_options():
 
 @bp.route("/sessions/<session_id>", methods=["GET"])
 @_safe_api
-def get_session(session_id: str):
+def get_session(session_id: str) -> tuple[dict, int]:
     """Return a single session by ID."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -359,7 +393,7 @@ def get_session(session_id: str):
 
 @bp.route("/sessions/<session_id>/laps", methods=["GET"])
 @_safe_api
-def get_laps(session_id: str):
+def get_laps(session_id: str) -> tuple[dict, int]:
     """Return all laps for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -377,7 +411,7 @@ def get_laps(session_id: str):
 
 @bp.route("/sessions/<session_id>/speed-trace", methods=["GET"])
 @_safe_api
-def get_speed_trace(session_id: str):
+def get_speed_trace(session_id: str) -> tuple[dict, int]:
     """Return speed vs distance arrays for a lap.
 
     Query params:
@@ -452,6 +486,33 @@ def get_speed_trace(session_id: str):
                     result["ref_speeds"] = interp.tolist()
                     result["ref_lap_number"] = ref_lap
 
+    # Optional average pace line across all valid laps
+    if request.args.get("avg") == "1":
+        try:
+            import numpy as np
+
+            all_laps = models.get_laps(conn, session_id)
+            primary_dists = trace.get("distances", [])
+            if all_laps and primary_dists:
+                speed_arrays = []
+                for lap_row in all_laps:
+                    ln = lap_row.get("lap_number")
+                    if ln == lap_num:
+                        speed_arrays.append(np.array(trace.get("speeds", [])))
+                        continue
+                    lt = models.get_gps_trace(conn, session_id, ln)
+                    if lt and lt.get("distances") and lt.get("speeds"):
+                        interp_s = np.interp(
+                            primary_dists, lt["distances"], lt["speeds"]
+                        )
+                        speed_arrays.append(interp_s)
+                if len(speed_arrays) >= 2:
+                    avg_arr = np.mean(speed_arrays, axis=0)
+                    result["avg_speeds"] = avg_arr.tolist()
+                    result["avg_lap_count"] = len(speed_arrays)
+        except Exception:
+            pass  # non-critical — graceful degradation
+
     return api_response(result)
 
 
@@ -462,7 +523,7 @@ def get_speed_trace(session_id: str):
 
 @bp.route("/sessions/<session_id>/gps-trace", methods=["GET"])
 @_safe_api
-def get_gps_trace(session_id: str):
+def get_gps_trace(session_id: str) -> tuple[dict, int]:
     """Return GPS coordinates and speed arrays for a lap.
 
     Query params:
@@ -506,7 +567,7 @@ def get_gps_trace(session_id: str):
 
 @bp.route("/sessions/<session_id>/gg-data", methods=["GET"])
 @_safe_api
-def get_gg_data(session_id: str):
+def get_gg_data(session_id: str) -> tuple[dict, int]:
     """Return lateral and longitudinal acceleration arrays for GG diagram.
 
     Query params:
@@ -570,7 +631,7 @@ def get_gg_data(session_id: str):
 
 @bp.route("/sessions/<session_id>/scores", methods=["GET"])
 @_safe_api
-def get_scores(session_id: str):
+def get_scores(session_id: str) -> tuple[dict, int]:
     """Return score breakdown for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -664,7 +725,7 @@ def get_scores(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
-def _merge_coaching_labels(conn, session_id: str, corners: list[dict]) -> None:
+def _merge_coaching_labels(conn: Any, session_id: str, corners: list[dict]) -> None:
     """Merge corner coaching labels from optimal_v2 into corner dicts (in-place)."""
     analysis = models.get_analysis_json(conn, session_id)
     if not analysis or not isinstance(analysis, dict):
@@ -690,7 +751,7 @@ def _merge_coaching_labels(conn, session_id: str, corners: list[dict]) -> None:
 
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
 @_safe_api
-def get_corners(session_id: str):
+def get_corners(session_id: str) -> tuple[dict, int]:
     """Return corner boundaries merged with coaching metrics.
 
     Corner boundaries come from corner_metrics_summary (aggregated
@@ -896,16 +957,50 @@ def get_corners(session_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════
+# 8b. GET /api/v1/sessions/<id>/corners/per-lap
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corners/per-lap", methods=["GET"])
+@_safe_api
+def get_corners_per_lap(session_id: str) -> tuple[dict, int]:
+    """Return per-lap corner metrics (apex speed, entry speed, etc.).
+
+    Used for corner speed trend analysis across laps.
+    Returns a flat list of rows with lap_number + corner_id + metrics.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    rows = models.get_corner_metrics_for_session(conn, session_id)
+    if not rows:
+        return api_response({
+            "metrics": [],
+            "available": False,
+            "reason_code": "NO_PER_LAP_CORNER_DATA",
+            "message": "No per-lap corner metrics available",
+        })
+
+    return api_response({
+        "metrics": rows,
+        "available": True,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
 # 9. DELETE /api/v1/sessions/<id>
 # ══════════════════════════════════════════════════════════════════
 
 
 @bp.route("/sessions/<session_id>", methods=["DELETE"])
 @_safe_api
-def delete_session(session_id: str):
-    """Delete a session and all related data.
+def delete_session(session_id: str) -> tuple[dict, int]:
+    """Soft-delete a session (recoverable for 30 days).
 
     Requires at least 'member' role in the workspace (viewers cannot delete).
+    Pass ``?permanent=true`` to hard-delete immediately (admin only).
     """
     # RBAC: viewers should not be able to delete sessions.
     workspace_role = getattr(g, "workspace_role", None)
@@ -917,33 +1012,32 @@ def delete_session(session_id: str):
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    # Delete from all related tables first (foreign key order).
-    # Table names are from the hardcoded _DELETE_RELATED_TABLES constant above.
-    for table in _DELETE_RELATED_TABLES:
-        assert table in _ALLOWED_DELETE_TABLES, f"Unexpected table: {table}"
-        try:
-            conn.execute(
-                f"DELETE FROM {table} WHERE session_id = :session_id",
-                {"session_id": session_id},
-            )
-        except Exception as exc:
-            # Table might not exist in older schema versions — skip
-            logger.debug("Skipping delete from %s: %s", table, exc)
+    permanent = request.args.get("permanent", "").lower() in ("true", "1")
 
-    # Delete the session itself.
-    conn.execute(
-        "DELETE FROM sessions WHERE session_id = :session_id",
-        {"session_id": session_id},
-    )
+    if permanent:
+        # Only admins/owners can permanently delete
+        if workspace_role not in ("admin", "owner", None):
+            return api_error(ErrorCode.FORBIDDEN, "Only admins can permanently delete", status=403)
 
-    audit_log(
-        conn,
-        "session.delete",
-        {
-            "session_id": session_id,
-            "tables_cleaned": list(_DELETE_RELATED_TABLES),
-        },
-    )
+        for table in _DELETE_RELATED_TABLES:
+            assert table in _ALLOWED_DELETE_TABLES, f"Unexpected table: {table}"
+            try:
+                conn.execute(
+                    f"DELETE FROM {table} WHERE session_id = :session_id",
+                    {"session_id": session_id},
+                )
+            except Exception as exc:
+                logger.debug("Skipping delete from %s: %s", table, exc)
+
+        conn.execute(
+            "DELETE FROM sessions WHERE session_id = :session_id",
+            {"session_id": session_id},
+        )
+        audit_log(conn, "session.hard_delete", {"session_id": session_id})
+    else:
+        # Soft delete — mark deleted_at, data preserved
+        models.soft_delete_session(conn, session_id)
+        audit_log(conn, "session.soft_delete", {"session_id": session_id})
 
     conn.commit()
 
@@ -953,8 +1047,201 @@ def delete_session(session_id: str):
     except Exception:
         logger.warning("Rollup refresh failed after delete", exc_info=True)
 
-    logger.info("Deleted session %s and related data", session_id)
-    return api_response({"deleted": session_id})
+    mode = "permanently deleted" if permanent else "soft-deleted"
+    logger.info("%s session %s", mode.capitalize(), session_id)
+    return api_response({"deleted": session_id, "permanent": permanent})
+
+
+@bp.route("/sessions/<session_id>/restore", methods=["POST"])
+@_safe_api
+def restore_session(session_id: str) -> tuple[dict, int]:
+    """Restore a soft-deleted session."""
+    workspace_role = getattr(g, "workspace_role", None)
+    if workspace_role == "viewer":
+        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions", status=403)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    if not session.get("deleted_at"):
+        return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
+
+    models.restore_session(conn, session_id)
+    audit_log(conn, "session.restore", {"session_id": session_id})
+    conn.commit()
+
+    logger.info("Restored session %s", session_id)
+    return api_response({"restored": session_id})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 9b. POST /api/v1/sessions/<id>/favorite — Toggle favorite
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/favorite", methods=["POST"])
+@_safe_api
+def toggle_favorite(session_id: str) -> tuple[dict, int]:
+    """Toggle the favorite/bookmark status of a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    current = session.get("is_favorite", 0)
+    new_val = 0 if current else 1
+    models.update_session_field(conn, session_id, "is_favorite", new_val)
+    conn.commit()
+    return api_response({"session_id": session_id, "is_favorite": bool(new_val)})
+
+
+# ══════════════════════════════════════════════════════════════════
+# 9c. POST /api/v1/sessions/bulk — Bulk operations
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/bulk", methods=["POST"])
+@_safe_api
+def bulk_session_action() -> tuple[dict, int]:
+    """Perform a bulk action on multiple sessions.
+
+    Body::
+
+        {
+            "action": "delete" | "restore" | "favorite" | "unfavorite",
+            "session_ids": ["id1", "id2", ...]
+        }
+
+    Returns the count of successfully processed sessions.
+    Max 100 session_ids per request.
+    """
+    workspace_role = getattr(g, "workspace_role", None)
+    if workspace_role == "viewer":
+        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions", status=403)
+
+    body = request.get_json(silent=True) or {}
+    action = body.get("action")
+    session_ids = body.get("session_ids", [])
+
+    if action not in ("delete", "restore", "favorite", "unfavorite"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "Invalid action", status=422)
+    if not session_ids or not isinstance(session_ids, list):
+        return api_error(ErrorCode.VALIDATION_ERROR, "session_ids must be a non-empty list", status=422)
+    if len(session_ids) > 100:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Max 100 sessions per bulk operation", status=422)
+
+    conn = get_db_connection()
+    processed = 0
+
+    for sid in session_ids:
+        session = models.get_session_by_id(conn, sid)
+        if session is None:
+            continue
+
+        if action == "delete":
+            if models.soft_delete_session(conn, sid):
+                processed += 1
+        elif action == "restore":
+            if models.restore_session(conn, sid):
+                processed += 1
+        elif action == "favorite":
+            models.update_session_field(conn, sid, "is_favorite", 1)
+            processed += 1
+        elif action == "unfavorite":
+            models.update_session_field(conn, sid, "is_favorite", 0)
+            processed += 1
+
+    audit_log(conn, f"session.bulk_{action}", {
+        "session_ids": session_ids,
+        "processed": processed,
+    })
+    conn.commit()
+
+    return api_response({
+        "action": action,
+        "requested": len(session_ids),
+        "processed": processed,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# 9d. GET/POST/DELETE /api/v1/sessions/<id>/tags — Session tagging
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/tags", methods=["GET"])
+@_safe_api
+def get_session_tags(session_id: str) -> tuple[dict, int]:
+    """List all tags for a session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    rows = conn.execute(
+        "SELECT tag, confidence, source, created_at "
+        "FROM session_tags WHERE session_id = :sid ORDER BY created_at",
+        {"sid": session_id},
+    ).fetchall()
+    tags = [dict(r) for r in rows]
+    return api_response({"session_id": session_id, "tags": tags})
+
+
+@bp.route("/sessions/<session_id>/tags", methods=["POST"])
+@_safe_api
+def add_session_tag(session_id: str) -> tuple[dict, int]:
+    """Add a tag to a session.
+
+    Body::
+
+        {"tag": "race-day", "confidence": 1.0}
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+    tag = (body.get("tag") or "").strip().lower()
+    if not tag or len(tag) > 50:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "Tag must be 1-50 characters", status=422)
+
+    confidence = body.get("confidence", 1.0)
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = 1.0
+
+    try:
+        conn.execute(
+            "INSERT INTO session_tags (session_id, tag, confidence, source) "
+            "VALUES (:sid, :tag, :conf, 'user')",
+            {"sid": session_id, "tag": tag, "conf": confidence},
+        )
+        conn.commit()
+    except Exception:
+        # Duplicate tag — ignore
+        return api_response({"session_id": session_id, "tag": tag, "created": False})
+
+    return api_response({"session_id": session_id, "tag": tag, "created": True}, status=201)
+
+
+@bp.route("/sessions/<session_id>/tags/<tag>", methods=["DELETE"])
+@_safe_api
+def delete_session_tag(session_id: str, tag: str) -> tuple[dict, int]:
+    """Remove a tag from a session."""
+    conn = get_db_connection()
+    result = conn.execute(
+        "DELETE FROM session_tags WHERE session_id = :sid AND tag = :tag",
+        {"sid": session_id, "tag": tag.lower()},
+    )
+    conn.commit()
+    if result.rowcount == 0:
+        return api_error(ErrorCode.NOT_FOUND, "Tag not found on session", status=404)
+    return api_response({"session_id": session_id, "tag": tag, "deleted": True})
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -964,7 +1251,7 @@ def delete_session(session_id: str):
 
 @bp.route("/compare/sessions", methods=["GET"])
 @_safe_api
-def compare_sessions():
+def compare_sessions() -> tuple[dict, int]:
     """Return two sessions side-by-side with scores and laps.
 
     Query params:
@@ -1019,11 +1306,120 @@ def compare_sessions():
 
 
 # ══════════════════════════════════════════════════════════════════
+# 10a2. GET /api/v1/compare/multi?ids=X,Y,Z — Multi-session comparison (3+)
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/compare/multi", methods=["GET"])
+@_safe_api
+def compare_multi_sessions() -> tuple[dict, int]:
+    """Compare up to 8 sessions side-by-side with scores, laps, and deltas.
+
+    Query params:
+        ids (str, required) — comma-separated session IDs (2-8)
+    """
+    ids_param = request.args.get("ids", "")
+    if not ids_param:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "The 'ids' query parameter is required (comma-separated session IDs)",
+            status=400,
+        )
+
+    session_ids = [sid.strip() for sid in ids_param.split(",") if sid.strip()]
+    if len(session_ids) < 2:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "At least 2 session IDs are required for comparison",
+            status=400,
+        )
+    if len(session_ids) > 8:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Maximum 8 sessions can be compared at once",
+            status=400,
+        )
+
+    conn = get_db_connection()
+    sessions_data = []
+
+    for sid in session_ids:
+        session = models.get_session_by_id(conn, sid)
+        if session is None:
+            return api_error(ErrorCode.NOT_FOUND, f"Session {sid} not found", status=404)
+        session = dict(session) if not isinstance(session, dict) else session
+
+        scores = models.get_score_details(conn, sid)
+        laps = models.get_laps_for_session(conn, sid)
+
+        # Best lap time for delta computation
+        best_time = None
+        if laps:
+            valid_times = [
+                float(l.get("lap_time_s", 0) if isinstance(l, dict) else l["lap_time_s"])
+                for l in laps
+                if (l.get("lap_time_s") if isinstance(l, dict) else l["lap_time_s"])
+                and float(l.get("lap_time_s") if isinstance(l, dict) else l["lap_time_s"]) > 0
+            ]
+            if valid_times:
+                best_time = min(valid_times)
+
+        sessions_data.append({
+            "session_id": sid,
+            "session": session,
+            "scores": scores,
+            "laps": laps,
+            "best_lap_time_s": best_time,
+            "n_laps": len(laps) if laps else 0,
+        })
+
+    # Find the overall best for delta computation
+    best_times = [s["best_lap_time_s"] for s in sessions_data if s["best_lap_time_s"]]
+    overall_best = min(best_times) if best_times else None
+    best_session_id = None
+    if overall_best is not None:
+        best_session_id = next(
+            s["session_id"] for s in sessions_data
+            if s["best_lap_time_s"] == overall_best
+        )
+
+    # Add deltas relative to best
+    for s in sessions_data:
+        if s["best_lap_time_s"] and overall_best:
+            s["delta_to_best_s"] = round(s["best_lap_time_s"] - overall_best, 3)
+        else:
+            s["delta_to_best_s"] = None
+
+    # Build pairwise delta matrix
+    n = len(sessions_data)
+    delta_matrix: list[list[float | None]] = []
+    for i in range(n):
+        row: list[float | None] = []
+        for j in range(n):
+            t_i = sessions_data[i]["best_lap_time_s"]
+            t_j = sessions_data[j]["best_lap_time_s"]
+            if t_i is not None and t_j is not None:
+                row.append(round(t_i - t_j, 3))
+            else:
+                row.append(None)
+        delta_matrix.append(row)
+
+    return api_response({
+        "sessions": sessions_data,
+        "session_count": len(sessions_data),
+        "best_session_id": best_session_id,
+        "overall_best_time_s": overall_best,
+        "delta_matrix": delta_matrix,
+        "session_ids": session_ids,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
 # 10b. GET /api/v1/compare/drivers?a=X&b=Y — Driver comparison
 # ══════════════════════════════════════════════════════════════════
 
 
-def _driver_data(conn, driver_id: int) -> dict | None:
+def _driver_data(conn: Any, driver_id: int) -> dict | None:
     """Aggregate scores, trend, and stats for a single driver.
 
     Returns None if the driver does not exist.
@@ -1127,7 +1523,7 @@ def _driver_data(conn, driver_id: int) -> dict | None:
 
 @bp.route("/compare/drivers", methods=["GET"])
 @_safe_api
-def compare_drivers():
+def compare_drivers() -> tuple[dict, int]:
     """Return two drivers side-by-side with aggregated scores, trend, and stats.
 
     Query params:
@@ -1182,7 +1578,7 @@ def compare_drivers():
 
 @bp.route("/sessions/<session_id>/report", methods=["GET"])
 @_safe_api
-def get_report(session_id: str):
+def get_report(session_id: str) -> tuple | Response:
     """Download a pre-generated HTML report for a session.
 
     Query params:
@@ -1243,7 +1639,152 @@ def get_report(session_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════
-# 12. PATCH /api/v1/sessions/<id> — Update session fields
+# 12. GET /api/v1/export/scores — Scoring history CSV
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/export/scores", methods=["GET"])
+@_safe_api
+def export_scores_csv() -> tuple:
+    """Export scoring history as CSV with session metadata."""
+    conn = get_db_connection()
+    limit = min(int(request.args.get("limit", 500)), 2000)
+
+    sessions = models.get_sessions(conn, limit=limit, offset=0)
+    if not sessions:
+        return api_error(ErrorCode.NOT_FOUND, "No sessions found", status=404)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "session_id", "session_date", "track_name", "driver_name",
+        "best_lap_s", "total_score", "grade",
+        "pace_score", "pace_max",
+        "consistency_score", "consistency_max",
+        "execution_score", "execution_max",
+        "robustness_score", "robustness_max",
+        "adaptation_score",
+    ])
+
+    for sess in sessions:
+        sid = sess.get("session_id", "")
+        scores = models.get_score_details(conn, sid)
+        if scores is None:
+            continue
+
+        writer.writerow([
+            sid,
+            sess.get("session_date", ""),
+            sess.get("track_name", ""),
+            sess.get("driver_name", ""),
+            sess.get("best_lap_time_s", ""),
+            sess.get("total_score", ""),
+            sess.get("grade", ""),
+            scores.get("pace_score", ""),
+            scores.get("pace_max", ""),
+            scores.get("consistency_score", ""),
+            scores.get("consistency_max", ""),
+            scores.get("execution_score", ""),
+            scores.get("execution_max", ""),
+            scores.get("robustness_score", ""),
+            scores.get("robustness_max", ""),
+            scores.get("adaptation_score", ""),
+        ])
+
+    output = buf.getvalue()
+    buf.close()
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=scoring_history.csv"},
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 12c. GET /api/v1/sessions/<id>/export?format=aim|motec
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/export", methods=["GET"])
+@_safe_api
+def export_session_telemetry(session_id: str) -> tuple:
+    """Export session telemetry in AiM RaceStudio or MoTeC i2 CSV format.
+
+    Query params:
+        format — aim (default) or motec
+        lap    — specific lap number (optional, all laps if omitted)
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    fmt = request.args.get("format", "aim").lower()
+    lap_filter = request.args.get("lap")
+
+    # Get GPS trace data (has distance, lat, lon, speed)
+    laps = models.get_laps(conn, session_id)
+    if not laps:
+        return api_error(ErrorCode.NOT_FOUND, "No lap data available", status=404)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+
+    if fmt == "motec":
+        # MoTeC i2 CSV format: Time, Distance, Speed, Lat Accel, Long Accel, GPS Lat, GPS Lon
+        writer.writerow([
+            "Time [s]", "Distance [m]", "Speed [m/s]",
+            "G Force Lat [m/s2]", "G Force Long [m/s2]",
+            "GPS Latitude [deg]", "GPS Longitude [deg]",
+            "Lap Number",
+        ])
+    else:
+        # AiM RaceStudio CSV format
+        writer.writerow([
+            "Time(s)", "Distance(m)", "Speed(m/s)",
+            "LateralAcceleration(m/s2)", "LongitudinalAcceleration(m/s2)",
+            "GPSLatitude(deg)", "GPSLongitude(deg)",
+            "LapNumber",
+        ])
+
+    for lap_row in laps:
+        lap_num = lap_row.get("lap_number", 0)
+        if lap_filter and str(lap_num) != str(lap_filter):
+            continue
+
+        gps_data = models.get_gps_trace(conn, session_id, lap_num)
+        if not gps_data:
+            continue
+
+        for pt in gps_data:
+            writer.writerow([
+                pt.get("elapsed_s", ""),
+                pt.get("distance_m", ""),
+                pt.get("speed_mps", ""),
+                pt.get("a_lat", ""),
+                pt.get("a_long", ""),
+                pt.get("latitude", ""),
+                pt.get("longitude", ""),
+                lap_num,
+            ])
+
+    output = buf.getvalue()
+    buf.close()
+
+    track = session.get("track_name", "unknown") or "unknown"
+    ext_name = "motec" if fmt == "motec" else "aim"
+    filename = f"{track}_{session_id}_{ext_name}.csv"
+
+    return Response(
+        output,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+# ══════════════════════════════════════════════════════════════════
+# 13. PATCH /api/v1/sessions/<id> — Update session fields
 # ══════════════════════════════════════════════════════════════════
 
 
@@ -1260,7 +1801,7 @@ _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed"}
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _validate_patch_fields(conn, body: dict) -> tuple[list[dict], dict]:
+def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
     """Validate PATCH body fields and return (errors, cleaned_body).
 
     Returns a tuple of (errors_list, cleaned_body_dict).  ``errors`` is a
@@ -1391,7 +1932,7 @@ def _validate_patch_fields(conn, body: dict) -> tuple[list[dict], dict]:
 
 @bp.route("/sessions/<session_id>", methods=["PATCH"])
 @_safe_api
-def update_session(session_id: str):
+def update_session(session_id: str) -> tuple[dict, int]:
     """Update editable fields on a session.
 
     Accepts JSON body with any of: session_type, track_state,
@@ -1464,13 +2005,46 @@ def update_session(session_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════
+# 12b. POST /api/v1/sessions/<id>/archive
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/archive", methods=["POST"])
+@_safe_api
+def archive_session(session_id: str) -> tuple[dict, int]:
+    """Toggle archive status on a session.
+
+    JSON body: { "archived": true } or { "archived": false }
+    Requires at least 'member' role.
+    """
+    workspace_role = getattr(g, "workspace_role", None)
+    if workspace_role == "viewer":
+        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions", status=403)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+    archived = body.get("archived", True)
+    if not isinstance(archived, bool):
+        archived = str(archived).lower() in ("true", "1")
+
+    models.update_session_field(conn, session_id, "archived", 1 if archived else 0)
+    conn.commit()
+
+    return api_response({"session_id": session_id, "archived": archived})
+
+
+# ══════════════════════════════════════════════════════════════════
 # 13. GET /api/v1/sessions/<id>/theoretical
 # ══════════════════════════════════════════════════════════════════
 
 
 @bp.route("/sessions/<session_id>/theoretical", methods=["GET"])
 @_safe_api
-def get_theoretical(session_id: str):
+def get_theoretical(session_id: str) -> tuple[dict, int]:
     """Return theoretical lap data (simulation result)."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1506,7 +2080,7 @@ def get_theoretical(session_id: str):
 
 @bp.route("/sessions/<session_id>/reference_line", methods=["GET"])
 @_safe_api
-def get_reference_line(session_id: str):
+def get_reference_line(session_id: str) -> tuple[dict, int]:
     """Return the median reference racing line GPS coordinates."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1531,7 +2105,7 @@ def get_reference_line(session_id: str):
 
 @bp.route("/sessions/<session_id>/best_lap_gps", methods=["GET"])
 @_safe_api
-def get_best_lap_gps(session_id: str):
+def get_best_lap_gps(session_id: str) -> tuple[dict, int]:
     """Return GPS trace for the best lap."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1566,7 +2140,7 @@ def get_best_lap_gps(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
-def _closest_index(distances, target):
+def _closest_index(distances: list[float], target: float) -> int:
     """Binary search for closest distance index."""
     if not distances:
         return 0
@@ -1582,7 +2156,7 @@ def _closest_index(distances, target):
 
 @bp.route("/sessions/<session_id>/corner-positions", methods=["GET"])
 @_safe_api
-def get_corner_positions(session_id: str):
+def get_corner_positions(session_id: str) -> tuple[dict, int]:
     """Return corner GPS positions with brake point data."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1660,7 +2234,7 @@ def get_corner_positions(session_id: str):
 
 @bp.route("/sessions/<session_id>/corner-metrics", methods=["GET"])
 @_safe_api
-def get_corner_metrics(session_id: str):
+def get_corner_metrics(session_id: str) -> tuple[dict, int]:
     """Return per-lap, per-corner metrics from the corner_metrics table."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1682,7 +2256,7 @@ def get_corner_metrics(session_id: str):
 
 @bp.route("/sessions/<session_id>/corner-metrics/summary", methods=["GET"])
 @_safe_api
-def get_corner_metrics_summary(session_id: str):
+def get_corner_metrics_summary(session_id: str) -> tuple[dict, int]:
     """Return per-corner aggregate metrics."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1704,7 +2278,7 @@ def get_corner_metrics_summary(session_id: str):
 
 @bp.route("/sessions/<session_id>/delta", methods=["GET"])
 @_safe_api
-def get_delta(session_id: str):
+def get_delta(session_id: str) -> tuple[dict, int]:
     """Compute time delta between two laps on the fly."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1732,7 +2306,7 @@ def get_delta(session_id: str):
         })
 
     # Compute cumulative time from distance and speed for each lap
-    def _cumulative_time(distances, speeds):
+    def _cumulative_time(distances: list[float], speeds: list[float]) -> list[float]:
         """Build cumulative time array from distance/speed arrays."""
         t = [0.0]
         for i in range(1, len(distances)):
@@ -1787,7 +2361,7 @@ def get_delta(session_id: str):
 
 @bp.route("/sessions/<session_id>/fingerprint", methods=["GET"])
 @_safe_api
-def get_fingerprint(session_id: str):
+def get_fingerprint(session_id: str) -> tuple[dict, int]:
     """Build a 6-dimension performance radar from scores + driving style."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1803,7 +2377,7 @@ def get_fingerprint(session_id: str):
         })
 
     # Normalize each score to percentage of its max
-    def _pct(val, mx):
+    def _pct(val: float | None, mx: float | None) -> float:
         if val is None or mx is None or mx == 0:
             return 0
         return round(min(val / mx * 100, 100), 1)
@@ -1850,7 +2424,7 @@ def get_fingerprint(session_id: str):
 
 @bp.route("/sessions/<session_id>/driving-style", methods=["GET"])
 @_safe_api
-def get_driving_style(session_id: str):
+def get_driving_style(session_id: str) -> tuple[dict, int]:
     """Return driving style features for this session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1903,7 +2477,7 @@ def get_driving_style(session_id: str):
 
 @bp.route("/sessions/<session_id>/lap-distribution", methods=["GET"])
 @_safe_api
-def get_lap_distribution(session_id: str):
+def get_lap_distribution(session_id: str) -> tuple[dict, int]:
     """Compute lap time distribution histogram on the fly."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -1948,7 +2522,7 @@ def get_lap_distribution(session_id: str):
 
 @bp.route("/sessions/<session_id>/lap-progress", methods=["GET"])
 @_safe_api
-def get_lap_progress(session_id: str):
+def get_lap_progress(session_id: str) -> tuple[dict, int]:
     """Lap times in order with rolling average and trend."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2005,7 +2579,7 @@ def get_lap_progress(session_id: str):
 
 @bp.route("/sessions/<session_id>/speed-profile", methods=["GET"])
 @_safe_api
-def get_speed_profile(session_id: str):
+def get_speed_profile(session_id: str) -> tuple[dict, int]:
     """Best-lap actual speed vs theoretical speed over distance."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2068,7 +2642,7 @@ def get_speed_profile(session_id: str):
 
 @bp.route("/sessions/<session_id>/brake-precision", methods=["GET"])
 @_safe_api
-def get_brake_precision(session_id: str):
+def get_brake_precision(session_id: str) -> tuple[dict, int]:
     """Per-corner brake point consistency from corner_metrics."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2085,6 +2659,7 @@ def get_brake_precision(session_id: str):
 
     # Group by corner_id, collect brake points
     from collections import defaultdict
+
     import numpy as np
     by_corner = defaultdict(list)
     for m in metrics:
@@ -2117,7 +2692,7 @@ def get_brake_precision(session_id: str):
 
 @bp.route("/sessions/<session_id>/stint-analysis", methods=["GET"])
 @_safe_api
-def get_stint_analysis(session_id: str):
+def get_stint_analysis(session_id: str) -> tuple[dict, int]:
     """Return stint breakdown from the stint_analysis table."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2150,7 +2725,7 @@ def get_stint_analysis(session_id: str):
 
 @bp.route("/sessions/<session_id>/sector_times", methods=["GET"])
 @_safe_api
-def get_sector_times(session_id: str):
+def get_sector_times(session_id: str) -> tuple[dict, int]:
     """Return sector analysis from analysis_json."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2194,7 +2769,7 @@ def get_sector_times(session_id: str):
 
 @bp.route("/sessions/<session_id>/track-map", methods=["GET"])
 @_safe_api
-def get_track_map(session_id: str):
+def get_track_map(session_id: str) -> tuple[dict, int]:
     """Return bundled GPS data for track map rendering.
 
     Query params:
@@ -2284,7 +2859,7 @@ def get_track_map(session_id: str):
 
 @bp.route("/sessions/<session_id>/sectors", methods=["GET"])
 @_safe_api
-def get_sectors(session_id: str):
+def get_sectors(session_id: str) -> tuple[dict, int]:
     """Alias for sector_times — returns sector analysis."""
     return get_sector_times(session_id)
 
@@ -2296,7 +2871,7 @@ def get_sectors(session_id: str):
 
 @bp.route("/sessions/<session_id>/compare", methods=["GET"])
 @_safe_api
-def get_session_compare_overlay(session_id: str):
+def get_session_compare_overlay(session_id: str) -> tuple[dict, int]:
     """Cross-session overlay with distance-aligned speed traces."""
     conn = get_db_connection()
     session_a = models.get_session_by_id(conn, session_id)
@@ -2351,7 +2926,7 @@ def get_session_compare_overlay(session_id: str):
     interp_b = np.interp(common_dist, dist_b, spd_b)
 
     # Cumulative time delta
-    def _cum_time(dists, speeds):
+    def _cum_time(dists: list[float], speeds: list[float]) -> list[float]:
         t = [0.0]
         for i in range(1, len(dists)):
             ds = dists[i] - dists[i - 1]
@@ -2394,7 +2969,7 @@ def get_session_compare_overlay(session_id: str):
 # ══════════════════════════════════════════════════════════════════
 
 
-def _safe_float(val, default=None):
+def _safe_float(val: Any, default: float | None = None) -> float | None:
     """Return float(val) rounded to 4 decimal places, or *default* if val is None/NaN."""
     if val is None:
         return default
@@ -2497,7 +3072,7 @@ def _build_sector_comparison(corner_list: list[dict], corners_per_sector: int = 
 
 @bp.route("/sessions/<session_id>/compare/sectors", methods=["GET"])
 @_safe_api
-def get_session_compare_sectors(session_id: str):
+def get_session_compare_sectors(session_id: str) -> tuple[dict, int]:
     """Compare sector and corner timing between two sessions.
 
     Query params:
@@ -2568,7 +3143,7 @@ def get_session_compare_sectors(session_id: str):
 
 @bp.route("/sessions/<session_id>/corner-replay-data", methods=["GET"])
 @_safe_api
-def get_corner_replay_data(session_id: str):
+def get_corner_replay_data(session_id: str) -> tuple[dict, int]:
     """Batch endpoint for corner replay — traces, positions, metrics, lap times."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2697,7 +3272,7 @@ def get_corner_replay_data(session_id: str):
 
 @bp.route("/sessions/<session_id>/corner-mastery", methods=["GET"])
 @_safe_api
-def get_corner_mastery(session_id: str):
+def get_corner_mastery(session_id: str) -> tuple[dict, int]:
     """Return corner mastery report card with per-corner scoring."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2746,7 +3321,7 @@ def get_corner_mastery(session_id: str):
 
 @bp.route("/sessions/<session_id>/condition-phases", methods=["GET"])
 @_safe_api
-def get_condition_phases(session_id: str):
+def get_condition_phases(session_id: str) -> tuple[dict, int]:
     """Return condition phase breakdown for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2772,7 +3347,7 @@ def get_condition_phases(session_id: str):
 
 @bp.route("/sessions/<session_id>/throttle-onset", methods=["GET"])
 @_safe_api
-def get_throttle_onset(session_id: str):
+def get_throttle_onset(session_id: str) -> tuple[dict, int]:
     """Per-corner throttle onset distance from corner_metrics."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2788,6 +3363,7 @@ def get_throttle_onset(session_id: str):
         })
 
     from collections import defaultdict
+
     import numpy as np
     by_corner: dict = defaultdict(list)
     for m in metrics:
@@ -2826,7 +3402,7 @@ def get_throttle_onset(session_id: str):
 
 @bp.route("/sessions/<session_id>/consistency-heatmap", methods=["GET"])
 @_safe_api
-def get_consistency_heatmap(session_id: str):
+def get_consistency_heatmap(session_id: str) -> tuple[dict, int]:
     """Laps x corners consistency heatmap from corner_metrics."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2916,7 +3492,7 @@ def get_consistency_heatmap(session_id: str):
 
 @bp.route("/sessions/<session_id>/timeline", methods=["GET"])
 @_safe_api
-def get_session_timeline(session_id: str):
+def get_session_timeline(session_id: str) -> tuple[dict, int]:
     """Return the session replay timeline — a narrative event feed."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -2943,7 +3519,7 @@ def get_session_timeline(session_id: str):
 
 @bp.route("/sessions/<session_id>/sector-analysis", methods=["GET"])
 @_safe_api
-def get_sector_analysis(session_id: str):
+def get_sector_analysis(session_id: str) -> tuple[dict, int]:
     """Alias for sector_times — desktop tool vanilla JS uses this path."""
     return get_sector_times(session_id)
 
@@ -2955,7 +3531,7 @@ def get_sector_analysis(session_id: str):
 
 @bp.route("/sessions/<session_id>/comparison-matrix", methods=["GET"])
 @_safe_api
-def get_comparison_matrix(session_id: str):
+def get_comparison_matrix(session_id: str) -> tuple[dict, int]:
     """Return a multi-session comparison matrix for the same track.
 
     Finds recent sessions on the same track, computes pairwise deltas
@@ -3105,7 +3681,7 @@ def get_comparison_matrix(session_id: str):
 
 @bp.route("/sessions/<session_id>/cross_session", methods=["GET"])
 @_safe_api
-def get_cross_session(session_id: str):
+def get_cross_session(session_id: str) -> tuple[dict, int]:
     """Return cross-session speed overlay data.
 
     Finds comparable sessions on the same track and returns
@@ -3216,7 +3792,7 @@ def get_cross_session(session_id: str):
 
 @bp.route("/sessions/<session_id>/speed_overlay", methods=["GET"])
 @_safe_api
-def get_speed_overlay(session_id: str):
+def get_speed_overlay(session_id: str) -> tuple[dict, int]:
     """Return speed overlay traces keyed by session ID.
 
     Used by the vanilla JS cross_session.js module (initOverlay).
@@ -3302,7 +3878,7 @@ def get_speed_overlay(session_id: str):
 
 @bp.route("/sessions/<session_id>/channels", methods=["GET"])
 @_safe_api
-def get_session_channels(session_id: str):
+def get_session_channels(session_id: str) -> tuple[dict, int]:
     """Return the channel inventory discovered during CSV ingestion."""
     conn = get_db_connection()
     row = conn.execute(
@@ -3329,7 +3905,7 @@ def get_session_channels(session_id: str):
 
 @bp.route("/sessions/<session_id>/corner-replay", methods=["GET"])
 @_safe_api
-def get_corner_replay(session_id: str):
+def get_corner_replay(session_id: str) -> tuple[dict, int]:
     """Batch endpoint for modular corner replay — columnar traces,
     replay windows, typed corners, structured laps, and per-corner metrics.
 
@@ -3577,7 +4153,7 @@ def get_corner_replay(session_id: str):
 
 @bp.route("/sessions/<session_id>/provenance", methods=["GET"])
 @_safe_api
-def get_provenance(session_id: str):
+def get_provenance(session_id: str) -> tuple[dict, int]:
     """Return the provenance record for a session.
 
     Read path: check analysis_provenance table first (fast indexed lookup),
@@ -3620,7 +4196,7 @@ def get_provenance(session_id: str):
 
 @bp.route("/sessions/<session_id>/distance-quality", methods=["GET"])
 @_safe_api
-def get_distance_quality(session_id: str):
+def get_distance_quality(session_id: str) -> tuple[dict, int]:
     """Return the distance quality assessment for a session.
 
     Read from analysis_json['distance_quality'].
@@ -3651,7 +4227,7 @@ def get_distance_quality(session_id: str):
 
 @bp.route("/sessions/<session_id>/grip-map", methods=["GET"])
 @_safe_api
-def get_grip_map(session_id: str):
+def get_grip_map(session_id: str) -> tuple[dict, int]:
     """Return distance-binned grip map for a session.
 
     Read from analysis_json['grip_map'].
@@ -3681,7 +4257,7 @@ def get_grip_map(session_id: str):
 
 @bp.route("/sessions/<session_id>/friction-envelope", methods=["GET"])
 @_safe_api
-def get_friction_envelope(session_id: str):
+def get_friction_envelope(session_id: str) -> tuple[dict, int]:
     """Return speed-binned friction envelope for a session.
 
     Read from analysis_json['friction_envelope'].
@@ -3711,7 +4287,7 @@ def get_friction_envelope(session_id: str):
 
 @bp.route("/sessions/<session_id>/optimal-v2", methods=["GET"])
 @_safe_api
-def get_optimal_v2(session_id: str):
+def get_optimal_v2(session_id: str) -> tuple[dict, int]:
     """Return unified optimal speed trace (v2 solver).
 
     Read from analysis_json['optimal_v2'].
@@ -3736,7 +4312,7 @@ def get_optimal_v2(session_id: str):
 
 @bp.route("/sessions/<session_id>/boundaries", methods=["GET"])
 @_safe_api
-def get_boundaries(session_id: str):
+def get_boundaries(session_id: str) -> tuple[dict, int]:
     """Return estimated track boundaries for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -3758,7 +4334,7 @@ def get_boundaries(session_id: str):
 
 @bp.route("/sessions/<session_id>/practice-plan", methods=["GET"])
 @_safe_api
-def get_practice_plan(session_id: str):
+def get_practice_plan(session_id: str) -> tuple[dict, int]:
     """Return generated practice plan for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -3780,7 +4356,7 @@ def get_practice_plan(session_id: str):
 
 @bp.route("/sessions/<session_id>/endurance", methods=["GET"])
 @_safe_api
-def get_endurance(session_id: str):
+def get_endurance(session_id: str) -> tuple[dict, int]:
     """Return endurance analytics for a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
@@ -3798,6 +4374,218 @@ def get_endurance(session_id: str):
         "Endurance data not available",
         status=404,
     )
+
+
+# ══════════════════════════════════════════════════════════════════
+# Driver achievements
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/driver/achievements", methods=["GET"])
+@_safe_api
+def get_driver_achievements() -> tuple[dict, int]:
+    """Return career milestone badges for the current user's sessions.
+
+    Evaluates cumulative metrics (total laps, scores, tracks visited, etc.)
+    and returns both earned and in-progress achievements.
+    """
+    conn = get_db_connection()
+
+    # Fetch all sessions for the current workspace
+    rows = conn.execute(
+        text(
+            "SELECT session_id, session_date, track_name, driver_name, "
+            "       n_laps, best_lap_time_s, total_score, grade "
+            "FROM sessions "
+            "WHERE deleted_at IS NULL "
+            "ORDER BY session_date DESC"
+        )
+    ).fetchall()
+
+    sessions = [dict(r) if not isinstance(r, dict) else r for r in rows]
+
+    from scoring.driver_achievements import evaluate_driver_achievements
+
+    achievements = evaluate_driver_achievements(sessions)
+
+    earned = [a for a in achievements if a["earned"]]
+    in_progress = [a for a in achievements if not a["earned"]]
+
+    return api_response({
+        "achievements": achievements,
+        "earned_count": len(earned),
+        "total_count": len(achievements),
+        "in_progress": in_progress[:5],  # Top 5 closest to earning
+    })
+
+
+# ── Coaching debrief endpoint ─────────────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/coaching", methods=["GET"])
+@_safe_api
+def get_coaching(session_id: str) -> tuple[dict, int]:
+    """Return AI coaching debrief with narrative, drills, and goals.
+
+    Synthesizes corner data, CoachingV2, scores, lap metrics, and
+    driving style into a structured session debrief.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Gather all available coaching inputs
+    _analysis = models.get_analysis_json(conn, session_id)
+    coaching_v2 = _analysis.get("coaching_v2") if _analysis else None
+
+    # Corner data
+    theo = models.get_theoretical_data(conn, session_id)
+    corner_list = theo.get("corner_coaching", []) if theo else []
+
+    # Scores
+    score_rows = models.get_scores(conn, session_id)
+    scores: dict = {}
+    if score_rows:
+        row = score_rows[0] if isinstance(score_rows, list) else score_rows
+        scores = dict(row) if not isinstance(row, dict) else row
+
+    # Lap metrics
+    laps = models.get_laps(conn, session_id)
+    lap_metrics = [dict(lap) if not isinstance(lap, dict) else lap for lap in (laps or [])]
+
+    # Driving style
+    driving_style = None
+    if _analysis:
+        driving_style = _analysis.get("driving_style")
+
+    from coaching_engine import generate_session_coaching
+
+    result = generate_session_coaching(
+        corners=corner_list,
+        coaching_v2=coaching_v2,
+        scores=scores,
+        lap_metrics=lap_metrics,
+        driving_style=driving_style,
+    )
+
+    return api_response(result.to_dict())
+
+
+# ── Predictive lap time endpoint ──────────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/predict", methods=["GET"])
+@_safe_api
+def predict_lap_time_endpoint(session_id: str) -> tuple[dict, int]:
+    """Predict expected lap time based on session conditions and history.
+
+    Uses the session's conditions and historical data from the same
+    driver/track to estimate expected performance. If the session has
+    completed laps, blends observed data with historical prediction.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    session = dict(session) if not isinstance(session, dict) else session
+    driver_id = session.get("driver_id", 0)
+    track_id = session.get("track_id", 0)
+
+    # Build current conditions from session data
+    from lap_time_predictor import (
+        SessionConditions,
+        HistoricalSession,
+        predict_lap_time as _predict,
+        predict_from_partial_session,
+        estimate_improvement_potential,
+    )
+
+    # Extract conditions from theoretical data
+    theo = models.get_theoretical_data(conn, session_id)
+    scalars = {}
+    if theo:
+        scalars = theo.get("session_scalars") or {}
+        if isinstance(scalars, str):
+            try:
+                scalars = json.loads(scalars)
+            except Exception:
+                scalars = {}
+
+    conditions = SessionConditions(
+        grip_mu=float(scalars.get("mu", 1.0)),
+        air_temp_c=float(session.get("air_temp_c", 20.0) or 20.0),
+        session_type=str(session.get("session_type", "practice") or "practice"),
+    )
+
+    # Gather historical sessions for this driver+track
+    rows = conn.execute(
+        "SELECT s.session_id, s.driver_id, s.track_id, s.best_lap_time_s, "
+        "s.mean_lap_time_s, s.n_laps, s.session_type, s.air_temp_c "
+        "FROM sessions s "
+        "WHERE s.track_id = :tid AND s.deleted_at IS NULL AND s.n_laps >= 3 "
+        "AND s.session_id != :sid "
+        "ORDER BY s.session_date DESC LIMIT 50",
+        {"tid": track_id, "sid": session_id},
+    ).fetchall()
+
+    history = []
+    for r in rows:
+        r = dict(r) if not isinstance(r, dict) else r
+        # Try to get grip from theoretical data
+        h_grip = 1.0
+        h_theo = models.get_theoretical_data(conn, r["session_id"])
+        if h_theo:
+            h_scalars = h_theo.get("session_scalars") or {}
+            if isinstance(h_scalars, str):
+                try:
+                    h_scalars = json.loads(h_scalars)
+                except Exception:
+                    h_scalars = {}
+            h_grip = float(h_scalars.get("mu", 1.0))
+
+        history.append(HistoricalSession(
+            session_id=str(r["session_id"]),
+            driver_id=int(r.get("driver_id", 0)),
+            track_id=int(r.get("track_id", 0)),
+            best_lap_time_s=float(r.get("best_lap_time_s", 0) or 0),
+            mean_lap_time_s=float(r.get("mean_lap_time_s", 0) or 0),
+            n_laps=int(r.get("n_laps", 0)),
+            grip_mu=h_grip,
+            air_temp_c=float(r.get("air_temp_c", 20.0) or 20.0),
+            session_type=str(r.get("session_type", "practice") or "practice"),
+        ))
+
+    # Get completed laps for partial-session prediction
+    laps = models.get_laps(conn, session_id)
+    completed_times = []
+    if laps:
+        for lap in laps:
+            lap = dict(lap) if not isinstance(lap, dict) else lap
+            t = lap.get("lap_time_s")
+            if t and float(t) > 0:
+                completed_times.append(float(t))
+
+    # Predict
+    if completed_times:
+        prediction = predict_from_partial_session(
+            completed_times, conditions, history,
+            driver_id=driver_id, track_id=track_id,
+        )
+    else:
+        prediction = _predict(driver_id, track_id, conditions, history)
+
+    result = prediction.to_dict()
+
+    # Add improvement potential if theoretical time is available
+    if theo and theo.get("theoretical_time_s"):
+        potential = estimate_improvement_potential(
+            prediction, float(theo["theoretical_time_s"]),
+        )
+        result["improvement_potential"] = potential.to_dict()
+
+    return api_response(result)
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

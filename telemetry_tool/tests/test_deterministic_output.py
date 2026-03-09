@@ -52,8 +52,8 @@ class TestTrainingDataHash:
     """training_data_hash is computed from laps_for_theo."""
 
     def test_training_data_hash_from_laps(self):
-        from provenance.run_context import build_provenance
         from provenance.fingerprint import compute_data_fingerprint
+        from provenance.run_context import build_provenance
 
         df = pd.DataFrame({
             "Distance (m)": np.linspace(0, 500, 100),

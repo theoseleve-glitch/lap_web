@@ -11,7 +11,7 @@ most impactful fix the user can make.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 logger = logging.getLogger(__name__)
 

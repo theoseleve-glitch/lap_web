@@ -54,6 +54,7 @@ def make_celery(app=None) -> Celery:
             "tasks.retention_tasks",
             "tasks.training_tasks",
             "tasks.rollup_tasks",
+            "tasks.dead_letter_tasks",
         ],
     )
     celery.conf.update(
@@ -148,6 +149,11 @@ def make_celery(app=None) -> Celery:
                 "schedule": crontab(hour=4, minute=0),  # Daily 04:00 UTC
                 "options": {"queue": "default"},
             },
+            "purge-dead-letter-queue": {
+                "task": "tasks.dead_letter_tasks.purge_dead_letters",
+                "schedule": 2592000,  # Monthly (30 days)
+                "options": {"queue": "default"},
+            },
         },
     )
 
@@ -156,15 +162,54 @@ def make_celery(app=None) -> Celery:
         class ContextTask(celery.Task):  # type: ignore[name-defined]
             def __call__(self, *args, **kwargs):
                 with app.app_context():
+                    # Propagate request context from message headers into Flask g
+                    from flask import g
+                    headers = getattr(self.request, "headers", None) or {}
+                    if headers.get("request_id"):
+                        g.request_id = headers["request_id"]
+                    if headers.get("user_id"):
+                        g.current_user_id = headers["user_id"]
+                    if headers.get("workspace_id"):
+                        g.workspace_id = headers["workspace_id"]
                     return self.run(*args, **kwargs)
 
         celery.Task = ContextTask
+
+    # Auto-inject Flask request context into Celery task headers
+    from celery.signals import before_task_publish
+
+    @before_task_publish.connect
+    def _propagate_request_context(headers=None, **kwargs):
+        """Copy request_id, user_id, workspace_id into Celery message headers."""
+        if headers is None:
+            return
+        try:
+            from flask import g
+            custom = {}
+            for attr, key in [
+                ("request_id", "request_id"),
+                ("current_user_id", "user_id"),
+                ("workspace_id", "workspace_id"),
+            ]:
+                val = getattr(g, attr, None)
+                if val is not None:
+                    custom[key] = str(val)
+            if custom:
+                headers.update(custom)
+        except (ImportError, RuntimeError):
+            pass  # Outside Flask context (e.g. beat scheduler)
 
     return celery
 
 
 # Standalone entry point: celery -A telemetry_tool.celery_app worker
 celery = make_celery()
+
+# Register dead-letter-queue signal handler (captures tasks that exhaust retries)
+try:
+    import tasks.dead_letter  # noqa: F401 — registers @task_failure.connect
+except ImportError:
+    pass
 
 # ── Sentry for Celery workers ──────────────────────────
 _worker_dsn = os.environ.get("SENTRY_DSN_WORKER")

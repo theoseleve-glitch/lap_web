@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from flask import Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for
 
+from web.api_utils import api_response
 from web.db import get_db_connection
 from web.models import (
     delete_track_cascade,
+    delete_track_record,
     delete_track_sector,
     get_all_tracks,
     get_track_by_id,
@@ -16,7 +18,6 @@ from web.models import (
     update_track_start_finish,
     upsert_track_record,
     upsert_track_sector,
-    delete_track_record,
 )
 
 bp = Blueprint("tracks", __name__, url_prefix="/tracks")
@@ -147,7 +148,7 @@ def rename_track(track_id: str):
 
     # Also update tracks.json if it exists.
     try:
-        from track_detection import load_track_database, _save_db
+        from track_detection import _save_db, load_track_database
         db = load_track_database()
         for entry in db:
             if entry.get("track_id") == track_id:
@@ -274,7 +275,7 @@ def api_sectors(track_id: str):
     """JSON API: list sectors for a track."""
     conn = get_db_connection()
     sectors = get_track_sectors(conn, track_id)
-    return jsonify(sectors)
+    return api_response(sectors)
 
 
 # ── Track Deletion ────────────────────────────────────────────

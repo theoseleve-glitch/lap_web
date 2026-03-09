@@ -1,13 +1,15 @@
 """Tests for compound corner detection and metrics."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from telemetry_tool.corner_detection import detect_compound_corners, identify_setup_corners
 from telemetry_tool.corner_analysis import CompoundCornerMetrics, compute_compound_metrics
+from telemetry_tool.corner_detection import detect_compound_corners, identify_setup_corners
 
 
 class TestCompoundDetection:

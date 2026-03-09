@@ -110,6 +110,7 @@ def compute_delta_map(
     kappa = np.zeros(len(s_mid))
     if hasattr(theoretical, "distance_m"):
         from kart_envelope.track.geometry import TrackGeometry  # avoid circular
+
         # Interpolate if possible from accel profile (a_lat ≈ v²κ)
         # Simpler: just use theoretical accel
         kappa_full = theoretical.accel_profile_mps2  # not quite κ but useful

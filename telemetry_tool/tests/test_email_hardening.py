@@ -2,7 +2,7 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -15,6 +15,7 @@ class TestEmailSuppression(unittest.TestCase):
         """When EMAIL_SUPPRESS=1, _send returns True without calling Resend."""
         # Reimport to pick up env var
         import importlib
+
         import auth.email as email_mod
         importlib.reload(email_mod)
 
@@ -33,6 +34,7 @@ class TestEmailSuppression(unittest.TestCase):
     def test_no_suppress_sends_normally(self):
         """When EMAIL_SUPPRESS=0, _send attempts to use Resend."""
         import importlib
+
         import auth.email as email_mod
         importlib.reload(email_mod)
 

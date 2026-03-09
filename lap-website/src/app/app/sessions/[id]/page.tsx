@@ -5,14 +5,20 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { formatLapTime, formatDate, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
-import { CornersTab, type CornerData } from '@/components/app/corners';
-import { AnalyticsTab } from '@/components/app/analytics';
-import { DrivingStyleSection } from '@/components/app/DrivingStyleSection';
-import { SessionDebrief } from '@/components/app/SessionDebrief';
-import { AchievementsBadges } from '@/components/app/AchievementsBadges';
-import { FocusMode } from '@/components/app/focus-mode/FocusMode';
+import type { CornerData } from '@/components/app/corners';
 import { SkeletonSessionDetail } from '@/components/app/Skeleton';
+import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
+import { exportCanvasAsPNG } from '@/lib/export-chart';
+import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 
+// Lazy-loaded tab content — only fetched when the user activates each tab/section
+const CornersTab = lazy(() => import('@/components/app/corners').then(m => ({ default: m.CornersTab })));
+const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
+const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSection').then(m => ({ default: m.DrivingStyleSection })));
+const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
+const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
+const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
+const ScoringWeightsEditor = lazy(() => import('@/components/app/ScoringWeightsEditor').then(m => ({ default: m.ScoringWeightsEditor })));
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
 // ── Types ────────────────────────────────────────────────────────
@@ -175,6 +181,14 @@ function TrackNamePrompt({
 
 // ── Score bar for Overview tab ───────────────────────────────────
 
+const SCORE_TOOLTIPS: Record<string, string> = {
+  Pace: 'How close your best lap is to the theoretical ideal. Based on sector times, apex speeds, and straight-line efficiency.',
+  Consistency: 'How repeatable your lap times are. Low variance between valid laps means high consistency.',
+  Execution: 'How well you hit braking points, apexes, and throttle application. Penalises over/understeer corrections.',
+  Robustness: 'How well you maintain performance across the full session. Accounts for tyre degradation and fatigue.',
+  Adaptation: 'How quickly you improve through the session. Measures learning rate from first to last stint.',
+};
+
 function ScoreBar({
   label,
   score,
@@ -187,10 +201,16 @@ function ScoreBar({
   accentColor: string;
 }) {
   const pct = score != null ? Math.min((score / max) * 100, 100) : 0;
+  const tooltip = SCORE_TOOLTIPS[label];
   return (
-    <div className="mb-3">
+    <div className="mb-3 group relative">
       <div className="flex justify-between text-sm mb-1">
-        <span className="text-chalk font-body">{label}</span>
+        <span className="text-chalk font-body flex items-center gap-1">
+          {label}
+          {tooltip && (
+            <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-steel/20 text-steel text-[9px] font-mono cursor-help" title={tooltip}>?</span>
+          )}
+        </span>
         <span className="text-steel font-telemetry">
           {score != null ? Math.round(score) : '\u2014'} / {Math.round(max)}
         </span>
@@ -201,6 +221,11 @@ function ScoreBar({
           style={{ width: `${pct}%`, backgroundColor: accentColor }}
         />
       </div>
+      {tooltip && (
+        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-20 w-64 p-2.5 bg-asphalt border border-steel/20 rounded-lg shadow-e3 text-xs text-steel font-body leading-relaxed pointer-events-none">
+          {tooltip}
+        </div>
+      )}
     </div>
   );
 }
@@ -369,15 +394,53 @@ export default function SessionDetailPage() {
             </div>
           )}
 
+          {/* Print */}
+          <button
+            onClick={() => window.print()}
+            data-print="hide"
+            className="px-3 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-steel font-body hover:text-chalk hover:bg-steel/10 transition-colors"
+            title="Print session report"
+          >
+            Print
+          </button>
+
           {/* Report download */}
           <a
             href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/report?format=html`}
             className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
             target="_blank"
             rel="noopener noreferrer"
+            data-print="hide"
           >
             Download Report
           </a>
+
+          {/* Export to AiM/MoTeC */}
+          <div className="relative group/export">
+            <button
+              type="button"
+              className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
+              data-print="hide"
+            >
+              Export Data
+            </button>
+            <div className="hidden group-hover/export:flex absolute top-full mt-1 right-0 z-20 flex-col bg-concrete border border-steel/20 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
+              <a
+                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=aim`}
+                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+                download
+              >
+                AiM RaceStudio CSV
+              </a>
+              <a
+                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=motec`}
+                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+                download
+              >
+                MoTeC i2 CSV
+              </a>
+            </div>
+          </div>
 
           {/* Driving Analyzer */}
           <button
@@ -411,7 +474,7 @@ export default function SessionDetailPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 mb-6 border-b border-steel/10">
+      <div className="flex items-center gap-1 mb-6 border-b border-steel/10">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -429,27 +492,37 @@ export default function SessionDetailPage() {
             )}
           </button>
         ))}
+        <div className="ml-auto mb-1">
+          <ChartSyncToggle />
+        </div>
       </div>
 
       {/* Tab content */}
       {activeTab === 'overview' && (
         <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} onSessionUpdate={setSession} />
       )}
-      {activeTab === 'corners' && <CornersTab corners={corners} sessionId={sessionId} />}
+      {activeTab === 'corners' && (
+        <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading corners&hellip;</div>}>
+          <CornersTab corners={corners} sessionId={sessionId} />
+        </Suspense>
+      )}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'analytics' && (
-        <AnalyticsTab
-          sessionId={sessionId}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-          scores={scores}
-          corners={corners}
-          trackName={session?.track_name ?? null}
-        />
+        <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading analytics&hellip;</div>}>
+          <AnalyticsTab
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            scores={scores}
+            corners={corners}
+            trackName={session?.track_name ?? null}
+          />
+        </Suspense>
       )}
       {activeTab === 'laps' && <LapDataTab laps={laps} conditionPhases={conditionPhases} />}
 
-      <FocusMode
+      <Suspense fallback={null}>
+        <FocusMode
         sessionId={sessionId}
         isOpen={focusOpen}
         onClose={() => setFocusOpen(false)}
@@ -457,6 +530,7 @@ export default function SessionDetailPage() {
         bestLap={bestLap}
         activeTab={activeTab}
       />
+      </Suspense>
 
       {analyzerOpen && (
         <Suspense fallback={
@@ -477,6 +551,83 @@ export default function SessionDetailPage() {
 // ══════════════════════════════════════════════════════════════════
 // 1. Overview Tab
 // ══════════════════════════════════════════════════════════════════
+
+function DataQualityIndicator({
+  laps,
+  session,
+  scores,
+}: {
+  laps: LapData[];
+  session: SessionData;
+  scores: ScoreData | null;
+}) {
+  // Compute quality checks
+  const checks: { label: string; ok: boolean; detail: string }[] = [];
+
+  const totalLaps = laps.length;
+  const validLaps = laps.filter((l) => l.is_valid !== 0);
+  const validRatio = totalLaps > 0 ? validLaps.length / totalLaps : 0;
+  checks.push({
+    label: 'Valid laps',
+    ok: validRatio >= 0.5,
+    detail: `${validLaps.length}/${totalLaps} laps valid (${Math.round(validRatio * 100)}%)`,
+  });
+
+  checks.push({
+    label: 'Lap count',
+    ok: totalLaps >= 3,
+    detail: totalLaps >= 3 ? `${totalLaps} laps recorded` : `Only ${totalLaps} lap${totalLaps === 1 ? '' : 's'} — need 3+ for meaningful analysis`,
+  });
+
+  const hasGPS = laps.some((l) => l.line_length_m != null && l.line_length_m > 0);
+  checks.push({
+    label: 'GPS data',
+    ok: hasGPS,
+    detail: hasGPS ? 'GPS coordinates present' : 'No GPS data — track map unavailable',
+  });
+
+  checks.push({
+    label: 'Track detected',
+    ok: session.track_name != null && session.track_name !== 'Unknown',
+    detail: session.track_name && session.track_name !== 'Unknown' ? `Track: ${session.track_name}` : 'Track not identified',
+  });
+
+  checks.push({
+    label: 'Scoring complete',
+    ok: scores != null && scores.pace_score != null,
+    detail: scores?.pace_score != null ? 'All scoring dimensions computed' : 'Scoring unavailable',
+  });
+
+  const passCount = checks.filter((c) => c.ok).length;
+  const pct = Math.round((passCount / checks.length) * 100);
+  const color = pct >= 80 ? 'text-acid-green' : pct >= 60 ? 'text-marshal-yellow' : 'text-safety-red';
+  const borderColor = pct >= 80 ? 'border-acid-green/20' : pct >= 60 ? 'border-marshal-yellow/20' : 'border-safety-red/20';
+
+  return (
+    <div className={`bg-concrete rounded-xl border ${borderColor} p-4`}>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs font-monument text-steel uppercase tracking-wider">Data Quality</h3>
+        <span className={`text-sm font-monument ${color}`}>{pct}%</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-asphalt overflow-hidden mb-3">
+        <div
+          className="h-full rounded-full transition-all duration-500"
+          style={{ width: `${pct}%`, backgroundColor: pct >= 80 ? '#22C55E' : pct >= 60 ? '#FACC15' : '#FF2A2A' }}
+        />
+      </div>
+      <ul className="space-y-1">
+        {checks.map((c) => (
+          <li key={c.label} className="flex items-start gap-1.5 text-xs font-body">
+            <span className={`mt-0.5 flex-shrink-0 ${c.ok ? 'text-acid-green' : 'text-safety-red'}`}>
+              {c.ok ? '\u2713' : '\u2717'}
+            </span>
+            <span className="text-steel">{c.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function OverviewTab({
   session,
@@ -509,6 +660,7 @@ function OverviewTab({
       session_type: session.session_type || 'practice',
       track_state: session.track_state || 'dry',
       display_name: session.display_name || '',
+      notes: session.notes || '',
     });
     setEditing(true);
   }, [session]);
@@ -565,7 +717,7 @@ function OverviewTab({
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-steel/10">
                 <div className="text-4xl font-monument text-chalk">
                   {subScores.some((v) => v != null)
-                    ? Math.round(computedTotal)
+                    ? <AnimatedCounter value={Math.round(computedTotal)} duration={1400} />
                     : '\u2014'}
                 </div>
                 <div className="text-steel font-body text-sm">/ 100</div>
@@ -665,7 +817,7 @@ function OverviewTab({
                     <div key={m.label} className="bg-asphalt rounded-lg p-3">
                       <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
                       <span className={`text-xl font-monument ${m.color}`}>
-                        {m.value != null ? Math.round(m.value) : '\u2014'}
+                        {m.value != null ? <AnimatedCounter value={Math.round(m.value)} duration={1000} /> : '\u2014'}
                       </span>
                       <span className="text-steel text-xs font-body ml-1">/ {Math.round(m.max)}</span>
                     </div>
@@ -750,6 +902,17 @@ function OverviewTab({
                 options={['dry', 'wet', 'damp', 'mixed']}
                 onChange={(v) => setEditFields({ ...editFields, track_state: v })}
               />
+              <div>
+                <label className="text-steel text-sm font-body block mb-1">Setup Notes</label>
+                <textarea
+                  value={editFields.notes || ''}
+                  onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })}
+                  placeholder="Tire pressures, gearing, suspension settings..."
+                  rows={3}
+                  className="w-full bg-asphalt border border-steel/20 rounded px-2.5 py-1.5 text-sm text-chalk font-body
+                    placeholder:text-steel/40 focus:outline-none focus:border-pit-orange/50 resize-y"
+                />
+              </div>
               <MetaRow label="File" value={session.csv_filename} />
               <MetaRow
                 label="Laps"
@@ -771,6 +934,12 @@ function OverviewTab({
                 label="Laps"
                 value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
               />
+              {session.notes && (
+                <div className="pt-2 border-t border-steel/10">
+                  <dt className="text-steel text-xs font-body uppercase tracking-wider mb-1">Setup Notes</dt>
+                  <dd className="text-chalk/80 text-sm font-body whitespace-pre-line">{session.notes}</dd>
+                </div>
+              )}
             </dl>
           )}
         </div>
@@ -798,19 +967,31 @@ function OverviewTab({
             </dl>
           </div>
         )}
+
+        {/* Custom scoring weights */}
+        {scores && (
+          <Suspense fallback={null}>
+            <ScoringWeightsEditor scores={scores} />
+          </Suspense>
+        )}
+
+        {/* Data quality indicator */}
+        <DataQualityIndicator laps={laps} session={session} scores={scores} />
       </div>
 
       {/* Full-width sections below the 2-column layout */}
       <div className="lg:col-span-3 space-y-6">
-        <DrivingStyleSection sessionId={sessionId} />
-        <SessionDebrief
-          totalScore={session.total_score}
-          grade={session.grade}
-          scores={scores}
-          laps={laps}
-          corners={corners}
-        />
-        <AchievementsBadges badges={scores?.badges} />
+        <Suspense fallback={<div className="py-8 text-center text-steel text-sm">Loading analysis&hellip;</div>}>
+          <DrivingStyleSection sessionId={sessionId} />
+          <SessionDebrief
+            totalScore={session.total_score}
+            grade={session.grade}
+            scores={scores}
+            laps={laps}
+            corners={corners}
+          />
+          <AchievementsBadges badges={scores?.badges} />
+        </Suspense>
       </div>
     </div>
   );
@@ -898,6 +1079,162 @@ function SelectRow({
 // 3. Lap Data Tab
 // ══════════════════════════════════════════════════════════════════
 
+
+function LapConsistencyHistogram({
+  times,
+  bestTime,
+  meanTime,
+}: {
+  times: number[];
+  bestTime: number | null;
+  meanTime: number | null;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || times.length < 3) return;
+
+    const canvas = canvasRef.current;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    const W = rect.width;
+    const H = rect.height;
+    ctx.clearRect(0, 0, W, H);
+
+    const pad = { top: 20, right: 15, bottom: 35, left: 45 };
+    const cW = W - pad.left - pad.right;
+    const cH = H - pad.top - pad.bottom;
+
+    // Compute histogram bins (Sturges' rule)
+    const sorted = [...times].sort((a, b) => a - b);
+    const lo = sorted[0];
+    const hi = sorted[sorted.length - 1];
+    const nBins = Math.max(5, Math.min(15, Math.ceil(1 + Math.log2(times.length))));
+    const binWidth = (hi - lo) / nBins || 0.1;
+
+    const bins: { lo: number; hi: number; count: number }[] = [];
+    for (let i = 0; i < nBins; i++) {
+      bins.push({ lo: lo + i * binWidth, hi: lo + (i + 1) * binWidth, count: 0 });
+    }
+    for (const t of times) {
+      const idx = Math.min(Math.floor((t - lo) / binWidth), nBins - 1);
+      bins[idx].count++;
+    }
+
+    const maxCount = Math.max(...bins.map((b) => b.count), 1);
+    const barW = (cW / nBins) * 0.8;
+    const barGap = (cW / nBins) * 0.2;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 3; i++) {
+      const y = pad.top + (i / 3) * cH;
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(W - pad.right, y);
+      ctx.stroke();
+    }
+
+    // Bars
+    for (let i = 0; i < nBins; i++) {
+      const x = pad.left + i * (barW + barGap) + barGap / 2;
+      const barH = (bins[i].count / maxCount) * cH;
+      const y = pad.top + cH - barH;
+
+      // Color based on proximity to best time
+      const binMid = (bins[i].lo + bins[i].hi) / 2;
+      const closeToBest = bestTime != null && Math.abs(binMid - bestTime) < binWidth * 1.5;
+      ctx.fillStyle = closeToBest ? 'rgba(34,197,94,0.6)' : 'rgba(255,255,255,0.2)';
+      ctx.fillRect(x, y, barW, barH);
+
+      // Bin label (lap time range midpoint)
+      ctx.fillStyle = 'rgba(255,255,255,0.4)';
+      ctx.font = '9px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(formatLapTime(binMid), x + barW / 2, H - pad.bottom + 14);
+
+      // Count above bar
+      if (bins[i].count > 0) {
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillText(String(bins[i].count), x + barW / 2, y - 4);
+      }
+    }
+
+    // Y-axis labels
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    for (let i = 0; i <= 3; i++) {
+      const val = Math.round(maxCount - (i / 3) * maxCount);
+      const y = pad.top + (i / 3) * cH;
+      ctx.fillText(String(val), pad.left - 5, y + 3);
+    }
+
+    // Mean line
+    if (meanTime != null && meanTime >= lo && meanTime <= hi) {
+      const meanX = pad.left + ((meanTime - lo) / (hi - lo)) * cW;
+      ctx.strokeStyle = 'rgba(255,140,0,0.6)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(meanX, pad.top);
+      ctx.lineTo(meanX, pad.top + cH);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Legend
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(34,197,94,0.6)';
+    ctx.fillRect(pad.left, 8, 10, 8);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('Near best', pad.left + 14, 14);
+    if (meanTime != null) {
+      ctx.strokeStyle = 'rgba(255,140,0,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pad.left + 85, 12);
+      ctx.lineTo(pad.left + 97, 12);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillText('Mean', pad.left + 101, 14);
+    }
+  }, [times, bestTime, meanTime]);
+
+  return (
+    <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
+      <div className="flex items-center justify-between mb-1">
+        <h2 className="text-lg font-monument text-chalk">Lap Consistency</h2>
+        <button
+          type="button"
+          data-print="hide"
+          onClick={() => canvasRef.current && exportCanvasAsPNG(canvasRef.current, 'lap-consistency')}
+          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-steel hover:text-chalk bg-asphalt/80 border border-steel/20 rounded px-2 py-1"
+        >
+          Export PNG
+        </button>
+      </div>
+      <p className="text-steel text-xs font-body mb-4">Distribution of valid lap times — tighter clustering means higher consistency</p>
+      <div className="rounded-lg overflow-hidden bg-asphalt">
+        <canvas
+          ref={canvasRef}
+          role="img"
+          aria-label="Histogram showing distribution of lap times"
+          style={{ width: '100%', height: '200px', display: 'block' }}
+        />
+      </div>
+    </div>
+  );
+}
 
 function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhases: ConditionPhase[] }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
@@ -1109,8 +1446,18 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
 
       {/* Lap Times Chart */}
       {validLaps.length > 0 && (
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-          <h2 className="text-lg font-monument text-chalk mb-4">Lap Times</h2>
+        <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-monument text-chalk">Lap Times</h2>
+            <button
+              type="button"
+              data-print="hide"
+              onClick={() => chartRef.current && exportCanvasAsPNG(chartRef.current, 'lap-times')}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-steel hover:text-chalk bg-asphalt/80 border border-steel/20 rounded px-2 py-1"
+            >
+              Export PNG
+            </button>
+          </div>
           <div className="rounded-lg overflow-hidden bg-asphalt">
             <canvas
               ref={chartRef}
@@ -1118,6 +1465,11 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
             />
           </div>
         </div>
+      )}
+
+      {/* Lap Consistency Histogram */}
+      {validTimes.length >= 3 && (
+        <LapConsistencyHistogram times={validTimes} bestTime={bestTime} meanTime={meanTime} />
       )}
 
       {/* Lap Data Table */}
@@ -1140,8 +1492,14 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                 </tr>
               </thead>
               <tbody>
-                {laps.map((lap) => {
+                {(() => {
+                  const validLaps = laps.filter((l) => l.is_valid !== 0 && l.lap_time_s != null && l.lap_time_s > 0);
+                  const bestTime = validLaps.length > 0 ? Math.min(...validLaps.map((l) => l.lap_time_s!)) : null;
+                  const worstTime = validLaps.length > 1 ? Math.max(...validLaps.map((l) => l.lap_time_s!)) : null;
+                  return laps.map((lap) => {
                   const isBest = lap.is_best === 1;
+                  const isWorst = !isBest && lap.is_valid !== 0 && lap.lap_time_s != null && worstTime != null && lap.lap_time_s >= worstTime;
+                  const deltaFromBest = bestTime != null && lap.lap_time_s != null && lap.lap_time_s > 0 ? lap.lap_time_s - bestTime : null;
                   const isInvalid = lap.is_valid === 0;
                   const isJoker = lap.is_joker === 1;
                   const isPit = lap.invalid_reason === 'Pitted lap';
@@ -1156,7 +1514,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                     <tr
                       key={lap.lap_number}
                       className={`border-b border-steel/5 transition-colors hover:bg-asphalt/50 ${
-                        isBest ? 'bg-acid-green/5' : ''
+                        isBest ? 'bg-acid-green/5' : isWorst ? 'bg-safety-red/5' : ''
                       } ${isJoker ? 'opacity-50' : isIncomplete ? 'opacity-60' : isInvalid ? 'opacity-40' : ''}`}
                     >
                       <td className="px-4 py-3 font-telemetry text-chalk">
@@ -1167,10 +1525,27 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                               Best
                             </span>
                           )}
+                          {isWorst && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-safety-red/20 text-safety-red font-body uppercase tracking-wide">
+                              Worst
+                            </span>
+                          )}
                         </span>
                       </td>
-                      <td className={`px-4 py-3 text-right font-telemetry ${isBest ? 'text-acid-green' : 'text-chalk'}`}>
+                      <td
+                        className={`px-4 py-3 text-right font-telemetry cursor-copy ${isBest ? 'text-acid-green' : isWorst ? 'text-safety-red' : 'text-chalk'}`}
+                        title="Click to copy lap time"
+                        onClick={() => {
+                          const t = formatLapTime(lap.lap_time_s);
+                          if (t !== '--') navigator.clipboard.writeText(t);
+                        }}
+                      >
                         {formatLapTime(lap.lap_time_s)}
+                        {deltaFromBest != null && deltaFromBest > 0.001 && (
+                          <span className="ml-1.5 text-[10px] text-steel">
+                            +{deltaFromBest.toFixed(3)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
                         {mpsToKmh(lap.speed_mean_mps)} km/h
@@ -1226,7 +1601,8 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                       </td>
                     </tr>
                   );
-                })}
+                });
+                })()}
               </tbody>
             </table>
           </div>

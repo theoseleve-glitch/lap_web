@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { formatDateFromTimestamp } from '@/lib/format-utils';
 
 interface TrackDetail {
   id: string;
@@ -245,13 +246,13 @@ export default function TrackDetailPage() {
           {track.created_at && (
             <div>
               <dt className="text-steel font-telemetry text-xs uppercase">First Seen</dt>
-              <dd className="text-chalk font-body mt-0.5">{new Date(track.created_at).toLocaleDateString()}</dd>
+              <dd className="text-chalk font-body mt-0.5">{formatDateFromTimestamp(track.created_at)}</dd>
             </div>
           )}
           {track.updated_at && (
             <div>
               <dt className="text-steel font-telemetry text-xs uppercase">Last Updated</dt>
-              <dd className="text-chalk font-body mt-0.5">{new Date(track.updated_at).toLocaleDateString()}</dd>
+              <dd className="text-chalk font-body mt-0.5">{formatDateFromTimestamp(track.updated_at)}</dd>
             </div>
           )}
         </dl>

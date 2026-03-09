@@ -21,12 +21,11 @@ _TT_DIR = _PROJECT_ROOT / "telemetry_tool"
 if str(_TT_DIR) not in sys.path:
     sys.path.insert(0, str(_TT_DIR))
 
+from kart_envelope.track.geometry import TrackGeometry  # noqa: E402
 from telemetry_tool.track_detection import (  # noqa: E402
     compute_track_fingerprint,
     match_track,
 )
-
-from kart_envelope.track.geometry import TrackGeometry  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

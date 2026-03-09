@@ -508,8 +508,8 @@ def load_last_session_context(base_results_dir: Path) -> Optional[SessionContext
 
 
 def _run_tests() -> None:
-    import traceback as _tb
     import tempfile as _tf
+    import traceback as _tb
 
     passed: list[str] = []
     failed: list[tuple[str, str]] = []

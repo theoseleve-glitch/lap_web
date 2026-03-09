@@ -1,11 +1,17 @@
 """Tests for drill registry, issue->drill mapping, and practice plan generation."""
+import os
+import sys
+
 import pytest
-import sys, os
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from drills import (
-    Drill, PracticePlan, DRILL_REGISTRY,
-    map_issues_to_drills, generate_practice_plan,
+    DRILL_REGISTRY,
+    Drill,
+    PracticePlan,
+    generate_practice_plan,
+    map_issues_to_drills,
 )
 
 

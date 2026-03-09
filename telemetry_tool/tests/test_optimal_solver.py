@@ -1,5 +1,6 @@
 """Tests for unified optimal lap solver."""
 import math
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -305,7 +306,9 @@ def test_limiting_factor_straight_track():
 def test_corner_saturation_cornering_dominated():
     """Corner with tight curvature -> high cornering saturation."""
     from optimal_solver import (
-        OptimalCaps, solve_optimal_speed, compute_corner_saturation,
+        OptimalCaps,
+        compute_corner_saturation,
+        solve_optimal_speed,
     )
 
     n = 200

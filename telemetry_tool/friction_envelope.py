@@ -12,7 +12,7 @@ Falls back gracefully when data is sparse.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 
 import numpy as np
 

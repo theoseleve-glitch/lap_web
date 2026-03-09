@@ -1,5 +1,7 @@
 """Tests for theoretical per-corner targets."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
@@ -7,9 +9,13 @@ import pandas as pd
 import pytest
 
 from telemetry_tool.corner_analysis import (
-    CornerTargets, compute_corner_targets, validate_corner_targets,
-    CornerEvent, CornerTimeline, CornerPerformance,
+    CornerEvent,
+    CornerPerformance,
+    CornerTargets,
+    CornerTimeline,
+    compute_corner_targets,
     detect_corner_events,
+    validate_corner_targets,
 )
 
 

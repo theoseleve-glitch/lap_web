@@ -23,7 +23,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-
 # ── Fixtures ──────────────────────────────────────────────────────
 
 def _make_racechrono_csv(
@@ -153,6 +152,7 @@ class TestStreamDetectHeader:
     def test_pure_latin1_fallback(self, tmp_dir):
         """File with bytes 0x80-0xFF that are invalid UTF-8 → latin-1 fallback."""
         from telemetry_tool.ingest.streaming import stream_detect_header
+
         # Write raw bytes: latin-1 metadata with accented chars + valid header
         content = (
             b"# Format: Donn\xe9es de t\xe9l\xe9m\xe9trie\n"
@@ -491,6 +491,7 @@ class TestProgressContract:
 class TestFeatureFlag:
     def test_flag_default_on(self):
         from telemetry_tool.ingest.config import refresh_flag
+
         # Ensure env var is not set — default is now ON
         os.environ.pop("TELEMETRY_INGEST_V2", None)
         assert refresh_flag() is True
@@ -554,6 +555,7 @@ class TestSchemaMigration:
     def test_v14_creates_ingestion_jobs(self):
         import sqlite3
         import sys
+
         # Ensure project root importable
         project_root = Path(__file__).resolve().parent.parent
         if str(project_root) not in sys.path:
@@ -717,11 +719,13 @@ class TestWriterDrainOnError:
 class TestDiskSpaceCheck:
     def test_check_passes_with_space(self, tmp_dir):
         from telemetry_tool.ingest.cache import check_disk_space
+
         # Small file, should always pass
         check_disk_space(tmp_dir, 1000)
 
     def test_check_raises_on_impossible_size(self, tmp_dir):
         from telemetry_tool.ingest.cache import InsufficientDiskSpace, check_disk_space
+
         # Request more space than any disk could have (1 PB)
         with pytest.raises(InsufficientDiskSpace):
             check_disk_space(tmp_dir, 1024**5)

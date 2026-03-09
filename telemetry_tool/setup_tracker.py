@@ -9,8 +9,12 @@ Public API
 ``correlate_setup_vs_pace(setups)``
 """
 from __future__ import annotations
-import logging, math, traceback
+
+import logging
+import math
+import traceback
 from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

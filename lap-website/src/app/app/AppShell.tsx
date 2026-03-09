@@ -8,7 +8,13 @@ import { AppFooter } from '@/components/ui/AppFooter';
 import { AuthGuard } from '@/components/auth/AuthGuard';
 import { DiagnosticsOverlay } from '@/components/dev/DiagnosticsOverlay';
 import { BillingStateBanner } from '@/components/billing/BillingStateBanner';
+import { Breadcrumb } from '@/components/ui/Breadcrumb';
 import { OfflineBanner } from '@/components/shared/OfflineBanner';
+import { KeyboardShortcuts } from '@/components/app/KeyboardShortcuts';
+import { CommandPalette } from '@/components/app/CommandPalette';
+import { UndoToastContainer } from '@/components/ui/UndoToast';
+import { UnitToggle } from '@/components/app/UnitToggle';
+import { AnnouncementBar } from '@/components/marketing/AnnouncementBar';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -156,7 +162,31 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AuthGuard>
           <main id="main-content" className="flex-1 flex flex-col overflow-y-auto bg-asphalt">
             <OfflineBanner />
+            <AnnouncementBar
+              id="v1.7.0"
+              message="New: Use-case pricing selector, lazy-loaded charts, and URL-synced filters"
+              link={{ href: '/changelog', label: 'See what changed' }}
+            />
+            {/* Top bar with quick upload */}
+            <div className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-sm flex items-center justify-end gap-4 px-6 py-2 border-b border-steel/10">
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))}
+                className="hidden sm:flex items-center gap-2 px-3 py-1 rounded border border-steel/20 text-steel/60 text-xs hover:border-steel/40 hover:text-steel transition-colors"
+              >
+                <span>Search</span>
+                <kbd className="font-telemetry text-[10px] border border-steel/20 rounded px-1 py-0.5">⌘K</kbd>
+              </button>
+              <UnitToggle />
+              <Link
+                href="/app/analyze"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gold text-carbon font-telemetry text-xs font-semibold rounded hover:bg-gold/90 transition-colors"
+              >
+                + Upload
+              </Link>
+            </div>
             <div className="max-w-7xl mx-auto px-6 py-6">
+              <Breadcrumb />
               <BillingStateBanner />
               {children}
             </div>
@@ -164,6 +194,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           </main>
         </AuthGuard>
         {process.env.NODE_ENV === 'development' && <DiagnosticsOverlay />}
+        <KeyboardShortcuts />
+        <CommandPalette />
+        <UndoToastContainer />
       </QueryProvider>
     </div>
   );

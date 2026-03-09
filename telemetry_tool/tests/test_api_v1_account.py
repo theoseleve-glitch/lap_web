@@ -16,7 +16,6 @@ from flask import Flask, g
 from web.api_utils import init_request_id
 from web.routes.api_v1_account import bp as api_v1_account_bp
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

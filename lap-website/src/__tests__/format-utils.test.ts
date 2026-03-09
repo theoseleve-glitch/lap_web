@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatLapTime, formatDate, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
+import { formatLapTime, formatDate, formatDateTime, formatDateFromTimestamp, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
 
 describe('formatLapTime', () => {
   it('returns em dash for null', () => {
@@ -34,6 +34,32 @@ describe('formatDate', () => {
   });
   it('returns raw string for invalid date', () => {
     expect(formatDate('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('formatDateTime', () => {
+  it('returns em dash for null', () => {
+    expect(formatDateTime(null)).toBe('\u2014');
+  });
+  it('formats ISO timestamp to en-GB date+time', () => {
+    const result = formatDateTime('2026-01-15T14:30:00Z');
+    expect(result).toContain('Jan');
+    expect(result).toContain('2026');
+  });
+  it('returns raw string for invalid timestamp', () => {
+    expect(formatDateTime('not-a-date')).toBe('not-a-date');
+  });
+});
+
+describe('formatDateFromTimestamp', () => {
+  it('returns em dash for null', () => {
+    expect(formatDateFromTimestamp(null)).toBe('\u2014');
+  });
+  it('formats ISO timestamp to en-GB date only', () => {
+    const result = formatDateFromTimestamp('2026-01-15T14:30:00Z');
+    expect(result).toContain('Jan');
+    expect(result).toContain('2026');
+    expect(result).not.toContain(':');
   });
 });
 

@@ -13,7 +13,7 @@ so downstream consumers get fused signals for free.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import numpy as np

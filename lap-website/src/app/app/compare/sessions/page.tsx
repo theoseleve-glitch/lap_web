@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
+import { ScoreRadarChart } from '@/components/app/compare/ScoreRadarChart';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -304,6 +305,50 @@ export default function CompareSessionsPage() {
     setSessionBId(oldA);
   }, [sessionAId, sessionBId]);
 
+  // ── Comparison templates (localStorage) ───────────────────────
+  interface CompareTemplate {
+    label: string;
+    sessionA: string;
+    sessionB: string;
+    savedAt: string;
+  }
+
+  const TEMPLATES_KEY = 'compare_templates';
+
+  const [templates, setTemplates] = useState<CompareTemplate[]>(() => {
+    if (typeof window === 'undefined') return [];
+    try {
+      return JSON.parse(localStorage.getItem(TEMPLATES_KEY) || '[]');
+    } catch { return []; }
+  });
+
+  const saveTemplate = useCallback(() => {
+    if (!sessionAId || !sessionBId) return;
+    const sA = sessions.find((s) => s.session_id === sessionAId);
+    const sB = sessions.find((s) => s.session_id === sessionBId);
+    const label = `${sA?.driver_name ?? 'A'} vs ${sB?.driver_name ?? 'B'} (${sA?.session_date ?? ''})`;
+    const tpl: CompareTemplate = {
+      label,
+      sessionA: sessionAId,
+      sessionB: sessionBId,
+      savedAt: new Date().toISOString(),
+    };
+    const updated = [tpl, ...templates.filter((t) => !(t.sessionA === sessionAId && t.sessionB === sessionBId))].slice(0, 10);
+    setTemplates(updated);
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated));
+  }, [sessionAId, sessionBId, sessions, templates]);
+
+  const loadTemplate = useCallback((tpl: CompareTemplate) => {
+    setSessionAId(tpl.sessionA);
+    setSessionBId(tpl.sessionB);
+  }, []);
+
+  const deleteTemplate = useCallback((idx: number) => {
+    const updated = templates.filter((_, i) => i !== idx);
+    setTemplates(updated);
+    localStorage.setItem(TEMPLATES_KEY, JSON.stringify(updated));
+  }, [templates]);
+
   // ── Derived comparison stats ──────────────────────────────────
 
   const compStats = useMemo(() => {
@@ -381,6 +426,50 @@ export default function CompareSessionsPage() {
               onChange={setSessionBId}
               accentColor={COLOR_B}
             />
+          {/* Save template button */}
+          {sessionAId && sessionBId && (
+            <button
+              type="button"
+              onClick={saveTemplate}
+              className="shrink-0 mb-0.5 px-3 py-2 rounded-lg border border-steel/20 text-steel text-xs font-body
+                hover:text-chalk hover:border-acid-green/40 transition-colors"
+              title="Save this comparison as a template"
+            >
+              Save
+            </button>
+          )}
+          </div>
+        )}
+
+        {/* Saved templates */}
+        {templates.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-steel/10">
+            <p className="text-xs font-monument uppercase tracking-wider text-steel mb-2">Saved Templates</p>
+            <div className="flex gap-2 flex-wrap">
+              {templates.map((tpl, i) => (
+                <div
+                  key={`${tpl.sessionA}-${tpl.sessionB}`}
+                  className="flex items-center gap-1 bg-zinc-800 rounded px-2 py-1 text-xs font-body group"
+                >
+                  <button
+                    type="button"
+                    onClick={() => loadTemplate(tpl)}
+                    className="text-chalk hover:text-acid-green transition-colors truncate max-w-[200px]"
+                    title={tpl.label}
+                  >
+                    {tpl.label}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => deleteTemplate(i)}
+                    className="text-steel hover:text-safety-red transition-colors ml-1 opacity-0 group-hover:opacity-100"
+                    title="Remove"
+                  >
+                    x
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -465,6 +554,21 @@ export default function CompareSessionsPage() {
                   {comparison.session_b.session.grade ?? '\u2014'}
                 </div>
               </div>
+            </div>
+          </div>
+
+          {/* ── Score Radar Chart ──────────────────────────────── */}
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+            <h2 className="text-lg font-monument text-chalk mb-4">Scoring Dimensions</h2>
+            <ScoreRadarChart
+              scoresA={comparison.session_a.scores}
+              scoresB={comparison.session_b.scores}
+              colorA={COLOR_A}
+              colorB={COLOR_B}
+            />
+            <div className="flex justify-center gap-6 mt-3 text-xs font-body">
+              <span style={{ color: COLOR_A }}>Session A</span>
+              <span style={{ color: COLOR_B }}>Session B</span>
             </div>
           </div>
 

@@ -28,7 +28,6 @@ from pydantic import BaseModel, ValidationError
 
 from .api_utils import ErrorCode, api_error
 
-
 # ---------------------------------------------------------------------------
 # Input sanitization helpers
 # ---------------------------------------------------------------------------

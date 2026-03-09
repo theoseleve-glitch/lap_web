@@ -57,7 +57,7 @@ class TestKartCRUD:
         assert len(karts) == 2
 
     def test_update_kart(self, db):
-        from web.models import create_kart, update_kart, get_kart_by_id
+        from web.models import create_kart, get_kart_by_id, update_kart
 
         kid = create_kart(db, kart_name="Old Name")
         db.commit()

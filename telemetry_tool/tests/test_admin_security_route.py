@@ -7,11 +7,11 @@ Verifies:
 - POST /admin/incidents creates incident note
 - GET /admin/incidents lists incidents
 """
-import sys
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 import pytest
 

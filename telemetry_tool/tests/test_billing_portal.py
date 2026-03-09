@@ -9,10 +9,10 @@ Validates:
 - PATCH /api/v1/billing/email updates Stripe customer email
 - PATCH /api/v1/billing/email returns 400 without customer
 """
-import sys
 import json
+import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -273,9 +273,9 @@ class TestBillingEmail:
 
     def test_email_update_requires_email_field(self):
         """Email update requires email in request body."""
-        from web.routes.billing import billing_email
-
         from flask import Flask
+
+        from web.routes.billing import billing_email
         app = Flask(__name__)
         from web.routes.billing import bp
         app.register_blueprint(bp)

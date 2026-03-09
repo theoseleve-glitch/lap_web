@@ -599,6 +599,7 @@ class TestChannelInventoryDB:
     def db(self):
         import json as _json
         import sqlite3
+
         from db.migrate import ensure_schema
         conn = sqlite3.connect(":memory:")
         conn.row_factory = sqlite3.Row

@@ -8,15 +8,14 @@ Run from the telemetry_tool directory:
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import sys
-import os
 
 # Add parent directory to sys.path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # 1. Schema tests
@@ -74,6 +73,7 @@ class TestPipelineTrackLayout:
 
     def test_layout_with_empty_corners(self):
         import pandas as pd
+
         from pipeline import _extract_track_layout_for_picker
 
         # Create a minimal DataFrame with GPS columns
@@ -94,6 +94,7 @@ class TestPipelineTrackLayout:
 
     def test_layout_with_corners(self):
         import pandas as pd
+
         from pipeline import _extract_track_layout_for_picker
 
         df = pd.DataFrame({
@@ -116,6 +117,7 @@ class TestPipelineTrackLayout:
 
     def test_layout_returns_none_without_gps(self):
         import pandas as pd
+
         from pipeline import _extract_track_layout_for_picker
 
         df = pd.DataFrame({

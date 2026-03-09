@@ -100,13 +100,37 @@ export const trackDemoCtaClick = (location: string) =>
   track('demo_cta_click', { location });
 export const trackDemoFormView = () => track('demo_form_view');
 
+// A/B Experiments — read active variants from cookies
+function getExperimentVariants(): Record<string, string> {
+  if (typeof document === 'undefined') return {};
+  const variants: Record<string, string> = {};
+  for (const name of ['lap_exp_hero', 'lap_exp_pricing', 'lap_exp_cta']) {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${name}=([^;]+)`));
+    if (match) variants[name] = match[1];
+  }
+  return variants;
+}
+
+/** Track a conversion event with experiment variant context. */
+export function trackConversion(goal: string, props?: EventProps) {
+  const variants = getExperimentVariants();
+  track('conversion', {
+    goal,
+    ...variants,
+    ...props,
+  });
+}
+
 // Conversion
-export const trackCtaClick = (cta: string, location: string, mode: string) =>
+export const trackCtaClick = (cta: string, location: string, mode: string) => {
   track('cta_click', { cta_name: cta, location, mode });
+  trackConversion('cta_click', { cta_name: cta, location, mode });
+};
 export const trackFormSubmitStart = (formType: string, sourcePath: string) =>
   track('lead_submit_start', { form_type: formType, source_path: sourcePath });
 export const trackFormSubmitSuccess = async (formType: string, sourcePath: string) => {
   track('lead_submit_success', { form_type: formType, source_path: sourcePath });
+  trackConversion('lead_submit', { form_type: formType, source_path: sourcePath });
   await trackServer('lead_submit_success', { leadType: formType, sourcePath });
 };
 export const trackFormSubmitError = (formType: string, sourcePath: string, reason: string) =>

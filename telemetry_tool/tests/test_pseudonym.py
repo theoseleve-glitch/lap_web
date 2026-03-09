@@ -32,7 +32,6 @@ from privacy.pseudonym import (
     resolve_session_pid,
 )
 
-
 # Fixed test values
 _SECRET_A = "test-secret-alpha-2026"
 _SECRET_B = "test-secret-beta-2026"

@@ -13,8 +13,8 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from telemetry_tool.adapters.base import BaseAdapter
 from telemetry_tool.adapters import registry as adapter_registry
+from telemetry_tool.adapters.base import BaseAdapter
 
 
 # ---------------------------------------------------------------------------

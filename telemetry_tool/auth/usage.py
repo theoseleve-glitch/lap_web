@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from auth.entitlements import get_plan_entitlements, METRIC_TO_ENTITLEMENT
+from auth.entitlements import METRIC_TO_ENTITLEMENT, get_plan_entitlements
 
 
 def get_current_period() -> str:

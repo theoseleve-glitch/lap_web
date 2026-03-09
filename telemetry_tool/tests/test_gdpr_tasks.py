@@ -16,7 +16,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from tasks.gdpr_tasks import export_user_data, purge_deleted_accounts
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

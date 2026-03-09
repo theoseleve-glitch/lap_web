@@ -10,7 +10,7 @@ traffic ahead. Produces per-lap traffic_score and per-segment flags.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict, field
+from dataclasses import asdict, dataclass, field
 from typing import Optional
 
 import numpy as np

@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 # -- -
 
-from scoring import _ratio_score, _score_consistency, MAX_CONSISTENCY
+from scoring import MAX_CONSISTENCY, _ratio_score, _score_consistency
 
 
 class TestScoringConsistencyDry(unittest.TestCase):

@@ -18,7 +18,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from telemetry_tool.adapters.racechrono_adapter import RaceChronoAdapter
 
-
 # ---------------------------------------------------------------------------
 # CSV fixtures
 # ---------------------------------------------------------------------------

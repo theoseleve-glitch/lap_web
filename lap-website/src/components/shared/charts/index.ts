@@ -12,3 +12,5 @@ export { WheelSlipChart } from './WheelSlipChart';
 export { BrakeAnalysisChart } from './BrakeAnalysisChart';
 export { FuelStrategyChart } from './FuelStrategyChart';
 export { LiveFrictionCircle } from './LiveFrictionCircle';
+export { FullscreenToggle } from './FullscreenToggle';
+export { SpeedTraceMiniMap } from './SpeedTraceMiniMap';

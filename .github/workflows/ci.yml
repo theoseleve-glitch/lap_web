@@ -39,10 +39,10 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install -r requirements.txt pytest-cov
 
-      - name: Run telemetry_tool tests
-        run: pytest telemetry_tool/tests/ -q --tb=short
+      - name: Run telemetry_tool tests with coverage
+        run: pytest telemetry_tool/tests/ -q --tb=short --cov=telemetry_tool --cov-report=term-missing --cov-fail-under=30
 
       - name: Run kart_envelope tests
         run: pytest kart_envelope/tests/ -q --tb=short
@@ -120,6 +120,104 @@ jobs:
         run: node scripts/ci-content-approval.mjs
         working-directory: lap-website
 
+  mypy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check requirements.txt completeness
+        run: python scripts/check_requirements.py
+
+      - name: Run mypy type checks
+        run: mypy
+
+      - name: Check import ordering (isort)
+        run: isort --check-only --diff telemetry_tool/ kart_envelope/ tests/
+
+      - name: Lint Python (ruff)
+        run: ruff check telemetry_tool/ kart_envelope/ tests/
+
+      - name: Track TODO/FIXME/HACK count
+        run: |
+          echo "── TODO/FIXME/HACK inventory ──"
+          COUNT=$(grep -rn "TODO\|FIXME\|HACK\|XXX" telemetry_tool/ --include="*.py" | wc -l)
+          echo "Total: $COUNT"
+          grep -rn "TODO\|FIXME\|HACK\|XXX" telemetry_tool/ --include="*.py" | head -20 || true
+          echo "---"
+          echo "::notice::$COUNT TODO/FIXME/HACK comments in telemetry_tool/"
+
+      - name: Code complexity report
+        run: |
+          pip install radon
+          echo "── Cyclomatic complexity (CC > 15 = warning) ──"
+          radon cc telemetry_tool/ -a -nc --min C | head -50
+          echo ""
+          echo "── Maintainability index (< 20 = hard to maintain) ──"
+          radon mi telemetry_tool/ --min B | head -30
+          echo ""
+          WORST=$(radon cc telemetry_tool/ -nc --min F -s 2>/dev/null | head -5)
+          if [ -n "$WORST" ]; then
+            echo "::warning::Functions with very high complexity (F-grade):"
+            echo "$WORST"
+          fi
+
+  sast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Bandit security linter
+        run: |
+          pip install bandit[toml]
+          echo "── Bandit SAST scan ──"
+          bandit -r telemetry_tool/ kart_envelope/ \
+            -ll \
+            --skip B101,B404,B603 \
+            -f json -o bandit-report.json || true
+          bandit -r telemetry_tool/ kart_envelope/ \
+            -ll \
+            --skip B101,B404,B603 \
+            -f screen | head -100
+          HIGH=$(python -c "import json; r=json.load(open('bandit-report.json')); print(sum(1 for i in r.get('results',[]) if i['issue_severity']=='HIGH'))")
+          echo "High-severity issues: $HIGH"
+          if [ "$HIGH" -gt 0 ]; then
+            echo "::warning::Bandit found $HIGH high-severity issues"
+          fi
+
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          echo "── pip-audit dependency scan ──"
+          pip-audit --strict --desc 2>&1 | head -50 || true
+          pip-audit --format json 2>/dev/null | python -c "
+          import json,sys
+          try:
+            data = json.load(sys.stdin)
+            vulns = data.get('dependencies', [])
+            critical = [v for v in vulns if v.get('vulns')]
+            if critical:
+              print(f'::warning::{len(critical)} packages with known vulnerabilities')
+          except: pass
+          " || true
+
   contract-tests:
     runs-on: ubuntu-latest
     steps:
@@ -157,6 +255,30 @@ jobs:
 
       - name: TypeScript type check
         run: npx tsc --noEmit
+
+  # ── Dead code detection (unused exports/files) ───────────
+
+  dead-code:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: lap-website
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: lap-website/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run knip (unused exports/files)
+        run: npx knip --no-exit-code --reporter compact
+        continue-on-error: true
 
   # ── Migration safety (fresh PG, upgrade/downgrade) ────────
 

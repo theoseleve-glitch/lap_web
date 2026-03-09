@@ -1,13 +1,15 @@
 """Tests for driver style profile computation."""
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from telemetry_tool.features import DriverStyleProfile, compute_driver_style
 from telemetry_tool.corner_analysis import CornerPerformance
+from telemetry_tool.features import DriverStyleProfile, compute_driver_style
 
 
 class TestDriverStyleProfile:

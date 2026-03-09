@@ -3,6 +3,7 @@
 import { useState, useId } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { formatDateFromTimestamp } from '@/lib/format-utils';
 import { apiFetch } from '@/lib/api-client';
 
 /* ── Types ────────────────────────────────────────────────── */
@@ -67,7 +68,7 @@ function formatRelative(iso: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   if (days < 7) return `${days}d ago`;
-  return d.toLocaleDateString();
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -686,7 +687,7 @@ export default function SecurityPage() {
                     {PROVIDER_LABELS[conn.provider] || conn.provider}
                   </p>
                   <p className="text-steel text-xs font-body">
-                    Connected {new Date(conn.connected_at).toLocaleDateString()}
+                    Connected {formatDateFromTimestamp(conn.connected_at)}
                   </p>
                 </div>
                 <button

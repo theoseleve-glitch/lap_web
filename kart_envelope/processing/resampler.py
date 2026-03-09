@@ -19,10 +19,9 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from telemetry_tool.resampling import resample_lap_by_distance  # noqa: E402
-
 from kart_envelope.config import KartEnvelopeConfig  # noqa: E402
-from kart_envelope.ingest.columns import COL_DIST, CANONICAL_TO_RAW  # noqa: E402
+from kart_envelope.ingest.columns import CANONICAL_TO_RAW, COL_DIST  # noqa: E402
+from telemetry_tool.resampling import resample_lap_by_distance  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

@@ -8,13 +8,13 @@ Validates:
 - Support ticket creation and listing
 - Cookie consent helpers (frontend-side, tested via import)
 """
-import sys
-import json
 import hashlib
 import hmac
+import json
 import os
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +32,7 @@ class TestDataSummary:
     def test_data_summary_structure(self):
         """Data summary returns expected fields."""
         from web.routes.api_v1_account import data_summary
+
         # We test the token/deletion logic directly instead of through Flask
         # since the endpoint needs Flask request context.
         # Test the structural expectations instead.
@@ -70,8 +71,9 @@ class TestDeleteSessionToken:
 
     def test_token_expired(self):
         """Expired token returns None."""
-        from web.routes.api_v1_account import _verify_delete_token
         import base64
+
+        from web.routes.api_v1_account import _verify_delete_token
 
         secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
         # Create a manually expired token
@@ -85,8 +87,9 @@ class TestDeleteSessionToken:
 
     def test_token_tampered(self):
         """Tampered token returns None."""
-        from web.routes.api_v1_account import _make_delete_token, _verify_delete_token
         import base64
+
+        from web.routes.api_v1_account import _make_delete_token, _verify_delete_token
 
         token = _make_delete_token(user_id=42, session_ids=[1])
         # Tamper with the encoded data
@@ -119,6 +122,7 @@ class TestTermsAcceptance:
     def test_terms_version_format(self):
         """TERMS_VERSION follows date-v format."""
         from web.routes.api_v1_account import TERMS_VERSION
+
         # Should contain a date-like prefix
         assert "-v" in TERMS_VERSION
 

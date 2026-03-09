@@ -9,8 +9,12 @@ Public API
 ``predict_pit_strategy(race_laps, fuel_effect, tank_capacity)``
 """
 from __future__ import annotations
-import logging, math, traceback
+
+import logging
+import math
+import traceback
 from typing import Any
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

@@ -138,7 +138,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
   }, [draw]);
 
   return (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} role="img" aria-label="Fuel strategy chart showing fuel consumption and pit stop planning">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         <span className="text-gray-400">Fuel Strategy</span>
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}

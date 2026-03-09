@@ -8,7 +8,6 @@ All functions are defensive: empty/NaN inputs return sensible defaults.
 import numpy as np
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Grip-temperature model
 # ---------------------------------------------------------------------------

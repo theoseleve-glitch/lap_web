@@ -11,7 +11,14 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from race_intelligence import predict_finish, fuel_alerts, pace_analysis, swap_suggestion, rival_analysis, analyze_race
+from race_intelligence import (
+    analyze_race,
+    fuel_alerts,
+    pace_analysis,
+    predict_finish,
+    rival_analysis,
+    swap_suggestion,
+)
 
 
 class TestPredictFinish:

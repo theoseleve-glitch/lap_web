@@ -9,14 +9,13 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from web.schemas.auth import LoginSchema, RefreshSchema, RegisterSchema, VerifyEmailSchema
-from web.schemas.teams import CreateTeamSchema, InviteMemberSchema
-from web.schemas.sessions import SessionListParams
-from web.schemas.jobs import JobListParams, ResumeJobSchema
-from web.schemas.batch import BatchReanalyzeSchema
-from web.schemas.tracks import TrackListParams
 from web.schemas.account import ExportRequestSchema, ProfileUpdateSchema
-
+from web.schemas.auth import LoginSchema, RefreshSchema, RegisterSchema, VerifyEmailSchema
+from web.schemas.batch import BatchReanalyzeSchema
+from web.schemas.jobs import JobListParams, ResumeJobSchema
+from web.schemas.sessions import SessionListParams
+from web.schemas.teams import CreateTeamSchema, InviteMemberSchema
+from web.schemas.tracks import TrackListParams
 
 # ---------------------------------------------------------------------------
 # auth schemas

@@ -4,11 +4,11 @@ Verifies:
 - GET /admin/email/stats returns delivery statistics
 - POST /admin/email/resend-verification/:user_id triggers resend
 """
-import sys
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 import pytest
 

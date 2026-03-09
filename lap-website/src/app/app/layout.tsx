@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { AppShell } from './AppShell';
 
 export const metadata: Metadata = {
+  title: { default: 'Dashboard', template: '%s | LAP Coach Dashboard' },
   robots: { index: false, follow: false },
 };
 

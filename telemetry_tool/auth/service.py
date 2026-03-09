@@ -167,7 +167,7 @@ def login_user(
     user = cur.fetchone()
 
     # Account lockout — check before attempting password verification
-    from auth.lockout import check_lockout, record_failed_attempt, clear_attempts
+    from auth.lockout import check_lockout, clear_attempts, record_failed_attempt
     lockout_remaining = check_lockout(email)
     if lockout_remaining is not None:
         log_security_event(conn, "login_locked_out",
@@ -449,6 +449,22 @@ def change_password(
 
     conn.commit()
     return True
+
+
+def revoke_all_sessions(conn, user_id: int) -> int:
+    """Revoke ALL refresh tokens for user (logout all devices).
+
+    Returns the number of tokens revoked.
+    """
+    cur = conn.execute(
+        "UPDATE refresh_tokens SET revoked_at = NOW() "
+        "WHERE user_id = %(uid)s AND revoked_at IS NULL",
+        {"uid": user_id},
+    )
+    count = cur.rowcount if hasattr(cur, "rowcount") else 0
+    _log_audit(conn, user_id, "logout_all_devices", {"revoked": count})
+    conn.commit()
+    return count
 
 
 # -- Audit helper -----------------------------------------------------------

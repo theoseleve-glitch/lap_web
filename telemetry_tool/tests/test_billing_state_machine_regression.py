@@ -7,8 +7,8 @@ Validates:
 - Entitlement middleware blocks unpaid/canceled users
 - plan_tier derived from price_id mapping
 """
-import sys
 import json
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -264,7 +264,7 @@ class TestPlanTierDerivation:
             "STRIPE_PRICE_RACER_MONTHLY": "price_racer_mo",
             "STRIPE_PRICE_WORLDCLASS_ANNUAL": "price_wc_yr",
         }):
-            from web.routes.billing import _init_price_mapping, STRIPE_PRICE_TO_TIER
+            from web.routes.billing import STRIPE_PRICE_TO_TIER, _init_price_mapping
             STRIPE_PRICE_TO_TIER.clear()
             _init_price_mapping()
             assert STRIPE_PRICE_TO_TIER.get("price_racer_mo") == "racer"

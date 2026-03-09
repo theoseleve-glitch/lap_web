@@ -14,8 +14,9 @@ import logging
 
 from flask import Blueprint, g, request
 
-from web.api_utils import api_response, api_error, ErrorCode
-from .middleware import require_superadmin, require_admin_role
+from web.api_utils import ErrorCode, api_error, api_response
+
+from .middleware import require_admin_role, require_superadmin
 
 logger = logging.getLogger(__name__)
 

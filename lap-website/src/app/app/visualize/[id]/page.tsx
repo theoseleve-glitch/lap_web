@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
 import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
+import { FullscreenToggle } from '@/components/shared/charts/FullscreenToggle';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -196,7 +197,7 @@ export default function VisualizeSessionPage() {
               GPS Track Map
             </h3>
           </div>
-          <div className="flex-1 p-2 overflow-hidden">
+          <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="GPS Track Map fullscreen">
             <ChartErrorBoundary chartName="GpsTrace" minHeight="300px">
               <GpsTrace
                 sessionId={sessionId}
@@ -206,7 +207,7 @@ export default function VisualizeSessionPage() {
                 className="w-full h-full"
               />
             </ChartErrorBoundary>
-          </div>
+          </FullscreenToggle>
         </div>
 
         {/* Right panels — Speed Trace + GG Diagram, stacked */}
@@ -218,7 +219,7 @@ export default function VisualizeSessionPage() {
                 Speed Trace
               </h3>
             </div>
-            <div className="flex-1 p-2 overflow-hidden">
+            <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="Speed Trace fullscreen">
               <ChartErrorBoundary chartName="SpeedTrace" minHeight="200px">
                 <SpeedTraceZoom
                   sessionId={sessionId}
@@ -228,7 +229,7 @@ export default function VisualizeSessionPage() {
                   className="w-full h-full"
                 />
               </ChartErrorBoundary>
-            </div>
+            </FullscreenToggle>
           </div>
 
           {/* GG Diagram — bottom right */}
@@ -238,7 +239,7 @@ export default function VisualizeSessionPage() {
                 G-G Diagram
               </h3>
             </div>
-            <div className="flex-1 p-2 overflow-hidden">
+            <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="G-G Diagram fullscreen">
               <ChartErrorBoundary chartName="GGExplorer" minHeight="200px">
                 <GGExplorer
                   sessionId={sessionId}
@@ -248,7 +249,7 @@ export default function VisualizeSessionPage() {
                   className="w-full h-full"
                 />
               </ChartErrorBoundary>
-            </div>
+            </FullscreenToggle>
           </div>
         </div>
       </div>

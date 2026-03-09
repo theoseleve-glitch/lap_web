@@ -24,9 +24,9 @@ from kart_envelope.envelope.pacejka import (
     combined_tire_scales_from_session,
     magic_formula,
 )
+from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.ingest.columns import COL_ACCEL_LAT, COL_ACCEL_LONG, COL_SPEED
 from kart_envelope.ingest.metadata import SessionMetadata
-from kart_envelope.inference.session_scalars import SessionScalars
 
 
 @dataclass

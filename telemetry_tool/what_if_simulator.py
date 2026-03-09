@@ -10,8 +10,12 @@ Public API
     Apply corner speed adjustments and return predicted lap time.
 """
 from __future__ import annotations
-import logging, math, traceback
+
+import logging
+import math
+import traceback
 from typing import Any, Optional
+
 import numpy as np
 
 logger = logging.getLogger(__name__)

@@ -39,7 +39,7 @@ def test_lap_inclusion_policy_fields():
 
 def test_policy_label_method():
     """LapInclusionPolicy.label() returns correct label per lap."""
-    from lap_inclusion import LapInclusionPolicy, LapExclusion
+    from lap_inclusion import LapExclusion, LapInclusionPolicy
 
     policy = LapInclusionPolicy(
         learning_laps=[2, 3, 4],
@@ -105,7 +105,7 @@ def test_high_traffic_excluded():
 def test_low_traffic_masked():
     """Lap with traffic_score 0.2 -> in learning set but has traffic mask."""
     from lap_inclusion import build_inclusion_policy
-    from traffic_detection import TrafficResult, TrafficEvent
+    from traffic_detection import TrafficEvent, TrafficResult
 
     laps = _make_simple_laps(5)
     lap_times = [60.0, 61.0, 62.0, 63.0, 64.0]

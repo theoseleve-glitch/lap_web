@@ -58,7 +58,7 @@ def get_db_connection(db_path: Optional[Path] = None):
 
     # Try Flask context first.
     try:
-        from flask import g, current_app
+        from flask import current_app, g
         if "db" not in g:
             g.db = _connect(Path(current_app.config["DB_PATH"]))
         return g.db

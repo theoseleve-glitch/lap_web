@@ -29,17 +29,17 @@ Design notes
 
 from __future__ import annotations
 
+import logging
 import os
 import time
-import logging
 from pathlib import Path
 from typing import Optional
 
+import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pandas as pd
 
-from feature_schema import validate_schema, SchemaValidationError  # noqa: F401 (re-exported)
+from feature_schema import SchemaValidationError, validate_schema  # noqa: F401 (re-exported)
 
 logger = logging.getLogger(__name__)
 
@@ -389,8 +389,10 @@ def load_parquet_partition(
 
 if __name__ == "__main__":  # pragma: no cover
     import tempfile
+
     import numpy as np
-    from feature_schema import ALL_COLUMNS, FEATURE_COLUMNS, TARGET_COLUMNS, METADATA_COLUMNS
+
+    from feature_schema import ALL_COLUMNS, FEATURE_COLUMNS, METADATA_COLUMNS, TARGET_COLUMNS
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 

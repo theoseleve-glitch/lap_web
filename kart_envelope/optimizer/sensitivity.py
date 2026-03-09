@@ -26,15 +26,15 @@ import pandas as pd
 
 from kart_envelope.config import KartEnvelopeConfig
 from kart_envelope.envelope.capability import CapabilityEnvelope, train_capability_envelope
+from kart_envelope.inference.session_scalars import SessionScalars
+from kart_envelope.ingest.acd_parser import load_acd_engine_data, resolve_acd_path
 from kart_envelope.ingest.columns import (
     COL_ACCEL_LAT,
     COL_ACCEL_LONG,
     COL_DIST,
     COL_SPEED,
 )
-from kart_envelope.ingest.acd_parser import load_acd_engine_data, resolve_acd_path
 from kart_envelope.ingest.metadata import SessionMetadata
-from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.track.geometry import TrackGeometry
 from telemetry_tool.lap_simulation import VehicleModel, fit_vehicle_model
 

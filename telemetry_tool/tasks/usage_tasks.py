@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 def _get_pg_conn():
     """Get a raw psycopg2 connection (outside Flask request context)."""
     import os
+
     import psycopg2
     import psycopg2.extras
 

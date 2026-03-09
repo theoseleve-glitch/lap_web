@@ -11,10 +11,10 @@ Validates:
 - Profile preferences JSONB merge
 - ProfileUpdateSchema + UserPreferences schema validation
 """
-import sys
 import json
-from pathlib import Path
+import sys
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -53,6 +53,7 @@ class FakeConn:
 def _make_flask_app():
     """Create a minimal Flask app with the account blueprint registered."""
     from flask import Flask
+
     from web.routes.api_v1_account import bp
     app = Flask(__name__)
     app.register_blueprint(bp)
@@ -520,8 +521,9 @@ class TestAccountSchemas:
 
     def test_profile_schema_max_lengths(self):
         """ProfileUpdateSchema enforces max_length constraints."""
-        from web.schemas.account import ProfileUpdateSchema
         from pydantic import ValidationError
+
+        from web.schemas.account import ProfileUpdateSchema
 
         with pytest.raises(ValidationError):
             ProfileUpdateSchema(display_name="x" * 201)
@@ -531,8 +533,9 @@ class TestAccountSchemas:
 
     def test_user_preferences_invalid_units(self):
         """UserPreferences rejects invalid units value."""
-        from web.schemas.account import UserPreferences
         from pydantic import ValidationError
+
+        from web.schemas.account import UserPreferences
 
         with pytest.raises(ValidationError):
             UserPreferences(units="hectares")

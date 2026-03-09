@@ -8,10 +8,10 @@ Validates:
 - Entitlement state transitions (active/trialing/past_due/canceled/paused)
 - Billing email templates
 """
-import sys
 import json
-from pathlib import Path
+import sys
 from datetime import date
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -230,7 +230,12 @@ class TestBillingBlueprintRegistration:
 
     def test_billing_endpoints_exist(self):
         """Key endpoint functions should exist in the module."""
-        from web.routes.api_v1_billing import get_subscription, get_invoices, get_usage, create_portal
+        from web.routes.api_v1_billing import (
+            create_portal,
+            get_invoices,
+            get_subscription,
+            get_usage,
+        )
         assert callable(get_subscription)
         assert callable(get_invoices)
         assert callable(get_usage)

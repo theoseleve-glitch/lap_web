@@ -57,6 +57,7 @@ class TestOAuthConfig:
 
         # Re-import to pick up monkeypatched env
         import importlib
+
         import web.config
         importlib.reload(web.config)
         cfg = web.config.Config()
@@ -166,7 +167,7 @@ class TestMiddlewareAllowlist:
 
     def test_oauth_paths_allowed(self):
         """The auth middleware should skip /auth/oauth/* paths."""
-        from web.middleware.auth import auth_middleware, _OAUTH_PATH_RE
+        from web.middleware.auth import _OAUTH_PATH_RE, auth_middleware
 
         # Verify the regex matches expected OAuth paths
         assert _OAUTH_PATH_RE.match("/auth/oauth/google")
@@ -185,6 +186,7 @@ class TestMiddlewareAllowlist:
     def test_verify_email_in_public_paths(self):
         """verify-email should be in the explicit allowlist set."""
         import inspect
+
         from web.middleware.auth import auth_middleware
         source = inspect.getsource(auth_middleware)
         assert "verify-email" in source
@@ -438,19 +440,21 @@ class TestRefreshEndpoint:
 
     def test_refresh_in_middleware_allowlist(self):
         """The /auth/refresh path should be in the public allowlist."""
-        from web.middleware.auth import auth_middleware
         import inspect
+
+        from web.middleware.auth import auth_middleware
         source = inspect.getsource(auth_middleware)
         assert "/auth/refresh" in source
 
     def test_refresh_has_rate_limit_decorator(self):
         """The /auth/refresh endpoint must have @rate_limit(tier='auth')."""
-        from web.routes.auth import refresh
         # When @rate_limit wraps a function, functools.wraps preserves the
         # original name but the wrapper closure lives in rate_limit's module.
         # We inspect the source code of the route module directly.
         import inspect
+
         from web.routes import auth as auth_module
+        from web.routes.auth import refresh
         source = inspect.getsource(auth_module)
         # Find the refresh function definition and verify rate_limit precedes it
         lines = source.splitlines()
@@ -477,8 +481,9 @@ class TestGetConnGuard:
 
     def test_get_conn_rejects_without_pg(self):
         """_get_conn should raise RuntimeError when USE_PG is False."""
-        from web.routes.auth import _get_conn
         from flask import Flask
+
+        from web.routes.auth import _get_conn
 
         app = Flask(__name__)
         app.config["USE_PG"] = False

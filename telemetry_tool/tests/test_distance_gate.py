@@ -99,7 +99,9 @@ class TestDistanceQualityEndpoint:
 def test_session_detail_includes_distance_quality():
     """GET /api/v1/sessions/<id> includes distance_quality when available."""
     from unittest.mock import MagicMock, patch
+
     from flask import Flask
+
     from web.routes.data_v2 import bp
 
     app = Flask(__name__)
@@ -140,8 +142,10 @@ def test_session_detail_includes_distance_quality():
 def test_report_includes_distance_debug_section():
     """generate_report() with distance_quality renders debug section."""
     pytest.importorskip("matplotlib")
+    import os
+    import tempfile
+
     from reporting_html import generate_report
-    import tempfile, os
 
     dq = {
         "status": "repaired",

@@ -579,6 +579,7 @@ def get_live_state(conn, race_id: int) -> dict | None:
     weather_alerts: list = []
     try:
         from meteo_service import get_weather_forecast
+
         # Weather enrichment requires track coordinates (lat/lon)
         # Currently not available in race_configs — skip for now
         # Future: add lat/lon to race_configs or resolve from track_name

@@ -1,9 +1,10 @@
 """Adaptation score parity tests — verify consistent output between paths."""
 import pytest
+
 from scoring import (
-    score_session,
-    MAX_ADAPTATION,
     ADAPT_V2_STABLE_DEFAULT_FRAC,
+    MAX_ADAPTATION,
+    score_session,
 )
 
 

@@ -6,8 +6,9 @@ backfill existing data and make it NOT NULL.
 Revision ID: 005
 Revises: 004
 """
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "005"
 down_revision = "004"

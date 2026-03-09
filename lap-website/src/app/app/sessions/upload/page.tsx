@@ -226,6 +226,7 @@ export default function UploadPage() {
 
   // Form state
   const [file, setFile] = useState<File | null>(null);
+  const [fileQueue, setFileQueue] = useState<File[]>([]);
   const [driverName, setDriverName] = useState('');
   const [sessionType, setSessionType] = useState('practice');
   const [trackState, setTrackState] = useState('dry');
@@ -249,6 +250,12 @@ export default function UploadPage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
 
+  // Batch upload tracking
+  const [batchResults, setBatchResults] = useState<{ name: string; sessionId: string | null; error: string | null }[]>([]);
+  const [batchTotal, setBatchTotal] = useState(0);
+  const batchQueueRef = useRef<File[]>([]);
+  const connectSSERef = useRef<(jId: string) => void>(() => {});
+
   // Pre-fill driver name from user profile
   useEffect(() => {
     const profile = getUserProfile();
@@ -267,6 +274,53 @@ export default function UploadPage() {
       .then((data) => { if (data?.karts) setKarts(data.karts); })
       .catch(() => {});
   }, []);
+
+  // Upload next file in batch queue (called after a file completes)
+  const uploadNextInBatch = useCallback(async () => {
+    const nextFile = batchQueueRef.current.shift();
+    if (!nextFile) return false; // No more files
+
+    setFile(nextFile);
+    setFileQueue([...batchQueueRef.current]);
+    setPageState('uploading');
+    setUploadPct(0);
+    setProgressPct(0);
+    setStageName(null);
+    setSseStatus('');
+    setErrorMessage('');
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      const result = await uploadSession(nextFile, {
+        driver_name: driverName.trim(),
+        session_type: sessionType,
+        track_state: trackState,
+        lap_range: lapRange.trim() || undefined,
+        exclude_laps: excludeLaps.trim() || undefined,
+        kart_id: kartId || undefined,
+        session_date: sessionDate || undefined,
+      }, setUploadPct, controller.signal);
+
+      setJobId(result.job_id);
+      setPageState('tracking');
+      connectSSERef.current(result.job_id);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'Upload cancelled') return true;
+      // Record failure for this file, continue with next
+      setBatchResults((prev) => [...prev, { name: nextFile.name, sessionId: null, error: err instanceof Error ? err.message : 'Upload failed' }]);
+      // Try next file
+      const hasMore = batchQueueRef.current.length > 0;
+      if (hasMore) {
+        await uploadNextInBatch();
+      } else {
+        setPageState('completed');
+      }
+    }
+    return true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate]);
 
   // ── SSE connection ──────────────────────────────────
   const connectSSE = useCallback((jId: string) => {
@@ -323,14 +377,37 @@ export default function UploadPage() {
               }
 
               if (event.status === 'completed') {
-                setPageState('completed');
                 const sid = event.session_id || jId;
-                setTimeout(() => router.push(`/app/sessions/${sid}`), 1500);
+                // Record batch result
+                if (batchTotal > 1) {
+                  setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: sid, error: null }]);
+                }
+                // If more files in queue, upload next
+                if (batchQueueRef.current.length > 0) {
+                  uploadNextInBatch();
+                  return;
+                }
+                setPageState('completed');
+                // Single file → redirect immediately; batch → show summary
+                if (batchTotal <= 1) {
+                  setTimeout(() => router.push(`/app/sessions/${sid}`), 1500);
+                }
                 return;
               }
 
               if (event.status === 'failed') {
-                setErrorMessage(event.error_message || 'Pipeline failed');
+                const errMsg = event.error_message || 'Pipeline failed';
+                // In batch mode, record failure and continue
+                if (batchTotal > 1) {
+                  setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: null, error: errMsg }]);
+                  if (batchQueueRef.current.length > 0) {
+                    uploadNextInBatch();
+                    return;
+                  }
+                  setPageState('completed');
+                  return;
+                }
+                setErrorMessage(errMsg);
                 setPageState('error');
                 return;
               }
@@ -345,7 +422,11 @@ export default function UploadPage() {
     };
 
     pollSSE();
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [router, uploadNextInBatch, batchTotal]);
+
+  // Keep ref in sync so uploadNextInBatch can call connectSSE without circular deps
+  connectSSERef.current = connectSSE;
 
   // Resume: if ?resume=jobId, load track layout immediately
   useEffect(() => {
@@ -381,29 +462,37 @@ export default function UploadPage() {
     e.stopPropagation();
     setIsDragOver(false);
 
-    const droppedFiles = e.dataTransfer.files;
-    if (droppedFiles.length > 0) {
-      const f = droppedFiles[0];
+    const droppedFiles = Array.from(e.dataTransfer.files);
+    const validFiles = droppedFiles.filter((f) => {
       const ext = f.name.split('.').pop()?.toLowerCase();
-      if (ext === 'csv' || ext === 'txt') {
-        setFile(f);
-        setErrorMessage('');
-      } else {
-        setErrorMessage('Only .csv and .txt files are accepted.');
-      }
+      return ext === 'csv' || ext === 'txt';
+    });
+    if (validFiles.length === 0) {
+      setErrorMessage('Only .csv and .txt files are accepted.');
+      return;
     }
+    setFile(validFiles[0]);
+    if (validFiles.length > 1) {
+      setFileQueue(validFiles.slice(1));
+    }
+    setErrorMessage('');
   }, []);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      setFile(files[0]);
+      const allFiles = Array.from(files);
+      setFile(allFiles[0]);
+      if (allFiles.length > 1) {
+        setFileQueue(allFiles.slice(1));
+      }
       setErrorMessage('');
     }
   }, []);
 
   const handleRemoveFile = useCallback(() => {
     setFile(null);
+    setFileQueue([]);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }, []);
 
@@ -417,6 +506,12 @@ export default function UploadPage() {
     setPageState('uploading');
     setErrorMessage('');
     setUploadPct(0);
+
+    // Initialize batch tracking
+    const totalFiles = 1 + fileQueue.length;
+    setBatchTotal(totalFiles);
+    setBatchResults([]);
+    batchQueueRef.current = [...fileQueue];
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -546,34 +641,64 @@ export default function UploadPage() {
                 ref={fileInputRef}
                 type="file"
                 accept={ACCEPTED_EXTENSIONS}
+                multiple
                 onChange={handleFileChange}
                 disabled={isFormDisabled}
                 className="sr-only"
-                aria-label="Choose telemetry file"
+                aria-label="Choose telemetry files"
               />
 
               {file ? (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-acid-green/10">
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-acid-green" aria-hidden="true">
-                      <path d="M4 4h8l4 4v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.5" />
-                      <path d="M12 4v4h4" stroke="currentColor" strokeWidth="1.5" />
-                    </svg>
+                <div className="w-full">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-acid-green/10">
+                      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-acid-green" aria-hidden="true">
+                        <path d="M4 4h8l4 4v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6a2 2 0 012-2z" stroke="currentColor" strokeWidth="1.5" />
+                        <path d="M12 4v4h4" stroke="currentColor" strokeWidth="1.5" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="font-telemetry text-chalk text-sm">{file.name}</p>
+                      <p className="text-steel text-xs font-body">
+                        {(file.size / 1024).toFixed(1)} KB
+                        {fileQueue.length > 0 && (
+                          <span className="ml-2 text-pit-orange">
+                            +{fileQueue.length} more file{fileQueue.length !== 1 ? 's' : ''} queued
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
+                      className="ml-4 text-steel hover:text-safety-red transition-colors text-sm"
+                      aria-label="Remove all files"
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <div>
-                    <p className="font-telemetry text-chalk text-sm">{file.name}</p>
-                    <p className="text-steel text-xs font-body">
-                      {(file.size / 1024).toFixed(1)} KB
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleRemoveFile(); }}
-                    className="ml-4 text-steel hover:text-safety-red transition-colors text-sm"
-                    aria-label="Remove file"
-                  >
-                    Remove
-                  </button>
+                  {fileQueue.length > 0 && (
+                    <div className="mt-3 pl-[52px] space-y-1">
+                      {fileQueue.map((qf, idx) => (
+                        <div key={`${qf.name}-${idx}`} className="flex items-center gap-2 text-xs">
+                          <span className="text-steel/50 font-telemetry w-4 text-right">{idx + 2}.</span>
+                          <span className="text-steel font-body truncate">{qf.name}</span>
+                          <span className="text-steel/40 font-body">({(qf.size / 1024).toFixed(1)} KB)</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setFileQueue((prev) => prev.filter((_, i) => i !== idx));
+                            }}
+                            className="text-steel/40 hover:text-safety-red transition-colors"
+                            aria-label={`Remove ${qf.name}`}
+                          >
+                            x
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
@@ -584,10 +709,10 @@ export default function UploadPage() {
                     </svg>
                   </div>
                   <p className="font-body text-chalk text-sm mb-1">
-                    Drag and drop your CSV file here
+                    Drag and drop your CSV files here
                   </p>
                   <p className="font-body text-steel text-xs">
-                    or click to browse. Accepts .csv and .txt files.
+                    or click to browse. Accepts .csv and .txt files. Multiple files supported.
                   </p>
                 </>
               )}
@@ -683,7 +808,7 @@ export default function UploadPage() {
               className="px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
                 hover:bg-gold/90 transition-colors
                 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold">
-              Upload &amp; Analyze
+              {fileQueue.length > 0 ? `Upload ${fileQueue.length + 1} Files` : 'Upload & Analyze'}
             </button>
             <Link href="/app/sessions"
               className="px-4 py-2.5 text-steel hover:text-chalk transition-colors font-body text-sm">
@@ -696,6 +821,13 @@ export default function UploadPage() {
       {/* ── Progress Section ──────────────────────────── */}
       {showProgress && (
         <div className="max-w-2xl">
+          {batchTotal > 1 && (
+            <div className="mb-3 flex items-center gap-2 text-xs font-telemetry text-steel">
+              <span>File {batchResults.length + 1} of {batchTotal}</span>
+              <span className="text-steel/30">|</span>
+              <span className="truncate">{file?.name}</span>
+            </div>
+          )}
           {pageState === 'uploading' && (
             <div className="mb-4">
               <div className="rounded-lg bg-concrete border border-steel/20 p-4 mb-4">
@@ -751,17 +883,61 @@ export default function UploadPage() {
       {/* ── Completed State ──────────────────────────── */}
       {showCompleted && (
         <div className="max-w-2xl">
-          <div className="mb-4 p-4 rounded-lg bg-acid-green/5 border border-acid-green/20" role="status">
-            <div className="flex items-center gap-3">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-acid-green" aria-hidden="true">
-                <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
-                <path d="M6 10l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <p className="text-acid-green font-body text-sm">
-                Analysis complete. Redirecting to session...
-              </p>
+          {batchTotal > 1 ? (
+            /* Batch summary */
+            <div className="space-y-3">
+              <div className="p-4 rounded-lg bg-acid-green/5 border border-acid-green/20" role="status">
+                <p className="text-acid-green font-body text-sm font-medium mb-1">
+                  Batch upload complete
+                </p>
+                <p className="text-steel text-xs font-body">
+                  {batchResults.filter((r) => r.sessionId).length} of {batchTotal} files processed successfully
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                {batchResults.map((r, i) => (
+                  <div key={i} className={`flex items-center gap-2 p-2.5 rounded-lg border text-sm font-body ${
+                    r.error ? 'bg-safety-red/5 border-safety-red/20 text-safety-red' : 'bg-concrete border-steel/20 text-chalk'
+                  }`}>
+                    {r.error ? (
+                      <span className="text-safety-red flex-shrink-0" aria-hidden="true">x</span>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 20 20" fill="none" className="text-acid-green flex-shrink-0" aria-hidden="true">
+                        <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+                        <path d="M6 10l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                    <span className="truncate flex-1">{r.name}</span>
+                    {r.error && <span className="text-xs text-safety-red/70 truncate max-w-[200px]">{r.error}</span>}
+                    {r.sessionId && (
+                      <Link href={`/app/sessions/${r.sessionId}`} className="text-xs text-pit-orange hover:text-chalk transition-colors flex-shrink-0">
+                        View
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <Link
+                href="/app/sessions"
+                className="inline-block mt-2 px-4 py-2 text-sm font-telemetry text-chalk bg-concrete border border-steel/20 rounded-lg hover:border-steel/40 transition-colors"
+              >
+                Back to Sessions
+              </Link>
             </div>
-          </div>
+          ) : (
+            /* Single file completion */
+            <div className="mb-4 p-4 rounded-lg bg-acid-green/5 border border-acid-green/20" role="status">
+              <div className="flex items-center gap-3">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" className="text-acid-green" aria-hidden="true">
+                  <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+                  <path d="M6 10l3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <p className="text-acid-green font-body text-sm">
+                  Analysis complete. Redirecting to session...
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

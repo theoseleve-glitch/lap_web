@@ -396,7 +396,7 @@ export function DeltaTimeChart({
   }
 
   return (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} role="img" aria-label="Delta time chart showing time difference between laps">
       {/* Lap selectors */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         <label className="flex items-center gap-1.5 text-gray-400">

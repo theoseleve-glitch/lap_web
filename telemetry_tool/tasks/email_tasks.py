@@ -62,8 +62,8 @@ def _send_email_impl(
     Returns:
         Dict with ``{"sent": bool, "template": str, "error": str|None}``
     """
-    from auth.email_templates import render_email
     from auth.email import _send
+    from auth.email_templates import render_email
 
     error_msg = None
     sent = False
@@ -121,6 +121,45 @@ def _log_email(
 # Register as Celery task
 # ---------------------------------------------------------------------------
 
+def _send_verification_reminders_impl() -> dict[str, Any]:
+    """Find users unverified for 24h+ and send one reminder.
+
+    Only sends one reminder per user (checks email_log for prior reminder).
+    """
+    sent_count = 0
+    try:
+        conn = _get_pg()
+        # Users registered >24h ago, not verified, no reminder sent yet
+        rows = conn.execute(
+            "SELECT u.id, u.email, u.email_verify_token "
+            "FROM users u "
+            "WHERE u.email_verified_at IS NULL "
+            "  AND u.created_at < NOW() - INTERVAL '24 hours' "
+            "  AND u.email_verify_token IS NOT NULL "
+            "  AND NOT EXISTS ("
+            "    SELECT 1 FROM email_log el "
+            "    WHERE el.user_id = u.id AND el.template = 'verification_reminder'"
+            "  ) "
+            "LIMIT 50",
+            {},
+        ).fetchall()
+
+        for row in rows:
+            user_id, email, token = row[0], row[1], row[2]
+            result = _send_email_impl(
+                "verification_reminder",
+                email,
+                {"verify_url": f"https://www.lap-coach.racing/verify-email?token={token}"},
+                user_id=user_id,
+            )
+            if result.get("sent"):
+                sent_count += 1
+    except Exception:
+        logger.exception("Failed to send verification reminders")
+
+    return {"sent_count": sent_count}
+
+
 if _USE_CELERY and _celery_app is not None:
     @_celery_app.task(
         name="tasks.email_tasks.send_email_async",
@@ -139,6 +178,13 @@ if _USE_CELERY and _celery_app is not None:
         user_id: int | None = None,
     ) -> dict[str, Any]:
         return _send_email_impl(template, to, variables, language, user_id)
+
+    @_celery_app.task(
+        name="tasks.email_tasks.send_verification_reminders",
+        queue="default",
+    )
+    def send_verification_reminders() -> dict[str, Any]:
+        return _send_verification_reminders_impl()
 else:
     def send_email_async(  # type: ignore[misc]
         template: str,

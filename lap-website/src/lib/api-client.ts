@@ -83,11 +83,27 @@ function buildHeaders(): Record<string, string> {
   return headers;
 }
 
+// In-flight GET request deduplication: identical concurrent GETs share one fetch.
+const _inflightGets = new Map<string, Promise<unknown>>();
+
 /**
  * Fetch from the API, unwrapping the standard envelope.
  * On 401, transparently attempts a single silent refresh and retries.
+ * Concurrent identical GET requests are deduplicated (coalesced).
  */
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method?.toUpperCase() ?? 'GET';
+  if (method === 'GET') {
+    const existing = _inflightGets.get(path);
+    if (existing) return existing as Promise<T>;
+    const promise = _apiFetchInner<T>(path, init).finally(() => _inflightGets.delete(path));
+    _inflightGets.set(path, promise);
+    return promise;
+  }
+  return _apiFetchInner<T>(path, init);
+}
+
+async function _apiFetchInner<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = buildHeaders();
 
   const res = await fetch(`${API_BASE}${path}`, {

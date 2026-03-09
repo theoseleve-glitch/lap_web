@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { FaqAccordion } from '@/components/ui/FaqAccordion';
@@ -20,6 +20,12 @@ export function PitStop() {
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('annual');
   const { t } = useTranslation();
   const { localizedPlans } = useCurrency();
+
+  const [ctaVariant, setCtaVariant] = useState<string | undefined>();
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^|;\s*)lap_exp_cta=([^;]+)/);
+    if (match) setCtaVariant(match[1]);
+  }, []);
 
   const toggleBilling = useCallback(() => {
     const next = billingPeriod === 'monthly' ? 'annual' : 'monthly';
@@ -105,6 +111,7 @@ export function PitStop() {
             plans={localizedPlans}
             billingPeriod={billingPeriod}
             onCtaClick={(plan) => trackCtaClick(plan, 'pit-stop', 'b2c')}
+            ctaVariant={ctaVariant}
           />
         </div>
 

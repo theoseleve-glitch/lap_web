@@ -70,7 +70,7 @@ class TestBillingErrorBuilder:
             from flask import g
             g.request_id = "test-req-123"
 
-            from web.api_utils import billing_error, ReasonCode
+            from web.api_utils import ReasonCode, billing_error
             resp, status = billing_error(
                 reason_code=ReasonCode.FEATURE_LOCKED,
                 message="Comparison requires World-Class plan",
@@ -90,7 +90,7 @@ class TestBillingErrorBuilder:
             from flask import g
             g.request_id = "test-req-456"
 
-            from web.api_utils import billing_error, ErrorCode, ReasonCode
+            from web.api_utils import ErrorCode, ReasonCode, billing_error
             resp, status = billing_error(
                 reason_code=ReasonCode.LIMIT_EXCEEDED,
                 message="Monthly reports limit reached (10/10)",
@@ -112,7 +112,7 @@ class TestBillingErrorBuilder:
             from flask import g
             g.request_id = "test-req-789"
 
-            from web.api_utils import billing_error, ReasonCode
+            from web.api_utils import ReasonCode, billing_error
             resp, status = billing_error(
                 reason_code=ReasonCode.SUBSCRIPTION_UNPAID,
                 message="Payment overdue",
@@ -129,7 +129,7 @@ class TestBillingErrorBuilder:
             from flask import g
             g.request_id = "test"
 
-            from web.api_utils import billing_error, ReasonCode
+            from web.api_utils import ReasonCode, billing_error
             resp, _ = billing_error(
                 reason_code=ReasonCode.FEATURE_LOCKED,
                 message="Locked",
@@ -146,7 +146,7 @@ class TestBillingErrorBuilder:
             g.request_id = "test"
 
             with patch.dict("os.environ", {"BILLING_UPGRADE_URL": "/pricing"}):
-                from web.api_utils import billing_error, ReasonCode
+                from web.api_utils import ReasonCode, billing_error
                 resp, _ = billing_error(
                     reason_code=ReasonCode.FEATURE_LOCKED,
                     message="Locked",
@@ -162,7 +162,7 @@ class TestBillingErrorBuilder:
             g.request_id = "test"
 
             with patch.dict("os.environ", {"BILLING_UPGRADE_URL": "/pricing"}):
-                from web.api_utils import billing_error, ReasonCode
+                from web.api_utils import ReasonCode, billing_error
                 resp, _ = billing_error(
                     reason_code=ReasonCode.FEATURE_LOCKED,
                     message="Locked",
@@ -339,6 +339,7 @@ class TestMiddlewareBillingStateEnvelope:
         mock_sub_status.return_value = "canceled"
         conn = MagicMock()
         from datetime import datetime, timedelta, timezone
+
         # Grace period NOT expired
         future_grace = datetime.now(timezone.utc) + timedelta(days=7)
         conn.execute.return_value.fetchone.return_value = {"grace_period_end": future_grace}

@@ -56,6 +56,7 @@ def _get_redis_config():
     """Get a Redis client for config reading."""
     try:
         import redis
+
         from web.config import Config
 
         return redis.Redis.from_url(
@@ -139,8 +140,8 @@ def _train_track_envelopes(
             continue
 
         try:
-            from kart_envelope.pipeline import train_library
             from kart_envelope.ingest.metadata import SessionMetadata
+            from kart_envelope.pipeline import train_library
 
             session_files = []
             for sess in sessions:
@@ -291,6 +292,7 @@ def _train_ml_models(conn) -> dict:
     # -- Anomaly detection model --
     try:
         import pandas as pd
+
         from anomaly_detection import train_anomaly_model
 
         try:

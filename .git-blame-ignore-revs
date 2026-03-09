@@ -1,0 +1,9 @@
+# .git-blame-ignore-revs
+# Commits that are mass formatting/refactoring and should be ignored in git blame.
+# Configure with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# fix(db): wrap raw SQL in text() for SQLAlchemy 2.x (bulk mechanical changes)
+1bb6fe5527fb32b7251b678ddc1c6301ca323dfc
+864b2d1037a3f164b8baa08455adc9ddd072884b
+01b91b9c6ec53c4ebf974c3ffc8ac770fde0ed93
+d83a7bc63a9f75c0be8ebfa8b2224c2ca604d20d

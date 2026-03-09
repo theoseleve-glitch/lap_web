@@ -16,7 +16,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from telemetry_tool.adapters.acc_adapter import ACCAdapter
 
-
 # ---------------------------------------------------------------------------
 # CSV fixtures
 # ---------------------------------------------------------------------------

@@ -30,6 +30,37 @@ export function formatDate(dateStr: string | null | undefined): string {
   }
 }
 
+/** Date + time: ISO string → "15 Jan 2026, 14:30" (en-GB) */
+export function formatDateTime(dateStr: string | null | undefined): string {
+  if (!dateStr) return EM_DASH;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return dateStr;
+  }
+}
+
+/** Date only from ISO/timestamp string → "15 Jan 2026" (en-GB) */
+export function formatDateFromTimestamp(dateStr: string | null | undefined): string {
+  if (!dateStr) return EM_DASH;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return dateStr;
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  } catch {
+    return dateStr;
+  }
+}
+
 /** Distance in meters, integer precision (matches desktop %.0f) */
 export function formatDistance(meters: number | null | undefined): string {
   if (meters == null || !isFinite(meters)) return EM_DASH;
@@ -55,4 +86,15 @@ export function scoreColor(score: number | null): string {
   if (score >= 60) return 'text-marshal-yellow';
   if (score >= 40) return 'text-pit-orange';
   return 'text-safety-red';
+}
+
+/** Letter grade for a score — provides a non-color indicator (WCAG 1.4.1). */
+export function scoreGrade(score: number | null): string {
+  if (score == null) return '\u2014';
+  if (score >= 90) return 'A+';
+  if (score >= 80) return 'A';
+  if (score >= 70) return 'B';
+  if (score >= 60) return 'C';
+  if (score >= 50) return 'D';
+  return 'F';
 }

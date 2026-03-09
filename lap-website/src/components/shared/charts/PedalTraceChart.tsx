@@ -443,7 +443,7 @@ export function PedalTraceChart({
   }
 
   return (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} role="img" aria-label="Pedal trace chart showing throttle and brake input over distance">
       {/* Lap selector */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         <label className="flex items-center gap-1.5 text-gray-400">

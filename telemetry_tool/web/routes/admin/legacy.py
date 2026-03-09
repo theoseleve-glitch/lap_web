@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, g, request
 
-from web.api_utils import api_response, api_error, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.middleware.audit import audit_log
 
 logger = logging.getLogger(__name__)
@@ -266,8 +266,9 @@ def impersonate_user(user_id: int):
     target = dict(row) if not isinstance(row, dict) else row
 
     # Generate short-lived token
-    import jwt
     import os
+
+    import jwt
     secret = os.environ.get("TELEMETRY_JWT_SECRET", "")
     if not secret:
         return api_error(ErrorCode.INTERNAL_ERROR, "JWT secret not configured", status=500)
@@ -512,8 +513,8 @@ def _get_backup_info() -> dict | None:
 
 def _get_disk_info() -> dict | None:
     """Return disk usage for the data partition."""
-    import shutil
     import os
+    import shutil
     data_path = os.environ.get("BACKUP_DIR", "/opt/lap-api/backups")
     try:
         usage = shutil.disk_usage(data_path)

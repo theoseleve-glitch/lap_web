@@ -1,14 +1,37 @@
 'use client';
 
-import { Fragment, useState, useCallback } from 'react';
+import { Fragment, useState, useCallback, useEffect } from 'react';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { StampButton } from '@/components/ui/StampButton';
+import { ChartTooltip } from '@/components/ui/ChartTooltip';
+import { PromoCountdown } from '@/components/marketing/PromoCountdown';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
 import { venueCard } from '@/data/pricing';
 import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
 import { useCurrency } from '@/hooks/useCurrency';
+
+/** Brief explanations for feature matrix rows */
+const FEATURE_TIPS: Record<string, string> = {
+  'pricing.matrix.uploadAnalyze': 'Upload a CSV from RaceChrono, RaceBox, AiM, or MoTeC and receive a full coaching report within seconds.',
+  'pricing.matrix.fourPillar': 'Scores your driving across Pace, Consistency, Execution, and Robustness — each out of 25 for a total out of 100.',
+  'pricing.matrix.cornerCoaching': 'Per-corner analysis showing time loss, coaching hints, and direction-specific feedback.',
+  'pricing.matrix.sessionTabs': 'Speed traces, G-G diagrams, pedal traces, sector analysis, and more in a unified session view.',
+  'pricing.matrix.comparisonProgress': 'Compare two sessions side-by-side to see exactly where you improved or lost time.',
+  'pricing.matrix.coachingDrills': 'Targeted practice drills generated from your weaknesses to accelerate improvement.',
+  'pricing.matrix.vizWorkspace': 'Interactive visualization workspace with chart theming, annotations, and custom overlays.',
+  'pricing.matrix.strategyDashboard': 'Real-time race strategy view with pit windows, stint pacing, and degradation trends.',
+  'pricing.matrix.livePace': 'Live telemetry monitoring during a race — see pace deltas and stint performance as they happen.',
+  'pricing.matrix.pitPlanning': 'Optimal pit stop timing based on tire degradation, fuel, and race position.',
+  'pricing.matrix.incidentAlert': 'Automated alerts for safety car, red flags, and unusual pace drops.',
+  'pricing.matrix.trackManagement': 'Manage your tracks, drivers, and karts in one workspace.',
+  'pricing.matrix.pdfReports': 'Download professional PDF reports to share with coaches, sponsors, or team engineers.',
+  'pricing.matrix.apiAccess': 'Programmatic access to your telemetry data for custom integrations and dashboards.',
+  'pricing.matrix.rawRetention': 'How long your original uploaded CSV files are stored before automatic cleanup.',
+  'pricing.matrix.reportRetention': 'Processed coaching reports are lightweight and stored indefinitely on all plans.',
+};
 
 interface MatrixRow {
   featureKey: string;
@@ -47,10 +70,25 @@ const GROUP_LABEL_KEYS: Record<string, string> = {
   data: 'pricing.groupData',
 };
 
+const USE_CASES = [
+  { id: 'hobby', label: 'Hobby Driver', description: 'Track day enthusiast, a few sessions per year', recommended: 'demo' },
+  { id: 'club', label: 'Club Racer', description: 'Regular race weekends, improving lap by lap', recommended: 'racer' },
+  { id: 'pro', label: 'Pro / Academy', description: 'Professional driver or coaching academy', recommended: 'world-class' },
+  { id: 'team', label: 'Racing Team', description: 'Multi-driver team with engineer support', recommended: 'world-class' },
+] as const;
+
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual');
+  const [useCase, setUseCase] = useState<string | null>(null);
   const { t } = useTranslation();
   const { localizedPlans } = useCurrency();
+
+  const [ctaVariant, setCtaVariant] = useState<string | undefined>();
+
+  useEffect(() => {
+    const match = document.cookie.match(/(?:^|;\s*)lap_exp_cta=([^;]+)/);
+    if (match) setCtaVariant(match[1]);
+  }, []);
 
   const toggleBilling = useCallback(() => {
     const next = billing === 'monthly' ? 'annual' : 'monthly';
@@ -71,6 +109,10 @@ export default function PricingPage() {
       faqItems={[
         { question: 'What is included in the free demo?', answer: 'The free demo lets you upload one session and receive a full coaching report with speed traces, corner analysis, and scoring.' },
         { question: 'Can I switch plans at any time?', answer: 'Yes. Upgrade or downgrade between Racer and World-Class at any time. Changes apply at your next billing cycle.' },
+        { question: 'Which GPS loggers are supported?', answer: 'RaceChrono, RaceBox, AiM, MoTeC, VBOX, and any logger that exports standard CSV with GPS coordinates.' },
+        { question: 'Is my data private?', answer: 'Yes. All data is isolated per workspace using row-level security. Your telemetry is never shared with other users.' },
+        { question: 'Can I use LAP for karts?', answer: 'Absolutely. LAP supports both kart and car telemetry with dedicated analysis pipelines for each.' },
+        { question: 'Do you offer team or circuit plans?', answer: 'Yes. Contact our sales team for B2B plans with multi-seat access, API integration, and dedicated support.' },
       ]}
     />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
@@ -79,6 +121,31 @@ export default function PricingPage() {
         title={t('pricing.title')}
         subtitle={t('pricing.description')}
       />
+      {/* Promotional countdown — set endsAt to activate a time-limited offer */}
+      <PromoCountdown endsAt="2026-04-01T00:00:00Z" label="Launch pricing ends in" className="mb-6" />
+
+      {/* Use-case selector */}
+      <section className="mb-8">
+        <p className="text-center text-steel text-sm mb-3">I am a&hellip;</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto">
+          {USE_CASES.map((uc) => (
+            <button
+              key={uc.id}
+              type="button"
+              onClick={() => setUseCase(useCase === uc.id ? null : uc.id)}
+              className={`p-3 border rounded text-left transition-all ${
+                useCase === uc.id
+                  ? 'border-acid-green bg-acid-green/5 text-chalk'
+                  : 'border-steel/20 text-steel hover:border-steel/40 hover:text-chalk'
+              }`}
+            >
+              <span className="block font-monument text-xs mb-0.5">{uc.label}</span>
+              <span className="block text-[11px] leading-tight opacity-70">{uc.description}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
         <span
@@ -105,6 +172,11 @@ export default function PricingPage() {
         >
           {t('pricing.toggleAnnual')}
         </span>
+        {billing === 'annual' && (
+          <span className="inline-flex items-center px-2 py-0.5 bg-acid-green/10 border border-acid-green/30 rounded text-acid-green text-[10px] font-telemetry uppercase tracking-wider animate-pulse">
+            Save 20%
+          </span>
+        )}
       </div>
 
       {/* Pricing Table + Venue card */}
@@ -113,6 +185,8 @@ export default function PricingPage() {
           plans={localizedPlans}
           billingPeriod={billing}
           onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
+          ctaVariant={ctaVariant}
+          recommendedSlug={useCase ? USE_CASES.find((uc) => uc.id === useCase)?.recommended : null}
         />
 
         {/* Venue card */}
@@ -170,7 +244,14 @@ export default function PricingPage() {
                 </tr>
                 {rows.map((row) => (
                   <tr key={row.featureKey}>
-                    <td className="border border-steel/20 p-2 text-steel">{t(row.featureKey)}</td>
+                    <td className="border border-steel/20 p-2 text-steel">
+                      <span className="inline-flex items-center gap-1.5">
+                        {t(row.featureKey)}
+                        {FEATURE_TIPS[row.featureKey] && (
+                          <ChartTooltip title={t(row.featureKey)} description={FEATURE_TIPS[row.featureKey]} />
+                        )}
+                      </span>
+                    </td>
                     <td className="border border-steel/20 p-2 text-chalk">{t(row.demoKey)}</td>
                     <td className="border border-steel/20 p-2 text-chalk">{t(row.racerKey)}</td>
                     <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
@@ -180,6 +261,118 @@ export default function PricingPage() {
             ))}
           </tbody>
         </table>
+      </section>
+
+      {/* Quick Comparison Checkmarks */}
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-4">Quick Comparison</h2>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr className="bg-concrete">
+                <th className="border border-steel/20 p-3 text-left text-steel w-1/2">Feature</th>
+                <th className="border border-steel/20 p-3 text-center text-steel">Demo</th>
+                <th className="border border-steel/20 p-3 text-center text-pit-orange font-monument">Racer</th>
+                <th className="border border-steel/20 p-3 text-center text-steel">World-Class</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                { feature: 'Upload & Analyze', demo: true, racer: true, worldClass: true },
+                { feature: '4-Pillar Scoring', demo: true, racer: true, worldClass: true },
+                { feature: 'Corner Coaching', demo: true, racer: true, worldClass: true },
+                { feature: 'Speed Trace & G-G Diagram', demo: true, racer: true, worldClass: true },
+                { feature: 'Coaching Drills', demo: false, racer: true, worldClass: true },
+                { feature: 'Visualization Workspace', demo: false, racer: true, worldClass: true },
+                { feature: 'Session Comparison', demo: false, racer: false, worldClass: true },
+                { feature: 'Race Strategy Dashboard', demo: 'partial', racer: true, worldClass: true },
+                { feature: 'Live Monitoring', demo: false, racer: true, worldClass: true },
+                { feature: 'PDF Reports', demo: false, racer: true, worldClass: true },
+                { feature: 'API Access', demo: false, racer: false, worldClass: true },
+                { feature: 'Priority Support', demo: false, racer: false, worldClass: true },
+              ].map((row) => (
+                <tr key={row.feature} className="hover:bg-concrete/40 transition-colors">
+                  <td className="border border-steel/20 p-3 text-chalk">{row.feature}</td>
+                  {([row.demo, row.racer, row.worldClass] as (boolean | string)[]).map((val, i) => (
+                    <td key={i} className="border border-steel/20 p-3 text-center">
+                      {val === true && <span className="text-acid-green text-lg">&#10003;</span>}
+                      {val === false && <span className="text-steel/30">&mdash;</span>}
+                      {val === 'partial' && <span className="text-marshal-yellow text-xs font-telemetry">Limited</span>}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="mb-10">
+        <h2 className="font-monument text-[var(--text-h2)] mb-4">
+          Frequently Asked Questions
+        </h2>
+        <div className="space-y-3">
+          {[
+            { q: 'What is included in the free demo?', a: 'The free demo lets you upload one session and receive a full coaching report with speed traces, corner analysis, and scoring.' },
+            { q: 'Can I switch plans at any time?', a: 'Yes. Upgrade or downgrade between Racer and World-Class at any time. Changes apply at your next billing cycle.' },
+            { q: 'Which GPS loggers are supported?', a: 'RaceChrono, RaceBox, AiM, MoTeC, VBOX, and any logger that exports standard CSV with GPS coordinates.' },
+            { q: 'Is my data private?', a: 'Yes. All data is isolated per workspace using row-level security. Your telemetry is never shared with other users.' },
+            { q: 'Can I use LAP for karts?', a: 'Absolutely. LAP supports both kart and car telemetry with dedicated analysis pipelines for each.' },
+            { q: 'Do you offer team or circuit plans?', a: 'Yes. Contact our sales team for B2B plans with multi-seat access, API integration, and dedicated support.' },
+          ].map(({ q, a }) => (
+            <details key={q} className="group border border-steel/20 bg-concrete/40">
+              <summary className="flex items-center justify-between cursor-pointer p-4 font-body text-sm text-chalk hover:text-acid-green transition-colors">
+                {q}
+                <span className="text-steel group-open:rotate-45 transition-transform ml-2 shrink-0">+</span>
+              </summary>
+              <p className="px-4 pb-4 text-steel text-sm font-body">{a}</p>
+            </details>
+          ))}
+        </div>
+      </section>
+
+      {/* Trust Badges */}
+      <section className="mb-10">
+        <div className="flex flex-wrap items-center justify-center gap-6 py-6 border-y border-steel/10">
+          <div className="flex items-center gap-2 text-steel">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M10 2l6 3v5c0 4-3 6.5-6 8-3-1.5-6-4-6-8V5l6-3z" />
+              <path d="M7 10l2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-xs font-telemetry uppercase tracking-wider">SSL Encrypted</span>
+          </div>
+          <div className="flex items-center gap-2 text-steel">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <circle cx="10" cy="10" r="7" />
+              <path d="M10 6v4l2.5 1.5" strokeLinecap="round" />
+            </svg>
+            <span className="text-xs font-telemetry uppercase tracking-wider">99.9% Uptime SLA</span>
+          </div>
+          <div className="flex items-center gap-2 text-steel">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <rect x="3" y="8" width="14" height="9" rx="1" />
+              <path d="M6 8V5a4 4 0 0 1 8 0v3" />
+              <circle cx="10" cy="13" r="1.5" />
+            </svg>
+            <span className="text-xs font-telemetry uppercase tracking-wider">Data Isolation (RLS)</span>
+          </div>
+          <div className="flex items-center gap-2 text-steel">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M4 10a6 6 0 0 1 12 0" />
+              <path d="M7 10a3 3 0 0 1 6 0" />
+              <circle cx="10" cy="10" r="1" fill="currentColor" />
+              <path d="M10 11v5" />
+            </svg>
+            <span className="text-xs font-telemetry uppercase tracking-wider">GDPR Compliant</span>
+          </div>
+          <div className="flex items-center gap-2 text-steel">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+              <path d="M3 14l4-4 3 3 7-7" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-xs font-telemetry uppercase tracking-wider">Daily Backups</span>
+          </div>
+        </div>
       </section>
 
       {/* Data Lifecycle Transparency */}
@@ -250,7 +443,24 @@ export default function PricingPage() {
           </article>
         </div>
       </section>
+
+      <RelatedPages pathname="/pricing" />
     </main>
+
+    {/* Sticky mobile CTA bar */}
+    <div className="fixed bottom-0 left-0 right-0 z-40 md:hidden bg-concrete/95 backdrop-blur-sm border-t border-steel/20 px-4 py-3 safe-area-bottom">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-monument text-xs text-chalk truncate">Start Free or from {billing === 'annual' ? '€6/mo' : '€9/mo'}</p>
+        </div>
+        <a
+          href="/register?source=pricing-sticky"
+          className="shrink-0 px-5 py-2.5 bg-pit-orange text-carbon font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
+        >
+          Get Started
+        </a>
+      </div>
+    </div>
     </>
   );
 }

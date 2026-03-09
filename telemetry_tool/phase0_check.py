@@ -77,6 +77,7 @@ def check_path_manager() -> None:
 def check_telemetry_schema() -> None:
     """Verify telemetry_schema loads and exposes expected attributes."""
     import telemetry_schema
+
     # Check that key constants / functions exist
 
     for attr in ("REQUIRED_COLUMNS", "OPTIONAL_COLUMNS", "validate_dataframe"):
@@ -106,6 +107,7 @@ def check_session_context() -> None:
         normalize_session_type,
         normalize_track_state,
     )
+
     # Quick smoke test
 
     st = normalize_session_type("practice")

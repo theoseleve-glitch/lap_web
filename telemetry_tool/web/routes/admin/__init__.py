@@ -24,17 +24,18 @@ from .auth_admin import bp as auth_admin_bp  # noqa: E402
 
 admin_bp.register_blueprint(auth_admin_bp)
 
+from .billing import bp as billing_admin_bp  # noqa: E402
+from .email import bp as email_bp  # noqa: E402
+from .entitlements import bp as entitlements_bp  # noqa: E402
+
 # Register Race Control sub-blueprints
 from .health import bp as health_bp  # noqa: E402
-from .users import bp as users_bp  # noqa: E402
-from .jobs import bp as jobs_bp  # noqa: E402
-from .billing import bp as billing_admin_bp  # noqa: E402
-from .entitlements import bp as entitlements_bp  # noqa: E402
-from .email import bp as email_bp  # noqa: E402
-from .security import bp as security_bp  # noqa: E402
 from .infra import bp as infra_bp  # noqa: E402
-from .training import bp as training_bp  # noqa: E402
+from .jobs import bp as jobs_bp  # noqa: E402
 from .monitoring import bp as monitoring_bp  # noqa: E402
+from .security import bp as security_bp  # noqa: E402
+from .training import bp as training_bp  # noqa: E402
+from .users import bp as users_bp  # noqa: E402
 
 for _sub_bp in [health_bp, users_bp, jobs_bp, billing_admin_bp,
                 entitlements_bp, email_bp, security_bp, infra_bp,
@@ -43,14 +44,14 @@ for _sub_bp in [health_bp, users_bp, jobs_bp, billing_admin_bp,
 
 # Re-export endpoint functions for backward compat with tests/imports
 from .legacy import (  # noqa: E402, F401
-    list_users,
+    billing_overview,
+    create_override,
     get_user_detail,
+    impersonate_user,
+    list_audit_log,
+    list_users,
+    list_workspaces,
+    storage_stats,
     suspend_user,
     unsuspend_user,
-    create_override,
-    impersonate_user,
-    list_workspaces,
-    list_audit_log,
-    billing_overview,
-    storage_stats,
 )

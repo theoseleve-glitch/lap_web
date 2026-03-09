@@ -7,7 +7,7 @@ value on every state-changing request to ``/api/v1/*``.
 import logging
 import secrets
 
-from flask import request, current_app
+from flask import current_app, request
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +44,11 @@ def csrf_middleware():
     header_token = request.headers.get(_CSRF_HEADER)
 
     if not cookie_token or not header_token:
-        from web.api_utils import api_error, ErrorCode
+        from web.api_utils import ErrorCode, api_error
         return api_error(ErrorCode.FORBIDDEN, "CSRF token missing", status=403)
 
     if not secrets.compare_digest(cookie_token, header_token):
-        from web.api_utils import api_error, ErrorCode
+        from web.api_utils import ErrorCode, api_error
         return api_error(ErrorCode.FORBIDDEN, "CSRF token mismatch", status=403)
 
 

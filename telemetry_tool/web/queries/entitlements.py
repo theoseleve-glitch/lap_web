@@ -19,6 +19,7 @@ def get_user_plan_tier(conn, user_id: int) -> str:
     Falls back to ``'demo'`` if user not found or plan_tier is NULL.
     """
     from flask import g
+
     from web.queries import get_cached
 
     def _load():

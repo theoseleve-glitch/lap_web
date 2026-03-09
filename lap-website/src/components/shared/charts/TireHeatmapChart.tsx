@@ -152,7 +152,7 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '' }
   }, [draw]);
 
   return (
-    <div ref={containerRef} className={className}>
+    <div ref={containerRef} className={className} role="img" aria-label="Tire heatmap showing temperature distribution across tires">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         <label className="flex items-center gap-1.5 text-gray-400">
           Lap:

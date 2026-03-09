@@ -10,13 +10,13 @@ Validates:
 - OAuth unlinking: prevents orphaned accounts (no password + no OAuth = blocked)
 - Audit log: all auth events logged with correct metadata
 """
-import sys
-import json
 import hashlib
+import json
 import secrets
-from pathlib import Path
+import sys
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, ANY
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -52,7 +52,7 @@ class TestTOTPModule:
 
     def test_verify_totp_current_step(self):
         """Current time step should verify."""
-        from auth.totp import generate_totp_secret, verify_totp, _hotp, _current_counter
+        from auth.totp import _current_counter, _hotp, generate_totp_secret, verify_totp
         secret = generate_totp_secret()
         counter = _current_counter()
         code = _hotp(secret, counter)
@@ -177,7 +177,7 @@ class TestPasswordReset:
 class TestPasswordChange:
     def test_change_password_wrong_current(self):
         """Wrong current password raises AuthError."""
-        from auth.service import change_password, hash_password, AuthError
+        from auth.service import AuthError, change_password, hash_password
         correct_hash = hash_password("correct-password")
         conn = FakeConn({
             "SELECT password_hash": [{"password_hash": correct_hash}],
@@ -213,7 +213,7 @@ class TestPasswordChange:
 class TestTwoFactorLogin:
     def test_login_returns_2fa_required(self):
         """Login with 2FA enabled returns requires_2fa + temp_token."""
-        from auth.service import login_user, hash_password
+        from auth.service import hash_password, login_user
         pw_hash = hash_password("password123")
         conn = FakeConn({
             "SELECT id, email, password_hash, display_name, totp_enabled": [{
@@ -238,7 +238,7 @@ class TestTwoFactorLogin:
 
     def test_temp_token_wrong_secret_fails(self):
         """Temp token with wrong secret raises AuthError."""
-        from auth.service import _create_temp_2fa_token, verify_2fa_temp_token, AuthError
+        from auth.service import AuthError, _create_temp_2fa_token, verify_2fa_temp_token
         token = _create_temp_2fa_token(42, "correct-secret")
         with pytest.raises(AuthError):
             verify_2fa_temp_token(token, "wrong-secret")

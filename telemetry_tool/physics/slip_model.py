@@ -8,7 +8,6 @@ distance-based (not time-based).
 import numpy as np
 import pandas as pd
 
-
 # ---------------------------------------------------------------------------
 # Slip ratio computation
 # ---------------------------------------------------------------------------

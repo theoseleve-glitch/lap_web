@@ -11,17 +11,17 @@ import os
 
 from flask import Blueprint, g, request
 
-from web.api_utils import api_response, api_error, ErrorCode
-from admin.totp import (
-    generate_totp_secret,
-    encrypt_secret,
-    decrypt_secret,
-    get_provisioning_uri,
-    verify_totp,
-    generate_recovery_codes,
-    verify_recovery_code,
-)
 from admin.audit import log_admin_action
+from admin.totp import (
+    decrypt_secret,
+    encrypt_secret,
+    generate_recovery_codes,
+    generate_totp_secret,
+    get_provisioning_uri,
+    verify_recovery_code,
+    verify_totp,
+)
+from web.api_utils import ErrorCode, api_error, api_response
 
 logger = logging.getLogger(__name__)
 

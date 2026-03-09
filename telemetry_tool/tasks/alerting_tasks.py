@@ -57,6 +57,7 @@ def _get_redis():
     """Get a Redis client from config."""
     try:
         import redis
+
         from web.config import Config
         return redis.Redis.from_url(Config.REDIS_URL, socket_timeout=2, decode_responses=True)
     except Exception:

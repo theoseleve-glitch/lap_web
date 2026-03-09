@@ -17,7 +17,6 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from db.sql_compat import translate_params
 
-
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------

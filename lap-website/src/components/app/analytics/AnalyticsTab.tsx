@@ -2,7 +2,7 @@
 
 import { BACKEND_URL } from '@/lib/api-client';
 import { GpsTrace, SpeedTraceZoom, GGExplorer } from '@/components/app/charts';
-import { SectorPanel } from '@/components/shared/charts';
+import { SectorPanel, SpeedTraceMiniMap } from '@/components/shared/charts';
 import { DeltaTimeChart } from '@/components/shared/charts/DeltaTimeChart';
 import { PedalTraceChart } from '@/components/shared/charts/PedalTraceChart';
 import { RPMGearChart } from '@/components/shared/charts/RPMGearChart';
@@ -17,6 +17,9 @@ import { LapDistribution } from './LapDistribution';
 import { LapProgressTracker } from './LapProgressTracker';
 import { SessionComparison } from './SessionComparison';
 import { DevelopmentDrills } from './DevelopmentDrills';
+import { ChartThemePicker } from '@/components/app/ChartThemePicker';
+import { ChartAnnotations } from '@/components/app/ChartAnnotations';
+import { ChartTooltip } from '@/components/ui/ChartTooltip';
 
 interface CornerData {
   corner_id: number;
@@ -69,42 +72,77 @@ export function AnalyticsTab({
 
   return (
     <div className="space-y-6">
+      {/* Chart color theme selector */}
+      <div className="flex justify-end">
+        <ChartThemePicker />
+      </div>
       {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 lg:row-span-2">
           <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">GPS Track Map</h3>
-            <GpsTrace
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-monument text-chalk">GPS Track Map</h3>
+              <ChartTooltip
+                title="GPS Track Map"
+                description="Shows the GPS trace of your laps on the track. The best lap is highlighted. Hover to sync with the speed trace."
+                tips={['Click a point to see its distance on the speed trace', 'Use the lap dropdown to change which lap is displayed']}
+              />
+            </div>
+            <div className="chart-enter" role="img" aria-label="GPS track map showing the racing line for the selected lap">
+              <GpsTrace
+                sessionId={sessionId}
+                apiBase={apiBase}
+                gpsLaps={gpsLaps}
+                bestLap={bestLap}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="lg:col-span-2">
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4 relative">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-monument text-chalk">Speed Trace</h3>
+                <ChartTooltip
+                  title="Speed Trace"
+                  description="Speed vs distance for the selected lap. The dashed gold line is the theoretical optimal. The dotted cyan line is your average pace across all laps."
+                  tips={['Double-click to add an annotation', 'Hover to see speed at any distance point', 'Zoom with mouse wheel']}
+                />
+              </div>
+              <ChartAnnotations sessionId={sessionId} canvasId="speed-chart" />
+            </div>
+            <SpeedTraceMiniMap sessionId={sessionId} bestLap={bestLap} size={90} />
+            <div className="chart-enter" role="img" aria-label="Speed trace chart showing speed versus distance for the selected lap">
+              <SpeedTraceZoom
+                sessionId={sessionId}
+                apiBase={apiBase}
+                gpsLaps={gpsLaps}
+                bestLap={bestLap}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
         <div className="lg:col-span-2">
           <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">Speed Trace</h3>
-            <SpeedTraceZoom
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
-          </div>
-        </div>
-        <div className="lg:col-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">G-G Diagram</h3>
-            <GGExplorer
-              sessionId={sessionId}
-              apiBase={apiBase}
-              gpsLaps={gpsLaps}
-              bestLap={bestLap}
-              className="w-full"
-            />
+            <div className="flex items-center gap-2 mb-3">
+              <h3 className="text-sm font-monument text-chalk">G-G Diagram</h3>
+              <ChartTooltip
+                title="G-G Diagram"
+                description="Plots lateral vs longitudinal G-forces. The dashed circle is the friction limit. Points outside mean you exceeded grip. Use the play button to animate through the lap."
+                tips={['Switch between All/Single/Compare modes', 'Click a point to highlight it on the map', 'Scroll to zoom in/out']}
+              />
+            </div>
+            <div className="chart-enter" role="img" aria-label="G-G diagram plotting lateral versus longitudinal G-forces">
+              <GGExplorer
+                sessionId={sessionId}
+                apiBase={apiBase}
+                gpsLaps={gpsLaps}
+                bestLap={bestLap}
+                className="w-full"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -112,12 +150,14 @@ export function AnalyticsTab({
       {/* ── Row 2: Delta Time Chart ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
         <h3 className="text-sm font-monument text-chalk mb-3">Time Delta</h3>
+        <div className="chart-enter" role="img" aria-label="Time delta chart showing cumulative time gained or lost versus the best lap">
         <DeltaTimeChart
           sessionId={sessionId}
           gpsLaps={gpsLaps}
           bestLap={bestLap}
           className="w-full"
         />
+        </div>
       </div>
 
       {/* ── Row 3: Pedal Traces + RPM/Gear (if controls data available) ── */}
@@ -125,17 +165,23 @@ export function AnalyticsTab({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-concrete rounded-xl border border-steel/10 p-4">
             <h3 className="text-sm font-monument text-chalk mb-3">Pedal Traces</h3>
-            <PedalTraceChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+            <div className="chart-enter" role="img" aria-label="Pedal trace chart showing throttle and brake input versus distance">
+              <PedalTraceChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+            </div>
           </div>
           {hasRpmGear ? (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">RPM &amp; Gear</h3>
-              <RPMGearChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="RPM and gear selection chart versus distance for the selected lap">
+                <RPMGearChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           ) : (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">Live Friction Circle</h3>
-              <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="Live friction circle showing real-time grip usage as the lap progresses">
+                <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           )}
         </div>
@@ -151,7 +197,9 @@ export function AnalyticsTab({
       {hasControls && hasRpmGear && (
         <div className="bg-concrete rounded-xl border border-steel/10 p-4">
           <h3 className="text-sm font-monument text-chalk mb-3">Live Friction Circle</h3>
-          <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+          <div className="chart-enter" role="img" aria-label="Live friction circle showing real-time grip usage as the lap progresses">
+            <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+          </div>
         </div>
       )}
 
@@ -161,13 +209,17 @@ export function AnalyticsTab({
           {hasTireTemps && (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">Tire Temperatures</h3>
-              <TireHeatmapChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="Tire temperature heatmap showing heat distribution across all four tires">
+                <TireHeatmapChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           )}
           {hasWheelSlip && (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">Wheel Slip</h3>
-              <WheelSlipChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="Wheel slip chart showing traction loss events across the lap">
+                <WheelSlipChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           )}
         </div>
@@ -179,13 +231,17 @@ export function AnalyticsTab({
           {hasBrakeTemps && (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">Brake Analysis</h3>
-              <BrakeAnalysisChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="Brake temperature and pressure analysis chart for the selected lap">
+                <BrakeAnalysisChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           )}
           {hasFuel && (
             <div className="bg-concrete rounded-xl border border-steel/10 p-4">
               <h3 className="text-sm font-monument text-chalk mb-3">Fuel Strategy</h3>
-              <FuelStrategyChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              <div className="chart-enter" role="img" aria-label="Fuel consumption and strategy chart showing fuel level over the session">
+                <FuelStrategyChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
+              </div>
             </div>
           )}
         </div>
@@ -197,23 +253,29 @@ export function AnalyticsTab({
       {/* ── Row 4: Lap Speed Overlay ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
         <h3 className="text-sm font-monument text-chalk mb-3">Lap Speed Overlay</h3>
-        <LapSpeedOverlay
-          sessionId={sessionId}
-          apiBase={apiBase}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-        />
+        <div className="chart-enter" role="img" aria-label="Lap speed overlay comparing speed traces of multiple laps on one chart">
+          <LapSpeedOverlay
+            sessionId={sessionId}
+            apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+          />
+        </div>
       </div>
 
       {/* ── Row 5: Distribution + Progress ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-concrete rounded-xl border border-steel/10 p-4">
           <h3 className="text-sm font-monument text-chalk mb-3">Lap Distribution</h3>
-          <LapDistribution sessionId={sessionId} apiBase={apiBase} />
+          <div className="chart-enter" role="img" aria-label="Lap time distribution histogram showing the spread of lap times in this session">
+            <LapDistribution sessionId={sessionId} apiBase={apiBase} />
+          </div>
         </div>
         <div className="bg-concrete rounded-xl border border-steel/10 p-4">
           <h3 className="text-sm font-monument text-chalk mb-3">Lap Progress</h3>
-          <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
+          <div className="chart-enter" role="img" aria-label="Lap progress tracker showing lap time trend over the session">
+            <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
+          </div>
         </div>
       </div>
 

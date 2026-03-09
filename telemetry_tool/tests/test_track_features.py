@@ -72,7 +72,7 @@ class TestStartFinishEdit:
         assert row["original_start_lat"] == 48.0  # Still the original
 
     def test_reset_to_original(self, db):
-        from web.models import update_track_start_finish, reset_track_start_finish
+        from web.models import reset_track_start_finish, update_track_start_finish
 
         _insert_track(db, lat=48.0, lon=2.0)
         update_track_start_finish(db, "t1", 48.5, 2.5)
@@ -93,7 +93,7 @@ class TestStartFinishEdit:
 # ── Task 3: Track Sectors ────────────────────────────────────
 class TestTrackSectors:
     def test_add_sector(self, db):
-        from web.models import upsert_track_sector, get_track_sectors
+        from web.models import get_track_sectors, upsert_track_sector
 
         _insert_track(db)
         upsert_track_sector(db, "t1", 48.1, 2.1)
@@ -105,7 +105,7 @@ class TestTrackSectors:
         assert sectors[0]["label"] == "S1"
 
     def test_multiple_sectors(self, db):
-        from web.models import upsert_track_sector, get_track_sectors
+        from web.models import get_track_sectors, upsert_track_sector
 
         _insert_track(db)
         upsert_track_sector(db, "t1", 48.1, 2.1)
@@ -118,7 +118,7 @@ class TestTrackSectors:
         assert [s["label"] for s in sectors] == ["S1", "S2", "S3"]
 
     def test_auto_reindex_on_delete(self, db):
-        from web.models import upsert_track_sector, get_track_sectors, delete_track_sector
+        from web.models import delete_track_sector, get_track_sectors, upsert_track_sector
 
         _insert_track(db)
         upsert_track_sector(db, "t1", 48.1, 2.1)
@@ -177,7 +177,7 @@ class TestTrackDeletion:
         assert db.execute("SELECT COUNT(*) FROM laps").fetchone()[0] == 0
 
     def test_cascade_deletes_sectors(self, db):
-        from web.models import upsert_track_sector, delete_track_cascade
+        from web.models import delete_track_cascade, upsert_track_sector
 
         _insert_track(db)
         upsert_track_sector(db, "t1", 48.1, 2.1)

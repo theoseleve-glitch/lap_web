@@ -1,6 +1,8 @@
 """Tests for session identity columns (display_name, source_filename, source_path)."""
 import sqlite3
+
 import pytest
+
 from db.migrate import ensure_schema
 
 

@@ -9,7 +9,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from provenance.persistence import insert_provenance, get_provenance_by_session
+from provenance.persistence import get_provenance_by_session, insert_provenance
 from provenance.run_context import ProvenanceRecord
 
 

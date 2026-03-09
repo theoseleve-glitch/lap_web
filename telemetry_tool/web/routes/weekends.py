@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from flask import (
-    Blueprint, abort, flash, jsonify, redirect, render_template, request, url_for,
+    Blueprint,
+    abort,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    url_for,
 )
 
 from web.db import get_db_connection
 from web.models import (
+from web.api_utils import api_error, api_response, ErrorCode
     add_session_to_weekend,
     create_weekend,
     delete_weekend,
@@ -16,8 +24,8 @@ from web.models import (
     get_sessions,
     get_weekend_by_id,
     get_weekend_sessions,
-    reorder_weekend_sessions,
     remove_session_from_weekend,
+    reorder_weekend_sessions,
     swap_weekend_session_order,
     update_weekend,
 )
@@ -86,7 +94,7 @@ def weekend_detail(weekend_id: int):
     summary = None
     insights = None
     try:
-        from cross_session import compute_weekend_summary, compute_weekend_insights
+        from cross_session import compute_weekend_insights, compute_weekend_summary
         summary = compute_weekend_summary(conn, weekend_id)
         insights = compute_weekend_insights(conn, weekend_id)
     except ImportError:
@@ -215,10 +223,10 @@ def weekend_reorder(weekend_id: int):
     session_id = data.get("session_id", "")
     direction = data.get("direction", "down")
     if not session_id:
-        return jsonify({"error": "missing session_id"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "missing session_id", status=400)
     swap_weekend_session_order(conn, weekend_id, session_id, direction)
     conn.commit()
-    return jsonify({"ok": True})
+    return api_response({"message": "ok"})
 
 
 @bp.route("/<int:weekend_id>/reorder_all", methods=["POST"])
@@ -228,7 +236,7 @@ def weekend_reorder_all(weekend_id: int):
     data = request.get_json(silent=True) or {}
     session_ids = data.get("session_ids", [])
     if not session_ids:
-        return jsonify({"error": "missing session_ids"}), 400
+        return api_error(ErrorCode.VALIDATION_ERROR, "missing session_ids", status=400)
     reorder_weekend_sessions(conn, weekend_id, session_ids)
     conn.commit()
-    return jsonify({"ok": True})
+    return api_response({"message": "ok"})

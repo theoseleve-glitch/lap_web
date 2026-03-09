@@ -17,7 +17,7 @@ import json
 import logging
 import os
 import secrets
-from datetime import datetime, timezone, timedelta, date
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Blueprint, g, request, send_file
 
@@ -491,7 +491,7 @@ def change_password_route():
 
     Requires current_password verification. Revokes all sessions except current.
     """
-    from auth.service import change_password, hash_refresh_token, AuthError
+    from auth.service import AuthError, change_password, hash_refresh_token
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -695,7 +695,7 @@ def setup_2fa():
         from sqlalchemy import text
     except ImportError:
         text = str  # PgConnectionWrapper handles plain strings
-    from auth.totp import generate_totp_secret, generate_totp_uri, generate_qr_data_uri
+    from auth.totp import generate_qr_data_uri, generate_totp_secret, generate_totp_uri
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -753,7 +753,7 @@ def confirm_2fa():
         from sqlalchemy import text
     except ImportError:
         text = str  # PgConnectionWrapper handles plain strings
-    from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
+    from auth.totp import generate_backup_codes, hash_backup_code, verify_totp
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -825,8 +825,8 @@ def disable_2fa():
         from sqlalchemy import text
     except ImportError:
         text = str  # PgConnectionWrapper handles plain strings
-    from auth.service import verify_password, _log_audit
-    from auth.totp import verify_totp, verify_backup_code
+    from auth.service import _log_audit, verify_password
+    from auth.totp import verify_backup_code, verify_totp
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -913,7 +913,7 @@ def regenerate_backup_codes():
     except ImportError:
         text = str  # PgConnectionWrapper handles plain strings
     from auth.service import verify_password
-    from auth.totp import verify_totp, generate_backup_codes, hash_backup_code
+    from auth.totp import generate_backup_codes, hash_backup_code, verify_totp
 
     user_id = getattr(g, "current_user_id", None)
     if user_id is None:
@@ -1342,8 +1342,8 @@ def _make_delete_token(user_id: int, session_ids: list[int]) -> str:
     Uses HMAC-SHA256 with the JWT secret to sign the payload.
     Token format: base64({user_id}:{session_ids}:{expires_ts}):signature
     """
-    import hmac
     import base64
+    import hmac
 
     secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
     expires = int((datetime.now(timezone.utc) + timedelta(minutes=_DELETE_TOKEN_EXPIRY_MINUTES)).timestamp())
@@ -1359,8 +1359,8 @@ def _verify_delete_token(user_id: int, token: str) -> list[int] | None:
 
     Returns session IDs on success, None on failure/expiry.
     """
-    import hmac
     import base64
+    import hmac
 
     secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
     try:

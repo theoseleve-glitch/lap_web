@@ -11,13 +11,13 @@ Usage::
 from __future__ import annotations
 
 import logging
+import math
 import os
 import sys
 from pathlib import Path
+from typing import Any, Iterable
 
-import math
-
-from flask import Flask, g, jsonify, render_template, request
+from flask import Flask, Response, g, jsonify, render_template, request
 from flask.json.provider import DefaultJSONProvider
 
 from .config import Config
@@ -30,14 +30,14 @@ class _NaNSafeJSONProvider(DefaultJSONProvider):
     per RFC 8259 and causes SyntaxError in browser JSON.parse().
     """
 
-    def dumps(self, obj, **kwargs):
+    def dumps(self, obj: Any, **kwargs: Any) -> str:
         kwargs.setdefault("default", self.default)
         # Use allow_nan=False so json.dumps raises on NaN, then handle it
         # via a custom default. But simpler: sanitize before encoding.
         return super().dumps(_sanitize_nan(obj), **kwargs)
 
 
-def _sanitize_nan(obj):
+def _sanitize_nan(obj: Any) -> Any:
     """Recursively replace NaN/Infinity with None for JSON safety."""
     if isinstance(obj, float) and (math.isnan(obj) or math.isinf(obj)):
         return None
@@ -163,6 +163,13 @@ def create_app(config: Config | None = None) -> Flask:
     except ImportError:
         logger.debug("Metrics module not available — skipping")
 
+    try:
+        from .openapi import register_openapi
+        register_openapi(app)
+        logger.debug("Registered OpenAPI spec at /api/v1/openapi.json and Swagger UI at /api/v1/docs")
+    except ImportError:
+        logger.debug("OpenAPI module not available — skipping")
+
     # Access logging middleware (method/path/status/latency with redaction)
     try:
         from .middleware.access_log import init_access_log
@@ -180,12 +187,14 @@ def create_app(config: Config | None = None) -> Flask:
     # Browsers require 2xx on preflight; the CORS after_request hook adds
     # headers to whatever response is returned here.
     @app.before_request
-    def _handle_preflight():
-        from flask import request as req, make_response
+    def _handle_preflight() -> Response | None:
+        from flask import make_response
+        from flask import request as req
         if req.method == "OPTIONS":
             resp = make_response("", 200)
             resp.content_type = "application/json"
             return resp
+        return None
 
     # Guard: reject oversized JSON bodies on non-upload API endpoints.
     # The global MAX_CONTENT_LENGTH is 12 GB for file uploads, but JSON
@@ -193,7 +202,7 @@ def create_app(config: Config | None = None) -> Flask:
     _MAX_JSON_BODY = 1 * 1024 * 1024  # 1 MB
 
     @app.before_request
-    def _json_body_size_guard():
+    def _json_body_size_guard() -> Response | tuple[Response, int] | None:
         if request.method in ("POST", "PUT", "PATCH") and request.path.startswith("/api/v1/"):
             ct = request.content_type or ""
             # Skip file uploads (multipart form data)
@@ -201,7 +210,8 @@ def create_app(config: Config | None = None) -> Flask:
                 return
             content_length = request.content_length
             if content_length and content_length > _MAX_JSON_BODY:
-                from .api_utils import api_error as _ae, ErrorCode as _EC
+                from .api_utils import ErrorCode as _EC
+                from .api_utils import api_error as _ae
                 return _ae(_EC.VALIDATION_ERROR,
                            "Request body too large (max 1 MB for JSON endpoints)",
                            status=413)
@@ -226,7 +236,7 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Database setup — route to PostgreSQL or SQLite based on config.
     if cfg.USE_PG:
-        from .db_pg import close_pg, init_pg, _get_pg_url
+        from .db_pg import _get_pg_url, close_pg, init_pg
         app.teardown_appcontext(close_pg)
 
         with app.app_context():
@@ -234,7 +244,8 @@ def create_app(config: Config | None = None) -> Flask:
             # Sync tracks using a standalone connection (not the pool) to avoid
             # Gunicorn pre-fork pool corruption — workers inherit master's pool
             # with stale thread IDs, causing "unkeyed connection" errors.
-            import psycopg2, psycopg2.extras
+            import psycopg2
+            import psycopg2.extras
             try:
                 raw = psycopg2.connect(_get_pg_url())
                 raw.cursor_factory = psycopg2.extras.RealDictCursor
@@ -289,6 +300,8 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.data_v2',            'bp', 'data_v2_bp'),        # Data-serving API endpoints
         ('.routes.data_v2_channels',   'bp', 'data_v2_channels_bp'), # Rich telemetry channel endpoints
         ('.routes.api_v1_entities',    'bp', 'api_v1_entities_bp'), # Entity CRUD (drivers, tracks)
+        ('.routes.api_changelog',      'bp', 'api_changelog_bp'),  # API changelog endpoint
+        ('.routes.api_rss',            'bp', 'api_rss_bp'),        # RSS feed endpoint
     ]
 
     import importlib
@@ -304,8 +317,9 @@ def create_app(config: Config | None = None) -> Flask:
     # Auth blueprints (only when PostgreSQL is enabled)
     if cfg.USE_PG:
         try:
-            from .routes.auth import bp as auth_bp, api_v1_bp
             from .middleware.auth import auth_middleware
+            from .routes.auth import api_v1_bp
+            from .routes.auth import bp as auth_bp
             app.register_blueprint(auth_bp)
             app.register_blueprint(api_v1_bp)
             app.before_request(auth_middleware)
@@ -326,13 +340,15 @@ def create_app(config: Config | None = None) -> Flask:
             init_legacy_guard(app)
             logger.debug("Registered legacy route guard")
             from .middleware.entitlements import (
-                entitlement_middleware, record_successful_usage,
+                entitlement_middleware,
+                record_successful_usage,
             )
             app.before_request(entitlement_middleware)
             app.after_request(record_successful_usage)
             logger.debug("Registered entitlement middleware")
+            from .routes.teams import bp as teams_bp
+            from .routes.teams import invitations_bp
             from .routes.workspaces import bp as workspaces_bp
-            from .routes.teams import bp as teams_bp, invitations_bp
             app.register_blueprint(workspaces_bp)
             app.register_blueprint(teams_bp)
             app.register_blueprint(invitations_bp)
@@ -385,8 +401,8 @@ def create_app(config: Config | None = None) -> Flask:
 
     # ── i18n: load translations on each request ──
     @app.before_request
-    def _load_i18n():
-        from .i18n import load_translations, SUPPORTED_LANGUAGES
+    def _load_i18n() -> None:
+        from .i18n import SUPPORTED_LANGUAGES, load_translations
         lang = request.cookies.get("lang") or request.args.get("lang", "en")
         if lang not in SUPPORTED_LANGUAGES:
             lang = "en"
@@ -395,7 +411,7 @@ def create_app(config: Config | None = None) -> Flask:
         g.supported_languages = SUPPORTED_LANGUAGES
 
     @app.context_processor
-    def _inject_i18n():
+    def _inject_i18n() -> dict[str, Any]:
         return {
             "t": getattr(g, "t", {}),
             "lang": getattr(g, "lang", "en"),
@@ -422,12 +438,12 @@ def create_app(config: Config | None = None) -> Flask:
             ('corner-coaching',  'corners'),
         ]
 
-        def __init__(self, wsgi_app, gps_re, gg_re):
+        def __init__(self, wsgi_app: Any, gps_re: _re.Pattern[str], gg_re: _re.Pattern[str]) -> None:
             self.wsgi_app = wsgi_app
             self._gps_re = gps_re
             self._gg_re = gg_re
 
-        def __call__(self, environ, start_response):
+        def __call__(self, environ: dict[str, Any], start_response: Any) -> Iterable[bytes]:
             path = environ.get('PATH_INFO', '')
             if '/api/session/' not in path:
                 return self.wsgi_app(environ, start_response)
@@ -480,9 +496,9 @@ def create_app(config: Config | None = None) -> Flask:
         Only decodes %2B specifically (not all percent-encoded chars)
         to avoid altering routing semantics for %2F (/) etc.
         """
-        def __init__(self, wsgi_app):
+        def __init__(self, wsgi_app: Any) -> None:
             self.wsgi_app = wsgi_app
-        def __call__(self, environ, start_response):
+        def __call__(self, environ: dict[str, Any], start_response: Any) -> Iterable[bytes]:
             path = environ.get("PATH_INFO", "")
             decoded = path.replace("%2B", "+").replace("%2b", "+")
             if decoded != path:
@@ -493,7 +509,8 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Error handlers — return JSON for API routes, HTML for browser pages.
     # All API paths use api_error() so responses include meta.request_id.
-    from .api_utils import api_error as _api_error, ErrorCode as _EC
+    from .api_utils import ErrorCode as _EC
+    from .api_utils import api_error as _api_error
 
     def _wants_html() -> bool:
         """True only for desktop/browser requests that explicitly want HTML."""
@@ -505,25 +522,25 @@ def create_app(config: Config | None = None) -> Flask:
 
     # Catch-all: API root returns JSON
     @app.route("/", defaults={"path": ""})
-    def _catch_root(path):
+    def _catch_root(path: str) -> Response | tuple[str, int]:
         if _wants_html():
             return render_template("dashboard.html"), 200
         return _api_error(_EC.NOT_FOUND, "Not found. API endpoints are under /api/v1/", status=404)
 
     @app.errorhandler(404)
-    def page_not_found(e):
+    def page_not_found(e: Exception) -> Response | tuple[str, int]:
         if not _wants_html():
             return _api_error(_EC.NOT_FOUND, "Resource not found", status=404)
         return render_template("404.html"), 404
 
     @app.errorhandler(405)
-    def method_not_allowed(e):
+    def method_not_allowed(e: Exception) -> Response | tuple[str, int]:
         if not _wants_html():
             return _api_error(_EC.VALIDATION_ERROR, "Method not allowed", status=405)
         return render_template("404.html"), 405
 
     @app.errorhandler(413)
-    def request_entity_too_large(e):
+    def request_entity_too_large(e: Exception) -> Response | tuple[str, int]:
         if not _wants_html():
             return _api_error(_EC.FILE_TOO_LARGE,
                               "File too large. Maximum upload size is 12 GB.",
@@ -531,34 +548,103 @@ def create_app(config: Config | None = None) -> Flask:
         return render_template("500.html"), 413
 
     @app.errorhandler(500)
-    def internal_error(e):
+    def internal_error(e: Exception) -> Response | tuple[str, int]:
         logger.exception("Unhandled 500 error on %s %s", request.method, request.path)
         if not _wants_html():
             return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
         return render_template("500.html"), 500
 
     @app.errorhandler(Exception)
-    def unhandled_exception(e):
+    def unhandled_exception(e: Exception) -> Response | tuple[str, int]:
         logger.exception("Unhandled exception on %s %s", request.method, request.path)
         if not _wants_html():
             return _api_error(_EC.INTERNAL_ERROR, "Internal server error", status=500)
         return render_template("500.html"), 500
 
-    # Cache static assets (CSS, JS, images) for 1 day.
+    # Security headers (defense-in-depth, also set by Caddy in prod)
     @app.after_request
-    def set_cache_headers(response):
+    def set_security_headers(response: Response) -> Response:
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault("X-XSS-Protection", "0")  # modern browsers: CSP is preferred
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=()",
+        )
+        return response
+
+    # Cache static assets (CSS, JS, images) for 1 day.
+    # Cache read-only API GETs for 60s (private, must-revalidate).
+    @app.after_request
+    def set_cache_headers(response: Response) -> Response:
         if request.path.startswith("/static/"):
             response.cache_control.max_age = 86400
             response.cache_control.public = True
+        elif (
+            request.method == "GET"
+            and request.path.startswith("/api/")
+            and response.status_code == 200
+            and "Cache-Control" not in response.headers
+        ):
+            # Short private cache for read-only API responses.
+            # Auth/SSE/write endpoints set their own Cache-Control.
+            response.cache_control.private = True
+            response.cache_control.max_age = 60
+            response.cache_control.must_revalidate = True
         # Add API version header for client diagnostics
         if request.path.startswith("/api/"):
             from pipeline_version import PIPELINE_VERSION
             response.headers["X-API-Version"] = PIPELINE_VERSION
         return response
 
+    # ETag for JSON API responses — enables 304 Not Modified.
+    @app.after_request
+    def set_etag(response: Response) -> Response:
+        if (
+            request.method == "GET"
+            and request.path.startswith("/api/")
+            and response.status_code == 200
+            and response.content_type
+            and response.content_type.startswith("application/json")
+        ):
+            response.add_etag()
+            # Return 304 if client's If-None-Match matches
+            return response.make_conditional(request)
+        return response
+
+    # Gzip compression for API JSON responses > 1 KB when client accepts it.
+    @app.after_request
+    def _gzip_response(response: Response) -> Response:
+        if (
+            not request.path.startswith("/api/")
+            or response.status_code < 200
+            or response.status_code >= 300
+            or not response.content_type
+            or not response.content_type.startswith("application/json")
+            or response.content_length is not None and response.content_length < 1024
+            or "Content-Encoding" in response.headers
+            or "gzip" not in request.headers.get("Accept-Encoding", "")
+        ):
+            return response
+        import gzip as _gzip
+
+        data = response.get_data()
+        if len(data) < 1024:
+            return response
+        compressed = _gzip.compress(data, compresslevel=6)
+        response.set_data(compressed)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Content-Length"] = str(len(compressed))
+        # Vary so caches distinguish compressed vs uncompressed
+        vary = response.headers.get("Vary", "")
+        if "Accept-Encoding" not in vary:
+            response.headers["Vary"] = f"{vary}, Accept-Encoding".lstrip(", ")
+        return response
+
     # Guard: ensure /api/* never returns HTML to JSON consumers.
     @app.after_request
-    def _json_guard(response):
+    def _json_guard(response: Response) -> Response:
         """Intercept HTML responses on /api/* paths.
 
         If a route under /api/ accidentally returns text/html (e.g. an old
@@ -579,8 +665,9 @@ def create_app(config: Config | None = None) -> Flask:
         ct = response.content_type or ""
         is_html_ct = "text/html" in ct
 
-        def _make_html_error():
-            from .api_utils import api_error as _ae, ErrorCode as _EC2
+        def _make_html_error() -> Response:
+            from .api_utils import ErrorCode as _EC2
+            from .api_utils import api_error as _ae
             resp, code = _ae(
                 _EC2.API_HTML_RESPONSE,
                 "Endpoint returned HTML instead of JSON",
@@ -607,7 +694,7 @@ def create_app(config: Config | None = None) -> Flask:
     # Debug endpoint to check template loading (only in debug mode)
     if app.debug:
         @app.route("/_debug/template-info")
-        def _debug_template_info():
+        def _debug_template_info() -> tuple[str, int, dict[str, str]]:
             import json
             info = {
                 "template_folder": app.template_folder,

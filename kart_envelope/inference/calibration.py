@@ -10,8 +10,8 @@ from typing import Any
 import numpy as np
 
 from kart_envelope.config import KartEnvelopeConfig
-from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.inference.session_scalars import SessionScalars
+from kart_envelope.ingest.metadata import SessionMetadata
 
 
 def build_calibration_report(

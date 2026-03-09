@@ -6,9 +6,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from weather_timeline import build_weather_timeline, parse_session_datetime
 from datetime import datetime
 
+from weather_timeline import build_weather_timeline, parse_session_datetime
 
 # ---------------------------------------------------------------------------
 # Helper: build a minimal hourly_weather dict

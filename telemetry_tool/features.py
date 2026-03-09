@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Callable, Final
 
 import numpy as np
 import pandas as pd
@@ -92,7 +92,7 @@ def _get_numeric(df: pd.DataFrame, col: str) -> np.ndarray:
     return vals[np.isfinite(vals)]
 
 
-def _safe_stat(values: np.ndarray, fn) -> float:  # type: ignore[type-arg]
+def _safe_stat(values: np.ndarray, fn: Callable[[np.ndarray], float]) -> float:
     """Apply *fn* to *values*; return NaN if fewer than 2 finite values."""
     if len(values) < 2:
         return float("nan")
@@ -655,10 +655,10 @@ class DriverStyleProfile:
     mrp_timing: float               # mean MRP position relative to corner (0=early, 1=late)
     exit_priority_score: float      # fraction of corners where exit loss < entry loss
     line_variance: float            # std-dev of braking point deltas across corners
-    style_labels: list              # ["late braker", "exit-focused", "smooth"]
+    style_labels: list[str]         # ["late braker", "exit-focused", "smooth"]
     confidence: float
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "brake_aggressiveness": round(self.brake_aggressiveness, 3),
             "trail_length_score": round(self.trail_length_score, 1),
@@ -671,8 +671,8 @@ class DriverStyleProfile:
 
 
 def compute_driver_style(
-    corner_performances: list,
-    timelines: list = None,
+    corner_performances: list[Any],
+    timelines: list[Any] | None = None,
     data_quality: float = 1.0,
 ) -> DriverStyleProfile:
     """
@@ -771,7 +771,7 @@ def _run_tests() -> None:
     passed: list[str] = []
     failed: list[tuple[str, str]] = []
 
-    def _test(name: str, fn) -> None:   # type: ignore[type-arg]
+    def _test(name: str, fn: Callable[[], None]) -> None:
         try:
             fn()
             passed.append(name)

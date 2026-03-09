@@ -166,8 +166,9 @@ def t_scoring_adaptation() -> None:
     # Build phases
 
     from condition_tracking import (
-        compute_grip_indicators, detect_condition_changes,
         build_condition_phases,
+        compute_grip_indicators,
+        detect_condition_changes,
     )
     lm_df = pd.DataFrame(lap_metrics)
     indicators = compute_grip_indicators(lm_df)
@@ -270,7 +271,7 @@ _test("theoretical_phase_selection", t_theoretical_phase_selection)
 # ===========================================================================
 
 def t_feature_builder_context() -> None:
-    from feature_builder import build_feature_dataset, CONTEXT_COLUMNS
+    from feature_builder import CONTEXT_COLUMNS, build_feature_dataset
 
     lap_metrics = _make_lap_metrics(5)
     lap_df = pd.DataFrame(lap_metrics)
@@ -317,13 +318,19 @@ _test("feature_builder_context_columns", t_feature_builder_context)
 
 def t_pipeline_with_context() -> None:
     """Lightweight pipeline test: just verify context/phase state flows."""
-    from session_context import (
-        SessionContext, SessionType, TrackState, WeatherObs,
-        save_session_context, load_last_session_context,
-    )
     from condition_tracking import (
-        compute_grip_indicators, detect_condition_changes,
-        build_condition_phases, label_phases,
+        build_condition_phases,
+        compute_grip_indicators,
+        detect_condition_changes,
+        label_phases,
+    )
+    from session_context import (
+        SessionContext,
+        SessionType,
+        TrackState,
+        WeatherObs,
+        load_last_session_context,
+        save_session_context,
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -574,8 +581,10 @@ _test("scoring_no_phases", t_scoring_no_phases)
 
 def t_condition_tracking_e2e() -> None:
     from condition_tracking import (
-        compute_grip_indicators, detect_condition_changes,
-        build_condition_phases, label_phases,
+        build_condition_phases,
+        compute_grip_indicators,
+        detect_condition_changes,
+        label_phases,
     )
     from session_context import TrackState, WeatherObs
 

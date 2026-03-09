@@ -3,7 +3,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useSearchParams, usePathname } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
 import { StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
@@ -123,6 +124,296 @@ function FilterSelect({
   );
 }
 
+/* ── Session Calendar ───────────────────────────────────── */
+
+function SessionCalendar({ sessions }: { sessions: SessionRow[] }) {
+  const router = useRouter();
+  const [viewDate, setViewDate] = useState(() => new Date());
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  // Group sessions by day
+  const sessionsByDay = useMemo(() => {
+    const map: Record<number, SessionRow[]> = {};
+    for (const s of sessions) {
+      const d = new Date(s.session_date);
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        const day = d.getDate();
+        if (!map[day]) map[day] = [];
+        map[day].push(s);
+      }
+    }
+    return map;
+  }, [sessions, year, month]);
+
+  const prevMonth = () => setViewDate(new Date(year, month - 1, 1));
+  const nextMonth = () => setViewDate(new Date(year, month + 1, 1));
+
+  const monthLabel = viewDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+  return (
+    <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+      <div className="flex items-center justify-between mb-4">
+        <button onClick={prevMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Previous month">&lt;</button>
+        <span className="font-monument text-chalk text-sm">{monthLabel}</span>
+        <button onClick={nextMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Next month">&gt;</button>
+      </div>
+      <div className="grid grid-cols-7 gap-px">
+        {days.map((d) => (
+          <div key={d} className="text-center text-[10px] font-telemetry text-steel/60 py-1">{d}</div>
+        ))}
+        {Array.from({ length: firstDay }).map((_, i) => (
+          <div key={`empty-${i}`} />
+        ))}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const daySessions = sessionsByDay[day];
+          const isToday = (() => {
+            const now = new Date();
+            return now.getFullYear() === year && now.getMonth() === month && now.getDate() === day;
+          })();
+          return (
+            <div
+              key={day}
+              className={`relative min-h-[48px] p-1 rounded-lg border transition-colors ${
+                daySessions
+                  ? 'border-steel/20 bg-asphalt hover:border-acid-green/30 cursor-pointer'
+                  : 'border-transparent'
+              } ${isToday ? 'ring-1 ring-pit-orange/40' : ''}`}
+              onClick={() => {
+                if (daySessions?.length === 1 && daySessions[0]) {
+                  router.push(`/app/sessions/${daySessions[0].session_id}`);
+                }
+              }}
+            >
+              <span className={`text-[10px] font-telemetry ${isToday ? 'text-pit-orange' : daySessions ? 'text-chalk' : 'text-steel/40'}`}>
+                {day}
+              </span>
+              {daySessions && (
+                <div className="mt-0.5 space-y-0.5">
+                  {daySessions.slice(0, 2).map((s) => (
+                    <div
+                      key={s.session_id}
+                      onClick={(e) => { e.stopPropagation(); router.push(`/app/sessions/${s.session_id}`); }}
+                      className="truncate text-[8px] font-body text-chalk/70 bg-steel/10 rounded px-1 py-0.5 hover:bg-steel/20 cursor-pointer"
+                      title={`${s.track_name} - ${s.driver_name}`}
+                    >
+                      {s.track_name || 'Session'}
+                    </div>
+                  ))}
+                  {daySessions.length > 2 && (
+                    <span className="text-[8px] text-steel/50 font-telemetry">+{daySessions.length - 2} more</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── Grouped by Event View ─────────────────────────────── */
+
+interface EventGroup {
+  key: string;
+  track: string;
+  dateRange: string;
+  sessions: SessionRow[];
+}
+
+function groupSessionsByEvent(sessions: SessionRow[]): EventGroup[] {
+  // Group sessions that share the same track and fall within 3 days of each other
+  const sorted = [...sessions].sort((a, b) => a.session_date.localeCompare(b.session_date));
+  const groups: EventGroup[] = [];
+  const used = new Set<number>();
+
+  for (let i = 0; i < sorted.length; i++) {
+    if (used.has(i)) continue;
+    const base = sorted[i];
+    if (!base) continue;
+    const cluster: SessionRow[] = [base];
+    used.add(i);
+    const baseDate = new Date(base.session_date).getTime();
+
+    for (let j = i + 1; j < sorted.length; j++) {
+      if (used.has(j)) continue;
+      const other = sorted[j];
+      if (!other) continue;
+      if (other.track_name !== base.track_name) continue;
+      const diff = Math.abs(new Date(other.session_date).getTime() - baseDate);
+      if (diff <= 3 * 86400000) { // within 3 days
+        cluster.push(other);
+        used.add(j);
+      }
+    }
+
+    const dates = cluster.map((s) => s.session_date).sort();
+    const first = dates[0] ?? '';
+    const last = dates[dates.length - 1] ?? '';
+    const dateRange = first === last ? formatDate(first) : `${formatDate(first)} – ${formatDate(last)}`;
+
+    groups.push({
+      key: `${base.track_name}-${first}`,
+      track: base.track_name || 'Unknown Track',
+      dateRange,
+      sessions: cluster,
+    });
+  }
+
+  return groups.sort((a, b) => b.sessions[0]!.session_date.localeCompare(a.sessions[0]!.session_date));
+}
+
+function SessionGroupedView({ sessions, onSessionClick }: { sessions: SessionRow[]; onSessionClick: (id: string) => void }) {
+  const groups = useMemo(() => groupSessionsByEvent(sessions), [sessions]);
+
+  if (groups.length === 0) return <p className="text-steel text-sm">No sessions to group.</p>;
+
+  return (
+    <div className="space-y-4">
+      {groups.map((group) => (
+        <div key={group.key} className="bg-concrete rounded-xl border border-steel/10 p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="text-sm font-monument text-chalk">{group.track}</h3>
+              <p className="text-[10px] font-telemetry text-steel/60">{group.dateRange}</p>
+            </div>
+            <span className="text-xs font-telemetry text-steel">
+              {group.sessions.length} session{group.sessions.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="space-y-1">
+            {group.sessions.map((s) => (
+              <button
+                key={s.session_id}
+                type="button"
+                onClick={() => onSessionClick(s.session_id)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-asphalt/50 transition-colors text-left"
+              >
+                <span className="text-xs font-telemetry text-steel w-20">{formatDate(s.session_date)}</span>
+                <span className="text-xs font-body text-chalk flex-1 truncate">{s.driver_name}</span>
+                <TypeBadge type={s.session_type} />
+                <span className="text-xs font-telemetry text-acid-green w-16 text-right">{formatLapTime(s.best_lap_time_s)}</span>
+                <span className={`text-xs font-telemetry w-10 text-right ${scoreColor(s.total_score)}`}>
+                  {s.total_score != null ? s.total_score.toFixed(0) : '—'}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Column Customization ──────────────────────────────── */
+
+const ALL_COLUMN_KEYS = [
+  'session_date', 'track_name', 'driver_name', 'session_type',
+  'track_state', 'n_laps', 'best_lap_time_s', 'mean_lap_time_s',
+  'total_score', 'grade',
+] as const;
+
+const COLUMN_LABELS: Record<string, string> = {
+  session_date: 'Date',
+  track_name: 'Track',
+  driver_name: 'Driver',
+  session_type: 'Type',
+  track_state: 'Condition',
+  n_laps: 'Laps',
+  best_lap_time_s: 'Best Lap',
+  mean_lap_time_s: 'Mean Lap',
+  total_score: 'Score',
+  grade: 'Grade',
+};
+
+const DEFAULT_VISIBLE = new Set(ALL_COLUMN_KEYS);
+const COLUMNS_STORAGE_KEY = 'session_list_columns';
+
+function loadVisibleColumns(): Set<string> {
+  try {
+    const raw = localStorage.getItem(COLUMNS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as string[];
+      if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
+    }
+  } catch {}
+  return new Set(DEFAULT_VISIBLE);
+}
+
+function saveVisibleColumns(cols: Set<string>) {
+  try { localStorage.setItem(COLUMNS_STORAGE_KEY, JSON.stringify([...cols])); } catch {}
+}
+
+function ColumnCustomizer({
+  visible,
+  onChange,
+}: {
+  visible: Set<string>;
+  onChange: (cols: Set<string>) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className={`inline-flex items-center gap-1.5 px-3 py-2.5 border rounded-lg font-telemetry text-xs transition-colors ${
+          visible.size < ALL_COLUMN_KEYS.length
+            ? 'border-pit-orange/40 text-pit-orange bg-pit-orange/5'
+            : 'border-steel/20 text-steel hover:text-chalk hover:border-steel/40'
+        }`}
+        title="Customize columns"
+        aria-label="Customize visible columns"
+      >
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+          <rect x="1" y="1" width="5" height="12" rx="0.5" />
+          <rect x="8" y="1" width="5" height="12" rx="0.5" />
+        </svg>
+        Columns
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 bg-concrete border border-steel/20 rounded-lg p-3 shadow-xl min-w-[180px]">
+          <p className="text-[10px] font-telemetry text-steel/60 uppercase tracking-wider mb-2">Visible columns</p>
+          {ALL_COLUMN_KEYS.map((key) => (
+            <label key={key} className="flex items-center gap-2 py-1 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visible.has(key)}
+                onChange={() => {
+                  const next = new Set(visible);
+                  if (next.has(key)) {
+                    if (next.size > 2) next.delete(key); // keep at least 2
+                  } else {
+                    next.add(key);
+                  }
+                  saveVisibleColumns(next);
+                  onChange(next);
+                }}
+                className="accent-acid-green w-3.5 h-3.5"
+              />
+              <span className="text-xs font-body text-chalk">{COLUMN_LABELS[key]}</span>
+            </label>
+          ))}
+          <button
+            type="button"
+            onClick={() => { onChange(new Set(DEFAULT_VISIBLE)); saveVisibleColumns(new Set(DEFAULT_VISIBLE)); }}
+            className="mt-2 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+          >
+            Reset to default
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Page Component ─────────────────────────────────────── */
 
 const PER_PAGE = 25;
@@ -130,28 +421,59 @@ const PER_PAGE = 25;
 export default function SessionsPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const [page, setPage] = useState(1);
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+
+  // Initialize filters from URL search params (bookmarkable/shareable)
+  const [page, setPage] = useState(() => Number(searchParams.get('page') ?? '1'));
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(() => loadVisibleColumns());
 
-  // Filters
-  const [search, setSearch] = useState('');
-  const [filterDriver, setFilterDriver] = useState('');
-  const [filterTrack, setFilterTrack] = useState('');
-  const [filterType, setFilterType] = useState('');
-  const [filterCondition, setFilterCondition] = useState('');
-  const [filterDateFrom, setFilterDateFrom] = useState('');
-  const [filterDateTo, setFilterDateTo] = useState('');
-  const [filterMinScore, setFilterMinScore] = useState('');
-  const [filterMaxScore, setFilterMaxScore] = useState('');
+  // Filters — seeded from URL params
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
+  const [filterDriver, setFilterDriver] = useState(() => searchParams.get('driver') ?? '');
+  const [filterTrack, setFilterTrack] = useState(() => searchParams.get('track') ?? '');
+  const [filterType, setFilterType] = useState(() => searchParams.get('type') ?? '');
+  const [filterCondition, setFilterCondition] = useState(() => searchParams.get('condition') ?? '');
+  const [filterDateFrom, setFilterDateFrom] = useState(() => searchParams.get('from') ?? '');
+  const [filterDateTo, setFilterDateTo] = useState(() => searchParams.get('to') ?? '');
+  const [filterMinScore, setFilterMinScore] = useState(() => searchParams.get('minScore') ?? '');
+  const [filterMaxScore, setFilterMaxScore] = useState(() => searchParams.get('maxScore') ?? '');
 
-  // Sorting
-  const [sortBy, setSortBy] = useState<string | null>(null);
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  // Sorting — seeded from URL params
+  const [sortBy, setSortBy] = useState<string | null>(() => searchParams.get('sort') ?? null);
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>(() => (searchParams.get('dir') === 'asc' ? 'asc' : 'desc'));
+
+  // Sync filters → URL (shallow replace, no scroll)
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (page > 1) params.set('page', String(page));
+    if (search) params.set('q', search);
+    if (filterDriver) params.set('driver', filterDriver);
+    if (filterTrack) params.set('track', filterTrack);
+    if (filterType) params.set('type', filterType);
+    if (filterCondition) params.set('condition', filterCondition);
+    if (filterDateFrom) params.set('from', filterDateFrom);
+    if (filterDateTo) params.set('to', filterDateTo);
+    if (filterMinScore) params.set('minScore', filterMinScore);
+    if (filterMaxScore) params.set('maxScore', filterMaxScore);
+    if (sortBy) { params.set('sort', sortBy); params.set('dir', sortDir); }
+    const qs = params.toString();
+    const target = qs ? `${pathname}?${qs}` : pathname;
+    router.replace(target, { scroll: false });
+  }, [page, search, filterDriver, filterTrack, filterType, filterCondition,
+      filterDateFrom, filterDateTo, filterMinScore, filterMaxScore, sortBy, sortDir,
+      pathname, router]);
 
   // Bulk action confirm
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+
+  // View mode: list, calendar, or grouped by event
+  const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'grouped'>('list');
+  // Archive filter: 'active' (default), 'archived', 'all'
+  const [archiveView, setArchiveView] = useState<'active' | 'archived' | 'all'>('active');
 
   const offset = (page - 1) * PER_PAGE;
 
@@ -173,9 +495,12 @@ export default function SessionsPage() {
       params.set('sort_by', sortBy);
       params.set('sort_dir', sortDir);
     }
+    if (archiveView === 'archived') params.set('archived', 'true');
+    else if (archiveView === 'all') params.set('archived', 'all');
+    // 'active' is the default — server hides archived by default
     return params.toString();
   }, [offset, search, filterDriver, filterTrack, filterType, filterCondition,
-      filterDateFrom, filterDateTo, filterMinScore, filterMaxScore, sortBy, sortDir]);
+      filterDateFrom, filterDateTo, filterMinScore, filterMaxScore, sortBy, sortDir, archiveView]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['sessions', 'list', queryParams],
@@ -236,14 +561,37 @@ export default function SessionsPage() {
     }
   }
 
-  // Bulk delete mutation
+  // Bulk delete mutation with optimistic update
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       await Promise.all(ids.map((id) => api.delete(`/sessions/${id}`)));
     },
-    onSuccess: () => {
+    onMutate: async (ids) => {
+      // Cancel in-flight refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['sessions', 'list'] });
+      // Snapshot current data for rollback
+      const previous = queryClient.getQueryData<ListResponse>(['sessions', 'list', queryParams]);
+      // Optimistically remove deleted sessions from the cached list
+      if (previous) {
+        const idSet = new Set(ids);
+        queryClient.setQueryData<ListResponse>(['sessions', 'list', queryParams], {
+          ...previous,
+          sessions: previous.sessions.filter((s) => !idSet.has(s.session_id)),
+          total: previous.total - ids.length,
+        });
+      }
       setSelectedKeys(new Set());
       setConfirmDelete(false);
+      return { previous };
+    },
+    onError: (_err, _ids, context) => {
+      // Roll back to the previous cache state on failure
+      if (context?.previous) {
+        queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
+      }
+    },
+    onSettled: () => {
+      // Always re-sync with server after mutation completes
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
   });
@@ -310,6 +658,15 @@ export default function SessionsPage() {
       onClick: (row) => navigator.clipboard.writeText(row.session_id),
     },
     {
+      label: archiveView === 'archived' ? 'Unarchive' : 'Archive',
+      onClick: (row) => {
+        const newArchived = archiveView !== 'archived';
+        api.post(`/sessions/${row.session_id}/archive`, { archived: newArchived }).then(() => {
+          queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        });
+      },
+    },
+    {
       label: 'Delete',
       destructive: true,
       onClick: (row) => {
@@ -318,9 +675,9 @@ export default function SessionsPage() {
         }
       },
     },
-  ], [router, deleteMutation]);
+  ], [router, deleteMutation, archiveView, queryClient]);
 
-  const columns = [
+  const columns = useMemo(() => [
     {
       key: 'session_date',
       header: 'Date',
@@ -393,7 +750,7 @@ export default function SessionsPage() {
       sortable: true,
       render: (row: SessionRow) => <GradeBadge grade={row.grade} score={row.total_score} />,
     },
-  ];
+  ].filter((col) => visibleCols.has(col.key)), [visibleCols]);
 
   return (
     <div>
@@ -402,6 +759,62 @@ export default function SessionsPage() {
         subtitle={data ? `${total} session${total !== 1 ? 's' : ''}` : undefined}
         actions={
           <div className="flex items-center gap-2">
+            {/* View toggle */}
+            <div className="inline-flex rounded-lg border border-steel/20 overflow-hidden">
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`px-2.5 py-2 text-xs font-telemetry transition-colors ${viewMode === 'list' ? 'bg-steel/20 text-chalk' : 'text-steel hover:text-chalk'}`}
+                title="List view"
+                aria-label="List view"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <path d="M2 3h10M2 7h10M2 11h10" strokeLinecap="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('calendar')}
+                className={`px-2.5 py-2 text-xs font-telemetry transition-colors ${viewMode === 'calendar' ? 'bg-steel/20 text-chalk' : 'text-steel hover:text-chalk'}`}
+                title="Calendar view"
+                aria-label="Calendar view"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <rect x="1" y="2" width="12" height="11" rx="1" />
+                  <path d="M4 1v2M10 1v2M1 5h12" strokeLinecap="round" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('grouped')}
+                className={`px-2.5 py-2 text-xs font-telemetry transition-colors ${viewMode === 'grouped' ? 'bg-steel/20 text-chalk' : 'text-steel hover:text-chalk'}`}
+                title="Grouped by event"
+                aria-label="Grouped by event"
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                  <rect x="1" y="1" width="5" height="5" rx="0.5" />
+                  <rect x="8" y="1" width="5" height="5" rx="0.5" />
+                  <rect x="1" y="8" width="5" height="5" rx="0.5" />
+                  <rect x="8" y="8" width="5" height="5" rx="0.5" />
+                </svg>
+              </button>
+            </div>
+            {/* Archive view toggle */}
+            <div className="inline-flex rounded-lg border border-steel/20 overflow-hidden">
+              {(['active', 'archived', 'all'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => { setArchiveView(mode); setPage(1); }}
+                  className={`px-2.5 py-2 text-[10px] font-telemetry uppercase transition-colors ${
+                    archiveView === mode ? 'bg-steel/20 text-chalk' : 'text-steel hover:text-chalk'
+                  }`}
+                >
+                  {mode === 'active' ? 'Active' : mode === 'archived' ? 'Archived' : 'All'}
+                </button>
+              ))}
+            </div>
+            <ColumnCustomizer visible={visibleCols} onChange={setVisibleCols} />
             <button
               type="button"
               onClick={() => setShowFilters(!showFilters)}
@@ -669,7 +1082,16 @@ export default function SessionsPage() {
         </div>
       ) : (
         <>
-          <DataTable
+          {viewMode === 'calendar' && (
+            <SessionCalendar sessions={sessions} />
+          )}
+          {viewMode === 'grouped' && (
+            <SessionGroupedView
+              sessions={sessions}
+              onSessionClick={(id) => router.push(`/app/sessions/${id}`)}
+            />
+          )}
+          {viewMode === 'list' && <DataTable
             columns={columns}
             data={sessions}
             keyField="session_id"
@@ -688,7 +1110,7 @@ export default function SessionsPage() {
               if (row.total_score != null && row.total_score < 40) return 'border-l-2 border-l-safety-red/20';
               return '';
             }}
-          />
+          />}
 
           {/* ── Pagination ─────────────────────────────── */}
           {totalPages > 1 && (

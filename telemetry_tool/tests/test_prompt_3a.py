@@ -9,13 +9,13 @@ Validates:
 - Login anomaly detection (new IP sends email)
 - Suspension blocks all endpoints
 """
-import sys
-import json
 import hashlib
+import json
 import secrets
-from pathlib import Path
+import sys
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch, ANY
+from pathlib import Path
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -61,8 +61,9 @@ class FakeConn:
 class TestEmailVerificationEnforcement:
     def test_require_email_verified_blocks_unverified(self):
         """Decorator returns 403 when email_verified is False."""
-        from auth.rbac import require_email_verified
         from flask import Flask
+
+        from auth.rbac import require_email_verified
 
         app = Flask(__name__)
 
@@ -81,8 +82,9 @@ class TestEmailVerificationEnforcement:
 
     def test_require_email_verified_allows_verified(self):
         """Decorator allows through when email_verified is True."""
-        from auth.rbac import require_email_verified
         from flask import Flask
+
+        from auth.rbac import require_email_verified
 
         app = Flask(__name__)
 
@@ -98,8 +100,9 @@ class TestEmailVerificationEnforcement:
 
     def test_require_email_verified_allows_none(self):
         """Decorator allows through when email_verified is None (legacy)."""
-        from auth.rbac import require_email_verified
         from flask import Flask
+
+        from auth.rbac import require_email_verified
 
         app = Flask(__name__)
 
@@ -249,7 +252,7 @@ class TestInvitationRoutes:
         assert bp.name == "teams"
         assert bp.url_prefix == "/api/v1/teams"
         # Verify invitation endpoint functions exist
-        from web.routes.teams import create_invitation, list_invitations, cancel_invitation
+        from web.routes.teams import cancel_invitation, create_invitation, list_invitations
         assert callable(create_invitation)
         assert callable(list_invitations)
         assert callable(cancel_invitation)
@@ -284,7 +287,7 @@ class TestInviteEmail:
 class TestLockoutModule:
     def test_lockout_constants(self):
         """Lockout configuration should match spec."""
-        from auth.lockout import MAX_ATTEMPTS, WINDOW_SECONDS, LOCKOUT_SECONDS
+        from auth.lockout import LOCKOUT_SECONDS, MAX_ATTEMPTS, WINDOW_SECONDS
         assert MAX_ATTEMPTS == 5
         assert WINDOW_SECONDS == 900     # 15 minutes
         assert LOCKOUT_SECONDS == 1800   # 30 minutes
@@ -326,7 +329,8 @@ class TestLockoutModule:
     def test_check_lockout_with_redis_locked(self):
         """Locked when at threshold with recent attempts."""
         import time
-        from auth.lockout import check_lockout, LOCKOUT_SECONDS
+
+        from auth.lockout import LOCKOUT_SECONDS, check_lockout
         mock_redis = MagicMock()
         mock_redis.zcard.return_value = 5  # At MAX_ATTEMPTS
         # Oldest attempt was just now
@@ -354,7 +358,9 @@ class TestSuspension:
     def test_suspension_check_in_login_route(self):
         """Login route should check suspension after auth."""
         import inspect
+
         from web.routes.auth import login
+
         # The function should reference _check_suspension
         source = inspect.getsource(login)
         assert "_check_suspension" in source

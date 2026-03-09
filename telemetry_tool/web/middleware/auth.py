@@ -1,14 +1,18 @@
 """JWT auth middleware -- extracts user from Bearer token."""
+from __future__ import annotations
+
 import logging
 import re
 from functools import wraps
+from typing import Any, Callable
 
-from flask import request, g, current_app, jsonify
+from flask import current_app, g, jsonify, request
+from flask.wrappers import Response
 
 logger = logging.getLogger(__name__)
 
 
-def log_security_event(*args, **kwargs):
+def log_security_event(*args: Any, **kwargs: Any) -> None:
     """Lazy proxy to avoid circular imports."""
     try:
         from admin.audit import log_security_event as _log
@@ -20,7 +24,7 @@ def log_security_event(*args, **kwargs):
 _OAUTH_PATH_RE = re.compile(r"^/auth/oauth/[a-z]+(/callback)?$")
 
 
-def auth_middleware():
+def auth_middleware() -> Response | tuple | None:
     """Before-request hook: decode JWT if present.
 
     When ``AUTH_REQUIRED`` is *False* (legacy / local mode), this is a
@@ -28,12 +32,12 @@ def auth_middleware():
     header on all ``/api/v1/`` routes.
     """
     if not current_app.config.get("AUTH_REQUIRED"):
-        return  # Legacy mode -- no auth required
+        return None  # Legacy mode -- no auth required
 
     # Let CORS preflight through — browsers never attach auth headers
     # to OPTIONS requests, so rejecting them breaks the CORS handshake.
     if request.method == "OPTIONS":
-        return
+        return None
 
     # Skip auth for public auth endpoints (explicit allowlist, not prefix,
     # so future /auth/admin/* routes are still protected).
@@ -45,25 +49,25 @@ def auth_middleware():
         "/api/v1/billing/webhook",  # Uses Stripe signature verification
     }
     if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path):
-        return
+        return None
 
     # Skip for static assets
     if request.path.startswith("/static/"):
-        return
+        return None
 
     # Skip for legacy HTML routes (backward compat)
     if not request.path.startswith("/api/v1/"):
-        return
+        return None
 
     token = _extract_token()
     if token is None:
         log_security_event("auth_denied",
                            ip_address=request.remote_addr,
                            details={"path": request.path, "reason": "missing_token"})
-        from web.api_utils import api_error, ErrorCode
+        from web.api_utils import ErrorCode, api_error
         return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
 
-    from auth.service import decode_access_token, AuthError
+    from auth.service import AuthError, decode_access_token
     secret = current_app.config["JWT_SECRET"]
     try:
         payload = decode_access_token(token, secret)
@@ -89,16 +93,18 @@ def auth_middleware():
                 {"uid": g.current_user_id},
             ).fetchone()
             if row is not None:
-                from web.api_utils import api_error, ErrorCode
+                from web.api_utils import ErrorCode, api_error
                 return api_error(ErrorCode.FORBIDDEN, "Account suspended", status=403)
         except Exception:
             pass  # Fail open — don't block if DB check fails
 
+    return None
 
-def require_auth(f):
+
+def require_auth(f: Callable) -> Callable:
     """Decorator: endpoint requires a valid JWT (g.current_user_id set)."""
     @wraps(f)
-    def decorated(*args, **kwargs):
+    def decorated(*args: Any, **kwargs: Any) -> Response | tuple:
         # Desktop mode — no auth enforced
         if not current_app.config.get("AUTH_REQUIRED"):
             if not hasattr(g, "current_user_id"):
@@ -106,13 +112,13 @@ def require_auth(f):
             return f(*args, **kwargs)
 
         if not hasattr(g, "current_user_id") or g.current_user_id is None:
-            from web.api_utils import api_error, ErrorCode
+            from web.api_utils import ErrorCode, api_error
             return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
         return f(*args, **kwargs)
     return decorated
 
 
-def _extract_token():
+def _extract_token() -> str | None:
     """Extract the Bearer token from the Authorization header."""
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):

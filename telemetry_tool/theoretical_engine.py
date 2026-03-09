@@ -51,6 +51,7 @@ from typing import Any, Callable, Final
 
 import numpy as np
 import pandas as pd
+
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -1148,8 +1149,8 @@ def get_phase_theoreticals(
 
 
 def _run_tests() -> None:
-    import traceback
     import tempfile
+    import traceback
 
     passed: list[str] = []
     failed: list[tuple[str, str]] = []

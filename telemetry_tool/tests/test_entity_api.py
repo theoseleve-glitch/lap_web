@@ -1,7 +1,9 @@
 """Tests for /api/v1/ entity endpoints — drivers and tracks."""
-import sqlite3
 import json
+import sqlite3
+
 import pytest
+
 from db.migrate import ensure_schema
 
 
@@ -26,7 +28,8 @@ def db():
 
 @pytest.fixture
 def client(db):
-    import sys, os
+    import os
+    import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     os.environ.setdefault("TELEMETRY_DB_PATH", ":memory:")
     from web.app import create_app

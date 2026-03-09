@@ -8,7 +8,7 @@ Verifies:
 """
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -56,6 +56,7 @@ class TestWebhookLogging:
         conn.execute.return_value = MagicMock(fetchone=MagicMock(return_value=None))
 
         import importlib
+
         import web.routes.billing as billing_mod
         importlib.reload(billing_mod)
 
@@ -91,6 +92,7 @@ class TestWebhookLogging:
         conn.execute.return_value = MagicMock(fetchone=MagicMock(return_value=None))
 
         import importlib
+
         import web.routes.billing as billing_mod
         importlib.reload(billing_mod)
 
@@ -123,6 +125,7 @@ class TestWebhookLogging:
         conn.execute.return_value = MagicMock(fetchone=MagicMock(return_value=None))
 
         import importlib
+
         import web.routes.billing as billing_mod
         importlib.reload(billing_mod)
 

@@ -5,6 +5,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { UsageDashboard } from '@/components/billing/UsageDashboard';
 import { apiFetch } from '@/lib/api-client';
+import { formatDateFromTimestamp } from '@/lib/format-utils';
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -113,7 +114,7 @@ export default function BillingPage() {
             </div>
             <div className="text-right text-sm text-steel font-body">
               {sub.current_period_end && (
-                <p>Renews: {new Date(sub.current_period_end).toLocaleDateString()}</p>
+                <p>Renews: {formatDateFromTimestamp(sub.current_period_end)}</p>
               )}
               {sub.next_invoice_amount !== null && (
                 <p>Next invoice: {formatAmount(sub.next_invoice_amount, sub.next_invoice_currency)}</p>

@@ -117,6 +117,7 @@ class TestRegisterUserCreatesWorkspace:
 
     def test_register_user_calls_create_personal_workspace(self):
         from unittest.mock import patch
+
         from auth.service import register_user
 
         conn = MagicMock()

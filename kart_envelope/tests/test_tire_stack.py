@@ -11,8 +11,8 @@ from kart_envelope.envelope.tire_stack import (
     apply_tire_runtime_to_envelope,
     build_tire_runtime_meta,
 )
-from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.inference.session_scalars import SessionScalars
+from kart_envelope.ingest.metadata import SessionMetadata
 
 
 def _mock_laps() -> dict[int, pd.DataFrame]:

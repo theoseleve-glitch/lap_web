@@ -15,7 +15,6 @@ from flask import Flask, g
 from web.api_utils import ErrorCode, api_response, init_request_id
 from web.idempotency import _LOCK_TTL, _RESPONSE_TTL, idempotent
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -306,11 +305,9 @@ class TestLockLifecycle:
 
 class TestTTL:
     def test_response_ttl_is_24h(self):
-        from web.idempotency import _RESPONSE_TTL
         assert _RESPONSE_TTL == 86400
 
     def test_lock_ttl_is_60s(self):
-        from web.idempotency import _LOCK_TTL
         assert _LOCK_TTL == 60
 
     def test_response_cached_with_ttl(self):

@@ -19,6 +19,7 @@ interface Preferences {
   timezone?: string;
   units?: string;
   notifications?: NotificationPrefs;
+  leaderboard_visible?: boolean;
 }
 
 interface UserProfile {
@@ -118,6 +119,7 @@ export default function ProfilePage() {
     product_updates: false,
     weekly_digest: false,
   });
+  const [leaderboardVisible, setLeaderboardVisible] = useState(true);
 
   // Sync server data into local state once loaded
   useEffect(() => {
@@ -134,6 +136,7 @@ export default function ProfilePage() {
       product_updates: profile.preferences?.notifications?.product_updates ?? false,
       weekly_digest: profile.preferences?.notifications?.weekly_digest ?? false,
     });
+    setLeaderboardVisible(profile.preferences?.leaderboard_visible ?? true);
   }, [profile]);
 
   /* ── Profile save mutation ────────────────────────── */
@@ -368,6 +371,7 @@ export default function ProfilePage() {
                   timezone,
                   units,
                   notifications,
+                  leaderboard_visible: leaderboardVisible,
                 })
               }
               disabled={prefsMutation.isPending}
@@ -446,6 +450,37 @@ export default function ProfilePage() {
                 disabled={prefsMutation.isPending}
               />
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Privacy ──────────────────────────────────── */}
+      <div className="bg-concrete rounded-lg border border-steel/20 p-6 mt-6">
+        <h2 className="font-monument text-sm text-chalk mb-4">Privacy</h2>
+        {isLoading ? (
+          <div className="animate-pulse h-8 bg-steel/10 rounded" />
+        ) : (
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-chalk text-sm font-body">Leaderboard Visibility</p>
+              <p className="text-steel text-xs font-body">
+                Show your sessions on workspace leaderboards. Turn off to hide your data from rankings.
+              </p>
+            </div>
+            <ToggleSwitch
+              checked={leaderboardVisible}
+              onChange={(val) => {
+                setLeaderboardVisible(val);
+                prefsMutation.mutate({
+                  language,
+                  timezone,
+                  units,
+                  notifications,
+                  leaderboard_visible: val,
+                });
+              }}
+              disabled={prefsMutation.isPending}
+            />
           </div>
         )}
       </div>

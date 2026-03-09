@@ -251,3 +251,88 @@ body {
   filter: blur(0);
   transform: translateY(0);
 }
+
+/* CSS containment — isolate repaints from triggering full-page layout */
+[id="speed-chart"],
+[id="gg-chart"],
+[id="gps-trace-chart"],
+[id="speed-zoom-chart"] {
+  contain: layout paint;
+}
+
+[id="speed-zoom-panel"] {
+  contain: layout style;
+}
+
+/* Containment for heavy app-shell regions */
+[role="img"] { contain: layout paint; }
+[data-sidebar] { contain: layout style; }
+main > section { contain: layout; }
+
+/* Reserve chart container dimensions to prevent CLS (#0106) */
+[id="speed-chart"],
+[id="speed-zoom-chart"] {
+  min-height: 250px;
+  aspect-ratio: 16 / 5;
+}
+
+[id="gg-chart"] {
+  min-height: 300px;
+  aspect-ratio: 1 / 1;
+}
+
+[id="gps-trace-chart"] {
+  min-height: 300px;
+  aspect-ratio: 4 / 3;
+}
+
+/* ── Chart fade-in on render ──────────── */
+@keyframes chart-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.chart-enter {
+  animation: chart-fade-in 0.4s ease-out both;
+}
+
+/* ── Print-friendly styles ─────────────── */
+@media print {
+  /* Reset backgrounds for ink-saving */
+  html, body {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 12px;
+  }
+
+  /* Hide nav, sidebar, interactive controls */
+  nav, [data-print="hide"], button:not([data-print="show"]),
+  .beam-card::before, .beam-card::after,
+  [role="tablist"], footer {
+    display: none !important;
+  }
+
+  /* Override dark theme cards */
+  .bg-concrete, .bg-asphalt {
+    background: #fafafa !important;
+    border-color: #ddd !important;
+  }
+
+  .text-chalk, .text-white { color: #000 !important; }
+  .text-steel, .text-muted { color: #555 !important; }
+  .text-acid-green { color: #16a34a !important; }
+  .text-safety-red { color: #dc2626 !important; }
+  .text-pit-orange { color: #a3660a !important; }
+
+  /* Score bars: ensure visible */
+  .bg-asphalt { background: #eee !important; }
+
+  /* Break pages cleanly */
+  .room { min-height: auto; page-break-inside: avoid; }
+  h1, h2, h3 { page-break-after: avoid; }
+
+  /* Charts: ensure they fit page width */
+  [id="speed-chart"], [id="gg-chart"], [id="gps-trace-chart"], [id="speed-zoom-chart"] {
+    contain: none;
+    page-break-inside: avoid;
+  }
+}

@@ -171,7 +171,15 @@ def rate_limit(tier: str = "read"):
                 scope_value = request.remote_addr or "unknown"
             else:
                 max_requests = _get_effective_limit(base_max_requests, tier)
-                scope_value = getattr(g, "current_user_id", None) or request.remote_addr or "unknown"
+                # Prefer workspace_id for team-scoped limits, fall back to user_id, then IP
+                ws_id = getattr(g, "workspace_id", None)
+                user_id = getattr(g, "current_user_id", None)
+                if ws_id:
+                    scope_value = f"ws:{ws_id}"
+                elif user_id:
+                    scope_value = str(user_id)
+                else:
+                    scope_value = request.remote_addr or "unknown"
 
             redis_key = f"ratelimit:{tier}:{scope_value}"
 
@@ -197,6 +205,9 @@ def rate_limit(tier: str = "read"):
                 )
                 return fn(*args, **kwargs)
 
+            remaining = max(0, max_requests - count)
+            reset_at = int(now + window_seconds)
+
             if count > max_requests:
                 plan_tier = getattr(g, "plan_tier", "demo")
                 logger.info(
@@ -214,8 +225,21 @@ def rate_limit(tier: str = "read"):
                     status=429,
                 )
                 resp.headers["Retry-After"] = str(window_seconds)
+                resp.headers["X-RateLimit-Limit"] = str(max_requests)
+                resp.headers["X-RateLimit-Remaining"] = "0"
+                resp.headers["X-RateLimit-Reset"] = str(reset_at)
                 return resp, status
 
-            return fn(*args, **kwargs)
+            response = fn(*args, **kwargs)
+            # Attach rate-limit headers to successful responses
+            if hasattr(response, "headers"):
+                response.headers["X-RateLimit-Limit"] = str(max_requests)
+                response.headers["X-RateLimit-Remaining"] = str(remaining)
+                response.headers["X-RateLimit-Reset"] = str(reset_at)
+            elif isinstance(response, tuple) and len(response) >= 1 and hasattr(response[0], "headers"):
+                response[0].headers["X-RateLimit-Limit"] = str(max_requests)
+                response[0].headers["X-RateLimit-Remaining"] = str(remaining)
+                response[0].headers["X-RateLimit-Reset"] = str(reset_at)
+            return response
         return wrapper
     return decorator

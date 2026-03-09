@@ -19,27 +19,26 @@ import logging
 
 from flask import Blueprint, request
 
-from web.api_utils import ErrorCode, api_error, api_response
-
 from services.race_strategy import (
-    list_races,
-    get_race_detail,
     create_race,
-    update_race,
     delete_race,
-    run_optimization,
-    go_live,
+    duplicate_race,
+    end_stint,
+    export_race,
     finish_race,
     get_live_state,
-    end_stint,
-    toggle_fuel,
-    set_pit_type,
-    reoptimize,
-    export_race,
-    import_race,
-    duplicate_race,
+    get_race_detail,
     get_summary,
+    go_live,
+    import_race,
+    list_races,
+    reoptimize,
+    run_optimization,
+    set_pit_type,
+    toggle_fuel,
+    update_race,
 )
+from web.api_utils import ErrorCode, api_error, api_response
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +113,7 @@ def create_race_endpoint():
         max_dur = None
         try:
             from flask import g
+
             from auth.entitlements import get_user_entitlements
             user_id = getattr(g, "current_user_id", None)
             ws_id = getattr(g, "workspace_id", None)
@@ -188,6 +188,7 @@ def update_race_endpoint(race_id: int):
         max_dur = None
         try:
             from flask import g
+
             from auth.entitlements import get_user_entitlements
             user_id = getattr(g, "current_user_id", None)
             ws_id = getattr(g, "workspace_id", None)

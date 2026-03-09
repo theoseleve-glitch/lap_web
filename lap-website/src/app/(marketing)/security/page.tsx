@@ -3,6 +3,7 @@ import { PageIntro } from '@/components/ui/PageIntro';
 import { StatusPill } from '@/components/site/StatusPill';
 import Link from 'next/link';
 import { generateSeoMetadata } from '@/lib/seo';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
 
 export const metadata = generateSeoMetadata('/security');
 
@@ -138,6 +139,8 @@ export default function SecurityPage() {
           <li>Enterprise support: contract-specific SLA commitments.</li>
         </ul>
       </section>
+
+      <RelatedPages pathname="/security" />
     </main>
     </>
   );

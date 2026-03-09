@@ -19,7 +19,7 @@ from functools import wraps
 from flask import Blueprint, g, request, send_file
 from sqlalchemy import text
 
-from web.api_utils import api_error, api_response, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)

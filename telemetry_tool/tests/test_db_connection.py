@@ -69,7 +69,7 @@ def test_pg_when_flag_on(monkeypatch):
     monkeypatch.setenv("USE_PG", "1")
 
     # Import inside the test so the flag is already set.
-    from web.db_pg import get_pg_connection, return_pg_connection, close_pool
+    from web.db_pg import close_pool, get_pg_connection, return_pg_connection
 
     conn = get_pg_connection()
     try:
@@ -85,7 +85,7 @@ def test_pg_returns_dict_rows(monkeypatch):
     """PG connections use RealDictCursor -- rows are dict-accessible."""
     monkeypatch.setenv("USE_PG", "1")
 
-    from web.db_pg import get_pg_connection, return_pg_connection, close_pool
+    from web.db_pg import close_pool, get_pg_connection, return_pg_connection
 
     conn = get_pg_connection()
     try:

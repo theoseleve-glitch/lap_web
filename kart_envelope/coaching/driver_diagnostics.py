@@ -23,6 +23,7 @@ import pandas as pd
 
 from kart_envelope.config import KartEnvelopeConfig
 from kart_envelope.envelope.capability import CapabilityEnvelope
+from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.ingest.columns import (
     COL_ACCEL_LAT,
     COL_ACCEL_LONG,
@@ -33,7 +34,6 @@ from kart_envelope.ingest.columns import (
     COL_YAW_RATE,
 )
 from kart_envelope.ingest.metadata import SessionMetadata
-from kart_envelope.inference.session_scalars import SessionScalars
 from kart_envelope.track.geometry import TrackGeometry
 
 logger = logging.getLogger(__name__)

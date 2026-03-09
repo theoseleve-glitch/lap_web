@@ -131,6 +131,8 @@ export function GGExplorer({
         ref={containerRef}
         id={containerId}
         className={`relative ${className}`}
+        role="img"
+        aria-label="G-G diagram showing lateral and longitudinal acceleration forces during the session"
       >
         {/* Loading indicator — hidden by gg_explorer.js once data loads */}
         <div

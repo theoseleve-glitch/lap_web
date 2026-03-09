@@ -5,11 +5,11 @@ Verifies:
 - POST /admin/infra/maintenance toggles maintenance mode
 - GET /admin/infra/maintenance returns maintenance status
 """
-import sys
 import json
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from datetime import datetime, timezone
 
 import pytest
 

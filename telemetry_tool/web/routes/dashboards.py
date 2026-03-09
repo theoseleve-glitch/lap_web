@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, render_template, abort
+from flask import Blueprint, abort, render_template
 
 from web.db import get_db_connection
 

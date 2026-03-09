@@ -15,8 +15,7 @@ interface AdminTableProps<T> {
   emptyMessage?: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function AdminTable<T extends Record<string, any>>({
+export function AdminTable<T extends Record<string, unknown>>({
   columns,
   data,
   onRowClick,

@@ -7,10 +7,18 @@ import { usePathname } from 'next/navigation';
 const mockUsePathname = vi.mocked(usePathname);
 
 describe('Breadcrumb', () => {
-  it('renders nothing for top-level pages', () => {
-    mockUsePathname.mockReturnValue('/pricing');
+  it('renders nothing for the homepage', () => {
+    mockUsePathname.mockReturnValue('/');
     const { container } = render(<Breadcrumb />);
     expect(container.innerHTML).toBe('');
+  });
+
+  it('renders Home breadcrumb for top-level marketing pages', () => {
+    mockUsePathname.mockReturnValue('/pricing');
+    render(<Breadcrumb />);
+    const nav = screen.getByRole('navigation', { name: /breadcrumb/i });
+    expect(nav).toBeInTheDocument();
+    expect(nav.querySelector('a')?.textContent).toBe('Home');
   });
 
   it('renders breadcrumb trail for subpages', () => {

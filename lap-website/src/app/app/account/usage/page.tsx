@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { apiFetch } from '@/lib/api-client';
+import { formatDateFromTimestamp } from '@/lib/format-utils';
 
 /* ── Types ────────────────────────────────────────────────── */
 
@@ -95,7 +96,7 @@ function UsageBar({
       </div>
       {resets && (
         <p className="text-steel text-[10px] font-body mt-1">
-          Resets {new Date(resets).toLocaleDateString()}
+          Resets {formatDateFromTimestamp(resets)}
         </p>
       )}
     </div>

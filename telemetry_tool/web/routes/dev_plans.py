@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from flask import Blueprint, render_template, abort, request
+from flask import Blueprint, abort, render_template, request
 
 from web.db import get_db_connection
 
@@ -17,7 +17,7 @@ def plan_list():
 
     drivers = conn.execute("SELECT driver_id, driver_name FROM drivers ORDER BY driver_name").fetchall()
 
-    from development_plan import get_plans, get_plan_templates
+    from development_plan import get_plan_templates, get_plans
     plans = get_plans(conn, driver_id) if driver_id else []
     templates = get_plan_templates()
 
@@ -32,7 +32,7 @@ def plan_list():
 def plan_detail(plan_id: int):
     """View a specific plan."""
     conn = get_db_connection()
-    from development_plan import get_plan, get_drill_sessions
+    from development_plan import get_drill_sessions, get_plan
     plan = get_plan(conn, plan_id)
     if not plan:
         abort(404)

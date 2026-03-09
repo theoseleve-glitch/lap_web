@@ -27,6 +27,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 def app():
     """Create a minimal Flask app with the versioning blueprint."""
     from flask import Flask, g
+
     from web.routes.versioning import bp
 
     app = Flask(__name__)

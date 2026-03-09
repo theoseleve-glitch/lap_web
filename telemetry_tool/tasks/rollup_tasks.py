@@ -1,6 +1,7 @@
 """Celery task: refresh rollup tables for all workspaces."""
 
 import logging
+
 from celery_app import celery
 
 logger = logging.getLogger(__name__)
@@ -9,8 +10,8 @@ logger = logging.getLogger(__name__)
 @celery.task(name="tasks.rollup_tasks.refresh_all_rollups", queue="default")
 def refresh_all_rollups():
     """Safety-net: recompute rollups for every workspace."""
-    from web.rollups import refresh_rollups
     from web.db_pg import get_pg_connection as get_pg_conn
+    from web.rollups import refresh_rollups
     conn = get_pg_conn()
     try:
         rows = conn.execute("SELECT id FROM workspaces").fetchall()

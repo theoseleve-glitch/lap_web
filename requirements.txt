@@ -33,6 +33,15 @@ cryptography>=42.0
 # Testing
 pytest>=7.0
 
+# Static type checking
+mypy>=1.8
+
+# Import sorting
+isort>=5.12
+
+# Linting
+ruff>=0.3
+
 # CORS
 flask-cors>=4.0
 
@@ -48,9 +57,22 @@ psutil>=5.9
 # Billing
 stripe>=8.0
 
+# Scientific computing (used by physics models, friction, etc.)
+scipy>=1.11
+
 # PDF generation (optional — install if you want PDF reports)
 # pdfkit>=1.0
 # weasyprint>=60.0
+# reportlab>=4.0
+
+# QR code generation (optional — admin 2FA setup)
+# qrcode>=7.4
+
+# YAML parsing (optional — config files)
+# PyYAML>=6.0
+
+# Prometheus metrics (optional — /metrics endpoint)
+# prometheus-client>=0.20
 
 # Error tracking (optional — app works without it)
 sentry-sdk[flask,celery]>=2.0,<3.0

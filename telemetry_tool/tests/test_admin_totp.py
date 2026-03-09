@@ -40,7 +40,7 @@ class TestGenerateSecret:
 
 class TestEncryptDecrypt:
     def test_roundtrip(self):
-        from admin.totp import encrypt_secret, decrypt_secret
+        from admin.totp import decrypt_secret, encrypt_secret
 
         original = "JBSWY3DPEHPK3PXP"
         encrypted = encrypt_secret(original, _TEST_ADMIN_KEY)
@@ -49,7 +49,7 @@ class TestEncryptDecrypt:
         assert decrypted == original
 
     def test_different_keys_fail(self):
-        from admin.totp import encrypt_secret, decrypt_secret
+        from admin.totp import decrypt_secret, encrypt_secret
 
         original = "JBSWY3DPEHPK3PXP"
         encrypted = encrypt_secret(original, _TEST_ADMIN_KEY)
@@ -71,6 +71,7 @@ class TestEncryptDecrypt:
 class TestVerifyTotp:
     def test_correct_code_passes(self):
         import pyotp
+
         from admin.totp import generate_totp_secret, verify_totp
 
         secret = generate_totp_secret()

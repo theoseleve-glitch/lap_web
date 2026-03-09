@@ -590,7 +590,7 @@ def require_feature(feature: str):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            from web.api_utils import api_error, ErrorCode
+            from web.api_utils import ErrorCode, api_error
             user_id = getattr(g, "current_user_id", None)
             if user_id is None:
                 return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=401)
@@ -613,7 +613,7 @@ def require_quota(meter_key: str, cost: int = 1):
     def decorator(fn):
         @wraps(fn)
         def wrapper(*args, **kwargs):
-            from web.api_utils import api_error, ErrorCode
+            from web.api_utils import ErrorCode, api_error
             user_id = getattr(g, "current_user_id", None)
             workspace_id = getattr(g, "workspace_id", None)
             if user_id is None:
@@ -650,7 +650,7 @@ def _plan_required_response(feature: str, ctx: dict):
     error responses share the same schema (code, reason_code, upgrade_url,
     required_plan, current_plan, request_id).
     """
-    from web.api_utils import billing_error, ReasonCode
+    from web.api_utils import ReasonCode, billing_error
     return billing_error(
         reason_code=ReasonCode.FEATURE_LOCKED,
         message=ctx.get("reason", f"{feature} is not available on your current plan"),
@@ -668,7 +668,7 @@ def _quota_exceeded_response(meter_key: str, ctx: dict):
     reason so the frontend receives the same schema as feature-gated errors
     plus quota-specific fields (limit, remaining, used, resets_at).
     """
-    from web.api_utils import billing_error, ErrorCode, ReasonCode
+    from web.api_utils import ErrorCode, ReasonCode, billing_error
     return billing_error(
         reason_code=ReasonCode.LIMIT_EXCEEDED,
         message=f"Monthly {meter_key} limit reached ({ctx.get('used', 0)}/{ctx.get('limit', 0)})",

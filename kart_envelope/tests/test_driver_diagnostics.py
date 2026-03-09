@@ -6,8 +6,8 @@ import pandas as pd
 
 from kart_envelope.coaching.corner_coaching import detect_corners_from_curvature
 from kart_envelope.coaching.driver_diagnostics import analyze_driver_dynamics
-from kart_envelope.ingest.metadata import SessionMetadata
 from kart_envelope.inference.session_scalars import SessionScalars
+from kart_envelope.ingest.metadata import SessionMetadata
 
 
 def _make_lap_df(

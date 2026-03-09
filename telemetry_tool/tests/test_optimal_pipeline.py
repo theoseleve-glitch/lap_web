@@ -1,5 +1,6 @@
 """Integration tests for unified optimal solver in pipeline."""
 import os
+
 import numpy as np
 import pandas as pd
 import pytest

@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 32
+SCHEMA_VERSION = 33
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -82,7 +82,9 @@ CREATE TABLE IF NOT EXISTS sessions (
     source_metadata   TEXT,
     pipeline_version_hash TEXT DEFAULT 'unknown',
     model_version     TEXT    DEFAULT 'none',
-    created_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+    is_favorite       INTEGER NOT NULL DEFAULT 0,
+    created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+    deleted_at        TEXT
 );
 """
 

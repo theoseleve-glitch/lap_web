@@ -320,8 +320,8 @@ function SummaryStats({ corners }: { corners: CornerData[] }) {
 /* ── Main Component ──────────────────────────────────── */
 
 export function CoachingTable({ corners }: CoachingTableProps) {
-  const [sortKey, setSortKey] = useState<SortKey>('corner_id');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>('time_loss_total_s');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [expandAll, setExpandAll] = useState(false);
 

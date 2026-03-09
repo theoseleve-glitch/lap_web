@@ -14,8 +14,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from telemetry_tool.adapters import parse_file, detect_format
-
+from telemetry_tool.adapters import detect_format, parse_file
 
 # ---------------------------------------------------------------------------
 # Fixtures — minimal CSV samples for each adapter format
@@ -164,8 +163,8 @@ class TestDetectFormatConfidence:
     """Verify format-specific adapters out-score the generic adapter."""
 
     def test_iracing_beats_generic(self, iracing_csv):
-        from telemetry_tool.adapters.iracing_adapter import IRacingAdapter
         from telemetry_tool.adapters.generic_csv_adapter import GenericCSVAdapter
+        from telemetry_tool.adapters.iracing_adapter import IRacingAdapter
 
         iracing_conf = IRacingAdapter.detect(str(iracing_csv))
         generic_conf = GenericCSVAdapter.detect(str(iracing_csv))
@@ -180,8 +179,8 @@ class TestDetectFormatConfidence:
         assert acc_conf > generic_conf
 
     def test_motec_beats_generic(self, motec_csv):
-        from telemetry_tool.adapters.motec_adapter import MoTeCAdapter
         from telemetry_tool.adapters.generic_csv_adapter import GenericCSVAdapter
+        from telemetry_tool.adapters.motec_adapter import MoTeCAdapter
 
         motec_conf = MoTeCAdapter.detect(str(motec_csv))
         generic_conf = GenericCSVAdapter.detect(str(motec_csv))

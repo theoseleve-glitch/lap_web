@@ -425,8 +425,9 @@ def _run_tests() -> None:
 
     def _make_db():
         """Create a temp DB with schema."""
-        from db.migrate import ensure_schema
         import sqlite3 as s3
+
+        from db.migrate import ensure_schema
         tmp = tempfile.mktemp(suffix=".db")
         conn = s3.connect(tmp)
         conn.row_factory = s3.Row

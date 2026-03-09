@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+
 from auth.service import AuthError
 
 logger = logging.getLogger(__name__)

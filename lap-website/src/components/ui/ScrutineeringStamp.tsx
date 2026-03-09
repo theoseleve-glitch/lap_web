@@ -52,7 +52,6 @@ export function ScrutineeringStamp({
       className={`inline-block border-2 border-current px-3 py-1 font-telemetry ${className}`}
       style={{
         transform: `rotate(${rotation}deg) translateX(${offsetX}px)`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         zIndex: 'var(--z-stamps)' as unknown as number,
       }}
     >

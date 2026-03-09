@@ -10,12 +10,12 @@ Validates:
 - Compliance pages exist
 - Migration 026 creates email_log + is_platform_admin
 """
-import sys
 import hashlib
 import hmac
+import sys
 import time
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -280,6 +280,7 @@ class TestSignedUrls:
     def test_verify_expired_url(self):
         """Expired URL returns (False, path)."""
         from web.signed_urls import create_signed_url, verify_signed_url
+
         # Create with 0-second expiry
         url = create_signed_url("/exports/test.zip", expires_in=-1)
         valid, path = verify_signed_url(url)
@@ -378,9 +379,15 @@ class TestAdminEndpoints:
     def test_admin_routes_exist(self):
         """Key admin endpoint functions exist."""
         from web.routes.admin import (
-            list_users, get_user_detail, suspend_user, unsuspend_user,
-            create_override, impersonate_user, list_workspaces,
-            list_audit_log, billing_overview,
+            billing_overview,
+            create_override,
+            get_user_detail,
+            impersonate_user,
+            list_audit_log,
+            list_users,
+            list_workspaces,
+            suspend_user,
+            unsuspend_user,
         )
         assert all(callable(f) for f in [
             list_users, get_user_detail, suspend_user, unsuspend_user,

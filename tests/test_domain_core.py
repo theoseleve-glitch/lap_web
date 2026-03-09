@@ -466,9 +466,9 @@ class TestGPSFilteringThresholds:
 
     def _import_filter(self):
         try:
-            from telemetry_tool.gps_filtering import filter_gps_quality, GPSFilterError
+            from telemetry_tool.gps_filtering import GPSFilterError, filter_gps_quality
         except ImportError:
-            from gps_filtering import filter_gps_quality, GPSFilterError
+            from gps_filtering import GPSFilterError, filter_gps_quality
         return filter_gps_quality, GPSFilterError
 
     def test_clean_data_passes(self):

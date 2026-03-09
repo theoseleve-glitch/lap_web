@@ -92,7 +92,7 @@ class TestQrCodeGeneration:
 class TestVerifyTotp:
     def test_current_step_accepted(self):
         """Code for the current time step should verify."""
-        from auth.totp import generate_totp_secret, verify_totp, _hotp, _current_counter
+        from auth.totp import _current_counter, _hotp, generate_totp_secret, verify_totp
         secret = generate_totp_secret()
         counter = _current_counter()
         code = _hotp(secret, counter)
@@ -100,7 +100,7 @@ class TestVerifyTotp:
 
     def test_previous_step_accepted(self):
         """Code for previous time step (clock skew) should verify."""
-        from auth.totp import generate_totp_secret, verify_totp, _hotp, _current_counter
+        from auth.totp import _current_counter, _hotp, generate_totp_secret, verify_totp
         secret = generate_totp_secret()
         counter = _current_counter()
         code = _hotp(secret, counter - 1)
@@ -108,7 +108,7 @@ class TestVerifyTotp:
 
     def test_next_step_accepted(self):
         """Code for next time step (clock skew) should verify."""
-        from auth.totp import generate_totp_secret, verify_totp, _hotp, _current_counter
+        from auth.totp import _current_counter, _hotp, generate_totp_secret, verify_totp
         secret = generate_totp_secret()
         counter = _current_counter()
         code = _hotp(secret, counter + 1)
@@ -116,7 +116,7 @@ class TestVerifyTotp:
 
     def test_old_step_rejected(self):
         """Code for 2 steps ago should be rejected."""
-        from auth.totp import generate_totp_secret, verify_totp, _hotp, _current_counter
+        from auth.totp import _current_counter, _hotp, generate_totp_secret, verify_totp
         secret = generate_totp_secret()
         counter = _current_counter()
         code = _hotp(secret, counter - 2)
@@ -202,6 +202,7 @@ class TestBackupCodes:
 # ===================================================================
 
 from flask import Flask, g
+
 from web.api_utils import init_request_id
 from web.routes.api_v1_account import bp as api_v1_account_bp
 
@@ -636,7 +637,7 @@ class FakeConn:
 class TestLoginWith2FA:
     def test_login_returns_requires_2fa(self):
         """login_user with 2FA enabled returns requires_2fa + temp_token."""
-        from auth.service import login_user, hash_password
+        from auth.service import hash_password, login_user
         pw_hash = hash_password("password123")
         conn = FakeConn({
             "SELECT id, email, password_hash, display_name, totp_enabled": [{
@@ -655,7 +656,7 @@ class TestLoginWith2FA:
 
     def test_login_without_2fa_returns_tokens(self):
         """login_user without 2FA returns access + refresh tokens."""
-        from auth.service import login_user, hash_password
+        from auth.service import hash_password, login_user
         pw_hash = hash_password("password123")
         conn = FakeConn({
             "SELECT id, email, password_hash, display_name, totp_enabled": [{
@@ -680,7 +681,7 @@ class TestLoginWith2FA:
 
     def test_temp_token_wrong_secret_fails(self):
         """Temp token with wrong secret raises AuthError."""
-        from auth.service import _create_temp_2fa_token, verify_2fa_temp_token, AuthError
+        from auth.service import AuthError, _create_temp_2fa_token, verify_2fa_temp_token
         token = _create_temp_2fa_token(42, "correct-secret")
         with pytest.raises(AuthError):
             verify_2fa_temp_token(token, "wrong-secret")
@@ -836,8 +837,9 @@ class TestVerify2FAEndpoint:
 
     def test_verify_rejects_expired_temp_token(self, auth_client):
         """POST /auth/2fa/verify with expired temp token returns 401."""
-        import jwt
         from datetime import datetime, timedelta, timezone
+
+        import jwt
 
         expired_payload = {
             "user_id": 99,

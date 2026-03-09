@@ -1,0 +1,130 @@
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = false
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+# Resolve bare imports (scoring.*, features, etc.) used via sys.path
+mypy_path = "telemetry_tool"
+explicit_package_bases = true
+
+# Start with typed modules; expand as more code gets annotated
+files = [
+    "telemetry_tool/scoring/",
+    "telemetry_tool/db/sql_compat.py",
+    "telemetry_tool/web/middleware/auth.py",
+    "telemetry_tool/web/middleware/tenant.py",
+]
+
+# Third-party libraries without stubs
+[[tool.mypy.overrides]]
+module = [
+    "pandas",
+    "pandas.*",
+    "numpy",
+    "numpy.*",
+    "sklearn",
+    "sklearn.*",
+    "pyarrow",
+    "pyarrow.*",
+    "flask",
+    "flask.*",
+    "celery",
+    "celery.*",
+    "redis",
+    "redis.*",
+    "psycopg2",
+    "psycopg2.*",
+    "authlib",
+    "authlib.*",
+    "argon2",
+    "argon2.*",
+    "pydantic",
+    "pydantic.*",
+    "sentry_sdk",
+    "sentry_sdk.*",
+    "werkzeug",
+    "werkzeug.*",
+    "jinja2",
+    "jinja2.*",
+    "matplotlib",
+    "matplotlib.*",
+    "psutil",
+    "psutil.*",
+]
+ignore_missing_imports = true
+
+# Internal modules not yet in scope — follow silently
+[[tool.mypy.overrides]]
+module = [
+    "features",
+    "features.*",
+    "web.*",
+    "auth.*",
+    "admin.*",
+    "db.*",
+]
+follow_imports = "silent"
+ignore_missing_imports = true
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = [
+    "scoring",
+    "features",
+    "web",
+    "auth",
+    "admin",
+    "db",
+    "ingest",
+    "pipeline",
+    "kart_envelope",
+]
+known_third_party = [
+    "flask",
+    "numpy",
+    "pandas",
+    "sklearn",
+    "pyarrow",
+    "celery",
+    "redis",
+    "psycopg2",
+    "authlib",
+    "argon2",
+    "pydantic",
+    "sentry_sdk",
+    "werkzeug",
+    "jinja2",
+    "matplotlib",
+    "psutil",
+    "jwt",
+    "stripe",
+]
+skip_glob = ["**/node_modules/**", "**/venv/**", "**/.venv/**"]
+src_paths = ["telemetry_tool", "kart_envelope", "tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["telemetry_tool", "kart_envelope", "tests"]
+
+[tool.ruff.lint]
+# Start conservative — catch real bugs first, expand later
+select = [
+    "F811",  # redefined unused name
+    "E711",  # comparison to None
+    "E712",  # comparison to True/False
+    "B006",  # mutable default argument
+    "B018",  # useless expression
+]
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"telemetry_tool/alembic/**" = ["F", "E", "B"]
+"telemetry_tool/_*_legacy.py" = ["F", "E", "B"]

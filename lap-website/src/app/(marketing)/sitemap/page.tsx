@@ -19,6 +19,15 @@ const sections: SitemapSection[] = [
       { href: '/billing', label: 'Billing' },
       { href: '/demo', label: 'Request a demo' },
       { href: '/free-report/analyze', label: 'Free telemetry report' },
+      { href: '/compare-tools', label: 'LAP vs Spreadsheets' },
+    ],
+  },
+  {
+    heading: 'Use Cases',
+    links: [
+      { href: '/teams', label: 'For racing teams' },
+      { href: '/circuits', label: 'For circuits & venues' },
+      { href: '/coaches', label: 'For coaches' },
     ],
   },
   {
@@ -26,6 +35,8 @@ const sections: SitemapSection[] = [
     links: [
       { href: '/insights', label: 'Insights & guides' },
       { href: '/customers', label: 'Customer stories' },
+      { href: '/changelog', label: 'Changelog' },
+      { href: '/help', label: 'Help center' },
       { href: '/status', label: 'System status' },
     ],
   },
@@ -45,6 +56,7 @@ const sections: SitemapSection[] = [
       { href: '/privacy', label: 'Privacy policy' },
       { href: '/dpa', label: 'Data processing agreement' },
       { href: '/subprocessors', label: 'Sub-processors' },
+      { href: '/accessibility', label: 'Accessibility statement' },
     ],
   },
   {

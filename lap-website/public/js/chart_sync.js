@@ -25,6 +25,7 @@
     var chartData = null;      // { distances, speeds }
     var chartBounds = null;    // { xMin, xMax, yMin, yMax, plotX, plotY, plotW, plotH }
     var theoreticalData = null; // { distances, speeds } from API
+    var averagePaceData = null; // { distances, avg_speeds } from API
     var _lastLaps = null;      // Stored for lap-times __redraw
 
     // ── Public API ──────────────────────────────────
@@ -50,6 +51,7 @@
             speedCtx = speedCanvas.getContext('2d');
             setupSpeedChartEvents();
             loadTheoreticalData();
+            loadAveragePace();
             // Self-load speed data from best lap GPS (no gps_trace dependency)
             _autoLoadBestLapSpeed();
         }
@@ -117,6 +119,28 @@
             })
             .catch(function (err) {
                 console.warn('Theoretical data not available:', err);
+            });
+    }
+
+    // ── Load average pace across all laps ────────────
+    function loadAveragePace() {
+        var T = window.TELEMETRY;
+        if (!T || !T.sessionId) return;
+        var lapNum = T.bestLap || (T.gpsLaps && T.gpsLaps[0]);
+        if (!lapNum) return;
+
+        var url = '/api/v1/sessions/' + encodeURIComponent(T.sessionId) +
+                  '/speed-trace?lap=' + lapNum + '&avg=1';
+        FetchHelper.fetch(url)
+            .then(function (resp) {
+                var data = resp.data || resp;
+                if (data.avg_speeds && data.distances) {
+                    averagePaceData = { distances: data.distances, avg_speeds: data.avg_speeds };
+                    if (chartData) drawSpeedChart();
+                }
+            })
+            .catch(function () {
+                // non-critical — average pace is optional
             });
     }
 
@@ -263,6 +287,41 @@
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillText('--- Theoretical', pad.left + 8, pad.top + 4);
+        }
+
+        // ── Average pace line (dotted cyan) ──────────────
+        if (averagePaceData && averagePaceData.distances && averagePaceData.avg_speeds) {
+            ctx.strokeStyle = C.cyan || '#58a6ff';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([4, 4]);
+            ctx.globalAlpha = 0.6;
+            ctx.beginPath();
+            var avgDists = averagePaceData.distances;
+            var avgSpds = averagePaceData.avg_speeds;
+            var avgStarted = false;
+            for (var ai = 0; ai < avgDists.length; ai++) {
+                if (avgDists[ai] === null || avgSpds[ai] === null) continue;
+                if (!isFinite(avgDists[ai]) || !isFinite(avgSpds[ai])) continue;
+                var ax = xToPixel(avgDists[ai]);
+                var ay = yToPixel(avgSpds[ai] * 3.6);
+                if (!avgStarted) {
+                    ctx.moveTo(ax, ay);
+                    avgStarted = true;
+                } else {
+                    ctx.lineTo(ax, ay);
+                }
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1.0;
+
+            // Legend
+            var avgLegendY = theoreticalData ? pad.top + 16 : pad.top + 4;
+            ctx.fillStyle = C.cyan || '#58a6ff';
+            ctx.font = '10px -apple-system, sans-serif';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            ctx.fillText('... Avg Pace', pad.left + 8, avgLegendY);
         }
 
         // Speed line with colour gradient.

@@ -1,13 +1,20 @@
 """Test annotation module."""
 import sqlite3
-import pytest
 import sys
 from pathlib import Path
+
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from annotations import (
-    create_annotation, get_annotations, get_annotation,
-    update_annotation, delete_annotation, search_annotations, get_all_tags,
+    create_annotation,
+    delete_annotation,
+    get_all_tags,
+    get_annotation,
+    get_annotations,
+    search_annotations,
+    update_annotation,
 )
 
 

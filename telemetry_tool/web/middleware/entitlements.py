@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import re
 
-from flask import g, request, current_app
+from flask import current_app, g, request
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,8 @@ def entitlement_middleware():
     # Only applies when the user has a non-demo plan_tier.
     plan_tier = getattr(g, "plan_tier", "demo")
     if plan_tier not in ("demo", "free", None):
-        from auth.entitlements import get_user_subscription_status, _get_conn as _ent_conn
+        from auth.entitlements import _get_conn as _ent_conn
+        from auth.entitlements import get_user_subscription_status
         conn = _ent_conn()
         sub_status = get_user_subscription_status(conn, user_id)
 
@@ -186,7 +187,7 @@ def entitlement_middleware():
         action_category = _classify_action(method, path)
 
         if not policy.get(action_category, True):
-            from web.api_utils import billing_error, ReasonCode
+            from web.api_utils import ReasonCode, billing_error
 
             reason_map = {
                 "unpaid": (ReasonCode.SUBSCRIPTION_UNPAID, "Your subscription payment is overdue. Please update your payment method."),
@@ -212,7 +213,7 @@ def entitlement_middleware():
         if method == gate_method and path.startswith(gate_prefix):
             if gate_suffix and not path.endswith(gate_suffix):
                 continue
-            from auth.entitlements import authorize_feature, _get_conn, _plan_required_response
+            from auth.entitlements import _get_conn, _plan_required_response, authorize_feature
             conn = _get_conn()
             allowed, ctx = authorize_feature(conn, user_id, feature)
             if not allowed:
@@ -228,7 +229,11 @@ def entitlement_middleware():
 
     for gate_method, gate_prefix, meter_key, cost in _QUOTA_GATES:
         if method == gate_method and path.startswith(gate_prefix):
-            from auth.entitlements import check_and_record_quota, _get_conn, _quota_exceeded_response
+            from auth.entitlements import (
+                _get_conn,
+                _quota_exceeded_response,
+                check_and_record_quota,
+            )
             conn = _get_conn()
             allowed, ctx = check_and_record_quota(conn, user_id, workspace_id, meter_key, cost)
             if not allowed:
@@ -303,7 +308,7 @@ def record_successful_usage(response):
             continue
         if method == gate_method and path.startswith(gate_prefix):
             try:
-                from auth.entitlements import record_usage, _get_conn
+                from auth.entitlements import _get_conn, record_usage
                 conn = _get_conn()
                 record_usage(conn, user_id, workspace_id, event_type)
                 conn.commit()
@@ -322,7 +327,7 @@ def record_successful_usage(response):
 from datetime import datetime, timezone
 from functools import wraps
 
-from auth.entitlements import get_user_entitlements, get_plan_entitlements
+from auth.entitlements import get_plan_entitlements, get_user_entitlements
 from web.api_utils import ErrorCode, api_error
 
 
@@ -376,7 +381,7 @@ def require_feature(feature_name: str):
             from auth.entitlements import authorize_feature as _authorize
             allowed, ctx = _authorize(conn, user_id, feature_name)
             if not allowed:
-                from web.api_utils import billing_error, ReasonCode
+                from web.api_utils import ReasonCode, billing_error
                 return billing_error(
                     reason_code=ReasonCode.FEATURE_LOCKED,
                     message=ctx.get("reason", f"Feature '{feature_name}' requires a plan upgrade."),
@@ -418,7 +423,7 @@ def require_report_quota(fn):
         limit = policy.get("reports_per_month", 0)
         remaining = max(0, limit - reports_used) if limit != -1 else 999
         if remaining <= 0:
-            from web.api_utils import billing_error, ErrorCode, ReasonCode
+            from web.api_utils import ErrorCode, ReasonCode, billing_error
             return billing_error(
                 reason_code=ReasonCode.LIMIT_EXCEEDED,
                 message="Monthly report quota exceeded.",

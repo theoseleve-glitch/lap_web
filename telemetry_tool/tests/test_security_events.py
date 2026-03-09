@@ -22,7 +22,7 @@ class TestLoginSecurityEvents:
     """Verify auth/service.py logs security events on login."""
 
     def test_login_failure_user_not_found(self):
-        from auth.service import login_user, AuthError
+        from auth.service import AuthError, login_user
 
         conn = MagicMock()
         cur = MagicMock()
@@ -42,7 +42,7 @@ class TestLoginSecurityEvents:
             assert kwargs["details"]["email"] == "bad@test.com"
 
     def test_login_failure_wrong_password(self):
-        from auth.service import login_user, AuthError, hash_password
+        from auth.service import AuthError, hash_password, login_user
 
         conn = MagicMock()
         cur = MagicMock()
@@ -64,7 +64,7 @@ class TestLoginSecurityEvents:
             assert args[1] == "login_failed"
 
     def test_login_success_logs_event(self):
-        from auth.service import login_user, hash_password
+        from auth.service import hash_password, login_user
 
         conn = MagicMock()
         cur = MagicMock()
@@ -93,7 +93,7 @@ class TestLoginSecurityEvents:
 
     def test_security_event_failure_doesnt_break_login(self):
         """Security logging must never break the main flow."""
-        from auth.service import login_user, hash_password
+        from auth.service import hash_password, login_user
 
         conn = MagicMock()
         cur = MagicMock()
@@ -143,8 +143,9 @@ class TestAuthMiddlewareSecurityEvents:
                 assert args[0] == "auth_denied"
 
     def test_expired_token_logs_event(self):
-        import jwt as pyjwt
         from datetime import datetime, timedelta, timezone
+
+        import jwt as pyjwt
 
         app = self._make_app()
         secret = "test-secret-key-1234567890123456"
@@ -213,6 +214,7 @@ class TestWebhookSecurityEvents:
             "STRIPE_WEBHOOK_SECRET": "whsec_test_123",
         }):
             import importlib
+
             import web.routes.billing as billing_mod
             importlib.reload(billing_mod)
 

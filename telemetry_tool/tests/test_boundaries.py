@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import os
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
 
-import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from telemetry_tool.reference_line import (

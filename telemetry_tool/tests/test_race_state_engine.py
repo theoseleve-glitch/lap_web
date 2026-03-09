@@ -12,8 +12,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from race_state_engine import FuelModel, StintState, RaceStateEngine
-
+from race_state_engine import FuelModel, RaceStateEngine, StintState
 
 # ---------------------------------------------------------------------------
 # Helpers

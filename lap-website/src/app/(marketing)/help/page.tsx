@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { JsonLd } from '@/components/seo/JsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
+import { RelatedPages } from '@/components/marketing/RelatedPages';
 
 export const metadata = generateSeoMetadata('/help');
 
@@ -44,6 +45,16 @@ export default function HelpPage() {
         { question: 'How do I upload my first session?', answer: 'Export a CSV from RaceChrono or RaceBox, then drag it into the Sessions page. LAP processes it automatically.' },
         { question: 'Which data loggers are supported?', answer: 'LAP supports RaceChrono and RaceBox CSV exports. More formats are planned.' },
       ]}
+      howTo={{
+        name: 'How to Analyze Your First Racing Session with LAP',
+        description: 'Upload telemetry data from RaceChrono or RaceBox and get automated coaching insights in under 5 minutes.',
+        steps: [
+          { name: 'Record your session', text: 'Record your session with RaceChrono or RaceBox on your phone or dedicated GPS logger.' },
+          { name: 'Export CSV', text: 'Export the CSV file from the recording app to your device.' },
+          { name: 'Upload to LAP', text: 'Upload the CSV to LAP via the dashboard or the free report tool. Drag and drop or use the file picker.' },
+          { name: 'Review your analysis', text: 'Review your analysis including pace scoring, consistency metrics, corner-by-corner coaching, and performance trends.' },
+        ],
+      }}
     />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
       <PageIntro
@@ -104,6 +115,8 @@ export default function HelpPage() {
           </Link>
         </div>
       </section>
+
+      <RelatedPages pathname="/help" />
     </main>
     </>
   );

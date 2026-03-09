@@ -25,8 +25,7 @@ export async function GET() {
       const response = await fetch(endpoint, { next: { revalidate: 60 } });
       if (!response.ok) continue;
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const data = (await response.json()) as any;
+      const data: Record<string, unknown> = await response.json();
       const nested = data.status as Record<string, unknown> | undefined;
       const indicatorRaw = String(nested?.indicator ?? data.indicator ?? 'none').toLowerCase();
       const description = String(nested?.description ?? data.description ?? 'Operational');

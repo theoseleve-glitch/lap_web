@@ -16,11 +16,10 @@ from flask import Blueprint, Response, g
 from sqlalchemy import text
 
 from tasks.job_registry import cancel_job, get_job, list_jobs
-
-from web.api_utils import api_response, api_error, ErrorCode
+from web.api_utils import ErrorCode, api_error, api_response
 from web.rate_limit import rate_limit
-from web.validation import validate_body, validate_params
 from web.schemas.jobs import JobListParams, ResumeJobSchema
+from web.validation import validate_body, validate_params
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +54,7 @@ def get_pg_connection():
 def _get_redis():
     """Create a Redis client from the app config."""
     import redis
+
     from web.config import Config
 
     return redis.Redis.from_url(Config.REDIS_URL)

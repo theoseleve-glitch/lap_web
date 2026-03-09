@@ -8,13 +8,13 @@ Validates:
 - Health check with DB stats
 - Pagination module exists and is functional
 """
-import sys
 import json
-import time
 import logging
-from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+import sys
+import time
 from datetime import date
+from pathlib import Path
+from unittest.mock import MagicMock, PropertyMock, patch
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
@@ -323,7 +323,7 @@ class TestPagination:
     """Keyset pagination module is functional."""
 
     def test_encode_decode_cursor(self):
-        from web.pagination import encode_cursor, decode_cursor
+        from web.pagination import decode_cursor, encode_cursor
         cursor = encode_cursor("2026-01-01", 42)
         decoded = decode_cursor(cursor)
         assert decoded is not None

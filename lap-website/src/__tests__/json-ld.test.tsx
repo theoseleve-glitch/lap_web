@@ -8,7 +8,7 @@ describe('JsonLd', () => {
     const script = container.querySelector('script[type="application/ld+json"]');
     expect(script).not.toBeNull();
     const data = JSON.parse(script!.textContent!);
-    expect(data['@graph'].some((s: any) => s['@type'] === 'WebPage')).toBe(true);
+    expect(data['@graph'].some((s: Record<string, unknown>) => s['@type'] === 'WebPage')).toBe(true);
   });
 
   it('renders BreadcrumbList for subpages', () => {
@@ -16,7 +16,7 @@ describe('JsonLd', () => {
     const data = JSON.parse(
       container.querySelector('script[type="application/ld+json"]')!.textContent!,
     );
-    expect(data['@graph'].some((s: any) => s['@type'] === 'BreadcrumbList')).toBe(true);
+    expect(data['@graph'].some((s: Record<string, unknown>) => s['@type'] === 'BreadcrumbList')).toBe(true);
   });
 
   it('renders FAQPage schema when faqItems provided', () => {
@@ -26,7 +26,7 @@ describe('JsonLd', () => {
     const data = JSON.parse(
       container.querySelector('script[type="application/ld+json"]')!.textContent!,
     );
-    expect(data['@graph'].some((s: any) => s['@type'] === 'FAQPage')).toBe(true);
+    expect(data['@graph'].some((s: Record<string, unknown>) => s['@type'] === 'FAQPage')).toBe(true);
   });
 
   it('renders Article schema with article data', () => {
@@ -39,7 +39,7 @@ describe('JsonLd', () => {
     const data = JSON.parse(
       container.querySelector('script[type="application/ld+json"]')!.textContent!,
     );
-    expect(data['@graph'].some((s: any) => s['@type'] === 'Article')).toBe(true);
+    expect(data['@graph'].some((s: Record<string, unknown>) => s['@type'] === 'Article')).toBe(true);
   });
 
   it('returns null for unknown paths', () => {

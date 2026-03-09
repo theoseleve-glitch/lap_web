@@ -1,13 +1,14 @@
 """Tests for auth middleware and @require_auth decorator."""
+from unittest.mock import MagicMock, patch
+
 import pytest
 from flask import Flask, g, jsonify
-from unittest.mock import patch, MagicMock
 
 
 def _make_app(auth_required=True):
     """Create a minimal Flask app with auth middleware + a protected route."""
-    from web.middleware.auth import require_auth, auth_middleware
-    from web.api_utils import init_request_id, api_response
+    from web.api_utils import api_response, init_request_id
+    from web.middleware.auth import auth_middleware, require_auth
 
     app = Flask(__name__)
     app.config["TESTING"] = True
@@ -63,6 +64,7 @@ class TestRequireAuthDecorator:
 
     def test_returns_401_with_expired_token(self):
         from auth.service import create_access_token
+
         # Create a token that expires immediately (negative minutes = past exp)
         token = create_access_token(user_id=42, secret="test-secret", expiry_minutes=-1)
 

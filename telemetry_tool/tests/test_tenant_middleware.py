@@ -13,8 +13,9 @@ if str(_PROJECT_ROOT) not in sys.path:
 class TestTenantMiddleware:
     def test_sets_workspace_from_header(self):
         """X-Workspace-Id header sets g.workspace_id."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -37,8 +38,9 @@ class TestTenantMiddleware:
 
     def test_falls_back_to_default_workspace(self):
         """Without header, uses user's default workspace."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -58,8 +60,9 @@ class TestTenantMiddleware:
 
     def test_skips_non_api_routes(self):
         """Non-/api/v1/ routes don't need workspace resolution."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -72,8 +75,9 @@ class TestTenantMiddleware:
 
     def test_legacy_mode_uses_default_workspace(self):
         """When AUTH_REQUIRED=False, use default workspace for all requests."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = False
@@ -88,8 +92,9 @@ class TestTenantMiddleware:
 
     def test_returns_403_when_no_workspace_access(self):
         """Returns 403 if user doesn't have access to requested workspace."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -108,8 +113,9 @@ class TestTenantMiddleware:
 
     def test_skips_when_sqlite_mode(self):
         """When USE_PG is False, middleware is a no-op."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["USE_PG"] = False
@@ -121,8 +127,9 @@ class TestTenantMiddleware:
 
     def test_invalid_workspace_header_returns_400(self):
         """Non-integer X-Workspace-Id returns 400."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -140,8 +147,9 @@ class TestTenantMiddleware:
 
     def test_no_default_workspace_returns_404(self):
         """When user has no default workspace, returns 404."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -159,8 +167,9 @@ class TestTenantMiddleware:
 
     def test_no_user_id_defers_to_auth_middleware(self):
         """When g.current_user_id is not set, returns None (auth handles 401)."""
-        from web.middleware.tenant import tenant_middleware
         from flask import Flask, g
+
+        from web.middleware.tenant import tenant_middleware
 
         app = Flask(__name__)
         app.config["AUTH_REQUIRED"] = True
@@ -176,8 +185,9 @@ class TestTenantMiddleware:
 class TestWorkspaceRoleResolution:
     def test_personal_workspace_owner_gets_owner_role(self):
         """Owner of personal workspace gets 'owner' role."""
-        from web.middleware.tenant import _resolve_workspace_role
         from flask import Flask, g
+
+        from web.middleware.tenant import _resolve_workspace_role
 
         app = Flask(__name__)
         with app.test_request_context():
@@ -192,8 +202,9 @@ class TestWorkspaceRoleResolution:
 
     def test_team_member_gets_team_role(self):
         """Team member gets their role from team_members."""
-        from web.middleware.tenant import _resolve_workspace_role
         from flask import Flask, g
+
+        from web.middleware.tenant import _resolve_workspace_role
 
         app = Flask(__name__)
         with app.test_request_context():
@@ -215,8 +226,9 @@ class TestWorkspaceRoleResolution:
 
     def test_personal_workspace_non_owner_gets_none(self):
         """Non-owner of personal workspace gets None role."""
-        from web.middleware.tenant import _resolve_workspace_role
         from flask import Flask
+
+        from web.middleware.tenant import _resolve_workspace_role
 
         app = Flask(__name__)
         with app.test_request_context():

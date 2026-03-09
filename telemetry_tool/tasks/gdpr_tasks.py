@@ -431,6 +431,7 @@ def _write_retention_audit(conn, workspace_id: int, tier: str, deleted_rows: int
 def _enforce_raw_data_retention_impl() -> dict[str, int]:
     """Delete raw telemetry artifacts based on per-tier SLA retention windows."""
     from sqlalchemy import text
+
     from auth.entitlements import get_plan_entitlements
 
     conn = get_pg_connection()

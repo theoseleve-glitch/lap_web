@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 from flask import Blueprint, current_app, jsonify
+from web.api_utils import api_error, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -126,14 +127,15 @@ def healthz_detail():
     """Return detailed health with DB stats. Requires auth in production."""
     if current_app.config.get("AUTH_REQUIRED"):
         from flask import request as req
-        from web.middleware.auth import _extract_token, _decode_token
+
+        from web.middleware.auth import _decode_token, _extract_token
         token = _extract_token(req)
         if not token:
-            return jsonify({"error": "Authentication required"}), 401
+            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
         try:
             _decode_token(token)
         except Exception:
-            return jsonify({"error": "Invalid token"}), 401
+            return api_error(ErrorCode.UNAUTHORIZED, "Invalid token", status=401)
 
     checks: dict = {"status": "ok", "db": "unknown", "redis": "unknown", "celery": "unknown"}
 
@@ -161,8 +163,63 @@ def healthz_detail():
     except Exception:
         pass
 
+    # Circuit breaker status
+    try:
+        from web.middleware.circuit_breaker import get_circuit_status
+        circuits = get_circuit_status()
+        if circuits:
+            checks["circuits"] = circuits
+    except ImportError:
+        pass
+
+    # Disk space
+    try:
+        import shutil
+        usage = shutil.disk_usage("/")
+        checks["disk"] = {
+            "total_gb": round(usage.total / (1024 ** 3), 1),
+            "free_gb": round(usage.free / (1024 ** 3), 1),
+            "used_pct": round((usage.used / usage.total) * 100, 1),
+        }
+        if checks["disk"]["used_pct"] > 90:
+            checks["status"] = "degraded"
+    except Exception:
+        pass
+
     status_code = 200 if checks["status"] == "ok" else 503
     return jsonify(checks), status_code
+
+
+@bp.route("/healthz/db")
+def healthz_db():
+    """Check database connectivity only."""
+    try:
+        status = _check_db()
+        return jsonify({"db": status}), 200
+    except Exception as exc:
+        return jsonify({"db": "error", "detail": str(exc)}), 503
+
+
+@bp.route("/healthz/redis")
+def healthz_redis():
+    """Check Redis connectivity only."""
+    try:
+        status = _check_redis()
+        code = 200 if status == "ok" else 503
+        return jsonify({"redis": status}), code
+    except Exception as exc:
+        return jsonify({"redis": "unavailable", "detail": str(exc)}), 503
+
+
+@bp.route("/healthz/celery")
+def healthz_celery():
+    """Check Celery worker availability only."""
+    try:
+        status = _check_celery()
+        code = 200 if status == "ok" else 503
+        return jsonify({"celery": status}), code
+    except Exception as exc:
+        return jsonify({"celery": "unavailable", "detail": str(exc)}), 503
 
 
 @bp.route("/healthz/startup")
@@ -182,3 +239,22 @@ def startup_diagnostics():
             status = "not_hardened"
 
     return jsonify({"status": status, "hardening": summary}), 200
+
+
+@bp.route("/csp-report", methods=["POST"])
+def csp_report():
+    """Receive CSP violation reports from browsers.
+
+    Browsers POST JSON when Content-Security-Policy is violated.
+    We log the violation for monitoring and return 204 No Content.
+    """
+    report = request.get_json(silent=True, force=True)
+    if report:
+        violation = report.get("csp-report", report)
+        logger.warning(
+            "CSP violation: directive=%s blocked=%s document=%s",
+            violation.get("violated-directive", "?"),
+            violation.get("blocked-uri", "?"),
+            violation.get("document-uri", "?"),
+        )
+    return "", 204

@@ -13,10 +13,28 @@ const KEY_FEATURES: Record<string, string[]> = {
   'world-class': ['Analysis Reports', 'Exports', 'Raw Telemetry Retention'],
 };
 
+/** A/B CTA text overrides per plan slug, keyed by experiment variant */
+const CTA_VARIANTS: Record<string, Record<string, string>> = {
+  book_first: {
+    demo: 'Try It Free',
+    racer: 'Start Racing',
+    'world-class': 'Unlock Full Access',
+  },
+  demo_first: {
+    demo: 'Analyze a Session',
+    racer: 'Upgrade Now',
+    'world-class': 'Go World-Class',
+  },
+};
+
 interface PricingTableProps {
   plans: Plan[];
   billingPeriod: 'monthly' | 'annual';
   onCtaClick?: (planName: string) => void;
+  /** A/B experiment variant for CTA text (from lap_exp_cta cookie) */
+  ctaVariant?: string;
+  /** Slug of the plan to highlight as "Recommended for you" (from use-case selector) */
+  recommendedSlug?: string | null;
   className?: string;
 }
 
@@ -24,21 +42,17 @@ export function PricingTable({
   plans,
   billingPeriod,
   onCtaClick,
+  ctaVariant,
+  recommendedSlug,
   className = '',
 }: PricingTableProps) {
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
+  const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
   const { currency } = useCurrency();
 
-  async function handleCheckout(plan: Plan) {
-    onCtaClick?.(plan.name);
-
-    // Free plan — go straight to register
-    if (plan.priceAnnualPerMonth === 'Free') {
-      window.location.href = '/register?source=demo';
-      return;
-    }
-
+  async function proceedToCheckout(plan: Plan) {
+    setConfirmPlan(null);
     setLoadingPlan(plan.name);
     try {
       const response = await fetch('/api/billing/checkout', {
@@ -60,11 +74,23 @@ export function PricingTable({
         window.location.href = data.checkoutUrl;
       }
     } catch {
-      // On failure, fall back to billing page
       window.location.href = plan.ctaHref;
     } finally {
       setLoadingPlan(null);
     }
+  }
+
+  function handleCheckout(plan: Plan) {
+    onCtaClick?.(plan.name);
+
+    // Free plan — go straight to register
+    if (plan.priceAnnualPerMonth === 'Free') {
+      window.location.href = '/register?source=demo';
+      return;
+    }
+
+    // Show confirmation before creating Stripe session
+    setConfirmPlan(plan);
   }
 
   return (
@@ -84,16 +110,24 @@ export function PricingTable({
             keyFeatureNames.includes(key),
           );
           const displayFeatures = expanded ? allFeatures : summaryFeatures;
+          const ctaText = (ctaVariant && CTA_VARIANTS[ctaVariant]?.[plan.slug]) || plan.cta;
+          const isRecommended = recommendedSlug === plan.slug;
 
           return (
             <div
               key={plan.name}
               className={`
-                p-6 bg-concrete
-                ${plan.highlighted ? 'beam-card border-2 border-pit-orange' : 'border border-chalk/15'}
+                p-6 bg-concrete transition-all duration-300 hover:scale-[1.02] hover:shadow-xl hover:z-10
+                ${plan.highlighted ? 'beam-card border-2 border-pit-orange' : 'border border-chalk/15 hover:border-chalk/30'}
+                ${isRecommended ? 'ring-2 ring-acid-green/60' : ''}
                 ${i > 0 ? 'md:border-l-0' : ''}
               `}
             >
+              {isRecommended && (
+                <p className="inline-flex mb-3 mr-2 border border-acid-green bg-acid-green/10 px-2 py-1 font-telemetry text-[10px] tracking-[0.12em] uppercase text-acid-green">
+                  Recommended for you
+                </p>
+              )}
               {plan.highlighted && (
                 <p className="inline-flex mb-3 border border-pit-orange bg-pit-orange/18 px-2 py-1 font-telemetry text-[10px] tracking-[0.12em] uppercase text-pit-orange">
                   Most Popular
@@ -104,7 +138,7 @@ export function PricingTable({
                 {plan.name}
               </h3>
 
-              <p className="font-monument text-[clamp(34px,4vw,52px)] text-chalk leading-[0.95]">
+              <p className="font-monument text-[clamp(34px,4vw,52px)] text-chalk leading-[0.95] transition-opacity duration-300">
                 {displayPrice}
               </p>
 
@@ -140,14 +174,14 @@ export function PricingTable({
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
                 >
-                  {isLoading ? 'Redirecting...' : plan.cta}
+                  {isLoading ? 'Redirecting...' : ctaText}
                 </PitButton>
               ) : (
                 <StampButton
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
                 >
-                  {isLoading ? 'Redirecting...' : plan.cta}
+                  {isLoading ? 'Redirecting...' : ctaText}
                 </StampButton>
               )}
             </div>
@@ -164,6 +198,68 @@ export function PricingTable({
           {expanded ? 'Show key features' : 'See all features'}
         </button>
       </div>
+
+      {/* Checkout confirmation dialog */}
+      {confirmPlan && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-carbon/80 backdrop-blur-sm"
+          onClick={() => setConfirmPlan(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-checkout-title"
+        >
+          <div
+            className="bg-concrete border border-chalk/15 p-8 max-w-md w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3
+              id="confirm-checkout-title"
+              className="font-monument text-xl text-chalk mb-4"
+            >
+              Confirm subscription
+            </h3>
+            <div className="space-y-3 mb-6">
+              <div className="flex justify-between py-2 px-2 bg-asphalt/40">
+                <span className="text-steel font-telemetry text-sm">Plan</span>
+                <span className="text-chalk font-telemetry text-sm">{confirmPlan.name}</span>
+              </div>
+              <div className="flex justify-between py-2 px-2">
+                <span className="text-steel font-telemetry text-sm">Billing</span>
+                <span className="text-chalk font-telemetry text-sm capitalize">{billingPeriod}</span>
+              </div>
+              <div className="flex justify-between py-2 px-2 bg-asphalt/40">
+                <span className="text-steel font-telemetry text-sm">Price</span>
+                <span className="text-chalk font-telemetry text-sm">
+                  {billingPeriod === 'annual' ? confirmPlan.priceAnnualPerMonth : confirmPlan.priceMonthly}/mo
+                </span>
+              </div>
+              {billingPeriod === 'annual' && confirmPlan.annualTotal && (
+                <div className="flex justify-between py-2 px-2">
+                  <span className="text-steel font-telemetry text-sm">Annual total</span>
+                  <span className="text-chalk font-telemetry text-sm">{confirmPlan.annualTotal}</span>
+                </div>
+              )}
+            </div>
+            <p className="text-steel text-xs mb-6">
+              You&apos;ll be redirected to Stripe to complete payment securely. You can cancel anytime.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setConfirmPlan(null)}
+                className="flex-1 py-2.5 border border-chalk/15 text-steel font-telemetry text-xs tracking-[0.08em] uppercase hover:text-chalk transition-colors"
+              >
+                Cancel
+              </button>
+              <PitButton
+                onClick={() => proceedToCheckout(confirmPlan)}
+                className="flex-1"
+              >
+                Continue to payment
+              </PitButton>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

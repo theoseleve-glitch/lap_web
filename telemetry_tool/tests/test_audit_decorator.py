@@ -15,7 +15,8 @@ class TestAuditLog(unittest.TestCase):
 
     def test_audit_log_inserts_row(self):
         """audit_log() executes INSERT into audit_log table."""
-        import sys, os
+        import os
+        import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
         from web.middleware.audit import audit_log

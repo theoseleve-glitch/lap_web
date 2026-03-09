@@ -24,7 +24,6 @@ from telemetry_tool.theoretical_adapter import (
     compute_theoretical_via_envelope,
 )
 
-
 # ---------------------------------------------------------------------------
 # Synthetic data helpers
 # ---------------------------------------------------------------------------
