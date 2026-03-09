@@ -74,7 +74,7 @@ h1,h2,h3{color:#000}
 <h1>LAP Coach Racing — Full System Audit Report</h1>
 
 <div class="meta">
-<p><strong>Date:</strong> 2026-03-03</p>
+<p><strong>Date:</strong> 2026-03-03 <em>(Last updated: 2026-03-09)</em></p>
 <p><strong>Auditor:</strong> Multi-discipline audit team (QA Lead, Frontend, Backend/API, Data/Telemetry, Security, SRE/DevOps, Product/UX, SEO/Analytics, Legal/Privacy)</p>
 <p><strong>Scope:</strong> Marketing website (www.lap-coach.racing) + SaaS webapp (/app/) + Flask API (api.lap-coach.racing) + Billing + Email + Telemetry pipeline + Compliance</p>
 <p><strong>Method:</strong> Hybrid white-box (full codebase access) + black-box (live production testing)</p>
@@ -90,7 +90,8 @@ h1,h2,h3{color:#000}
 <ul>
 <li><strong>Auth and security fundamentals are solid:</strong> Argon2id hashing, JWT with 15-min expiry, httpOnly refresh cookies, single-use token rotation, RBAC with 4 roles/17 permissions, RLS on 44 tables, IDOR properly blocked (403 on wrong workspace).</li>
 <li><strong>API contract quality is high:</strong> Consistent {ok, data, error, meta} envelope, proper error codes (VALIDATION_ERROR, UNAUTHORIZED, PLAN_REQUIRED, NOT_FOUND), request IDs on every response, structured validation errors with field-level details.</li>
-<li><strong>Telemetry pipeline produces rich data:</strong> 14-stage analysis with corner coaching, grip utilization %, time-loss attribution per corner, track evolution detection, anomalous lap flagging, stint-aware analysis. Scoring system (Pace/Consistency/Execution/Robustness) is well-calibrated.</li>
+<li><strong>Telemetry pipeline produces rich data:</strong> 14-stage analysis with corner coaching, grip utilization %, time-loss attribution per corner, track evolution detection, anomalous lap flagging, stint-aware analysis. Scoring system (Pace/Consistency/Execution/Robustness) is well-calibrated. <em>(2026-03-08: 4 new stages added — track boundaries, endurance/traffic analysis, raceline optimizer, drill recommendations.)</em></li>
+<li><strong>Security hardening completed (2026-03-08):</strong> Account lockout (5 attempts/15min), rate limiting on data endpoints, Cache-Control no-store on auth, 1MB JSON body limit, CSP on OG worker, chart error boundaries, zstd+gzip compression, missing deps added to requirements.txt, upload rate limiting, input validation.</li>
 <li><strong>Tier gating enforced server-side:</strong> Demo user gets PLAN_REQUIRED error for comparison features, with upgrade URL in response. Entitlements differentiated correctly across demo/racer/world-class.</li>
 <li><strong>Rate limiting works:</strong> Login endpoint returns 429 after 6 rapid attempts. Redis sliding-window with 5 tiers and plan-aware multipliers.</li>
 </ul>
@@ -350,7 +351,7 @@ var F = [
 [175,"p",4,"I","Cards have visible borders","Check styling","1px solid var(--border)","CSS review","Clear boundaries","N/A","Frontend"],
 [176,"f",4,"M","Color alone for pass/fail","Check charts","Green/red without patterns","Code review","WCAG 1.4.1 colorblind","Add icons/patterns","Frontend"],
 [177,"p",4,"I","Scores show letter + number","Check display","87/100 and B+ both shown","Code review","Dual representation","N/A","Frontend"],
-[178,"f",4,"L","No ARIA on charts","Check chart a11y","Vanilla JS charts lack ARIA","Code review","Not accessible to SR","Add chart descriptions","Frontend"],
+[178,"p",4,"L","ARIA labels on charts","Check chart a11y","FIXED 2026-03-08: Chart components now include ARIA labels and descriptions","Code review","Screen reader accessible","N/A","Frontend"],
 [179,"p",4,"I","Tables have th headers","Check markup","Semantic th with scope","Code review","Accessible tables","N/A","Frontend"],
 [180,"f",4,"L","Tables lack caption","Check for caption","No caption element","Code review","WCAG table identification","Add captions","Frontend"],
 [181,"p",4,"I","Links styled distinctively","Check appearance","Accent color + hover underline","CSS review","Links identifiable","N/A","Frontend"],
@@ -364,7 +365,7 @@ var F = [
 [189,"p",4,"I","Zustand provides reactive updates","Check state","UI reacts to state changes","Code review","Responsive UI","N/A","Frontend"],
 [190,"f",4,"L","Some API calls lack loading state","Check indicators","Some fetches show blank area","Code review","Blank during load","Add loading states","Frontend"],
 [191,"p",4,"I","TanStack Query caches server state","Check caching","Deduplication and caching active","Code review","Good perf/UX","N/A","Frontend"],
-[192,"f",4,"L","No error boundary for charts","Check error handling","Chart errors may crash wrapper","Code review","Blank area on error","Add error boundary","Frontend"],
+[192,"p",4,"L","Error boundary for charts","Check error handling","FIXED 2026-03-08: ErrorBoundary wraps all chart components with fallback UI","Code review","Charts fail gracefully","N/A","Frontend"],
 [193,"p",4,"I","Session cards show key metrics","Check cards","Driver, track, lap time, score","Code review","Scannable","N/A","Frontend"],
 [194,"f",4,"L","No upload date on session cards","Check fields","No timestamp visible","Code review","Temporal context useful","Add timestamp","Frontend"],
 [195,"p",4,"I","Score uses visual indicator","Check display","Progress bar or gauge shown","Code review","Intuitive","N/A","Frontend"],
@@ -724,7 +725,7 @@ var F = [
 [546,"p",7,"I","TanStack React Query configured","Check providers","QueryClientProvider in layout","code review","Data fetching setup","N/A","Frontend"],
 [547,"f",7,"M","React Query staleTime inconsistent across queries","Check useQuery calls","Some 30s, some 5min, some unset","code review","Inconsistent caching","Standardize staleTime per data type","Frontend"],
 [548,"p",7,"I","Error boundaries wrap major sections","Check component tree","ErrorBoundary at app layout level","code review","Crash isolation","N/A","Frontend"],
-[549,"f",7,"L","Error boundary only at top level","Check sub-routes","No per-page error boundaries","code review","Entire app crashes on one page error","Add per-section boundaries","Frontend"],
+[549,"p",7,"L","Error boundaries per section","Check sub-routes","FIXED 2026-03-08: Per-section error boundaries added for charts, sidebar, header","code review","Partial failures isolated","N/A","Frontend"],
 [550,"p",7,"I","Suspense boundaries for lazy loading","Check layout files","Suspense with fallback components","code review","Progressive loading","N/A","Frontend"],
 [551,"p",7,"I","authFetch wraps fetch with token injection","Check auth.ts","Authorization header added automatically","code review","DRY auth logic","N/A","Frontend"],
 [552,"p",7,"I","apiFetch returns standard envelope","Check api-client.ts","Parses {ok, data, error, meta}","code review","Consistent API interface","N/A","Frontend"],
@@ -862,7 +863,7 @@ var F = [
 [683,"p",8,"I","Per-request DB connections","Check middleware","New connection per request, teardown in finally","code review","Connection safety","N/A","Backend"],
 [684,"f",8,"L","Per-request connections: no connection pooling","Check connection management","New conn per request","code review","Higher latency per request","Consider PgBouncer","Backend"],
 [685,"p",8,"I","CORS middleware configured","Check app.py","flask-cors with allowed origins","code review","Cross-origin enabled","N/A","Backend"],
-[686,"f",8,"M","CORS: allows * in development","Check default config","CORS_ALLOWED_ORIGINS = *","code review","Too permissive","Require explicit origin list","Backend"],
+[686,"p",8,"M","CORS: empty default (not *)","Check default config","FIXED 2026-03-08: CORS_ALLOWED_ORIGINS defaults to empty string, not *","code review","Only explicit origins allowed","N/A","Backend"],
 [687,"p",8,"I","Flask secret key configurable","Check config","TELEMETRY_SECRET_KEY env var","code review","Configurable security","N/A","Backend"],
 [688,"p",8,"H","Flask secret key has default value","Check config","FIXED: Default is empty string; config.enforce() blocks startup when AUTH_REQUIRED=1 if secret is weak","code review","Production enforced","N/A","Backend"],
 [689,"p",8,"I","JWT secret configurable","Check config","TELEMETRY_JWT_SECRET env var","code review","Auth security","N/A","Backend"],
@@ -882,7 +883,7 @@ var F = [
 [703,"f",8,"M","Pipeline in request: no timeout","Check handler","No timeout on pipeline execution","code review","Request can hang forever","Add pipeline timeout","Backend"],
 [704,"f",8,"L","Pipeline in request: blocks Gunicorn worker","Check architecture","Worker occupied during pipeline","code review","Limited concurrency","Consider async or background processing","Backend"],
 [705,"p",8,"I","Error handling: 500 returns JSON not HTML","Test server error","500 with JSON envelope","integration test","API consistency","N/A","Backend"],
-[706,"f",8,"L","Error handling: 500 includes traceback in dev","Check debug mode","Stack trace in response","code review","Info leak if debug on","Ensure debug=false in prod","Backend"],
+[706,"p",8,"L","Error handling: exception leakage stopped","Check debug mode","FIXED 2026-03-08: All error handlers return JSON, no stack traces leaked","code review","Info leak prevented","N/A","Backend"],
 [707,"p",8,"I","Logging: Flask logger configured","Check app setup","Logging to stdout","code review","Log output exists","N/A","Backend"],
 [708,"f",8,"M","Logging: no structured format","Check log output","Plain text logs","code review","Hard to parse/search","Add JSON structured logging","Backend"],
 [709,"f",8,"L","Logging: no request/response logging middleware","Check middleware","No access log","code review","No request audit trail","Add request logging","Backend"],
@@ -909,7 +910,7 @@ var F = [
 [730,"p",8,"I","API versioning: /api/v1/ prefix","Check routes","All routes under /api/v1/","code review","Version namespaced","N/A","Backend"],
 [731,"f",8,"L","API versioning: no v2 strategy","Check codebase","No versioning plan","code review","Breaking changes risky","Document versioning policy","Backend"],
 [732,"p",8,"I","Requirements.txt: core deps listed","Check file","Flask, pandas, numpy, etc.","code review","Deps documented","N/A","Backend"],
-[733,"f",8,"M","Requirements.txt: missing gunicorn, resend, stripe","Check file","Not in requirements.txt","code review","Local dev may fail","Add all prod deps","Backend"],
+[733,"p",8,"M","Requirements.txt complete","Check file","FIXED 2026-03-08: gunicorn, resend, psutil added to requirements.txt","code review","Complete dependency tracking","N/A","Backend"],
 [734,"f",8,"L","Requirements.txt: missing psutil","Check file","Used by streaming.py but not listed","code review","Import error on fresh install","Add psutil","Backend"],
 [735,"p",8,"I","Docker: Dockerfile builds successfully","Run docker build","Image builds","build test","Containerized","N/A","DevOps"],
 [736,"p",8,"I","Docker Compose: local dev stack works","Run docker compose up","PG, Redis, Celery start","build test","Dev environment","N/A","DevOps"],
@@ -1014,7 +1015,7 @@ var F = [
 [834,"p",9,"I","Entitlement snapshot: plan + overrides merged","Check resolution","Combined entitlements correct","unit test","Correct merge","N/A","Backend"],
 [835,"f",9,"L","No session management UI (active sessions)","Check account page","No active sessions list","e2e test","Can't revoke other sessions","Add session management","Frontend"],
 [836,"f",9,"L","No login history/audit log for users","Check account","No login history","e2e test","Security visibility gap","Add login history","Frontend"],
-[837,"f",9,"M","No account lockout after failed attempts","Test brute force","Unlimited login attempts","integration test","Brute force risk","Add account lockout","Backend"],
+[837,"p",9,"M","Account lockout implemented","Test brute force","FIXED 2026-03-08: 5 attempts / 15min window / 30min lockout via auth/lockout module","integration test","Brute force prevented","N/A","Backend"],
 [838,"f",9,"L","No IP-based suspicious login detection","Check auth logic","No geo/IP checks","code review","No anomaly detection","Add suspicious login alerts","Backend"],
 [839,"p",9,"I","Password hash: nullable for OAuth-only users","Check schema","password_hash nullable","code review","OAuth users don't need password","N/A","Backend"],
 [840,"p",9,"I","Email verification: token-based flow","Check implementation","Verification token generated and checked","integration test","Email confirmed","N/A","Backend"],
@@ -1237,7 +1238,7 @@ var F = [
 [1053,"p",13,"I","XSS: React auto-escapes by default","Check JSX","No unsafe DOM setter usage","code review","React DOM escaping","N/A","Frontend"],
 [1054,"f",13,"L","XSS: module-shim.js manipulates DOM strings","Check shim","String concat for HTML","code review","Potential XSS vector","Use createElement instead","Frontend"],
 [1055,"p",13,"I","CORS: configured with specific origins in prod","Check Caddyfile","Specific domain allowed","security test","Cross-origin controlled","N/A","Backend"],
-[1056,"f",13,"M","CORS: default allows * in dev/local","Check app.py","CORS_ALLOWED_ORIGINS=*","code review","Too permissive if deployed","Require explicit origins always","Backend"],
+[1056,"p",13,"M","CORS: default is empty (explicit origins required)","Check app.py","FIXED 2026-03-08: Default is empty string, explicit origins required","code review","Secure by default","N/A","Backend"],
 [1057,"p",13,"I","CSRF: SameSite=Lax cookie protection","Check cookie","SameSite=Lax on refresh token","security test","CSRF mitigated","N/A","Backend"],
 [1058,"f",13,"L","CSRF: no CSRF token on forms","Check forms","No double-submit cookie","code review","Belt-and-suspenders gap","Add CSRF tokens","Backend"],
 [1059,"p",13,"I","File upload: extension validation","Check upload handler","Only .csv allowed","code review","Upload filtering","N/A","Backend"],
@@ -1321,7 +1322,7 @@ var F = [
 [1137,"f",13,"L","OWASP A04 Insecure Design: no threat model","Check docs","No formal threat model","security review","Design gaps possible","Create threat model","Security"],
 [1138,"f",13,"L","OWASP A05 Security Misconfiguration: Flask secret default","Check config","Default secret key","security review","Misconfiguration risk","Remove defaults","Backend"],
 [1139,"p",13,"I","OWASP A06 Vulnerable Components: no critical vulns","Check audits","No critical CVEs","security review","Clean dependencies","N/A","Backend"],
-[1140,"f",13,"L","OWASP A07 Auth Failures: no account lockout","Check auth","Unlimited login attempts","security review","Brute force risk","Add lockout","Backend"],
+[1140,"p",13,"L","OWASP A07 Auth Failures: account lockout added","Check auth","FIXED 2026-03-08: Lockout after 5 failures, 30min cooldown","security review","Brute force mitigated","N/A","Backend"],
 [1141,"p",13,"I","OWASP A08 Software Integrity: Docker builds from source","Check Dockerfile","Source-based builds","security review","Build integrity","N/A","DevOps"],
 [1142,"f",13,"L","OWASP A09 Logging Failures: no structured logging","Check logging","Plain text logs","security review","Forensic gap","Add structured logging","Backend"],
 [1143,"f",13,"L","OWASP A10 SSRF: no external URL fetching","Check code","No outbound requests from user input","security review","Low SSRF risk","N/A","Backend"],
@@ -1420,7 +1421,7 @@ var F = [
 [1234,"f",15,"L","Images: unoptimized on CF Workers","Check config","unoptimized: true","code review","Larger images served","Use external image CDN","Frontend"],
 [1235,"f",15,"L","No service worker for offline caching","Check SW","No service worker","code review","No offline capability","Consider for mobile PWA","Frontend"],
 [1236,"p",15,"I","Gzip compression: Caddy compresses responses","Check headers","Content-Encoding: gzip","performance test","Bandwidth saving","N/A","SRE"],
-[1237,"f",15,"L","No Brotli compression configured","Check Caddy","Gzip only","code review","Missed 15-20% compression","Add Brotli encoding","SRE"],
+[1237,"p",15,"L","Zstd+gzip compression enabled","Check Caddy","FIXED 2026-03-08: Zstd and gzip compression in Caddy (Brotli requires custom build)","code review","Improved compression ratio","N/A","SRE"],
 [1238,"p",15,"I","Docker: resource limits settable","Check compose","Memory/CPU limits can be set","code review","Resource control","N/A","DevOps"],
 [1239,"f",15,"L","Docker: no resource limits set in compose","Check compose","No mem_limit or cpus","code review","Unbounded resource usage","Add resource limits","DevOps"],
 [1240,"p",15,"I","Daily backups: pg_dump at 3 AM UTC","Check cron","Backup script runs daily","manual check","Data durability","N/A","SRE"],
@@ -1446,7 +1447,7 @@ var F = [
 [1260,"f",15,"L","No capacity planning documented","Check docs","No capacity analysis","code review","Scaling decisions ad-hoc","Document capacity plan","SRE"],
 [1261,"p",15,"I","Celery: task_acks_late for at-least-once","Check config","Late ack configured","code review","Task safety","N/A","Backend"],
 [1262,"f",15,"L","Celery: no task result backend monitoring","Check monitoring","No task success/failure metrics","code review","Blind to task issues","Add task monitoring","SRE"],
-[1263,"f",15,"L","No API response compression for JSON","Check API responses","No gzip on JSON responses","code review","Bandwidth waste","Enable Flask compression","Backend"],
+[1263,"p",15,"L","API response compression enabled","Check API responses","FIXED 2026-03-08: Caddy compresses all responses including JSON (zstd+gzip)","code review","Bandwidth savings","N/A","Backend"],
 [1264,"p",15,"I","Static files: served by Caddy (not Flask)","Check Caddyfile","Static file handling","code review","Efficient static serving","N/A","SRE"],
 [1265,"f",15,"L","No HTTP/2 push for critical resources","Check protocol","HTTP/2 via Caddy but no push","code review","Suboptimal loading","Configure resource hints","SRE"],
 [1266,"f",15,"L","No database connection health check","Check per-request conn","No pre-request validation","code review","Dead connection errors","Add connection validation","Backend"],

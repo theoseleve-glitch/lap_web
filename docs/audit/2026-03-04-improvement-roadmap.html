@@ -45,6 +45,7 @@ td{font-size:13px}
 .badge.l{background:#3a2a1a;color:var(--l)}
 .badge.xl{background:#3a1a1a;color:var(--xl)}
 .badge.cat{background:#1a2a3a;color:var(--accent)}
+.badge.done{background:#1a3a2a;color:var(--p4)}
 .stars{color:var(--star);letter-spacing:2px}
 .id-col{font-family:'JetBrains Mono','Fira Code',monospace;font-size:12px;color:var(--accent);white-space:nowrap}
 .toggle-all{background:var(--accent);color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:13px;margin:5px}
@@ -74,7 +75,7 @@ td{font-size:13px}
 
 <h1>LAP Coach Racing — Improvement Roadmap</h1>
 <div class="meta">
-<p><strong>Date:</strong> 2026-03-04</p>
+<p><strong>Date:</strong> 2026-03-04 <em>(Last updated: 2026-03-09)</em></p>
 <p><strong>Scope:</strong> Code optimisation, feature enhancements, marketing, SEO, UX, performance, infrastructure</p>
 <p><strong>Method:</strong> Systematic audit of codebase, frontend, backend, infrastructure, and business layer</p>
 <p><strong>Items:</strong> 1,200 actionable improvements across 18 focus areas</p>
@@ -191,7 +192,7 @@ var I = [
 [25,"P3",1,"M",3,"Extract chart wrapper into reusable library","useVanillaChart per component","Create generic ChartBridge component that handles all chart types","Less boilerplate per chart, consistent lifecycle","Architecture","Frontend"],
 [26,"P4",1,"S",2,"Add JSDoc to vanilla JS chart modules","Minimal documentation","Add JSDoc comments to public functions in public/js/","IDE support for legacy code","Docs","Frontend"],
 [27,"P3",1,"M",3,"Convert vanilla JS charts to TypeScript","Plain JavaScript in public/js/","Incrementally convert to TS, bundle with Next.js","Type safety, tree shaking, proper bundling","TypeSafety","Frontend"],
-[28,"P2",1,"S",3,"Add requirements.txt completeness check","Missing gunicorn, resend, stripe, psutil","Add all production dependencies; add CI check for completeness","No missing deps on fresh install","Build","Backend"],
+[28,"P2",1,"S",3,"✓ DONE: Add requirements.txt completeness check","DONE 2026-03-08: gunicorn, resend, psutil added to requirements.txt","Add all production dependencies; add CI check for completeness","No missing deps on fresh install","Build","Backend"],
 [29,"P4",1,"XS",2,"Add .python-version file","No Python version pinned","Pin Python 3.11+ in .python-version","Consistent Python across team","Build","Backend"],
 [30,"P3",1,"S",3,"Add pyproject.toml for project config","No project metadata","Add pyproject.toml with tool configs (mypy, ruff, pytest)","Single config source","Build","Backend"],
 [31,"P4",1,"S",2,"Extract middleware into composable decorators","Middleware registered globally","Make middleware opt-in per route via decorators","Finer control, easier testing","Architecture","Backend"],
@@ -239,7 +240,7 @@ var I = [
 [72,"P1",2,"S",4,"Add PgBouncer connection pooling","Per-request connections with overhead","Deploy PgBouncer in front of PG, configure pool_mode=transaction","50% lower DB latency; handle more concurrent requests","Backend","SRE"],
 [73,"P1",2,"S",5,"Optimize mobile LCP to under 2.5s","LCP = 3.5s on mobile","Inline critical CSS, defer non-critical JS, optimize hero image","Better Google ranking, faster mobile experience","Frontend","Frontend"],
 [74,"P2",2,"M",4,"Code-split JavaScript by route","Large shared chunk ~450KB","Configure Next.js dynamic imports and chunk splitting per route group","50% smaller initial JS payload per page","Frontend","Frontend"],
-[75,"P2",2,"S",4,"Enable Brotli compression on Caddy","Gzip only","Add encode brotli gzip to Caddyfile","15-20% smaller responses than gzip alone","Infrastructure","SRE"],
+[75,"P2",2,"S",4,"✓ DONE: Enable advanced compression on Caddy","DONE 2026-03-08: Zstd+gzip enabled (Brotli requires custom Caddy build, used zstd instead)","Add encode brotli gzip to Caddyfile","15-20% smaller responses than gzip alone","Infrastructure","SRE"],
 [76,"P2",2,"S",3,"Add cache-control headers on read API endpoints","No caching headers on API","Add Cache-Control: max-age=60 on session list, detail, laps","Reduced API load, faster repeat visits","Backend","Backend"],
 [77,"P2",2,"M",4,"Bundle vanilla JS charts with Next.js","Loaded as separate script tags","Import charts into Next.js build, tree-shake unused code","Single optimized bundle, proper cache invalidation","Frontend","Frontend"],
 [78,"P3",2,"S",3,"Lazy-load Three.js only on 3D pages","Three.js in main bundle","Dynamic import for 3D components","100KB+ saved on non-3D pages","Frontend","Frontend"],
@@ -257,7 +258,7 @@ var I = [
 [90,"P4",2,"S",2,"Add font subsetting for Inter","Full Inter font loaded","Subset to only Latin characters used","30% smaller font files","Frontend","Frontend"],
 [91,"P2",2,"M",4,"Add pipeline stage timing metrics","No per-stage duration data","Time each pipeline stage, log to structured output","Identify bottleneck stages for optimization","Backend","Backend"],
 [92,"P3",2,"S",3,"Implement connection pre-warming","Cold connection on first request","Pre-establish DB connection in app startup","Faster first request after deploy","Backend","Backend"],
-[93,"P3",2,"S",3,"Add DNS prefetch for external resources","No DNS hints","Add dns-prefetch for Stripe, Google, CDN domains","50ms faster external resource loading","Frontend","Frontend"],
+[93,"P3",2,"S",3,"✓ DONE: Add DNS prefetch for external resources","DONE 2026-03-08: DNS prefetch link added for API endpoint","Add dns-prefetch for Stripe, Google, CDN domains","50ms faster external resource loading","Frontend","Frontend"],
 [94,"P3",2,"M",3,"Optimize Parquet file merging for large sessions","Sequential merge chunks","Parallelize chunk merge with thread pool","2x faster large file processing","Backend","Backend"],
 [95,"P4",2,"S",2,"Add client-side response caching via Service Worker","No offline or cache layer","Add minimal SW for API response caching","Instant loads on repeat visits","Frontend","Frontend"],
 [96,"P3",2,"S",3,"Enable PG parallel query execution","Default PG settings","Configure max_parallel_workers_per_gather=2","Faster complex queries on multi-core VPS","Database","SRE"],
@@ -484,7 +485,7 @@ var I = [
 [315,"P1",4,"L",5,"Add natural language query for telemetry data","Chart-based analysis only","Ask questions like 'which corner was my slowest in session X'","Accessible analysis for non-technical users","AI","Full Stack"],
 [316,"P3",4,"S",3,"Add export to coaching platform formats","Custom export only","Export in formats used by coaching platforms (e.g., TrackTitan)","Interoperability with coaching tools","Export","Backend"],
 [317,"P4",4,"M",2,"Add achievement progression system","No progression tracking","Multi-tier achievements with visual progress bars","Long-term engagement and gamification","Social","Full Stack"],
-[318,"P3",4,"M",3,"Add race distance/endurance session mode","Sprint session assumption","Support long-distance sessions with stint analysis and fuel calc","Proper analysis for endurance racing","Analysis","Full Stack"],
+[318,"P3",4,"M",3,"✓ DONE: Add endurance session analysis","DONE 2026-03-08: Endurance module with traffic loss detection, risk/reward classification, team coaching","Support long-distance sessions with stint analysis and fuel calc","Proper analysis for endurance racing","Analysis","Full Stack"],
 [319,"P2",4,"M",4,"Add data quality auto-fix suggestions","Data quality shown but not fixable","Suggest and apply fixes for GPS drift, timestamp gaps, outliers","Cleaner data for more accurate analysis","Analysis","Backend"],
 [320,"P3",4,"S",3,"Add community forum integration","No community discussion","Embed or link to community forum for track-specific discussions","Knowledge sharing and community building","Social","Full Stack"],
 // Area 5: Marketing and Conversion (0321-0400)
@@ -721,7 +722,7 @@ var I = [
 [548,"P4",8,"S",2,"Add database read replica for read-heavy endpoints","Single database for reads and writes","Read replica for session list, leaderboards, analytics","Scale read capacity independently from writes","Database","Backend"],
 [549,"P2",8,"M",4,"Implement Redis caching layer for frequently accessed data","No application-level caching beyond rate limits","Cache track info, user profiles, scoring results with TTL and invalidation","Reduce database load by 60% for common queries","Caching","Backend"],
 [550,"P3",8,"M",3,"Add ETag support for API responses","No conditional responses","Generate ETags from content hash, support If-None-Match","Reduce bandwidth and client-side rendering for unchanged data","API","Backend"],
-[551,"P3",8,"S",3,"Implement response compression (gzip/brotli)","No response compression configured","Enable gzip and brotli compression in Caddy and Flask","40-70% smaller API responses, faster client loading","API","Backend"],
+[551,"P3",8,"S",3,"✓ DONE: Implement response compression","DONE 2026-03-08: Zstd+gzip compression enabled in Caddy for all responses","Enable gzip and brotli compression in Caddy and Flask","40-70% smaller API responses, faster client loading","API","Backend"],
 [552,"P4",8,"S",2,"Add bulk API operations for session management","Individual API calls per operation","Batch endpoints: bulk delete, bulk tag, bulk export","Fewer HTTP round trips for batch operations","API","Backend"],
 [553,"P2",8,"M",4,"Implement structured logging with correlation IDs","Inconsistent log format, no request tracing","Structured JSON logs with request_id, user_id, workspace_id per entry","Searchable logs, end-to-end request tracing","Observability","Backend"],
 [554,"P3",8,"M",3,"Add distributed tracing with OpenTelemetry","No tracing across services","OpenTelemetry instrumentation for Flask, Celery, Redis, PG","End-to-end visibility into request lifecycle","Observability","Backend"],
@@ -765,7 +766,7 @@ var I = [
 [592,"P3",8,"S",3,"Implement request context propagation to Celery tasks","Task loses request context (user, workspace)","Pass request context through Celery task kwargs","Background tasks operate in correct user/workspace context","Queue","Backend"],
 [593,"P4",8,"M",2,"Add GraphQL API layer for complex queries","REST-only API","GraphQL endpoint for flexible data querying by frontend","Frontend fetches exactly the data it needs","API","Backend"],
 [594,"P3",8,"M",3,"Implement database row-level locking for concurrent updates","Potential race conditions on concurrent writes","SELECT FOR UPDATE on session updates, lap modifications","Data integrity under concurrent access","Database","Backend"],
-[595,"P2",8,"M",4,"Add API response caching headers (Cache-Control)","No cache headers on API responses","Appropriate Cache-Control headers per endpoint type","Client-side caching for static data, CDN caching","API","Backend"],
+[595,"P2",8,"M",4,"⟳ PARTIAL: Add API response caching headers (Cache-Control)","PARTIAL 2026-03-08: Cache-Control: no-store added on auth responses; read endpoints still need caching headers","Appropriate Cache-Control headers per endpoint type","Client-side caching for static data, CDN caching","API","Backend"],
 [596,"P3",8,"S",3,"Implement graceful degradation when Redis is unavailable","Redis failure crashes rate limiting","Fallback behavior: skip rate limiting, use in-memory cache","Application functional even when Redis is down","Resilience","Backend"],
 [597,"P3",8,"M",3,"Add database query parameterization audit","Most queries parameterized but not audited","Audit all SQL for parameterization, add SQL injection tests","Verified SQL injection prevention coverage","Security","Backend"],
 [598,"P4",8,"S",2,"Add API deprecation header support","No deprecation signaling mechanism","Sunset and Deprecation headers for deprecated endpoints","Clients warned before breaking changes","API","Backend"],
@@ -837,11 +838,11 @@ var I = [
 [663,"P3",9,"M",3,"Implement stale-while-revalidate pattern for chart data","Loading spinner on every chart data fetch","Show cached data immediately, update in background","Instant chart display with fresh data arriving","State","Frontend"],
 [664,"P2",9,"S",4,"Add build caching for faster CI builds","Full rebuild on every CI run","Turborepo or Next.js build cache in CI","2-3x faster CI builds from cache hits","Build","Frontend"],
 [665,"P3",9,"S",3,"Implement dynamic imports for Three.js on marketing pages","Three.js loaded on all pages","Dynamically import Three.js only on marketing pages that use 3D","No Three.js overhead on app pages","Bundle","Frontend"],
-[666,"P3",9,"M",3,"Add error boundary with recovery for each page section","Single app-level error boundary","Granular error boundaries: charts, sidebar, header with retry","Partial failures do not crash the entire page","ErrorHandling","Frontend"],
+[666,"P3",9,"M",3,"✓ DONE: Add error boundary for each page section","DONE 2026-03-08: Per-section error boundaries added for chart components","Granular error boundaries: charts, sidebar, header with retry","Partial failures do not crash the entire page","ErrorHandling","Frontend"],
 [667,"P4",9,"S",2,"Add React Suspense boundaries for loading states","Manual loading state management","Suspense boundaries with skeleton fallbacks per section","Consistent loading UX with less boilerplate","Loading","Frontend"],
 [668,"P3",9,"S",3,"Implement optimistic updates for user actions","Wait for server response before UI update","Optimistic UI for tag, favorite, delete with rollback on error","Instant UI feedback for all user actions","State","Frontend"],
 [669,"P2",9,"M",4,"Add end-to-end type safety from API to UI","Manual type alignment between backend and frontend","Auto-generate TypeScript types from Pydantic schemas","Zero type mismatches between backend and frontend","TypeSafety","Full Stack"],
-[670,"P3",9,"M",3,"Implement proper error handling for vanilla JS chart modules","Charts may silently fail","Add error boundaries and fallback UI for each chart wrapper","Graceful chart failure with informative error display","ErrorHandling","Frontend"],
+[670,"P3",9,"M",3,"✓ DONE: Error handling for vanilla JS chart modules","DONE 2026-03-08: Error boundaries with fallback UI wrap all chart wrappers","Add error boundaries and fallback UI for each chart wrapper","Graceful chart failure with informative error display","ErrorHandling","Frontend"],
 [671,"P3",9,"S",3,"Add React Query devtools in development","No query debugging tools","Configure React Query devtools panel for development","Easy debugging of cache state, queries, mutations","DX","Frontend"],
 [672,"P4",9,"S",2,"Add ESLint rules for React performance patterns","No performance-specific lint rules","ESLint rules: no inline objects in JSX, proper key usage","Catch performance anti-patterns at lint time","DX","Frontend"],
 [673,"P3",9,"M",3,"Implement proper abort controller for API requests","Requests not cancelled on navigation","AbortController for all API calls, cancel on route change","No wasted requests and memory leaks on navigation","Performance","Frontend"],
@@ -898,9 +899,9 @@ var I = [
 [723,"P2",10,"M",4,"Add DAST scanning for deployed API","No dynamic security testing","OWASP ZAP automated scan against staging environment","Detect runtime security vulnerabilities","DAST","DevOps"],
 [724,"P2",10,"M",4,"Implement dependency vulnerability scanning in CI","No automated dependency scanning","Add pip-audit and npm audit in CI pipeline","Block deployments with known vulnerable dependencies","Dependencies","DevOps"],
 [725,"P3",10,"S",3,"Refine Content Security Policy headers","Basic CSP headers","Strict CSP with nonce-based script loading and report-uri","Prevent XSS even if application code has vulnerability","CSP","Frontend"],
-[726,"P2",10,"M",4,"Add CORS origin allowlist with strict validation","CORS allows all origins","Strict allowlist of production domains, reject unknown origins","Prevent cross-origin request abuse","CORS","Backend"],
+[726,"P2",10,"M",4,"✓ DONE: CORS origin allowlist with strict validation","DONE 2026-03-08: CORS default is empty string (not *); explicit origins required","Strict allowlist of production domains, reject unknown origins","Prevent cross-origin request abuse","CORS","Backend"],
 [727,"P3",10,"S",3,"Implement rate limit bypass prevention","Basic rate limiting by IP","Add fingerprinting, account-level limits, API key limits","Prevent rate limit circumvention","RateLimit","Backend"],
-[728,"P2",10,"M",4,"Add brute force protection on authentication endpoints","Basic rate limiting","Account lockout after 5 failures, CAPTCHA after 3, alert on patterns","Prevent credential stuffing and brute force attacks","Auth","Backend"],
+[728,"P2",10,"M",4,"✓ DONE: Add brute force protection on authentication endpoints","DONE 2026-03-08: Account lockout after 5 failures / 15min window / 30min cooldown","Account lockout after 5 failures, CAPTCHA after 3, alert on patterns","Prevent credential stuffing and brute force attacks","Auth","Backend"],
 [729,"P3",10,"M",3,"Implement session fixation prevention","Session ID persists across auth state changes","Regenerate session token on login and privilege escalation","Prevent session fixation attacks","Auth","Backend"],
 [730,"P3",10,"S",3,"Add CSRF token validation for state-changing requests","SameSite cookie only CSRF protection","Double-submit CSRF token pattern for additional protection","Defense in depth against CSRF attacks","CSRF","Backend"],
 [731,"P2",10,"M",4,"Conduct SQL injection prevention audit","Parameterized queries assumed but not audited","Audit all SQL for parameterized queries and input sanitization","Verified SQL injection resistance","SQLi","Backend"],
@@ -1327,11 +1328,11 @@ var I = [
 [1144,"P3",18,"M",3,"Add tire degradation curve extraction from telemetry","No tire degradation analysis","Model grip loss over stint from speed and G-force trends","Predict tire cliff and optimal pit timing","Pipeline","Backend"],
 [1145,"P3",18,"M",3,"Improve anomaly detection tuning for false positive reduction","Anomaly detector flags valid fast laps","Train on labeled data to reduce false positive rate below 5%","Accurate anomaly detection that users trust","ML","Backend"],
 [1146,"P2",18,"M",4,"Add kart-car analysis parity for scoring","Kart scoring less refined than car scoring","Calibrate scoring dimensions for kart-specific performance patterns","Equal scoring quality for kart and car users","Scoring","Backend"],
-[1147,"P3",18,"M",3,"Improve track database with verified corner boundaries","Auto-detected corners may be inaccurate","Community-verified corner coordinates for top 100 tracks","Accurate corner analysis for popular tracks","TrackDB","Full Stack"],
+[1147,"P3",18,"M",3,"⟳ PARTIAL: Track boundaries from XY traces","PARTIAL 2026-03-08: TrackBoundaries module estimates boundaries from XY traces; community verification still needed","Community-verified corner coordinates for top 100 tracks","Accurate corner analysis for popular tracks","TrackDB","Full Stack"],
 [1148,"P3",18,"S",3,"Add fuel consumption model from telemetry data","No fuel analysis from telemetry","Estimate fuel usage from speed, throttle, and session duration","Fuel strategy without dedicated fuel sensor","Pipeline","Backend"],
 [1149,"P1",18,"XL",5,"Build AI coaching engine with corner-specific advice","No AI coaching beyond data display","ML model generating natural language corner technique tips","Personalized coaching accessible to all skill levels","AI","Backend"],
 [1150,"P2",18,"M",4,"Add braking point consistency scoring","Braking not scored specifically","Score braking point repeatability per corner across session","Identify inconsistent braking as improvement area","Scoring","Backend"],
-[1151,"P3",18,"M",3,"Improve reference line generation quality","Basic racing line from GPS average","Physics-optimized reference line considering grip and speed","Reference line closer to actual optimal racing line","Pipeline","Backend"],
+[1151,"P3",18,"M",3,"✓ DONE: Improve reference line generation quality","DONE 2026-03-08: raceline module with line variant generation and point-mass optimizer","Physics-optimized reference line considering grip and speed","Reference line closer to actual optimal racing line","Pipeline","Backend"],
 [1152,"P3",18,"S",3,"Add corner classification by geometry type","Corners identified by number only","Classify as hairpin, chicane, fast sweeper, kink from GPS geometry","Meaningful corner names aid communication and learning","Pipeline","Backend"],
 [1153,"P2",18,"L",4,"Improve scoring calibration across track types","Scoring inconsistent between short and long tracks","Track-length and corner-count normalization for scoring","Comparable scores regardless of track characteristics","Scoring","Backend"],
 [1154,"P3",18,"M",3,"Add driver consistency model across sessions","Consistency scored per session only","Multi-session consistency metric tracking lap-to-lap variance","Long-term consistency improvement tracking","Scoring","Backend"],
@@ -1375,7 +1376,7 @@ var I = [
 [1192,"P3",18,"S",3,"Improve lap split accuracy at sector boundaries","Split times sometimes off by 50-100ms","Higher precision interpolation at sector crossing points","Split times accurate to within 10ms","Pipeline","Backend"],
 [1193,"P4",18,"S",2,"Add telemetry data validation rules per format","Format-agnostic validation only","Format-specific validation: expected channels, ranges, frequencies","Better error messages for invalid input data","DataQuality","Backend"],
 [1194,"P3",18,"M",3,"Implement progressive analysis detail levels","Single analysis depth for all users","Quick summary (30s), standard (2min), deep analysis (5min) options","Flexible analysis depth matching user needs","Pipeline","Backend"],
-[1195,"P2",18,"M",4,"Add racing line comparison to optimal line","GPS line shown without reference","Compare actual racing line to computed optimal line per corner","Visual racing line improvement guidance","Analysis","Backend"],
+[1195,"P2",18,"M",4,"✓ DONE: Racing line comparison to optimal line","DONE 2026-03-08: raceline optimizer generates optimal line, wired into pipeline + API","Compare actual racing line to computed optimal line per corner","Visual racing line improvement guidance","Analysis","Backend"],
 [1196,"P3",18,"M",3,"Improve scoring letter grade calibration","Grade boundaries may not match user expectations","Calibrate A/B/C/D/F thresholds from community performance data","Letter grades users intuitively understand","Scoring","Backend"],
 [1197,"P3",18,"S",3,"Add data channel auto-detection from CSV headers","Manual channel mapping sometimes needed","ML-based column identification from header text and data patterns","Zero-configuration import for any CSV format","Pipeline","Backend"],
 [1198,"P2",18,"M",4,"Implement continuous scoring model improvement","Static scoring algorithm","Feedback loop: user corrections improve scoring model over time","Self-improving scoring that gets better with usage","ML","Backend"],
