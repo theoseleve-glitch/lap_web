@@ -34,6 +34,7 @@ def client(app):
 
 class TestHealthz:
     def test_returns_200_when_healthy(self, client):
+        """Basic /healthz returns simple {status: ok} for load balancers."""
         with patch("web.db.get_db_connection") as mock_db:
             mock_conn = MagicMock()
             mock_db.return_value = mock_conn
@@ -41,11 +42,21 @@ class TestHealthz:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "ok"
+
+    def test_detail_returns_db_field(self, client):
+        """Detailed /healthz/detail includes db, redis, celery fields."""
+        with patch("web.db.get_db_connection") as mock_db:
+            mock_conn = MagicMock()
+            mock_db.return_value = mock_conn
+            resp = client.get("/healthz/detail")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "ok"
         assert data["db"] == "ok"
 
     def test_returns_503_when_db_fails(self, client):
         with patch("web.db.get_db_connection", side_effect=Exception("DB down")):
-            resp = client.get("/healthz")
+            resp = client.get("/healthz/detail")
         assert resp.status_code == 503
         data = resp.get_json()
         assert data["status"] == "degraded"
@@ -55,7 +66,7 @@ class TestHealthz:
         with patch("web.db.get_db_connection") as mock_db:
             mock_conn = MagicMock()
             mock_db.return_value = mock_conn
-            resp = client.get("/healthz")
+            resp = client.get("/healthz/detail")
         data = resp.get_json()
         assert "redis" in data
 
@@ -66,7 +77,7 @@ class TestHealthz:
              patch("web.routes.health._get_db_stats", return_value={}):
             mock_conn = MagicMock()
             mock_pg.return_value = mock_conn
-            resp = client.get("/healthz")
+            resp = client.get("/healthz/detail")
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["db"] == "ok"

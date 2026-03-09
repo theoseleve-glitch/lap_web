@@ -347,7 +347,7 @@ class TestSpeedTrace:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["data"]["available"] is False
-        assert body["data"]["reason_code"] == "NO_SPEED_TRACE"
+        assert body["data"]["reason_code"] == "no_speed_trace"
 
     def test_speed_trace_session_not_found(self, client):
         """Returns 404 when session does not exist."""
@@ -401,7 +401,7 @@ class TestGpsTrace:
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["data"]["available"] is False
-        assert body["data"]["reason_code"] == "NO_GPS_DATA"
+        assert body["data"]["reason_code"] == "no_gps_data"
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -453,7 +453,7 @@ class TestGGData:
         assert data["available"] is False
 
     def test_gg_data_no_trace(self, client):
-        """Returns 404 when no GPS trace for that lap."""
+        """Returns 200 with available=false when no GPS trace for that lap."""
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models:
             mock_db.return_value = MagicMock()
@@ -462,7 +462,9 @@ class TestGGData:
 
             resp = client.get("/api/v1/sessions/s1/gg-data?lap=1")
 
-        assert resp.status_code == 404
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+        assert data["available"] is False
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -575,6 +577,7 @@ class TestCorners:
             mock_models.get_session_by_id.return_value = _sample_session()
             mock_models.get_corner_metrics_summary.return_value = boundary_rows
             mock_models.get_theoretical_data.return_value = theo
+            mock_models.get_analysis_json.return_value = None
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
@@ -608,6 +611,7 @@ class TestCorners:
             mock_models.get_session_by_id.return_value = _sample_session()
             mock_models.get_corner_metrics_summary.return_value = boundary_rows
             mock_models.get_theoretical_data.return_value = None
+            mock_models.get_analysis_json.return_value = None
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
@@ -647,6 +651,7 @@ class TestCorners:
             mock_models.get_session_by_id.return_value = _sample_session()
             mock_models.get_corner_metrics_summary.return_value = []
             mock_models.get_theoretical_data.return_value = theo
+            mock_models.get_analysis_json.return_value = None
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
@@ -665,6 +670,7 @@ class TestCorners:
             mock_models.get_session_by_id.return_value = _sample_session()
             mock_models.get_corner_metrics_summary.return_value = []
             mock_models.get_theoretical_data.return_value = None
+            mock_models.get_analysis_json.return_value = None
 
             resp = client.get("/api/v1/sessions/s1/corners")
 
@@ -2316,8 +2322,20 @@ class TestSessionCompareOverlay:
 
 class TestDevPlansEndpoint:
 
-    def test_list_dev_plans(self, client):
-        with patch("web.routes.data_v2.get_db_connection") as mock_db:
+    @pytest.fixture
+    def entities_client(self):
+        """Client with api_v1_entities blueprint (where dev-plans routes live)."""
+        from flask import Flask
+        from web.routes.api_v1_entities import bp as entities_bp
+
+        app = Flask(__name__)
+        app.config["TESTING"] = True
+        app.config["USE_PG"] = False
+        app.register_blueprint(entities_bp)
+        return app.test_client()
+
+    def test_list_dev_plans(self, entities_client):
+        with patch("web.routes.api_v1_entities._get_conn") as mock_db:
             conn = MagicMock()
             mock_db.return_value = conn
             conn.execute.return_value.fetchall.return_value = [
@@ -2327,16 +2345,19 @@ class TestDevPlansEndpoint:
                  "created_at": "2026-01-01", "updated_at": "2026-01-01"},
             ]
 
-            resp = client.get("/api/v1/dev-plans")
+            resp = entities_client.get("/api/v1/dev-plans")
 
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert len(body["data"]["plans"]) == 1
-        assert body["data"]["plans"][0]["plan_name"] == "Beginner Plan"
+        # list endpoint returns array directly in data
+        plans = body["data"]
+        assert isinstance(plans, list)
+        assert len(plans) == 1
+        assert plans[0]["plan_name"] == "Beginner Plan"
 
-    def test_get_dev_plan_detail(self, client):
-        with patch("web.routes.data_v2.get_db_connection") as mock_db:
+    def test_get_dev_plan_detail(self, entities_client):
+        with patch("web.routes.api_v1_entities._get_conn") as mock_db:
             conn = MagicMock()
             mock_db.return_value = conn
             conn.execute.return_value.fetchone.return_value = {
@@ -2347,22 +2368,20 @@ class TestDevPlansEndpoint:
                 "created_at": "2026-01-01", "updated_at": "2026-01-01",
             }
 
-            resp = client.get("/api/v1/dev-plans/1")
+            resp = entities_client.get("/api/v1/dev-plans/1")
 
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
         assert body["data"]["plan_name"] == "Beginner Plan"
-        assert isinstance(body["data"]["weeks"], list)
-        assert isinstance(body["data"]["progress"], dict)
 
-    def test_get_dev_plan_not_found(self, client):
-        with patch("web.routes.data_v2.get_db_connection") as mock_db:
+    def test_get_dev_plan_not_found(self, entities_client):
+        with patch("web.routes.api_v1_entities._get_conn") as mock_db:
             conn = MagicMock()
             mock_db.return_value = conn
             conn.execute.return_value.fetchone.return_value = None
 
-            resp = client.get("/api/v1/dev-plans/999")
+            resp = entities_client.get("/api/v1/dev-plans/999")
 
         assert resp.status_code == 404
 

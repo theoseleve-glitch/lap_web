@@ -262,50 +262,22 @@ class TestUploadEndpointIntegration:
     def client(self, app):
         return app.test_client()
 
-    def test_upload_endpoint_returns_correct_shape(self, client):
-        """POST /api/v1/sessions/upload returns {ok, data} with
-        session_id, grade, total_score, steps_ok, steps_failed.
-        """
-        # Build a mock pipeline summary (mimicking real pipeline output)
-        summary = {
-            "csv_path": "/tmp/test.csv",
-            "session_meta": {
-                "session_id": "integration-test-001",
-                "session_type": "practice",
-                "track_state": "dry",
-                "driver_name": "TestDriver",
-                "date": "2026-03-01",
-            },
-            "track_id": "t1",
-            "lap_metrics": [
-                {"lap_number": 1, "lap_time_s": 62.1},
-                {"lap_number": 2, "lap_time_s": 61.5},
-            ],
-            "lap_times": [62.1, 61.5],
-            "resampled_laps": {},
-            "score_result": {
-                "total_score": 72.5,
-                "grade": "B",
-                "sub_scores": {
-                    "pace": {"score": 18, "max": 25},
-                    "consistency": {"score": 20, "max": 25},
-                    "execution": {"score": 17, "max": 25},
-                    "robustness": {"score": 17.5, "max": 25},
-                },
-                "strengths": ["Good consistency"],
-                "weaknesses": ["Brake too late"],
-            },
-            "steps_ok": ["ingest", "gps_filter", "corners", "scoring"],
-            "steps_failed": ["ml_training"],
-            "errors": {"ml_training": "Not enough data"},
-            "trim_report": {},
-        }
+    def test_upload_endpoint_returns_202_async(self, app):
+        """POST /api/v1/sessions/upload returns 202 with job_id (async).
 
-        csv_content = (
-            "Lap #,Time (s),Speed (m/s)\n"
-            "1,0.0,10.5\n"
-            "1,1.0,11.2\n"
-        )
+        The upload endpoint was refactored to async Celery dispatch.
+        """
+        mock_conn = MagicMock()
+        mock_conn.execute.return_value.fetchone.return_value = {"count": 0}
+
+        @app.before_request
+        def _inject_auth():
+            from flask import g
+            g.workspace_id = 1
+            g.current_user_id = 42
+            g.plan_tier = "racer"
+
+        csv_content = "Lap #,Time (s),Speed (m/s)\n1,0.0,10.5\n1,1.0,11.2\n"
         data = {
             "file": (io.BytesIO(csv_content.encode()), "session.csv"),
             "session_type": "practice",
@@ -313,98 +285,32 @@ class TestUploadEndpointIntegration:
             "driver_name": "TestDriver",
         }
 
-        with patch("web.routes.sessions_v2.run_full_analysis", return_value=summary), \
-             patch("web.routes.sessions_v2.get_db_connection") as mock_db, \
-             patch("web.routes.sessions_v2.upsert_driver", return_value=1), \
-             patch("web.routes.sessions_v2.upsert_session", return_value="integration-test-001"), \
-             patch("web.routes.sessions_v2.insert_laps", return_value=2), \
-             patch("web.routes.sessions_v2.insert_score_details"), \
-             patch("web.routes.sessions_v2.insert_gps_traces", return_value=0):
+        with patch("web.routes.sessions_v2._get_conn", return_value=mock_conn), \
+             patch("redis.Redis.from_url", return_value=MagicMock()), \
+             patch("pipeline_context.PipelineContext"), \
+             patch("tasks.pipeline_tasks.build_pipeline_chain", return_value=MagicMock()), \
+             patch("web.config.Config") as mock_cfg:
 
-            mock_db.return_value = MagicMock()
-
-            resp = client.post(
+            mock_cfg.REDIS_URL = "redis://localhost:6379/0"
+            resp = app.test_client().post(
                 "/api/v1/sessions/upload",
                 data=data,
                 content_type="multipart/form-data",
             )
 
-        assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.data}"
-        body = resp.get_json()
-
-        # Verify envelope shape
-        assert body["ok"] is True
-        assert "data" in body
-        assert "meta" in body
-
-        # Verify data contains required fields
-        result = body["data"]
-        assert "session_id" in result, "Response must contain session_id"
-        assert "grade" in result, "Response must contain grade"
-        assert "total_score" in result, "Response must contain total_score"
-        assert "steps_ok" in result, "Response must contain steps_ok"
-        assert "steps_failed" in result, "Response must contain steps_failed"
-
-        # Verify types
-        assert isinstance(result["session_id"], str)
-        assert isinstance(result["total_score"], (int, float))
-        assert isinstance(result["grade"], str)
-        assert isinstance(result["steps_ok"], list)
-        assert isinstance(result["steps_failed"], list)
-
-        # Verify actual values
-        assert result["session_id"] == "integration-test-001"
-        assert result["total_score"] == 72.5
-        assert result["grade"] == "B"
-
-    def test_upload_endpoint_handles_no_scores(self, client):
-        """Upload endpoint handles pipeline output with no scores gracefully."""
-        summary = {
-            "csv_path": "/tmp/test.csv",
-            "session_meta": {
-                "session_id": "no-score-001",
-                "session_type": "practice",
-                "track_state": "dry",
-                "driver_name": "TestDriver",
-            },
-            "track_id": "t1",
-            "lap_metrics": [],
-            "lap_times": [],
-            "resampled_laps": {},
-            "score_result": None,  # Scoring failed
-            "steps_ok": ["ingest"],
-            "steps_failed": ["scoring"],
-            "errors": {"scoring": "Not enough laps"},
-            "trim_report": {},
-        }
-
-        csv_content = "Lap #,Time (s)\n1,0.0\n"
-        data = {
-            "file": (io.BytesIO(csv_content.encode()), "session.csv"),
-        }
-
-        with patch("web.routes.sessions_v2.run_full_analysis", return_value=summary), \
-             patch("web.routes.sessions_v2.get_db_connection") as mock_db, \
-             patch("web.routes.sessions_v2.upsert_driver", return_value=1), \
-             patch("web.routes.sessions_v2.upsert_session", return_value="no-score-001"), \
-             patch("web.routes.sessions_v2.insert_laps", return_value=0), \
-             patch("web.routes.sessions_v2.insert_score_details"), \
-             patch("web.routes.sessions_v2.insert_gps_traces", return_value=0):
-
-            mock_db.return_value = MagicMock()
-
-            resp = client.post(
-                "/api/v1/sessions/upload",
-                data=data,
-                content_type="multipart/form-data",
-            )
-
-        assert resp.status_code == 200
+        assert resp.status_code == 202
         body = resp.get_json()
         assert body["ok"] is True
-        result = body["data"]
-        assert result["session_id"] == "no-score-001"
-        assert result["grade"] is None  # No scores
-        assert result["total_score"] is None  # No scores
-        assert result["steps_ok"] == ["ingest"]
-        assert "scoring" in result["steps_failed"]
+        assert "job_id" in body["data"]
+        assert body["data"]["status"] == "pending"
+
+    def test_upload_validation_rejects_missing_file(self, client):
+        """Upload rejects requests without a file."""
+        resp = client.post(
+            "/api/v1/sessions/upload",
+            data={"session_type": "practice"},
+            content_type="multipart/form-data",
+        )
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert body["ok"] is False
