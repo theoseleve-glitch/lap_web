@@ -720,6 +720,18 @@ def setup_2fa():
     if user.get("totp_enabled"):
         return api_error(ErrorCode.CONFLICT, "2FA is already enabled", status=409)
 
+    # Superadmins must use admin 2FA setup (encrypted storage)
+    admin_check = conn.execute(
+        text("SELECT is_superadmin FROM users WHERE id = :uid"),
+        {"uid": user_id},
+    ).fetchone()
+    if admin_check and (dict(admin_check) if not isinstance(admin_check, dict) else admin_check).get("is_superadmin"):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Admin accounts must set up 2FA via the admin panel",
+            status=400,
+        )
+
     secret = generate_totp_secret()
     uri = generate_totp_uri(secret, user["email"])
 
@@ -1350,7 +1362,12 @@ def _make_delete_token(user_id: int, session_ids: list[int]) -> str:
     import base64
     import hmac
 
-    secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
+    secret = os.environ.get("TELEMETRY_JWT_SECRET", "")
+    if not secret:
+        from flask import current_app
+        secret = current_app.config.get("JWT_SECRET", "")
+    if not secret:
+        raise RuntimeError("TELEMETRY_JWT_SECRET not configured")
     expires = int((datetime.now(timezone.utc) + timedelta(minutes=_DELETE_TOKEN_EXPIRY_MINUTES)).timestamp())
     ids_str = ",".join(str(s) for s in sorted(session_ids))
     payload = f"{user_id}:{ids_str}:{expires}"
@@ -1367,7 +1384,12 @@ def _verify_delete_token(user_id: int, token: str) -> list[int] | None:
     import base64
     import hmac
 
-    secret = os.environ.get("TELEMETRY_JWT_SECRET", "dev-secret")
+    secret = os.environ.get("TELEMETRY_JWT_SECRET", "")
+    if not secret:
+        from flask import current_app
+        secret = current_app.config.get("JWT_SECRET", "")
+    if not secret:
+        return None  # Cannot verify without secret
     try:
         decoded = base64.urlsafe_b64decode(token.encode()).decode()
         parts = decoded.rsplit(":", 1)

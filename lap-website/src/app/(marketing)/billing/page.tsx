@@ -11,10 +11,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const [hasSession, setHasSession] = useState<boolean | null>(null);
 
   useEffect(() => {
-    // Check for auth token — billing operations require a valid session
+    // Check for refresh token cookie — billing operations require a valid session
     const token =
-      typeof window !== 'undefined' &&
-      (document.cookie.includes('lap_refresh') || sessionStorage.getItem('lap_auth'));
+      typeof window !== 'undefined' && document.cookie.includes('lap_refresh');
     setHasSession(!!token);
   }, []);
 

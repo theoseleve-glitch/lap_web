@@ -64,12 +64,20 @@ def verify_recovery_code(
 
     Returns (valid, updated_codes_json). If valid, the code is removed
     from the list. If invalid, the list is returned unchanged.
+    Uses constant-time comparison to prevent timing attacks.
     """
+    import hmac as _hmac
+
     codes = json.loads(stored_codes_json)
     normalized = code.upper().strip()
 
-    if normalized in codes:
-        codes.remove(normalized)
+    matched_idx = None
+    for i, stored in enumerate(codes):
+        if _hmac.compare_digest(normalized, stored):
+            matched_idx = i
+
+    if matched_idx is not None:
+        codes.pop(matched_idx)
         return True, json.dumps(codes)
 
     return False, stored_codes_json

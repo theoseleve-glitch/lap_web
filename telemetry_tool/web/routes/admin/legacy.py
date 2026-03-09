@@ -265,28 +265,26 @@ def impersonate_user(user_id: int):
 
     target = dict(row) if not isinstance(row, dict) else row
 
-    # Generate short-lived token
+    # Generate short-lived token using the standard access token format
     import os
 
-    import jwt
+    from auth.service import create_access_token
     secret = os.environ.get("TELEMETRY_JWT_SECRET", "")
     if not secret:
         return api_error(ErrorCode.INTERNAL_ERROR, "JWT secret not configured", status=500)
 
-    now = datetime.now(timezone.utc)
-    payload = {
-        "sub": user_id,
-        "email": target["email"],
-        "iat": int(now.timestamp()),
-        "exp": int((now + timedelta(minutes=15)).timestamp()),
-        "impersonated_by": getattr(g, "current_user_id", None),
-    }
-    token = jwt.encode(payload, secret, algorithm="HS256")
+    token = create_access_token(
+        user_id=user_id,
+        secret=secret,
+        expiry_minutes=15,
+    )
 
+    now = datetime.now(timezone.utc)
     audit_log(conn, "admin_impersonation", {
         "target_user_id": user_id,
         "target_email": target["email"],
         "admin_user_id": getattr(g, "current_user_id", None),
+        "impersonated_by": getattr(g, "current_user_id", None),
         "token_expires": (now + timedelta(minutes=15)).isoformat(),
     })
     conn.commit()

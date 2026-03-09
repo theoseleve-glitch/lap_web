@@ -159,7 +159,16 @@ def verify_2fa_setup():
 
     # Decrypt and verify
     admin_key = _get_admin_key()
-    secret = decrypt_secret(user["totp_secret"], admin_key)
+    try:
+        secret = decrypt_secret(user["totp_secret"], admin_key)
+    except Exception:
+        logger.warning("Failed to decrypt TOTP secret for user %s — "
+                        "possibly set via non-admin flow", user_id)
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "2FA secret corrupted — disable and re-setup via admin /2fa/setup",
+            status=400,
+        )
 
     if not verify_totp(secret, code):
         return api_error(
@@ -217,7 +226,16 @@ def challenge_2fa():
         )
 
     admin_key = _get_admin_key()
-    secret = decrypt_secret(user["totp_secret"], admin_key)
+    try:
+        secret = decrypt_secret(user["totp_secret"], admin_key)
+    except Exception:
+        logger.warning("Failed to decrypt TOTP secret for user %s — "
+                        "possibly set via non-admin flow", user_id)
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "2FA secret corrupted — disable and re-setup via admin /2fa/setup",
+            status=400,
+        )
 
     # Try TOTP first, then recovery code
     valid = verify_totp(secret, code)

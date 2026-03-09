@@ -129,6 +129,13 @@ def create_app(config: Config | None = None) -> Flask:
 
     logger.info("Startup hardening summary: %s", app.config["HARDENING_SUMMARY"])
 
+    # Trust X-Forwarded-For from reverse proxy (Caddy) so request.remote_addr
+    # returns the real client IP. Only applied in production (USE_PG=1).
+    # x_for=1 means trust one proxy hop (Caddy).
+    if cfg.USE_PG:
+        from werkzeug.middleware.proxy_fix import ProxyFix
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
     # Phase 4 API infrastructure — request ID, structured logging, metrics.
     try:
         from .api_utils import init_request_id
