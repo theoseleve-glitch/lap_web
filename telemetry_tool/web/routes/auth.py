@@ -675,6 +675,7 @@ def verify_2fa():
 
 
 @bp.route("/verify-email", methods=["POST"])
+@rate_limit(tier="auth")
 def verify_email():
     """Verify email address with token."""
     body = request.get_json(silent=True) or {}

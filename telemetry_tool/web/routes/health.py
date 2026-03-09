@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 from web.api_utils import api_error, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -197,7 +197,8 @@ def healthz_db():
         status = _check_db()
         return jsonify({"db": status}), 200
     except Exception as exc:
-        return jsonify({"db": "error", "detail": str(exc)}), 503
+        logger.warning("Health check DB failure: %s", exc)
+        return jsonify({"db": "error"}), 503
 
 
 @bp.route("/healthz/redis")
@@ -208,7 +209,8 @@ def healthz_redis():
         code = 200 if status == "ok" else 503
         return jsonify({"redis": status}), code
     except Exception as exc:
-        return jsonify({"redis": "unavailable", "detail": str(exc)}), 503
+        logger.warning("Health check Redis failure: %s", exc)
+        return jsonify({"redis": "unavailable"}), 503
 
 
 @bp.route("/healthz/celery")
@@ -219,12 +221,28 @@ def healthz_celery():
         code = 200 if status == "ok" else 503
         return jsonify({"celery": status}), code
     except Exception as exc:
-        return jsonify({"celery": "unavailable", "detail": str(exc)}), 503
+        logger.warning("Health check Celery failure: %s", exc)
+        return jsonify({"celery": "unavailable"}), 503
 
 
 @bp.route("/healthz/startup")
 def startup_diagnostics():
-    """Return startup hardening diagnostics without secret values."""
+    """Return startup hardening diagnostics without secret values.
+
+    Requires authentication in production to avoid leaking security posture.
+    """
+    if current_app.config.get("AUTH_REQUIRED"):
+        from flask import request as req
+
+        from web.middleware.auth import _decode_token, _extract_token
+        token = _extract_token(req)
+        if not token:
+            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
+        try:
+            _decode_token(token)
+        except Exception:
+            return api_error(ErrorCode.UNAUTHORIZED, "Invalid token", status=401)
+
     summary = dict(current_app.config.get("HARDENING_SUMMARY", {}))
     status = "hardened"
 
