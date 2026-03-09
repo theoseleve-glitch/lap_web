@@ -470,7 +470,7 @@ export function SpeedTraceChart({
   }
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`relative flex flex-col ${className}`}>
       {/* Lap selector */}
       {showLapSelector && (
         <div className="flex items-center gap-2 mb-2">
@@ -503,11 +503,11 @@ export function SpeedTraceChart({
       )}
 
       {/* Canvas */}
-      <div className="relative w-full rounded-lg overflow-hidden bg-concrete border border-steel/10">
+      <div className="relative w-full flex-1 min-h-0 rounded-lg bg-concrete border border-steel/10">
         <canvas
           ref={canvasRef}
-          className="w-full cursor-crosshair"
-          style={{ height: '280px', display: 'block' }}
+          className="w-full h-full cursor-crosshair"
+          style={{ minHeight: '280px', display: 'block' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           role="img"
