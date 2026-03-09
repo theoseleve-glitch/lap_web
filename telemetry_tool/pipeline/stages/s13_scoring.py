@@ -72,8 +72,8 @@ def run_score(
         accels = [lm.get("accel_max_mps2", float("nan")) for lm in src]
         brakes = [lm.get("braking_max_mps2", float("nan")) for lm in src]
         m["speed_mean_mps"] = float(np.nanmean(speeds)) if speeds else float("nan")
-        m["accel_max_mps2"] = float(np.nanmax(accels)) if accels else float("nan")
-        m["braking_max_mps2"] = float(np.nanmax(brakes)) if brakes else float("nan")
+        m["accel_max_mps2"] = float(np.nanmax(accels)) if accels and not all(np.isnan(v) for v in accels) else float("nan")
+        m["braking_max_mps2"] = float(np.nanmax(brakes)) if brakes and not all(np.isnan(v) for v in brakes) else float("nan")
 
     # Phase-aware scoring (preferred)
     if hasattr(score_mod, "score_session_phase_aware"):

@@ -434,8 +434,11 @@ def compute_reference_line(
 
     # --- Aggregate -
     if method == "median":
-        x_ref = np.nanmedian(X, axis=0)
-        y_ref = np.nanmedian(Y, axis=0)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", "All-NaN slice", RuntimeWarning)
+            x_ref = np.nanmedian(X, axis=0)
+            y_ref = np.nanmedian(Y, axis=0)
     else:  # "weighted"
         w = np.array(weights)
         w = w / w.sum()  # normalise

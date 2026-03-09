@@ -22,12 +22,22 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 _MAX_LIMIT = 100
 _MIN_LIMIT = 1
+
+# Strict SQL identifier pattern: letters, digits, underscore only.
+_SAFE_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+
+
+def _validate_identifier(name: str, label: str) -> None:
+    """Raise ValueError if *name* is not a safe SQL identifier."""
+    if not _SAFE_IDENT_RE.match(name):
+        raise ValueError(f"{label} is not a safe SQL identifier: {name!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +105,9 @@ def build_keyset_clause(
         *params* is a dict with ``cursor_sort`` and ``cursor_id`` keys
         (empty dict when *cursor* is ``None``).
     """
+    _validate_identifier(sort_col, "sort_col")
+    _validate_identifier(id_col, "id_col")
+
     if cursor is None:
         return "", {}
 
