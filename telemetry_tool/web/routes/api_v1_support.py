@@ -129,6 +129,7 @@ def create_ticket():
         plan = user_data.get("plan_tier", "unknown")
         name = user_data.get("display_name", "User")
 
+        from html import escape as _h
         subject = f"[LAP Support #{ticket_id}] {issue_type}: {description[:60]}"
         html = f"""\
 <div style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -136,24 +137,24 @@ def create_ticket():
   <table style="border-collapse: collapse; margin: 12px 0;">
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">User:</td>
-      <td style="color: #F3F0E8;">{name} ({email})</td>
+      <td style="color: #F3F0E8;">{_h(str(name))} ({_h(str(email))})</td>
     </tr>
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Plan:</td>
-      <td style="color: #F3F0E8;">{plan}</td>
+      <td style="color: #F3F0E8;">{_h(str(plan))}</td>
     </tr>
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Type:</td>
-      <td style="color: #F3F0E8;">{issue_type}</td>
+      <td style="color: #F3F0E8;">{_h(str(issue_type))}</td>
     </tr>
     <tr>
       <td style="color: #8A8F98; padding: 4px 12px 4px 0;">Workspace:</td>
-      <td style="color: #F3F0E8;">{workspace_id}</td>
+      <td style="color: #F3F0E8;">{_h(str(workspace_id))}</td>
     </tr>
   </table>
   <h3 style="color: #F3F0E8;">Description</h3>
-  <p style="color: #8A8F98; white-space: pre-wrap;">{description}</p>
-  {f'<h3 style="color: #F3F0E8;">Diagnostics</h3><pre style="color: #8A8F98; font-size: 12px;">{json.dumps(diagnostics, indent=2)}</pre>' if diagnostics else ''}
+  <p style="color: #8A8F98; white-space: pre-wrap;">{_h(str(description))}</p>
+  {f'<h3 style="color: #F3F0E8;">Diagnostics</h3><pre style="color: #8A8F98; font-size: 12px;">{_h(json.dumps(diagnostics, indent=2))}</pre>' if diagnostics else ''}
 </div>"""
         import os
         support_email = os.environ.get("SUPPORT_EMAIL", "support@lap-coach.racing")
