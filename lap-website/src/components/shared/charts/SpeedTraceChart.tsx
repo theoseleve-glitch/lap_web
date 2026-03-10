@@ -43,6 +43,12 @@ interface SpeedTraceChartProps {
   gpsLaps?: number[];
   bestLap?: number | null;
   apiBase?: string;
+  /** When set, fetches ref lap and draws delta time sub-chart */
+  compareLap?: number | null;
+  /** Actual lap time of the primary lap (seconds) */
+  primaryLapTime?: number | null;
+  /** Actual lap time of the compare lap (seconds) */
+  compareLapTime?: number | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -104,6 +110,10 @@ interface DrawOptions {
   avgSpeeds?: number[];   // m/s
   refSpeeds?: number[];   // m/s
   hoverDistanceM: number | null;
+  /** When set, ref line legend shows "Lap N" instead of "Theoretical" */
+  refLapLabel?: string | null;
+  /** Primary lap label shown in legend */
+  primaryLapLabel?: string | null;
 }
 
 function drawSpeedTrace(
@@ -232,7 +242,7 @@ function drawSpeedTrace(
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('--- Theoretical', pad.left + 8, legendY);
+    ctx.fillText(opts.refLapLabel ? `--- ${opts.refLapLabel}` : '--- Theoretical', pad.left + 8, legendY);
     legendY += 12;
   }
 
@@ -259,6 +269,16 @@ function drawSpeedTrace(
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('... Avg Pace', pad.left + 8, legendY);
+    legendY += 12;
+  }
+
+  // Primary lap label
+  if (opts.primaryLapLabel) {
+    ctx.fillStyle = COLORS.accent;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`── ${opts.primaryLapLabel}`, pad.left + 8, legendY);
     legendY += 12;
   }
 
@@ -321,6 +341,195 @@ function drawSpeedTrace(
   return bounds;
 }
 
+// ── Delta time drawing ──────────────────────────────────────────
+/** Compute cumulative time delta between primary and ref speeds.
+ *  Uses trapezoidal integration, then scales to match actual lap time diff.
+ *  Positive = primary is slower (losing time). */
+function computeDeltaTime(
+  distances: number[],
+  primarySpeeds: number[],
+  refSpeeds: number[],
+  actualDeltaS: number | null,
+): number[] {
+  const n = Math.min(distances.length, primarySpeeds.length, refSpeeds.length);
+  const delta: number[] = [0];
+  const MIN_SPEED = 0.5; // m/s floor to avoid div-by-zero
+  for (let i = 1; i < n; i++) {
+    const ds = distances[i] - distances[i - 1];
+    if (ds <= 0) { delta.push(delta[delta.length - 1]); continue; }
+    // Trapezoidal: average speed over segment
+    const sp = Math.max(MIN_SPEED, (primarySpeeds[i - 1] + primarySpeeds[i]) / 2);
+    const sr = Math.max(MIN_SPEED, (refSpeeds[i - 1] + refSpeeds[i]) / 2);
+    const dt = ds / sp - ds / sr;
+    delta.push(delta[delta.length - 1] + dt);
+  }
+  // Scale to match actual lap time difference if available
+  if (actualDeltaS != null && delta.length > 1) {
+    const rawFinal = delta[delta.length - 1];
+    if (Math.abs(rawFinal) > 0.001) {
+      const scale = actualDeltaS / rawFinal;
+      for (let i = 1; i < delta.length; i++) {
+        delta[i] *= scale;
+      }
+    }
+  }
+  return delta;
+}
+
+function drawDeltaChart(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  distances: number[],
+  deltaSeconds: number[],
+  hoverDistanceM: number | null,
+  primaryLapNum: number,
+  compareLapNum: number,
+) {
+  const pad = { top: 6, right: 20, bottom: 22, left: 60 };
+  const pW = w - pad.left - pad.right;
+  const pH = h - pad.top - pad.bottom;
+  const ox = x0 + pad.left;
+  const oy = y0 + pad.top;
+
+  // Separator line
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x0 + w, y0);
+  ctx.stroke();
+
+  // Background
+  ctx.fillStyle = '#0d0d0d';
+  ctx.fillRect(x0, y0, w, h);
+
+  if (distances.length < 2 || deltaSeconds.length < 2) return;
+
+  const n = Math.min(distances.length, deltaSeconds.length);
+  const xMin = 0;
+  const xMax = distances[distances.length - 1];
+
+  // Y range — symmetric around zero
+  let maxAbs = 0;
+  for (let i = 0; i < n; i++) {
+    const a = Math.abs(deltaSeconds[i]);
+    if (a > maxAbs) maxAbs = a;
+  }
+  if (maxAbs < 0.1) maxAbs = 0.1;
+  const yMax = maxAbs * 1.15;
+  const yMin = -yMax;
+
+  const xToPixel = (v: number) => ox + (v - xMin) / (xMax - xMin) * pW;
+  const yToPixel = (v: number) => oy + pH - (v - yMin) / (yMax - yMin) * pH;
+
+  // Zero line
+  const zeroY = yToPixel(0);
+  ctx.strokeStyle = '#555';
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([4, 3]);
+  ctx.beginPath();
+  ctx.moveTo(ox, zeroY);
+  ctx.lineTo(ox + pW, zeroY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Y-axis ticks
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '10px "Space Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  const yTicks = niceRange(yMin, yMax, 3);
+  for (const tick of yTicks) {
+    const ty = yToPixel(tick);
+    ctx.fillText(`${tick > 0 ? '+' : ''}${tick.toFixed(1)}s`, ox - 6, ty);
+    if (tick !== 0) {
+      ctx.strokeStyle = COLORS.grid;
+      ctx.lineWidth = 0.3;
+      ctx.beginPath();
+      ctx.moveTo(ox, ty);
+      ctx.lineTo(ox + pW, ty);
+      ctx.stroke();
+    }
+  }
+
+  // Delta area fill + line
+  ctx.beginPath();
+  ctx.moveTo(xToPixel(distances[0]), zeroY);
+  for (let i = 0; i < n; i++) {
+    ctx.lineTo(xToPixel(distances[i]), yToPixel(deltaSeconds[i]));
+  }
+  ctx.lineTo(xToPixel(distances[n - 1]), zeroY);
+  ctx.closePath();
+
+  // Fill: green when faster (negative delta), red when slower (positive)
+  // Use gradient from the actual data
+  const lastDelta = deltaSeconds[n - 1];
+  ctx.fillStyle = lastDelta <= 0 ? 'rgba(0,255,100,0.12)' : 'rgba(255,60,60,0.12)';
+  ctx.fill();
+
+  // Line colored by sign
+  for (let i = 0; i < n - 1; i++) {
+    const d = deltaSeconds[i];
+    ctx.strokeStyle = d <= 0 ? '#00ff64' : '#ff3c3c';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(xToPixel(distances[i]), yToPixel(deltaSeconds[i]));
+    ctx.lineTo(xToPixel(distances[i + 1]), yToPixel(deltaSeconds[i + 1]));
+    ctx.stroke();
+  }
+
+  // Label
+  ctx.fillStyle = COLORS.text;
+  ctx.font = '9px "Space Mono", monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`\u0394t Lap ${primaryLapNum} vs ${compareLapNum}`, ox + 4, oy + 2);
+
+  // Final delta value
+  const finalDelta = deltaSeconds[n - 1];
+  const sign = finalDelta <= 0 ? '' : '+';
+  ctx.fillStyle = finalDelta <= 0 ? '#00ff64' : '#ff3c3c';
+  ctx.font = '11px "Space Mono", monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText(`${sign}${finalDelta.toFixed(3)}s`, ox + pW - 4, oy + 2);
+
+  // Hover crosshair
+  if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
+    const hx = xToPixel(hoverDistanceM);
+    ctx.strokeStyle = COLORS.textBright + '60';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(hx, oy);
+    ctx.lineTo(hx, oy + pH);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Find closest delta value
+    const idx = closestIndex(distances, hoverDistanceM);
+    if (idx >= 0 && idx < deltaSeconds.length) {
+      const dt = deltaSeconds[idx];
+      const dtSign = dt <= 0 ? '' : '+';
+      const label = `${dtSign}${dt.toFixed(3)}s`;
+      ctx.font = '10px "Space Mono", monospace';
+      const tw = ctx.measureText(label).width + 8;
+      const tx = Math.min(hx + 6, x0 + w - pad.right - tw);
+      const ty = Math.max(oy, yToPixel(dt) - 14);
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.beginPath();
+      ctx.roundRect(tx, ty, tw, 16, 3);
+      ctx.fill();
+      ctx.fillStyle = dt <= 0 ? '#00ff64' : '#ff3c3c';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, tx + 4, ty + 8);
+    }
+  }
+}
+
 // ── Component ────────────────────────────────────────────────────
 export function SpeedTraceChart({
   sessionId,
@@ -329,12 +538,17 @@ export function SpeedTraceChart({
   className = '',
   gpsLaps = [],
   bestLap = null,
+  compareLap = null,
+  primaryLapTime = null,
+  compareLapTime = null,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
 
   const [traceData, setTraceData] = useState<SpeedTraceData | null>(null);
   const [avgSpeeds, setAvgSpeeds] = useState<number[] | null>(null);
+  const [refSpeeds, setRefSpeeds] = useState<number[] | null>(null);
+  const [activeCompareLap, setActiveCompareLap] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
@@ -381,7 +595,42 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [sessionId, activeLap, externalData]);
 
+  // ── Fetch reference lap for comparison ────────────────────────
+  useEffect(() => {
+    if (!sessionId || !compareLap || activeLap == null || compareLap === activeLap) {
+      setRefSpeeds(null);
+      setActiveCompareLap(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api.get<SpeedTraceData & { ref_speeds?: number[] }>(
+          `/sessions/${encodeURIComponent(sessionId)}/speed-trace?lap=${activeLap}&ref=${compareLap}`,
+        );
+        if (cancelled) return;
+        if (data.ref_speeds) {
+          setRefSpeeds(data.ref_speeds);
+          setActiveCompareLap(compareLap);
+        }
+      } catch {
+        if (!cancelled) { setRefSpeeds(null); setActiveCompareLap(null); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId, activeLap, compareLap]);
+
   // ── Draw ────────────────────────────────────────────────────
+  // Compute delta time when ref data is available
+  const actualDelta = (primaryLapTime != null && compareLapTime != null)
+    ? primaryLapTime - compareLapTime
+    : null;
+
+  const deltaSeconds = useMemo(() => {
+    if (!chartData?.distances || !chartData?.speeds || !refSpeeds) return null;
+    return computeDeltaTime(chartData.distances, chartData.speeds, refSpeeds, actualDelta);
+  }, [chartData, refSpeeds, actualDelta]);
+
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -404,14 +653,29 @@ export function SpeedTraceChart({
       return;
     }
 
-    boundsRef.current = drawSpeedTrace(ctx, rect.width, rect.height, {
+    // Split: if delta data, top 65% speed trace, bottom 35% delta
+    const hasDelta = deltaSeconds && deltaSeconds.length > 1 && activeCompareLap != null;
+    const speedH = hasDelta ? Math.round(rect.height * 0.65) : rect.height;
+    const deltaH = hasDelta ? rect.height - speedH : 0;
+
+    boundsRef.current = drawSpeedTrace(ctx, rect.width, speedH, {
       distances: chartData.distances,
       speeds: chartData.speeds,
-      refSpeeds: chartData.ref_speeds,
-      avgSpeeds: avgSpeeds ?? chartData.avg_speeds,
+      refSpeeds: refSpeeds ?? chartData.ref_speeds,
+      avgSpeeds: !refSpeeds ? (avgSpeeds ?? chartData.avg_speeds) : undefined,
       hoverDistanceM: hoverDistance,
+      refLapLabel: activeCompareLap != null ? `Lap ${activeCompareLap}` : null,
+      primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
     });
-  }, [chartData, avgSpeeds, hoverDistance]);
+
+    if (hasDelta && deltaSeconds) {
+      drawDeltaChart(
+        ctx, 0, speedH, rect.width, deltaH,
+        chartData.distances, deltaSeconds,
+        hoverDistance, activeLap!, activeCompareLap!,
+      );
+    }
+  }, [chartData, avgSpeeds, refSpeeds, deltaSeconds, activeCompareLap, hoverDistance]);
 
   useEffect(() => {
     render();
@@ -503,11 +767,14 @@ export function SpeedTraceChart({
       )}
 
       {/* Canvas */}
-      <div className="relative w-full flex-1 min-h-0 rounded-lg bg-concrete border border-steel/10">
+      <div
+        className="relative w-full flex-1 min-h-0 rounded-lg bg-concrete border border-steel/10"
+        style={!className.includes('h-full') ? { minHeight: '280px' } : undefined}
+      >
         <canvas
           ref={canvasRef}
           className="w-full h-full cursor-crosshair"
-          style={{ minHeight: '280px', display: 'block' }}
+          style={{ display: 'block' }}
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
           role="img"

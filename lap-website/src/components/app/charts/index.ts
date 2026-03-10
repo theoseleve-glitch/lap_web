@@ -9,3 +9,4 @@ export { SpeedTraceZoom } from './SpeedTraceZoom';
 export { GpsTrace } from './GpsTrace';
 export { GGExplorer } from './GGExplorer';
 export { useVanillaChart } from './useVanillaChart';
+export { CornerDefiner } from './CornerDefiner';

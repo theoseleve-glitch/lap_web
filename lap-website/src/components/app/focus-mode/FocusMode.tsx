@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useCallback, useMemo } from 'react';
+import { useEffect, useCallback, useMemo, useState } from 'react';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
 import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 import { BACKEND_URL } from '@/lib/api-client';
@@ -95,6 +95,8 @@ export function FocusMode({
   const { activeTools: toolState, toggle, reset, toggleByShortcut } = useToolDock('speed-trace');
 
   const apiBase = BACKEND_URL;
+  const [focusLap, setFocusLap] = useState<number | null>(null);
+  const activeLap = focusLap ?? bestLap ?? gpsLaps[0] ?? null;
 
   // Sync store tools into useToolDock if available
   const storeTools = store.activeTools[activeTab];
@@ -156,6 +158,14 @@ export function FocusMode({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Lock body scroll when focus mode is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [isOpen]);
+
   // Persist active tools to store when they change
   useEffect(() => {
     if (isOpen) {
@@ -169,20 +179,19 @@ export function FocusMode({
   // Build the content panels from active tools
   const toolIds = activeToolIds.length > 0 ? activeToolIds : ['speed-trace' as ToolId];
 
+  // Minimal panel: no border/padding chrome — chart fills edge-to-edge
   const renderToolPanel = (toolId: ToolId) => (
-    <div key={toolId} className="h-full bg-concrete rounded-lg border border-steel/10 p-3 flex flex-col">
-      <h3 className="text-[10px] font-monument text-steel mb-1.5 uppercase tracking-wider shrink-0">
+    <div key={toolId} className="h-full w-full relative">
+      <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
         {toolId.replace(/-/g, ' ')}
-      </h3>
-      <div className="flex-1 min-h-0">
-        <ToolRenderer
-          toolId={toolId}
-          sessionId={sessionId}
-          apiBase={apiBase}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-        />
-      </div>
+      </span>
+      <ToolRenderer
+        toolId={toolId}
+        sessionId={sessionId}
+        apiBase={apiBase}
+        gpsLaps={[]}
+        bestLap={activeLap}
+      />
     </div>
   );
 
@@ -190,7 +199,7 @@ export function FocusMode({
   let mainContent: React.ReactNode;
   if (toolIds.length === 1) {
     mainContent = (
-      <div className="h-full p-2">
+      <div className="h-full">
         {renderToolPanel(toolIds[0])}
       </div>
     );
@@ -198,12 +207,12 @@ export function FocusMode({
     mainContent = (
       <SplitPane
         leftContent={
-          <div className="h-full p-2 pr-1">
+          <div className="h-full">
             {renderToolPanel(toolIds[0])}
           </div>
         }
         rightContent={
-          <div className="h-full p-2 pl-1">
+          <div className="h-full">
             {renderToolPanel(toolIds[1])}
           </div>
         }
@@ -211,33 +220,23 @@ export function FocusMode({
       />
     );
   } else {
-    // 3+ tools: top split pane + bottom grid
-    const [first, second, ...rest] = toolIds;
+    // 3+ tools: VRS-style — left column (first tool full height) + right column (stacked)
+    const [first, ...stacked] = toolIds;
     mainContent = (
-      <div className="h-full flex flex-col">
-        <div className="flex-1 min-h-0">
-          <SplitPane
-            leftContent={
-              <div className="h-full p-2 pr-1">
-                {renderToolPanel(first)}
-              </div>
-            }
-            rightContent={
-              <div className="h-full p-2 pl-1">
-                {renderToolPanel(second)}
-              </div>
-            }
-            defaultLeftWidth={defaultSplit}
-          />
+      <div className="h-full flex">
+        {/* Left: first tool takes ~40% width, full height */}
+        <div className="h-full" style={{ width: '38%' }}>
+          {renderToolPanel(first)}
         </div>
-        <div
-          className="shrink-0 grid gap-2 p-2 pt-0"
-          style={{
-            height: '35%',
-            gridTemplateColumns: `repeat(${rest.length}, 1fr)`,
-          }}
-        >
-          {rest.map((id) => renderToolPanel(id))}
+        <div className="w-px bg-steel/15 shrink-0" />
+        {/* Right: remaining tools stacked vertically */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          {stacked.map((id, i) => (
+            <div key={id} className="flex-1 min-h-0">
+              {i > 0 && <div className="h-px bg-steel/15" />}
+              {renderToolPanel(id)}
+            </div>
+          ))}
         </div>
       </div>
     );
@@ -245,37 +244,54 @@ export function FocusMode({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-asphalt/98 flex flex-col"
+      className="fixed inset-0 z-50 bg-asphalt flex flex-col overflow-hidden"
       role="dialog"
       aria-modal="true"
       aria-label="Focus Mode"
     >
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-steel/10 shrink-0">
-        <div className="flex items-center gap-4">
-          <h2 className="text-lg font-monument text-chalk">Focus Mode</h2>
-          <div className="hidden sm:flex items-center gap-2 text-[10px] font-telemetry text-steel/60">
-            <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20">Esc</kbd>
-            <span>close</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20 ml-2">S</kbd>
-            <span>sidebar</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20 ml-2">R</kbd>
-            <span>reset</span>
-            <kbd className="px-1.5 py-0.5 rounded bg-asphalt border border-steel/20 ml-2">1-9</kbd>
-            <span>tools</span>
+      {/* Compact header — minimal chrome, max chart space */}
+      <div className="flex items-center justify-between px-3 py-1 border-b border-steel/15 shrink-0">
+        <div className="flex items-center gap-3">
+          <h2 className="text-xs font-monument text-steel/60 uppercase tracking-wider">Focus</h2>
+          <div className="hidden sm:flex items-center gap-1.5 text-[9px] font-telemetry text-steel/40">
+            <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15">Esc</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">S</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">R</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">1-9</kbd>
           </div>
         </div>
-        <button
-          onClick={onClose}
-          className="px-3 py-1.5 bg-concrete border border-steel/20 rounded text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
-          aria-label="Close focus mode"
-        >
-          Exit Focus
-        </button>
+        <div className="flex items-center gap-3">
+          {gpsLaps.length > 1 && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-telemetry text-steel/40 uppercase">Lap</span>
+              <div className="flex gap-0.5">
+                {gpsLaps.map((lap) => (
+                  <button
+                    key={lap}
+                    type="button"
+                    onClick={() => setFocusLap(lap)}
+                    className={`px-1.5 py-0.5 text-[10px] font-telemetry rounded transition-colors ${
+                      lap === activeLap
+                        ? 'bg-acid-green/20 text-acid-green border border-acid-green/40'
+                        : 'text-steel/50 hover:text-chalk'
+                    }`}
+                  >
+                    {lap}
+                    {lap === bestLap && <span className="ml-0.5 text-[8px] text-acid-green">B</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={onClose}
+            className="px-2 py-0.5 text-[10px] text-steel/60 font-telemetry uppercase tracking-wider hover:text-chalk transition-colors"
+            aria-label="Close focus mode"
+          >
+            Exit
+          </button>
+        </div>
       </div>
-
-      {/* Corner nav bar */}
-      <CornerNavBar sessionId={sessionId} />
 
       {/* Main workspace: ToolDock + content */}
       <div className="flex flex-1 min-h-0 overflow-hidden">

@@ -116,8 +116,8 @@ function buildProjection(
   // Angle of principal axis
   const pcaAngle = 0.5 * Math.atan2(2 * cxy, cxx - cyy);
 
-  // Try 4 candidate rotations: PCA angle + 0°, 90° and the isometric tilt
-  // Pick the one that gives the best fill ratio for this canvas
+  // Try PCA angle + 90° to find best natural orientation.
+  // Compute fit using UN-TILTED bounding box; tilt applied visually afterward.
   const drawW = width - padding * 2;
   const drawH = height - padding * 2;
 
@@ -132,7 +132,7 @@ function buildProjection(
     let rMinY = Infinity, rMaxY = -Infinity;
     for (let i = 0; i < xs.length; i++) {
       const rx = xs[i] * cosA - ys[i] * sinA;
-      const ry = (xs[i] * sinA + ys[i] * cosA) * COS_TILT; // apply tilt
+      const ry = xs[i] * sinA + ys[i] * cosA; // NO tilt during fit
       if (rx < rMinX) rMinX = rx;
       if (rx > rMaxX) rMaxX = rx;
       if (ry < rMinY) rMinY = ry;
@@ -148,14 +148,15 @@ function buildProjection(
     }
   }
 
-  // Apply best rotation + isometric tilt
+  // Apply best rotation — use uniform scale from un-tilted fit,
+  // then apply COS_TILT only to Y for the isometric visual effect.
   const cosR = Math.cos(bestAngle);
   const sinR = Math.sin(bestAngle);
 
   const pxs = new Float64Array(lats.length);
   const pys = new Float64Array(lats.length);
 
-  // Compute rotated + tilted coordinates
+  // First pass: compute rotated (un-tilted) to get bounding box for centering
   const rxs = new Float64Array(lats.length);
   const rys = new Float64Array(lats.length);
   let rMinX = Infinity, rMaxX = -Infinity;
@@ -163,7 +164,7 @@ function buildProjection(
 
   for (let i = 0; i < xs.length; i++) {
     rxs[i] = xs[i] * cosR - ys[i] * sinR;
-    rys[i] = (xs[i] * sinR + ys[i] * cosR) * COS_TILT;
+    rys[i] = xs[i] * sinR + ys[i] * cosR; // un-tilted for fit
     if (rxs[i] < rMinX) rMinX = rxs[i];
     if (rxs[i] > rMaxX) rMaxX = rxs[i];
     if (rys[i] < rMinY) rMinY = rys[i];
@@ -173,36 +174,37 @@ function buildProjection(
   const spanX = rMaxX - rMinX || 0.0001;
   const spanY = rMaxY - rMinY || 0.0001;
   const scale = Math.min(drawW / spanX, drawH / spanY);
-  const offsetX = padding + (drawW - spanX * scale) / 2;
-  const offsetY = padding + (drawH - spanY * scale) / 2;
+
+  // Center in canvas using the un-tilted span
+  const usedW = spanX * scale;
+  const usedH = spanY * scale;
+  const offsetX = padding + (drawW - usedW) / 2;
+  const offsetY = padding + (drawH - usedH) / 2;
+
+  // Map to screen coords with subtle Y foreshortening (2.5D effect)
+  const centerY = offsetY + usedH / 2;
+  const TILT_K = 0.88; // subtle Y compression for isometric feel
 
   for (let i = 0; i < lats.length; i++) {
     pxs[i] = offsetX + (rxs[i] - rMinX) * scale;
-    pys[i] = offsetY + (rMaxY - rys[i]) * scale; // flip Y
+    const baseY = offsetY + (rMaxY - rys[i]) * scale; // flip Y: north=up
+    pys[i] = centerY + (baseY - centerY) * TILT_K;
   }
 
-  // toX/toY for ad-hoc points (corners, etc.)
-  const toX = (lon: number) => {
-    const lx = (lon - midLon) * cosLat;
-    const ly = 0; // approximate — corners also have lat
-    return offsetX + (lx * cosR - ly * sinR - rMinX) * scale;
-  };
-  const toY = (lat: number) => {
-    const ly = lat - midLat;
-    const lx = 0;
-    return offsetY + (rMaxY - (lx * sinR + ly * cosR) * COS_TILT) * scale;
-  };
-  // Full projection for a (lat, lon) pair
-  const toXY = (lat: number, lon: number): [number, number] => {
+  // Project an arbitrary (lat, lon) → screen coords
+  const projectPoint = (lat: number, lon: number): [number, number] => {
     const lx = (lon - midLon) * cosLat;
     const ly = lat - midLat;
     const rx = lx * cosR - ly * sinR;
-    const ry = (lx * sinR + ly * cosR) * COS_TILT;
-    return [
-      offsetX + (rx - rMinX) * scale,
-      offsetY + (rMaxY - ry) * scale,
-    ];
+    const ry = lx * sinR + ly * cosR;
+    const px = offsetX + (rx - rMinX) * scale;
+    const baseY = offsetY + (rMaxY - ry) * scale;
+    return [px, centerY + (baseY - centerY) * TILT_K];
   };
+
+  const toX = (lon: number) => projectPoint(0, lon)[0]; // approx
+  const toY = (lat: number) => projectPoint(lat, midLon)[1]; // approx
+  const toXY = projectPoint;
   const toShadowY = (lat: number) => toY(lat) + 6;
 
   const closestIndex = (cx: number, cy: number): number => {
@@ -248,7 +250,7 @@ function drawTrack(
   const { latitudes: lats, longitudes: lons, speeds } = trace;
   if (lats.length < 2) return;
 
-  const proj = buildProjection(lats, lons, w, h, 30);
+  const proj = buildProjection(lats, lons, w, h, 12);
 
   // Speed normalization
   let minSpd = Infinity, maxSpd = -Infinity;
@@ -274,7 +276,7 @@ function drawTrack(
     if (proj.pys[i] < pMinY) pMinY = proj.pys[i];
     if (proj.pys[i] > pMaxY) pMaxY = proj.pys[i];
   }
-  const gridPad = 30;
+  const gridPad = 8;
   const gx0 = pMinX - gridPad, gx1 = pMaxX + gridPad;
   const gy0 = pMinY - gridPad, gy1 = pMaxY + gridPad;
   const gridStep = Math.max(20, (gx1 - gx0) / 12);
@@ -609,7 +611,7 @@ export function TrackMap(props: TrackMapProps) {
     <div className={`flex flex-col ${className}`}>
       <div
         className="relative flex-1 min-h-0 rounded-lg border border-steel/10"
-        style={{ width: '100%', minHeight: '300px', background: '#0B0C0F' }}
+        style={{ width: '100%', background: '#0B0C0F', ...(!className.includes('h-full') ? { minHeight: '300px' } : {}) }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10">

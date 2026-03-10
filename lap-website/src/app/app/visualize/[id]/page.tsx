@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useLayoutEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
@@ -36,7 +36,7 @@ export default function VisualizeSessionPage() {
   const [laps, setLaps] = useState<LapData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedLap, setSelectedLap] = useState<number | null>(null);
+  const [selectedLaps, setSelectedLaps] = useState<number[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Fetch session + laps on mount
@@ -83,10 +83,25 @@ export default function VisualizeSessionPage() {
 
   const gpsLaps = useMemo(() => laps.map((l) => l.lap_number), [laps]);
 
-  const activeLap = selectedLap ?? bestLap;
+  // Primary lap = first selected, or best. Compare lap = second selected.
+  const primaryLap = selectedLaps.length > 0 ? selectedLaps[0] : bestLap;
+  const compareLap = selectedLaps.length > 1 ? selectedLaps[1] : null;
+  const primaryLapTime = laps.find((l) => l.lap_number === primaryLap)?.lap_time_s ?? null;
+  const compareLapTime = compareLap != null ? (laps.find((l) => l.lap_number === compareLap)?.lap_time_s ?? null) : null;
 
   const handleLapSelect = useCallback((lapNum: number) => {
-    setSelectedLap(lapNum);
+    setSelectedLaps((prev) => {
+      if (prev.includes(lapNum)) {
+        // Deselect — remove from selection
+        return prev.filter((l) => l !== lapNum);
+      }
+      if (prev.length < 2) {
+        // Add to selection (max 2)
+        return [...prev, lapNum];
+      }
+      // Replace second selection
+      return [prev[0], lapNum];
+    });
   }, []);
 
   const toggleSidebar = useCallback(() => {
@@ -105,11 +120,18 @@ export default function VisualizeSessionPage() {
 
   const apiBase = BACKEND_URL;
 
+  // Lock body scroll — this page is a full viewport overlay
+  useLayoutEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // ── Loading state ──────────────────────────────────────────────
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0f1117]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1117]">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-acid-green border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-steel font-body">Loading visualization...</p>
@@ -120,7 +142,7 @@ export default function VisualizeSessionPage() {
 
   if (error || !session) {
     return (
-      <div className="flex items-center justify-center h-screen bg-[#0f1117]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1117]">
         <div className="text-center">
           <h1 className="text-2xl font-monument text-chalk mb-2">Session Not Found</h1>
           <p className="text-steel font-body mb-4">{error || 'The session could not be loaded.'}</p>
@@ -138,7 +160,7 @@ export default function VisualizeSessionPage() {
   // ── Full-screen layout ─────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-screen bg-[#0f1117] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#0f1117] overflow-hidden">
       {/* Top bar — minimal chrome */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-steel/10 bg-concrete shrink-0">
         <div className="flex items-center gap-3">
@@ -188,22 +210,20 @@ export default function VisualizeSessionPage() {
         </div>
       </div>
 
-      {/* Main content — 3-panel layout */}
-      <div className="flex flex-1 min-h-0">
+      {/* Main content — 3-panel VRS-style layout */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* GPS Map — left, full height */}
-        <div className="flex-1 min-w-0 flex flex-col border-r border-steel/10">
-          <div className="px-3 py-2 border-b border-steel/10 bg-concrete/50">
-            <h3 className="text-xs font-monument text-steel uppercase tracking-wider">
-              GPS Track Map
-            </h3>
-          </div>
-          <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="GPS Track Map fullscreen">
-            <ChartErrorBoundary chartName="GpsTrace" minHeight="300px">
+        <div className="flex-1 min-w-0 min-h-0 relative border-r border-steel/10">
+          <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+            track map
+          </span>
+          <FullscreenToggle className="h-full w-full overflow-hidden" label="GPS Track Map fullscreen">
+            <ChartErrorBoundary chartName="GpsTrace">
               <GpsTrace
                 sessionId={sessionId}
                 apiBase={apiBase}
-                gpsLaps={gpsLaps}
-                bestLap={activeLap}
+                gpsLaps={[]}
+                bestLap={primaryLap}
                 className="w-full h-full"
               />
             </ChartErrorBoundary>
@@ -211,21 +231,22 @@ export default function VisualizeSessionPage() {
         </div>
 
         {/* Right panels — Speed Trace + GG Diagram, stacked */}
-        <div className="flex-1 min-w-0 flex flex-col">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
           {/* Speed Trace — top right */}
-          <div className="flex-1 flex flex-col border-b border-steel/10">
-            <div className="px-3 py-2 border-b border-steel/10 bg-concrete/50">
-              <h3 className="text-xs font-monument text-steel uppercase tracking-wider">
-                Speed Trace
-              </h3>
-            </div>
-            <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="Speed Trace fullscreen">
-              <ChartErrorBoundary chartName="SpeedTrace" minHeight="200px">
+          <div className="flex-1 min-h-0 relative border-b border-steel/10">
+            <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+              speed trace
+            </span>
+            <FullscreenToggle className="h-full w-full overflow-hidden" label="Speed Trace fullscreen">
+              <ChartErrorBoundary chartName="SpeedTrace">
                 <SpeedTraceZoom
                   sessionId={sessionId}
                   apiBase={apiBase}
-                  gpsLaps={gpsLaps}
-                  bestLap={activeLap}
+                  gpsLaps={[]}
+                  bestLap={primaryLap}
+                  compareLap={compareLap}
+                  primaryLapTime={primaryLapTime}
+                  compareLapTime={compareLapTime}
                   className="w-full h-full"
                 />
               </ChartErrorBoundary>
@@ -233,19 +254,17 @@ export default function VisualizeSessionPage() {
           </div>
 
           {/* GG Diagram — bottom right */}
-          <div className="flex-1 flex flex-col">
-            <div className="px-3 py-2 border-b border-steel/10 bg-concrete/50">
-              <h3 className="text-xs font-monument text-steel uppercase tracking-wider">
-                G-G Diagram
-              </h3>
-            </div>
-            <FullscreenToggle className="flex-1 p-2 overflow-hidden" label="G-G Diagram fullscreen">
-              <ChartErrorBoundary chartName="GGExplorer" minHeight="200px">
+          <div className="flex-1 min-h-0 relative">
+            <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+              g-g diagram
+            </span>
+            <FullscreenToggle className="h-full w-full overflow-hidden" label="G-G Diagram fullscreen">
+              <ChartErrorBoundary chartName="GGExplorer">
                 <GGExplorer
                   sessionId={sessionId}
                   apiBase={apiBase}
-                  gpsLaps={gpsLaps}
-                  bestLap={activeLap}
+                  gpsLaps={[]}
+                  bestLap={primaryLap}
                   className="w-full h-full"
                 />
               </ChartErrorBoundary>
@@ -260,7 +279,8 @@ export default function VisualizeSessionPage() {
           <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto">
             <span className="text-steel text-xs font-body shrink-0 mr-2">Laps:</span>
             {laps.map((lap) => {
-              const isActive = lap.lap_number === activeLap;
+              const isPrimary = lap.lap_number === primaryLap;
+              const isCompare = lap.lap_number === compareLap;
               const isBest = lap.is_best === 1;
               return (
                 <button
@@ -270,9 +290,11 @@ export default function VisualizeSessionPage() {
                   className={`
                     shrink-0 px-3 py-1.5 rounded text-xs font-telemetry transition-colors
                     ${
-                      isActive
+                      isPrimary
                         ? 'bg-acid-green/20 text-acid-green border border-acid-green/40'
-                        : 'bg-asphalt text-steel border border-steel/20 hover:text-chalk hover:border-steel/40'
+                        : isCompare
+                          ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40'
+                          : 'bg-asphalt text-steel border border-steel/20 hover:text-chalk hover:border-steel/40'
                     }
                   `}
                 >
@@ -288,6 +310,11 @@ export default function VisualizeSessionPage() {
             })}
             {laps.length === 0 && (
               <span className="text-steel/50 text-xs font-body">No Lap Data available</span>
+            )}
+            {compareLap != null && (
+              <span className="text-steel/40 text-[10px] font-telemetry shrink-0 ml-2">
+                Delta: Lap {primaryLap} vs {compareLap}
+              </span>
             )}
           </div>
         </div>

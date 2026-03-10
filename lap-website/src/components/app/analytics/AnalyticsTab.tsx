@@ -78,9 +78,9 @@ export function AnalyticsTab({
       </div>
       {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1 lg:row-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <div className="flex items-center gap-2 mb-3">
+        <div className="lg:col-span-1">
+          <div className="bg-concrete rounded-xl border border-steel/10 p-4 h-full flex flex-col">
+            <div className="flex items-center gap-2 mb-3 shrink-0">
               <h3 className="text-sm font-monument text-chalk">GPS Track Map</h3>
               <ChartTooltip
                 title="GPS Track Map"
@@ -88,13 +88,13 @@ export function AnalyticsTab({
                 tips={['Click a point to see its distance on the speed trace', 'Use the lap dropdown to change which lap is displayed']}
               />
             </div>
-            <div className="chart-enter" role="img" aria-label="GPS track map showing the racing line for the selected lap">
+            <div className="chart-enter flex-1 min-h-0" role="img" aria-label="GPS track map showing the racing line for the selected lap">
               <GpsTrace
                 sessionId={sessionId}
                 apiBase={apiBase}
                 gpsLaps={gpsLaps}
                 bestLap={bestLap}
-                className="w-full"
+                className="w-full h-full"
               />
             </div>
           </div>
