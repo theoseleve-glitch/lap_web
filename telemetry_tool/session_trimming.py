@@ -1267,44 +1267,52 @@ def identify_invalid_laps(
                     f"(threshold: {track_cut_pct}%)"
                 )
 
-    # -- Incident lap detection -- # A lap is flagged if it's more than incident_pct% slower than the mean of
-
-    # its direct neighbours.  Laps in the first 2 positions are exempt (may be
-
-    # slow due to warm-up, not incident).
+    # -- Incident lap detection --
+    # A lap is flagged if it's more than incident_pct% slower than the
+    # median of its direct neighbours.  Uses median (not mean) so a single
+    # outlier neighbour cannot poison the comparison.
+    # Laps in the first 2 positions are exempt (warm-up, not incident).
 
     if n >= 3:
         for i in range(2, n):  # skip first 2 laps
             if not np.isfinite(arr[i]):
                 continue
+            # Already flagged as track cut — don't double-flag as incident
+            if lap_keys[i] in track_cuts:
+                continue
 
-            # Average of up to 2 neighbours on each side (excluding self).
-            # Skip neighbours already flagged as track cuts and those whose
-            # time is < 50% of the current lap (clearly incomplete fragments
-            # that would poison the average).
+            # Gather up to 2 neighbours on each side (excluding self).
+            # Skip neighbours that are:
+            #   - already flagged as track cuts or incidents (cascade guard)
+            #   - more than 30% faster than current lap (fragments/shortcuts)
+            #   - more than 30% slower than current lap (other incidents)
             neighbours = []
+            lo_bound = arr[i] * 0.70
+            hi_bound = arr[i] * 1.30
             for j in (i - 2, i - 1, i + 1, i + 2):
                 if 0 <= j < n and j != i and np.isfinite(arr[j]):
                     if lap_keys[j] in track_cuts:
                         continue
-                    if arr[j] < arr[i] * 0.5:
+                    if lap_keys[j] in incidents:
+                        continue
+                    if arr[j] < lo_bound or arr[j] > hi_bound:
                         continue
                     neighbours.append(arr[j])
 
             if len(neighbours) < 1:
                 continue
 
-            avg_neighbour = float(np.mean(neighbours))
-            if avg_neighbour <= 0:
+            med_neighbour = float(np.median(neighbours))
+            if med_neighbour <= 0:
                 continue
 
-            pct_slower = (arr[i] - avg_neighbour) / avg_neighbour * 100.0
+            pct_slower = (arr[i] - med_neighbour) / med_neighbour * 100.0
             if pct_slower > incident_pct:
                 lk = lap_keys[i]
                 incidents.add(lk)
                 reason[lk] = (
                     f"incident: lap {arr[i]:.3f}s is {pct_slower:.1f}% "
-                    f"slower than neighbours avg {avg_neighbour:.3f}s "
+                    f"slower than neighbours median {med_neighbour:.3f}s "
                     f"(threshold: {incident_pct}%)"
                 )
 
