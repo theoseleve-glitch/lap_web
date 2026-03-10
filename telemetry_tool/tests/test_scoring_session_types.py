@@ -1,33 +1,48 @@
 """Test scoring system differentiates by session type."""
+import os
+import sys
 import pytest
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 class TestScoringSessionTypes:
     def test_weight_normalization(self):
-        """All session-type weights should normalize properly."""
+        """Backward-compat _SESSION_WEIGHT_OVERRIDES should still exist."""
         from scoring import _SESSION_WEIGHT_OVERRIDES
-        for stype, weights in _SESSION_WEIGHT_OVERRIDES.items():
-            total = sum(weights.values())
-            assert 3.0 < total < 7.0, f"{stype} weights sum to {total}"
+        assert len(_SESSION_WEIGHT_OVERRIDES) >= 10
 
-    def test_qualifying_prioritizes_pace(self):
-        from scoring import _SESSION_WEIGHT_OVERRIDES
-        w = _SESSION_WEIGHT_OVERRIDES.get("qualifying", {})
-        assert w.get("pace", 0) > w.get("robustness", 0)
+    def test_session_category_config_complete(self):
+        """New config should cover all session types."""
+        from scoring import _SESSION_CATEGORY_CONFIG
+        required = {"qualifying", "race", "practice", "warmup", "test",
+                     "endurance", "heat", "final", "sprint"}
+        assert required.issubset(set(_SESSION_CATEGORY_CONFIG.keys()))
+
+    def test_qualifying_suppresses_consistency(self):
+        from scoring import _SESSION_CATEGORY_CONFIG
+        q = _SESSION_CATEGORY_CONFIG["qualifying"]
+        assert "consistency" in q["suppressed"]
 
     def test_race_prioritizes_robustness(self):
-        from scoring import _SESSION_WEIGHT_OVERRIDES
-        w = _SESSION_WEIGHT_OVERRIDES.get("race", {})
-        assert w.get("robustness", 0) > w.get("pace", 0)
+        from scoring import _SESSION_CATEGORY_CONFIG
+        r = _SESSION_CATEGORY_CONFIG["race"]
+        assert r["emphasis"].get("robustness", 0) > 1.0
 
     def test_endurance_high_robustness(self):
-        from scoring import _SESSION_WEIGHT_OVERRIDES
-        for key in ("endurance_stint", "endurance_race"):
-            if key in _SESSION_WEIGHT_OVERRIDES:
-                w = _SESSION_WEIGHT_OVERRIDES[key]
-                assert w.get("robustness", 0) >= 1.4
+        from scoring import _SESSION_CATEGORY_CONFIG
+        for key in ("endurance", "endurance_stint", "endurance_race"):
+            if key in _SESSION_CATEGORY_CONFIG:
+                e = _SESSION_CATEGORY_CONFIG[key]
+                assert e["emphasis"].get("robustness", 0) >= 1.4
 
-    def test_all_types_have_five_keys(self):
-        from scoring import _SESSION_WEIGHT_OVERRIDES
-        for stype, weights in _SESSION_WEIGHT_OVERRIDES.items():
-            assert set(weights.keys()) == {"pace", "consistency", "execution", "robustness", "adaptation"}
+    def test_practice_emphasizes_adaptation(self):
+        from scoring import _SESSION_CATEGORY_CONFIG
+        p = _SESSION_CATEGORY_CONFIG["practice"]
+        assert p["emphasis"].get("adaptation", 0) > 1.0
+
+    def test_no_overlap_suppressed_emphasis(self):
+        from scoring import _SESSION_CATEGORY_CONFIG
+        for stype, cfg in _SESSION_CATEGORY_CONFIG.items():
+            overlap = cfg["suppressed"] & set(cfg["emphasis"].keys())
+            assert not overlap, f"{stype} has overlap: {overlap}"
