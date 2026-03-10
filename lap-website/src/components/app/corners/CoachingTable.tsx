@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import type { CornerData } from './CornersTab';
+import type { CornerData, HandlingEventData } from './CornersTab';
 
 interface CoachingTableProps {
   corners: CornerData[];
@@ -61,6 +61,31 @@ function dirColor(dir?: 'L' | 'R'): string {
   if (dir === 'L') return 'text-blue-400';
   if (dir === 'R') return 'text-orange-400';
   return 'text-steel';
+}
+
+const CORNER_TYPE_LABELS: Record<string, { label: string; color: string }> = {
+  hairpin: { label: 'Hairpin', color: 'text-red-400 bg-red-400/10 border-red-400/30' },
+  fast_sweeper: { label: 'Fast Sweeper', color: 'text-blue-300 bg-blue-300/10 border-blue-300/30' },
+  simple: { label: 'Simple', color: 'text-steel bg-steel/10 border-steel/30' },
+  kink: { label: 'Kink', color: 'text-green-300 bg-green-300/10 border-green-300/30' },
+  double_apex: { label: 'Double Apex', color: 'text-purple-400 bg-purple-400/10 border-purple-400/30' },
+  compound: { label: 'Compound', color: 'text-amber-400 bg-amber-400/10 border-amber-400/30' },
+  chicane: { label: 'Chicane', color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/30' },
+  decreasing_radius: { label: 'Dec. Radius', color: 'text-orange-400 bg-orange-400/10 border-orange-400/30' },
+  increasing_radius: { label: 'Inc. Radius', color: 'text-teal-400 bg-teal-400/10 border-teal-400/30' },
+};
+
+function severityColor(severity: string): string {
+  if (severity === 'severe') return 'text-safety-red bg-safety-red/10';
+  if (severity === 'moderate') return 'text-amber-400 bg-amber-400/10';
+  return 'text-yellow-300 bg-yellow-300/10';
+}
+
+function exitImportanceBar(importance: number | null | undefined): string {
+  if (importance == null) return '';
+  if (importance >= 0.7) return 'High exit priority';
+  if (importance >= 0.4) return 'Medium exit priority';
+  return 'Low exit priority';
 }
 
 /** Speed comparison bar: actual vs theoretical. */
@@ -151,12 +176,22 @@ function CornerCard({ corner, expanded, onToggle, rank }: {
         onClick={onToggle}
         className="w-full flex items-center gap-3 px-4 py-3 text-left"
       >
-        {/* Corner number + direction */}
+        {/* Corner number + direction + type */}
         <div className="flex items-center gap-2 min-w-[80px]">
           <span className="text-lg font-monument text-chalk">C{corner.corner_id}</span>
           {corner.direction && (
             <span className={`text-[10px] font-telemetry uppercase ${dirColor(corner.direction)}`}>
               {dirLabel(corner.direction)}
+            </span>
+          )}
+          {corner.corner_type && CORNER_TYPE_LABELS[corner.corner_type] && (
+            <span className={`text-[9px] font-telemetry px-1.5 py-0.5 rounded border ${CORNER_TYPE_LABELS[corner.corner_type].color}`}>
+              {CORNER_TYPE_LABELS[corner.corner_type].label}
+            </span>
+          )}
+          {corner.is_user_defined && (
+            <span className="text-[9px] font-telemetry px-1.5 py-0.5 rounded border text-cyan-400 bg-cyan-400/10 border-cyan-400/30">
+              Custom
             </span>
           )}
         </div>
@@ -263,6 +298,121 @@ function CornerCard({ corner, expanded, onToggle, rank }: {
               )}
             </div>
           </div>
+
+          {/* v2: MRP + Exit Importance + Handling Events */}
+          {(corner.mrp_distance_m != null || (corner.handling_events && corner.handling_events.length > 0) || corner.exit_importance != null) && (
+            <div className="mt-4 pt-3 border-t border-steel/10">
+              <div className="grid grid-cols-1 lg:grid-cols-[1fr_1fr] gap-6">
+                {/* MRP + Exit Importance */}
+                <div>
+                  {corner.mrp_distance_m != null && (
+                    <div className="mb-3">
+                      <h4 className="text-[10px] font-telemetry uppercase tracking-wider text-steel mb-2">
+                        Maximum Rotation Point
+                      </h4>
+                      <div className="flex items-center gap-4">
+                        <div>
+                          <span className="text-[9px] font-telemetry text-steel/60">MRP</span>
+                          <p className="text-xs font-mono text-chalk">{corner.mrp_distance_m.toFixed(0)}m</p>
+                        </div>
+                        {corner.mrp_speed_mps != null && (
+                          <div>
+                            <span className="text-[9px] font-telemetry text-steel/60">Speed at MRP</span>
+                            <p className="text-xs font-mono text-chalk">
+                              {(corner.mrp_speed_mps * 3.6).toFixed(1)} km/h
+                            </p>
+                          </div>
+                        )}
+                        {corner.geometric_apex_m != null && (
+                          <div>
+                            <span className="text-[9px] font-telemetry text-steel/60">Geo Apex</span>
+                            <p className="text-xs font-mono text-steel">
+                              {corner.geometric_apex_m.toFixed(0)}m
+                            </p>
+                          </div>
+                        )}
+                        {corner.mrp_distance_m != null && corner.geometric_apex_m != null && (
+                          <div>
+                            <span className="text-[9px] font-telemetry text-steel/60">Delta</span>
+                            <p className={`text-xs font-mono ${
+                              corner.mrp_distance_m > corner.geometric_apex_m ? 'text-amber-400' : 'text-acid-green'
+                            }`}>
+                              {corner.mrp_distance_m > corner.geometric_apex_m ? '+' : ''}
+                              {(corner.mrp_distance_m - corner.geometric_apex_m).toFixed(1)}m
+                              {corner.mrp_distance_m > corner.geometric_apex_m ? ' late' : ' early'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {corner.exit_importance != null && (
+                    <div>
+                      <h4 className="text-[10px] font-telemetry uppercase tracking-wider text-steel mb-1">
+                        Exit Importance
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-2 rounded-full bg-steel/10 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${
+                              corner.exit_importance >= 0.7 ? 'bg-safety-red/70' :
+                              corner.exit_importance >= 0.4 ? 'bg-amber-400/70' : 'bg-steel/40'
+                            }`}
+                            style={{ width: `${Math.min(corner.exit_importance * 100, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono text-steel min-w-[60px]">
+                          {exitImportanceBar(corner.exit_importance)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Handling events */}
+                {corner.handling_events && corner.handling_events.length > 0 && (
+                  <div>
+                    <h4 className="text-[10px] font-telemetry uppercase tracking-wider text-steel mb-2">
+                      Handling Events
+                    </h4>
+                    <div className="space-y-1.5">
+                      {corner.handling_events.map((evt, i) => (
+                        <div
+                          key={i}
+                          className={`px-3 py-2 rounded border ${
+                            evt.event_type === 'oversteer'
+                              ? 'border-orange-400/20 bg-orange-400/5'
+                              : 'border-blue-400/20 bg-blue-400/5'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className={`text-[9px] font-telemetry uppercase px-1.5 py-0.5 rounded ${severityColor(evt.severity)}`}>
+                              {evt.severity}
+                            </span>
+                            <span className={`text-[10px] font-telemetry uppercase ${
+                              evt.event_type === 'oversteer' ? 'text-orange-400' : 'text-blue-400'
+                            }`}>
+                              {evt.event_type}
+                            </span>
+                            <span className="text-[9px] font-telemetry text-steel/60 ml-auto">
+                              {evt.corner_phase}
+                            </span>
+                          </div>
+                          <p className="text-xs text-chalk/80 font-body">{evt.cause_detail}</p>
+                          {evt.time_cost_s != null && (
+                            <span className="text-[9px] font-mono text-safety-red">
+                              +{Math.round(evt.time_cost_s * 1000)}ms
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

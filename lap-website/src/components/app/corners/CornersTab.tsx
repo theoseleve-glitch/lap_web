@@ -15,6 +15,16 @@ import 'leaflet/dist/leaflet.css';
 
 /* ── Types ──────────────────────────────────────────────── */
 
+export interface HandlingEventData {
+  event_type: 'understeer' | 'oversteer';
+  severity: 'mild' | 'moderate' | 'severe';
+  cause: string;
+  cause_detail: string;
+  corner_phase: 'entry' | 'mid' | 'exit';
+  magnitude: number;
+  time_cost_s?: number | null;
+}
+
 export interface CornerData {
   corner_id: number;
   s_start: number;
@@ -32,6 +42,15 @@ export interface CornerData {
   grip_utilisation_pct?: number | null;
   primary_cause?: string | null;
   coaching_hint?: string | null;
+  /* v2 fields */
+  corner_type?: string | null;
+  section_type?: string | null;
+  mrp_distance_m?: number | null;
+  mrp_speed_mps?: number | null;
+  geometric_apex_m?: number | null;
+  exit_importance?: number | null;
+  is_user_defined?: boolean | null;
+  handling_events?: HandlingEventData[] | null;
 }
 
 interface CornerPosition {
