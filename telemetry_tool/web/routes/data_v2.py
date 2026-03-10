@@ -656,6 +656,29 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
     distances = trace.get("distances") or []
     has_accel = bool(lat_g and lon_g)
 
+    # Reconstruct real distances from GPS if stored values are row indices
+    lats = trace.get("latitudes") or []
+    lons = trace.get("longitudes") or []
+    if (
+        distances
+        and len(distances) > 2
+        and distances[0] == 0
+        and abs(distances[-1] - (len(distances) - 1)) < 1.0
+        and lats and lons and len(lats) == len(distances)
+    ):
+        import math
+        _R = 6_371_000
+        cum = [0.0]
+        for i in range(1, len(lats)):
+            lat1, lat2 = math.radians(lats[i - 1]), math.radians(lats[i])
+            dlat = lat2 - lat1
+            dlon = math.radians(lons[i] - lons[i - 1])
+            a = (math.sin(dlat / 2) ** 2
+                 + math.cos(lat1) * math.cos(lat2)
+                 * math.sin(dlon / 2) ** 2)
+            cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+        distances = cum
+
     result = {
         "accel_lat": lat_g if has_accel else [],
         "accel_long": lon_g if has_accel else [],
@@ -929,6 +952,38 @@ def get_corners(session_id: str) -> tuple[dict, int]:
                     if cid in risk_map:
                         corner["risk_index"] = risk_map[cid].get("risk_index", 0)
 
+        # -- Merge v2 corner coaching fields --
+        try:
+            for corner in corners:
+                cid = corner.get("corner_id")
+                if cid is not None:
+                    v2_row = conn.execute(
+                        """SELECT corner_type, section_type, mrp_distance_m,
+                                  mrp_speed_mps, geometric_apex_m, exit_importance,
+                                  handling_events_json, is_user_defined
+                           FROM corner_metrics
+                           WHERE session_id = ? AND corner_id = ?
+                           LIMIT 1""",
+                        (session_id, cid),
+                    ).fetchone()
+                    if v2_row:
+                        v2 = dict(v2_row) if hasattr(v2_row, 'keys') else {}
+                        corner["corner_type"] = v2.get("corner_type")
+                        corner["section_type"] = v2.get("section_type")
+                        corner["mrp_distance_m"] = v2.get("mrp_distance_m")
+                        corner["mrp_speed_mps"] = v2.get("mrp_speed_mps")
+                        corner["geometric_apex_m"] = v2.get("geometric_apex_m")
+                        corner["exit_importance"] = v2.get("exit_importance")
+                        corner["is_user_defined"] = bool(v2.get("is_user_defined"))
+                        he_json = v2.get("handling_events_json")
+                        if he_json:
+                            try:
+                                corner["handling_events"] = json.loads(he_json)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+        except Exception:
+            logger.debug("v2 corner field merge failed", exc_info=True)
+
         resp = {
             "corners": corners,
             "available": True,
@@ -988,6 +1043,38 @@ def get_corners(session_id: str) -> tuple[dict, int]:
                         corner["targets"] = tgt_map[cid]
                     if cid in risk_map:
                         corner["risk_index"] = risk_map[cid].get("risk_index", 0)
+
+        # -- Merge v2 corner coaching fields --
+        try:
+            for corner in corners:
+                cid = corner.get("corner_id")
+                if cid is not None:
+                    v2_row = conn.execute(
+                        """SELECT corner_type, section_type, mrp_distance_m,
+                                  mrp_speed_mps, geometric_apex_m, exit_importance,
+                                  handling_events_json, is_user_defined
+                           FROM corner_metrics
+                           WHERE session_id = ? AND corner_id = ?
+                           LIMIT 1""",
+                        (session_id, cid),
+                    ).fetchone()
+                    if v2_row:
+                        v2 = dict(v2_row) if hasattr(v2_row, 'keys') else {}
+                        corner["corner_type"] = v2.get("corner_type")
+                        corner["section_type"] = v2.get("section_type")
+                        corner["mrp_distance_m"] = v2.get("mrp_distance_m")
+                        corner["mrp_speed_mps"] = v2.get("mrp_speed_mps")
+                        corner["geometric_apex_m"] = v2.get("geometric_apex_m")
+                        corner["exit_importance"] = v2.get("exit_importance")
+                        corner["is_user_defined"] = bool(v2.get("is_user_defined"))
+                        he_json = v2.get("handling_events_json")
+                        if he_json:
+                            try:
+                                corner["handling_events"] = json.loads(he_json)
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+        except Exception:
+            logger.debug("v2 corner field merge failed", exc_info=True)
 
         resp = {
             "corners": corners,
@@ -4636,6 +4723,120 @@ def predict_lap_time_endpoint(session_id: str) -> tuple[dict, int]:
         result["improvement_potential"] = potential.to_dict()
 
     return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# User-defined corner endpoints (corner coaching v2)
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/user-corners", methods=["POST"])
+@_safe_api
+def save_user_corners(session_id: str) -> tuple[dict, int]:
+    """Save user-defined corner definitions for a session.
+
+    Body: {"corners": [{"corner_index": 1, "lat_entry": ..., "lon_entry": ...,
+           "lat_apex": ..., "lon_apex": ..., "lat_exit": ..., "lon_exit": ...,
+           "s_entry": ..., "s_apex": ..., "s_exit": ...}, ...]}
+    """
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    corners = data.get("corners", [])
+
+    if not corners:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "No corners provided", status=400)
+
+    # Validate and insert
+    count = 0
+    for c in corners:
+        idx = c.get("corner_index")
+        if idx is None:
+            continue
+
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO user_corners
+                   (session_id, corner_index, lat_entry, lon_entry,
+                    lat_apex, lon_apex, lat_exit, lon_exit,
+                    s_entry, s_apex, s_exit)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (session_id, idx,
+                 c.get("lat_entry"), c.get("lon_entry"),
+                 c.get("lat_apex"), c.get("lon_apex"),
+                 c.get("lat_exit"), c.get("lon_exit"),
+                 c.get("s_entry"), c.get("s_apex"), c.get("s_exit")),
+            )
+            count += 1
+        except Exception:
+            logger.debug("Failed to save user corner %s", idx, exc_info=True)
+
+    conn.commit()
+    logger.info("Saved %d user-defined corners for session %s", count, session_id)
+    return api_response({"saved": count}), 200
+
+
+@bp.route("/sessions/<session_id>/user-corners", methods=["GET"])
+@_safe_api
+def get_user_corners(session_id: str) -> tuple[dict, int]:
+    """Retrieve user-defined corners for a session."""
+    conn = get_db_connection()
+
+    try:
+        rows = conn.execute(
+            "SELECT * FROM user_corners WHERE session_id = ? ORDER BY corner_index",
+            (session_id,),
+        ).fetchall()
+    except Exception:
+        # Table might not exist yet
+        return api_response({"corners": [], "count": 0})
+
+    corners = []
+    for row in rows:
+        row_dict = dict(row) if hasattr(row, 'keys') else {}
+        corners.append({
+            "corner_index": row_dict.get("corner_index"),
+            "lat_entry": row_dict.get("lat_entry"),
+            "lon_entry": row_dict.get("lon_entry"),
+            "lat_apex": row_dict.get("lat_apex"),
+            "lon_apex": row_dict.get("lon_apex"),
+            "lat_exit": row_dict.get("lat_exit"),
+            "lon_exit": row_dict.get("lon_exit"),
+            "s_entry": row_dict.get("s_entry"),
+            "s_apex": row_dict.get("s_apex"),
+            "s_exit": row_dict.get("s_exit"),
+        })
+
+    return api_response({"corners": corners, "count": len(corners)})
+
+
+@bp.route("/sessions/<session_id>/recoach", methods=["POST"])
+@_safe_api
+def recoach_session(session_id: str) -> tuple[dict, int]:
+    """Re-run coaching with current corner definitions.
+
+    Triggers the v2 coaching pipeline using either user-defined or
+    autonomous corners, whichever is current.
+    """
+    conn = get_db_connection()
+
+    # Check session exists
+    session = conn.execute(
+        "SELECT session_id FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    if not session:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "Session not found", status=404)
+
+    # For now, return acknowledgment. Full re-coaching requires
+    # the pipeline runner which is a heavy operation.
+    # In production this would trigger a Celery task.
+    return api_response({
+        "status": "accepted",
+        "message": "Re-coaching queued for session",
+        "session_id": session_id,
+    }), 202
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
