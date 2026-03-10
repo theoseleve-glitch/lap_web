@@ -1,4 +1,4 @@
-"""Tests for lap validation priority order and endurance pit detection."""
+"""Tests for rolling-average lap validity detection."""
 import sqlite3
 import sys
 from pathlib import Path
@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.migrate import ensure_schema
 from web.models import insert_laps
+from web.repos.lap_repo import _rolling_avg_validity
 
 
 @pytest.fixture
@@ -16,7 +17,6 @@ def db():
     conn = sqlite3.connect(":memory:")
     conn.row_factory = sqlite3.Row
     ensure_schema(conn)
-    # Insert a driver and session so FK constraints pass.
     conn.execute(
         "INSERT INTO drivers (driver_id, driver_name) VALUES (1, 'Test')"
     )
@@ -29,69 +29,37 @@ def db():
     conn.close()
 
 
-def _make_summary(
-    n_laps=10,
-    dist_flagged=None,
-    time_flagged=None,
-    outlap_numbers=None,
-    inlap_numbers=None,
-    flagged_only=None,
-    deviated_laps=None,
-    incomplete_laps=None,
-    invalid_laps=None,
-    track_cuts=None,
-    incidents=None,
-    manual_exclusions=None,
-    session_type="practice",
-    drivers=None,
-    joker_lap=None,
+def _make_laps(
+    n=10,
+    base_time=60.0,
+    base_dist=500.0,
+    time_overrides=None,
+    dist_overrides=None,
 ):
-    """Build a minimal pipeline summary dict for testing insert_laps."""
-    lap_metrics = [
+    """Build lap_metrics list with optional per-lap time/distance overrides."""
+    time_overrides = time_overrides or {}
+    dist_overrides = dist_overrides or {}
+    return [
         {
             "lap_number": i,
-            "lap_time_s": 60.0 + i * 0.1,
+            "lap_time_s": time_overrides.get(i, base_time + (i - 1) * 0.05),
             "speed_mean_mps": 20.0,
             "speed_max_mps": 30.0,
             "braking_max_mps2": 10.0,
             "accel_max_mps2": 5.0,
-            "line_length_m": 500.0,
+            "line_length_m": dist_overrides.get(i, base_dist),
         }
-        for i in range(1, n_laps + 1)
+        for i in range(1, n + 1)
     ]
+
+
+def _make_summary(lap_metrics, best_key=1, joker_lap=None):
+    """Build a minimal pipeline summary for insert_laps."""
     return {
         "lap_metrics": lap_metrics,
-        "best_lap_key": 1,
+        "best_lap_key": best_key,
         "lap_to_phase": {},
-        "trim_report": {
-            "outlap_analysis": {
-                "outlap_numbers": outlap_numbers or [],
-                "inlap_numbers": inlap_numbers or [],
-                "flagged_only": flagged_only or [],
-            },
-        },
-        "invalid_lap_analysis": {
-            "invalid_laps": invalid_laps or [],
-            "track_cuts": track_cuts or [],
-            "incidents": incidents or [],
-            "manual": manual_exclusions or [],
-        },
-        "incomplete_lap_analysis": {
-            "incomplete_laps": incomplete_laps or [],
-        },
-        "anomalous_lap_analysis": {
-            "flagged_laps": (dist_flagged or []) + (time_flagged or []),
-            "dist_flagged": dist_flagged or [],
-            "time_flagged": time_flagged or [],
-        },
-        "line_deviation_analysis": {
-            "deviated_laps": deviated_laps or [],
-        },
         "joker_lap_number": joker_lap,
-        "session_meta": {
-            "session_type": session_type,
-            "drivers": drivers or [],
-        },
     }
 
 
@@ -103,267 +71,157 @@ def _get_laps(conn, session_id="s1"):
     return {r["lap_number"]: dict(r) for r in rows}
 
 
-class TestDistanceFirst:
-    """Distance anomalies should be checked before time anomalies."""
+class TestRollingAvgUnit:
+    """Unit tests for _rolling_avg_validity() directly."""
 
-    def test_dist_flagged_before_time(self, db):
-        """A lap in both dist and time sets gets the distance label."""
-        summary = _make_summary(
-            dist_flagged=[3], time_flagged=[3], outlap_numbers=[3]
+    def test_all_consistent_laps_valid(self):
+        metrics = _make_laps(n=10)
+        result = _rolling_avg_validity(metrics)
+        for i in range(1, 11):
+            assert result[i][0] is True, f"Lap {i} should be valid"
+
+    def test_time_anomaly_detected(self):
+        """A lap with 2x the normal time → flagged."""
+        metrics = _make_laps(n=8, time_overrides={6: 120.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[6][0] is False
+        assert "Time" in result[6][1]
+
+    def test_distance_anomaly_detected(self):
+        """A lap with half the normal distance → flagged."""
+        metrics = _make_laps(n=8, dist_overrides={5: 250.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[5][0] is False
+        assert "Distance" in result[5][1]
+
+    def test_both_anomalies(self):
+        """A lap with both time and distance anomaly → both reasons."""
+        metrics = _make_laps(n=8, time_overrides={5: 120.0}, dist_overrides={5: 250.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[5][0] is False
+        assert "Time" in result[5][1]
+        assert "Distance" in result[5][1]
+
+    def test_invalid_doesnt_poison_window(self):
+        """After one bad lap, the next normal lap should still be valid."""
+        metrics = _make_laps(n=10, time_overrides={5: 120.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[5][0] is False
+        assert result[6][0] is True  # normal lap after anomaly
+        assert result[7][0] is True
+
+    def test_first_two_laps_always_accepted(self):
+        """First 2 laps seed the window — always valid."""
+        metrics = _make_laps(n=5)
+        result = _rolling_avg_validity(metrics)
+        assert result[1][0] is True
+        assert result[2][0] is True
+
+    def test_missing_time_invalid(self):
+        """Lap with no time → invalid."""
+        metrics = _make_laps(n=5, time_overrides={3: None})
+        result = _rolling_avg_validity(metrics)
+        assert result[3][0] is False
+        assert result[3][1] == "No lap time"
+
+    def test_zero_time_invalid(self):
+        """Lap with 0 time → invalid."""
+        metrics = _make_laps(n=5, time_overrides={3: 0.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[3][0] is False
+
+    def test_slightly_fast_lap_valid(self):
+        """A lap 5% faster than average is still valid (within 90-110%)."""
+        # Base ~60s, 5% faster = 57s → within [54, 66]
+        metrics = _make_laps(n=8, time_overrides={6: 57.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[6][0] is True
+
+    def test_borderline_slow_invalid(self):
+        """A lap 12% slower than average → invalid (>110%)."""
+        # Base ~60s, 12% slower = 67.2s → outside [54, 66]
+        metrics = _make_laps(n=8, time_overrides={6: 67.2})
+        result = _rolling_avg_validity(metrics)
+        assert result[6][0] is False
+
+    def test_missing_distance_uses_time_only(self):
+        """When distance is None/0, only time is checked."""
+        metrics = _make_laps(n=6, dist_overrides={i: None for i in range(1, 7)})
+        result = _rolling_avg_validity(metrics)
+        for i in range(1, 7):
+            assert result[i][0] is True  # all times are normal
+
+    def test_pit_lap_both_anomalous(self):
+        """A pit lap (very slow + short distance) → caught by both checks."""
+        metrics = _make_laps(
+            n=8,
+            time_overrides={5: 180.0},  # 3x normal time (pit stop)
+            dist_overrides={5: 200.0},  # cut through pit lane
         )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        # Lap 3 is in dist (as outlap) AND time — distance wins
-        assert laps[3]["is_valid"] == 0
-        assert laps[3]["invalid_reason"] == "Outlap"
+        result = _rolling_avg_validity(metrics)
+        assert result[5][0] is False
+        assert "Time" in result[5][1]
+        assert "Distance" in result[5][1]
 
-    def test_pure_time_anomaly(self, db):
-        """A lap only in time_flagged gets 'Time anomaly'."""
-        summary = _make_summary(time_flagged=[5])
-        insert_laps(db, "s1", summary)
+    def test_crash_lap_time_anomaly(self):
+        """A crash lap (very long time) → caught by time check."""
+        metrics = _make_laps(n=8, time_overrides={4: 300.0})
+        result = _rolling_avg_validity(metrics)
+        assert result[4][0] is False
+        assert "Time" in result[4][1]
+
+    def test_multiple_consecutive_bad_laps(self):
+        """Multiple bad laps in a row don't cascade — good laps after stay valid."""
+        metrics = _make_laps(
+            n=10,
+            time_overrides={5: 120.0, 6: 130.0, 7: 150.0},
+        )
+        result = _rolling_avg_validity(metrics)
+        assert result[5][0] is False
+        assert result[6][0] is False
+        assert result[7][0] is False
+        assert result[8][0] is True  # back to normal
+        assert result[9][0] is True
+
+
+class TestInsertLapsIntegration:
+    """Integration tests: insert_laps writes correct validity to DB."""
+
+    def test_normal_session_all_valid(self, db):
+        metrics = _make_laps(n=8)
+        insert_laps(db, "s1", _make_summary(metrics))
+        laps = _get_laps(db)
+        for n in range(1, 9):
+            assert laps[n]["is_valid"] == 1, f"Lap {n} should be valid"
+            assert laps[n]["invalid_reason"] is None
+
+    def test_anomalous_lap_flagged(self, db):
+        metrics = _make_laps(n=8, time_overrides={5: 120.0})
+        insert_laps(db, "s1", _make_summary(metrics))
         laps = _get_laps(db)
         assert laps[5]["is_valid"] == 0
-        assert laps[5]["invalid_reason"] == "Time anomaly"
+        assert laps[5]["invalid_reason"] is not None
+        # Other laps remain valid
+        assert laps[4]["is_valid"] == 1
+        assert laps[6]["is_valid"] == 1
 
-    def test_dist_sub_labels_preserved(self, db):
-        """Distance anomalies carry specific sub-labels."""
-        summary = _make_summary(
-            dist_flagged=[2, 4],
-            outlap_numbers=[2],
-            deviated_laps=[4],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[2]["invalid_reason"] == "Outlap"
-        assert laps[4]["invalid_reason"] == "Track deviation"
-
-    def test_inlap_label(self, db):
-        summary = _make_summary(
-            dist_flagged=[1],
-            outlap_numbers=[1],
-            inlap_numbers=[1],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[1]["invalid_reason"] == "Inlap"
-
-    def test_pit_lap_label(self, db):
-        summary = _make_summary(
-            dist_flagged=[6],
-            flagged_only=[6],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[6]["invalid_reason"] == "Pit lap"
-
-    def test_valid_laps_untouched(self, db):
-        """Laps not in any flagged set remain valid."""
-        summary = _make_summary(dist_flagged=[1], time_flagged=[10])
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[5]["is_valid"] == 1
-        assert laps[5]["invalid_reason"] is None
-
-
-class TestEndurancePitDetection:
-    """In endurance mode, anomalous laps near stint boundaries → 'Pitted lap'."""
-
-    def test_near_boundary_relabeled(self, db):
-        """Dist anomaly within ±3 of stint boundary → 'Pitted lap'."""
-        summary = _make_summary(
-            n_laps=20,
-            dist_flagged=[10],
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[10]["invalid_reason"] == "Pitted lap"
-
-    def test_time_anomaly_near_boundary(self, db):
-        """Time anomaly within ±3 of stint boundary → 'Pitted lap'."""
-        summary = _make_summary(
-            n_laps=20,
-            time_flagged=[11],
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[11]["invalid_reason"] == "Pitted lap"
-
-    def test_far_from_boundary_keeps_label(self, db):
-        """Anomaly far from any boundary keeps original label."""
-        summary = _make_summary(
-            n_laps=20,
-            dist_flagged=[5],
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[5]["invalid_reason"] == "Distance anomaly"
-
-    def test_window_boundary_exactly_3(self, db):
-        """Lap exactly 3 away from boundary is still relabeled."""
-        summary = _make_summary(
-            n_laps=20,
-            time_flagged=[7],  # boundary at 10, distance = 3
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[7]["invalid_reason"] == "Pitted lap"
-
-    def test_window_boundary_4_not_relabeled(self, db):
-        """Lap 4 away from boundary is NOT relabeled."""
-        summary = _make_summary(
-            n_laps=20,
-            time_flagged=[6],  # boundary at 10, distance = 4
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[6]["invalid_reason"] == "Time anomaly"
-
-    def test_non_endurance_no_relabel(self, db):
-        """Practice sessions don't get pit relabeling even with drivers."""
-        summary = _make_summary(
-            n_laps=20,
-            dist_flagged=[10],
-            session_type="practice",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[10]["invalid_reason"] == "Distance anomaly"
-
-    def test_joker_still_wins(self, db):
-        """Joker lap stays 'Joker lap' even near a stint boundary."""
-        summary = _make_summary(
-            n_laps=20,
-            joker_lap=10,
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[10]["invalid_reason"] == "Joker lap"
-        assert laps[10]["is_joker"] == 1
-
-
-class TestInvalidLapAnalysis:
-    """Track cuts, incidents, and manual exclusions from identify_invalid_laps()."""
-
-    def test_track_cut_flagged_invalid(self, db):
-        """A track-cut lap is marked is_valid=0 with reason 'Track cut'."""
-        summary = _make_summary(
-            invalid_laps=[4], track_cuts=[4],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[4]["is_valid"] == 0
-        assert laps[4]["invalid_reason"] == "Track cut"
-
-    def test_incident_flagged_invalid(self, db):
-        """An incident lap is marked is_valid=0 with reason 'Incident'."""
-        summary = _make_summary(
-            invalid_laps=[7], incidents=[7],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[7]["is_valid"] == 0
-        assert laps[7]["invalid_reason"] == "Incident"
-
-    def test_manual_exclusion_flagged_invalid(self, db):
-        """A manually excluded lap is marked with reason 'Manual exclusion'."""
-        summary = _make_summary(
-            invalid_laps=[2], manual_exclusions=[2],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[2]["is_valid"] == 0
-        assert laps[2]["invalid_reason"] == "Manual exclusion"
-
-    def test_invalid_wins_over_dist_anomaly(self, db):
-        """Track cut (invalid_set) takes priority over distance anomaly."""
-        summary = _make_summary(
-            invalid_laps=[3], track_cuts=[3],
-            dist_flagged=[3],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[3]["is_valid"] == 0
-        assert laps[3]["invalid_reason"] == "Track cut"
-
-    def test_invalid_wins_over_time_anomaly(self, db):
-        """Incident (invalid_set) takes priority over time anomaly."""
-        summary = _make_summary(
-            invalid_laps=[5], incidents=[5],
-            time_flagged=[5],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        assert laps[5]["is_valid"] == 0
-        assert laps[5]["invalid_reason"] == "Incident"
-
-    def test_joker_still_wins_over_invalid(self, db):
-        """Joker lap takes priority over track cut."""
-        summary = _make_summary(
-            invalid_laps=[3], track_cuts=[3],
-            joker_lap=3,
-        )
-        insert_laps(db, "s1", summary)
+    def test_joker_overrides_rolling_avg(self, db):
+        """Joker lap is always invalid regardless of rolling avg."""
+        metrics = _make_laps(n=8)
+        insert_laps(db, "s1", _make_summary(metrics, joker_lap=3))
         laps = _get_laps(db)
         assert laps[3]["is_valid"] == 0
         assert laps[3]["invalid_reason"] == "Joker lap"
         assert laps[3]["is_joker"] == 1
 
-    def test_endurance_invalid_near_boundary_relabeled(self, db):
-        """Track cut near a stint boundary in endurance → 'Pitted lap'."""
-        summary = _make_summary(
-            n_laps=20,
-            invalid_laps=[10], track_cuts=[10],
-            session_type="endurance",
-            drivers=[
-                {"name": "A", "lap_range": (1, 10)},
-                {"name": "B", "lap_range": (11, 20)},
-            ],
-        )
-        insert_laps(db, "s1", summary)
+    def test_best_lap_flag(self, db):
+        metrics = _make_laps(n=5)
+        insert_laps(db, "s1", _make_summary(metrics, best_key=2))
         laps = _get_laps(db)
-        assert laps[10]["invalid_reason"] == "Pitted lap"
+        assert laps[2]["is_best"] == 1
+        assert laps[1]["is_best"] == 0
 
-    def test_valid_laps_unaffected_by_invalid_set(self, db):
-        """Laps NOT in invalid_set remain valid."""
-        summary = _make_summary(
-            invalid_laps=[3, 8], track_cuts=[3], incidents=[8],
-        )
-        insert_laps(db, "s1", summary)
-        laps = _get_laps(db)
-        for n in [1, 2, 4, 5, 6, 7, 9, 10]:
-            assert laps[n]["is_valid"] == 1, f"Lap {n} should be valid"
-            assert laps[n]["invalid_reason"] is None
+    def test_count_returned(self, db):
+        metrics = _make_laps(n=6)
+        count = insert_laps(db, "s1", _make_summary(metrics))
+        assert count == 6
