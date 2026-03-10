@@ -12,6 +12,13 @@ from scoring.constants import (
     _SESSION_WEIGHT_OVERRIDES,
     _TRACK_STATE_MODIFIERS,
     ADAPT_V2_STABLE_DEFAULT_FRAC,
+    DR_COMBINED_FLOOR,
+    DR_EXP_FLOOR,
+    DR_EXP_K,
+    DR_EXP_L0,
+    DR_SES_FLOOR,
+    DR_SES_K,
+    DR_SES_L0,
     MAX_ADAPTATION,
     MAX_CONSISTENCY,
     MAX_EXECUTION,
@@ -112,12 +119,42 @@ def _apply_session_weights(
     return rescaled
 
 
+def _compute_dr_multiplier(
+    total_laps: int = 0,
+    session_laps: int = 0,
+) -> float:
+    """
+    Compute a gentle diminishing-returns multiplier.
+
+    Two independent factors stacked multiplicatively:
+    - experience_factor: based on driver's lifetime total laps
+    - session_factor: based on number of laps in this session
+
+    Both use asymptotic log curves with per-factor and combined floors.
+    Returns a value in [DR_COMBINED_FLOOR, 1.0].
+    """
+    if total_laps <= 0 and session_laps <= 0:
+        return 1.0
+
+    exp_factor = max(
+        DR_EXP_FLOOR,
+        1.0 - DR_EXP_K * math.log(1.0 + max(0, total_laps) / DR_EXP_L0),
+    )
+    ses_factor = max(
+        DR_SES_FLOOR,
+        1.0 - DR_SES_K * math.log(1.0 + max(0, session_laps) / DR_SES_L0),
+    )
+    return max(DR_COMBINED_FLOOR, exp_factor * ses_factor)
+
+
 def score_session(
     metrics_dict:         dict[str, Any],
     theoretical_metrics:  dict[str, Any],
     session_type:         str = "practice",
     *,
     is_wet:               bool = False,
+    track_state:          str = "dry",
+    driver_total_laps:    int = 0,
     corner_coaching:      list[dict[str, Any]] | None = None,
     progressive_physics:  dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -269,22 +306,10 @@ def score_session(
 
     # --- Apply session-type reweighting -- -
 
-    final_scores = _apply_session_weights(raw_scores, session_type)
-
-    # Recompute effective maximums for this session type
-
-    _stype_key = _normalize_session_type(session_type)
-    _stype_key = _SESSION_TYPE_SYNONYMS.get(_stype_key, _stype_key)
-    overrides = _SESSION_WEIGHT_OVERRIDES.get(_stype_key, {})
-    if overrides:
-        adj_max = {
-            cat: _BASE_MAXES[cat] * overrides.get(cat, 1.0)
-            for cat in _BASE_MAXES
-        }
-        total_adj = sum(adj_max.values())
-        norm_max  = {cat: round(v / total_adj * TOTAL_MAX, 4) for cat, v in adj_max.items()}
-    else:
-        norm_max = dict(_BASE_MAXES)
+    n_laps = int(metrics_dict.get("n_laps", 0) or 0)
+    final_scores, norm_max = _apply_adaptive_weights(
+        raw_scores, session_type, track_state=track_state,
+    )
 
     total = round(min(TOTAL_MAX, max(0.0, sum(final_scores.values()))), 4)
 
@@ -293,6 +318,12 @@ def score_session(
     # misleading high or low scores built on unreliable telemetry.
 
     total = _apply_confidence(total, data_confidence)
+
+    # --- Diminishing returns (experience + session length) ---
+    dr_multiplier = _compute_dr_multiplier(
+        total_laps=driver_total_laps, session_laps=n_laps,
+    )
+    total = round(total * dr_multiplier, 4)
 
     # --- Assemble sub-scores dict -- -
 

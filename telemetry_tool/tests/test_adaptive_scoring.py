@@ -171,3 +171,114 @@ class TestApplyAdaptiveWeights:
                 assert abs(sum(maxes.values()) - 100.0) < 0.01, (
                     f"{stype}/{ts}: maxes sum to {sum(maxes.values())}"
                 )
+
+
+class TestDiminishingReturns:
+    """Test the diminishing-returns multiplier."""
+
+    def test_compute_dr_multiplier_new_driver(self):
+        from scoring.scorer import _compute_dr_multiplier
+        m = _compute_dr_multiplier(total_laps=0, session_laps=10)
+        assert 0.99 < m <= 1.0
+
+    def test_compute_dr_multiplier_veteran(self):
+        from scoring.scorer import _compute_dr_multiplier
+        m = _compute_dr_multiplier(total_laps=10000, session_laps=100)
+        assert 0.92 <= m < 0.99
+
+    def test_compute_dr_multiplier_extreme_near_floor(self):
+        from scoring.scorer import _compute_dr_multiplier
+        m = _compute_dr_multiplier(total_laps=1_000_000, session_laps=10_000)
+        # Product of two per-factor floors (0.96 * 0.96 = 0.9216) but
+        # with these constants the raw values don't quite hit per-factor
+        # floors, so combined stays above DR_COMBINED_FLOOR.
+        assert 0.92 <= m < 0.96
+
+    def test_compute_dr_multiplier_no_laps_is_neutral(self):
+        from scoring.scorer import _compute_dr_multiplier
+        m = _compute_dr_multiplier(total_laps=0, session_laps=0)
+        assert m == 1.0
+
+    def test_veteran_scores_lower_than_newcomer(self):
+        """Identical raw metrics, veteran gets slightly lower total."""
+        from scoring import score_session
+        metrics = {
+            "best_s": 60.0, "n_laps": 15, "cv_pct": 1.0,
+            "best_to_median_s": 0.5, "speed_mean_mps": 30.0,
+            "accel_max_mps2": 10.0, "braking_max_mps2": 12.0,
+            "early_mean_s": 61.0, "late_mean_s": 61.5,
+            "early_yaw_var": 0.01, "late_yaw_var": 0.012,
+        }
+        theo = {
+            "best_s": 58.0, "speed_mean_mps": 32.0,
+            "accel_max_mps2": 12.0, "braking_max_mps2": 14.0,
+        }
+        newcomer = score_session(metrics, theo, "practice",
+                                  driver_total_laps=50)
+        veteran = score_session(metrics, theo, "practice",
+                                 driver_total_laps=20000)
+        assert newcomer["total_score"] > veteran["total_score"]
+
+    def test_long_session_scores_lower_than_short(self):
+        """200-lap session scores slightly lower than 15-lap with same metrics."""
+        from scoring import score_session
+        base_metrics = {
+            "best_s": 60.0, "cv_pct": 1.0,
+            "best_to_median_s": 0.5, "speed_mean_mps": 30.0,
+            "accel_max_mps2": 10.0, "braking_max_mps2": 12.0,
+            "early_mean_s": 61.0, "late_mean_s": 61.5,
+            "early_yaw_var": 0.01, "late_yaw_var": 0.012,
+        }
+        theo = {
+            "best_s": 58.0, "speed_mean_mps": 32.0,
+            "accel_max_mps2": 12.0, "braking_max_mps2": 14.0,
+        }
+        short = score_session({**base_metrics, "n_laps": 15}, theo, "practice")
+        long = score_session({**base_metrics, "n_laps": 200}, theo, "practice")
+        assert short["total_score"] > long["total_score"]
+
+
+class TestScoreSessionAdaptive:
+    """Integration: score_session uses adaptive weights end-to-end."""
+
+    def test_qualifying_sub_scores_suppressed(self):
+        from scoring import score_session
+        metrics = {
+            "best_s": 60.0, "n_laps": 5, "cv_pct": 1.0,
+            "best_to_median_s": 0.5, "speed_mean_mps": 30.0,
+            "accel_max_mps2": 10.0, "braking_max_mps2": 12.0,
+            "early_mean_s": 61.0, "late_mean_s": 61.5,
+            "early_yaw_var": 0.01, "late_yaw_var": 0.012,
+        }
+        theo = {
+            "best_s": 58.0, "speed_mean_mps": 32.0,
+            "accel_max_mps2": 12.0, "braking_max_mps2": 14.0,
+        }
+        result = score_session(metrics, theo, "qualifying")
+        assert result["sub_scores"]["consistency"]["score"] == 0.0
+        assert result["sub_scores"]["consistency"]["max"] == 0.0
+        assert result["sub_scores"]["robustness"]["score"] == 0.0
+        assert result["sub_scores"]["adaptation"]["score"] == 0.0
+        # Pace and execution should have all the budget
+        pace_max = result["sub_scores"]["pace"]["max"]
+        exec_max = result["sub_scores"]["execution"]["max"]
+        assert abs(pace_max + exec_max - 100.0) < 0.01
+
+    def test_track_state_passed_through(self):
+        from scoring import score_session
+        metrics = {
+            "best_s": 60.0, "n_laps": 15, "cv_pct": 1.0,
+            "best_to_median_s": 0.5, "speed_mean_mps": 30.0,
+            "accel_max_mps2": 10.0, "braking_max_mps2": 12.0,
+            "early_mean_s": 61.0, "late_mean_s": 61.5,
+            "early_yaw_var": 0.01, "late_yaw_var": 0.012,
+        }
+        theo = {
+            "best_s": 58.0, "speed_mean_mps": 32.0,
+            "accel_max_mps2": 12.0, "braking_max_mps2": 14.0,
+        }
+        dry = score_session(metrics, theo, "race", track_state="dry")
+        wet = score_session(metrics, theo, "race", track_state="wet")
+        dry_adapt = dry["sub_scores"]["adaptation"]["max"]
+        wet_adapt = wet["sub_scores"]["adaptation"]["max"]
+        assert wet_adapt > dry_adapt
