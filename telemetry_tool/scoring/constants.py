@@ -238,24 +238,107 @@ BADGE_TIER_GOLD:   Final[float] = 0.90
 CONFIDENCE_NEUTRAL_SCORE: Final[float] = 65.0
 
 # =============================================================================
-# SESSION-TYPE WEIGHT OVERRIDES
+# SESSION-TYPE CATEGORY CONFIG (suppression + emphasis)
 # =============================================================================
+# Replaces the old flat _SESSION_WEIGHT_OVERRIDES.
+# - "suppressed": categories zeroed out, budget redistributed
+# - "emphasis": multipliers on surviving categories (default 1.0)
 
-_SESSION_WEIGHT_OVERRIDES: dict[str, dict[str, float]] = {
-    "qualifying":      {"pace": 1.40, "consistency": 0.90, "execution": 1.10, "robustness": 0.60, "adaptation": 0.60},
-    "race":            {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.20},
-    "sprint_race":     {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.10},
-    "practice":        {"pace": 1.00, "consistency": 1.00, "execution": 1.20, "robustness": 0.80, "adaptation": 1.00},
-    "test":            {"pace": 0.80, "consistency": 1.10, "execution": 1.30, "robustness": 0.80, "adaptation": 1.00},
-    "warmup":          {"pace": 0.60, "consistency": 0.80, "execution": 1.30, "robustness": 0.60, "adaptation": 0.80},
-    "heat":            {"pace": 1.20, "consistency": 1.00, "execution": 1.00, "robustness": 0.80, "adaptation": 1.00},
-    "final":           {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90, "adaptation": 1.00},
-    "feature_race":    {"pace": 0.90, "consistency": 1.10, "execution": 0.90, "robustness": 1.40, "adaptation": 1.20},
-    "endurance_stint": {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
-    "endurance_race":  {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
-    "sprint":          {"pace": 1.10, "consistency": 1.00, "execution": 1.00, "robustness": 0.90, "adaptation": 1.00},
-    "endurance":       {"pace": 0.80, "consistency": 1.20, "execution": 0.80, "robustness": 1.60, "adaptation": 1.30},
+_SESSION_CATEGORY_CONFIG: dict[str, dict] = {
+    "qualifying": {
+        "suppressed": {"consistency", "robustness", "adaptation"},
+        "emphasis":   {"pace": 1.6, "execution": 1.4},
+    },
+    "race": {
+        "suppressed": set(),
+        "emphasis":   {"robustness": 1.4, "adaptation": 1.2},
+    },
+    "practice": {
+        "suppressed": {"robustness"},
+        "emphasis":   {"adaptation": 1.4, "execution": 1.2},
+    },
+    "warmup": {
+        "suppressed": {"pace", "robustness"},
+        "emphasis":   {"execution": 1.3, "adaptation": 1.2},
+    },
+    "test": {
+        "suppressed": {"pace", "robustness"},
+        "emphasis":   {"execution": 1.3, "consistency": 1.2},
+    },
+    "endurance": {
+        "suppressed": set(),
+        "emphasis":   {"robustness": 1.6},
+    },
+    "endurance_stint": {
+        "suppressed": set(),
+        "emphasis":   {"robustness": 1.6},
+    },
+    "endurance_race": {
+        "suppressed": set(),
+        "emphasis":   {"robustness": 1.6},
+    },
+    "heat": {
+        "suppressed": {"consistency"},
+        "emphasis":   {"pace": 1.4, "execution": 1.2},
+    },
+    "final": {
+        "suppressed": set(),
+        "emphasis":   {"pace": 1.2, "robustness": 1.1},
+    },
+    "sprint": {
+        "suppressed": {"consistency"},
+        "emphasis":   {"pace": 1.3, "execution": 1.2},
+    },
+    "sprint_race": {
+        "suppressed": {"consistency"},
+        "emphasis":   {"pace": 1.3, "execution": 1.2},
+    },
+    "feature_race": {
+        "suppressed": set(),
+        "emphasis":   {"robustness": 1.4, "adaptation": 1.2},
+    },
 }
+
+# Backward compat: build _SESSION_WEIGHT_OVERRIDES from the new config
+# so any code still importing it gets a reasonable dict.
+_SESSION_WEIGHT_OVERRIDES: dict[str, dict[str, float]] = {}
+for _stype, _cfg in _SESSION_CATEGORY_CONFIG.items():
+    _w: dict[str, float] = {}
+    for _cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
+        if _cat in _cfg["suppressed"]:
+            _w[_cat] = 0.0
+        else:
+            _w[_cat] = _cfg["emphasis"].get(_cat, 1.0)
+    _SESSION_WEIGHT_OVERRIDES[_stype] = _w
+
+# =============================================================================
+# TRACK-STATE WEIGHT MODIFIERS
+# =============================================================================
+# Applied multiplicatively on top of session-type weights (surviving categories).
+
+_TRACK_STATE_MODIFIERS: dict[str, dict[str, float]] = {
+    "dry":      {},
+    "damp":     {"adaptation": 1.10, "robustness": 1.05, "pace": 0.95},
+    "wet":      {"adaptation": 1.15, "robustness": 1.10, "pace": 0.90, "execution": 0.95},
+    "full_wet": {"adaptation": 1.20, "robustness": 1.15, "pace": 0.85, "execution": 0.90},
+    "drying":   {"adaptation": 1.20, "pace": 0.90},
+    "greasy":   {"adaptation": 1.10, "robustness": 1.05, "pace": 0.95},
+}
+
+# =============================================================================
+# DIMINISHING RETURNS CONSTANTS
+# =============================================================================
+# Asymptotic log curve: factor = max(floor, 1.0 - k * ln(1 + laps / L0))
+
+DR_EXP_K:     Final[float] = 0.005    # experience decay rate
+DR_EXP_L0:    Final[float] = 1000.0   # reference lap count
+DR_EXP_FLOOR: Final[float] = 0.96     # per-factor floor
+
+DR_SES_K:     Final[float] = 0.004    # session laps decay rate
+DR_SES_L0:    Final[float] = 30.0     # reference (typical short session)
+DR_SES_FLOOR: Final[float] = 0.96     # per-factor floor
+
+DR_COMBINED_FLOOR: Final[float] = 0.92  # absolute floor for combined multiplier
 
 # Synonyms: map alternative type names to canonical keys
 _SESSION_TYPE_SYNONYMS: dict[str, str] = {
