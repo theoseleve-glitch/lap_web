@@ -93,6 +93,131 @@ def _rolling_avg_validity(
     return result
 
 
+def _pipeline_validity(
+    summary: dict[str, Any],
+) -> dict[int, tuple[bool, str]]:
+    """Build lap validity from pipeline analysis dicts.
+
+    Priority order (highest wins):
+    1. Joker lap
+    2. Invalid lap analysis (track cuts, incidents, manual exclusions)
+    3. Incomplete lap analysis
+    4. Distance anomalies (outlaps, inlaps, pit laps, track deviation)
+    5. Time anomalies
+    6. Endurance pit relabeling (near stint boundary → "Pitted lap")
+
+    Returns {lap_number: (is_valid, invalid_reason)} for flagged laps only.
+    Laps not in the dict are considered valid.
+    """
+    result: dict[int, tuple[bool, str]] = {}
+
+    # ── Extract pipeline analysis dicts ──────────────────────────
+    trim_report = summary.get("trim_report") or {}
+    outlap_analysis = trim_report.get("outlap_analysis") or {}
+    outlap_set = set(outlap_analysis.get("outlap_numbers") or [])
+    inlap_set = set(outlap_analysis.get("inlap_numbers") or [])
+    flagged_set = set(outlap_analysis.get("flagged_only") or [])
+
+    invalid_analysis = summary.get("invalid_lap_analysis") or {}
+    invalid_set = set(invalid_analysis.get("invalid_laps") or [])
+    track_cut_set = set(invalid_analysis.get("track_cuts") or [])
+    incident_set = set(invalid_analysis.get("incidents") or [])
+    manual_set = set(invalid_analysis.get("manual") or [])
+
+    incomplete_analysis = summary.get("incomplete_lap_analysis") or {}
+    incomplete_set = set(incomplete_analysis.get("incomplete_laps") or [])
+
+    anomalous_analysis = summary.get("anomalous_lap_analysis") or {}
+    anomalous_dist = set(anomalous_analysis.get("dist_flagged") or [])
+    anomalous_time = set(anomalous_analysis.get("time_flagged") or [])
+
+    deviation_analysis = summary.get("line_deviation_analysis") or {}
+    deviated_set = set(deviation_analysis.get("deviated_laps") or [])
+
+    # ── Distance-based anomalies with sub-labels ─────────────────
+    # Priority within distance: outlap/inlap > pit lap > track deviation
+    #                           > incomplete > generic distance anomaly
+    dist_labels: dict[int, str] = {}
+    for lap_num in anomalous_dist:
+        dist_labels[lap_num] = "Distance anomaly"
+    for lap_num in incomplete_set:
+        dist_labels[lap_num] = "Incomplete"
+    for lap_num in deviated_set:
+        dist_labels[lap_num] = "Track deviation"
+    for lap_num in flagged_set:
+        dist_labels[lap_num] = "Pit lap"
+    for lap_num in outlap_set:
+        if lap_num in inlap_set:
+            dist_labels[lap_num] = "Inlap"
+        else:
+            dist_labels[lap_num] = "Outlap"
+
+    all_dist_flagged = set(dist_labels.keys())
+
+    # ── Endurance pit detection ──────────────────────────────────
+    meta = summary.get("session_meta") or {}
+    session_type = meta.get("session_type", "practice")
+    endurance_types = {"endurance", "endurance_race", "endurance_stint"}
+    stint_boundary_laps: set[int] = set()
+
+    if session_type in endurance_types:
+        drivers = meta.get("drivers") or []
+        for drv in drivers:
+            lr = drv.get("lap_range")
+            if lr and len(lr) == 2:
+                stint_boundary_laps.add(lr[1])
+                stint_boundary_laps.add(lr[0])
+
+    def _near_stint_boundary(lap: int) -> bool:
+        for boundary in stint_boundary_laps:
+            if abs(lap - boundary) <= 3:
+                return True
+        return False
+
+    # ── Build per-lap results ────────────────────────────────────
+    all_flagged = invalid_set | all_dist_flagged | anomalous_time | incomplete_set
+    for lap_num in all_flagged:
+        if lap_num in invalid_set:
+            if stint_boundary_laps and _near_stint_boundary(lap_num):
+                result[lap_num] = (False, "Pitted lap")
+            elif lap_num in manual_set:
+                result[lap_num] = (False, "Manual exclusion")
+            elif lap_num in track_cut_set:
+                result[lap_num] = (False, "Track cut")
+            elif lap_num in incident_set:
+                result[lap_num] = (False, "Incident")
+            else:
+                result[lap_num] = (False, "Invalid")
+        elif lap_num in all_dist_flagged:
+            if stint_boundary_laps and _near_stint_boundary(lap_num):
+                result[lap_num] = (False, "Pitted lap")
+            else:
+                result[lap_num] = (False, dist_labels[lap_num])
+        elif lap_num in anomalous_time:
+            if stint_boundary_laps and _near_stint_boundary(lap_num):
+                result[lap_num] = (False, "Pitted lap")
+            else:
+                result[lap_num] = (False, "Time anomaly")
+
+    return result
+
+
+def _has_pipeline_analysis(summary: dict[str, Any]) -> bool:
+    """Check if the summary contains any populated pipeline analysis dicts."""
+    for key in ("invalid_lap_analysis", "incomplete_lap_analysis",
+                "anomalous_lap_analysis", "line_deviation_analysis"):
+        analysis = summary.get(key) or {}
+        for v in analysis.values():
+            if isinstance(v, (list, set)) and len(v) > 0:
+                return True
+    trim = summary.get("trim_report") or {}
+    outlap = trim.get("outlap_analysis") or {}
+    for v in outlap.values():
+        if isinstance(v, (list, set)) and len(v) > 0:
+            return True
+    return False
+
+
 def insert_laps(
     conn: sqlite3.Connection,
     session_id: str,
@@ -104,12 +229,27 @@ def insert_laps(
     lap_to_phase = summary.get("lap_to_phase") or {}
     joker_lap_number = summary.get("joker_lap_number")
 
-    # ── Rolling-average validity detection ───────────────────────
-    # Replaces the old pipeline-based detection which relied on upstream
-    # analysis dicts that were often empty or unreliable.
-    # Algorithm: rolling avg of last 5 valid laps, valid = within
-    # [90%, 110%] of avg for BOTH time AND distance.
-    validity = _rolling_avg_validity(lap_metrics)
+    # ── Blended validity detection ──────────────────────────────
+    # Layer 1: Pipeline analysis dicts (outlaps, track cuts,
+    # incidents, anomalous laps) — rich, label-specific.
+    # Layer 2: Rolling-average catches anything the pipeline missed
+    # (e.g. laps that slipped through pipeline detection).
+    # Pipeline labels take priority; rolling-avg fills gaps.
+    pipeline_validity = _pipeline_validity(summary)
+    rolling_validity = _rolling_avg_validity(lap_metrics)
+
+    # Merge: pipeline wins where it has data, rolling-avg fills rest
+    validity: dict[int, tuple[bool, str | None]] = {}
+    all_lap_nums = {lm.get("lap_number") for lm in lap_metrics if lm.get("lap_number") is not None}
+    for lap_num in all_lap_nums:
+        if lap_num in pipeline_validity:
+            # Pipeline flagged this lap — use its label
+            validity[lap_num] = pipeline_validity[lap_num]
+        elif lap_num in rolling_validity:
+            # Rolling-avg caught something the pipeline didn't
+            validity[lap_num] = rolling_validity[lap_num]
+        else:
+            validity[lap_num] = (True, None)
 
     count = 0
     for lm in lap_metrics:
