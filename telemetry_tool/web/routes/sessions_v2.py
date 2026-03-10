@@ -249,6 +249,21 @@ def _persist_analysis_json(conn: sqlite3.Connection, session_id: str, summary: d
     if cp and isinstance(cp, list):
         blob["corner_performances"] = cp
 
+    # Coaching V2 (evidence-based, confidence-gated)
+    cv2 = summary.get("coaching_v2")
+    if cv2:
+        blob["coaching_v2"] = cv2.to_dict() if hasattr(cv2, "to_dict") else cv2
+
+    # Corner coaching V2 (per-section coaching from user-defined/autonomous corners)
+    ccv2 = summary.get("corner_coaching_v2")
+    if ccv2 and isinstance(ccv2, list):
+        blob["corner_coaching_v2"] = ccv2
+
+    # Driving style
+    ds = summary.get("driving_style")
+    if ds and isinstance(ds, dict):
+        blob["driving_style"] = ds
+
     # Grip map (distance-binned friction coefficients)
     gm = summary.get("grip_map")
     if gm and isinstance(gm, dict):
@@ -400,6 +415,15 @@ def upload_session() -> tuple[Response, int]:
         lap_range = _parse_lap_range(request.form.get("lap_range"))
         if lap_range:
             session_meta["lap_range"] = list(lap_range)
+
+        joker_lap_raw = request.form.get("joker_lap")
+        if joker_lap_raw:
+            try:
+                jl = int(joker_lap_raw.strip())
+                if jl >= 1:
+                    session_meta["joker_lap_number"] = jl
+            except (ValueError, TypeError):
+                pass  # Ignore invalid joker_lap
 
         # ── 4b. Filter profile + vehicle overrides ──────────────
         filter_profile_name = request.form.get("filter_profile")

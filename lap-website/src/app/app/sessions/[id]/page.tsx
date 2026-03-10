@@ -301,7 +301,7 @@ export default function SessionDetailPage() {
 
   // Derived values
   const bestLap = useMemo(() => {
-    const best = laps.find((l) => l.is_best === 1);
+    const best = laps.find((l) => l.is_best);
     return best?.lap_number ?? (laps.length > 0 ? laps[0].lap_number : null);
   }, [laps]);
 
@@ -646,7 +646,7 @@ function OverviewTab({
   corners: CornerData[];
   onSessionUpdate: (s: SessionData) => void;
 }) {
-  const bestLapData = laps.find((l) => l.is_best === 1);
+  const bestLapData = laps.find((l) => l.is_best);
 
   // Editable session info state
   const [editing, setEditing] = useState(false);
@@ -1258,7 +1258,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     return (stddev / meanTime) * 100;
   }, [validTimes, meanTime]);
 
-  const bestLapData = laps.find((l) => l.is_best === 1);
+  const bestLapData = laps.find((l) => l.is_best);
 
   // Build phase lookup
   const phaseMap = useMemo(() => {
@@ -1359,13 +1359,13 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       const x = xBar(i);
       const y = yScale(time);
       const barH = pad.top + cH - y;
-      const isBest = lap.is_best === 1;
+      const isBest = !!lap.is_best;
       const isInvalid = !lap.is_valid;
       const isIncomplete = lap.invalid_reason?.toLowerCase().includes('incomplete') ||
                            lap.invalid_reason?.toLowerCase().includes('outlap') ||
                            lap.invalid_reason?.toLowerCase().includes('inlap');
 
-      const isJoker = lap.is_joker === 1;
+      const isJoker = !!lap.is_joker;
       const isPit = lap.invalid_reason === 'Pitted lap';
 
       if (isBest) {
@@ -1497,11 +1497,11 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                   const bestTime = validLaps.length > 0 ? Math.min(...validLaps.map((l) => l.lap_time_s!)) : null;
                   const worstTime = validLaps.length > 1 ? Math.max(...validLaps.map((l) => l.lap_time_s!)) : null;
                   return laps.map((lap) => {
-                  const isBest = lap.is_best === 1;
+                  const isBest = !!lap.is_best;
                   const isWorst = !isBest && lap.is_valid && lap.lap_time_s != null && worstTime != null && lap.lap_time_s >= worstTime;
                   const deltaFromBest = bestTime != null && lap.lap_time_s != null && lap.lap_time_s > 0 ? lap.lap_time_s - bestTime : null;
                   const isInvalid = !lap.is_valid;
-                  const isJoker = lap.is_joker === 1;
+                  const isJoker = !!lap.is_joker;
                   const isPit = lap.invalid_reason === 'Pitted lap';
                   const isIncomplete = isInvalid && (
                     lap.invalid_reason?.toLowerCase().includes('incomplete') ||

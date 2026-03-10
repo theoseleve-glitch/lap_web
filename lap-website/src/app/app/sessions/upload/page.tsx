@@ -96,6 +96,7 @@ function uploadSession(
     exclude_laps?: string;
     kart_id?: string;
     session_date?: string;
+    joker_lap?: string;
   },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
@@ -110,6 +111,7 @@ function uploadSession(
     if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
     if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
     if (metadata.session_date) formData.append('session_date', metadata.session_date);
+    if (metadata.joker_lap) formData.append('joker_lap', metadata.joker_lap);
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/v1/sessions/upload`);
@@ -234,6 +236,8 @@ export default function UploadPage() {
   const [excludeLaps, setExcludeLaps] = useState('');
   const [kartId, setKartId] = useState('');
   const [sessionDate, setSessionDate] = useState('');
+  const [jokerEnabled, setJokerEnabled] = useState(false);
+  const [jokerLap, setJokerLap] = useState('');
   const [karts, setKarts] = useState<{ kart_id: number; kart_name: string }[]>([]);
 
   // Page state machine
@@ -301,6 +305,7 @@ export default function UploadPage() {
         exclude_laps: excludeLaps.trim() || undefined,
         kart_id: kartId || undefined,
         session_date: sessionDate || undefined,
+        joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
       }, setUploadPct, controller.signal);
 
       setJobId(result.job_id);
@@ -525,6 +530,7 @@ export default function UploadPage() {
         exclude_laps: excludeLaps.trim() || undefined,
         kart_id: kartId || undefined,
         session_date: sessionDate || undefined,
+        joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
       }, setUploadPct, controller.signal);
 
       setJobId(result.job_id);
@@ -545,7 +551,7 @@ export default function UploadPage() {
         setErrorRequestId(null);
       }
     }
-  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, connectSSE]);
+  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, jokerEnabled, jokerLap, connectSSE]);
 
   // Corner selection submit
   const handleCornerSubmit = useCallback(async (selectedIds: number[]) => {
@@ -787,6 +793,47 @@ export default function UploadPage() {
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
                   placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
+            </div>
+
+            {/* ── Joker Lap ──────────────────────────────── */}
+            <div className="sm:col-span-2">
+              <div className="flex items-center gap-3">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={jokerEnabled}
+                    onChange={(e) => {
+                      setJokerEnabled(e.target.checked);
+                      if (!e.target.checked) setJokerLap('');
+                    }}
+                    disabled={isFormDisabled}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-steel/30 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full
+                    after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-chalk after:rounded-full after:h-4 after:w-4
+                    after:transition-all peer-checked:bg-pit-orange disabled:opacity-50" />
+                </label>
+                <span className="text-sm font-telemetry text-steel uppercase tracking-wider">
+                  Joker Lap
+                </span>
+                {jokerEnabled && (
+                  <input
+                    id="joker-lap"
+                    type="number"
+                    min="1"
+                    value={jokerLap}
+                    onChange={(e) => setJokerLap(e.target.value)}
+                    disabled={isFormDisabled}
+                    placeholder="Lap #"
+                    className="w-24 bg-concrete border border-steel/30 rounded px-3 py-1.5 text-chalk font-body text-sm
+                      placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                )}
+              </div>
+              <p className="text-steel/60 text-xs font-body mt-1.5 ml-12">
+                Mark a specific lap as a joker lap (excluded from stats, flagged in reports)
+              </p>
             </div>
           </div>
 

@@ -150,7 +150,7 @@ function draw(canvas: HTMLCanvasElement, laps: LapData[]) {
   // Dots
   for (let i = 0; i < valid.length; i++) {
     const x = xToPixel(i), y = yToPixel(times[i]);
-    const isBest = valid[i].is_best === 1;
+    const isBest = !!valid[i].is_best;
     ctx.beginPath();
     ctx.arc(x, y, isBest ? 5 : 3, 0, Math.PI * 2);
     ctx.fillStyle = isBest ? C.best : C.dot;

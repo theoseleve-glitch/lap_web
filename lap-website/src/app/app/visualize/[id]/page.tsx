@@ -77,7 +77,7 @@ export default function VisualizeSessionPage() {
 
   // Derived values
   const bestLap = useMemo(() => {
-    const best = laps.find((l) => l.is_best === 1);
+    const best = laps.find((l) => l.is_best);
     return best?.lap_number ?? (laps.length > 0 ? laps[0].lap_number : null);
   }, [laps]);
 
@@ -281,7 +281,7 @@ export default function VisualizeSessionPage() {
             {laps.map((lap) => {
               const isPrimary = lap.lap_number === primaryLap;
               const isCompare = lap.lap_number === compareLap;
-              const isBest = lap.is_best === 1;
+              const isBest = !!lap.is_best;
               return (
                 <button
                   key={lap.lap_number}

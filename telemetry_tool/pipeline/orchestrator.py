@@ -605,23 +605,36 @@ def run_full_analysis(
         summary["line_deviation_analysis"] = dev_analysis
 
     # Step 08j — Joker lap detection
-    joker_result, err = _safe_step(
-        "08j_joker_detection", s09_physics.run_joker_detection,
-        session_meta, track_id, lap_metrics, lap_times,
-        invalid_lap_set=invalid_lap_set,
-        incomplete_lap_set=incomplete_lap_set,
-        anomalous_lap_set=anomalous_lap_set,
-        deviated_lap_set=deviated_lap_set,
-        joker_callback=joker_callback,
-    )
-    _record("08j_joker_detection", joker_result, err)
+    # If user explicitly specified a joker lap number, use it directly
+    # and skip auto-detection.
+    user_joker = session_meta.get("joker_lap_number")
     joker_lap_set: set = set()
-    if joker_result is not None:
-        joker_lap_set, joker_dict, invalid_additions = joker_result
-        summary["joker_detection_result"] = joker_dict
-        if joker_lap_set:
-            summary["joker_lap_number"] = next(iter(joker_lap_set))
-        invalid_lap_set |= invalid_additions
+    if user_joker is not None:
+        logger.info("Using user-specified joker lap: %s", user_joker)
+        joker_lap_set = {user_joker}
+        summary["joker_lap_number"] = user_joker
+        summary["joker_detection_result"] = {
+            "source": "user",
+            "joker_laps": [user_joker],
+        }
+        _record("08j_joker_detection", summary["joker_detection_result"], None)
+    else:
+        joker_result, err = _safe_step(
+            "08j_joker_detection", s09_physics.run_joker_detection,
+            session_meta, track_id, lap_metrics, lap_times,
+            invalid_lap_set=invalid_lap_set,
+            incomplete_lap_set=incomplete_lap_set,
+            anomalous_lap_set=anomalous_lap_set,
+            deviated_lap_set=deviated_lap_set,
+            joker_callback=joker_callback,
+        )
+        _record("08j_joker_detection", joker_result, err)
+        if joker_result is not None:
+            joker_lap_set, joker_dict, invalid_additions = joker_result
+            summary["joker_detection_result"] = joker_dict
+            if joker_lap_set:
+                summary["joker_lap_number"] = next(iter(joker_lap_set))
+            invalid_lap_set |= invalid_additions
 
     # Combine exclusion sets
     excluded_laps = (
@@ -921,6 +934,55 @@ def run_full_analysis(
         if rl_result:
             summary["raceline_optimization"] = (
                 rl_result.to_dict() if hasattr(rl_result, "to_dict") else rl_result
+            )
+
+    # Step 10g — V2 corner coaching (user-defined corners + MRP + handling)
+    _v2_conn = None
+    try:
+        from web.db import get_db_connection as _get_v2_conn
+        _v2_conn = _get_v2_conn()
+    except Exception:
+        pass
+
+    v2_sections, err = _safe_step(
+        "10g_track_decomposition_v2", s10b_corners.run_track_decomposition_v2,
+        best_lap_df, conn=_v2_conn, session_id=str(meta.get("session_id", "")),
+    )
+    _record("10g_track_decomposition_v2", v2_sections, err)
+
+    if v2_sections:
+        summary["track_sections_v2"] = v2_sections
+
+        # Step 10g2 — MRP detection on v2 sections
+        v2_mrp, err = _safe_step(
+            "10g2_mrp_detection_v2", s10b_corners.run_mrp_detection_v2,
+            v2_sections, best_lap_df,
+        )
+        _record("10g2_mrp_detection_v2", v2_mrp, err)
+        if v2_mrp:
+            summary["mrp_events_v2"] = v2_mrp
+
+        # Step 10g3 — Handling analysis on v2 sections
+        _avail_cols = set(best_lap_df.columns) if best_lap_df is not None else None
+        v2_handling, err = _safe_step(
+            "10g3_handling_v2", s10b_corners.run_handling_analysis_v2,
+            v2_sections, best_lap_df, available_columns=_avail_cols,
+        )
+        _record("10g3_handling_v2", v2_handling, err)
+
+        # Step 10g4 — Coaching on v2 sections
+        v2_coaching, err = _safe_step(
+            "10g4_coaching_v2", s10b_corners.run_coaching_v2,
+            v2_sections, v2_mrp, v2_handling, best_lap_df,
+            available_columns=_avail_cols,
+        )
+        _record("10g4_coaching_v2", v2_coaching, err)
+        if v2_coaching:
+            summary["corner_coaching_v2"] = v2_coaching
+            logger.info(
+                "V2 corner coaching: %d sections coached (%s user-defined)",
+                len(v2_coaching),
+                sum(1 for s in v2_sections if s.get("corner_type") == "user_defined"),
             )
 
     # ══════════════════════════════════════════════════════════════

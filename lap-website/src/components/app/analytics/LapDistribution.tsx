@@ -73,7 +73,7 @@ function draw(
   }
 
   const times = valid.map((l) => l.lap_time_s!);
-  const bestIdx = valid.findIndex((l) => l.is_best === 1);
+  const bestIdx = valid.findIndex((l) => l.is_best);
   const sorted = [...times].sort((a, b) => a - b);
   const minT = sorted[0];
   const maxT = sorted[sorted.length - 1];

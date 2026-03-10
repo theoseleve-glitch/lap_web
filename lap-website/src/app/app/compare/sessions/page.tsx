@@ -709,8 +709,8 @@ export default function CompareSessionsPage() {
 
                     {/* Best lap avg speed */}
                     {(() => {
-                      const bestA = comparison.session_a.laps.find((l) => l.is_best === 1);
-                      const bestB = comparison.session_b.laps.find((l) => l.is_best === 1);
+                      const bestA = comparison.session_a.laps.find((l) => l.is_best);
+                      const bestB = comparison.session_b.laps.find((l) => l.is_best);
                       const speedDelta =
                         bestA?.speed_mean_mps != null && bestB?.speed_mean_mps != null
                           ? (bestA.speed_mean_mps - bestB.speed_mean_mps) * 3.6
@@ -728,8 +728,8 @@ export default function CompareSessionsPage() {
 
                     {/* Best lap max speed */}
                     {(() => {
-                      const bestA = comparison.session_a.laps.find((l) => l.is_best === 1);
-                      const bestB = comparison.session_b.laps.find((l) => l.is_best === 1);
+                      const bestA = comparison.session_a.laps.find((l) => l.is_best);
+                      const bestB = comparison.session_b.laps.find((l) => l.is_best);
                       const speedDelta =
                         bestA?.speed_max_mps != null && bestB?.speed_max_mps != null
                           ? (bestA.speed_max_mps - bestB.speed_max_mps) * 3.6
@@ -875,9 +875,9 @@ function LapTimesTable({
           </thead>
           <tbody>
             {laps.map((lap) => {
-              const isBest = lap.is_best === 1;
+              const isBest = !!lap.is_best;
               const isInvalid = !lap.is_valid;
-              const isJoker = lap.is_joker === 1;
+              const isJoker = !!lap.is_joker;
               const isPit = lap.invalid_reason === 'Pitted lap';
               const isIncomplete = isInvalid && (
                 lap.invalid_reason?.toLowerCase().includes('incomplete') ||
