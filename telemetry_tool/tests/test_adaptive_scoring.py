@@ -307,3 +307,34 @@ class TestReExports:
     def test_backward_compat_apply_session_weights_still_importable(self):
         from scoring import _apply_session_weights
         assert callable(_apply_session_weights)
+
+
+class TestPipelineWiring:
+    """Verify s13_scoring passes track_state and driver_total_laps."""
+
+    def test_run_score_passes_track_state_and_experience(self):
+        """run_score should forward track_state and driver_total_laps from meta."""
+        import sys, os
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+        from unittest.mock import MagicMock, patch
+        import pipeline.stages.s13_scoring as s13
+
+        mock_score_mod = MagicMock()
+        # Remove score_session_phase_aware so hasattr returns False
+        del mock_score_mod.score_session_phase_aware
+        mock_score_mod.score_session.return_value = {"total_score": 75}
+
+        with patch.object(s13, "lazy_import", return_value=mock_score_mod):
+            meta = {"session_type": "race", "track_state": "wet", "driver_total_laps": 5000}
+            s13.run_score(
+                consistency={"cv_pct": 1.0},
+                robustness={"early_mean_s": 60},
+                lap_metrics=None,
+                excluded_laps=frozenset(),
+                theo_metrics={"best_s": 58},
+                meta=meta,
+            )
+
+        call_kwargs = mock_score_mod.score_session.call_args
+        assert call_kwargs.kwargs.get("track_state") == "wet"
+        assert call_kwargs.kwargs.get("driver_total_laps") == 5000

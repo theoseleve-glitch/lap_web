@@ -90,19 +90,23 @@ def run_score(
             weather_timeline=weather_timeline,
         )
 
-    # Standard fallback — detect wet from context
+    # Standard fallback — detect wet + track state from context
     is_wet = False
+    track_state = meta.get("track_state", "dry")
     if context is not None:
         ts = getattr(context, "baseline_track_state", None)
         if ts is not None:
             sv = ts.value if hasattr(ts, "value") else str(ts)
             is_wet = sv.lower() in ("wet", "full_wet", "damp", "drying", "greasy")
+            track_state = sv.lower()
 
     return score_mod.score_session(
         m,
         theo_metrics,
         meta.get("session_type", "practice"),
         is_wet=is_wet,
+        track_state=track_state,
+        driver_total_laps=int(meta.get("driver_total_laps", 0) or 0),
         corner_coaching=corner_coaching,
         progressive_physics=progressive_physics,
     )

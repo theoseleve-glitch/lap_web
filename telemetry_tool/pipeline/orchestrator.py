@@ -104,6 +104,25 @@ def run_full_analysis(
     meta.setdefault("session_type", "practice")
     meta.setdefault("track_state", "dry")
     meta.setdefault("driver_name", "Unknown")
+    # ── Fetch driver experience for scoring ────────────────────────
+    meta.setdefault("driver_total_laps", 0)
+    try:
+        from db.queries import SELECT_DRIVER_BY_NAME
+        from db.db_manager import get_db_connection as _get_exp_conn
+        _exp_conn = _get_exp_conn()
+        _drv_row = _exp_conn.execute(SELECT_DRIVER_BY_NAME, {"driver_name": meta["driver_name"]}).fetchone()
+        if _drv_row:
+            _drv_id = _drv_row[0] if not isinstance(_drv_row, dict) else _drv_row.get("driver_id")
+            _prof_row = _exp_conn.execute(
+                "SELECT total_laps FROM driver_profiles WHERE driver_id = ?",
+                (_drv_id,),
+            ).fetchone()
+            if _prof_row:
+                meta["driver_total_laps"] = int(
+                    (_prof_row[0] if not isinstance(_prof_row, dict) else _prof_row.get("total_laps", 0)) or 0
+                )
+    except Exception:
+        pass  # Graceful fallback — new driver or no DB
     meta.setdefault("session_id", csv_path.stem)
     if meta.get("session_date") and not meta.get("date"):
         meta["date"] = meta["session_date"]
