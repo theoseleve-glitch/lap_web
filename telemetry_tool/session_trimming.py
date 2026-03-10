@@ -1278,11 +1278,17 @@ def identify_invalid_laps(
             if not np.isfinite(arr[i]):
                 continue
 
-            # Average of up to 2 neighbours on each side (excluding self)
-
+            # Average of up to 2 neighbours on each side (excluding self).
+            # Skip neighbours already flagged as track cuts and those whose
+            # time is < 50% of the current lap (clearly incomplete fragments
+            # that would poison the average).
             neighbours = []
             for j in (i - 2, i - 1, i + 1, i + 2):
                 if 0 <= j < n and j != i and np.isfinite(arr[j]):
+                    if lap_keys[j] in track_cuts:
+                        continue
+                    if arr[j] < arr[i] * 0.5:
+                        continue
                     neighbours.append(arr[j])
 
             if len(neighbours) < 1:
