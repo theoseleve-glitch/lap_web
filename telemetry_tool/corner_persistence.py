@@ -507,6 +507,74 @@ def _resolve_corners_impl(
 
 # -- -
 
+# Corner coaching v2 persistence
+
+# -- -
+
+
+def persist_corner_v2_data(
+    conn: Any,
+    session_id: str,
+    sections: list[dict],
+    events: dict | None = None,
+    handling: dict | None = None,
+) -> int:
+    """Persist corner coaching v2 data to corner_metrics table.
+
+    Stores the new fields (corner_type, mrp, handling, etc.) alongside
+    existing corner_metrics data.
+    """
+    import json as _json
+
+    events = events or {}
+    handling = handling or {}
+    count = 0
+
+    for sd in sections:
+        if sd.get("section_type") != "corner":
+            continue
+
+        sid = sd.get("section_id", 0)
+        ev = events.get(sid, {})
+        he = handling.get(sid, [])
+
+        try:
+            conn.execute(
+                """UPDATE corner_metrics
+                   SET corner_type = ?,
+                       section_type = ?,
+                       mrp_distance_m = ?,
+                       mrp_speed_mps = ?,
+                       mrp_yaw_rate = ?,
+                       geometric_apex_m = ?,
+                       exit_importance = ?,
+                       handling_events_json = ?,
+                       is_user_defined = ?
+                   WHERE session_id = ? AND corner_id = ?""",
+                (
+                    sd.get("corner_type"),
+                    sd.get("section_type"),
+                    ev.get("mrp_m") if isinstance(ev, dict) else None,
+                    ev.get("mrp_speed_mps") if isinstance(ev, dict) else None,
+                    ev.get("mrp_yaw_rate") if isinstance(ev, dict) else None,
+                    sd.get("geometric_apex"),
+                    sd.get("exit_importance"),
+                    _json.dumps(he) if he else None,
+                    1 if sd.get("corner_type") == "user_defined" else 0,
+                    session_id,
+                    sid,
+                ),
+            )
+            count += 1
+        except Exception:
+            logger.debug("Failed to persist v2 data for section %s", sid, exc_info=True)
+
+    logger.info("Persisted v2 corner data for %d corners in session %s", count, session_id)
+    return count
+
+
+# -- -
+
 # Unit tests
 
 # -- -

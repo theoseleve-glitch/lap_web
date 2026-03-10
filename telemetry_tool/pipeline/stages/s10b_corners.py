@@ -534,3 +534,241 @@ def run_raceline_optimizer(
     return rl_mod.optimize_corner_lines(
         corners or [], ref_dict, bounds_dict, friction,
     )
+
+
+# ── Step 10g: Track Decomposition (v2 corner coaching) ─────────────
+
+
+def run_track_decomposition_v2(
+    best_lap_df: Optional[pd.DataFrame],
+    conn: Any = None,
+    session_id: str = "",
+) -> Optional[list[dict[str, Any]]]:
+    """Step 10g: Decompose track into typed sections.
+
+    Checks for user-defined corners first. If found, uses those.
+    Otherwise runs autonomous track decomposition.
+    """
+    td_mod = lazy_import("track_decomposition")
+    if td_mod is None or best_lap_df is None:
+        return None
+
+    # Check for user-defined corners
+    if conn is not None and session_id:
+        try:
+            rows = conn.execute(
+                "SELECT * FROM user_corners WHERE session_id = ? ORDER BY corner_index",
+                (session_id,)
+            ).fetchall()
+            if rows:
+                logger.info("Using %d user-defined corners for session %s", len(rows), session_id)
+                return _user_corners_to_sections(rows, best_lap_df, td_mod)
+        except Exception:
+            logger.debug("user_corners table check failed, using autonomous", exc_info=True)
+
+    # Autonomous decomposition
+    sections = td_mod.decompose_track(best_lap_df)
+    logger.info("Track decomposition: %d sections", len(sections))
+    return [s.to_dict() for s in sections]
+
+
+def _user_corners_to_sections(rows, best_lap_df, td_mod):
+    """Convert user-defined corner rows to TrackSection list."""
+    from corner_focus import score_exit_importance
+    sections = []
+    for i, row in enumerate(rows):
+        row_dict = dict(row) if hasattr(row, 'keys') else row
+        s_entry = row_dict.get("s_entry", 0)
+        s_exit = row_dict.get("s_exit", 0)
+        s_apex = row_dict.get("s_apex")
+
+        # Compute exit importance based on distance to next corner
+        if i + 1 < len(rows):
+            next_row = dict(rows[i + 1]) if hasattr(rows[i + 1], 'keys') else rows[i + 1]
+            next_entry = next_row.get("s_entry", s_exit)
+            straight_length = next_entry - s_exit
+        else:
+            straight_length = 100.0  # default for last corner
+
+        section = td_mod.TrackSection(
+            section_id=i + 1,
+            section_type="corner",
+            corner_type="user_defined",
+            s_start=s_entry,
+            s_end=s_exit,
+            direction=None,
+            geometric_apex=s_apex,
+            exit_importance=score_exit_importance(straight_length),
+            sub_corners=None,
+        )
+        sections.append(section.to_dict())
+    return sections
+
+
+def run_mrp_detection_v2(
+    sections: Optional[list[dict[str, Any]]],
+    best_lap_df: Optional[pd.DataFrame],
+) -> Optional[dict[int, dict[str, Any]]]:
+    """Step 10g2: Detect MRP + events for each corner section."""
+    mrp_mod = lazy_import("mrp_detector")
+    td_mod = lazy_import("track_decomposition")
+    if mrp_mod is None or td_mod is None or sections is None or best_lap_df is None:
+        return None
+
+    # Reconstruct TrackSection objects
+    section_objs = []
+    for sd in sections:
+        section_objs.append(td_mod.TrackSection(
+            section_id=sd["section_id"],
+            section_type=sd["section_type"],
+            corner_type=sd.get("corner_type"),
+            s_start=sd["s_start"],
+            s_end=sd["s_end"],
+            direction=sd.get("direction"),
+            geometric_apex=sd.get("geometric_apex"),
+            exit_importance=sd.get("exit_importance", 0.0),
+            sub_corners=sd.get("sub_corners"),
+        ))
+
+    events = mrp_mod.detect_all_mrp(section_objs, best_lap_df)
+    result = {}
+    for sid, ev in events.items():
+        result[sid] = ev.to_dict() if hasattr(ev, 'to_dict') else ev
+    logger.info("MRP detection: %d corners with events", len(result))
+    return result
+
+
+def run_handling_analysis_v2(
+    sections: Optional[list[dict[str, Any]]],
+    best_lap_df: Optional[pd.DataFrame],
+    available_columns: Optional[set[str]] = None,
+) -> Optional[dict[int, list[dict[str, Any]]]]:
+    """Step 10g3: Detect understeer/oversteer with causal chains."""
+    hd_mod = lazy_import("handling_detector")
+    if hd_mod is None or sections is None or best_lap_df is None:
+        return None
+
+    result = {}
+    for sd in sections:
+        if sd.get("section_type") != "corner":
+            continue
+        try:
+            # Extract section data
+            dist_col = None
+            for c in ("Distance (m)", "distance_m"):
+                if c in best_lap_df.columns:
+                    dist_col = c
+                    break
+            if dist_col is None:
+                continue
+
+            mask = (best_lap_df[dist_col] >= sd["s_start"]) & (best_lap_df[dist_col] <= sd["s_end"])
+            section_df = best_lap_df[mask]
+            if len(section_df) < 5:
+                continue
+
+            distances = section_df[dist_col].values
+
+            speed_col = None
+            for c in ("Speed (m/s)", "speed_mps"):
+                if c in section_df.columns:
+                    speed_col = c
+                    break
+            if speed_col is None:
+                continue
+            speeds = section_df[speed_col].values
+
+            # Compute reference curvature and actual headings
+            # Simple curvature estimate from speed + lateral accel
+            curvature = np.ones_like(distances) * 0.01  # placeholder
+            headings = np.cumsum(curvature * np.diff(np.concatenate([[0], distances])))
+
+            accel_long = None
+            for c in ("accel_long_mps2", "Longitudinal acceleration (G) *calc"):
+                if c in section_df.columns:
+                    accel_long = section_df[c].values
+                    break
+
+            events = hd_mod.detect_handling(
+                corner_id=sd["section_id"],
+                distances=distances,
+                speeds=speeds,
+                reference_curvature=curvature,
+                actual_headings=headings,
+                accel_long=accel_long,
+                geometric_apex_m=sd.get("geometric_apex"),
+            )
+            if events:
+                result[sd["section_id"]] = [e.__dict__ if hasattr(e, '__dict__') else e for e in events]
+        except Exception:
+            logger.debug("Handling analysis failed for section %s", sd.get("section_id"), exc_info=True)
+
+    logger.info("Handling analysis: %d corners with events", len(result))
+    return result
+
+
+def run_coaching_v2(
+    sections: Optional[list[dict[str, Any]]],
+    events: Optional[dict],
+    handling: Optional[dict],
+    best_lap_df: Optional[pd.DataFrame],
+    theoretical: Optional[dict] = None,
+    friction: Optional[float] = None,
+    available_columns: Optional[set[str]] = None,
+) -> Optional[list[dict[str, Any]]]:
+    """Step 10g4: Generate coaching for all sections."""
+    adv_mod = lazy_import("coaching_advanced")
+    basic_mod = lazy_import("coaching_basic")
+    td_mod = lazy_import("track_decomposition")
+
+    if sections is None or best_lap_df is None:
+        return None
+    if basic_mod is None:
+        return None
+
+    # Reconstruct TrackSection objects
+    section_objs = []
+    for sd in sections:
+        section_objs.append(td_mod.TrackSection(
+            section_id=sd["section_id"],
+            section_type=sd["section_type"],
+            corner_type=sd.get("corner_type"),
+            s_start=sd["s_start"],
+            s_end=sd["s_end"],
+            direction=sd.get("direction"),
+            geometric_apex=sd.get("geometric_apex"),
+            exit_importance=sd.get("exit_importance", 0.0),
+            sub_corners=sd.get("sub_corners"),
+        ))
+
+    # Determine tier
+    tier = "basic"
+    if adv_mod is not None and available_columns:
+        tier = adv_mod.get_coaching_tier(available_columns)
+
+    events = events or {}
+    handling = handling or {}
+
+    if tier == "advanced" and adv_mod is not None:
+        coaching = adv_mod.generate_advanced_coaching(
+            section_objs, events, handling, best_lap_df, theoretical, friction,
+        )
+    else:
+        coaching = basic_mod.generate_basic_coaching(
+            section_objs, events, handling, best_lap_df, theoretical, friction,
+        )
+
+    result = []
+    for sc in coaching:
+        d = sc.__dict__.copy() if hasattr(sc, '__dict__') else dict(sc)
+        # Serialize nested objects
+        if hasattr(d.get("section"), "to_dict"):
+            d["section"] = d["section"].to_dict()
+        if hasattr(d.get("events"), "to_dict"):
+            d["events"] = d["events"].to_dict()
+        if d.get("handling"):
+            d["handling"] = [h.__dict__ if hasattr(h, '__dict__') else h for h in d["handling"]]
+        result.append(d)
+
+    logger.info("Coaching v2: %d sections coached (tier=%s)", len(result), tier)
+    return result
