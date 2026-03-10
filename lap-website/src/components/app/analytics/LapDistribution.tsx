@@ -62,7 +62,7 @@ function draw(
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, w, h);
 
-  const valid = laps.filter((l) => l.is_valid !== 0 && l.lap_time_s != null && l.lap_time_s > 0);
+  const valid = laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0);
   if (valid.length < 2) {
     ctx.fillStyle = C.text;
     ctx.font = '13px "Space Mono", monospace';

@@ -565,7 +565,7 @@ function DataQualityIndicator({
   const checks: { label: string; ok: boolean; detail: string }[] = [];
 
   const totalLaps = laps.length;
-  const validLaps = laps.filter((l) => l.is_valid !== 0);
+  const validLaps = laps.filter((l) => l.is_valid);
   const validRatio = totalLaps > 0 ? validLaps.length / totalLaps : 0;
   checks.push({
     label: 'Valid laps',
@@ -1360,7 +1360,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       const y = yScale(time);
       const barH = pad.top + cH - y;
       const isBest = lap.is_best === 1;
-      const isInvalid = lap.is_valid === 0;
+      const isInvalid = !lap.is_valid;
       const isIncomplete = lap.invalid_reason?.toLowerCase().includes('incomplete') ||
                            lap.invalid_reason?.toLowerCase().includes('outlap') ||
                            lap.invalid_reason?.toLowerCase().includes('inlap');
@@ -1493,14 +1493,14 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
               </thead>
               <tbody>
                 {(() => {
-                  const validLaps = laps.filter((l) => l.is_valid !== 0 && l.lap_time_s != null && l.lap_time_s > 0);
+                  const validLaps = laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0);
                   const bestTime = validLaps.length > 0 ? Math.min(...validLaps.map((l) => l.lap_time_s!)) : null;
                   const worstTime = validLaps.length > 1 ? Math.max(...validLaps.map((l) => l.lap_time_s!)) : null;
                   return laps.map((lap) => {
                   const isBest = lap.is_best === 1;
-                  const isWorst = !isBest && lap.is_valid !== 0 && lap.lap_time_s != null && worstTime != null && lap.lap_time_s >= worstTime;
+                  const isWorst = !isBest && lap.is_valid && lap.lap_time_s != null && worstTime != null && lap.lap_time_s >= worstTime;
                   const deltaFromBest = bestTime != null && lap.lap_time_s != null && lap.lap_time_s > 0 ? lap.lap_time_s - bestTime : null;
-                  const isInvalid = lap.is_valid === 0;
+                  const isInvalid = !lap.is_valid;
                   const isJoker = lap.is_joker === 1;
                   const isPit = lap.invalid_reason === 'Pitted lap';
                   const isIncomplete = isInvalid && (

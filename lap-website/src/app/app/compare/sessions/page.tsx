@@ -876,7 +876,7 @@ function LapTimesTable({
           <tbody>
             {laps.map((lap) => {
               const isBest = lap.is_best === 1;
-              const isInvalid = lap.is_valid === 0;
+              const isInvalid = !lap.is_valid;
               const isJoker = lap.is_joker === 1;
               const isPit = lap.invalid_reason === 'Pitted lap';
               const isIncomplete = isInvalid && (
