@@ -19,8 +19,10 @@ from scoring.consistency import _score_consistency
 from scoring.constants import *  # noqa: F401,F403 — all constants
 from scoring.constants import (
     _CONSISTENCY_THRESHOLDS_BY_TYPE,
+    _SESSION_CATEGORY_CONFIG,
     _SESSION_TYPE_SYNONYMS,
     _SESSION_WEIGHT_OVERRIDES,
+    _TRACK_STATE_MODIFIERS,
     ScoringError,
 )
 from scoring.execution import (
@@ -40,7 +42,7 @@ from scoring.pace import _score_pace
 from scoring.phase_aware import score_session_phase_aware
 from scoring.racecraft import compute_racecraft_score
 from scoring.robustness import _score_robustness
-from scoring.scorer import _apply_session_weights, score_session
+from scoring.scorer import _apply_adaptive_weights, _apply_session_weights, score_session
 
 __all__ = [
     # Public API
@@ -66,6 +68,9 @@ __all__ = [
     "_score_adaptation_v2",
     "_ratio_score",
     "_apply_session_weights",
+    "_apply_adaptive_weights",
     "_SESSION_WEIGHT_OVERRIDES",
+    "_SESSION_CATEGORY_CONFIG",
+    "_TRACK_STATE_MODIFIERS",
     "_CONSISTENCY_THRESHOLDS_BY_TYPE",
 ]

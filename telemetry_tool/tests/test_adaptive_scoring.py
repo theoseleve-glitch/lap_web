@@ -282,3 +282,28 @@ class TestScoreSessionAdaptive:
         dry_adapt = dry["sub_scores"]["adaptation"]["max"]
         wet_adapt = wet["sub_scores"]["adaptation"]["max"]
         assert wet_adapt > dry_adapt
+
+
+class TestReExports:
+    """Verify new symbols are accessible from the scoring package."""
+
+    def test_session_category_config_importable(self):
+        from scoring import _SESSION_CATEGORY_CONFIG
+        assert isinstance(_SESSION_CATEGORY_CONFIG, dict)
+
+    def test_track_state_modifiers_importable(self):
+        from scoring import _TRACK_STATE_MODIFIERS
+        assert isinstance(_TRACK_STATE_MODIFIERS, dict)
+
+    def test_apply_adaptive_weights_importable(self):
+        from scoring import _apply_adaptive_weights
+        assert callable(_apply_adaptive_weights)
+
+    def test_backward_compat_weight_overrides_still_importable(self):
+        from scoring import _SESSION_WEIGHT_OVERRIDES
+        assert isinstance(_SESSION_WEIGHT_OVERRIDES, dict)
+        assert "qualifying" in _SESSION_WEIGHT_OVERRIDES
+
+    def test_backward_compat_apply_session_weights_still_importable(self):
+        from scoring import _apply_session_weights
+        assert callable(_apply_session_weights)
