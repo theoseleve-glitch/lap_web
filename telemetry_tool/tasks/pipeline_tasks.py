@@ -222,6 +222,29 @@ def _build_session_meta(ctx: PipelineContext) -> dict:
 
     # Ensure session_id is always from context
     meta["session_id"] = ctx.session_id
+
+    # Fetch driver experience (total_laps) for adaptive scoring
+    meta.setdefault("driver_total_laps", 0)
+    try:
+        from web.db_pg import get_pg_connection
+        _conn = get_pg_connection()
+        _drv_row = _conn.execute(
+            "SELECT driver_id FROM drivers WHERE driver_name = %(driver_name)s",
+            {"driver_name": meta.get("driver_name", "Unknown")},
+        ).fetchone()
+        if _drv_row:
+            _drv_id = _drv_row[0] if not isinstance(_drv_row, dict) else _drv_row.get("driver_id")
+            _prof_row = _conn.execute(
+                "SELECT total_laps FROM driver_profiles WHERE driver_id = %(driver_id)s",
+                {"driver_id": _drv_id},
+            ).fetchone()
+            if _prof_row:
+                meta["driver_total_laps"] = int(
+                    (_prof_row[0] if not isinstance(_prof_row, dict) else _prof_row.get("total_laps", 0)) or 0
+                )
+    except Exception:
+        pass  # Graceful fallback — new driver or no profile yet
+
     return meta
 
 
