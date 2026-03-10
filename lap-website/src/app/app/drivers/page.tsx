@@ -4,21 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
+import { queryKeys } from '@/lib/query-keys';
+import type { Driver } from '@/lib/api-types';
 import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
-
-/* ── Types ──────────────────────────────────────────────── */
-
-interface DriverRow {
-  driver_id: number;
-  driver_name: string;
-  session_count: number;
-  personal_best_s: number | null;
-  mean_score: number | null;
-  has_profile: boolean;
-  style_label: string | null;
-  total_laps: number;
-}
 
 /* ── Helpers ────────────────────────────────────────────── */
 
@@ -51,21 +40,19 @@ export default function DriversPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'score'>('sessions');
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['drivers'],
-    queryFn: () => api.get<{ drivers: DriverRow[] }>('/drivers'),
+  const { data: drivers = [], isLoading, error, refetch } = useQuery({
+    queryKey: queryKeys.drivers.all,
+    queryFn: () => api.get<Driver[]>('/drivers'),
   });
-
-  const drivers = data?.drivers ?? [];
 
   const filtered = useMemo(() => {
     let list = drivers;
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter((d) => d.driver_name.toLowerCase().includes(q));
+      list = list.filter((d) => d.name.toLowerCase().includes(q));
     }
     list = [...list].sort((a, b) => {
-      if (sort === 'name') return a.driver_name.localeCompare(b.driver_name);
+      if (sort === 'name') return a.name.localeCompare(b.name);
       if (sort === 'sessions') return (b.session_count ?? 0) - (a.session_count ?? 0);
       if (sort === 'score') return (b.mean_score ?? 0) - (a.mean_score ?? 0);
       return 0;
@@ -147,15 +134,15 @@ export default function DriversPage() {
             const tier = scoreColor(driver.mean_score);
             return (
               <Link
-                key={driver.driver_id}
-                href={`/app/drivers/${driver.driver_id}`}
+                key={driver.id}
+                href={`/app/drivers/${driver.id}`}
                 className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                   hover:border-acid-green/40 transition-all"
               >
                 {/* Name + style */}
                 <div className="flex items-start justify-between">
                   <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors">
-                    {driver.driver_name}
+                    {driver.name}
                   </h3>
                   {driver.style_label && (
                     <span className={`px-2 py-0.5 rounded text-[10px] font-telemetry uppercase ${
