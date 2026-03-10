@@ -1287,8 +1287,8 @@ def identify_invalid_laps(
             #   - more than 30% faster than current lap (fragments/shortcuts)
             #   - more than 30% slower than current lap (other incidents)
             neighbours = []
-            lo_bound = arr[i] * 0.70
-            hi_bound = arr[i] * 1.30
+            lo_bound = arr[i] * 0.85
+            hi_bound = arr[i] * 1.15
             for j in (i - 2, i - 1, i + 1, i + 2):
                 if 0 <= j < n and j != i and np.isfinite(arr[j]):
                     if lap_keys[j] in track_cuts:
