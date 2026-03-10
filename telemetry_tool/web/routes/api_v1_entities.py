@@ -65,6 +65,13 @@ def list_drivers():
     return api_response([_map_driver(r) for r in rows])
 
 
+def _verify_driver(conn, driver_id):
+    """Return driver row or None."""
+    return conn.execute(
+        "SELECT * FROM drivers WHERE driver_id = ?", (driver_id,)
+    ).fetchone()
+
+
 @bp.route("/drivers/<int:driver_id>", methods=["GET"])
 def get_driver(driver_id):
     conn = _get_conn()
@@ -76,7 +83,11 @@ def get_driver(driver_id):
     ).fetchone()
     if not row or row["driver_id"] is None:
         return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
-    return api_response(_map_driver(row))
+    result = _map_driver(row)
+    from web.repos.driver_repo import get_driver_profile
+    profile = get_driver_profile(conn, driver_id)
+    result["profile"] = dict(profile) if profile else None
+    return api_response(result)
 
 
 @bp.route("/drivers/<int:driver_id>", methods=["PATCH"])
@@ -108,6 +119,104 @@ def patch_driver(driver_id):
         "WHERE d.driver_id = ?", (driver_id,)
     ).fetchone()
     return api_response(_map_driver(updated))
+
+
+@bp.route("/drivers/<int:driver_id>/progression", methods=["GET"])
+def get_driver_progression(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    from web.repos.driver_repo import get_driver_progression as _get_prog
+    prog = _get_prog(conn, driver_id)
+    return api_response({"driver_id": driver_id, "progression": prog})
+
+
+@bp.route("/drivers/<int:driver_id>/style-history", methods=["GET"])
+def get_driver_style_history(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    from web.repos.driver_repo import get_driver_style_history as _get_style
+    history = _get_style(conn, driver_id)
+    for h in history:
+        h.pop("strengths_json", None)
+        h.pop("weaknesses_json", None)
+    return api_response({"driver_id": driver_id, "history": history})
+
+
+@bp.route("/drivers/<int:driver_id>/badges", methods=["GET"])
+def get_driver_badges(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    rows = conn.execute(
+        "SELECT * FROM driver_badges WHERE driver_id = ? ORDER BY earned_at DESC",
+        (driver_id,),
+    ).fetchall()
+    return api_response({"driver_id": driver_id, "badges": [dict(r) for r in rows]})
+
+
+@bp.route("/drivers/<int:driver_id>/best-ever", methods=["GET"])
+def get_driver_best_ever(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    from web.repos.driver_repo import compute_best_ever_relative
+    result = compute_best_ever_relative(conn, driver_id)
+    return api_response(result)
+
+
+@bp.route("/drivers/<int:driver_id>/sessions", methods=["GET"])
+def get_driver_sessions(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    rows = conn.execute(
+        "SELECT s.session_id, s.session_date, s.best_lap_time_s, "
+        "s.total_score, s.n_laps, s.track_state, "
+        "t.track_name, s.track_id "
+        "FROM sessions s "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.driver_id = ? AND s.deleted_at IS NULL "
+        "ORDER BY s.session_date DESC",
+        (driver_id,),
+    ).fetchall()
+    return api_response({"driver_id": driver_id, "sessions": [dict(r) for r in rows]})
+
+
+@bp.route("/drivers/<int:driver_id>/profile", methods=["PATCH"])
+def patch_driver_profile(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    body = request.get_json(silent=True) or {}
+    field_name = body.get("field")
+    value = body.get("value")
+    if not field_name:
+        return api_error(ErrorCode.VALIDATION_ERROR, "field is required", status=400)
+    from web.repos.driver_repo import (
+        get_driver_profile, upsert_driver_profile, update_driver_profile_field,
+    )
+    if get_driver_profile(conn, driver_id) is None:
+        upsert_driver_profile(conn, driver_id, {})
+        conn.commit()
+    try:
+        update_driver_profile_field(conn, driver_id, field_name, value)
+        conn.commit()
+    except ValueError:
+        return api_error(ErrorCode.VALIDATION_ERROR, f"Field '{field_name}' is not editable", status=400)
+    return api_response({"field": field_name, "value": value})
+
+
+@bp.route("/drivers/<int:driver_id>", methods=["DELETE"])
+def delete_driver(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    from web.repos.driver_repo import delete_driver_cascade
+    delete_driver_cascade(conn, driver_id)
+    conn.commit()
+    return api_response({"deleted": True})
 
 
 # ══════════════════════════════════════════════════════════════════

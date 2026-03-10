@@ -105,3 +105,93 @@ def test_list_drivers_has_enriched_fields(client, db):
 def test_get_track_not_found(client):
     resp = client.get("/api/v1/tracks/nonexistent")
     assert resp.status_code == 404
+
+
+def test_get_driver_detail_enriched(client, db):
+    """GET /drivers/:id returns profile."""
+    resp = client.get("/api/v1/drivers/1")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert d["name"] == "Alice"
+    assert "profile" in d
+    assert "session_count" in d
+
+
+def test_get_driver_progression(client, db):
+    resp = client.get("/api/v1/drivers/1/progression")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert isinstance(d["progression"], list)
+
+
+def test_get_driver_progression_not_found(client, db):
+    resp = client.get("/api/v1/drivers/9999/progression")
+    assert resp.status_code == 404
+
+
+def test_get_driver_style_history(client, db):
+    resp = client.get("/api/v1/drivers/1/style-history")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert isinstance(d["history"], list)
+
+
+def test_get_driver_badges(client, db):
+    resp = client.get("/api/v1/drivers/1/badges")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert isinstance(d["badges"], list)
+
+
+def test_get_driver_badges_with_data(client, db):
+    db.execute(
+        "INSERT INTO driver_badges (driver_id, badge_type, badge_name, badge_level) "
+        "VALUES (1, 'consistency', 'Iron Consistency', 'bronze')"
+    )
+    db.commit()
+    resp = client.get("/api/v1/drivers/1/badges")
+    badges = resp.get_json()["data"]["badges"]
+    assert len(badges) == 1
+    assert badges[0]["badge_name"] == "Iron Consistency"
+
+
+def test_get_driver_best_ever(client, db):
+    resp = client.get("/api/v1/drivers/1/best-ever")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert "best_pct" in d
+    assert "records_held" in d
+
+
+def test_get_driver_sessions(client, db):
+    resp = client.get("/api/v1/drivers/1/sessions")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert isinstance(d["sessions"], list)
+    assert len(d["sessions"]) >= 1
+
+
+def test_patch_driver_profile(client, db):
+    resp = client.patch("/api/v1/drivers/1/profile", json={"field": "goals", "value": "Win championship"})
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert d["field"] == "goals"
+
+
+def test_patch_driver_profile_invalid_field(client, db):
+    resp = client.patch("/api/v1/drivers/1/profile", json={"field": "driver_id", "value": "99"})
+    assert resp.status_code == 400
+
+
+def test_delete_driver(client, db):
+    resp = client.delete("/api/v1/drivers/2")
+    assert resp.status_code == 200
+    d = resp.get_json()["data"]
+    assert d["deleted"] is True
+    resp2 = client.get("/api/v1/drivers/2")
+    assert resp2.status_code == 404
+
+
+def test_delete_driver_not_found(client, db):
+    resp = client.delete("/api/v1/drivers/9999")
+    assert resp.status_code == 404
