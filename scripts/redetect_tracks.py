@@ -24,15 +24,20 @@ logger = logging.getLogger(__name__)
 
 def redetect_all(dry_run: bool = False) -> dict:
     """Re-run track detection for all sessions. Returns summary dict."""
-    from db.schema import ensure_schema
-    from web.db import get_db_connection
+    import os
+    import sqlite3
+
+    from db.migrate import ensure_schema
     from track_detection import register_or_match_track
 
-    conn = get_db_connection()
+    # Open SQLite connection directly (no Flask context needed)
+    db_path = os.environ.get("TELEMETRY_DB_PATH", "telemetry.db")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
     ensure_schema(conn)
 
     sessions = conn.execute(
-        "SELECT s.session_id, s.track_id, s.raw_csv_path, t.track_name "
+        "SELECT s.session_id, s.track_id, s.source_path, t.track_name "
         "FROM sessions s "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
         "WHERE s.deleted_at IS NULL "
