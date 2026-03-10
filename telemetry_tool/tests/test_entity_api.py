@@ -89,6 +89,19 @@ def test_get_track_detail(client):
     assert data["data"]["session_count"] >= 1
 
 
+def test_list_drivers_has_enriched_fields(client, db):
+    """List should include has_profile, style_label, total_laps."""
+    resp = client.get("/api/v1/drivers")
+    assert resp.status_code == 200
+    drivers = resp.get_json()["data"]
+    alice = next(d for d in drivers if d["name"] == "Alice")
+    assert "has_profile" in alice
+    assert "style_label" in alice
+    assert "total_laps" in alice
+    assert isinstance(alice["has_profile"], bool)
+    assert isinstance(alice["total_laps"], int)
+
+
 def test_get_track_not_found(client):
     resp = client.get("/api/v1/tracks/nonexistent")
     assert resp.status_code == 404

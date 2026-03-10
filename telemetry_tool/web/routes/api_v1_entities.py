@@ -51,13 +51,17 @@ def _map_driver(row):
         "session_count": d.get("session_count", 0),
         "personal_best_s": d.get("personal_best_s"),
         "mean_score": d.get("mean_score"),
+        "has_profile": d.get("has_profile", False),
+        "style_label": d.get("style_label"),
+        "total_laps": d.get("total_laps", 0),
     }
 
 
 @bp.route("/drivers", methods=["GET"])
 def list_drivers():
     conn = _get_conn()
-    rows = conn.execute(Q.SELECT_ALL_DRIVERS).fetchall()
+    from web.repos.driver_repo import get_all_drivers
+    rows = get_all_drivers(conn)
     return api_response([_map_driver(r) for r in rows])
 
 
