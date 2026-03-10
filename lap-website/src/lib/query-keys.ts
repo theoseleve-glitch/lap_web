@@ -24,6 +24,17 @@ export const queryKeys = {
     ggData: (id: string) => ['sessions', 'gg-data', id] as const,
   },
 
+  // ── Drivers ────────────────────────────────────
+  drivers: {
+    all: ['drivers'] as const,
+    detail: (id: number) => ['drivers', 'detail', id] as const,
+    progression: (id: number) => ['drivers', 'progression', id] as const,
+    styleHistory: (id: number) => ['drivers', 'style-history', id] as const,
+    badges: (id: number) => ['drivers', 'badges', id] as const,
+    bestEver: (id: number) => ['drivers', 'best-ever', id] as const,
+    sessions: (id: number) => ['drivers', 'sessions', id] as const,
+  },
+
   // ── Tracks ────────────────────────────────────
   tracks: {
     all: ['tracks'] as const,
