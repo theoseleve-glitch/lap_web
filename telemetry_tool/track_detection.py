@@ -25,7 +25,7 @@ Matching rules
 ~~~~~~~~~~~~~~
 - Lap length within +/-``lap_length_tolerance`` (default 6 %).
 - Bounding-box IoU (Intersection-over-Union) >= ``min_bbox_iou``
-  (default 0.50) -- ensures boxes overlap, relaxed for GPS drift on kart tracks.
+  (default 0.75) -- ensures boxes overlap, tightened for kart circuits.
 - Both conditions must hold; the closest match by lap-length ratio is
   selected when multiple candidates pass.
 
@@ -78,7 +78,7 @@ _COL_TIME: Final[str] = "Time (s)"
 
 
 _DEFAULT_LAP_TOL:  Final[float] = 0.06   # +/-6 % lap-length tolerance (relaxed for GPS drift on short tracks)
-_DEFAULT_MIN_IOU:  Final[float] = 0.50   # minimum bounding-box IoU to match (relaxed for GPS variance)
+_DEFAULT_MIN_IOU:  Final[float] = 0.75   # minimum bounding-box IoU to match (tightened from 0.50 for kart circuits)
 _DB_FILENAME:      Final[str]   = "tracks.json"
 
 
@@ -480,7 +480,7 @@ def match_track(
             fingerprint.start_lat, fingerprint.start_lon,
             stored_fp.start_lat, stored_fp.start_lon,
         )
-        sf_sim = max(0.0, 1.0 - sf_dist / 500.0)  # 500 m saturation
+        sf_sim = max(0.0, 1.0 - sf_dist / 200.0)  # 200 m saturation (tightened for kart circuits)
         composite = 0.40 * length_sim + 0.35 * iou + 0.25 * sf_sim
 
         # Guard: flag suspicious iou=1.0 + ratio=0.0 with low start/finish match
@@ -603,6 +603,34 @@ def register_or_match_track(
     """
     fingerprint = compute_track_fingerprint(df)
     database    = load_track_database(db_path)
+
+    # -- Metadata-first: prefer name match over pure geometry ----------
+    if track_name and track_name != "Unknown Track":
+        name_lower = track_name.strip().lower()
+        for entry in database:
+            stored_name = (entry.get("track_name") or "").strip().lower()
+            if not stored_name or stored_name == "unknown track":
+                continue
+            if stored_name == name_lower:
+                try:
+                    stored_fp = TrackFingerprint.from_dict(entry["fingerprint"])
+                except (KeyError, TypeError):
+                    continue
+                iou = fingerprint.bbox.iou(stored_fp.bbox)
+                logger.info(
+                    "Track name exact match: %r -> %r (id=%s, iou=%.4f)",
+                    track_name, entry["track_name"], entry["track_id"], iou,
+                )
+                return MatchResult(
+                    matched=True,
+                    track_id=entry["track_id"],
+                    track_name=entry["track_name"],
+                    is_new=False,
+                    lap_length_m=stored_fp.lap_length_m,
+                    iou=round(iou, 4),
+                    length_ratio=0.0,
+                    confidence=1.0,
+                ), database
 
     result = match_track(
         fingerprint,
