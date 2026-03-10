@@ -102,7 +102,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const pw = w - pad.left - pad.right;
     const ph = h - pad.top - pad.bottom;
 
-    ctx.fillStyle = '#1a1a2e';
+    // Background — matches SpeedTraceChart (#141414)
+    ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, w, h);
 
     const { distances, speeds_a, speeds_b } = compareData;
@@ -116,7 +117,21 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
     const yScale = (v: number) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
 
-    // Draw lines
+    // Grid lines — matches SpeedTraceChart
+    ctx.strokeStyle = '#30363d';
+    ctx.lineWidth = 0.5;
+    const ySteps = 5;
+    for (let i = 0; i <= ySteps; i++) {
+      const y = pad.top + (ph * i) / ySteps;
+      ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
+    }
+    const xSteps = 6;
+    for (let i = 0; i <= xSteps; i++) {
+      const x = pad.left + (pw * i) / xSteps;
+      ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke();
+    }
+
+    // Draw lines — acid-green (#3ddc84) for current, pit-orange (#ff8c00) for comparison
     const drawLine = (speeds: number[], color: string) => {
       ctx.beginPath();
       ctx.strokeStyle = color;
@@ -129,12 +144,31 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.stroke();
     };
 
-    drawLine(speeds_a, '#3b82f6'); // blue = current session
-    drawLine(speeds_b, '#f59e0b'); // amber = comparison
+    drawLine(speeds_a, '#3ddc84'); // acid-green = current session
+    drawLine(speeds_b, '#ff8c00'); // pit-orange = comparison
 
-    // Axes labels
-    ctx.fillStyle = '#888';
-    ctx.font = '10px monospace';
+    // Y-axis labels
+    ctx.fillStyle = '#888888';
+    ctx.font = '11px "Space Mono", monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i <= ySteps; i++) {
+      const val = yMax - (yMax - yMin) * (i / ySteps);
+      const y = pad.top + (ph * i) / ySteps;
+      ctx.fillText(val.toFixed(0), pad.left - 6, y);
+    }
+
+    // X-axis labels
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i <= xSteps; i++) {
+      const val = (xMax * i) / xSteps;
+      const x = pad.left + (pw * i) / xSteps;
+      ctx.fillText(`${val.toFixed(0)}m`, x, pad.top + ph + 6);
+    }
+
+    // Axis titles
+    ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', w / 2, h - 2);
     ctx.save();
@@ -143,16 +177,13 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.fillText('Speed (m/s)', 0, 0);
     ctx.restore();
 
-    // Legend
-    ctx.fillStyle = '#3b82f6';
-    ctx.fillRect(pad.left + 5, pad.top + 5, 10, 3);
-    ctx.fillStyle = '#ccc';
+    // Legend — matches SpeedTraceChart style
+    ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
-    ctx.fillText('This session', pad.left + 20, pad.top + 10);
-    ctx.fillStyle = '#f59e0b';
-    ctx.fillRect(pad.left + 5, pad.top + 18, 10, 3);
-    ctx.fillStyle = '#ccc';
-    ctx.fillText('Comparison', pad.left + 20, pad.top + 23);
+    ctx.fillStyle = '#3ddc84';
+    ctx.fillText('\u2500\u2500 This session', pad.left + 8, pad.top + 8);
+    ctx.fillStyle = '#ff8c00';
+    ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
   }, [compareData]);
 
   // Draw cumulative delta strip
@@ -174,7 +205,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const pad = { left: 45, right: 10 };
     const pw = w - pad.left - pad.right;
 
-    ctx.fillStyle = '#1a1a2e';
+    // Background — matches SpeedTraceChart (#141414)
+    ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, w, h);
 
     const { distances, delta_s } = compareData;
@@ -188,7 +220,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const yScale = (v: number) => yMid - (v / absMax) * (h / 2 - 5);
 
     // Zero line
-    ctx.strokeStyle = '#444';
+    ctx.strokeStyle = '#30363d';
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -197,22 +229,32 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Delta fill
+    // Separate green (above zero) and red (below zero) fills
+    // Green fill (positive = faster)
     ctx.beginPath();
     ctx.moveTo(xScale(distances[0]), yMid);
     for (let i = 0; i < distances.length; i++) {
-      ctx.lineTo(xScale(distances[i]), yScale(delta_s[i]));
+      ctx.lineTo(xScale(distances[i]), yScale(Math.max(0, delta_s[i])));
     }
     ctx.lineTo(xScale(distances[distances.length - 1]), yMid);
     ctx.closePath();
-
-    // Green above zero (faster), red below (slower)
-    const finalDelta = delta_s[delta_s.length - 1];
-    ctx.fillStyle = finalDelta >= 0 ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)';
+    ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
     ctx.fill();
-    ctx.strokeStyle = finalDelta >= 0 ? '#10b981' : '#ef4444';
-    ctx.lineWidth = 1.5;
 
+    // Red fill (negative = slower)
+    ctx.beginPath();
+    ctx.moveTo(xScale(distances[0]), yMid);
+    for (let i = 0; i < distances.length; i++) {
+      ctx.lineTo(xScale(distances[i]), yScale(Math.min(0, delta_s[i])));
+    }
+    ctx.lineTo(xScale(distances[distances.length - 1]), yMid);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+    ctx.fill();
+
+    // Delta line
+    ctx.strokeStyle = '#F0EDE5';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < distances.length; i++) {
       const x = xScale(distances[i]);
@@ -222,8 +264,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.stroke();
 
     // Label
-    ctx.fillStyle = '#888';
-    ctx.font = '10px monospace';
+    ctx.fillStyle = '#888888';
+    ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
   }, [compareData]);
@@ -232,7 +274,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     <div className={className}>
       {/* Session picker */}
       <div className="flex items-center gap-3 mb-4">
-        <label className="text-xs text-steel font-body">Compare with:</label>
+        <label className="text-xs text-steel font-body flex items-center gap-3">
+          Compare with:
         <select
           value={selectedId}
           onChange={(e) => loadComparison(e.target.value)}
@@ -245,6 +288,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
             </option>
           ))}
         </select>
+        </label>
         {sessions.length === 0 && (
           <span className="text-xs text-steel/60">No other sessions on this track</span>
         )}

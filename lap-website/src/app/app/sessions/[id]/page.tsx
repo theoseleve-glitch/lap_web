@@ -902,8 +902,8 @@ function OverviewTab({
                 options={['dry', 'wet', 'damp', 'mixed']}
                 onChange={(v) => setEditFields({ ...editFields, track_state: v })}
               />
-              <div>
-                <label className="text-steel text-sm font-body block mb-1">Setup Notes</label>
+              <label className="block">
+                <span className="text-steel text-sm font-body block mb-1">Setup Notes</span>
                 <textarea
                   value={editFields.notes || ''}
                   onChange={(e) => setEditFields({ ...editFields, notes: e.target.value })}
@@ -912,7 +912,7 @@ function OverviewTab({
                   className="w-full bg-asphalt border border-steel/20 rounded px-2.5 py-1.5 text-sm text-chalk font-body
                     placeholder:text-steel/40 focus:outline-none focus:border-pit-orange/50 resize-y"
                 />
-              </div>
+              </label>
               <MetaRow label="File" value={session.csv_filename} />
               <MetaRow
                 label="Laps"
@@ -1027,15 +1027,15 @@ function EditRow({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex justify-between items-center">
-      <label className="text-steel text-sm font-body">{label}</label>
+    <label className="flex justify-between items-center">
+      <span className="text-steel text-sm font-body">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="bg-asphalt text-chalk text-sm font-telemetry px-2 py-1 rounded border border-steel/20 focus:border-acid-green/50 outline-none w-40"
       />
-    </div>
+    </label>
   );
 }
 
@@ -1051,8 +1051,8 @@ function SelectRow({
   onChange: (v: string) => void;
 }) {
   return (
-    <div className="flex justify-between items-center">
-      <label className="text-steel text-sm font-body">{label}</label>
+    <label className="flex justify-between items-center">
+      <span className="text-steel text-sm font-body">{label}</span>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -1064,7 +1064,7 @@ function SelectRow({
           </option>
         ))}
       </select>
-    </div>
+    </label>
   );
 }
 
