@@ -7,8 +7,10 @@ from typing import Any
 
 from scoring.consistency import _score_consistency
 from scoring.constants import (
+    _SESSION_CATEGORY_CONFIG,
     _SESSION_TYPE_SYNONYMS,
     _SESSION_WEIGHT_OVERRIDES,
+    _TRACK_STATE_MODIFIERS,
     ADAPT_V2_STABLE_DEFAULT_FRAC,
     MAX_ADAPTATION,
     MAX_CONSISTENCY,
@@ -43,37 +45,70 @@ _BASE_MAXES: dict[str, float] = {
 }
 
 
+def _apply_adaptive_weights(
+    raw_scores: dict[str, float],
+    session_type: str,
+    *,
+    track_state: str = "dry",
+) -> tuple[dict[str, float], dict[str, float]]:
+    """
+    Apply 3-layer adaptive weighting: suppression, track-state, normalize.
+
+    Returns (rescaled_scores, effective_maxes) where effective_maxes sum to 100.
+    Suppressed categories get score=0 and max=0.
+    """
+    stype = _normalize_session_type(session_type)
+    stype = _SESSION_TYPE_SYNONYMS.get(stype, stype)
+    config = _SESSION_CATEGORY_CONFIG.get(stype, {"suppressed": set(), "emphasis": {}})
+
+    suppressed = config["suppressed"]
+    emphasis = config["emphasis"]
+
+    # Layer 1: Suppress + emphasize
+    adjusted_max: dict[str, float] = {}
+    for cat, base in _BASE_MAXES.items():
+        if cat in suppressed:
+            adjusted_max[cat] = 0.0
+        else:
+            adjusted_max[cat] = base * emphasis.get(cat, 1.0)
+
+    # Layer 2: Track-state modifiers (only on surviving categories)
+    ts_key = track_state.lower().strip() if track_state else "dry"
+    ts_mods = _TRACK_STATE_MODIFIERS.get(ts_key, {})
+    for cat in adjusted_max:
+        if adjusted_max[cat] > 0 and cat in ts_mods:
+            adjusted_max[cat] *= ts_mods[cat]
+
+    # Normalize so surviving categories sum to TOTAL_MAX
+    total_adjusted = sum(adjusted_max.values())
+    if total_adjusted > 0:
+        scale = TOTAL_MAX / total_adjusted
+        norm_max = {cat: round(v * scale, 4) for cat, v in adjusted_max.items()}
+    else:
+        norm_max = {cat: 0.0 for cat in _BASE_MAXES}
+
+    # Scale raw scores
+    rescaled: dict[str, float] = {}
+    for cat, raw in raw_scores.items():
+        if cat in suppressed or _BASE_MAXES.get(cat, 0) == 0:
+            rescaled[cat] = 0.0
+        else:
+            fraction = raw / _BASE_MAXES[cat]
+            rescaled[cat] = round(fraction * norm_max.get(cat, 0.0), 4)
+
+    return rescaled, norm_max
+
+
 def _apply_session_weights(
     raw_scores: dict[str, float],
     session_type: str,
 ) -> dict[str, float]:
     """
-    Re-scale sub-scores so the total always sums to TOTAL_MAX (100).
+    Backward-compatible wrapper around _apply_adaptive_weights.
 
-    The multipliers in ``_SESSION_WEIGHT_OVERRIDES`` change the *relative*
-    emphasis between categories without changing the total budget.
+    Returns only the rescaled scores dict (not the maxes).
     """
-    stype = _normalize_session_type(session_type)
-    stype = _SESSION_TYPE_SYNONYMS.get(stype, stype)
-    overrides = _SESSION_WEIGHT_OVERRIDES.get(stype, {})
-    if not overrides:
-        return raw_scores   # no-op for unknown session types
-
-    # Compute adjusted maximums
-
-    adjusted_max = {
-        cat: _BASE_MAXES[cat] * overrides.get(cat, 1.0)
-        for cat in _BASE_MAXES
-    }
-    total_adjusted = sum(adjusted_max.values())
-    scale = TOTAL_MAX / total_adjusted   # normalisation factor
-
-    rescaled: dict[str, float] = {}
-    for cat, raw in raw_scores.items():
-        fraction = raw / _BASE_MAXES[cat] if _BASE_MAXES[cat] > 0 else 0.0
-        new_max  = adjusted_max[cat] * scale
-        rescaled[cat] = round(fraction * new_max, 4)
-
+    rescaled, _ = _apply_adaptive_weights(raw_scores, session_type)
     return rescaled
 
 
