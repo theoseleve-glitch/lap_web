@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 34
+SCHEMA_VERSION = 35
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -1045,5 +1045,27 @@ PHASE_21_TABLES: list[tuple[str, str]] = [
     ("user_corners", _USER_CORNERS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 22 tables — Driver sleep windows (endurance 12h+)
+# ------------------------------------------------------------------
+
+_RACE_SLEEP_WINDOWS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_sleep_windows (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id         INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    driver_id       INTEGER NOT NULL REFERENCES race_drivers(id) ON DELETE CASCADE,
+    start_s         INTEGER NOT NULL,
+    end_s           INTEGER NOT NULL,
+    label           TEXT,
+    actual_wake_s   INTEGER,
+    status          TEXT    NOT NULL DEFAULT 'planned',
+    created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+PHASE_22_TABLES: list[tuple[str, str]] = [
+    ("race_sleep_windows", _RACE_SLEEP_WINDOWS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES

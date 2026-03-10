@@ -34,6 +34,32 @@ def _rows_to_list(rows) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _save_sleep_windows_from_form(conn, race_id: int, form) -> None:
+    """Parse sleep windows from form data and save to DB."""
+    conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    i = 0
+    while True:
+        driver_id = form.get(f"sleep_driver_id_{i}")
+        start_h = form.get(f"sleep_start_h_{i}")
+        start_m = form.get(f"sleep_start_m_{i}")
+        end_h = form.get(f"sleep_end_h_{i}")
+        end_m = form.get(f"sleep_end_m_{i}")
+        if driver_id is None and start_h is None:
+            break
+        if driver_id and start_h is not None and end_h is not None:
+            start_s = (int(start_h) * 3600) + (int(start_m or 0) * 60)
+            end_s = (int(end_h) * 3600) + (int(end_m or 0) * 60)
+            if end_s > start_s:
+                conn.execute(
+                    "INSERT INTO race_sleep_windows "
+                    "(race_id, driver_id, start_s, end_s, label) "
+                    "VALUES (?,?,?,?,?)",
+                    (race_id, int(driver_id), start_s, end_s,
+                     form.get(f"sleep_label_{i}") or None),
+                )
+        i += 1
+
+
 # ── Weather alert helpers ─────────────────────────
 
 _forecast_cache: dict[int, tuple[float, dict]] = {}
@@ -447,6 +473,7 @@ def new_race():
     # Save drivers and windows
     _save_drivers(conn, race_id, request.form)
     _save_windows(conn, race_id, request.form)
+    _save_sleep_windows_from_form(conn, race_id, request.form)
 
     conn.commit()
     return redirect(url_for("race_strategy_v2.detail", race_id=race_id))
@@ -501,6 +528,7 @@ def update_race(race_id: int):
     conn.execute("DELETE FROM race_drivers WHERE race_id = ?", (race_id,))
     _save_drivers(conn, race_id, request.form)
     _save_windows(conn, race_id, request.form)
+    _save_sleep_windows_from_form(conn, race_id, request.form)
 
     # Clear planned stints (will need re-optimize)
     conn.execute("DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'", (race_id,))
@@ -523,10 +551,15 @@ def edit_race(race_id: int):
     race_windows = _rows_to_list(conn.execute(
         "SELECT * FROM race_windows WHERE race_id = ? ORDER BY window_order", (race_id,)
     ).fetchall())
+    sleep_windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
+        (race_id,),
+    ).fetchall())
     tracks = _rows_to_list(conn.execute("SELECT track_id, track_name FROM tracks ORDER BY track_name").fetchall())
     drivers = _rows_to_list(conn.execute("SELECT driver_id, driver_name FROM drivers ORDER BY driver_name").fetchall())
     return render_template("race_strategy/config.html", race=race, race_drivers=race_drivers,
-                           race_windows=race_windows, tracks=tracks, drivers=drivers)
+                           race_windows=race_windows, sleep_windows=sleep_windows,
+                           tracks=tracks, drivers=drivers)
 
 
 @bp.route("/<int:race_id>/duplicate", methods=["POST"])
@@ -707,6 +740,28 @@ def finish(race_id: int):
     )
     conn.commit()
     return redirect(url_for("race_strategy_v2.summary", race_id=race_id))
+
+
+@bp.route("/<int:race_id>/wake-driver", methods=["POST"])
+def wake_driver_route(race_id: int):
+    """Wake a sleeping driver early."""
+    import sys as _sys
+    from pathlib import Path as _Path
+    _root = str(_Path(__file__).resolve().parents[2])
+    if _root not in _sys.path:
+        _sys.path.insert(0, _root)
+    from services.race_strategy import wake_driver
+
+    data = request.get_json(silent=True) or {}
+    driver_id = data.get("driver_id")
+    if not driver_id:
+        return jsonify({"ok": False, "error": "driver_id required"}), 400
+
+    conn = get_db_connection()
+    result = wake_driver(conn, race_id, int(driver_id))
+    if result is None:
+        return jsonify({"ok": False, "error": "No active sleep window for this driver"}), 404
+    return jsonify(result)
 
 
 # ── Post-Race Summary ────────────────────────────────────

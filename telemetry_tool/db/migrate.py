@@ -629,6 +629,14 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (34, "Phase 34 schema — corner coaching v2 (corner_type, MRP, handling, user_corners)"),
     )
 
+    # Phase 22 — Driver sleep windows (endurance 12h+)
+    # Table already created by the ALL_TABLES loop above.
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (35, "Phase 35 schema — driver sleep windows for endurance races (12h+)"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)

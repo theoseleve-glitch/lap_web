@@ -131,6 +131,67 @@ def _save_windows(conn, race_id: int, windows: list[dict]) -> None:
         )
 
 
+def _save_sleep_windows(conn, race_id: int, driver_id_map: dict[int, int],
+                        sleep_windows: list[dict]) -> None:
+    """Persist sleep windows for a race. Deletes existing first."""
+    conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    for sw in sleep_windows:
+        start = sw.get("start_s")
+        end = sw.get("end_s")
+        if start is None or end is None or end <= start:
+            continue
+        raw_did = sw.get("driver_id")
+        driver_id = driver_id_map.get(raw_did, raw_did) if driver_id_map else raw_did
+        if driver_id is None:
+            continue
+        conn.execute(
+            "INSERT INTO race_sleep_windows "
+            "(race_id, driver_id, start_s, end_s, label, status) "
+            "VALUES (?,?,?,?,?,?)",
+            (race_id, driver_id, start, end,
+             sw.get("label"), sw.get("status", "planned")),
+        )
+
+
+def _get_sleep_windows(conn, race_id: int) -> list[dict]:
+    """Fetch all sleep windows for a race, ordered by start time."""
+    return _rows_to_list(conn.execute(
+        "SELECT sw.*, d.driver_name FROM race_sleep_windows sw "
+        "JOIN race_drivers d ON sw.driver_id = d.id "
+        "WHERE sw.race_id = ? ORDER BY sw.start_s",
+        (race_id,),
+    ).fetchall())
+
+
+def _compute_driver_sleep_status(
+    sleep_windows: list[dict], elapsed_s: int
+) -> dict[int, dict]:
+    """Compute current sleep status for each driver.
+
+    Returns dict keyed by driver_id:
+      sleeping=True: until_s, remaining_s, window_id, label
+      sleeping=False: next_sleep_s (if upcoming window exists)
+    """
+    status: dict[int, dict] = {}
+    for sw in sleep_windows:
+        did = sw["driver_id"]
+        effective_end = sw.get("actual_wake_s") or sw["end_s"]
+        if sw["start_s"] <= elapsed_s < effective_end and sw.get("actual_wake_s") is None:
+            status[did] = {
+                "sleeping": True,
+                "until_s": sw["end_s"],
+                "remaining_s": max(0, sw["end_s"] - elapsed_s),
+                "window_id": sw["id"],
+                "label": sw.get("label"),
+            }
+        elif did not in status:
+            if sw["start_s"] > elapsed_s and sw.get("actual_wake_s") is None:
+                status[did] = {"sleeping": False, "next_sleep_s": sw["start_s"]}
+            else:
+                status[did] = {"sleeping": False}
+    return status
+
+
 def _get_last_insert_id(conn, cur, table: str, pk_col: str) -> int | None:
     """Get the ID of the last inserted row.
 
@@ -208,12 +269,15 @@ def get_race_detail(conn, race_id: int) -> dict | None:
         (race_id,),
     ).fetchall())
 
+    sleep_windows = _get_sleep_windows(conn, race_id)
+
     return {
         "race": race,
         "drivers": drivers,
         "stints": stints,
         "pit_stops": pit_stops,
         "windows": windows,
+        "sleep_windows": sleep_windows,
     }
 
 
@@ -248,6 +312,7 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
 
     drivers = data.get("drivers", [])
     windows = data.get("windows", [])
+    sleep_windows = data.get("sleep_windows", [])
 
     cur = conn.execute(
         """INSERT INTO race_configs (
@@ -287,6 +352,8 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
         _save_drivers(conn, race_id, drivers)
     if windows:
         _save_windows(conn, race_id, windows)
+    if sleep_windows:
+        _save_sleep_windows(conn, race_id, {}, sleep_windows)
 
     conn.commit()
     return race_id
@@ -333,6 +400,7 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
 
     drivers = data.get("drivers", [])
     windows = data.get("windows", [])
+    sleep_windows = data.get("sleep_windows", [])
 
     conn.execute(
         """UPDATE race_configs SET
@@ -377,6 +445,10 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
     if windows:
         _save_windows(conn, race_id, windows)
 
+    conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    if sleep_windows:
+        _save_sleep_windows(conn, race_id, {}, sleep_windows)
+
     # Clear planned stints (will need re-optimize)
     conn.execute(
         "DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'",
@@ -416,7 +488,11 @@ def run_optimization(conn, race_id: int) -> dict:
         (race_id,),
     ).fetchall())
 
-    result = optimize_stints(race, drivers)
+    sleep_windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
+        (race_id,),
+    ).fetchall())
+    result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
 
     # Wrap in engine for fuel/ballast cascade
     engine = RaceStateEngine(race, drivers, result["stints"], result["pit_stops"])
@@ -599,6 +675,28 @@ def get_live_state(conn, race_id: int) -> dict | None:
     except Exception:
         logger.debug("Intelligence enrichment failed for race %d", race_id)
 
+    # Sleep windows + live status
+    sleep_windows = _get_sleep_windows(conn, race_id)
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    driver_sleep_status = _compute_driver_sleep_status(sleep_windows, elapsed)
+
+    # Auto-update sleep window statuses in DB
+    for sw in sleep_windows:
+        effective_end = sw.get("actual_wake_s") or sw["end_s"]
+        if sw["status"] == "planned" and sw["start_s"] <= elapsed:
+            conn.execute(
+                "UPDATE race_sleep_windows SET status = 'active' WHERE id = ?",
+                (sw["id"],),
+            )
+            sw["status"] = "active"
+        elif sw["status"] == "active" and elapsed >= effective_end:
+            conn.execute(
+                "UPDATE race_sleep_windows SET status = 'completed' WHERE id = ?",
+                (sw["id"],),
+            )
+            sw["status"] = "completed"
+    conn.commit()
+
     return {
         "race": race,
         "drivers": drivers,
@@ -610,6 +708,8 @@ def get_live_state(conn, race_id: int) -> dict | None:
         "driver_cumulative": driver_cumulative,
         "weather_alerts": weather_alerts,
         "intelligence": intelligence,
+        "sleep_windows": sleep_windows,
+        "driver_sleep_status": driver_sleep_status,
         **engine_data,
     }
 
@@ -711,6 +811,36 @@ def set_pit_type(
     return engine.snapshot()
 
 
+def wake_driver(conn, race_id: int, driver_id: int) -> dict | None:
+    """Wake a driver early by setting actual_wake_s on their active sleep window.
+
+    Returns {"ok": True, "elapsed_s": <int>} on success, or None if no
+    active sleep window found for this driver.
+    """
+    race = get_race(conn, race_id)
+    if not race:
+        return None
+
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+
+    active_window = conn.execute(
+        "SELECT id FROM race_sleep_windows "
+        "WHERE race_id = ? AND driver_id = ? AND status = 'active' "
+        "AND actual_wake_s IS NULL LIMIT 1",
+        (race_id, driver_id),
+    ).fetchone()
+    if not active_window:
+        return None
+
+    conn.execute(
+        "UPDATE race_sleep_windows SET actual_wake_s = ?, status = 'completed' "
+        "WHERE id = ?",
+        (elapsed, active_window["id"]),
+    )
+    conn.commit()
+    return {"ok": True, "elapsed_s": elapsed}
+
+
 def reoptimize(conn, race_id: int) -> dict:
     """Re-optimize remaining stints mid-race.
 
@@ -736,7 +866,11 @@ def reoptimize(conn, race_id: int) -> dict:
     ).fetchall())
 
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
-    result = reoptimize_remaining(race, drivers, completed, elapsed)
+    sleep_windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
+        (race_id,),
+    ).fetchall())
+    result = reoptimize_remaining(race, drivers, completed, elapsed, sleep_windows=sleep_windows)
 
     # Clear planned stints only
     conn.execute(
@@ -807,6 +941,10 @@ def export_race(conn, race_id: int) -> dict | None:
         "SELECT * FROM race_windows WHERE race_id = ? ORDER BY window_order",
         (race_id,),
     ).fetchall())
+    sleep_windows = _rows_to_list(conn.execute(
+        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
+        (race_id,),
+    ).fetchall())
 
     return {
         "version": 1,
@@ -817,6 +955,7 @@ def export_race(conn, race_id: int) -> dict | None:
         "pit_stops": pit_stops,
         "messages": messages,
         "windows": windows,
+        "sleep_windows": sleep_windows,
     }
 
 
@@ -979,6 +1118,19 @@ def import_race(conn, data: dict) -> int:
             ),
         )
 
+    # Import sleep windows
+    for sw in data.get("sleep_windows", []):
+        old_driver_id = sw.get("driver_id")
+        new_driver_id = id_map.get(old_driver_id, old_driver_id)
+        conn.execute(
+            "INSERT INTO race_sleep_windows "
+            "(race_id, driver_id, start_s, end_s, label, status) "
+            "VALUES (?,?,?,?,?,?)",
+            (new_race_id, new_driver_id,
+             sw.get("start_s", 0), sw.get("end_s", 0),
+             sw.get("label"), sw.get("status", "planned")),
+        )
+
     conn.commit()
     return new_race_id
 
@@ -1076,6 +1228,28 @@ def duplicate_race(conn, race_id: int) -> int | None:
                 wd.get("driver_change_allowed", 1),
                 wd.get("window_order", 1),
             ),
+        )
+
+    # Copy sleep windows
+    old_sleep = conn.execute(
+        "SELECT * FROM race_sleep_windows WHERE race_id = ?", (race_id,)
+    ).fetchall()
+    new_drivers_list = conn.execute(
+        "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order",
+        (new_id,),
+    ).fetchall()
+    sleep_id_map = {}
+    for old_d, new_d in zip(old_drivers, new_drivers_list):
+        sleep_id_map[_row_to_dict(old_d)["id"]] = _row_to_dict(new_d)["id"]
+    for sw in old_sleep:
+        swd = _row_to_dict(sw)
+        new_did = sleep_id_map.get(swd["driver_id"], swd["driver_id"])
+        conn.execute(
+            "INSERT INTO race_sleep_windows "
+            "(race_id, driver_id, start_s, end_s, label, status) "
+            "VALUES (?,?,?,?,?,?)",
+            (new_id, new_did, swd["start_s"], swd["end_s"],
+             swd.get("label"), "planned"),
         )
 
     conn.commit()

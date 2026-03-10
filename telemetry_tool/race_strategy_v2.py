@@ -37,6 +37,7 @@ def compute_ballast(
 def optimize_stints(
     config: dict[str, Any],
     drivers: list[dict[str, Any]],
+    sleep_windows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Generate optimal stint plan using constraint-bounded equal distribution.
@@ -240,6 +241,28 @@ def optimize_stints(
             stints[-1]["planned_start_s"] -= overshoot
             stints[-1]["planned_duration_s"] += overshoot
 
+    # Sleep window overlap warnings (soft constraint)
+    if sleep_windows:
+        for s in stints:
+            did = s["driver_id"]
+            s_start = s["planned_start_s"]
+            s_end = s["planned_end_s"]
+            driver_name = s.get("driver_name", f"Driver {did}")
+            for sw in sleep_windows:
+                if sw.get("driver_id") != did:
+                    continue
+                sw_start = sw.get("start_s", 0)
+                sw_end = sw.get("end_s", 0)
+                overlap_start = max(s_start, sw_start)
+                overlap_end = min(s_end, sw_end)
+                if overlap_start < overlap_end:
+                    overlap_min = (overlap_end - overlap_start) // 60
+                    sw_label = sw.get("label") or f"{sw_start // 3600}h{(sw_start % 3600) // 60:02d}-{sw_end // 3600}h{(sw_end % 3600) // 60:02d}"
+                    warnings.append(
+                        f"{driver_name} stint {s['stint_order']} overlaps sleep window "
+                        f"'{sw_label}' by {overlap_min}min"
+                    )
+
     # Check feasibility: total assigned drive time
     total_assigned = sum(s["planned_duration_s"] for s in stints)
     if total_assigned + total_pit_time < race_duration * 0.95:
@@ -306,6 +329,7 @@ def reoptimize_remaining(
     drivers: list[dict[str, Any]],
     completed_stints: list[dict[str, Any]],
     elapsed_s: int,
+    sleep_windows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Re-optimize remaining stints given completed work."""
     remaining_time = config["race_duration_s"] - elapsed_s
@@ -334,7 +358,7 @@ def reoptimize_remaining(
         "desired_stints": remaining_stints,
     }
 
-    result = optimize_stints(remaining_config, adjusted_drivers)
+    result = optimize_stints(remaining_config, adjusted_drivers, sleep_windows=sleep_windows)
 
     # Offset times by elapsed
     for s in result["stints"]:

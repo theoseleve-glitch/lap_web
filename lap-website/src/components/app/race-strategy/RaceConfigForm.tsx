@@ -31,6 +31,15 @@ export interface WindowForm {
   driver_change_allowed: boolean;
 }
 
+export interface SleepWindowForm {
+  driver_index: string;  // index into drivers array (we don't have DB IDs during creation)
+  start_hh: string;
+  start_mm: string;
+  end_hh: string;
+  end_mm: string;
+  label: string;
+}
+
 /** Payload shape assembled by the form and passed to onSubmit. */
 export interface RaceFormData {
   race: {
@@ -73,6 +82,12 @@ export interface RaceFormData {
     refuel_allowed: number;
     driver_change_allowed: number;
     window_order: number;
+  }>;
+  sleep_windows: Array<{
+    driver_id: number;
+    start_s: number;
+    end_s: number;
+    label: string | null;
   }>;
 }
 
@@ -150,6 +165,7 @@ export interface RaceConfigFormProps {
     race: Record<string, unknown>;
     drivers: Array<Record<string, unknown>>;
     windows: Array<Record<string, unknown>>;
+    sleep_windows?: Array<Record<string, unknown>>;
   };
   /** Entitlement value, e.g. 'limited_3h' for demo plans. */
   raceStrategyLimit?: string | null;
@@ -197,6 +213,10 @@ export function RaceConfigForm({
   const [refuelingAllowed, setRefuelingAllowed] = useState(true);
 
   const [windows, setWindows] = useState<WindowForm[]>([]);
+  const [sleepWindows, setSleepWindows] = useState<SleepWindowForm[]>([]);
+
+  const raceDurationS = (parseInt(durationH) || 0) * 3600 + (parseInt(durationM) || 0) * 60;
+  const isEndurance = raceDurationS >= 43200;
 
   const [fuelAutonomyM, setFuelAutonomyM] = useState('');
   const [fuelAutonomyS, setFuelAutonomyS] = useState('');
@@ -275,6 +295,23 @@ export function RaceConfigForm({
       })),
     );
 
+    if (initialData.sleep_windows) {
+      setSleepWindows(
+        initialData.sleep_windows.map((sw) => {
+          const startS = Number(sw.start_s) || 0;
+          const endS = Number(sw.end_s) || 0;
+          return {
+            driver_index: str(sw.driver_id),
+            start_hh: String(Math.floor(startS / 3600)),
+            start_mm: String(Math.floor((startS % 3600) / 60)),
+            end_hh: String(Math.floor(endS / 3600)),
+            end_mm: String(Math.floor((endS % 3600) / 60)),
+            label: str(sw.label),
+          };
+        }),
+      );
+    }
+
     setLoaded(true);
   }, [mode, initialData, loaded]);
 
@@ -291,6 +328,9 @@ export function RaceConfigForm({
   function updateDriver(idx: number, field: keyof DriverForm, value: string | boolean) {
     setDrivers((prev) => prev.map((d, i) => (i === idx ? { ...d, [field]: value } : d)));
   }
+  function updateSleepWindow(idx: number, field: keyof SleepWindowForm, value: string) {
+    setSleepWindows((prev) => prev.map((sw, i) => (i === idx ? { ...sw, [field]: value } : sw)));
+  }
   function addWindow() {
     setWindows((prev) => [...prev, { ...DEFAULT_WINDOW }]);
   }
@@ -306,7 +346,6 @@ export function RaceConfigForm({
     e.preventDefault();
     setError('');
 
-    const raceDurationS = (parseInt(durationH) || 0) * 3600 + (parseInt(durationM) || 0) * 60;
     if (!raceName.trim()) {
       setError('Race name is required');
       return;
@@ -364,6 +403,14 @@ export function RaceConfigForm({
         driver_change_allowed: w.driver_change_allowed ? 1 : 0,
         window_order: i + 1,
       })),
+      sleep_windows: sleepWindows
+        .filter(sw => sw.driver_index !== '' && sw.start_hh !== '' && sw.end_hh !== '')
+        .map(sw => ({
+          driver_id: parseInt(sw.driver_index),
+          start_s: parseInt(sw.start_hh) * 3600 + parseInt(sw.start_mm || '0') * 60,
+          end_s: parseInt(sw.end_hh) * 3600 + parseInt(sw.end_mm || '0') * 60,
+          label: sw.label || null,
+        })),
     };
 
     onSubmit(payload);
@@ -517,6 +564,110 @@ export function RaceConfigForm({
             </div>
           )}
         </div>
+
+        {/* Sleep Windows (endurance races only) */}
+        {isEndurance && (
+          <div className={sectionCls}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-monument text-lg text-chalk">Sleep Windows</h2>
+                <p className="text-steel font-body text-sm mt-1">
+                  Plan driver rest periods. The optimizer will avoid scheduling stints during sleep windows when possible.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSleepWindows([...sleepWindows, { driver_index: '', start_hh: '', start_mm: '00', end_hh: '', end_mm: '00', label: '' }])}
+                className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10 transition-colors"
+              >
+                + Add Sleep Window
+              </button>
+            </div>
+            {sleepWindows.length === 0 ? (
+              <p className="text-steel font-body text-sm">No sleep windows configured.</p>
+            ) : (
+              <div className="space-y-3">
+                {sleepWindows.map((sw, i) => (
+                  <div key={i} className="flex flex-wrap items-end gap-3 bg-asphalt/40 border border-steel/10 p-3">
+                    {/* Driver select */}
+                    <div className="flex-1 min-w-[140px]">
+                      {i === 0 && <label className={labelCls}>Driver</label>}
+                      <select
+                        aria-label={`Sleep window ${i + 1} driver`}
+                        value={sw.driver_index}
+                        onChange={e => updateSleepWindow(i, 'driver_index', e.target.value)}
+                        className={`${inputCls} w-full`}
+                      >
+                        <option value="">Select driver...</option>
+                        {drivers.map((d, di) => (
+                          <option key={di} value={String(di)}>{d.driver_name || `Driver ${di + 1}`}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Start time */}
+                    <div>
+                      {i === 0 && <label className={labelCls}>Start</label>}
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" max="47" placeholder="h"
+                          aria-label={`Sleep window ${i + 1} start hours`}
+                          value={sw.start_hh}
+                          onChange={e => updateSleepWindow(i, 'start_hh', e.target.value)}
+                          className={`${inputCls} w-14 text-center`}
+                        />
+                        <span className="text-steel">:</span>
+                        <input type="number" min="0" max="59" placeholder="m"
+                          aria-label={`Sleep window ${i + 1} start minutes`}
+                          value={sw.start_mm}
+                          onChange={e => updateSleepWindow(i, 'start_mm', e.target.value)}
+                          className={`${inputCls} w-14 text-center`}
+                        />
+                      </div>
+                    </div>
+
+                    <span className="text-steel pb-2">{'\u2192'}</span>
+
+                    {/* End time */}
+                    <div>
+                      {i === 0 && <label className={labelCls}>End</label>}
+                      <div className="flex items-center gap-1">
+                        <input type="number" min="0" max="47" placeholder="h"
+                          aria-label={`Sleep window ${i + 1} end hours`}
+                          value={sw.end_hh}
+                          onChange={e => updateSleepWindow(i, 'end_hh', e.target.value)}
+                          className={`${inputCls} w-14 text-center`}
+                        />
+                        <span className="text-steel">:</span>
+                        <input type="number" min="0" max="59" placeholder="m"
+                          aria-label={`Sleep window ${i + 1} end minutes`}
+                          value={sw.end_mm}
+                          onChange={e => updateSleepWindow(i, 'end_mm', e.target.value)}
+                          className={`${inputCls} w-14 text-center`}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Label */}
+                    <div className="flex-1 min-w-[100px]">
+                      {i === 0 && <label className={labelCls}>Label</label>}
+                      <input type="text" placeholder="e.g. Night rest"
+                        aria-label={`Sleep window ${i + 1} label`}
+                        value={sw.label}
+                        onChange={e => updateSleepWindow(i, 'label', e.target.value)}
+                        className={inputCls}
+                      />
+                    </div>
+
+                    {/* Remove button */}
+                    <button type="button" onClick={() => setSleepWindows(sleepWindows.filter((_, j) => j !== i))}
+                      aria-label={`Remove sleep window ${i + 1}`}
+                      className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">{'\u2715'}</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Fuel & Weight */}
         <div className={sectionCls}>

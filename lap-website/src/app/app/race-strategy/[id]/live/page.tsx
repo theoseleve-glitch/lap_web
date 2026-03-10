@@ -79,6 +79,24 @@ interface LiveState {
     [key: string]: unknown;
   }>;
   is_neutralized?: boolean;
+  sleep_windows?: Array<{
+    id: number;
+    driver_id: number;
+    driver_name: string;
+    start_s: number;
+    end_s: number;
+    label: string | null;
+    actual_wake_s: number | null;
+    status: 'planned' | 'active' | 'completed' | 'cancelled';
+  }>;
+  driver_sleep_status?: Record<number, {
+    sleeping: boolean;
+    until_s?: number;
+    remaining_s?: number;
+    window_id?: number;
+    label?: string;
+    next_sleep_s?: number;
+  }>;
 }
 
 /* ── helpers ──────────────────────────────────────────────────────── */
@@ -149,6 +167,12 @@ export default function LiveDashboardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
   });
 
+  const wakeDriverMut = useMutation({
+    mutationFn: (driverId: number) =>
+      api.post<unknown>(`/race-strategy/${raceId}/wake-driver`, { driver_id: driverId }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
   const finishMut = useMutation({
     mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/finish`),
     onSuccess: () => {
@@ -156,6 +180,8 @@ export default function LiveDashboardPage() {
       router.push(`/app/race-strategy/${raceId}/summary`);
     },
   });
+
+  const [showSleepWarning, setShowSleepWarning] = useState(false);
 
   /* ── loading / error ────────────────────────────────────────────── */
 
@@ -286,7 +312,7 @@ export default function LiveDashboardPage() {
 
         {/* Current Driver */}
         <div
-          className="bg-concrete rounded-lg border-2 p-4 space-y-3"
+          className={`bg-concrete rounded-lg border-2 p-4 space-y-3${activeStint && state?.driver_sleep_status?.[activeStint.driver_id]?.sleeping ? ' opacity-50' : ''}`}
           style={{ borderColor: activeStint ? (driverColors[activeStint.driver_id] || '#888') : 'rgba(128,128,128,0.2)' }}
         >
           <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Current Driver</h3>
@@ -306,6 +332,32 @@ export default function LiveDashboardPage() {
                     COM {driverObj.com_channel}
                   </span>
                 ) : null;
+              })()}
+              {(() => {
+                const sleepStatus = state?.driver_sleep_status?.[activeStint.driver_id];
+                if (!sleepStatus?.sleeping) return null;
+                return (
+                  <div className="flex items-center gap-2 mt-2 bg-asphalt/40 rounded-lg px-3 py-2">
+                    <span className="text-lg">&#x1F319;</span>
+                    <div className="flex-1">
+                      <span className="text-sm text-steel">
+                        Sleeping until {formatTime(sleepStatus.until_s)}
+                      </span>
+                      {sleepStatus.remaining_s != null && (
+                        <span className="text-chalk text-sm ml-1">
+                          ({formatTime(sleepStatus.remaining_s)} left)
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => wakeDriverMut.mutate(activeStint.driver_id)}
+                      disabled={wakeDriverMut.isPending}
+                      className="text-xs bg-acid-green/20 text-acid-green border border-acid-green/30 rounded px-2 py-1 hover:bg-acid-green/30 disabled:opacity-50"
+                    >
+                      Wake
+                    </button>
+                  </div>
+                );
               })()}
               {/* stint progress */}
               {activeStint.planned_duration_s && activeStint.actual_start_s != null && (
@@ -331,7 +383,7 @@ export default function LiveDashboardPage() {
         </div>
 
         {/* Next Driver */}
-        <div className="bg-concrete rounded-lg border border-steel/20 p-4 space-y-3">
+        <div className={`bg-concrete rounded-lg border border-steel/20 p-4 space-y-3${nextStint && state?.driver_sleep_status?.[nextStint.driver_id]?.sleeping ? ' opacity-50' : ''}`}>
           <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Next Driver</h3>
           {nextStint ? (
             <>
@@ -345,6 +397,32 @@ export default function LiveDashboardPage() {
               <div className="text-sm font-body text-steel">
                 Planned: {formatTime(nextStint.planned_duration_s)}
               </div>
+              {(() => {
+                const sleepStatus = state?.driver_sleep_status?.[nextStint.driver_id];
+                if (!sleepStatus?.sleeping) return null;
+                return (
+                  <div className="flex items-center gap-2 mt-2 bg-asphalt/40 rounded-lg px-3 py-2">
+                    <span className="text-lg">&#x1F319;</span>
+                    <div className="flex-1">
+                      <span className="text-sm text-steel">
+                        Sleeping until {formatTime(sleepStatus.until_s)}
+                      </span>
+                      {sleepStatus.remaining_s != null && (
+                        <span className="text-chalk text-sm ml-1">
+                          ({formatTime(sleepStatus.remaining_s)} left)
+                        </span>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => wakeDriverMut.mutate(nextStint.driver_id)}
+                      disabled={wakeDriverMut.isPending}
+                      className="text-xs bg-acid-green/20 text-acid-green border border-acid-green/30 rounded px-2 py-1 hover:bg-acid-green/30 disabled:opacity-50"
+                    >
+                      Wake
+                    </button>
+                  </div>
+                );
+              })()}
             </>
           ) : (
             <p className="text-steel font-body text-sm">No upcoming stint</p>
@@ -468,7 +546,17 @@ export default function LiveDashboardPage() {
       {/* Action Buttons */}
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
         <button
-          onClick={() => endStintMut.mutate()}
+          onClick={() => {
+            if (state?.next_stint && state?.driver_sleep_status) {
+              const nextDriverId = state.next_stint.driver_id;
+              const sleepStatus = state.driver_sleep_status[nextDriverId];
+              if (sleepStatus?.sleeping) {
+                setShowSleepWarning(true);
+                return;
+              }
+            }
+            endStintMut.mutate();
+          }}
           disabled={endStintMut.isPending || !activeStint}
           className="px-5 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
         >
@@ -499,6 +587,30 @@ export default function LiveDashboardPage() {
           View Config
         </Link>
       </div>
+
+      {/* Sleep Warning Dialog */}
+      {showSleepWarning && state?.next_stint && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+          <div className="bg-graphite border border-steel/30 rounded-xl p-6 max-w-md mx-4">
+            <h3 className="text-chalk text-lg font-semibold mb-2">Driver is sleeping</h3>
+            <p className="text-steel text-sm mb-4">
+              {state.next_stint.driver_name} is currently in a sleep window
+              until {formatTime(state.driver_sleep_status?.[state.next_stint.driver_id]?.until_s)}.
+              {' '}Are you sure you want to assign them to the next stint?
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setShowSleepWarning(false)}
+                className="px-4 py-2 text-sm text-steel border border-steel/30 rounded-lg hover:bg-steel/10">
+                Cancel
+              </button>
+              <button onClick={() => { setShowSleepWarning(false); endStintMut.mutate(); }}
+                className="px-4 py-2 text-sm bg-safety-red/20 text-safety-red border border-safety-red/30 rounded-lg hover:bg-safety-red/30">
+                Assign Anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

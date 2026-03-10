@@ -31,7 +31,7 @@ COPY --chown=app:app predefined_kart_list.csv predefined_track_list.csv ./
 COPY --chown=app:app gunicorn.conf.py ./
 
 ARG APP_VERSION=1.4.0
-ENV PYTHONPATH=/app \
+ENV PYTHONPATH=/app:/app/telemetry_tool \
     PYTHONUNBUFFERED=1 \
     APP_VERSION=${APP_VERSION}
 
