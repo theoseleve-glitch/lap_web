@@ -955,6 +955,7 @@ def run_full_analysis(
     v2_sections, err = _safe_step(
         "10g_track_decomposition_v2", s10b_corners.run_track_decomposition_v2,
         best_lap_df, conn=_v2_conn, session_id=str(meta.get("session_id", "")),
+        fallback_corners=corners,
     )
     _record("10g_track_decomposition_v2", v2_sections, err)
 

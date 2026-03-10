@@ -543,11 +543,14 @@ def run_track_decomposition_v2(
     best_lap_df: Optional[pd.DataFrame],
     conn: Any = None,
     session_id: str = "",
+    fallback_corners: Optional[list[dict[str, Any]]] = None,
 ) -> Optional[list[dict[str, Any]]]:
     """Step 10g: Decompose track into typed sections.
 
-    Checks for user-defined corners first. If found, uses those.
-    Otherwise runs autonomous track decomposition.
+    Priority order:
+    1. User-defined corners from ``user_corners`` table
+    2. Autonomous ``decompose_track()``
+    3. Fallback: convert step-06b corners into v2 sections
     """
     td_mod = lazy_import("track_decomposition")
     if td_mod is None or best_lap_df is None:
@@ -568,8 +571,17 @@ def run_track_decomposition_v2(
 
     # Autonomous decomposition
     sections = td_mod.decompose_track(best_lap_df)
-    logger.info("Track decomposition: %d sections", len(sections))
-    return [s.to_dict() for s in sections]
+    if sections:
+        logger.info("Track decomposition: %d sections", len(sections))
+        return [s.to_dict() for s in sections]
+
+    # Fallback: convert step-06b corners into v2 sections
+    if fallback_corners:
+        logger.info("decompose_track returned 0 sections; using %d step-06b corners as fallback", len(fallback_corners))
+        return _legacy_corners_to_sections(fallback_corners, td_mod)
+
+    logger.info("Track decomposition: 0 sections (no fallback corners)")
+    return []
 
 
 def _user_corners_to_sections(rows, best_lap_df, td_mod):
@@ -599,6 +611,46 @@ def _user_corners_to_sections(rows, best_lap_df, td_mod):
             direction=None,
             geometric_apex=s_apex,
             exit_importance=score_exit_importance(straight_length),
+            sub_corners=None,
+        )
+        sections.append(section.to_dict())
+    return sections
+
+
+def _legacy_corners_to_sections(
+    corners: list[dict[str, Any]], td_mod: Any,
+) -> list[dict[str, Any]]:
+    """Convert step-06b corner dicts into v2 TrackSection dicts."""
+    try:
+        from corner_focus import score_exit_importance
+    except ImportError:
+        def score_exit_importance(d: float) -> float:  # type: ignore[misc]
+            return min(1.0, d / 200.0)
+
+    sections = []
+    for i, c in enumerate(corners):
+        s_start = c.get("s_start") or c.get("distance_start") or 0
+        s_end = c.get("s_end") or c.get("distance_end") or 0
+        s_apex = c.get("s_apex") or c.get("distance_apex")
+        direction = c.get("direction")
+
+        # Exit importance from distance to next corner
+        if i + 1 < len(corners):
+            nc = corners[i + 1]
+            ns = nc.get("s_start") or nc.get("distance_start") or s_end
+            straight = ns - s_end
+        else:
+            straight = 100.0
+
+        section = td_mod.TrackSection(
+            section_id=c.get("corner_id", i + 1),
+            section_type="corner",
+            corner_type="detected",
+            s_start=s_start,
+            s_end=s_end,
+            direction=direction,
+            geometric_apex=s_apex,
+            exit_importance=score_exit_importance(straight),
             sub_corners=None,
         )
         sections.append(section.to_dict())

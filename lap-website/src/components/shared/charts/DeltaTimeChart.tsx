@@ -104,13 +104,13 @@ export function DeltaTimeChart({
     const pW = w - pad.left - pad.right;
     const pH = h - pad.top - pad.bottom;
 
-    // Background
-    ctx.fillStyle = '#1a1f2e';
+    // Background — matches SpeedTraceChart (#141414)
+    ctx.fillStyle = '#141414';
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#8b949e';
-      ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = '#888888';
+      ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(
@@ -178,8 +178,8 @@ export function DeltaTimeChart({
     ctx.stroke();
 
     // Y axis labels
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = '#888888';
+    ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let v = -maxAbs; v <= maxAbs + 0.001; v += yStep) {
@@ -195,7 +195,8 @@ export function DeltaTimeChart({
     }
 
     // Axis titles
-    ctx.font = '11px -apple-system, sans-serif';
+    ctx.fillStyle = '#888888';
+    ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
     ctx.save();
@@ -233,7 +234,7 @@ export function DeltaTimeChart({
     ctx.fill();
 
     // Delta line
-    ctx.strokeStyle = '#e6edf3';
+    ctx.strokeStyle = '#F0EDE5';
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -252,7 +253,7 @@ export function DeltaTimeChart({
       const sign = finalDelta > 0 ? '+' : '';
       const color = finalDelta > 0 ? '#10b981' : '#ef4444';
       ctx.fillStyle = color;
-      ctx.font = 'bold 12px -apple-system, sans-serif';
+      ctx.font = 'bold 12px "Space Mono", monospace';
       ctx.textAlign = 'right';
       ctx.textBaseline = finalDelta > 0 ? 'bottom' : 'top';
       const fx = xToPixel(dists[dists.length - 1]) - 4;
@@ -285,22 +286,22 @@ export function DeltaTimeChart({
         ctx.arc(hx, py, 5, 0, Math.PI * 2);
         ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
         ctx.fill();
-        ctx.strokeStyle = '#e6edf3';
+        ctx.strokeStyle = '#F0EDE5';
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Tooltip
         const sign = d >= 0 ? '+' : '';
         const label = sign + d.toFixed(3) + 's @ ' + hoverDist.toFixed(0) + 'm';
-        ctx.fillStyle = 'rgba(0,0,0,0.8)';
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.font = '11px "Space Mono", monospace';
         const metrics = ctx.measureText(label);
         const tipW = metrics.width + 12;
         const tipH = 20;
         let tipX = hx + 10;
         if (tipX + tipW > w - 10) tipX = hx - tipW - 10;
         ctx.fillRect(tipX, py - tipH / 2, tipW, tipH);
-        ctx.fillStyle = '#e6edf3';
+        ctx.fillStyle = '#F0EDE5';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, tipX + 6, py);
@@ -308,8 +309,8 @@ export function DeltaTimeChart({
     }
 
     // ── Legend ───────────────────────────────────────────────
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = '#888888';
+    ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
     const legend = `Lap ${lapA} vs Lap ${lapB}`;

@@ -88,6 +88,9 @@ def run_score(
             track_evolution=track_evolution,
             corner_performances=corner_performances,
             weather_timeline=weather_timeline,
+            driver_total_laps=int(meta.get("driver_total_laps", 0) or 0),
+            corner_coaching=corner_coaching,
+            progressive_physics=progressive_physics,
         )
 
     # Standard fallback — detect wet + track state from context

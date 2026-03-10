@@ -316,6 +316,14 @@ export function CornerDefiner({
       }));
 
       await api.post(`/sessions/${sessionId}/user-corners`, { corners: payload });
+
+      // Trigger re-coaching with the new user-defined corners
+      try {
+        await api.post(`/sessions/${sessionId}/recoach`, {});
+      } catch {
+        // Recoach is best-effort — corners are saved regardless
+      }
+
       onDone?.(valid);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save corners');

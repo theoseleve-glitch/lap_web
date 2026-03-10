@@ -18,7 +18,7 @@ const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSect
 const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
 const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
 const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
-const ScoringWeightsEditor = lazy(() => import('@/components/app/ScoringWeightsEditor').then(m => ({ default: m.ScoringWeightsEditor })));
+
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
 // ── Types ────────────────────────────────────────────────────────
@@ -968,12 +968,7 @@ function OverviewTab({
           </div>
         )}
 
-        {/* Custom scoring weights */}
-        {scores && (
-          <Suspense fallback={null}>
-            <ScoringWeightsEditor scores={scores} />
-          </Suspense>
-        )}
+        {/* Scoring weights editor removed — internal detail not for display */}
 
         {/* Data quality indicator */}
         <DataQualityIndicator laps={laps} session={session} scores={scores} />

@@ -2138,6 +2138,56 @@ def _build_coaching_v2_html(coaching_v2: Optional[dict] = None) -> str:
     return "\n".join(parts)
 
 
+def _build_corner_coaching_v2_html(coaching_list: Optional[list] = None) -> str:
+    """Build HTML for per-section V2 corner coaching (user-defined + autonomous)."""
+    if not coaching_list:
+        return ""
+
+    parts = ['<div style="margin-top:24px;"><h3 style="color:#e0e0e0;">Corner Coaching</h3>']
+
+    for sc in coaching_list:
+        section = sc.get("section") or {}
+        sid = section.get("section_id", "?")
+        s_type = section.get("corner_type") or section.get("section_type", "corner")
+        is_user = s_type == "user_defined"
+        label = f"Corner {sid}"
+        if is_user:
+            label += ' <span style="color:#4ecdc4;font-size:0.65rem;">(user-defined)</span>'
+
+        primary = sc.get("primary_focus", "")
+        hints = sc.get("coaching_hints", [])
+        time_loss = sc.get("time_loss_braking", 0) + sc.get("time_loss_apex", 0) + sc.get("time_loss_exit", 0)
+        exit_imp = section.get("exit_importance", 0)
+
+        border_color = "#ff9800" if exit_imp > 0.5 else "#666"
+        parts.append(
+            f'<div style="background:#1e1e1e;border-left:3px solid {border_color};'
+            f'padding:8px 12px;margin:6px 0;border-radius:4px;">'
+            f'<div style="color:#e0e0e0;font-weight:600;font-size:0.85rem;">{label}'
+            f' <span style="color:#888;font-size:0.7rem;">({s_type})</span></div>'
+        )
+
+        if primary:
+            parts.append(
+                f'<div style="color:#ffd600;font-size:0.8rem;margin-top:4px;">'
+                f'Focus: {primary}</div>'
+            )
+        if time_loss > 0.001:
+            parts.append(
+                f'<div style="color:#ff5252;font-size:0.75rem;">'
+                f'Est. time loss: {time_loss*1000:.0f}ms</div>'
+            )
+        for hint in hints:
+            parts.append(
+                f'<div style="color:#aaa;font-size:0.75rem;margin:2px 0;">'
+                f'&bull; {hint}</div>'
+            )
+        parts.append('</div>')
+
+    parts.append('</div>')
+    return "\n".join(parts)
+
+
 def _build_driver_style_badge_html(driver_style: Optional[dict] = None) -> str:
     """Build a compact driver style badge for the report header."""
     if not driver_style:
@@ -2717,6 +2767,11 @@ _HTML_TEMPLATE: Final[str] = r"""<!DOCTYPE html>
 {{ coaching_v2_html }}
 {% endif %}
 
+<!-- ====== Per-Section Corner Coaching V2 ====== -->
+{% if corner_coaching_v2_html %}
+{{ corner_coaching_v2_html }}
+{% endif %}
+
 <!-- ====== Practice Plan ====== -->
 {% if practice_plan_html %}
 {{ practice_plan_html }}
@@ -2806,12 +2861,12 @@ def _build_driver_rows(
         rows.append({
             "driver_name":  dp.get("driver_name", "Unknown"),
             "n_sessions":   dp.get("n_sessions", 0),
-            "pace_delta":   f"{pace_val:+.3f}" if math.isfinite(pace_val) else " —",
-            "consistency":  f"{consistency_val:.2f}" if math.isfinite(consistency_val) else " —",
-            "aggression":   f"{aggression_val:.2f}" if math.isfinite(aggression_val) else " —",
-            "smoothness":   f"{smoothness_val:.2f}" if math.isfinite(smoothness_val) else " —",
-            "trend":        trend_label if trend_label else " —",
-            "avg_score":    f"{avg_score_val:.1f}" if math.isfinite(avg_score_val) else " —",
+            "pace_delta":   f"{pace_val:+.3f}s" if math.isfinite(pace_val) else " \u2014",
+            "consistency":  f"{consistency_val:.2f}" if math.isfinite(consistency_val) else " \u2014",
+            "aggression":   f"{aggression_val:.2f}" if math.isfinite(aggression_val) else " \u2014",
+            "smoothness":   f"{smoothness_val:.2f}" if math.isfinite(smoothness_val) else " \u2014",
+            "trend":        trend_label if trend_label else " \u2014",
+            "avg_score":    f"{avg_score_val:.1f}" if math.isfinite(avg_score_val) else " \u2014",
             # Raw values for ranking
 
             "_pace":        pace_val,
@@ -3858,6 +3913,8 @@ def generate_report(
     driver_style:         Optional[dict[str, Any]]         = None,
     # --- Coaching V2 (evidence-based, confidence-gated) -
     coaching_v2:          Optional[dict[str, Any]]         = None,
+    # --- Per-section corner coaching V2 (user-defined + autonomous) -
+    corner_coaching_v2:   Optional[list[dict[str, Any]]]   = None,
     # --- Batch features (practice plan, endurance, boundaries, raceline) -
     practice_plan:        Optional[dict[str, Any]]         = None,
     endurance:            Optional[dict[str, Any]]         = None,
@@ -4096,6 +4153,7 @@ def generate_report(
     )
     driver_style_badge = _build_driver_style_badge_html(driver_style)
     coaching_v2_html = _build_coaching_v2_html(coaching_v2)
+    corner_coaching_v2_html = _build_corner_coaching_v2_html(corner_coaching_v2)
     practice_plan_html = _build_practice_plan_html(practice_plan)
     endurance_html = _build_endurance_html(endurance)
     boundaries_html = _build_boundaries_html(track_boundaries)
@@ -4158,6 +4216,7 @@ def generate_report(
         sim_method_badge=sim_method_badge,
         driver_style_badge=driver_style_badge,
         coaching_v2_html=coaching_v2_html,
+        corner_coaching_v2_html=corner_coaching_v2_html,
         practice_plan_html=practice_plan_html,
         endurance_html=endurance_html,
         boundaries_html=boundaries_html,
@@ -4235,99 +4294,377 @@ _COMPARISON_TEMPLATE = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{ title }}</title>
 <style>
-  :root { --bg: #0e1117; --card: #1a1d26; --accent: #00d4aa;
-          --text: #e6e9ef; --text-med: #a0a4b0; --red: #ff6b6b;
-          --green: #00d4aa; --yellow: #ffd93d; }
+  :root {
+    --bg: #0f1117; --card: #181b24; --asphalt: #12151e;
+    --steel: #6b7280; --chalk: #e6e9ef; --text-med: #9ca3af;
+    --accent: #3ddc84; --color-a: #3ddc84; --color-b: #ff8c00;
+    --green: #34d399; --red: #f87171; --yellow: #ffd93d;
+  }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif;
-         max-width: 1200px; margin: 0 auto; padding: 24px; }
-  h1 { font-size: 1.6rem; color: var(--accent); margin-bottom: 8px; }
-  h2 { font-size: 1.2rem; color: var(--text); margin: 24px 0 12px; }
-  .subtitle { color: var(--text-med); font-size: 0.9rem; margin-bottom: 24px; }
-  .card { background: var(--card); border-radius: 10px; padding: 20px; margin-bottom: 20px; }
-  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
-  th { text-align: left; color: var(--text-med); font-size: 0.8rem;
-       text-transform: uppercase; padding: 8px 12px; border-bottom: 1px solid #333; }
-  td { padding: 8px 12px; border-bottom: 1px solid #222; font-size: 0.9rem; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--chalk);
+    line-height: 1.55; padding: 24px;
+    max-width: 1200px; margin: 0 auto;
+  }
+  h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+  h2 { font-size: 1.1rem; font-weight: 700; margin: 24px 0 12px; }
+  .subtitle { color: var(--steel); font-size: 0.85rem; margin-top: 4px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border-radius: 12px;
+    padding: 20px 24px; margin-bottom: 16px;
+    border: 1px solid rgba(107,114,128,0.1);
+  }
+  /* — Metadata cards — */
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .meta-card { border-radius: 12px; padding: 20px; }
+  .meta-card-a { background: var(--card); border: 1px solid rgba(61,220,132,0.19); }
+  .meta-card-b { background: var(--card); border: 1px solid rgba(255,140,0,0.19); }
+  .meta-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .meta-label-a { color: var(--color-a); }
+  .meta-label-b { color: var(--color-b); }
+  .meta-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .meta-key { font-size: 0.75rem; color: var(--steel); }
+  .meta-val { font-size: 0.75rem; font-family: 'SF Mono', 'Cascadia Code', monospace; color: var(--chalk); text-align: right; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  /* — Score section — */
+  .score-center { display: flex; align-items: center; justify-content: center; gap: 32px; flex-wrap: wrap; }
+  .score-block { text-align: center; }
+  .score-num { font-size: 2.2rem; font-weight: 700; margin-top: 4px; }
+  .grade-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    font-size: 1.1rem; font-weight: 800; margin-top: 4px;
+  }
+  .grade-S { background: linear-gradient(135deg, #facc15, #eab308); color: #000; }
+  .grade-A { background: linear-gradient(135deg, #34d399, #10b981); color: #000; }
+  .grade-B { background: linear-gradient(135deg, #22d3ee, #06b6d4); color: #000; }
+  .grade-C { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; }
+  .grade-D { background: linear-gradient(135deg, #fb923c, #ea580c); color: #fff; }
+  .grade-F { background: linear-gradient(135deg, #f87171, #dc2626); color: #fff; }
+  .delta-badge {
+    text-align: center; padding: 12px 24px; border-radius: 8px;
+    background: var(--asphalt); border: 1px solid rgba(107,114,128,0.1);
+  }
+  .delta-label { font-size: 0.7rem; color: var(--steel); margin-bottom: 4px; }
+  .delta-val { font-size: 1.5rem; font-weight: 700; }
+  .delta-green { color: var(--green); }
+  .delta-red { color: var(--red); }
+  .delta-neutral { color: var(--steel); }
+  /* — Score bars — */
+  .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .score-card { border-radius: 12px; padding: 16px; background: var(--card); border: 1px solid rgba(107,114,128,0.1); }
+  .score-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .score-card-title { font-size: 0.85rem; font-weight: 700; }
+  .score-card-delta { font-size: 0.75rem; font-family: monospace; }
+  .bar-row { margin-bottom: 8px; }
+  .bar-meta { display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 3px; }
+  .bar-track { width: 100%; height: 8px; background: var(--asphalt); border-radius: 4px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+  .bar-fill-a { background: var(--color-a); }
+  .bar-fill-b { background: var(--color-b); }
+  /* — Comparison table — */
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px 16px; font-size: 0.7rem; font-weight: 400;
+       text-transform: uppercase; letter-spacing: 0.05em; color: var(--steel);
+       border-bottom: 1px solid rgba(107,114,128,0.1); }
+  th.right, td.right { text-align: right; }
+  th.col-a { color: var(--color-a); }
+  th.col-b { color: var(--color-b); }
+  td { padding: 10px 16px; font-size: 0.85rem;
+       border-bottom: 1px solid rgba(107,114,128,0.05);
+       font-family: 'SF Mono', 'Cascadia Code', monospace; }
+  td.label-cell { font-family: inherit; color: var(--steel); }
+  tr:hover td { background: rgba(18,21,30,0.5); }
   .best { color: var(--green); font-weight: 600; }
   .worse { color: var(--red); }
-  .strength { background: rgba(0,212,170,0.12); border-left: 3px solid var(--green);
-              padding: 8px 12px; border-radius: 4px; margin: 4px 0; font-size: 0.9rem; }
-  .weakness { background: rgba(255,107,107,0.12); border-left: 3px solid var(--red);
-              padding: 8px 12px; border-radius: 4px; margin: 4px 0; font-size: 0.9rem; }
+  /* — Lap times tables — */
+  .laps-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .laps-card { border-radius: 12px; overflow: hidden; background: var(--card); border: 1px solid rgba(107,114,128,0.1); }
+  .laps-header { padding: 8px 16px; border-bottom: 1px solid rgba(107,114,128,0.1); }
+  .badge-best { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px;
+                background: rgba(61,220,132,0.15); color: var(--green);
+                text-transform: uppercase; margin-left: 6px; }
+  .badge-joker { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px;
+                 background: rgba(255,217,61,0.15); color: var(--yellow);
+                 text-transform: uppercase; border: 1px solid rgba(255,217,61,0.25); }
+  .badge-invalid { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px;
+                   background: rgba(248,113,113,0.15); color: var(--red);
+                   text-transform: uppercase; border: 1px solid rgba(248,113,113,0.25); }
+  .badge-valid { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px;
+                 background: rgba(34,197,94,0.08); color: #4ade80;
+                 text-transform: uppercase; border: 1px solid rgba(34,197,94,0.15); }
+  .row-best { background: rgba(61,220,132,0.04); }
+  .row-invalid { opacity: 0.5; }
+  /* — Strengths / weaknesses — */
+  .sw-item { padding: 10px 14px; border-radius: 6px; margin: 6px 0; font-size: 0.85rem; }
+  .strength { background: rgba(52,211,153,0.08); border-left: 3px solid var(--green); }
+  .weakness { background: rgba(248,113,113,0.08); border-left: 3px solid var(--red); }
+  /* — Misc — */
   .plot-img { max-width: 100%; border-radius: 8px; margin: 12px 0; }
   .radar-container { text-align: center; margin: 16px 0; }
   .radar-container img { max-width: 500px; border-radius: 8px; }
-  .footer { text-align: center; color: var(--text-med); font-size: 0.75rem;
-            margin-top: 32px; padding-top: 16px; border-top: 1px solid #333; }
+  .footer { text-align: center; color: var(--steel); font-size: 0.7rem;
+            margin-top: 32px; padding-top: 16px; border-top: 1px solid rgba(107,114,128,0.15); }
+  .no-data { color: var(--steel); font-style: italic; padding: 20px 0; text-align: center; }
+  @media (max-width: 700px) {
+    body { padding: 12px; }
+    .meta-grid, .score-grid, .laps-grid { grid-template-columns: 1fr; }
+    .score-center { gap: 16px; }
+    .card { padding: 14px 16px; }
+  }
+  @media print {
+    body { background: #fff; color: #1a1a1a; padding: 12px; }
+    .card, .meta-card, .score-card, .laps-card { background: #f5f5f5; border-color: #ddd; }
+    .bar-track { background: #e0e0e0; }
+    .footer { border-top-color: #ccc; }
+    td, th { border-color: #ddd !important; }
+    :root { --steel: #666; --chalk: #1a1a1a; --text-med: #888; --asphalt: #eee; }
+  }
 </style>
 </head>
 <body>
-<h1>{{ title }}</h1>
-<p class="subtitle">Generated {{ generated_at }}</p>
 
-<div class="card">
-  <h2>Head-to-Head Summary</h2>
-  <table>
-    <tr><th>Metric</th>{% for d in drivers %}<th>{{ d.name }}</th>{% endfor %}</tr>
-    <tr><td>Best Lap</td>{% for d in drivers %}<td class="{{ d.best_lap_class }}">{{ d.best_lap_s }}</td>{% endfor %}</tr>
-    <tr><td>Average Lap</td>{% for d in drivers %}<td class="{{ d.avg_lap_class }}">{{ d.avg_lap_s }}</td>{% endfor %}</tr>
-    <tr><td>Consistency (CV%)</td>{% for d in drivers %}<td class="{{ d.cv_class }}">{{ d.cv_pct }}</td>{% endfor %}</tr>
-    <tr><td>Total Score</td>{% for d in drivers %}<td class="{{ d.score_class }}">{{ d.score_str }}</td>{% endfor %}</tr>
-    <tr><td>Grade</td>{% for d in drivers %}<td>{{ d.grade }}</td>{% endfor %}</tr>
-    <tr><td>Laps</td>{% for d in drivers %}<td>{{ d.n_laps }}</td>{% endfor %}</tr>
-  </table>
+<!-- ====== Header ====== -->
+<h1>{{ title }}</h1>
+<p class="subtitle">
+  Select two sessions to compare scores, lap times, and performance metrics side by side.
+  &mdash; Generated {{ generated_at }}
+</p>
+
+<!-- ====== Metadata Cards ====== -->
+<div class="meta-grid">
+  {% for d in drivers %}
+  <div class="meta-card {{ 'meta-card-a' if loop.index0 == 0 else 'meta-card-b' }}">
+    <div class="meta-label {{ 'meta-label-a' if loop.index0 == 0 else 'meta-label-b' }}">
+      Session {{ 'A' if loop.index0 == 0 else 'B' }}
+    </div>
+    <div class="meta-row"><span class="meta-key">Driver</span><span class="meta-val">{{ d.name }}</span></div>
+    {% if d.track %}<div class="meta-row"><span class="meta-key">Track</span><span class="meta-val">{{ d.track }}</span></div>{% endif %}
+    {% if d.session_type %}<div class="meta-row"><span class="meta-key">Type</span><span class="meta-val">{{ d.session_type }}</span></div>{% endif %}
+    {% if d.track_state %}<div class="meta-row"><span class="meta-key">Conditions</span><span class="meta-val">{{ d.track_state }}</span></div>{% endif %}
+    {% if d.date %}<div class="meta-row"><span class="meta-key">Date</span><span class="meta-val">{{ d.date }}</span></div>{% endif %}
+    <div class="meta-row"><span class="meta-key">Laps</span><span class="meta-val">{{ d.n_laps }}</span></div>
+  </div>
+  {% endfor %}
 </div>
 
+<!-- ====== Total Score Comparison ====== -->
+<div class="card">
+  <h2 style="margin-top:0;">Total Score</h2>
+  <div class="score-center">
+    {% for d in drivers %}
+    <div class="score-block">
+      <div class="meta-label {{ 'meta-label-a' if loop.index0 == 0 else 'meta-label-b' }}">
+        Session {{ 'A' if loop.index0 == 0 else 'B' }}
+      </div>
+      <div class="score-num">{{ d.score_str }}</div>
+      <div class="grade-badge grade-{{ d.grade }}">{{ d.grade }}</div>
+    </div>
+    {% if loop.index0 == 0 %}
+    <div class="delta-badge">
+      <div class="delta-label">Delta</div>
+      <div class="delta-val {{ score_delta_class }}">{{ score_delta_str }}</div>
+    </div>
+    {% endif %}
+    {% endfor %}
+  </div>
+</div>
+
+<!-- ====== Radar Chart ====== -->
 {% if radar_img %}
 <div class="card">
-  <h2>Sub-Score Comparison</h2>
+  <h2 style="margin-top:0;">Scoring Dimensions</h2>
   <div class="radar-container">
     <img class="plot-img" src="{{ radar_img }}" alt="Radar comparison">
+  </div>
+  <div style="display:flex;justify-content:center;gap:24px;font-size:0.75rem;margin-top:8px;">
+    <span style="color:var(--color-a);">Session A</span>
+    <span style="color:var(--color-b);">Session B</span>
   </div>
 </div>
 {% endif %}
 
-{% if corner_comparison %}
-<div class="card">
-  <h2>Corner-by-Corner</h2>
-  <table>
-    <tr><th>Corner</th>{% for d in drivers %}<th>{{ d.name }} Loss</th>{% endfor %}<th>Advantage</th></tr>
-    {% for c in corner_comparison %}
-    <tr><td>T{{ c.corner_id }}</td>
-    {% for loss in c.losses %}<td class="{{ loss.cls }}">{{ loss.val }}</td>{% endfor %}
-    <td>{{ c.advantage }}</td></tr>
-    {% endfor %}
-  </table>
-</div>
-{% endif %}
-
-{% if speed_overlay_img %}
-<div class="card">
-  <h2>Speed Trace Overlay</h2>
-  <img class="plot-img" src="{{ speed_overlay_img }}" alt="Speed overlay">
-</div>
-{% endif %}
-
-{% if strengths_weaknesses %}
-<div class="card">
-  <h2>Relative Strengths</h2>
-  {% for sw in strengths_weaknesses %}
-  <div class="{{ sw.cls }}">{{ sw.text }}</div>
+<!-- ====== Score Breakdown ====== -->
+{% if score_bars %}
+<h2>Score Breakdown</h2>
+<div class="score-grid">
+  {% for bar in score_bars %}
+  <div class="score-card">
+    <div class="score-card-header">
+      <span class="score-card-title">{{ bar.label }}</span>
+      {% if bar.delta_str %}
+      <span class="score-card-delta {{ bar.delta_class }}">A {{ bar.delta_str }}</span>
+      {% endif %}
+    </div>
+    <div class="bar-row">
+      <div class="bar-meta">
+        <span style="color:var(--color-a);">Session A</span>
+        <span>{{ bar.val_a_str }} / {{ bar.max }}</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill bar-fill-a" style="width:{{ bar.pct_a }}%;"></div></div>
+    </div>
+    <div class="bar-row">
+      <div class="bar-meta">
+        <span style="color:var(--color-b);">Session B</span>
+        <span>{{ bar.val_b_str }} / {{ bar.max }}</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill bar-fill-b" style="width:{{ bar.pct_b }}%;"></div></div>
+    </div>
+  </div>
   {% endfor %}
 </div>
 {% endif %}
 
+<!-- ====== Speed Overlay ====== -->
+{% if speed_overlay_img %}
 <div class="card">
-  <h2>Gap Breakdown</h2>
+  <h2 style="margin-top:0;">Speed Trace Overlay</h2>
+  <img class="plot-img" src="{{ speed_overlay_img }}" alt="Speed overlay">
+</div>
+{% endif %}
+
+<!-- ====== Lap Comparison Table ====== -->
+<div class="card">
+  <h2 style="margin-top:0;">Lap Comparison</h2>
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th class="right col-a">Session A</th>
+        <th class="right col-b">Session B</th>
+        <th class="right">Delta</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label-cell">Lap Count</td>
+        <td class="right">{{ drivers[0].n_laps }}</td>
+        <td class="right">{{ drivers[1].n_laps if drivers|length > 1 else '&mdash;' }}</td>
+        <td class="right delta-neutral">&mdash;</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Best Lap Time</td>
+        <td class="right {{ drivers[0].best_lap_class }}">{{ drivers[0].best_lap_fmt }}</td>
+        <td class="right {{ drivers[1].best_lap_class if drivers|length > 1 else '' }}">{{ drivers[1].best_lap_fmt if drivers|length > 1 else '&mdash;' }}</td>
+        <td class="right {{ best_lap_delta_class }}">{{ best_lap_delta_str }}</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Avg Lap Time</td>
+        <td class="right {{ drivers[0].avg_lap_class }}">{{ drivers[0].avg_lap_fmt }}</td>
+        <td class="right {{ drivers[1].avg_lap_class if drivers|length > 1 else '' }}">{{ drivers[1].avg_lap_fmt if drivers|length > 1 else '&mdash;' }}</td>
+        <td class="right {{ avg_lap_delta_class }}">{{ avg_lap_delta_str }}</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Consistency (CV%)</td>
+        <td class="right {{ drivers[0].cv_class }}">{{ drivers[0].cv_pct }}</td>
+        <td class="right {{ drivers[1].cv_class if drivers|length > 1 else '' }}">{{ drivers[1].cv_pct if drivers|length > 1 else '&mdash;' }}</td>
+        <td class="right delta-neutral">&mdash;</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Total Score</td>
+        <td class="right {{ drivers[0].score_class }}">{{ drivers[0].score_str }}</td>
+        <td class="right {{ drivers[1].score_class if drivers|length > 1 else '' }}">{{ drivers[1].score_str if drivers|length > 1 else '&mdash;' }}</td>
+        <td class="right {{ score_delta_class }}">{{ score_delta_str }}</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<!-- ====== Corner-by-Corner ====== -->
+{% if corner_comparison %}
+<div class="card">
+  <h2 style="margin-top:0;">Corner-by-Corner</h2>
+  <div style="overflow-x:auto;">
+  <table>
+    <thead>
+      <tr>
+        <th>Corner</th>
+        {% for d in drivers %}<th class="right {{ 'col-a' if loop.index0 == 0 else 'col-b' }}">{{ d.name }} Loss</th>{% endfor %}
+        <th class="right">Advantage</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in corner_comparison %}
+    <tr>
+      <td class="label-cell">T{{ c.corner_id }}</td>
+      {% for loss in c.losses %}<td class="right {{ loss.cls }}">{{ loss.val }}</td>{% endfor %}
+      <td class="right" style="font-family:inherit;font-size:0.8rem;">{{ c.advantage }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- ====== Individual Lap Times ====== -->
+{% if lap_tables %}
+<h2>Individual Lap Times</h2>
+<div class="laps-grid">
+  {% for lt in lap_tables %}
+  <div class="laps-card">
+    <div class="laps-header">
+      <span class="meta-label {{ 'meta-label-a' if loop.index0 == 0 else 'meta-label-b' }}">
+        Session {{ 'A' if loop.index0 == 0 else 'B' }} &mdash; {{ lt.driver_name }}
+      </span>
+    </div>
+    {% if lt.laps %}
+    <table>
+      <thead>
+        <tr>
+          <th>Lap</th>
+          <th class="right">Time</th>
+          <th class="right">Avg km/h</th>
+          <th style="text-align:center;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for lap in lt.laps %}
+        <tr class="{{ 'row-best' if lap.is_best else ('row-invalid' if not lap.is_valid else '') }}">
+          <td>{{ lap.number }}{% if lap.is_best %}<span class="badge-best">best</span>{% endif %}</td>
+          <td class="right" style="{{ 'color:var(--green);' if lap.is_best else '' }}">{{ lap.time_fmt }}</td>
+          <td class="right">{{ lap.avg_kmh }}</td>
+          <td style="text-align:center;">
+            {% if lap.is_joker %}<span class="badge-joker">J</span>
+            {% elif not lap.is_valid %}<span class="badge-invalid">{{ lap.invalid_reason or 'Invalid' }}</span>
+            {% else %}<span class="badge-valid">Valid</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="no-data">No lap data</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ====== Relative Strengths ====== -->
+{% if strengths_weaknesses %}
+<div class="card">
+  <h2 style="margin-top:0;">Relative Strengths</h2>
+  {% for sw in strengths_weaknesses %}
+  <div class="sw-item {{ sw.cls }}">{{ sw.text }}</div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- ====== Gap Breakdown ====== -->
+<div class="card">
+  <h2 style="margin-top:0;">Gap Breakdown</h2>
   <p style="color: var(--text-med); font-size: 0.9rem;">
-    Overall best-lap gap: <b>{{ gap_s }}</b> &mdash; {{ gap_summary }}
+    Overall best-lap gap: <b style="color:var(--chalk);">{{ gap_s }}</b> &mdash; {{ gap_summary }}
   </p>
 </div>
 
-<div class="footer">Telemetry Tool Driver Comparison {{ generated_at }}</div>
+<div class="footer">Telemetry Tool Driver Comparison &mdash; {{ generated_at }}</div>
 </body>
 </html>"""
 
@@ -4427,13 +4764,45 @@ def _plot_speed_overlay(
     return _fig_to_base64(fig)
 
 
+def _fmt_lap_time(seconds: float) -> str:
+    """Format lap time matching webapp: sub-60s → '45.123s', 60s+ → '1:02.345'."""
+    if not math.isfinite(seconds):
+        return "\u2014"
+    if seconds >= 60:
+        mins = int(seconds // 60)
+        secs = seconds - mins * 60
+        return f"{mins}:{secs:06.3f}"
+    return f"{seconds:.3f}s"
+
+
+def _fmt_delta(delta: float, decimals: int = 3) -> str:
+    """Format time delta matching webapp: '+0.123s' / '-0.456s' / em dash."""
+    if not math.isfinite(delta):
+        return "\u2014"
+    sign = "+" if delta > 0 else ""
+    return f"{sign}{delta:.{decimals}f}s"
+
+
+def _delta_css_class(delta: float, lower_is_better: bool = False) -> str:
+    """Return CSS class matching webapp delta colour semantics."""
+    if not math.isfinite(delta) or delta == 0:
+        return "delta-neutral"
+    if lower_is_better:
+        return "delta-green" if delta < 0 else "delta-red"
+    return "delta-green" if delta > 0 else "delta-red"
+
+
 def generate_comparison_report(
     driver_results: list[dict[str, Any]],
     *,
     output_path: "str | Path" = "comparison.html",
     session_meta: Optional[dict[str, Any]] = None,
 ) -> "Path":
-    """Generate head-to-head comparison HTML report for 2+ drivers."""
+    """Generate head-to-head comparison HTML report for 2+ drivers.
+
+    Output styled to match the webapp session comparison page layout:
+    metadata cards, score bars with deltas, lap-by-lap tables, etc.
+    """
     output_path = Path(output_path)
     session_meta = session_meta or {}
 
@@ -4470,17 +4839,36 @@ def generate_comparison_report(
 
         drivers.append({
             "name": name,
-            "best_lap_s": f"{best_s:.3f}" if math.isfinite(best_s) else "-",
-            "avg_lap_s": f"{avg_s:.3f}" if math.isfinite(avg_s) else "-",
-            "cv_pct": f"{cv:.2f}%" if math.isfinite(cv) else "-",
-            "score_str": f"{total_score:.1f}", "grade": grade, "n_laps": n_laps,
+            # Raw numeric values for delta computation
+            "_best_s": best_s,
+            "_avg_s": avg_s,
+            "_total_score": total_score,
+            # Display strings
+            "best_lap_s": f"{best_s:.3f}" if math.isfinite(best_s) else "\u2014",
+            "best_lap_fmt": _fmt_lap_time(best_s),
+            "avg_lap_s": f"{avg_s:.3f}" if math.isfinite(avg_s) else "\u2014",
+            "avg_lap_fmt": _fmt_lap_time(avg_s),
+            "cv_pct": f"{cv:.2f}%" if math.isfinite(cv) else "\u2014",
+            "score_str": f"{total_score:.1f}",
+            "grade": grade,
+            "n_laps": n_laps,
+            # Metadata from session
+            "track": meta.get("track_id") or meta.get("track_name", ""),
+            "session_type": meta.get("session_type", ""),
+            "track_state": meta.get("track_state", ""),
+            "date": meta.get("date", ""),
         })
-        all_best.append(best_s); all_avg.append(avg_s)
-        all_cv.append(cv); all_scores.append(total_score)
+        all_best.append(best_s)
+        all_avg.append(avg_s)
+        all_cv.append(cv)
+        all_scores.append(total_score)
 
-    def _cls(vals, idx, lower_better=True):
+    # ── Best/worst CSS classes ─────────────────────────────────────
+
+    def _cls(vals: list[float], idx: int, lower_better: bool = True) -> str:
         fin = [(j, v) for j, v in enumerate(vals) if math.isfinite(v)]
-        if len(fin) < 2: return ""
+        if len(fin) < 2:
+            return ""
         best_j = min(fin, key=lambda x: x[1])[0] if lower_better else max(fin, key=lambda x: x[1])[0]
         worst_j = max(fin, key=lambda x: x[1])[0] if lower_better else min(fin, key=lambda x: x[1])[0]
         return "best" if idx == best_j else ("worse" if idx == worst_j else "")
@@ -4491,20 +4879,121 @@ def generate_comparison_report(
         d["cv_class"] = _cls(all_cv, i, True)
         d["score_class"] = _cls(all_scores, i, False)
 
+    # ── Delta strings (A - B) matching webapp formatDelta ──────────
+
+    def _compute_delta(vals: list[float]) -> float:
+        """Compute delta between first two finite values (A - B)."""
+        fin = [v for v in vals[:2] if math.isfinite(v)]
+        if len(fin) < 2:
+            return float("nan")
+        return fin[0] - fin[1]
+
+    score_delta = _compute_delta(all_scores)
+    score_delta_str = _fmt_delta(score_delta, 1) if math.isfinite(score_delta) else "\u2014"
+    score_delta_class = _delta_css_class(score_delta, lower_is_better=False)
+
+    best_lap_delta = _compute_delta(all_best)
+    best_lap_delta_str = _fmt_delta(best_lap_delta) if math.isfinite(best_lap_delta) else "\u2014"
+    best_lap_delta_class = _delta_css_class(best_lap_delta, lower_is_better=True)
+
+    avg_lap_delta = _compute_delta(all_avg)
+    avg_lap_delta_str = _fmt_delta(avg_lap_delta) if math.isfinite(avg_lap_delta) else "\u2014"
+    avg_lap_delta_class = _delta_css_class(avg_lap_delta, lower_is_better=True)
+
+    # ── Score bars (matching webapp ScoreCompareCard) ──────────────
+
+    score_bars: list[dict[str, Any]] = []
+    if len(driver_results) >= 2:
+        for cat, label in [("pace", "Pace"), ("consistency", "Consistency"),
+                           ("execution", "Execution"), ("robustness", "Robustness"),
+                           ("adaptation", "Adaptation")]:
+            s1 = driver_results[0].get("score_result", {}).get("sub_scores", {}).get(cat, {})
+            s2 = driver_results[1].get("score_result", {}).get("sub_scores", {}).get(cat, {})
+            val_a = _safe_float(s1.get("score"), 0.0)
+            val_b = _safe_float(s2.get("score"), 0.0)
+            mx = _safe_float(s1.get("max") or s2.get("max"), 25.0)
+            if mx <= 0:
+                mx = 25.0
+            pct_a = min(val_a / mx * 100, 100) if math.isfinite(val_a) else 0
+            pct_b = min(val_b / mx * 100, 100) if math.isfinite(val_b) else 0
+            bar_delta = val_a - val_b if math.isfinite(val_a) and math.isfinite(val_b) else float("nan")
+            score_bars.append({
+                "label": label,
+                "val_a_str": f"{val_a:.1f}" if math.isfinite(val_a) else "\u2014",
+                "val_b_str": f"{val_b:.1f}" if math.isfinite(val_b) else "\u2014",
+                "max": int(mx),
+                "pct_a": f"{pct_a:.0f}",
+                "pct_b": f"{pct_b:.0f}",
+                "delta_str": _fmt_delta(bar_delta, 1) if math.isfinite(bar_delta) else "",
+                "delta_class": _delta_css_class(bar_delta),
+            })
+
+    # ── Individual lap tables (matching webapp LapTimesTable) ──────
+
+    lap_tables: list[dict[str, Any]] = []
+    for i, dr in enumerate(driver_results[:2]):
+        lt = dr.get("lap_times") or []
+        lap_details = dr.get("lap_details") or []
+        d_name = drivers[i]["name"]
+        laps_out: list[dict[str, Any]] = []
+
+        if lap_details:
+            for ld in lap_details:
+                t = _safe_float(ld.get("lap_time_s"))
+                avg_mps = _safe_float(ld.get("speed_mean_mps"))
+                avg_kmh = f"{avg_mps * 3.6:.1f}" if math.isfinite(avg_mps) else "\u2014"
+                laps_out.append({
+                    "number": ld.get("lap_number", "?"),
+                    "time_fmt": _fmt_lap_time(t) if math.isfinite(t) else "\u2014",
+                    "avg_kmh": avg_kmh,
+                    "is_best": bool(ld.get("is_best")),
+                    "is_valid": bool(ld.get("is_valid", True)),
+                    "is_joker": bool(ld.get("is_joker", False)),
+                    "invalid_reason": ld.get("invalid_reason", ""),
+                })
+        elif lt:
+            for j, t_val in enumerate(lt):
+                t = float(t_val) if isinstance(t_val, (int, float)) and math.isfinite(t_val) else float("nan")
+                laps_out.append({
+                    "number": j + 1,
+                    "time_fmt": _fmt_lap_time(t) if math.isfinite(t) else "\u2014",
+                    "avg_kmh": "\u2014",
+                    "is_best": False,
+                    "is_valid": True,
+                    "is_joker": False,
+                    "invalid_reason": "",
+                })
+            # Mark best lap
+            valid_times = [(k, lap["time_fmt"]) for k, lap in enumerate(laps_out)
+                           if lap["time_fmt"] != "\u2014"]
+            if valid_times:
+                fin_lt = [float(lt[k]) for k, _ in valid_times
+                          if isinstance(lt[k], (int, float)) and math.isfinite(lt[k])]
+                if fin_lt:
+                    best_val = min(fin_lt)
+                    for k in range(len(laps_out)):
+                        if k < len(lt) and isinstance(lt[k], (int, float)) and float(lt[k]) == best_val:
+                            laps_out[k]["is_best"] = True
+                            break
+
+        lap_tables.append({"driver_name": d_name, "laps": laps_out})
+
+    # ── Plots ─────────────────────────────────────────────────────
+
     radar_img = _plot_radar_comparison(driver_results)
     speed_overlay_img = _plot_speed_overlay(driver_results)
 
-    # Corner comparison
+    # ── Corner comparison ─────────────────────────────────────────
 
-    corner_comparison = []
+    corner_comparison: list[dict[str, Any]] = []
     all_corners = [dr.get("corner_performances") or [] for dr in driver_results]
     if all(len(c) > 0 for c in all_corners):
         corner_ids = sorted(set(
             cp.get("corner_id") for cps in all_corners for cp in cps if "corner_id" in cp
         ))
         for cid in corner_ids:
-            losses = []
-            loss_vals = []
+            losses: list[dict[str, str]] = []
+            loss_vals: list[float] = []
             for cps in all_corners:
                 cp = next((c for c in cps if c.get("corner_id") == cid), None)
                 tl = cp.get("time_loss_s", 0.0) if cp else 0.0
@@ -4513,15 +5002,19 @@ def generate_comparison_report(
             if len(loss_vals) >= 2:
                 bi, wi = loss_vals.index(min(loss_vals)), loss_vals.index(max(loss_vals))
                 if bi != wi:
-                    losses[bi]["cls"] = "best"; losses[wi]["cls"] = "worse"
+                    losses[bi]["cls"] = "best"
+                    losses[wi]["cls"] = "worse"
             adv = drivers[loss_vals.index(min(loss_vals))]["name"]
-            delta = max(loss_vals) - min(loss_vals)
+            cdelta = max(loss_vals) - min(loss_vals)
             corner_comparison.append({
-                "corner_id": cid, "losses": losses,
-                "advantage": f"{adv} by {delta:.3f}s" if delta > 0.01 else "Even",
+                "corner_id": cid,
+                "losses": losses,
+                "advantage": f"{adv} by {cdelta:.3f}s" if cdelta > 0.01 else "Even",
             })
 
-    sw_list = []
+    # ── Strengths / weaknesses ────────────────────────────────────
+
+    sw_list: list[dict[str, str]] = []
     if len(driver_results) == 2:
         for cat, label in [("pace", "Pace"), ("consistency", "Consistency"),
                            ("execution", "Execution"), ("robustness", "Robustness")]:
@@ -4530,7 +5023,12 @@ def generate_comparison_report(
             p1, p2 = s1.get("pct", 50.0), s2.get("pct", 50.0)
             if abs(p1 - p2) > 5:
                 better = drivers[0]["name"] if p1 > p2 else drivers[1]["name"]
-                sw_list.append({"cls": "strength", "text": f"{better} has a {label.lower()} advantage ({abs(p1-p2):.0f}% difference)"})
+                sw_list.append({
+                    "cls": "strength",
+                    "text": f"{better} has a {label.lower()} advantage ({abs(p1 - p2):.0f}% difference)",
+                })
+
+    # ── Gap breakdown ─────────────────────────────────────────────
 
     fin_best = [b for b in all_best if math.isfinite(b)]
     if len(fin_best) >= 2:
@@ -4538,7 +5036,10 @@ def generate_comparison_report(
         gap_s = f"{gap:.3f}s"
         gap_summary = f"{drivers[all_best.index(min(fin_best))]['name']} is fastest overall"
     else:
-        gap_s = "-"; gap_summary = "Insufficient data"
+        gap_s = "\u2014"
+        gap_summary = "Insufficient data"
+
+    # ── Render template ───────────────────────────────────────────
 
     title = "Driver Comparison: " + " vs ".join(d["name"] for d in drivers)
 
@@ -4547,11 +5048,22 @@ def generate_comparison_report(
     html = template.render(
         title=title,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        drivers=drivers, radar_img=radar_img,
+        drivers=drivers,
+        radar_img=radar_img,
         speed_overlay_img=speed_overlay_img,
         corner_comparison=corner_comparison or None,
         strengths_weaknesses=sw_list or None,
-        gap_s=gap_s, gap_summary=gap_summary,
+        gap_s=gap_s,
+        gap_summary=gap_summary,
+        # New fields matching webapp layout
+        score_delta_str=score_delta_str,
+        score_delta_class=score_delta_class,
+        best_lap_delta_str=best_lap_delta_str,
+        best_lap_delta_class=best_lap_delta_class,
+        avg_lap_delta_str=avg_lap_delta_str,
+        avg_lap_delta_class=avg_lap_delta_class,
+        score_bars=score_bars or None,
+        lap_tables=lap_tables or None,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

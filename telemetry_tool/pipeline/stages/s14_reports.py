@@ -130,6 +130,7 @@ def run_html_report(
     weather_timeline: Optional[pd.DataFrame] = None,
     coaching_guide: Optional[dict[str, Any]] = None,
     corners: Optional[list[dict[str, Any]]] = None,
+    track_boundaries: Any = None,
 ) -> Path:
     """Generate HTML report.
 
@@ -191,6 +192,7 @@ def run_html_report(
         grip_map=summary.get("grip_map"),
         driver_style=summary.get("driver_style"),
         coaching_v2=summary.get("coaching_v2"),
+        corner_coaching_v2=summary.get("corner_coaching_v2"),
         practice_plan=summary.get("practice_plan"),
         endurance=summary.get("endurance"),
         track_boundaries=summary.get("track_boundaries"),

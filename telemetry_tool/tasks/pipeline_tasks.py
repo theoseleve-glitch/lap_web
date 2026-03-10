@@ -300,6 +300,21 @@ def _build_analysis_blob(result: dict) -> dict:
     if cp and isinstance(cp, list):
         blob["corner_performances"] = cp
 
+    # Coaching V2 (evidence-based, confidence-gated)
+    cv2 = result.get("coaching_v2")
+    if cv2:
+        blob["coaching_v2"] = cv2.to_dict() if hasattr(cv2, "to_dict") else cv2
+
+    # Corner coaching V2 (per-section coaching from user-defined/autonomous corners)
+    ccv2 = result.get("corner_coaching_v2")
+    if ccv2 and isinstance(ccv2, list):
+        blob["corner_coaching_v2"] = ccv2
+
+    # Driving style
+    ds = result.get("driving_style")
+    if ds and isinstance(ds, dict):
+        blob["driving_style"] = ds
+
     # Lap validation analysis (invalid, incomplete, anomalous, deviation)
     # These are needed by insert_laps() and for the frontend to show status.
     for key in ("invalid_lap_analysis", "incomplete_lap_analysis",

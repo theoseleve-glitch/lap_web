@@ -990,6 +990,10 @@ def get_corners(session_id: str) -> tuple[dict, int]:
         }
         if _coaching_v2:
             resp["coaching_v2"] = _coaching_v2
+        # Include per-section v2 coaching from analysis_json
+        _ccv2 = _analysis.get("corner_coaching_v2") if _analysis else None
+        if _ccv2:
+            resp["corner_coaching_v2"] = _ccv2
         return api_response(resp)
 
     # -- 5. Fallback: no boundaries but coaching exists ------------------
@@ -1082,6 +1086,9 @@ def get_corners(session_id: str) -> tuple[dict, int]:
         }
         if _coaching_v2:
             resp["coaching_v2"] = _coaching_v2
+        _ccv2 = _analysis.get("corner_coaching_v2") if _analysis else None
+        if _ccv2:
+            resp["corner_coaching_v2"] = _ccv2
         return api_response(resp)
 
     # -- 6. No data at all -----------------------------------------------
@@ -4813,10 +4820,10 @@ def get_user_corners(session_id: str) -> tuple[dict, int]:
 @bp.route("/sessions/<session_id>/recoach", methods=["POST"])
 @_safe_api
 def recoach_session(session_id: str) -> tuple[dict, int]:
-    """Re-run coaching with current corner definitions.
+    """Re-run v2 coaching with current corner definitions.
 
-    Triggers the v2 coaching pipeline using either user-defined or
-    autonomous corners, whichever is current.
+    Loads the best lap GPS trace, runs the v2 corner coaching pipeline
+    (which checks user_corners table first), and persists results.
     """
     conn = get_db_connection()
 
@@ -4829,14 +4836,91 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
         return api_error(ErrorCode.NOT_FOUND,
                          "Session not found", status=404)
 
-    # For now, return acknowledgment. Full re-coaching requires
-    # the pipeline runner which is a heavy operation.
-    # In production this would trigger a Celery task.
+    # 1. Resolve best lap and load GPS trace
+    best_lap = _resolve_lap_number(conn, session_id)
+    if best_lap is None:
+        return api_error(ErrorCode.VALIDATION, "No laps for session", status=400)
+
+    trace = models.get_gps_trace(conn, session_id, best_lap)
+    if trace is None:
+        return api_error(ErrorCode.VALIDATION, "No GPS trace for best lap", status=400)
+
+    # 2. Reconstruct a best_lap DataFrame from stored trace data
+    import numpy as np
+    import pandas as pd
+
+    distances = trace.get("distances", [])
+    speeds = trace.get("speeds", [])
+    lats = trace.get("latitudes", [])
+    lons = trace.get("longitudes", [])
+
+    if not distances or not speeds:
+        return api_error(ErrorCode.VALIDATION, "Insufficient trace data", status=400)
+
+    best_lap_df = pd.DataFrame({
+        "Distance (m)": distances,
+        "Speed (m/s)": speeds,
+        "Latitude": lats,
+        "Longitude": lons,
+    })
+    if trace.get("accel_lat"):
+        best_lap_df["Lateral acceleration (G) *calc"] = trace["accel_lat"]
+    if trace.get("accel_long"):
+        best_lap_df["Longitudinal acceleration (G) *calc"] = trace["accel_long"]
+
+    # 3. Run v2 corner coaching pipeline stages
+    from pipeline.stages import s10b_corners
+
+    # Load existing corners as fallback for when decompose_track returns 0
+    fallback_corners = None
+    theo = models.get_theoretical_data(conn, session_id)
+    if theo and theo.get("corner_coaching"):
+        fallback_corners = theo["corner_coaching"]
+
+    v2_sections = s10b_corners.run_track_decomposition_v2(
+        best_lap_df, conn=conn, session_id=session_id,
+        fallback_corners=fallback_corners,
+    )
+    if not v2_sections:
+        return api_response({
+            "status": "completed",
+            "message": "No corner sections found (define corners or check data)",
+            "corner_coaching_v2": [],
+        })
+
+    v2_mrp = s10b_corners.run_mrp_detection_v2(v2_sections, best_lap_df)
+    avail_cols = set(best_lap_df.columns)
+    v2_handling = s10b_corners.run_handling_analysis_v2(
+        v2_sections, best_lap_df, available_columns=avail_cols,
+    )
+    v2_coaching = s10b_corners.run_coaching_v2(
+        v2_sections, v2_mrp, v2_handling, best_lap_df,
+        available_columns=avail_cols,
+    )
+
+    # 4. Persist to analysis_json
+    analysis = models.get_analysis_json(conn, session_id) or {}
+    analysis["track_sections_v2"] = v2_sections
+    if v2_mrp:
+        analysis["mrp_events_v2"] = v2_mrp
+    if v2_coaching:
+        analysis["corner_coaching_v2"] = v2_coaching
+    models.insert_analysis_json(conn, session_id, analysis)
+    conn.commit()
+
+    logger.info(
+        "Recoach session %s: %d sections, %d coached (%d user-defined)",
+        session_id, len(v2_sections),
+        len(v2_coaching) if v2_coaching else 0,
+        sum(1 for s in v2_sections if s.get("corner_type") == "user_defined"),
+    )
+
     return api_response({
-        "status": "accepted",
-        "message": "Re-coaching queued for session",
+        "status": "completed",
         "session_id": session_id,
-    }), 202
+        "sections_count": len(v2_sections),
+        "corner_coaching_v2": v2_coaching or [],
+    })
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

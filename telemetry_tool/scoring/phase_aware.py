@@ -39,6 +39,9 @@ def score_session_phase_aware(
     track_evolution: Optional[dict[str, Any]] = None,
     corner_performances: Optional[list[dict[str, Any]]] = None,
     weather_timeline: Optional[pd.DataFrame] = None,
+    driver_total_laps: int = 0,
+    corner_coaching: Optional[list[dict[str, Any]]] = None,
+    progressive_physics: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """
     Phase-aware wrapper around :func:`score_session`.
@@ -68,11 +71,13 @@ def score_session_phase_aware(
     # Detect wet conditions from context
 
     _is_wet = False
+    _track_state_str = "dry"
     if context is not None:
         _track_state = getattr(context, "baseline_track_state", None)
         if _track_state is not None:
             _state_val = _track_state.value if hasattr(_track_state, "value") else str(_track_state)
-            _is_wet = _state_val.lower() in ("wet", "full_wet", "damp", "drying", "greasy")
+            _track_state_str = _state_val.lower()
+            _is_wet = _track_state_str in ("wet", "full_wet", "damp", "drying", "greasy")
 
     # Check for track evolution to adjust consistency scoring
 
@@ -82,7 +87,12 @@ def score_session_phase_aware(
     )
 
     result = score_session(
-        metrics_dict, theoretical_metrics, session_type, is_wet=_is_wet,
+        metrics_dict, theoretical_metrics, session_type,
+        is_wet=_is_wet,
+        track_state=_track_state_str,
+        driver_total_laps=driver_total_laps,
+        corner_coaching=corner_coaching,
+        progressive_physics=progressive_physics,
     )
 
     # --- Detrended consistency for evolving conditions -- -
