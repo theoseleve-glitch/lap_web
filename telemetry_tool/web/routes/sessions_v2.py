@@ -416,14 +416,16 @@ def upload_session() -> tuple[Response, int]:
         if lap_range:
             session_meta["lap_range"] = list(lap_range)
 
-        joker_lap_raw = request.form.get("joker_lap")
-        if joker_lap_raw:
-            try:
-                jl = int(joker_lap_raw.strip())
-                if jl >= 1:
-                    session_meta["joker_lap_number"] = jl
-            except (ValueError, TypeError):
-                pass  # Ignore invalid joker_lap
+        if request.form.get("joker_enabled") == "1":
+            session_meta["joker_enabled"] = True
+            joker_lap_raw = request.form.get("joker_lap")
+            if joker_lap_raw:
+                try:
+                    jl = int(joker_lap_raw.strip())
+                    if jl >= 1:
+                        session_meta["joker_lap_number"] = jl
+                except (ValueError, TypeError):
+                    pass  # Ignore invalid joker_lap
 
         # ── 4b. Filter profile + vehicle overrides ──────────────
         filter_profile_name = request.form.get("filter_profile")

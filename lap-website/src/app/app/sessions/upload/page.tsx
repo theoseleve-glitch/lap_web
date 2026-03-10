@@ -96,6 +96,7 @@ function uploadSession(
     exclude_laps?: string;
     kart_id?: string;
     session_date?: string;
+    joker_enabled?: boolean;
     joker_lap?: string;
   },
   onProgress?: (pct: number) => void,
@@ -111,7 +112,10 @@ function uploadSession(
     if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
     if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
     if (metadata.session_date) formData.append('session_date', metadata.session_date);
-    if (metadata.joker_lap) formData.append('joker_lap', metadata.joker_lap);
+    if (metadata.joker_enabled) {
+      formData.append('joker_enabled', '1');
+      if (metadata.joker_lap) formData.append('joker_lap', metadata.joker_lap);
+    }
 
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${BACKEND_URL}/api/v1/sessions/upload`);
@@ -305,6 +309,7 @@ export default function UploadPage() {
         exclude_laps: excludeLaps.trim() || undefined,
         kart_id: kartId || undefined,
         session_date: sessionDate || undefined,
+        joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
       }, setUploadPct, controller.signal);
 
@@ -530,6 +535,7 @@ export default function UploadPage() {
         exclude_laps: excludeLaps.trim() || undefined,
         kart_id: kartId || undefined,
         session_date: sessionDate || undefined,
+        joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
       }, setUploadPct, controller.signal);
 

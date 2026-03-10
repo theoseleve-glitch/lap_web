@@ -604,12 +604,16 @@ def run_full_analysis(
         deviated_lap_set, dev_analysis = deviation_result
         summary["line_deviation_analysis"] = dev_analysis
 
-    # Step 08j — Joker lap detection
-    # If user explicitly specified a joker lap number, use it directly
-    # and skip auto-detection.
-    user_joker = session_meta.get("joker_lap_number")
+    # Step 08j — Joker lap detection (opt-in only)
+    # Only runs when the user enabled the joker checkbox at upload.
+    # If a specific lap number was provided, use it directly;
+    # otherwise auto-detect.
     joker_lap_set: set = set()
-    if user_joker is not None:
+    joker_enabled = session_meta.get("joker_enabled", False)
+    user_joker = session_meta.get("joker_lap_number")
+
+    if joker_enabled and user_joker is not None:
+        # User specified an exact joker lap — use it directly
         logger.info("Using user-specified joker lap: %s", user_joker)
         joker_lap_set = {user_joker}
         summary["joker_lap_number"] = user_joker
@@ -618,7 +622,8 @@ def run_full_analysis(
             "joker_laps": [user_joker],
         }
         _record("08j_joker_detection", summary["joker_detection_result"], None)
-    else:
+    elif joker_enabled:
+        # User enabled joker but didn't specify which lap — auto-detect
         joker_result, err = _safe_step(
             "08j_joker_detection", s09_physics.run_joker_detection,
             session_meta, track_id, lap_metrics, lap_times,
@@ -635,6 +640,9 @@ def run_full_analysis(
             if joker_lap_set:
                 summary["joker_lap_number"] = next(iter(joker_lap_set))
             invalid_lap_set |= invalid_additions
+    else:
+        # Joker not enabled — skip detection entirely
+        _record("08j_joker_detection", None, None)
 
     # Combine exclusion sets
     excluded_laps = (
