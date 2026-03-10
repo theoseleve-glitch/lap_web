@@ -108,14 +108,16 @@ def run_full_analysis(
     meta.setdefault("driver_total_laps", 0)
     try:
         from db.queries import SELECT_DRIVER_BY_NAME
-        from db.db_manager import get_db_connection as _get_exp_conn
+        from web.db import get_db_connection as _get_exp_conn
         _exp_conn = _get_exp_conn()
-        _drv_row = _exp_conn.execute(SELECT_DRIVER_BY_NAME, {"driver_name": meta["driver_name"]}).fetchone()
+        _drv_row = _exp_conn.execute(
+            SELECT_DRIVER_BY_NAME, {"driver_name": meta["driver_name"]}
+        ).fetchone()
         if _drv_row:
             _drv_id = _drv_row[0] if not isinstance(_drv_row, dict) else _drv_row.get("driver_id")
             _prof_row = _exp_conn.execute(
-                "SELECT total_laps FROM driver_profiles WHERE driver_id = ?",
-                (_drv_id,),
+                "SELECT total_laps FROM driver_profiles WHERE driver_id = :driver_id",
+                {"driver_id": _drv_id},
             ).fetchone()
             if _prof_row:
                 meta["driver_total_laps"] = int(
