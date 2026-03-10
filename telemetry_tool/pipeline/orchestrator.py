@@ -241,13 +241,14 @@ def run_full_analysis(
         return result
 
     _channel_discovery = None
-    raw_df: Optional[pd.DataFrame] = None
+    raw_df = None  # type: Optional[pd.DataFrame]
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 1: Ingest through Corner Detection (steps 01-07)
     # ══════════════════════════════════════════════════════════════
 
     if resume_from_step8:
+        raw_df = None  # not available when resuming
         if preloaded_resampled_laps is None:
             logger.error("resume_from_step8=True but no preloaded_resampled_laps")
             return summary
