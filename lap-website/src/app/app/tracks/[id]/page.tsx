@@ -130,6 +130,12 @@ export default function TrackDetailPage() {
               Delete
             </button>
             <Link
+              href={`/app/tracks/${id}/evolution`}
+              className="px-4 py-2 border border-acid-green/30 text-acid-green font-telemetry text-sm rounded hover:bg-acid-green/10 transition-colors"
+            >
+              Evolution
+            </Link>
+            <Link
               href="/app/tracks"
               className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
             >
@@ -145,7 +151,7 @@ export default function TrackDetailPage() {
           <p className="text-chalk font-body text-sm mb-3">
             Are you sure you want to delete <strong>{track.name}</strong>?
             {track.session_count > 0 && (
-              <span className="text-safety-red"> This track has {track.session_count} linked session(s) — you must unlink them first.</span>
+              <span className="text-safety-red"> This will permanently delete {track.session_count} session(s) and all associated data.</span>
             )}
           </p>
           {deleteMutation.error && (
