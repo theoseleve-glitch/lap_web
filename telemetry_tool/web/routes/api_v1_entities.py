@@ -340,16 +340,156 @@ def delete_track(track_id):
     ).fetchone()
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
-    count = conn.execute(
-        "SELECT COUNT(*) AS c FROM sessions WHERE track_id = ?", (track_id,)
-    ).fetchone()
-    if count and count["c"] > 0:
-        return api_error(
-            ErrorCode.CONFLICT,
-            f"Cannot delete track with {count['c']} linked session(s). Unlink sessions first.",
-            status=409,
-        )
-    conn.execute("DELETE FROM tracks WHERE track_id = ?", (track_id,))
+    from web.repos.track_repo import delete_track_cascade
+    counts = delete_track_cascade(conn, track_id)
+    conn.commit()
+    return api_response({"deleted": True, "sessions_removed": counts.get("sessions", 0)})
+
+
+@bp.route("/tracks/<track_id>/sessions", methods=["GET"])
+def list_track_sessions(track_id):
+    conn = _get_conn()
+    row = conn.execute("SELECT track_id FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    rows = conn.execute(
+        "SELECT s.session_id, s.session_date, s.best_lap_time_s, s.total_score, "
+        "s.n_laps, s.track_state, d.driver_name "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "WHERE s.track_id = ? AND s.deleted_at IS NULL "
+        "ORDER BY s.session_date DESC",
+        (track_id,),
+    ).fetchall()
+    return api_response([dict(r) for r in rows])
+
+
+@bp.route("/tracks/<track_id>/evolution", methods=["GET"])
+def track_evolution(track_id):
+    """Aggregate evolution data: lap trends, sector breakdown, corner metrics."""
+    conn = _get_conn()
+    row = conn.execute("SELECT track_id FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+
+    # Lap time trend: best lap per session, ordered by date
+    sessions = conn.execute(
+        "SELECT s.session_id, s.session_date, s.best_lap_time_s, s.total_score, "
+        "s.n_laps, s.track_state, d.driver_name "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "WHERE s.track_id = ? AND s.deleted_at IS NULL AND s.best_lap_time_s IS NOT NULL "
+        "ORDER BY s.session_date ASC",
+        (track_id,),
+    ).fetchall()
+    lap_trend = [dict(r) for r in sessions]
+
+    # Sector breakdown: best sector times per session
+    sector_data = []
+    for sess in lap_trend:
+        sid = sess["session_id"]
+        sectors = conn.execute(
+            "SELECT sector_index, MIN(sector_time_s) AS best_sector_time_s "
+            "FROM sector_times WHERE session_id = ? "
+            "GROUP BY sector_index ORDER BY sector_index",
+            (sid,),
+        ).fetchall()
+        if sectors:
+            sector_data.append({
+                "session_id": sid,
+                "session_date": sess["session_date"],
+                "sectors": [dict(s) for s in sectors],
+            })
+
+    # Corner metrics aggregated: avg time loss per corner across all sessions
+    corner_metrics = conn.execute(
+        "SELECT cm.corner_index, AVG(cm.time_loss_s) AS avg_time_loss_s, "
+        "AVG(cm.min_speed_mps) AS avg_min_speed_mps, COUNT(*) AS sample_count "
+        "FROM corner_metrics cm "
+        "JOIN sessions s ON cm.session_id = s.session_id "
+        "WHERE s.track_id = ? AND s.deleted_at IS NULL "
+        "GROUP BY cm.corner_index "
+        "ORDER BY AVG(cm.time_loss_s) DESC",
+        (track_id,),
+    ).fetchall()
+
+    return api_response({
+        "lap_trend": lap_trend,
+        "sector_breakdown": sector_data,
+        "corner_metrics": [dict(r) for r in corner_metrics],
+    })
+
+
+@bp.route("/tracks/<track_id>/sectors", methods=["GET"])
+def list_track_sectors(track_id):
+    conn = _get_conn()
+    from web.repos.track_repo import get_track_sectors
+    sectors = get_track_sectors(conn, track_id)
+    return api_response(sectors)
+
+
+@bp.route("/tracks/<track_id>/sectors", methods=["POST"])
+def add_track_sector(track_id):
+    conn = _get_conn()
+    row = conn.execute("SELECT track_id FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    body = request.get_json(silent=True) or {}
+    lat = body.get("lat") or body.get("latitude")
+    lon = body.get("lon") or body.get("longitude")
+    if lat is None or lon is None:
+        return api_error(ErrorCode.VALIDATION_ERROR, "lat and lon are required", status=400)
+    from web.repos.track_repo import upsert_track_sector
+    sector_id = upsert_track_sector(conn, track_id, float(lat), float(lon), body.get("distance_m"))
+    conn.commit()
+    return api_response({"sector_id": sector_id}, status=201)
+
+
+@bp.route("/tracks/<track_id>/sectors/<int:sector_id>", methods=["DELETE"])
+def remove_track_sector(track_id, sector_id):
+    conn = _get_conn()
+    from web.repos.track_repo import delete_track_sector
+    delete_track_sector(conn, track_id, sector_id)
+    conn.commit()
+    return api_response({"deleted": True})
+
+
+@bp.route("/tracks/<track_id>/records", methods=["GET"])
+def list_track_records(track_id):
+    conn = _get_conn()
+    from web.repos.track_repo import get_track_records
+    records = get_track_records(conn, track_id)
+    return api_response(records)
+
+
+@bp.route("/tracks/<track_id>/records", methods=["POST"])
+def add_track_record(track_id):
+    conn = _get_conn()
+    row = conn.execute("SELECT track_id FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    body = request.get_json(silent=True) or {}
+    record_time = body.get("record_time_s")
+    if record_time is None:
+        return api_error(ErrorCode.VALIDATION_ERROR, "record_time_s is required", status=400)
+    from web.repos.track_repo import upsert_track_record
+    upsert_track_record(
+        conn, track_id,
+        record_time_s=float(record_time),
+        record_holder=body.get("record_holder"),
+        record_date=body.get("record_date"),
+        vehicle_class=body.get("vehicle_class"),
+        source=body.get("source"),
+    )
+    conn.commit()
+    return api_response({"saved": True}, status=201)
+
+
+@bp.route("/tracks/<track_id>/records/<int:record_id>", methods=["DELETE"])
+def remove_track_record(track_id, record_id):
+    conn = _get_conn()
+    from web.repos.track_repo import delete_track_record
+    delete_track_record(conn, record_id)
     conn.commit()
     return api_response({"deleted": True})
 

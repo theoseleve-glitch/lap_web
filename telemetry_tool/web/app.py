@@ -292,7 +292,7 @@ def create_app(config: Config | None = None) -> Flask:
     _blueprint_imports = [
         ('.routes.health',             'bp', 'health_bp'),
         ('.routes.dashboard',          'bp', 'dashboard_bp'),
-        ('.routes.tracks',             'bp', 'tracks_bp'),
+        # Legacy tracks routes removed — replaced by api_v1_entities tracks endpoints
         ('.routes.weekends',           'bp', 'weekends_bp'),
         ('.routes.drivers',            'bp', 'drivers_bp'),
         ('.routes.leaderboard',        'bp', 'leaderboard_bp'),
