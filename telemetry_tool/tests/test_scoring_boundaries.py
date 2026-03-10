@@ -381,10 +381,17 @@ class TestScoreSessionStructure:
         assert result["session_type"] == "qualifying"
 
     def test_total_equals_sum_of_sub_scores(self):
-        """total_score must match the sum of final sub-scores (within rounding)."""
+        """total_score must be <= sum of sub-scores (DR multiplier + confidence may reduce total)."""
         result = score_session(_base_metrics(), _base_theoretical())
         sub_total = sum(s["score"] for s in result["sub_scores"].values())
-        # The total is clamped to [0, 100] and rounded; allow 0.01 tolerance.
-        assert abs(result["total_score"] - sub_total) < 0.02, (
+        # total_score has DR multiplier and data-confidence weighting applied
+        # on top of the sub-score sum, so it may be slightly lower.
+        # It should never exceed the sub-score sum.
+        assert result["total_score"] <= sub_total + 0.02, (
             f"total={result['total_score']}  sub_sum={sub_total}"
+        )
+        # DR floor is 0.92, confidence can reduce further, but the gap
+        # should be modest for default inputs (no driver laps, few session laps).
+        assert result["total_score"] >= sub_total * 0.90, (
+            f"total={result['total_score']} is too far below sub_sum={sub_total}"
         )

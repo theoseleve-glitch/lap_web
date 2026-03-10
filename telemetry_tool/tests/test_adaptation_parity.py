@@ -57,7 +57,9 @@ def test_adaptation_display_rounds_cleanly():
     raw = result["sub_scores"]["adaptation"]["score"]
     display = round(raw)
     assert isinstance(display, int)
-    assert display in range(0, 16)
+    # Practice suppresses robustness, redistributing its budget —
+    # adaptation max can grow beyond 15 (up to ~22).
+    assert display in range(0, 31)
 
 
 def test_adaptation_deterministic():
