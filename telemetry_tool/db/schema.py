@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 33
+SCHEMA_VERSION = 34
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -1023,5 +1023,27 @@ PHASE_20_TABLES: list[tuple[str, str]] = [
     ("retention_audit", _RETENTION_AUDIT_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 21 tables — Corner coaching v2 (user-defined corners)
+# ------------------------------------------------------------------
+
+_USER_CORNERS_TABLE = """
+CREATE TABLE IF NOT EXISTS user_corners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL REFERENCES sessions(session_id),
+    corner_index INTEGER NOT NULL,
+    lat_entry REAL, lon_entry REAL,
+    lat_apex REAL, lon_apex REAL,
+    lat_exit REAL, lon_exit REAL,
+    s_entry REAL, s_apex REAL, s_exit REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(session_id, corner_index)
+);
+"""
+
+PHASE_21_TABLES: list[tuple[str, str]] = [
+    ("user_corners", _USER_CORNERS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES

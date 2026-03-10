@@ -604,6 +604,31 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         (33, "Phase 33 schema — archived column on sessions"),
     )
 
+    # Phase 34 migration: corner coaching v2 columns + user_corners table.
+    _CORNER_V2_COLS = [
+        "corner_type TEXT",
+        "section_type TEXT",
+        "mrp_distance_m REAL",
+        "mrp_speed_mps REAL",
+        "mrp_yaw_rate REAL",
+        "geometric_apex_m REAL",
+        "exit_importance REAL",
+        "handling_events_json TEXT",
+        "is_user_defined INTEGER DEFAULT 0",
+    ]
+    for col in _CORNER_V2_COLS:
+        try:
+            cur.execute(f"ALTER TABLE corner_metrics ADD COLUMN {col};")
+            logger.debug("Added column corner_metrics.%s.", col.split()[0])
+        except sqlite3.OperationalError:
+            pass  # Column already exists.
+
+    cur.execute(
+        "INSERT OR IGNORE INTO schema_version (version, description) "
+        "VALUES (?, ?);",
+        (34, "Phase 34 schema — corner coaching v2 (corner_type, MRP, handling, user_corners)"),
+    )
+
     conn.commit()
 
     logger.info("Database schema at version %d.", SCHEMA_VERSION)
