@@ -15,7 +15,7 @@ def upgrade():
         CREATE TABLE driver_xp (
             id              SERIAL PRIMARY KEY,
             workspace_id    INTEGER NOT NULL REFERENCES workspaces(id),
-            driver_id       INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+            driver_id       INTEGER NOT NULL REFERENCES drivers(driver_id) ON DELETE CASCADE,
             total_xp        INTEGER NOT NULL DEFAULT 0,
             level           INTEGER NOT NULL DEFAULT 0,
             current_streak  INTEGER NOT NULL DEFAULT 0,
@@ -37,10 +37,10 @@ def upgrade():
         CREATE TABLE achievements (
             id              SERIAL PRIMARY KEY,
             workspace_id    INTEGER NOT NULL REFERENCES workspaces(id),
-            driver_id       INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+            driver_id       INTEGER NOT NULL REFERENCES drivers(driver_id) ON DELETE CASCADE,
             achievement_key VARCHAR(64) NOT NULL,
             unlocked_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            session_id      INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            session_id      TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
             UNIQUE (workspace_id, driver_id, achievement_key)
         );
     """)
@@ -58,11 +58,11 @@ def upgrade():
         CREATE TABLE drill_executions (
             id              SERIAL PRIMARY KEY,
             workspace_id    INTEGER NOT NULL REFERENCES workspaces(id),
-            driver_id       INTEGER NOT NULL REFERENCES drivers(id) ON DELETE CASCADE,
+            driver_id       INTEGER NOT NULL REFERENCES drivers(driver_id) ON DELETE CASCADE,
             plan_id         INTEGER NOT NULL REFERENCES development_plans(id) ON DELETE CASCADE,
             week_number     INTEGER NOT NULL,
             drill_index     INTEGER NOT NULL,
-            session_id      INTEGER REFERENCES sessions(id) ON DELETE SET NULL,
+            session_id      TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
             status          VARCHAR(16) NOT NULL DEFAULT 'attempted'
                             CHECK (status IN ('attempted', 'completed', 'skipped')),
             notes           TEXT,
