@@ -1160,6 +1160,26 @@ def session_delete_impact(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 9a2. POST /api/v1/sessions/<id>/restore — Restore soft-deleted
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/restore", methods=["POST"])
+@_safe_api
+def restore_session(session_id: str) -> tuple[dict, int]:
+    """Restore a soft-deleted session."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+    if not session.get("deleted_at"):
+        return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
+    models.restore_session(conn, session_id)
+    conn.commit()
+    return api_response({"restored": session_id})
+
+
+# ══════════════════════════════════════════════════════════════════
 # 9b. POST /api/v1/sessions/<id>/favorite — Toggle favorite
 # ══════════════════════════════════════════════════════════════════
 
@@ -1224,7 +1244,7 @@ def bulk_session_action() -> tuple[dict, int]:
             continue
 
         if action == "delete":
-            delete_entity_cascade(conn, "session", sid)
+            models.soft_delete_session(conn, sid)
             processed += 1
         elif action == "favorite":
             models.update_session_field(conn, sid, "is_favorite", 1)

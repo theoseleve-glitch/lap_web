@@ -121,7 +121,8 @@ def _safe_delete(conn: sqlite3.Connection, sql: str, params: dict) -> int:
     """Execute a DELETE/UPDATE and return rowcount, 0 on missing table."""
     try:
         cur = conn.execute(sql, params)
-        return cur.rowcount
+        rc = cur.rowcount
+        return rc if isinstance(rc, int) else 0
     except Exception as exc:
         # Table may not exist in all DB versions (SQLite vs PG, schema version)
         logger.debug("Skipping: %s — %s", sql[:80], exc)

@@ -70,15 +70,19 @@ def test_delete_kart_no_sessions(client):
     assert resp.status_code == 200
 
 
-def test_delete_kart_with_sessions_blocked(client, db):
-    """Karts linked to sessions cannot be deleted."""
+def test_delete_kart_with_sessions_unlinks(client, db):
+    """Karts linked to sessions are deleted; sessions get kart_id set to NULL."""
     db.execute(
         "INSERT INTO sessions (session_id, csv_filename, driver_id, session_date, kart_id) "
         "VALUES ('s1', 'test.csv', 1, '2026-01-01', 1)"
     )
     db.commit()
     resp = client.delete("/api/v1/karts/1")
-    assert resp.status_code == 409
+    assert resp.status_code == 200
+    # Session still exists but kart_id is unlinked
+    row = db.execute("SELECT kart_id FROM sessions WHERE session_id = 's1'").fetchone()
+    assert row is not None
+    assert row["kart_id"] is None
 
 
 def test_delete_kart_not_found(client):
