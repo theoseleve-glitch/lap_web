@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import logging
 
-from flask import Blueprint, request
+from flask import Blueprint, g, request
 
 import web.models as models
 from db import queries as Q
 from web.api_utils import ErrorCode, api_error, api_response
+from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 
 logger = logging.getLogger(__name__)
 
@@ -212,13 +213,27 @@ def patch_driver_profile(driver_id):
 
 @bp.route("/drivers/<int:driver_id>", methods=["DELETE"])
 def delete_driver(driver_id):
+    logger.info("DELETE /drivers/%s — entering handler", driver_id)
     conn = _get_conn()
     if not _verify_driver(conn, driver_id):
         return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
-    from web.repos.driver_repo import delete_driver_cascade
-    delete_driver_cascade(conn, driver_id)
-    conn.commit()
-    return api_response({"deleted": True})
+    try:
+        result = delete_entity_cascade(conn, "driver", driver_id)
+        conn.commit()
+        logger.info("DELETE /drivers/%s — success, impact=%s", driver_id, result["impact"])
+    except Exception as exc:
+        logger.exception("DELETE /drivers/%s — cascade failed: %s", driver_id, exc)
+        return api_error(ErrorCode.INTERNAL, "Delete failed", status=500)
+    return api_response(result)
+
+
+@bp.route("/drivers/<int:driver_id>/delete-impact", methods=["GET"])
+def driver_delete_impact(driver_id):
+    conn = _get_conn()
+    if not _verify_driver(conn, driver_id):
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    result = get_delete_impact(conn, "driver", driver_id)
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -337,15 +352,22 @@ def _map_kart(row):
 @bp.route("/tracks/<track_id>", methods=["DELETE"])
 def delete_track(track_id):
     conn = _get_conn()
-    row = conn.execute(
-        "SELECT * FROM tracks WHERE track_id = ?", (track_id,)
-    ).fetchone()
+    row = conn.execute("SELECT * FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
-    from web.repos.track_repo import delete_track_cascade
-    counts = delete_track_cascade(conn, track_id)
+    result = delete_entity_cascade(conn, "track", track_id)
     conn.commit()
-    return api_response({"deleted": True, "sessions_removed": counts.get("sessions", 0)})
+    return api_response(result)
+
+
+@bp.route("/tracks/<track_id>/delete-impact", methods=["GET"])
+def track_delete_impact(track_id):
+    conn = _get_conn()
+    row = conn.execute("SELECT track_id FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
+    result = get_delete_impact(conn, "track", track_id)
+    return api_response(result)
 
 
 @bp.route("/tracks/<track_id>/sessions", methods=["GET"])
@@ -573,18 +595,19 @@ def delete_kart(kart_id):
     kart = models.get_kart_by_id(conn, kart_id)
     if not kart:
         return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
-    count = conn.execute(
-        "SELECT COUNT(*) AS c FROM sessions WHERE kart_id = ?", (kart_id,)
-    ).fetchone()
-    if count and count["c"] > 0:
-        return api_error(
-            ErrorCode.CONFLICT,
-            f"Cannot delete kart with {count['c']} linked session(s). Unlink sessions first.",
-            status=409,
-        )
-    conn.execute("DELETE FROM karts WHERE kart_id = ?", (kart_id,))
+    result = delete_entity_cascade(conn, "kart", kart_id)
     conn.commit()
-    return api_response({"deleted": True})
+    return api_response(result)
+
+
+@bp.route("/karts/<int:kart_id>/delete-impact", methods=["GET"])
+def kart_delete_impact(kart_id):
+    conn = _get_conn()
+    kart = models.get_kart_by_id(conn, kart_id)
+    if not kart:
+        return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
+    result = get_delete_impact(conn, "kart", kart_id)
+    return api_response(result)
 
 
 @bp.route("/predefined-karts", methods=["GET"])
@@ -684,10 +707,19 @@ def delete_weekend(weekend_id):
     existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
     if not existing:
         return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
-    conn.execute(Q.DELETE_ALL_WEEKEND_SESSIONS, {"weekend_id": weekend_id})
-    conn.execute(Q.DELETE_WEEKEND, {"weekend_id": weekend_id})
+    result = delete_entity_cascade(conn, "weekend", weekend_id)
     conn.commit()
-    return api_response({"deleted": True})
+    return api_response(result)
+
+
+@bp.route("/weekends/<int:weekend_id>/delete-impact", methods=["GET"])
+def weekend_delete_impact(weekend_id):
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    result = get_delete_impact(conn, "weekend", weekend_id)
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -813,6 +845,105 @@ def delete_dev_plan(plan_id):
     row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
-    conn.execute(Q.DELETE_DEVELOPMENT_PLAN, {"id": plan_id})
+    result = delete_entity_cascade(conn, "dev_plan", plan_id)
     conn.commit()
-    return api_response({"deleted": True})
+    return api_response(result)
+
+
+@bp.route("/dev-plans/<int:plan_id>/delete-impact", methods=["GET"])
+def dev_plan_delete_impact(plan_id):
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    result = get_delete_impact(conn, "dev_plan", plan_id)
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# Gamification
+# ══════════════════════════════════════════════════════════════════
+
+def _workspace_id() -> int:
+    return getattr(g, "workspace_id", 1)
+
+
+@bp.route("/drivers/<int:driver_id>/progress", methods=["GET"])
+def get_driver_progress_api(driver_id):
+    """Full driver progress: XP, level, streak, achievements."""
+    conn = _get_conn()
+    row = _verify_driver(conn, driver_id)
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    try:
+        from gamification.xp import get_driver_progress as _get_progress
+        from gamification.achievements import get_achievement_status
+        wid = _workspace_id()
+        progress = _get_progress(conn, driver_id, wid)
+        progress["achievements"] = get_achievement_status(conn, driver_id, wid)
+        return api_response(progress)
+    except Exception:
+        logger.warning("Gamification progress failed for driver %s", driver_id, exc_info=True)
+        return api_response({"total_xp": 0, "level": 0, "achievements": []})
+
+
+@bp.route("/drivers/<int:driver_id>/achievements", methods=["GET"])
+def get_driver_achievements(driver_id):
+    """All 15 achievements with locked/unlocked state."""
+    conn = _get_conn()
+    row = _verify_driver(conn, driver_id)
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    try:
+        from gamification.achievements import get_achievement_status
+        return api_response(get_achievement_status(conn, driver_id, _workspace_id()))
+    except Exception:
+        logger.warning("Achievements failed for driver %s", driver_id, exc_info=True)
+        return api_response([])
+
+
+@bp.route("/dev-plans/<int:plan_id>/drills/<int:week>/<int:drill_idx>/execute", methods=["POST"])
+def execute_drill(plan_id, week, drill_idx):
+    """Log a drill execution, optionally linking to a session. Awards XP on 'completed'."""
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    body = request.get_json(silent=True) or {}
+    session_id = body.get("session_id")
+    status = body.get("status", "attempted")
+    if status not in ("attempted", "completed", "skipped"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "status must be attempted, completed, or skipped", status=400)
+    notes = body.get("notes")
+    driver_id = dict(row)["driver_id"]
+    wid = _workspace_id()
+    try:
+        from gamification.queries import insert_drill_execution
+        exec_id = insert_drill_execution(
+            conn, wid, driver_id, plan_id, week, drill_idx,
+            session_id, status, notes,
+        )
+        xp_result = None
+        if status == "completed":
+            from gamification.xp import award_drill_xp
+            xp_result = award_drill_xp(conn, driver_id, wid, plan_id)
+        conn.commit()
+        return api_response({"execution_id": exec_id, "status": status, "xp_result": xp_result}, status=201)
+    except Exception:
+        logger.warning("Drill execution failed for plan %s", plan_id, exc_info=True)
+        return api_error(ErrorCode.SERVER_ERROR, "Failed to log drill execution", status=500)
+
+
+@bp.route("/dev-plans/<int:plan_id>/executions", methods=["GET"])
+def list_drill_executions(plan_id):
+    """All drill executions for a plan with session details."""
+    conn = _get_conn()
+    row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
+    if not row:
+        return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
+    try:
+        from gamification.queries import get_plan_executions
+        return api_response(get_plan_executions(conn, plan_id, _workspace_id()))
+    except Exception:
+        logger.warning("Drill executions fetch failed for plan %s", plan_id, exc_info=True)
+        return api_response([])
