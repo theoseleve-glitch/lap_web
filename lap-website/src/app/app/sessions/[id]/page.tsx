@@ -339,7 +339,7 @@ export default function SessionDetailPage() {
       setShowLevelUp(true);
     }
     if (gam.new_achievements.length > 0) {
-      setToastAchievement(gam.new_achievements[0]);
+      setToastAchievement(gam.new_achievements[0] ?? null);
     }
   }, [scores, gamShown]);
 
