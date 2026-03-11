@@ -32,8 +32,17 @@ export interface TrackLayout {
 
 interface CornerPickerProps {
   trackLayout: TrackLayout;
-  onSubmit: (selectedIds: number[]) => void;
-  isSubmitting: boolean;
+  /** Submit button mode — for upload flow */
+  onSubmit?: (selectedIds: number[]) => void;
+  isSubmitting?: boolean;
+  /** Controlled mode — for CornersTab inline selection */
+  controlled?: boolean;
+  selected?: Set<number>;
+  onToggle?: (id: number) => void;
+  onSelectAll?: () => void;
+  onClearAll?: () => void;
+  /** Canvas height (default 400px) */
+  height?: string;
 }
 
 /* ── Colors ──────────────────────────────────────────── */
@@ -393,25 +402,51 @@ function enrichCorners(corners: Corner[], layout: TrackLayout): Corner[] {
 
 /* ── Component ──────────────────────────────────────── */
 
-export function CornerPicker({ trackLayout, onSubmit, isSubmitting }: CornerPickerProps) {
+export function CornerPicker({
+  trackLayout,
+  onSubmit,
+  isSubmitting = false,
+  controlled = false,
+  selected: externalSelected,
+  onToggle: externalToggle,
+  onSelectAll: externalSelectAll,
+  onClearAll: externalClearAll,
+  height = '400px',
+}: CornerPickerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const projRef = useRef<Projection | null>(null);
 
   const rawCorners = trackLayout?.corners ?? [];
   const corners = enrichCorners(rawCorners, trackLayout);
   const allIds = corners.map((c) => c.corner_id);
-  const [selected, setSelected] = useState<Set<number>>(() => new Set(allIds));
+
+  // Internal state (used when not controlled)
+  const [internalSelected, setInternalSelected] = useState<Set<number>>(() => new Set(allIds));
+
+  // Resolve controlled vs internal
+  const selected = controlled && externalSelected ? externalSelected : internalSelected;
 
   const toggle = useCallback((id: number) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
+    if (controlled && externalToggle) {
+      externalToggle(id);
+    } else {
+      setInternalSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+    }
+  }, [controlled, externalToggle]);
 
-  const selectAll = useCallback(() => setSelected(new Set(allIds)), [allIds]);
-  const clearAll = useCallback(() => setSelected(new Set()), []);
+  const selectAll = useCallback(() => {
+    if (controlled && externalSelectAll) externalSelectAll();
+    else setInternalSelected(new Set(allIds));
+  }, [controlled, externalSelectAll, allIds]);
+
+  const clearAll = useCallback(() => {
+    if (controlled && externalClearAll) externalClearAll();
+    else setInternalSelected(new Set());
+  }, [controlled, externalClearAll]);
 
   // Draw
   useEffect(() => {
@@ -461,7 +496,7 @@ export function CornerPicker({ trackLayout, onSubmit, isSubmitting }: CornerPick
       <canvas
         ref={canvasRef}
         className="w-full cursor-pointer"
-        style={{ display: 'block', height: '400px' }}
+        style={{ display: 'block', height }}
         onClick={handleClick}
         role="img"
         aria-label="Track map for corner selection"
@@ -526,17 +561,19 @@ export function CornerPicker({ trackLayout, onSubmit, isSubmitting }: CornerPick
           })}
         </div>
 
-        {/* Submit */}
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={isSubmitting || selectedCount === 0}
-          className="w-full px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
-            hover:bg-gold/90 transition-colors
-            disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold"
-        >
-          {isSubmitting ? 'Resuming Analysis...' : `Continue Analysis (${selectedCount} corners)`}
-        </button>
+        {/* Submit — only shown in non-controlled (upload) mode */}
+        {!controlled && onSubmit && (
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || selectedCount === 0}
+            className="w-full px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+              hover:bg-gold/90 transition-colors
+              disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold"
+          >
+            {isSubmitting ? 'Resuming Analysis...' : `Continue Analysis (${selectedCount} corners)`}
+          </button>
+        )}
       </div>
     </div>
   );
