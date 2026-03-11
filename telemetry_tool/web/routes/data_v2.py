@@ -44,7 +44,8 @@ from web import models
 from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
-from web.repos.session_repo import soft_delete_session, restore_session
+from web.repos.session_repo import soft_delete_session
+from web.repos.session_repo import restore_session as _repo_restore_session
 
 logger = logging.getLogger(__name__)
 
@@ -517,7 +518,7 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
         try:
             import numpy as np
 
-            all_laps = models.get_laps(conn, session_id)
+            all_laps = models.get_laps_for_session(conn, session_id)
             primary_dists = trace.get("distances", [])
             if all_laps and primary_dists:
                 speed_arrays = []
@@ -1213,7 +1214,7 @@ def restore_session(session_id: str) -> tuple[dict, int]:
     if not session.get("deleted_at"):
         return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
 
-    restore_session(conn, session_id)
+    _repo_restore_session(conn, session_id)
     audit_log(conn, "session.restore", {"session_id": session_id})
     conn.commit()
 
@@ -1869,7 +1870,7 @@ def export_session_telemetry(session_id: str) -> tuple:
     lap_filter = request.args.get("lap")
 
     # Get GPS trace data (has distance, lat, lon, speed)
-    laps = models.get_laps(conn, session_id)
+    laps = models.get_laps_for_session(conn, session_id)
     if not laps:
         return api_error(ErrorCode.NOT_FOUND, "No lap data available", status=404)
 
@@ -2299,20 +2300,12 @@ def _closest_index(distances: list[float], target: float) -> int:
     return lo
 
 
-@bp.route("/sessions/<session_id>/corner-positions", methods=["GET"])
-@_safe_api
-def get_corner_positions(session_id: str) -> tuple[dict, int]:
-    """Return corner GPS positions with brake point data."""
-    conn = get_db_connection()
-    session = models.get_session_by_id(conn, session_id)
-    if session is None:
-        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
-
-    # Build corners from theoretical data
+def _build_corner_positions(conn: Any, session_id: str) -> list[dict]:
+    """Build corner GPS positions with brake point data (shared helper)."""
     theo = models.get_theoretical_data(conn, session_id)
-    corners = []
+    corners: list[dict] = []
     if theo and theo.get("corner_coaching"):
-        seen = set()
+        seen: set = set()
         for cc in theo["corner_coaching"]:
             cid = cc.get("corner_id") or cc.get("corner_index")
             if cid is not None and cid not in seen:
@@ -2330,7 +2323,6 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
                 })
 
     if not corners:
-        # Fall back to corner_metrics summary (unique corner_ids)
         summary = models.get_corner_metrics_summary(conn, session_id)
         for row in summary:
             corners.append({
@@ -2342,8 +2334,7 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
             })
 
     if not corners:
-        return api_error(ErrorCode.NOT_FOUND,
-                         "No corner position data for this session", status=404)
+        return []
 
     # Enrich with GPS coordinates from best lap trace
     best_lap = _resolve_lap_number(conn, session_id)
@@ -2368,6 +2359,24 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
     for corner in corners:
         if corner.get("brake_point_m") is None:
             corner["brake_point_m"] = bp_map.get(corner["corner_id"])
+
+    return corners
+
+
+@bp.route("/sessions/<session_id>/corner-positions", methods=["GET"])
+@_safe_api
+def get_corner_positions(session_id: str) -> tuple[dict, int]:
+    """Return corner GPS positions with brake point data."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    corners = _build_corner_positions(conn, session_id)
+
+    if not corners:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No corner position data for this session", status=404)
 
     return api_response({"corners": corners})
 
@@ -3375,7 +3384,7 @@ def get_corner_replay_data(session_id: str) -> tuple[dict, int]:
     # Corner positions
     corner_positions = []
     try:
-        cp_data = models.get_corner_positions(conn, session_id)
+        cp_data = _build_corner_positions(conn, session_id)
         if cp_data:
             corner_positions = cp_data
     except Exception:
@@ -4589,14 +4598,14 @@ def get_coaching(session_id: str) -> tuple[dict, int]:
     corner_list = theo.get("corner_coaching", []) if theo else []
 
     # Scores
-    score_rows = models.get_scores(conn, session_id)
+    score_rows = models.get_score_details(conn, session_id)
     scores: dict = {}
     if score_rows:
         row = score_rows[0] if isinstance(score_rows, list) else score_rows
         scores = dict(row) if not isinstance(row, dict) else row
 
     # Lap metrics
-    laps = models.get_laps(conn, session_id)
+    laps = models.get_laps_for_session(conn, session_id)
     lap_metrics = [dict(lap) if not isinstance(lap, dict) else lap for lap in (laps or [])]
 
     # Driving style
@@ -4703,7 +4712,7 @@ def predict_lap_time_endpoint(session_id: str) -> tuple[dict, int]:
         ))
 
     # Get completed laps for partial-session prediction
-    laps = models.get_laps(conn, session_id)
+    laps = models.get_laps_for_session(conn, session_id)
     completed_times = []
     if laps:
         for lap in laps:

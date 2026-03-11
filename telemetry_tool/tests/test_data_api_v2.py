@@ -703,7 +703,8 @@ class TestDeleteSession:
         """DELETE removes session and returns 200."""
         mock_conn = MagicMock()
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
-             patch("web.routes.data_v2.models") as mock_models:
+             patch("web.routes.data_v2.models") as mock_models, \
+             patch("web.routes.data_v2.soft_delete_session") as mock_soft_del:
             mock_db.return_value = mock_conn
             mock_models.get_session_by_id.return_value = _sample_session()
 
@@ -713,8 +714,7 @@ class TestDeleteSession:
         body = resp.get_json()
         assert body["ok"] is True
         assert body["data"]["deleted"] == "s1"
-        # Should have called execute for DELETE statements and commit
-        assert mock_conn.execute.called
+        mock_soft_del.assert_called_once_with(mock_conn, "s1")
         mock_conn.commit.assert_called_once()
 
     def test_delete_session_not_found(self, client):
