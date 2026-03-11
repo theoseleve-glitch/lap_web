@@ -1097,6 +1097,64 @@ def run_full_analysis(
         plan_dict = plan_result.to_dict() if hasattr(plan_result, "to_dict") else plan_result
         summary["practice_plan"] = plan_dict
 
+    # ── Step 13h: Gamification — XP, streaks, achievements ─────
+    if os.environ.get("GAMIFICATION", "1") != "0":
+        try:
+            from gamification.xp import award_session_xp
+            from gamification.streaks import update_streak
+            from gamification.achievements import check_achievements
+            from gamification.queries import count_driver_sessions, get_driver_best_lap
+            from scoring import evaluate_badges as _eval_badges
+
+            _gam_wid = getattr(g, "workspace_id", 1) if "g" in dir() else 1
+            _gam_driver = context.get("driver_id") if context else None
+            _gam_sid = context.get("session_id") if context else None
+            _gam_date = meta.get("date", "")
+
+            if _gam_driver and conn:
+                _gam_badges = []
+                if score_result:
+                    try:
+                        _gam_badges = _eval_badges(score_result)
+                    except Exception:
+                        pass
+
+                _prev_best = get_driver_best_lap(conn, _gam_driver, _gam_wid)
+                _cur_best = summary.get("best_lap_time_s")
+
+                xp_result = award_session_xp(
+                    conn, _gam_driver, _gam_wid, _gam_sid,
+                    badges=_gam_badges,
+                    previous_best_lap=_prev_best,
+                    current_best_lap=_cur_best,
+                )
+                streak_result = update_streak(conn, _gam_driver, _gam_wid, _gam_date)
+                _gam_count = count_driver_sessions(conn, _gam_driver, _gam_wid)
+
+                new_achievements = check_achievements(
+                    conn, _gam_driver, _gam_wid, _gam_sid,
+                    context={
+                        "session_count": _gam_count,
+                        "badges": _gam_badges,
+                        "streak": streak_result["current_streak"],
+                        "is_personal_best": xp_result["xp_breakdown"].get("personal_best", 0) > 0,
+                    },
+                )
+
+                summary["gamification"] = {
+                    "xp_gained": xp_result["xp_gained"],
+                    "new_level": xp_result["new_level"] if xp_result["leveled_up"] else None,
+                    "new_achievements": [a["key"] for a in new_achievements],
+                    "streak": streak_result["current_streak"],
+                }
+                logger.info(
+                    "Gamification: driver=%s xp=+%d level=%d streak=%d achievements=%d",
+                    _gam_driver, xp_result["xp_gained"], xp_result["new_level"],
+                    streak_result["current_streak"], len(new_achievements),
+                )
+        except Exception:
+            logger.warning("Gamification stage failed (non-fatal)", exc_info=True)
+
     # HTML + PDF reports
     html_path: Optional[Path] = None
     pdf_path: Optional[Path] = None
