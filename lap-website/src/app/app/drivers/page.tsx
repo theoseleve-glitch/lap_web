@@ -49,7 +49,7 @@ export default function DriversPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (driverId: number) => api.delete(`/drivers/${driverId}`),
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
       setConfirmDelete(null);
     },

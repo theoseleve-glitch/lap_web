@@ -21,6 +21,7 @@ from web.repos.session_repo import (  # noqa: F401
     update_session_field,
     count_sessions,
     get_dashboard_stats,
+    soft_delete_session,
 )
 
 # ── lap ──────────────────────────────────────────────────────────
