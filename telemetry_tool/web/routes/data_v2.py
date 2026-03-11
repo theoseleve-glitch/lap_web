@@ -44,8 +44,7 @@ from web import models
 from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
-from web.repos.session_repo import soft_delete_session
-from web.repos.session_repo import restore_session as _repo_restore_session
+from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 
 logger = logging.getLogger(__name__)
 
@@ -114,32 +113,6 @@ def _get_lap_param(conn: Any, session_id: str) -> int | None:
         except (ValueError, TypeError):
             return None
     return _resolve_lap_number(conn, session_id)
-
-
-# ── Tables to clean on session delete ─────────────────────────────
-
-_DELETE_RELATED_TABLES = [
-    "gps_traces",
-    "laps",
-    "score_details",
-    "condition_phases",
-    "theoretical_data",
-    "reference_lines",
-    "session_sectors",
-    "session_tags",
-    "corner_metrics",
-    "session_weather",
-    "data_health",
-    "driver_progression",
-    "driving_style_features",
-    "condition_markers",
-    "vehicle_setups",
-    "what_if_scenarios",
-    "session_annotations",
-    "stint_analysis",
-]
-
-_ALLOWED_DELETE_TABLES = frozenset(_DELETE_RELATED_TABLES)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -783,6 +756,10 @@ def get_scores(session_id: str) -> tuple[dict, int]:
             scores["optimal_v2_available"] = (
                 analysis.get("optimal_v2") is not None
             )
+            # Gamification data (XP gained, achievements, streak) from pipeline
+            gam = analysis.get("gamification")
+            if gam:
+                scores["gamification"] = gam
         else:
             scores["grip_map_available"] = False
             scores["friction_envelope_available"] = False
@@ -1143,12 +1120,10 @@ def get_corners_per_lap(session_id: str) -> tuple[dict, int]:
 @bp.route("/sessions/<session_id>", methods=["DELETE"])
 @_safe_api
 def delete_session(session_id: str) -> tuple[dict, int]:
-    """Soft-delete a session (recoverable for 30 days).
+    """Hard-delete a session and all related data.
 
     Requires at least 'member' role in the workspace (viewers cannot delete).
-    Pass ``?permanent=true`` to hard-delete immediately (admin only).
     """
-    # RBAC: viewers should not be able to delete sessions.
     workspace_role = getattr(g, "workspace_role", None)
     if workspace_role == "viewer":
         return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions to delete sessions", status=403)
@@ -1158,33 +1133,8 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    permanent = request.args.get("permanent", "").lower() in ("true", "1")
-
-    if permanent:
-        # Only admins/owners can permanently delete
-        if workspace_role not in ("admin", "owner", None):
-            return api_error(ErrorCode.FORBIDDEN, "Only admins can permanently delete", status=403)
-
-        for table in _DELETE_RELATED_TABLES:
-            assert table in _ALLOWED_DELETE_TABLES, f"Unexpected table: {table}"
-            try:
-                conn.execute(
-                    f"DELETE FROM {table} WHERE session_id = :session_id",
-                    {"session_id": session_id},
-                )
-            except Exception as exc:
-                logger.debug("Skipping delete from %s: %s", table, exc)
-
-        conn.execute(
-            "DELETE FROM sessions WHERE session_id = :session_id",
-            {"session_id": session_id},
-        )
-        audit_log(conn, "session.hard_delete", {"session_id": session_id})
-    else:
-        # Soft delete — mark deleted_at, data preserved
-        soft_delete_session(conn, session_id)
-        audit_log(conn, "session.soft_delete", {"session_id": session_id})
-
+    result = delete_entity_cascade(conn, "session", session_id)
+    audit_log(conn, "session.delete", {"session_id": session_id, "impact": result["impact"]})
     conn.commit()
 
     try:
@@ -1193,33 +1143,20 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     except Exception:
         logger.warning("Rollup refresh failed after delete", exc_info=True)
 
-    mode = "permanently deleted" if permanent else "soft-deleted"
-    logger.info("%s session %s", mode.capitalize(), session_id)
-    return api_response({"deleted": session_id, "permanent": permanent})
+    logger.info("Deleted session %s, impact=%s", session_id, result["impact"])
+    return api_response(result)
 
 
-@bp.route("/sessions/<session_id>/restore", methods=["POST"])
+@bp.route("/sessions/<session_id>/delete-impact", methods=["GET"])
 @_safe_api
-def restore_session(session_id: str) -> tuple[dict, int]:
-    """Restore a soft-deleted session."""
-    workspace_role = getattr(g, "workspace_role", None)
-    if workspace_role == "viewer":
-        return api_error(ErrorCode.FORBIDDEN, "Insufficient permissions", status=403)
-
+def session_delete_impact(session_id: str) -> tuple[dict, int]:
+    """Preview cascade impact of deleting a session."""
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
-
-    if not session.get("deleted_at"):
-        return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
-
-    _repo_restore_session(conn, session_id)
-    audit_log(conn, "session.restore", {"session_id": session_id})
-    conn.commit()
-
-    logger.info("Restored session %s", session_id)
-    return api_response({"restored": session_id})
+    result = get_delete_impact(conn, "session", session_id)
+    return api_response(result)
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -1256,7 +1193,7 @@ def bulk_session_action() -> tuple[dict, int]:
     Body::
 
         {
-            "action": "delete" | "restore" | "favorite" | "unfavorite",
+            "action": "delete" | "favorite" | "unfavorite",
             "session_ids": ["id1", "id2", ...]
         }
 
@@ -1271,7 +1208,7 @@ def bulk_session_action() -> tuple[dict, int]:
     action = body.get("action")
     session_ids = body.get("session_ids", [])
 
-    if action not in ("delete", "restore", "favorite", "unfavorite"):
+    if action not in ("delete", "favorite", "unfavorite"):
         return api_error(ErrorCode.VALIDATION_ERROR, "Invalid action", status=422)
     if not session_ids or not isinstance(session_ids, list):
         return api_error(ErrorCode.VALIDATION_ERROR, "session_ids must be a non-empty list", status=422)
@@ -1287,11 +1224,8 @@ def bulk_session_action() -> tuple[dict, int]:
             continue
 
         if action == "delete":
-            if soft_delete_session(conn, sid):
-                processed += 1
-        elif action == "restore":
-            if restore_session(conn, sid):
-                processed += 1
+            delete_entity_cascade(conn, "session", sid)
+            processed += 1
         elif action == "favorite":
             models.update_session_field(conn, sid, "is_favorite", 1)
             processed += 1
