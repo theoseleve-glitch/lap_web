@@ -152,6 +152,13 @@ export default function RaceDetailPage() {
       qc.invalidateQueries({ queryKey: ['race-strategy'] });
       router.push('/app/race-strategy');
     },
+    onError: (err) => {
+      // 404 means already deleted — navigate away as if success
+      if (err instanceof Error && 'status' in err && (err as any).status === 404) {
+        qc.invalidateQueries({ queryKey: ['race-strategy'] });
+        router.push('/app/race-strategy');
+      }
+    },
   });
 
   /* ── loading / error ────────────────────────────────────────────── */

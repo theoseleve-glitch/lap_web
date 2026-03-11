@@ -95,7 +95,11 @@ export default function RaceStrategyListPage() {
       return { prev };
     },
     onError: (_err, _raceId, context) => {
-      // Rollback to the previous data
+      // 404 means the race is already gone — treat as success, don't rollback
+      if (_err instanceof Error && 'status' in _err && (_err as any).status === 404) {
+        return;
+      }
+      // Rollback to the previous data for real errors
       if (context?.prev) {
         queryClient.setQueryData(['race-strategy'], context.prev);
       }
