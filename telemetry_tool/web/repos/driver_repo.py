@@ -233,23 +233,29 @@ def delete_driver_cascade(conn: sqlite3.Connection, driver_id: int) -> dict:
         "what_if_scenarios", "condition_markers", "weekend_sessions",
     ]
     for table in session_tables:
-        c = conn.execute(
-            f"DELETE FROM {table} WHERE session_id IN "
-            f"(SELECT session_id FROM sessions WHERE driver_id = ?)",
-            (driver_id,),
-        )
-        counts[table] = c.rowcount
+        try:
+            c = conn.execute(
+                f"DELETE FROM {table} WHERE session_id IN "
+                f"(SELECT session_id FROM sessions WHERE driver_id = ?)",
+                (driver_id,),
+            )
+            counts[table] = c.rowcount
+        except Exception:
+            counts[table] = 0
 
     # Sessions themselves.
     c = conn.execute("DELETE FROM sessions WHERE driver_id = ?", (driver_id,))
     counts["sessions"] = c.rowcount
 
-    # Driver-level tables.
+    # Driver-level tables (some may not exist in all DB versions).
     for table in ["driver_badges", "driver_stats_rollup", "export_jobs",
                    "driving_style_features", "driver_progression",
                    "driver_profiles", "development_plans"]:
-        c = conn.execute(f"DELETE FROM {table} WHERE driver_id = ?", (driver_id,))
-        counts[table] = c.rowcount
+        try:
+            c = conn.execute(f"DELETE FROM {table} WHERE driver_id = ?", (driver_id,))
+            counts[table] = c.rowcount
+        except Exception:
+            counts[table] = 0
 
     # The driver itself.
     conn.execute("DELETE FROM drivers WHERE driver_id = ?", (driver_id,))
