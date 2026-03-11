@@ -4589,8 +4589,12 @@ def get_coaching(session_id: str) -> tuple[dict, int]:
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
 
-    # Gather all available coaching inputs
+    # Check for pre-computed V3 coaching first
     _analysis = models.get_analysis_json(conn, session_id)
+    if _analysis and "coaching_v3" in _analysis:
+        return api_response(_analysis["coaching_v3"])
+
+    # Gather all available coaching inputs
     coaching_v2 = _analysis.get("coaching_v2") if _analysis else None
 
     # Corner data

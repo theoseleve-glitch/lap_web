@@ -1097,6 +1097,56 @@ def run_full_analysis(
         plan_dict = plan_result.to_dict() if hasattr(plan_result, "to_dict") else plan_result
         summary["practice_plan"] = plan_dict
 
+    # ── Coaching V3 (feature-flagged, default ON) ──
+    if os.environ.get("COACHING_V3", "1") != "0":
+        from pipeline.stages import s13_coaching_v3
+
+        _analyzer_bundle, err = _safe_step(
+            "13e_analyzers", s13_coaching_v3.run_coaching_analyzers,
+            corner_perfs=corner_performances,
+            best_lap_df=best_lap_df,
+            theoretical_result=_sim_result,
+            friction_model=corrected_friction or friction_circle,
+            resampled_laps=resampled_laps,
+            available_columns=_avail_cols,
+        )
+        _record("13e_analyzers", _analyzer_bundle, err)
+
+        _driver_history, err = _safe_step(
+            "13f_multi_session", s13_coaching_v3.run_multi_session_lookup,
+            driver_id=_drv_id if '_drv_id' in dir() else None,
+            track_id=meta.get("track_id"),
+            corner_ids=[c["corner_id"] for c in (corner_performances or [])],
+        )
+        _record("13f_multi_session", _driver_history, err)
+
+        _coaching_v3, err = _safe_step(
+            "13g_coaching_v3", s13_coaching_v3.run_enhanced_coaching,
+            corner_perfs=corner_performances,
+            coaching_v2=summary.get("coaching_v2"),
+            scores=score_result,
+            lap_metrics=summary.get("metrics"),
+            driving_style=driving_style_result,
+            analyzer_bundle=_analyzer_bundle,
+            driver_history=_driver_history,
+            vehicle_class=meta.get("vehicle_class", "car"),
+            previous_goals=None,
+        )
+        _record("13g_coaching_v3", _coaching_v3, err)
+        if _coaching_v3:
+            summary["coaching_v3"] = _coaching_v3
+
+        _safe_step(
+            "13g2_persist_coaching", s13_coaching_v3.persist_coaching_v3,
+            coaching_dict=_coaching_v3,
+            analysis_json=summary.get("_analysis_json_blob", {}),
+            conn=None,
+            session_id=meta.get("session_id"),
+            driver_id=_drv_id if '_drv_id' in dir() else None,
+            track_id=meta.get("track_id"),
+            corner_coaching=(_coaching_v3 or {}).get("corner_coaching"),
+        )
+
     # HTML + PDF reports
     html_path: Optional[Path] = None
     pdf_path: Optional[Path] = None
