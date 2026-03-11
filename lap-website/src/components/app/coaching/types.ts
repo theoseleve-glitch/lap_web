@@ -72,8 +72,11 @@ export interface CornerCoachingDetail {
 }
 
 export interface WarmUpProtocol {
-  steps?: string[] | null;
-  duration_minutes?: number | null;
+  phase_1_laps: number;
+  phase_1_instruction: string;
+  phase_2_laps: number;
+  phase_2_instruction: string;
+  phase_3_instruction: string;
 }
 
 export interface CoachingV3Data {

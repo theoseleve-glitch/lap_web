@@ -8,6 +8,8 @@ import NextSessionGoals from './NextSessionGoals';
 import StrengthsList from './StrengthsList';
 import DeferredAreas from './DeferredAreas';
 import CornerCoachingCard from './CornerCoachingCard';
+import WarmUpProtocol from './WarmUpProtocol';
+import MentalImageryPrompt from './MentalImageryPrompt';
 
 interface CoachingPanelProps {
   data: CoachingV3Data;
@@ -70,6 +72,12 @@ export default function CoachingPanel({ data, grade, className = '' }: CoachingP
 
       {/* Strengths */}
       <StrengthsList strengths={data.strengths} />
+
+      {/* Warm-Up Protocol */}
+      <WarmUpProtocol protocol={data.warm_up_protocol} />
+
+      {/* Mental Imagery */}
+      <MentalImageryPrompt prompts={data.mental_imagery_prompts} />
 
       {/* Deferred Areas */}
       <DeferredAreas areas={data.deferred_focus_areas} />
