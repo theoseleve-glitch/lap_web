@@ -19,9 +19,9 @@ import logging
 
 from flask import Blueprint, request
 
+from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 from services.race_strategy import (
     create_race,
-    delete_race,
     duplicate_race,
     end_stint,
     export_race,
@@ -222,20 +222,49 @@ def update_race_endpoint(race_id: int):
 @bp.route("/<int:race_id>", methods=["DELETE"])
 @rate_limit(tier="write")
 def delete_race_endpoint(race_id: int):
-    """Delete a race and all associated data.
+    """Delete a race and all associated data via cascade.
 
     Returns:
-        200 with ``{"ok": true}``
+        200 with ``{"ok": true, "impact": {...}}``
         404 if race not found.
     """
     try:
         conn = get_pg_connection()
-        deleted = delete_race(conn, race_id)
-        if not deleted:
+        # Verify race exists first
+        row = conn.execute(
+            "SELECT race_id FROM race_configs WHERE race_id = %(race_id)s",
+            {"race_id": race_id},
+        ).fetchone()
+        if not row:
             return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
-        return api_response({"ok": True})
+        result = delete_entity_cascade(conn, "race_strategy", race_id)
+        conn.commit()
+        return api_response(result)
     except Exception as exc:
         logger.exception("Failed to delete race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+
+
+# ---------------------------------------------------------------------------
+# GET /<race_id>/delete-impact — preview cascade impact
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/delete-impact", methods=["GET"])
+@rate_limit(tier="read")
+def delete_impact_endpoint(race_id: int):
+    """Preview what would be deleted without actually deleting."""
+    try:
+        conn = get_pg_connection()
+        row = conn.execute(
+            "SELECT race_id FROM race_configs WHERE race_id = %(race_id)s",
+            {"race_id": race_id},
+        ).fetchone()
+        if not row:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        result = get_delete_impact(conn, "race_strategy", race_id)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("Failed to get delete impact for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
 
 
