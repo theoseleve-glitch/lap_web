@@ -69,11 +69,11 @@ export default function DevelopmentPlansPage() {
 
   const { data: driversData } = useQuery({
     queryKey: ['drivers-list'],
-    queryFn: () => api.get<{ drivers: DriverRow[] }>('/drivers'),
+    queryFn: () => api.get<DriverRow[]>('/drivers'),
   });
 
   const plans = Array.isArray(plansData) ? plansData : [];
-  const drivers = driversData?.drivers ?? [];
+  const drivers = Array.isArray(driversData) ? driversData : [];
 
   /* Driver lookup map */
   const driverMap = useMemo(() => {
