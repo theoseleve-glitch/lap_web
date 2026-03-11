@@ -343,3 +343,67 @@ def extract_track_layout_for_picker(
         "corners": enriched_corners,
         "n_points": len(lat),
     }
+
+
+# ── Enrich user-defined corners ───────────────────────────────────
+
+def enrich_custom_corners(
+    custom_corners: list[dict[str, Any]],
+    lats: np.ndarray,
+    lons: np.ndarray,
+    dists: np.ndarray,
+) -> list[dict[str, Any]]:
+    """Enrich user-defined corner zones with lat/lon, direction, and corner_id.
+
+    Each corner dict must have s_start, s_apex, s_end (distances in meters).
+    Returns a new list of corner dicts ready for the pipeline.
+    """
+    if not custom_corners or len(lats) < 2 or len(dists) < 2:
+        return []
+
+    enriched = []
+    for i, cn in enumerate(custom_corners):
+        s_apex = cn["s_apex"]
+        s_start = cn["s_start"]
+        s_end = cn["s_end"]
+
+        apex_idx = int(np.searchsorted(dists, s_apex))
+        apex_idx = min(apex_idx, len(lats) - 1)
+
+        direction = _compute_direction(lats, lons, apex_idx)
+
+        enriched.append({
+            "corner_id": i,
+            "s_start": s_start,
+            "s_apex": s_apex,
+            "s_end": s_end,
+            "lat": float(lats[apex_idx]) if np.isfinite(lats[apex_idx]) else 0.0,
+            "lon": float(lons[apex_idx]) if np.isfinite(lons[apex_idx]) else 0.0,
+            "dist_m": float(dists[apex_idx]),
+            "direction": direction,
+        })
+
+    return enriched
+
+
+def _compute_direction(
+    lats: np.ndarray, lons: np.ndarray, idx: int, window: int = 5,
+) -> str:
+    """Estimate turn direction (L/R) from track curvature at *idx*."""
+    n = len(lats)
+    if n < 3 or idx < 1 or idx >= n - 1:
+        return "S"
+
+    lo = max(0, idx - window)
+    hi = min(n - 1, idx + window)
+
+    cos_mid = math.cos(math.radians(float(lats[idx])))
+    dx1 = (float(lons[idx]) - float(lons[lo])) * cos_mid
+    dy1 = float(lats[idx]) - float(lats[lo])
+    dx2 = (float(lons[hi]) - float(lons[idx])) * cos_mid
+    dy2 = float(lats[hi]) - float(lats[idx])
+
+    cross = dx1 * dy2 - dy1 * dx2
+    if abs(cross) < 1e-12:
+        return "S"
+    return "L" if cross > 0 else "R"

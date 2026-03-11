@@ -77,6 +77,7 @@ class PipelineContext:
     errors: list = field(default_factory=list)
     joker_decision: Optional[str] = None
     selected_corner_ids: Optional[list] = None
+    custom_corners: Optional[list] = None
     temp_dir: Path = field(default_factory=lambda: Path(_DEFAULT_TEMP_ROOT))
     redis_client: Any = field(default=None, repr=False)
 
@@ -154,6 +155,7 @@ class PipelineContext:
             errors=data.get("errors", []),
             joker_decision=data.get("joker_decision"),
             selected_corner_ids=data.get("selected_corner_ids"),
+            custom_corners=data.get("custom_corners"),
             temp_dir=temp_dir,
             redis_client=redis_client,
         )
@@ -173,6 +175,7 @@ class PipelineContext:
             "errors": self.errors,
             "joker_decision": self.joker_decision,
             "selected_corner_ids": self.selected_corner_ids,
+            "custom_corners": self.custom_corners,
         }
 
     def save(self) -> None:
@@ -202,6 +205,10 @@ class PipelineContext:
     def set_selected_corner_ids(self, corner_ids: list) -> None:
         """Set the user-selected corner IDs for analysis."""
         self.selected_corner_ids = corner_ids
+
+    def set_custom_corners(self, corners: list) -> None:
+        """Set user-defined corner geometry for analysis."""
+        self.custom_corners = corners
 
     # ------------------------------------------------------------------
     # DataFrame I/O (temp dir)

@@ -4908,25 +4908,42 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
             "corner_coaching_v2": [],
         })
 
-    v2_mrp = s10b_corners.run_mrp_detection_v2(v2_sections, best_lap_df)
+    try:
+        v2_mrp = s10b_corners.run_mrp_detection_v2(v2_sections, best_lap_df)
+    except Exception:
+        logger.exception("MRP detection failed for session %s", session_id)
+        v2_mrp = None
+
     avail_cols = set(best_lap_df.columns)
-    v2_handling = s10b_corners.run_handling_analysis_v2(
-        v2_sections, best_lap_df, available_columns=avail_cols,
-    )
-    v2_coaching = s10b_corners.run_coaching_v2(
-        v2_sections, v2_mrp, v2_handling, best_lap_df,
-        available_columns=avail_cols,
-    )
+    try:
+        v2_handling = s10b_corners.run_handling_analysis_v2(
+            v2_sections, best_lap_df, available_columns=avail_cols,
+        )
+    except Exception:
+        logger.exception("Handling analysis failed for session %s", session_id)
+        v2_handling = None
+
+    try:
+        v2_coaching = s10b_corners.run_coaching_v2(
+            v2_sections, v2_mrp, v2_handling, best_lap_df,
+            available_columns=avail_cols,
+        )
+    except Exception:
+        logger.exception("Coaching v2 failed for session %s", session_id)
+        v2_coaching = None
 
     # 4. Persist to analysis_json
-    analysis = models.get_analysis_json(conn, session_id) or {}
-    analysis["track_sections_v2"] = v2_sections
-    if v2_mrp:
-        analysis["mrp_events_v2"] = v2_mrp
-    if v2_coaching:
-        analysis["corner_coaching_v2"] = v2_coaching
-    models.insert_analysis_json(conn, session_id, analysis)
-    conn.commit()
+    try:
+        analysis = models.get_analysis_json(conn, session_id) or {}
+        analysis["track_sections_v2"] = v2_sections
+        if v2_mrp:
+            analysis["mrp_events_v2"] = v2_mrp
+        if v2_coaching:
+            analysis["corner_coaching_v2"] = v2_coaching
+        models.insert_analysis_json(conn, session_id, analysis)
+        conn.commit()
+    except Exception:
+        logger.exception("Failed to persist recoach results for session %s", session_id)
 
     logger.info(
         "Recoach session %s: %d sections, %d coached (%d user-defined)",
