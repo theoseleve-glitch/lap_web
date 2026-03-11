@@ -3,8 +3,8 @@
 import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { PageIntro } from '@/components/ui/PageIntro';
-import { BACKEND_URL } from '@/lib/api-client';
-import { getAccessToken, getWorkspaceId, getUserProfile, setUserProfile } from '@/lib/auth-store';
+import { api } from '@/lib/api-client';
+import { getUserProfile, setUserProfile } from '@/lib/auth-store';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -26,23 +26,7 @@ export default function OnboardingPage() {
     setError('');
 
     try {
-      const token = getAccessToken();
-      const wsId = getWorkspaceId();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (wsId !== null) headers['X-Workspace-Id'] = String(wsId);
-
-      const res = await fetch(`${BACKEND_URL}/api/v1/account/profile`, {
-        method: 'PATCH',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({ display_name: name }),
-      });
-
-      const envelope = await res.json().catch(() => null);
-      if (!res.ok || !envelope?.ok) {
-        throw new Error(envelope?.error?.message || `Failed to save profile (${res.status})`);
-      }
+      await api.patch('/account/profile', { display_name: name });
 
       // Update cached profile so AuthGuard passes on next check
       const current = getUserProfile();

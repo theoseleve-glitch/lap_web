@@ -56,6 +56,52 @@
         return {};
     }
 
+    // ── 401 Auto-Refresh ────────────────────────────────────────────
+    // When a request gets a 401, we attempt a silent token refresh
+    // and retry once.  A singleton promise prevents concurrent 401s
+    // from firing multiple refresh calls (same pattern as api-client.ts).
+    var _refreshPromise = null;
+
+    /**
+     * Attempt to refresh the auth token via the host app's callback.
+     * All concurrent 401 callers share the same promise.
+     * @returns {Promise<boolean>} true if refresh succeeded
+     */
+    function _tryRefresh() {
+        if (_refreshPromise) return _refreshPromise;
+        if (!window.FetchHelper || typeof window.FetchHelper.onRefreshToken !== 'function') {
+            return Promise.resolve(false);
+        }
+        _refreshPromise = Promise.resolve()
+            .then(function () { return window.FetchHelper.onRefreshToken(); })
+            .then(function (result) { return !!result; })
+            .catch(function () { return false; })
+            .then(function (ok) { _refreshPromise = null; return ok; });
+        return _refreshPromise;
+    }
+
+    /**
+     * Retry a request with fresh auth headers after a successful token refresh.
+     * Returns parsed (but NOT unwrapped) JSON so callers can continue their
+     * existing .then(unwrap) chain.
+     */
+    function _retryWithNewToken(url, timeout) {
+        var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+        var retryOpts = { headers: _getDefaultHeaders() };
+        if (ctrl) retryOpts.signal = ctrl.signal;
+        var t = ctrl ? setTimeout(function () { ctrl.abort(); }, timeout) : null;
+        return fetch(url, retryOpts)
+            .then(function (r) {
+                if (t) clearTimeout(t);
+                if (!r.ok) throw new Error('HTTP ' + r.status + ': ' + r.statusText);
+                return r.json();
+            })
+            .catch(function (err) {
+                if (t) clearTimeout(t);
+                throw err;
+            });
+    }
+
     /**
      * Show a skeleton/loading state inside container,
      * fetch url, call onSuccess(data) or show error with retry.
@@ -82,6 +128,18 @@
         fetch(url, fetchOpts)
             .then(function (response) {
                 if (timer) clearTimeout(timer);
+                // 401 → attempt silent token refresh, retry once
+                if (response.status === 401) {
+                    return _tryRefresh().then(function (ok) {
+                        if (!ok) {
+                            if (window.FetchHelper && window.FetchHelper.onSessionExpired) {
+                                window.FetchHelper.onSessionExpired();
+                            }
+                            throw new Error('HTTP 401: Session expired');
+                        }
+                        return _retryWithNewToken(url, opts.timeout);
+                    });
+                }
                 if (!response.ok) {
                     throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                 }
@@ -204,6 +262,18 @@
         return fetch(url, opts)
             .then(function (response) {
                 if (timer) clearTimeout(timer);
+                // 401 → attempt silent token refresh, retry once
+                if (response.status === 401) {
+                    return _tryRefresh().then(function (ok) {
+                        if (!ok) {
+                            if (window.FetchHelper && window.FetchHelper.onSessionExpired) {
+                                window.FetchHelper.onSessionExpired();
+                            }
+                            throw new Error('HTTP 401: Session expired');
+                        }
+                        return _retryWithNewToken(url, timeout);
+                    });
+                }
                 if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + response.statusText);
                 return response.json();
             })

@@ -1,12 +1,14 @@
 'use client';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { useState, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 import { QueryError, SkeletonBox } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 
 /* -- Types -------------------------------------------------- */
 
@@ -68,12 +70,10 @@ function parseProgress(raw: string | ProgressJson | null): ProgressJson {
 
 export default function DevelopmentPlanDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const planId = params.id;
 
   const [newItemText, setNewItemText] = useState('');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   /* Fetch plan detail */
   const {
@@ -101,13 +101,12 @@ export default function DevelopmentPlanDetailPage() {
     },
   });
 
-  /* DELETE mutation */
-  const deleteMutation = useMutation({
-    mutationFn: () => api.delete<void>(`/dev-plans/${planId}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['dev-plans'] });
-      router.push('/app/development');
-    },
+  const del = useEntityDelete({
+    entity: 'dev-plan',
+    id: planId,
+    endpoint: `/dev-plans/${planId}`,
+    invalidate: [['dev-plans'], ['dev-plan', planId]],
+    redirectTo: '/app/development',
   });
 
   /* Toggle item done/undone */
@@ -309,44 +308,17 @@ export default function DevelopmentPlanDetailPage() {
       {/* -- Delete ------------------------------------------ */}
       <div className="bg-concrete rounded-lg border border-safety-red/20 p-5">
         <h2 className="font-monument text-sm text-chalk mb-2">Danger Zone</h2>
-        {showDeleteConfirm ? (
-          <div className="flex items-center gap-3">
-            <p className="text-safety-red font-body text-sm">
-              Are you sure? This cannot be undone.
-            </p>
-            <button
-              type="button"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-              className="px-4 py-2 bg-safety-red text-chalk font-telemetry text-xs rounded
-                hover:bg-safety-red/80 transition-colors disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Yes, delete'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(false)}
-              className="px-4 py-2 bg-steel/10 text-steel font-telemetry text-xs rounded
-                hover:bg-steel/20 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
+        {!del.showConfirm && (
           <button
             type="button"
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={del.requestDelete}
             className="px-4 py-2 bg-safety-red/10 text-safety-red border border-safety-red/30 font-telemetry text-xs rounded
               hover:bg-safety-red/20 transition-colors"
           >
             Delete this plan
           </button>
         )}
-        {deleteMutation.isError && (
-          <p className="mt-2 text-safety-red font-body text-xs">
-            Failed to delete plan. Please try again.
-          </p>
-        )}
+        <DeleteConfirmPanel {...del} entityName={plan.plan_name} entityType="development plan" />
       </div>
     </div>
   );

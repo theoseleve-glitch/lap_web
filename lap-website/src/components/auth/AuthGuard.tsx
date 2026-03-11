@@ -4,13 +4,12 @@ import { useEffect, useState, useCallback, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { silentRefresh, type AuthUser } from '@/lib/auth';
 import { getAccessToken, getUserProfile, setUserProfile } from '@/lib/auth-store';
-import { SESSION_EXPIRED_EVENT } from '@/lib/api-client';
+import { SESSION_EXPIRED_EVENT, api } from '@/lib/api-client';
 import { getFlag } from '@/lib/feature-flags';
 import { useTranslation } from '@/i18n';
 import { SessionExpiredModal } from './SessionExpiredModal';
 
 const ONBOARDING_PATH = '/app/onboarding';
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 /**
  * Wraps authenticated pages. On mount, attempts to restore the session
@@ -44,26 +43,15 @@ export function AuthGuard({ children }: { children: ReactNode }) {
       } else if (getAccessToken()) {
         // Token present (e.g. from BroadcastChannel) but no cached profile
         try {
-          const res = await fetch(`${BACKEND_URL}/api/v1/me`, {
-            headers: {
-              Authorization: `Bearer ${getAccessToken()}`,
-              'Content-Type': 'application/json',
-            },
-            credentials: 'include',
-          });
-          if (res.ok) {
-            const envelope = await res.json();
-            if (envelope?.data) {
-              user = {
-                id: envelope.data.id,
-                email: envelope.data.email,
-                display_name: envelope.data.display_name ?? '',
-              };
-              setUserProfile(user);
-            }
-          }
+          const data = await api.get<{ id: number; email: string; display_name?: string }>('/me');
+          user = {
+            id: data.id,
+            email: data.email,
+            display_name: data.display_name ?? '',
+          };
+          setUserProfile(user);
         } catch {
-          // Non-fatal — skip profile check
+          // Non-fatal — skip profile check (api client handles 401 retry)
         }
       } else {
         // No token — try silent refresh (also stores profile via auth.ts)

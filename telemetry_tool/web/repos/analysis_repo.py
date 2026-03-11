@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import sqlite3
 from typing import Optional
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_for_json(obj):
+    """Recursively replace NaN/Inf floats with None for valid JSON."""
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
+# Regex to fix legacy analysis_json containing Python NaN/Infinity literals
+_NAN_RE = re.compile(r'\bNaN\b')
+_INF_RE = re.compile(r'-?\bInfinity\b')
 
 
 def insert_stint_analysis(
@@ -105,10 +125,17 @@ def get_analysis_json(
         return None
     if not row or not row["analysis_json"]:
         return None
+    raw = row["analysis_json"]
     try:
-        return json.loads(row["analysis_json"])
+        return json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        return None
+        # Legacy data may contain Python NaN/Infinity literals — fix and retry
+        try:
+            cleaned = _NAN_RE.sub("null", raw)
+            cleaned = _INF_RE.sub("null", cleaned)
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return None
 
 
 def insert_analysis_json(
@@ -117,7 +144,7 @@ def insert_analysis_json(
     analysis: dict,
 ) -> None:
     """Persist the supplementary analysis blob to sessions.analysis_json."""
-    blob = json.dumps(analysis, default=str)
+    blob = json.dumps(_sanitize_for_json(analysis), default=str)
     conn.execute(
         "UPDATE sessions SET analysis_json = :blob WHERE session_id = :sid",
         {"blob": blob, "sid": session_id},

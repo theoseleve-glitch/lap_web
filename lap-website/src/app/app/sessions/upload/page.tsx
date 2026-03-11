@@ -4,7 +4,7 @@ import { useState, useRef, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
-import { BACKEND_URL, ApiError } from '@/lib/api-client';
+import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerPicker, type TrackLayout } from '@/components/app/CornerPicker';
 import { logger } from '@/lib/logger';
@@ -163,33 +163,20 @@ function uploadSession(
 }
 
 async function fetchTrackLayout(jobId: string): Promise<TrackLayout> {
-  const res = await fetch(`${BACKEND_URL}/api/v1/jobs/${jobId}/track-layout`, {
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    credentials: 'include',
-  });
-  const envelope = await res.json();
-  if (!envelope.ok || !envelope.data) throw new Error(envelope.error?.message ?? 'Failed to load track layout');
-  const d = envelope.data;
+  const d = await api.get<Record<string, unknown>>(`/jobs/${jobId}/track-layout`);
   // Normalize key names — backend may return short keys (lat/lon/distance_m)
   return {
-    latitudes: d.latitudes ?? d.lat ?? [],
-    longitudes: d.longitudes ?? d.lon ?? [],
-    distances: d.distances ?? d.distance_m ?? [],
-    speeds: d.speeds ?? [],
-    corners: d.corners ?? [],
-    track_id: d.track_id,
+    latitudes: (d.latitudes ?? d.lat ?? []) as number[],
+    longitudes: (d.longitudes ?? d.lon ?? []) as number[],
+    distances: (d.distances ?? d.distance_m ?? []) as number[],
+    speeds: (d.speeds ?? []) as number[],
+    corners: (d.corners ?? []) as TrackLayout['corners'],
+    track_id: d.track_id as string | undefined,
   };
 }
 
 async function resumeWithCorners(jobId: string, selectedIds: number[]): Promise<void> {
-  const res = await fetch(`${BACKEND_URL}/api/v1/jobs/${jobId}/resume`, {
-    method: 'POST',
-    headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ selected_corner_ids: selectedIds }),
-    credentials: 'include',
-  });
-  const envelope = await res.json();
-  if (!envelope.ok) throw new Error(envelope.error?.message ?? 'Resume failed');
+  await api.post(`/jobs/${jobId}/resume`, { selected_corner_ids: selectedIds });
 }
 
 /* ── Progress Bar ──────────────────────────────────────── */
@@ -289,15 +276,17 @@ function UploadPage() {
     }
   }, []);
 
-  // Fetch karts for dropdown
+  // Fetch karts for dropdown (uses api client for auth + 401 retry)
   useEffect(() => {
-    const token = getAccessToken();
-    fetch(`${BACKEND_URL}/api/v1/karts`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then((r) => r.ok ? r.json() : null)
-      .then((data) => { if (data?.karts) setKarts(data.karts); })
-      .catch(() => {});
+    api.get<Array<{ id: number; name: string }>>('/karts')
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setKarts(data.map((k) => ({ kart_id: k.id, kart_name: k.name })));
+        }
+      })
+      .catch(() => {
+        // Non-critical — kart dropdown will just be empty
+      });
   }, []);
 
   // Upload next file in batch queue (called after a file completes)

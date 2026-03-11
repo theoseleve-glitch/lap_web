@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { StatCard, DataTable, QueryError, SkeletonStatCards, SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 
 interface WeekendDetail {
   id: number;
@@ -53,6 +55,14 @@ export default function WeekendDetailPage() {
   const params = useParams();
   const router = useRouter();
   const id = params.id as string;
+
+  const del = useEntityDelete({
+    entity: 'weekend',
+    id: id,
+    endpoint: `/weekends/${id}`,
+    invalidate: [['weekends']],
+    redirectTo: '/app/weekends',
+  });
 
   const { data: weekend, isLoading, error: weekendError, refetch } = useQuery({
     queryKey: ['weekend', id],
@@ -103,14 +113,26 @@ export default function WeekendDetailPage() {
         title={weekend.name}
         subtitle={`${weekend.track_name} · ${formatDateRange(weekend.start_date, weekend.end_date)}`}
         actions={
-          <Link
-            href="/app/weekends"
-            className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
-          >
-            ← All Weekends
-          </Link>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={del.requestDelete}
+              className="px-4 py-2 border border-safety-red/30 text-safety-red font-telemetry text-sm rounded hover:bg-safety-red/10 transition-colors"
+            >
+              Delete
+            </button>
+            <Link
+              href="/app/weekends"
+              className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
+            >
+              ← All Weekends
+            </Link>
+          </div>
         }
       />
+
+      {/* Delete confirmation */}
+      <DeleteConfirmPanel {...del} entityName={weekend.name} entityType="weekend" />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
         <StatCard label="Sessions" value={weekend.session_count} />

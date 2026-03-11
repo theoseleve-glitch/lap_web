@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -1098,7 +1099,8 @@ def run_full_analysis(
         summary["practice_plan"] = plan_dict
 
     # ── Step 13h: Gamification — XP, streaks, achievements ─────
-    if os.environ.get("GAMIFICATION", "1") != "0":
+    import os as _gam_os
+    if _gam_os.environ.get("GAMIFICATION", "1") != "0":
         try:
             from gamification.xp import award_session_xp
             from gamification.streaks import update_streak

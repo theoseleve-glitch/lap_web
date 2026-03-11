@@ -83,20 +83,33 @@ def auth_middleware() -> Response | tuple | None:
         from web.api_utils import api_error
         return api_error(e.code, str(e), status=401)
 
-    # Check account suspension (after successful JWT decode)
-    if g.current_user_id is not None:
+    # Check account suspension (after successful JWT decode).
+    # Only applies when AUTH_REQUIRED is set (multi-tenant SaaS mode).
+    # In desktop/local mode (no auth), skip the suspension check entirely.
+    if g.current_user_id is not None and current_app.config.get("AUTH_REQUIRED"):
+        conn = None
         try:
             from web.db import get_db_connection
             conn = get_db_connection()
-            row = conn.execute(
-                "SELECT suspended_at FROM users WHERE id = %(uid)s AND suspended_at IS NOT NULL",
-                {"uid": g.current_user_id},
-            ).fetchone()
-            if row is not None:
-                from web.api_utils import ErrorCode, api_error
-                return api_error(ErrorCode.FORBIDDEN, "Account suspended", status=403)
         except Exception:
-            pass  # Fail open — don't block if DB check fails
+            # DB not configured (desktop/test mode) — skip suspension check
+            pass
+
+        if conn is not None:
+            try:
+                row = conn.execute(
+                    "SELECT suspended_at FROM users WHERE id = %(uid)s AND suspended_at IS NOT NULL",
+                    {"uid": g.current_user_id},
+                ).fetchone()
+                if row is not None:
+                    from web.api_utils import ErrorCode, api_error
+                    return api_error(ErrorCode.FORBIDDEN, "Account suspended", status=403)
+            except Exception:
+                # Fail closed: DB is available but query failed — deny rather
+                # than letting a potentially suspended user through.
+                logger.warning("Suspended-account check failed — denying request", exc_info=True)
+                from web.api_utils import api_error
+                return api_error("SERVICE_UNAVAILABLE", "Unable to verify account status", status=503)
 
     return None
 

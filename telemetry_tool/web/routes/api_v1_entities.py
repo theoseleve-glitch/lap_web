@@ -766,7 +766,14 @@ def leaderboard():
 
 def _map_plan(row):
     """Map DB development_plan row to frontend-expected field names."""
+    import json as _json
     d = dict(row)
+    weeks_raw = d.get("weeks_json")
+    progress_raw = d.get("progress_json")
+    try:
+        weeks = _json.loads(weeks_raw) if weeks_raw else []
+    except (TypeError, _json.JSONDecodeError):
+        weeks = []
     return {
         "id": d["id"],
         "driver_id": d["driver_id"],
@@ -774,9 +781,18 @@ def _map_plan(row):
         "template_id": d.get("template_id"),
         "level": d.get("level"),
         "status": d.get("status"),
+        "weeks": weeks,
+        "progress_json": progress_raw,
         "created_at": d.get("created_at"),
         "updated_at": d.get("updated_at"),
     }
+
+
+@bp.route("/dev-plans/templates", methods=["GET"])
+def list_dev_plan_templates():
+    """Return available plan templates."""
+    from development_plan import get_plan_templates
+    return api_response(get_plan_templates())
 
 
 @bp.route("/dev-plans", methods=["GET"])
@@ -800,10 +816,20 @@ def create_dev_plan():
     plan_name = body.get("plan_name")
     if not driver_id or not plan_name:
         return api_error(ErrorCode.VALIDATION_ERROR, "driver_id and plan_name are required", status=400)
+
+    template_id = body.get("template_id")
+    if template_id:
+        from development_plan import create_plan_from_template
+        try:
+            result = create_plan_from_template(conn, driver_id, template_id, plan_name)
+            return api_response(result, status=201)
+        except ValueError as exc:
+            return api_error(ErrorCode.NOT_FOUND, str(exc), status=404)
+
     conn.execute(Q.INSERT_DEVELOPMENT_PLAN, {
         "driver_id": driver_id,
         "plan_name": plan_name,
-        "template_id": body.get("template_id"),
+        "template_id": None,
         "level": body.get("level", "intermediate"),
         "weeks_json": body.get("weeks_json", "[]"),
         "progress_json": body.get("progress_json"),
@@ -830,10 +856,15 @@ def patch_dev_plan(plan_id):
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
     body = request.get_json(silent=True) or {}
-    progress_json = body.get("progress_json")
-    if progress_json is None:
-        return api_error(ErrorCode.VALIDATION_ERROR, "progress_json is required", status=400)
-    conn.execute(Q.UPDATE_PLAN_PROGRESS, {"id": plan_id, "progress_json": progress_json})
+
+    _ALLOWED = {"progress_json", "plan_name", "status"}
+    updates = {k: v for k, v in body.items() if k in _ALLOWED}
+    if not updates:
+        return api_error(ErrorCode.VALIDATION_ERROR, "No updatable fields provided", status=400)
+
+    set_clauses = ", ".join(f"{k} = :{k}" for k in updates)
+    updates["id"] = plan_id
+    conn.execute(f"UPDATE development_plans SET {set_clauses} WHERE id = :id", updates)
     conn.commit()
     updated = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
     return api_response(_map_plan(updated))

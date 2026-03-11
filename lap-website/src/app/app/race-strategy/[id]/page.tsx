@@ -8,6 +8,8 @@ import { SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
 import { canUseFeature } from '@/lib/entitlements-store';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -146,19 +148,12 @@ export default function RaceDetailPage() {
     },
   });
 
-  const deleteMut = useMutation({
-    mutationFn: () => api.delete<unknown>(`/race-strategy/${raceId}`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['race-strategy'] });
-      router.push('/app/race-strategy');
-    },
-    onError: (err) => {
-      // 404 means already deleted — navigate away as if success
-      if (err instanceof Error && 'status' in err && (err as any).status === 404) {
-        qc.invalidateQueries({ queryKey: ['race-strategy'] });
-        router.push('/app/race-strategy');
-      }
-    },
+  const del = useEntityDelete({
+    entity: 'race-strategy',
+    id: raceId,
+    endpoint: `/race-strategy/${raceId}`,
+    invalidate: [['race-strategy']],
+    redirectTo: '/app/race-strategy',
   });
 
   /* ── loading / error ────────────────────────────────────────────── */
@@ -287,17 +282,16 @@ export default function RaceDetailPage() {
           {duplicateMut.isPending ? 'Duplicating...' : 'Duplicate'}
         </button>
         <button
-          onClick={() => {
-            if (window.confirm('Delete this race? This cannot be undone.')) {
-              deleteMut.mutate();
-            }
-          }}
-          disabled={deleteMut.isPending}
+          onClick={del.requestDelete}
+          disabled={del.isPending}
           className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors disabled:opacity-50"
         >
-          {deleteMut.isPending ? 'Deleting...' : 'Delete'}
+          Delete
         </button>
       </div>
+
+      {/* Delete confirmation panel */}
+      <DeleteConfirmPanel {...del} entityName={race.race_name} entityType="race strategy" />
 
       {/* Config Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

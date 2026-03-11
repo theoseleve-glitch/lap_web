@@ -292,16 +292,23 @@ def resume(job_id: str):
     redis_client = _get_redis()
     ctx = _load_pipeline_context(redis_client, job_id)
 
+    if ctx is None:
+        return api_error(
+            ErrorCode.CONFLICT,
+            "Pipeline context expired. Please re-upload the file.",
+            status=409,
+        )
+
     if current_status == "awaiting_corner_selection":
         # Corner selection path
         selected_ids = g.body.selected_corner_ids
-        if ctx is not None and selected_ids is not None:
+        if selected_ids is not None:
             ctx.set_selected_corner_ids(selected_ids)
             ctx.save()
     else:
         # Joker decision path
         joker_decision = g.body.joker_decision
-        if ctx is not None and joker_decision is not None:
+        if joker_decision is not None:
             ctx.set_joker_decision(joker_decision)
             ctx.save()
 

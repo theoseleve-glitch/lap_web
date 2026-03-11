@@ -12,6 +12,7 @@ from flask import Blueprint, abort, jsonify, redirect, render_template, request,
 from web.db import get_db_connection
 from web.middleware.entitlements import require_feature
 from web.api_utils import api_error, ErrorCode
+from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
 
 logger = logging.getLogger(__name__)
 
@@ -606,11 +607,37 @@ def duplicate(race_id: int):
 
 @bp.route("/<int:race_id>/delete", methods=["POST"])
 def delete(race_id: int):
-    """Delete a race configuration."""
+    """Delete a race configuration (form-based for Jinja2 templates)."""
     conn = get_db_connection()
-    conn.execute("DELETE FROM race_configs WHERE race_id = ?", (race_id,))
+    row = conn.execute("SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+    if not row:
+        return redirect(url_for("race_strategy_v2.index"))
+    delete_entity_cascade(conn, "race_strategy", race_id)
     conn.commit()
     return redirect(url_for("race_strategy_v2.index"))
+
+
+@bp.route("/<int:race_id>/api/delete", methods=["DELETE"])
+def api_delete(race_id: int):
+    """Delete a race configuration (JSON API for React frontend)."""
+    conn = get_db_connection()
+    row = conn.execute("SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "Race not found"}), 404
+    result = delete_entity_cascade(conn, "race_strategy", race_id)
+    conn.commit()
+    return jsonify({"ok": True, "data": result})
+
+
+@bp.route("/<int:race_id>/api/delete-impact", methods=["GET"])
+def api_delete_impact(race_id: int):
+    """Preview cascade impact of deleting a race."""
+    conn = get_db_connection()
+    row = conn.execute("SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "Race not found"}), 404
+    result = get_delete_impact(conn, "race_strategy", race_id)
+    return jsonify({"ok": True, "data": result})
 
 
 # ── Detail Page + Optimizer ───────────────────────────────

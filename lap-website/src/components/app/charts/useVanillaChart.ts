@@ -49,6 +49,8 @@ declare global {
       fetch: (url: string, opts?: RequestInit & { timeout?: number }) => Promise<unknown>;
       lazyInit: (containerId: string, initFn: () => void) => void;
       getAuthHeaders?: () => Record<string, string>;
+      onRefreshToken?: () => Promise<boolean>;
+      onSessionExpired?: () => void;
     };
     TELEMETRY?: {
       sessionId: string;
@@ -147,6 +149,20 @@ function patchFetchHelper(apiBase: string): void {
     const wsId = getWorkspaceId();
     if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
     return headers;
+  };
+
+  // 401 → silent refresh → retry: same dedup pattern as api-client.ts.
+  // All concurrent 401s from vanilla JS charts share one refresh promise.
+  (window.FetchHelper as Record<string, unknown>).onRefreshToken = async () => {
+    const { silentRefresh } = await import('@/lib/auth');
+    const user = await silentRefresh();
+    return user !== null;
+  };
+
+  // When refresh fails, emit session-expired event so AuthGuard can show
+  // the SessionExpiredModal (consistent with api-client.ts behavior).
+  (window.FetchHelper as Record<string, unknown>).onSessionExpired = () => {
+    window.dispatchEvent(new Event('lap:session-expired'));
   };
 
   const originalFetch = window.FetchHelper.fetch;

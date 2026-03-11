@@ -11,21 +11,26 @@ type Step = 1 | 2 | 3;
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
-interface AnalysisJob {
+/**
+ * Shape returned by `GET /api/v1/jobs/:id/status` (inside envelope.data).
+ * The backend computes progress from stage_index / stage_total.
+ */
+interface JobStatusData {
   job_id: string;
-  status: 'pending' | 'processing' | 'complete' | 'failed';
-  progress: number;
-  message: string;
+  status: string;
+  stage_name: string | null;
+  stage_index: number;
+  stage_total: number;
   session_id?: string;
+  file_name?: string | null;
+  error_message?: string | null;
 }
 
 export default function FreeReportAnalyzePage() {
   const router = useRouter();
   const { t } = useTranslation();
   const [step, setStep] = useState<Step>(1);
-  const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -36,7 +41,8 @@ export default function FreeReportAnalyzePage() {
 
   // Step 3
   const [jobId, setJobId] = useState<string | null>(null);
-  const [jobStatus, setJobStatus] = useState<AnalysisJob | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatusData | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   // One-report limit
   const [alreadyUsed, setAlreadyUsed] = useState(false);
@@ -64,18 +70,23 @@ export default function FreeReportAnalyzePage() {
     }
   }, []);
 
-  // Poll job status (Flask serves at /api/v1/ingest/status/:id)
+  // Poll job status via the correct endpoint with envelope unwrapping.
+  // Backend returns: { ok: true, data: { job_id, status, stage_name, ... } }
   useQuery({
     queryKey: ['analysis-job', jobId],
     queryFn: async () => {
-      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/status/${jobId}`);
-      return res.json() as Promise<AnalysisJob>;
+      const res = await fetch(`${BACKEND_URL}/api/v1/jobs/${jobId}/status`);
+      const envelope = await res.json();
+      if (!res.ok || !envelope?.ok) {
+        throw new Error(envelope?.error?.message ?? 'Failed to fetch job status');
+      }
+      return envelope.data as JobStatusData;
     },
-    enabled: step === 3 && !!jobId && jobStatus?.status !== 'complete' && jobStatus?.status !== 'failed',
+    enabled: step === 3 && !!jobId && jobStatus?.status !== 'completed' && jobStatus?.status !== 'failed',
     refetchInterval: 2000,
     select: (data) => {
       setJobStatus(data);
-      if (data.status === 'complete' && data.session_id) {
+      if (data.status === 'completed' && data.session_id) {
         localStorage.setItem(
           'lap_free_report',
           JSON.stringify({ used: true, session_id: data.session_id }),
@@ -85,24 +96,10 @@ export default function FreeReportAnalyzePage() {
     },
   });
 
-  const handleUpload = useCallback(async (file: File) => {
-    setUploading(true);
-    setUploadProgress(0);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await fetch(`${BACKEND_URL}/api/v1/sessions/upload`, {
-        method: 'POST',
-        body: formData,
-      });
-      if (!result.ok) throw new Error('Upload failed');
-      const data = await result.json();
-      setSelectedFile(data.data?.filename ?? file.name);
-      setUploadProgress(100);
-    } catch {
-      setUploadProgress(0);
-    } finally {
-      setUploading(false);
+  // Step 1: Just store the File object client-side (no upload yet).
+  const handleFileSelect = useCallback((f: File) => {
+    if (f.name.endsWith('.csv')) {
+      setFile(f);
     }
   }, []);
 
@@ -110,33 +107,60 @@ export default function FreeReportAnalyzePage() {
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
-      const file = e.dataTransfer.files[0];
-      if (file?.name.endsWith('.csv')) {
-        handleUpload(file);
-      }
+      const f = e.dataTransfer.files[0];
+      if (f) handleFileSelect(f);
     },
-    [handleUpload],
+    [handleFileSelect],
   );
 
+  // Step 3: Upload file + metadata in one request, then poll for progress.
+  // The backend's /sessions/upload accepts file + metadata and returns job_id.
   const handleSubmit = async () => {
-    if (!selectedFile) return;
+    if (!file) return;
     setStep(3);
+    setSubmitError(null);
     try {
-      // Flask serves ingest start at /api/v1/ingest/start (form data)
-      const form = new FormData();
-      form.append('csv_file', selectedFile);
-      if (driverName) form.append('driver_name', driverName);
-      if (trackName) form.append('track_name', trackName);
-      form.append('session_type', sessionType);
-      const res = await fetch(`${BACKEND_URL}/api/v1/ingest/start`, { method: 'POST', body: form });
-      const result = await res.json();
-      if (!res.ok) throw new Error(result.error || 'Failed');
-      setJobId(result.job_id);
-      setJobStatus({ job_id: result.job_id, status: 'pending', progress: 0, message: t('freeReport.startingAnalysis') });
-    } catch {
-      setJobStatus({ job_id: '', status: 'failed', progress: 0, message: t('freeReport.failedToStart') });
+      const formData = new FormData();
+      formData.append('file', file);
+      if (driverName) formData.append('driver_name', driverName);
+      if (trackName) formData.append('track_name', trackName);
+      formData.append('session_type', sessionType.toLowerCase());
+
+      const res = await fetch(`${BACKEND_URL}/api/v1/sessions/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      const envelope = await res.json();
+      if (!res.ok || !envelope?.ok) {
+        throw new Error(envelope?.error?.message ?? 'Upload failed');
+      }
+      const data = envelope.data;
+      setJobId(data.job_id);
+      setJobStatus({
+        job_id: data.job_id,
+        status: 'pending',
+        stage_name: null,
+        stage_index: 0,
+        stage_total: 14,
+        session_id: data.job_id,
+      });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : t('freeReport.failedToStart'));
+      setJobStatus({
+        job_id: '',
+        status: 'failed',
+        stage_name: null,
+        stage_index: 0,
+        stage_total: 14,
+        error_message: err instanceof Error ? err.message : t('freeReport.failedToStart'),
+      });
     }
   };
+
+  // Progress percentage derived from stage_index / stage_total
+  const progressPct = jobStatus
+    ? Math.round(((jobStatus.stage_index ?? 0) / (jobStatus.stage_total || 14)) * 100)
+    : 0;
 
   // Already used — show redirect
   if (alreadyUsed) {
@@ -203,34 +227,22 @@ export default function FreeReportAnalyzePage() {
               accept=".csv"
               className="hidden"
               onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) handleUpload(file);
+                const f = e.target.files?.[0];
+                if (f) handleFileSelect(f);
               }}
             />
           </div>
 
-          {uploading && (
-            <div className="mt-4">
-              <div className="w-full bg-steel/20 rounded-full h-2">
-                <div
-                  className="bg-acid-green h-2 rounded-full transition-all"
-                  style={{ width: `${uploadProgress}%` }}
-                />
-              </div>
-              <span className="text-steel font-telemetry text-xs mt-1">{t('freeReport.uploading')}</span>
-            </div>
-          )}
-
-          {selectedFile && (
+          {file && (
             <div className="mt-4 p-3 bg-acid-green/5 border border-acid-green/20 rounded text-acid-green font-telemetry text-sm">
-              {t('freeReport.selected')} {selectedFile}
+              {t('freeReport.selected')} {file.name}
             </div>
           )}
 
           <div className="flex justify-end mt-6">
             <button
               type="button"
-              disabled={!selectedFile}
+              disabled={!file}
               onClick={() => setStep(2)}
               className="px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gold/80 transition-colors"
             >
@@ -247,7 +259,7 @@ export default function FreeReportAnalyzePage() {
 
           <div className="mb-3 p-3 bg-asphalt/50 rounded border border-steel/20 flex items-center gap-2">
             <span className="text-steel">{t('freeReport.fileLabel')}</span>
-            <span className="text-acid-green font-telemetry text-sm">{selectedFile}</span>
+            <span className="text-acid-green font-telemetry text-sm">{file?.name}</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -306,13 +318,13 @@ export default function FreeReportAnalyzePage() {
       {step === 3 && (
         <div className="bg-concrete rounded-lg border border-steel/20 p-6 max-w-2xl mx-auto">
           <div className="flex flex-col items-center py-8">
-            {jobStatus?.status === 'complete' ? (
+            {jobStatus?.status === 'completed' ? (
               <>
                 <div className="w-16 h-16 rounded-full bg-acid-green/20 flex items-center justify-center mb-4">
                   <span className="text-acid-green text-3xl">✓</span>
                 </div>
                 <p className="text-chalk font-body text-lg mb-2">{t('freeReport.analysisComplete')}</p>
-                <p className="text-steel font-body text-sm mb-6">{jobStatus.message}</p>
+                <p className="text-steel font-body text-sm mb-6">{jobStatus.stage_name}</p>
                 <button
                   type="button"
                   onClick={() =>
@@ -333,13 +345,16 @@ export default function FreeReportAnalyzePage() {
                   <span className="text-safety-red text-3xl">✗</span>
                 </div>
                 <p className="text-chalk font-body text-lg mb-2">{t('freeReport.analysisFailed')}</p>
-                <p className="text-safety-red font-body text-sm mb-6">{jobStatus.message}</p>
+                <p className="text-safety-red font-body text-sm mb-6">
+                  {jobStatus.error_message ?? submitError ?? t('freeReport.analysisFailed')}
+                </p>
                 <button
                   type="button"
                   onClick={() => {
                     setStep(1);
                     setJobId(null);
                     setJobStatus(null);
+                    setSubmitError(null);
                   }}
                   className="px-4 py-2 text-steel font-telemetry text-sm hover:text-chalk transition-colors"
                 >
@@ -350,18 +365,18 @@ export default function FreeReportAnalyzePage() {
               <>
                 <div className="w-12 h-12 border-3 border-steel/30 border-t-acid-green rounded-full animate-spin mb-4" />
                 <p className="text-chalk font-body mb-2">
-                  {jobStatus?.message ?? t('freeReport.startingAnalysis')}
+                  {jobStatus?.stage_name ?? t('freeReport.startingAnalysis')}
                 </p>
                 <div className="w-full max-w-md">
                   <div className="w-full bg-steel/20 rounded-full h-2 mb-1">
                     <div
                       className="bg-acid-green h-2 rounded-full transition-all duration-500"
-                      style={{ width: `${jobStatus?.progress ?? 0}%` }}
+                      style={{ width: `${progressPct}%` }}
                     />
                   </div>
                   <div className="text-right">
                     <span className="font-telemetry text-xs text-steel">
-                      {jobStatus?.progress ?? 0}%
+                      {progressPct}%
                     </span>
                   </div>
                 </div>

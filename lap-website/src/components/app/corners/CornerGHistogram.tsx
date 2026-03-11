@@ -8,8 +8,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useMemo } from 'react';
-import { BACKEND_URL } from '@/lib/api-client';
-import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
+import { api } from '@/lib/api-client';
 
 interface CornerInfo {
   corner_id: number;
@@ -35,27 +34,21 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
   const [ggData, setGGData] = useState<GGData | null>(null);
   const [selectedCorner, setSelectedCorner] = useState<number | null>(null);
 
-  // Fetch GG data
+  // Fetch GG data (uses api client for auth headers + 401 retry)
   useEffect(() => {
     const lap = bestLap ?? 1;
-    const headers: Record<string, string> = {};
-    const token = getAccessToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const wsId = getWorkspaceId();
-    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
 
-    fetch(`${BACKEND_URL}/api/v1/sessions/${sessionId}/gg-data?lap=${lap}`, {
-      headers,
-      credentials: 'include',
-    })
-      .then((r) => r.json())
-      .then((json) => {
-        const d = json.data ?? json;
+    api.get<{ available: boolean; accel_lat?: number[]; distances?: number[] }>(
+      `/sessions/${sessionId}/gg-data?lap=${lap}`,
+    )
+      .then((d) => {
         if (d.available && d.accel_lat?.length) {
-          setGGData({ accel_lat: d.accel_lat, distances: d.distances, available: true });
+          setGGData({ accel_lat: d.accel_lat, distances: d.distances ?? [], available: true });
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Non-critical chart — silent fail is acceptable
+      });
   }, [sessionId, bestLap]);
 
   // Compute per-corner lateral G arrays

@@ -330,6 +330,20 @@ def _build_analysis_blob(result: dict) -> dict:
     return blob
 
 
+def _sanitize_for_json(obj):
+    """Recursively replace NaN/Inf floats with None for valid JSON."""
+    import math as _math
+    if isinstance(obj, float):
+        if _math.isnan(obj) or _math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
 def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
     """Persist theoretical lap metrics to the ``theoretical_data`` table.
 
@@ -356,7 +370,7 @@ def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
     if theoretical_time_s and actual_best and theoretical_time_s > 0:
         gap_pct = round((actual_best - theoretical_time_s) / theoretical_time_s * 100, 2)
 
-    # Serialise optional fields as JSON
+    # Serialise optional fields as JSON (sanitize NaN/Inf → null)
     speed_profile_json = None
     distance_json = None
     theo_lap = result.get("theoretical_lap")
@@ -364,25 +378,25 @@ def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
         for c in theo_lap.columns:
             cl = c.lower()
             if distance_json is None and "distance" in cl:
-                distance_json = _json.dumps(theo_lap[c].tolist())
+                distance_json = _json.dumps(_sanitize_for_json(theo_lap[c].tolist()))
             if speed_profile_json is None and ("v_env" in cl or "speed" in cl):
-                speed_profile_json = _json.dumps(theo_lap[c].tolist())
+                speed_profile_json = _json.dumps(_sanitize_for_json(theo_lap[c].tolist()))
 
-    metrics_json = _json.dumps(theo_metrics) if theo_metrics else None
+    metrics_json = _json.dumps(_sanitize_for_json(theo_metrics)) if theo_metrics else None
 
     corner_coaching = result.get("corner_coaching")
-    corner_coaching_json = _json.dumps(corner_coaching) if corner_coaching else None
+    corner_coaching_json = _json.dumps(_sanitize_for_json(corner_coaching)) if corner_coaching else None
 
     delta_map = result.get("delta_map")
     delta_map_json = None
     if delta_map is not None and hasattr(delta_map, "to_dict"):
         try:
-            delta_map_json = _json.dumps(delta_map.head(10).to_dict(orient="records"))
+            delta_map_json = _json.dumps(_sanitize_for_json(delta_map.head(10).to_dict(orient="records")))
         except Exception:
             pass
 
     session_scalars = result.get("session_scalars")
-    session_scalars_json = _json.dumps(session_scalars) if session_scalars else None
+    session_scalars_json = _json.dumps(_sanitize_for_json(session_scalars)) if session_scalars else None
 
     conn.execute(
         text(

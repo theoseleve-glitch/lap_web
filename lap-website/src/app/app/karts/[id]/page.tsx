@@ -2,11 +2,13 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api-client';
 import { StatCard, FormField, QueryError, SkeletonStatCards, SkeletonBox } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 
 interface KartDetail {
   id: number;
@@ -22,12 +24,10 @@ interface KartDetail {
 
 export default function KartDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const queryClient = useQueryClient();
   const id = params.id as string;
 
   const [editing, setEditing] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [form, setForm] = useState({
     name: '',
     manufacturer: '',
@@ -53,12 +53,12 @@ export default function KartDetailPage() {
     },
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: () => api.delete<{ deleted: boolean }>(`/karts/${id}`),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['karts'] });
-      router.push('/app/karts');
-    },
+  const del = useEntityDelete({
+    entity: 'kart',
+    id: id,
+    endpoint: `/karts/${id}`,
+    invalidate: [['karts'], ['sessions']],
+    redirectTo: '/app/karts',
   });
 
   const startEditing = () => {
@@ -138,7 +138,7 @@ export default function KartDetailPage() {
             </button>
             <button
               type="button"
-              onClick={() => setConfirmDelete(true)}
+              onClick={del.requestDelete}
               className="px-4 py-2 border border-safety-red/30 text-safety-red font-telemetry text-sm rounded hover:bg-safety-red/10 transition-colors"
             >
               Delete
@@ -154,38 +154,7 @@ export default function KartDetailPage() {
       />
 
       {/* Delete confirmation */}
-      {confirmDelete && (
-        <div className="bg-safety-red/5 border border-safety-red/30 rounded-lg p-4 mb-6">
-          <p className="text-chalk font-body text-sm mb-3">
-            Are you sure you want to delete <strong>{kart.name}</strong>?
-            {kart.session_count > 0 && (
-              <span className="text-safety-red"> This kart has {kart.session_count} linked session(s) — you must unlink them first.</span>
-            )}
-          </p>
-          {deleteMutation.error && (
-            <p className="text-safety-red font-telemetry text-sm mb-2">
-              {(deleteMutation.error as Error).message}
-            </p>
-          )}
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => deleteMutation.mutate()}
-              disabled={deleteMutation.isPending}
-              className="px-4 py-2 bg-safety-red text-white font-telemetry text-sm rounded hover:bg-safety-red/80 transition-colors disabled:opacity-50"
-            >
-              {deleteMutation.isPending ? 'Deleting...' : 'Confirm Delete'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      <DeleteConfirmPanel {...del} entityName={kart.name} entityType="kart" />
 
       {/* Edit form */}
       {editing && (

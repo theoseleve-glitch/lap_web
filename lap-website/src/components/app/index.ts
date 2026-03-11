@@ -6,3 +6,4 @@ export { UpgradeBanner } from './UpgradeBanner';
 export { QueryError } from './QueryError';
 export { InlineEdit } from './InlineEdit';
 export { SkeletonStatCards, SkeletonCardGrid, SkeletonTableRows, SkeletonBox, SkeletonSessionDetail, SkeletonCompareView } from './Skeleton';
+export { DeleteConfirmPanel } from './DeleteConfirmPanel';

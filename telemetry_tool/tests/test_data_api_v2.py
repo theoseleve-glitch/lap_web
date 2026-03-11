@@ -704,17 +704,18 @@ class TestDeleteSession:
         mock_conn = MagicMock()
         with patch("web.routes.data_v2.get_db_connection") as mock_db, \
              patch("web.routes.data_v2.models") as mock_models, \
-             patch("web.routes.data_v2.soft_delete_session") as mock_soft_del:
+             patch("web.routes.data_v2.delete_entity_cascade") as mock_cascade:
             mock_db.return_value = mock_conn
             mock_models.get_session_by_id.return_value = _sample_session()
+            mock_cascade.return_value = {"deleted": True, "impact": {}}
 
             resp = client.delete("/api/v1/sessions/s1")
 
         assert resp.status_code == 200
         body = resp.get_json()
         assert body["ok"] is True
-        assert body["data"]["deleted"] == "s1"
-        mock_soft_del.assert_called_once_with(mock_conn, "s1")
+        assert body["data"]["deleted"] is True
+        mock_cascade.assert_called_once_with(mock_conn, "session", "s1")
         mock_conn.commit.assert_called_once()
 
     def test_delete_session_not_found(self, client):

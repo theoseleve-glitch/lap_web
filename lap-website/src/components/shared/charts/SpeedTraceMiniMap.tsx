@@ -8,8 +8,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
-import { BACKEND_URL } from '@/lib/api-client';
-import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
+import { api } from '@/lib/api-client';
 
 interface GpsData {
   latitudes: number[];
@@ -33,34 +32,25 @@ export function SpeedTraceMiniMap({
   const gpsRef = useRef<GpsData | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  // Fetch GPS data once
+  // Fetch GPS data once (uses api client for auth headers + 401 retry)
   useEffect(() => {
     let cancelled = false;
     const lap = bestLap ?? 1;
 
-    const headers: Record<string, string> = {};
-    const token = getAccessToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    const wsId = getWorkspaceId();
-    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
-
-    fetch(`${BACKEND_URL}/api/v1/sessions/${sessionId}/gps-trace?lap=${lap}`, {
-      headers,
-      credentials: 'include',
-    })
-      .then((r) => r.json())
-      .then((json) => {
+    api.get<{ available: boolean; latitudes?: number[]; longitudes?: number[]; distances?: number[] }>(
+      `/sessions/${sessionId}/gps-trace?lap=${lap}`,
+    )
+      .then((d) => {
         if (cancelled) return;
-        const d = json.data ?? json;
-        if (d.available === false || !d.latitudes?.length) return;
-        gpsRef.current = {
-          latitudes: d.latitudes,
-          longitudes: d.longitudes,
-          distances: d.distances,
-        };
+        const lats = d.latitudes;
+        const lons = d.longitudes;
+        if (d.available === false || !lats?.length || !lons?.length) return;
+        gpsRef.current = { latitudes: lats, longitudes: lons, distances: d.distances ?? [] };
         setLoaded(true);
       })
-      .catch(() => {});
+      .catch(() => {
+        // Non-critical UI element — silent fail is acceptable
+      });
 
     return () => { cancelled = true; };
   }, [sessionId, bestLap]);
