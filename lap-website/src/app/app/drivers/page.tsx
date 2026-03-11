@@ -49,9 +49,20 @@ export default function DriversPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (driverId: number) => api.delete(`/drivers/${driverId}`),
+    onMutate: async (driverId) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.drivers.all });
+      const prev = queryClient.getQueryData<Driver[]>(queryKeys.drivers.all);
+      queryClient.setQueryData<Driver[]>(queryKeys.drivers.all, (old) =>
+        old ? old.filter((d) => d.id !== driverId) : [],
+      );
+      setConfirmDelete(null);
+      return { prev };
+    },
+    onError: (_err, _id, context) => {
+      if (context?.prev) queryClient.setQueryData(queryKeys.drivers.all, context.prev);
+    },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
-      setConfirmDelete(null);
     },
   });
 
