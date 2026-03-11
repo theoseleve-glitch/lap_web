@@ -33,6 +33,7 @@ export const queryKeys = {
     badges: (id: number) => ['drivers', 'badges', id] as const,
     bestEver: (id: number) => ['drivers', 'best-ever', id] as const,
     sessions: (id: number) => ['drivers', 'sessions', id] as const,
+    gamification: (id: number) => ['drivers', 'gamification', id] as const,
   },
 
   // ── Tracks ────────────────────────────────────

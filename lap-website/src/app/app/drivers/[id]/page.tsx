@@ -1,10 +1,11 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
 import { api } from '@/lib/api-client';
 import { queryKeys } from '@/lib/query-keys';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 import type {
   DriverDetail, DriverProgression, DriverStyleEntry,
   DriverBadge, DriverBestEver, DriverSession,
@@ -15,6 +16,8 @@ import { ProgressionChart } from '@/components/app/drivers/ProgressionChart';
 import { StyleRadar } from '@/components/app/drivers/StyleRadar';
 import { BadgeGrid } from '@/components/app/drivers/BadgeGrid';
 import { DriverSessionsTable } from '@/components/app/drivers/DriverSessionsTable';
+import { XPProgressBar, StreakCounter, AchievementGrid } from '@/components/app/gamification';
+import type { DriverProgress, Achievement } from '@/components/app/gamification';
 
 /* ── Helpers ───────────────────────────────────────────── */
 
@@ -48,10 +51,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export default function DriverDetailPage() {
   const { id } = useParams<{ id: string }>();
   const driverId = Number(id);
-  const router = useRouter();
   const queryClient = useQueryClient();
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [deleting, setDeleting] = useState(false);
 
   // ── Queries (parallel) ──────────────────────────────
   const driverQ = useQuery({
@@ -89,6 +89,12 @@ export default function DriverDetailPage() {
     enabled: driverQ.isSuccess,
   });
 
+  const gamificationQ = useQuery({
+    queryKey: queryKeys.drivers.gamification(driverId),
+    queryFn: () => api.get<DriverProgress>(`/drivers/${driverId}/progress`),
+    enabled: driverQ.isSuccess,
+  });
+
   // ── Mutations ───────────────────────────────────────
   async function saveName(newName: string) {
     await api.patch(`/drivers/${driverId}`, { name: newName });
@@ -101,17 +107,13 @@ export default function DriverDetailPage() {
     queryClient.invalidateQueries({ queryKey: queryKeys.drivers.detail(driverId) });
   }
 
-  async function handleDelete() {
-    setDeleting(true);
-    try {
-      await api.delete(`/drivers/${driverId}`);
-      queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
-      router.push('/app/drivers');
-    } catch {
-      setDeleting(false);
-      setShowDeleteConfirm(false);
-    }
-  }
+  const del = useEntityDelete({
+    entity: 'driver',
+    id: driverId,
+    endpoint: `/drivers/${driverId}`,
+    invalidate: [['drivers'], ['sessions'], ['dashboard']],
+    redirectTo: '/app/drivers',
+  });
 
   // ── Loading / Error ─────────────────────────────────
   if (driverQ.isLoading) {
@@ -134,6 +136,7 @@ export default function DriverDetailPage() {
   const badges = badgesQ.data?.badges ?? [];
   const bestEver = bestEverQ.data;
   const sessions = sessionsQ.data?.sessions ?? [];
+  const gamification = gamificationQ.data ?? null;
 
   return (
     <div className="space-y-6">
@@ -164,6 +167,23 @@ export default function DriverDetailPage() {
           </span>
         )}
       </div>
+
+      {/* ── XP & Streak ────────────────────────────────── */}
+      {gamification && gamification.total_xp > 0 && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <XPProgressBar
+            totalXp={gamification.total_xp}
+            level={gamification.level}
+            xpForCurrentLevel={gamification.xp_for_current_level}
+            xpForNextLevel={gamification.xp_for_next_level}
+            className="flex-1 min-w-0"
+          />
+          <StreakCounter
+            currentStreak={gamification.current_streak}
+            longestStreak={gamification.longest_streak}
+          />
+        </div>
+      )}
 
       {/* ── Stats Bar ──────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -231,42 +251,27 @@ export default function DriverDetailPage() {
         )}
       </Section>
 
+      {/* ── Achievements ────────────────────────────────── */}
+      {gamification && gamification.achievements.length > 0 && (
+        <Section title="Achievements">
+          <AchievementGrid achievements={gamification.achievements} />
+        </Section>
+      )}
+
       {/* ── Danger Zone ────────────────────────────────── */}
       <section className="bg-concrete rounded-lg border border-safety-red/20 p-5">
         <h3 className="font-monument text-sm text-safety-red uppercase tracking-wider mb-3">Danger Zone</h3>
-        {showDeleteConfirm ? (
-          <div className="flex items-center gap-3">
-            <p className="text-chalk font-body text-sm">
-              Delete <strong>{driver.name}</strong> and all their sessions? This cannot be undone.
-            </p>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="px-4 py-2 bg-safety-red text-white font-telemetry text-xs rounded
-                hover:bg-safety-red/80 disabled:opacity-50 transition-colors"
-            >
-              {deleting ? 'Deleting...' : 'Confirm Delete'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowDeleteConfirm(false)}
-              className="px-4 py-2 bg-steel/10 text-steel font-telemetry text-xs rounded
-                hover:bg-steel/20 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        ) : (
+        {!del.showConfirm && (
           <button
             type="button"
-            onClick={() => setShowDeleteConfirm(true)}
+            onClick={del.requestDelete}
             className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-xs rounded
               hover:bg-safety-red/10 transition-colors"
           >
             Delete Driver
           </button>
         )}
+        <DeleteConfirmPanel {...del} entityName={driver.name} entityType="driver" />
       </section>
     </div>
   );

@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } fro
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
+import { useEntityDelete } from '@/hooks/useEntityDelete';
+import { DeleteConfirmPanel } from '@/components/app/DeleteConfirmPanel';
 import { formatLapTime, formatDate, formatDistance, mpsToKmh, mps2ToG } from '@/lib/format-utils';
 import type { CornerData } from '@/components/app/corners';
 import { SkeletonSessionDetail } from '@/components/app/Skeleton';
@@ -18,6 +20,10 @@ const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSect
 const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
 const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
 const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
+
+// Gamification components
+const AchievementToast = lazy(() => import('@/components/app/gamification/AchievementToast'));
+const LevelUpModal = lazy(() => import('@/components/app/gamification/LevelUpModal'));
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
@@ -77,6 +83,16 @@ interface BadgeData {
   criteria: string;
 }
 
+interface GamificationResult {
+  xp_gained: number;
+  new_total: number;
+  old_level: number;
+  new_level: number;
+  leveled_up: boolean;
+  current_streak: number;
+  new_achievements: { key: string; label: string; description: string; icon: string }[];
+}
+
 interface ScoreData {
   pace_score: number | null;
   pace_max: number | null;
@@ -90,6 +106,7 @@ interface ScoreData {
   strengths: string[];
   weaknesses: string[];
   badges?: BadgeData[];
+  gamification?: GamificationResult;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -248,6 +265,19 @@ export default function SessionDetailPage() {
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [trackNamed, setTrackNamed] = useState(false);
 
+  // Gamification state
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [toastAchievement, setToastAchievement] = useState<GamificationResult['new_achievements'][0] | null>(null);
+  const [gamShown, setGamShown] = useState(false);
+
+  const del = useEntityDelete({
+    entity: 'session',
+    id: sessionId,
+    endpoint: `/sessions/${sessionId}`,
+    invalidate: [['sessions'], ['dashboard'], ['drivers'], ['tracks']],
+    redirectTo: '/app/sessions',
+  });
+
   // Fetch all data on mount
   useEffect(() => {
     let cancelled = false;
@@ -298,6 +328,20 @@ export default function SessionDetailPage() {
       cancelled = true;
     };
   }, [sessionId]);
+
+  // Trigger gamification UI once when scores load
+  useEffect(() => {
+    const gam = scores?.gamification;
+    if (!gam || gamShown) return;
+    setGamShown(true);
+
+    if (gam.leveled_up) {
+      setShowLevelUp(true);
+    }
+    if (gam.new_achievements.length > 0) {
+      setToastAchievement(gam.new_achievements[0]);
+    }
+  }, [scores, gamShown]);
 
   // Derived values
   const bestLap = useMemo(() => {
@@ -456,6 +500,16 @@ export default function SessionDetailPage() {
             <kbd className="text-[10px] px-1 py-0.5 rounded bg-asphalt border border-steel/20 text-steel/50 font-telemetry">D</kbd>
           </button>
 
+          {/* Delete */}
+          <button
+            type="button"
+            onClick={del.requestDelete}
+            className="px-3 py-2 bg-concrete border border-safety-red/30 rounded-lg text-sm text-safety-red font-body hover:bg-safety-red/10 transition-colors"
+            data-print="hide"
+          >
+            Delete
+          </button>
+
           {/* Focus Mode */}
           <button
             onClick={() => setFocusOpen(true)}
@@ -472,6 +526,13 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </div>
+
+      {/* Delete confirmation */}
+      <DeleteConfirmPanel
+        {...del}
+        entityName={session.display_name || session.csv_filename || session.session_id}
+        entityType="session"
+      />
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-6 border-b border-steel/10">
@@ -543,6 +604,46 @@ export default function SessionDetailPage() {
             onClose={() => setAnalyzerOpen(false)}
           />
         </Suspense>
+      )}
+
+      {/* Gamification overlays */}
+      <Suspense fallback={null}>
+        {showLevelUp && scores?.gamification && (
+          <LevelUpModal
+            oldLevel={scores.gamification.old_level}
+            newLevel={scores.gamification.new_level}
+            totalXp={scores.gamification.new_total}
+            onClose={() => setShowLevelUp(false)}
+          />
+        )}
+        <AchievementToast
+          achievement={toastAchievement ? {
+            key: toastAchievement.key,
+            label: toastAchievement.label,
+            description: toastAchievement.description,
+            icon: toastAchievement.icon,
+            unlocked: true,
+            unlocked_at: new Date().toISOString(),
+          } : null}
+          onDismiss={() => {
+            const gam = scores?.gamification;
+            if (!gam) { setToastAchievement(null); return; }
+            const idx = gam.new_achievements.findIndex((a) => a.key === toastAchievement?.key);
+            const next = gam.new_achievements[idx + 1] ?? null;
+            setToastAchievement(next);
+          }}
+        />
+      </Suspense>
+
+      {/* XP gained banner */}
+      {scores?.gamification && scores.gamification.xp_gained > 0 && (
+        <div className="fixed bottom-4 left-4 z-40 px-4 py-2 rounded-lg shadow-lg"
+          style={{ backgroundColor: '#1a1a2e', border: '1px solid rgba(163, 230, 53, 0.4)' }}
+        >
+          <span className="font-telemetry text-sm font-semibold" style={{ color: '#a3e635' }}>
+            +{scores.gamification.xp_gained} XP
+          </span>
+        </div>
       )}
     </div>
   );

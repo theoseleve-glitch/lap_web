@@ -6,6 +6,8 @@ import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { QueryError, SkeletonCardGrid } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { XPProgressBar, StreakCounter } from '@/components/app/gamification';
+import type { DriverProgress } from '@/components/app/gamification';
 
 /* -- Types -------------------------------------------------- */
 
@@ -70,6 +72,12 @@ export default function DevelopmentPlansPage() {
   const { data: driversData } = useQuery({
     queryKey: ['drivers-list'],
     queryFn: () => api.get<DriverRow[]>('/drivers'),
+  });
+
+  const { data: driverProgress } = useQuery({
+    queryKey: ['driver-gamification', driverFilter],
+    queryFn: () => api.get<DriverProgress>(`/drivers/${driverFilter}/progress`),
+    enabled: driverFilter != null,
   });
 
   const plans = Array.isArray(plansData) ? plansData : [];
@@ -189,6 +197,25 @@ export default function DevelopmentPlansPage() {
           ))}
         </select>
       </div>
+
+      {/* -- Driver XP (when filtered) ----------------------- */}
+      {driverFilter != null && driverProgress && driverProgress.total_xp > 0 && (
+        <div className="bg-concrete rounded-lg border border-steel/20 p-5 mb-6">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <XPProgressBar
+              totalXp={driverProgress.total_xp}
+              level={driverProgress.level}
+              xpForCurrentLevel={driverProgress.xp_for_current_level}
+              xpForNextLevel={driverProgress.xp_for_next_level}
+              className="flex-1 min-w-0"
+            />
+            <StreakCounter
+              currentStreak={driverProgress.current_streak}
+              longestStreak={driverProgress.longest_streak}
+            />
+          </div>
+        </div>
+      )}
 
       {/* -- Content ----------------------------------------- */}
       {plansLoading ? (
