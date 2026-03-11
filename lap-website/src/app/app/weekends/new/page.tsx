@@ -38,9 +38,9 @@ export default function NewWeekendPage() {
 
   const { data: tracksData } = useQuery({
     queryKey: ['tracks'],
-    queryFn: () => api.get<{ tracks: TrackOption[] }>('/tracks'),
+    queryFn: () => api.get<TrackOption[]>('/tracks'),
   });
-  const tracks = tracksData?.tracks ?? [];
+  const tracks = Array.isArray(tracksData) ? tracksData : [];
 
   const mutation = useMutation({
     mutationFn: (payload: NewWeekendPayload) =>
