@@ -245,8 +245,8 @@ def delete_driver_cascade(conn: sqlite3.Connection, driver_id: int) -> dict:
     counts["sessions"] = c.rowcount
 
     # Driver-level tables.
-    for table in ["driving_style_features", "driver_progression", "driver_profiles",
-                   "development_plans"]:
+    for table in ["driver_badges", "driving_style_features", "driver_progression",
+                   "driver_profiles", "development_plans"]:
         c = conn.execute(f"DELETE FROM {table} WHERE driver_id = ?", (driver_id,))
         counts[table] = c.rowcount
 
