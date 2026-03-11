@@ -79,7 +79,8 @@ def get_driver(driver_id):
         "SELECT d.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS personal_best_s, AVG(s.total_score) AS mean_score "
         "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id "
-        "WHERE d.driver_id = ?", (driver_id,)
+        "WHERE d.driver_id = ? "
+        "GROUP BY d.driver_id", (driver_id,)
     ).fetchone()
     if not row or row["driver_id"] is None:
         return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
@@ -116,7 +117,8 @@ def patch_driver(driver_id):
         "SELECT d.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS personal_best_s, AVG(s.total_score) AS mean_score "
         "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id "
-        "WHERE d.driver_id = ?", (driver_id,)
+        "WHERE d.driver_id = ? "
+        "GROUP BY d.driver_id", (driver_id,)
     ).fetchone()
     return api_response(_map_driver(updated))
 

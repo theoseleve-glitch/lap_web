@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import os
-import uuid
 from functools import wraps
 
 from flask import Blueprint, g, request, send_file
@@ -110,18 +109,16 @@ def generate_export():
         )
 
     conn = _get_conn()
-    export_id = str(uuid.uuid4())
     user_id = getattr(g, "current_user_id", None)
     workspace_id = getattr(g, "workspace_id", None)
 
-    # Insert export record
+    # Insert export record (id is autoincrement Integer per migration 026)
     conn.execute(
         text(
-            "INSERT INTO exports (id, user_id, workspace_id, data_type, format, status) "
-            "VALUES (:id, :user_id, :workspace_id, :data_type, :format, 'pending')"
+            "INSERT INTO exports (user_id, workspace_id, data_type, format, status) "
+            "VALUES (:user_id, :workspace_id, :data_type, :format, 'pending')"
         ),
         {
-            "id": export_id,
             "user_id": user_id,
             "workspace_id": workspace_id,
             "data_type": data_type,
@@ -129,6 +126,20 @@ def generate_export():
         },
     )
     conn.commit()
+
+    # Retrieve the auto-generated id
+    row = conn.execute(
+        text(
+            "SELECT id FROM exports WHERE user_id = :user_id "
+            "ORDER BY created_at DESC LIMIT 1"
+        ),
+        {"user_id": user_id},
+    ).fetchone()
+    export_id = row["id"] if row else None
+
+    if export_id is None:
+        return api_error(ErrorCode.INTERNAL_ERROR,
+                         "Failed to create export record", status=500)
 
     # Dispatch Celery task
     try:
@@ -141,7 +152,7 @@ def generate_export():
     except Exception:
         logger.exception("Failed to dispatch export task for %s", export_id)
         conn.execute(
-            text("UPDATE exports SET status = 'failed', error_message = 'Task dispatch failed' WHERE id = :id"),
+            text("UPDATE exports SET status = 'failed', error = 'Task dispatch failed' WHERE id = :id"),
             {"id": export_id},
         )
         conn.commit()
@@ -172,7 +183,7 @@ def list_exports():
     cursor = conn.execute(
         text(
             "SELECT id, data_type, format, status, file_size, "
-            "error_message, created_at, completed_at "
+            "error, created_at, completed_at "
             "FROM exports "
             "WHERE user_id = :user_id "
             "ORDER BY created_at DESC "
@@ -188,10 +199,10 @@ def list_exports():
         for key in ("created_at", "completed_at"):
             if r.get(key) is not None and hasattr(r[key], "isoformat"):
                 r[key] = r[key].isoformat()
-        # Sanitize error_message — don't leak internal details (stack traces,
+        # Sanitize error — don't leak internal details (stack traces,
         # connection strings, SQL errors) to end users.
-        if r.get("error_message"):
-            r["error_message"] = "Export failed — contact support if this persists."
+        if r.get("error"):
+            r["error"] = "Export failed — contact support if this persists."
         exports.append(r)
 
     return api_response({"exports": exports})
