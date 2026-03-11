@@ -463,14 +463,39 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
 def delete_race(conn, race_id: int) -> bool:
     """Delete a race and all associated data.
 
+    Explicitly removes child rows before the parent to avoid FK constraint
+    issues when PostgreSQL RLS policies interfere with ON DELETE CASCADE.
+
     Returns True if a row was deleted, False otherwise.
     """
-    cur = conn.execute(
-        "DELETE FROM race_configs WHERE race_id = ?", (race_id,)
-    )
+    # Check existence first
+    row = conn.execute(
+        "SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)
+    ).fetchone()
+    if not row:
+        return False
+
+    # Delete children in dependency order (deepest first)
+    child_tables = [
+        "race_rival_events",
+        "race_alerts",
+        "race_compound_models",
+        "race_strategies",
+        "race_rivals",
+        "race_neutralizations",
+        "race_messages",
+        "race_sleep_windows",
+        "race_windows",
+        "race_pit_stops",
+        "race_stints",
+        "race_drivers",
+    ]
+    for table in child_tables:
+        conn.execute(f"DELETE FROM {table} WHERE race_id = ?", (race_id,))
+
+    conn.execute("DELETE FROM race_configs WHERE race_id = ?", (race_id,))
     conn.commit()
-    # rowcount is reliable on both SQLite and psycopg2
-    return (getattr(cur, "rowcount", 0) or 0) > 0
+    return True
 
 
 def run_optimization(conn, race_id: int) -> dict:
