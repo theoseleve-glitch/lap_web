@@ -964,6 +964,8 @@ def run_full_analysis(
     )
     _record("10g_track_decomposition_v2", v2_sections, err)
 
+    _avail_cols = set(best_lap_df.columns) if best_lap_df is not None else None
+
     if v2_sections:
         summary["track_sections_v2"] = v2_sections
 
@@ -977,7 +979,6 @@ def run_full_analysis(
             summary["mrp_events_v2"] = v2_mrp
 
         # Step 10g3 — Handling analysis on v2 sections
-        _avail_cols = set(best_lap_df.columns) if best_lap_df is not None else None
         v2_handling, err = _safe_step(
             "10g3_handling_v2", s10b_corners.run_handling_analysis_v2,
             v2_sections, best_lap_df, available_columns=_avail_cols,

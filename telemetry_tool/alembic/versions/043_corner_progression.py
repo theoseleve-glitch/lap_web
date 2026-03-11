@@ -1,18 +1,18 @@
-"""041 -- Corner progression tracking for coaching V3.
+"""043 -- Corner progression tracking for coaching V3.
 
 Stores per-corner metrics across sessions for trend detection
 and multi-session coaching insights.
 
-Revision ID: 041
-Revises: 040
+Revision ID: 043
+Revises: 042
 Create Date: 2026-03-11
 """
 from sqlalchemy import text
 
 from alembic import op
 
-revision = "041"
-down_revision = "040"
+revision = "043"
+down_revision = "042"
 branch_labels = None
 depends_on = None
 
