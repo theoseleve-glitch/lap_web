@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "categories": {
+    "braking": {
+      "causes": {
+        "early_braking_confidence": {
+          "symptom": "Brake application begins significantly before the optimal braking point",
+          "diagnosis": "Driver lacks confidence in braking ability or track knowledge, resulting in premature brake application and unnecessary speed loss on approach",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 5.0, "moderate": 10.0, "severe": 20.0},
+          "unit": "meters_early"
+        },
+        "late_braking_aggressive": {
+          "symptom": "Brake application begins past the optimal braking point, causing excessive corner-entry speed",
+          "diagnosis": "Driver over-commits to late braking, arriving too fast and compromising corner entry geometry and exit speed",
+          "root_cause": "aggression",
+          "severity_thresholds": {"mild": 3.0, "moderate": 8.0, "severe": 15.0},
+          "unit": "meters_late"
+        },
+        "insufficient_brake_pressure": {
+          "symptom": "Peak braking deceleration well below vehicle capability",
+          "diagnosis": "Driver does not apply enough initial brake pressure, under-utilizing available grip and extending braking distance",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 1.0, "moderate": 2.5, "severe": 4.0},
+          "unit": "mps2_below_capability"
+        },
+        "no_trail_braking": {
+          "symptom": "Brake fully released before turn-in with no overlap between braking and steering",
+          "diagnosis": "Driver separates braking and turning completely, missing the weight transfer benefit that loads the front tyres for better turn-in grip",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 0.05, "moderate": 0.12, "severe": 0.25},
+          "unit": "time_loss_seconds"
+        },
+        "abrupt_brake_release": {
+          "symptom": "Brake pressure drops sharply rather than being trailed off progressively",
+          "diagnosis": "Driver snaps off the brakes instead of progressively releasing, causing sudden weight transfer rearward and destabilizing the car at turn-in",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 15.0, "moderate": 30.0, "severe": 50.0},
+          "unit": "release_rate_mps3"
+        },
+        "inconsistent_brake_point": {
+          "symptom": "Braking point varies significantly across laps for the same corner",
+          "diagnosis": "Driver has not anchored a repeatable reference point, leading to lap-to-lap inconsistency in corner entry",
+          "root_cause": "awareness",
+          "severity_thresholds": {"mild": 3.0, "moderate": 8.0, "severe": 15.0},
+          "unit": "std_dev_meters"
+        },
+        "braking_while_turning": {
+          "symptom": "Heavy braking continues deep into the corner with high steering angle applied",
+          "diagnosis": "Driver carries excessive brake pressure past the trail-brake zone into the cornering phase, exceeding the traction circle and risking lockup or understeer",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 0.03, "moderate": 0.08, "severe": 0.15},
+          "unit": "time_loss_seconds"
+        }
+      }
+    },
+    "cornering": {
+      "causes": {
+        "early_apex": {
+          "symptom": "Vehicle reaches the geometric inside of the corner before the ideal apex point",
+          "diagnosis": "Driver turns in too early, running out of road on exit and having to lift or tighten the line, losing exit speed",
+          "root_cause": "line",
+          "severity_thresholds": {"mild": 2.0, "moderate": 5.0, "severe": 10.0},
+          "unit": "meters_early"
+        },
+        "late_apex_excessive": {
+          "symptom": "Vehicle reaches the inside of the corner well past the geometric apex",
+          "diagnosis": "Driver over-delays turn-in, sacrificing mid-corner speed in pursuit of exit speed beyond the point of diminishing returns",
+          "root_cause": "line",
+          "severity_thresholds": {"mild": 2.0, "moderate": 5.0, "severe": 10.0},
+          "unit": "meters_late"
+        },
+        "mid_corner_speed_loss": {
+          "symptom": "Significant speed drop at apex compared to theoretical minimum speed",
+          "diagnosis": "Driver carries too little speed through the corner apex, either from over-slowing on entry or mid-corner hesitation",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 2.0, "moderate": 5.0, "severe": 10.0},
+          "unit": "kmh_below_theoretical"
+        },
+        "excess_steering_angle": {
+          "symptom": "Steering angle exceeds the optimal slip angle, indicating understeer or over-rotation",
+          "diagnosis": "Driver uses more steering input than necessary, scrubbing speed through excessive front tyre slip",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 3.0, "moderate": 8.0, "severe": 15.0},
+          "unit": "degrees_excess"
+        },
+        "corner_entry_too_fast": {
+          "symptom": "Entry speed exceeds the corner's grip envelope, requiring mid-corner correction",
+          "diagnosis": "Driver arrives too fast into the corner, exceeding available grip and having to lift, scrub speed, or run wide",
+          "root_cause": "aggression",
+          "severity_thresholds": {"mild": 2.0, "moderate": 5.0, "severe": 10.0},
+          "unit": "kmh_over_theoretical"
+        },
+        "tightening_radius": {
+          "symptom": "Corner radius decreases through the turn as driver runs out of road",
+          "diagnosis": "Driver's line progressively tightens, indicating an early turn-in or too much entry speed, requiring increasing steering lock and speed reduction",
+          "root_cause": "line",
+          "severity_thresholds": {"mild": 5.0, "moderate": 12.0, "severe": 20.0},
+          "unit": "pct_radius_decrease"
+        },
+        "mid_corner_correction": {
+          "symptom": "Sudden steering input change or throttle adjustment mid-corner",
+          "diagnosis": "Driver makes a reactive correction mid-corner due to line error, speed misjudgement, or loss of confidence in grip level",
+          "root_cause": "balance",
+          "severity_thresholds": {"mild": 1, "moderate": 2, "severe": 4},
+          "unit": "correction_count"
+        }
+      }
+    },
+    "exit": {
+      "causes": {
+        "late_throttle_application": {
+          "symptom": "Throttle application begins well after the apex, leaving exit speed on the table",
+          "diagnosis": "Driver waits too long after the apex to get on throttle, missing the optimal acceleration window for the exit straight",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 5.0, "moderate": 12.0, "severe": 20.0},
+          "unit": "meters_late"
+        },
+        "hesitant_throttle": {
+          "symptom": "Throttle application is gradual and tentative rather than progressively decisive",
+          "diagnosis": "Driver applies throttle too cautiously on exit, under-utilizing available rear grip and losing acceleration time",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 10.0, "moderate": 25.0, "severe": 40.0},
+          "unit": "pct_below_optimal_rate"
+        },
+        "mid_corner_lift": {
+          "symptom": "Throttle drops significantly between apex and exit while still cornering",
+          "diagnosis": "Driver lifts off throttle mid-corner, shifting weight forward and reducing rear grip, potentially causing oversteer or losing momentum",
+          "root_cause": "fear",
+          "severity_thresholds": {"mild": 10.0, "moderate": 25.0, "severe": 40.0},
+          "unit": "pct_throttle_drop"
+        },
+        "poor_exit_speed": {
+          "symptom": "Exit speed significantly below theoretical optimum for the corner",
+          "diagnosis": "Driver leaves too much speed on the table at corner exit, which cascades as time loss down the following straight",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 2.0, "moderate": 5.0, "severe": 10.0},
+          "unit": "kmh_below_theoretical"
+        },
+        "track_out_not_used": {
+          "symptom": "Vehicle does not use the full track width on corner exit",
+          "diagnosis": "Driver stays away from the exit kerb, using a tighter exit line than necessary and limiting the radius available for acceleration",
+          "root_cause": "awareness",
+          "severity_thresholds": {"mild": 0.5, "moderate": 1.0, "severe": 2.0},
+          "unit": "meters_unused"
+        }
+      }
+    },
+    "consistency": {
+      "causes": {
+        "lap_time_variation": {
+          "symptom": "Lap times vary more than expected between clean laps",
+          "diagnosis": "Driver's lap-to-lap pace is inconsistent, suggesting concentration lapses or inconsistent technique application",
+          "root_cause": "fitness",
+          "severity_thresholds": {"mild": 0.5, "moderate": 1.0, "severe": 2.0},
+          "unit": "std_dev_seconds"
+        },
+        "corner_speed_variation": {
+          "symptom": "Apex or exit speed varies significantly across laps for the same corner",
+          "diagnosis": "Driver executes the same corner differently each lap, indicating technique has not been consolidated into muscle memory",
+          "root_cause": "technique",
+          "severity_thresholds": {"mild": 2.0, "moderate": 4.0, "severe": 8.0},
+          "unit": "std_dev_kmh"
+        },
+        "late_session_degradation": {
+          "symptom": "Lap times increase in the final third of the session",
+          "diagnosis": "Driver's performance drops as the session progresses, suggesting physical or mental fatigue affecting concentration and reaction time",
+          "root_cause": "fitness",
+          "severity_thresholds": {"mild": 0.3, "moderate": 0.8, "severe": 1.5},
+          "unit": "seconds_slower"
+        },
+        "sector_imbalance": {
+          "symptom": "One sector consistently weaker relative to theoretical compared to other sectors",
+          "diagnosis": "Driver has a sector-specific weakness, often due to unfamiliarity with a particular corner type or sequence in that section",
+          "root_cause": "awareness",
+          "severity_thresholds": {"mild": 0.2, "moderate": 0.5, "severe": 1.0},
+          "unit": "seconds_delta"
+        }
+      }
+    },
+    "vehicle_management": {
+      "causes": {
+        "tyre_abuse": {
+          "symptom": "Tyre grip degrades faster than expected across a session or stint",
+          "diagnosis": "Driver's driving style generates excessive heat or wear in the tyres through aggressive inputs, reducing grip available in later laps",
+          "root_cause": "management",
+          "severity_thresholds": {"mild": 0.3, "moderate": 0.7, "severe": 1.5},
+          "unit": "seconds_degradation_per_stint"
+        },
+        "fuel_weight_unadjusted": {
+          "symptom": "Driving style does not adapt as fuel load decreases",
+          "diagnosis": "Driver does not adjust braking points and corner speeds as the car gets lighter with fuel burn, leaving time on the table in later stints",
+          "root_cause": "management",
+          "severity_thresholds": {"mild": 0.1, "moderate": 0.3, "severe": 0.6},
+          "unit": "seconds_unadjusted"
+        },
+        "kerb_avoidance": {
+          "symptom": "Driver avoids kerbs that are safe to use for wider cornering line",
+          "diagnosis": "Driver stays away from kerbs, using a tighter line than necessary and limiting the effective track width available for faster cornering",
+          "root_cause": "confidence",
+          "severity_thresholds": {"mild": 0.05, "moderate": 0.12, "severe": 0.25},
+          "unit": "time_loss_seconds"
+        }
+      }
+    }
+  }
+}
