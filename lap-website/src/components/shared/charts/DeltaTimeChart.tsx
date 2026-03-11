@@ -42,12 +42,13 @@ export function DeltaTimeChart({
     plotX: number; plotY: number; plotW: number; plotH: number;
   } | null>(null);
 
-  const [lapA, setLapA] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
+  const safeLaps = gpsLaps ?? [];
+  const [lapA, setLapA] = useState<number>(bestLap ?? safeLaps[0] ?? 0);
   const [lapB, setLapB] = useState<number>(() => {
     // Default lap B: second lap or first non-best lap
-    if (gpsLaps.length < 2) return 0;
-    const other = gpsLaps.find((l) => l !== (bestLap ?? gpsLaps[0]));
-    return other ?? gpsLaps[1] ?? 0;
+    if (safeLaps.length < 2) return 0;
+    const other = safeLaps.find((l) => l !== (bestLap ?? safeLaps[0]));
+    return other ?? safeLaps[1] ?? 0;
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -388,7 +389,7 @@ export function DeltaTimeChart({
   }, [draw]);
 
   // ── Render ────────────────────────────────────────────────
-  if (gpsLaps.length < 2) {
+  if (safeLaps.length < 2) {
     return (
       <div className={`text-steel text-sm text-center p-4 ${className}`}>
         At least 2 laps with GPS data are needed for delta comparison.
@@ -400,28 +401,28 @@ export function DeltaTimeChart({
     <div ref={containerRef} className={className} role="img" aria-label="Delta time chart showing time difference between laps">
       {/* Lap selectors */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <label className="flex items-center gap-1.5 text-gray-400">
+        <label className="flex items-center gap-1.5 text-steel font-body">
           Primary:
           <select
             value={lapA}
             onChange={(e) => setLapA(Number(e.target.value))}
-            className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
+            className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
           >
-            {gpsLaps.map((l) => (
+            {safeLaps.map((l) => (
               <option key={l} value={l}>
                 Lap {l}{l === bestLap ? ' (Best)' : ''}
               </option>
             ))}
           </select>
         </label>
-        <label className="flex items-center gap-1.5 text-gray-400">
+        <label className="flex items-center gap-1.5 text-steel font-body">
           Reference:
           <select
             value={lapB}
             onChange={(e) => setLapB(Number(e.target.value))}
-            className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
+            className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
           >
-            {gpsLaps.map((l) => (
+            {safeLaps.map((l) => (
               <option key={l} value={l}>
                 Lap {l}{l === bestLap ? ' (Best)' : ''}
               </option>

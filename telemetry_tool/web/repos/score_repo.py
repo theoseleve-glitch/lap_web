@@ -28,6 +28,12 @@ def insert_score_details(
     def _sub(key: str, field: str):
         return _safe_float(subs.get(key, {}).get(field))
 
+    # Adaptive weighting can push individual sub-scores above 25 (the
+    # original static max) when categories are suppressed and their
+    # weight is redistributed.  Scores always sum to <= 100.
+    # No clamping needed — the DB constraints (migration 039) allow up
+    # to 50 per category.
+
     conn.execute(Q.INSERT_SCORE_DETAILS, {
         "session_id":        session_id,
         "pace_score":        _sub("pace", "score"),

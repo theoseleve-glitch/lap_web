@@ -11,6 +11,7 @@ import { ThrottleOnsetMap } from './ThrottleOnsetMap';
 import { ConsistencyHeatmap } from './ConsistencyHeatmap';
 import { CornerGHistogram } from './CornerGHistogram';
 import { CornerSpeedTrend } from './CornerSpeedTrend';
+import { CornerDefiner } from '../charts/CornerDefiner';
 import 'leaflet/dist/leaflet.css';
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -70,7 +71,7 @@ interface CornersTabProps {
   sessionId: string;
 }
 
-type SubTab = 'coaching' | 'replay' | 'charts';
+type SubTab = 'coaching' | 'replay' | 'charts' | 'define';
 
 const STORAGE_KEY = 'corner_sel_';
 
@@ -98,7 +99,9 @@ function TrackOverviewMap({
     enabled: !!sessionId,
   });
 
-  const positions = posData?.corners ?? [];
+  const positions = (posData?.corners ?? []).filter(
+    (p) => p.lat !== 0 && p.lon !== 0 && isFinite(p.lat) && isFinite(p.lon),
+  );
 
   useEffect(() => {
     if (!mapRef.current || positions.length === 0) return;
@@ -123,9 +126,11 @@ function TrackOverviewMap({
         maxZoom: 19,
       }).addTo(map);
 
-      // Fit to positions
+      // Fit to positions (guard against invalid bounds)
       const bounds = L.latLngBounds(positions.map((p) => [p.lat, p.lon]));
-      map.fitBounds(bounds, { padding: [40, 40] });
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [40, 40] });
+      }
 
       // Draw corner markers
       const layers = new Map<number, { marker: L.CircleMarker }>();
@@ -270,11 +275,27 @@ function AreaOfInterestBar({
 
 /* ── Page ─────────────────────────────────────────────── */
 
-export function CornersTab({ corners, sessionId }: CornersTabProps) {
+interface GpsTraceData {
+  latitudes: number[];
+  longitudes: number[];
+  distances: number[];
+  speeds: number[];
+}
+
+export function CornersTab({ corners: rawCorners, sessionId }: CornersTabProps) {
+  const corners = rawCorners ?? [];
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(corners.map((c) => c.corner_id)),
   );
   const [subTab, setSubTab] = useState<SubTab>('coaching');
+
+  // Fetch GPS trace for CornerDefiner (only when 'define' tab is active)
+  const { data: gpsTrace } = useQuery({
+    queryKey: ['gps-trace-for-definer', sessionId],
+    queryFn: () => api.get<GpsTraceData>(`/sessions/${sessionId}/gps-trace`),
+    enabled: subTab === 'define',
+    staleTime: 5 * 60 * 1000,
+  });
 
   // Persist selection
   useEffect(() => {
@@ -318,15 +339,45 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
 
   if (corners.length === 0) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <p className="text-steel font-telemetry text-sm mb-2">
-            No corners detected for this session.
-          </p>
-          <p className="text-steel/60 font-telemetry text-xs">
-            Corner detection requires GPS data with sufficient curvature changes.
-          </p>
+      <div className="space-y-4">
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <p className="text-steel font-telemetry text-sm mb-2">
+              No corners detected for this session.
+            </p>
+            <p className="text-steel/60 font-telemetry text-xs mb-4">
+              Corner detection requires GPS data with sufficient curvature changes.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSubTab('define')}
+              className="px-4 py-2 border border-pit-orange/50 text-pit-orange text-xs font-telemetry
+                rounded hover:bg-pit-orange/10 transition-colors"
+            >
+              Define Corners Manually
+            </button>
+          </div>
         </div>
+        {subTab === 'define' && (
+          <div className="space-y-3">
+            <p className="text-xs text-steel font-body">
+              Click on the track to place entry, apex, and exit points for each corner. Saved corners will be used in future coaching analysis.
+            </p>
+            {gpsTrace?.latitudes?.length ? (
+              <CornerDefiner
+                sessionId={sessionId}
+                latitudes={gpsTrace.latitudes}
+                longitudes={gpsTrace.longitudes}
+                distances={gpsTrace.distances}
+                onDone={() => window.location.reload()}
+              />
+            ) : (
+              <div className="flex items-center justify-center py-12 text-steel/60 text-sm">
+                Loading GPS trace data...
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -354,6 +405,7 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
           { key: 'coaching' as SubTab, label: 'Corner Coaching' },
           { key: 'replay' as SubTab, label: 'Corner Replay' },
           { key: 'charts' as SubTab, label: 'Analysis Charts' },
+          { key: 'define' as SubTab, label: 'Define Corners' },
         ]).map((tab) => (
           <button
             key={tab.key}
@@ -399,6 +451,32 @@ export function CornersTab({ corners, sessionId }: CornersTabProps) {
             <p className="text-xs text-steel mb-3 font-body">Minimum speed per corner across laps — shows learning and consistency</p>
             <CornerSpeedTrend sessionId={sessionId} />
           </div>
+        </div>
+      )}
+
+      {subTab === 'define' && (
+        <div className="space-y-3">
+          <p className="text-xs text-steel font-body">
+            Click on the track to place entry, apex, and exit points for each corner. Saved corners will be used in future coaching analysis.
+          </p>
+          {gpsTrace?.latitudes?.length ? (
+            <CornerDefiner
+              sessionId={sessionId}
+              latitudes={gpsTrace.latitudes}
+              longitudes={gpsTrace.longitudes}
+              distances={gpsTrace.distances}
+              onDone={() => {
+                // Switch back to coaching tab after defining corners
+                setSubTab('coaching');
+                // Reload page to pick up new coaching data
+                window.location.reload();
+              }}
+            />
+          ) : (
+            <div className="flex items-center justify-center py-12 text-steel/60 text-sm">
+              Loading GPS trace data...
+            </div>
+          )}
         </div>
       )}
     </div>

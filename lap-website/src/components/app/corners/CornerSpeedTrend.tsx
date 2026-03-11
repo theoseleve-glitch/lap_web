@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { BACKEND_URL } from '@/lib/api-client';
+import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
 
 interface CornerMetric {
   lap_number: number;
@@ -32,7 +33,14 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
   const [available, setAvailable] = useState(true);
 
   useEffect(() => {
+    const headers: Record<string, string> = {};
+    const token = getAccessToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const wsId = getWorkspaceId();
+    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
+
     fetch(`${BACKEND_URL}/api/v1/sessions/${sessionId}/corners/per-lap`, {
+      headers,
       credentials: 'include',
     })
       .then((r) => r.json())

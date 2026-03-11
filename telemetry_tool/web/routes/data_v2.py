@@ -4537,13 +4537,13 @@ def get_driver_achievements() -> tuple[dict, int]:
 
     # Fetch all sessions for the current workspace
     rows = conn.execute(
-        text(
-            "SELECT session_id, session_date, track_name, driver_name, "
-            "       n_laps, best_lap_time_s, total_score, grade "
-            "FROM sessions "
-            "WHERE deleted_at IS NULL "
-            "ORDER BY session_date DESC"
-        )
+        "SELECT s.session_id, s.session_date, t.track_name, d.driver_name, "
+        "       s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
+        "FROM sessions s "
+        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.deleted_at IS NULL "
+        "ORDER BY s.session_date DESC"
     ).fetchall()
 
     sessions = [dict(r) if not isinstance(r, dict) else r for r in rows]

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
@@ -168,8 +168,17 @@ async function fetchTrackLayout(jobId: string): Promise<TrackLayout> {
     credentials: 'include',
   });
   const envelope = await res.json();
-  if (envelope.ok && envelope.data) return envelope.data as TrackLayout;
-  throw new Error(envelope.error?.message ?? 'Failed to load track layout');
+  if (!envelope.ok || !envelope.data) throw new Error(envelope.error?.message ?? 'Failed to load track layout');
+  const d = envelope.data;
+  // Normalize key names — backend may return short keys (lat/lon/distance_m)
+  return {
+    latitudes: d.latitudes ?? d.lat ?? [],
+    longitudes: d.longitudes ?? d.lon ?? [],
+    distances: d.distances ?? d.distance_m ?? [],
+    speeds: d.speeds ?? [],
+    corners: d.corners ?? [],
+    track_id: d.track_id,
+  };
 }
 
 async function resumeWithCorners(jobId: string, selectedIds: number[]): Promise<void> {
@@ -220,7 +229,15 @@ function PipelineProgress({
 
 /* ── Component ──────────────────────────────────────── */
 
-export default function UploadPage() {
+export default function UploadPageWrapper() {
+  return (
+    <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading...</div>}>
+      <UploadPage />
+    </Suspense>
+  );
+}
+
+function UploadPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);

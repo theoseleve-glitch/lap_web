@@ -596,14 +596,24 @@ export default function SessionsPage() {
     },
   });
 
-  // Bulk re-analyze mutation
+  // Bulk re-analyze mutation — calls /sessions/<id>/recoach per session
   const reanalyzeMutation = useMutation({
     mutationFn: async (ids: (string | number)[]) => {
       setBulkStatus(`Re-analyzing 0/${ids.length}...`);
-      return api.post<{ succeeded: number; failed: number }>(
-        '/sessions/batch-reanalyze',
-        { session_ids: ids }
+      let succeeded = 0;
+      let failed = 0;
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            await api.post(`/sessions/${id}/recoach`);
+            succeeded++;
+          } catch {
+            failed++;
+          }
+          setBulkStatus(`Re-analyzing ${succeeded + failed}/${ids.length}...`);
+        })
       );
+      return { succeeded, failed };
     },
     onSuccess: (data) => {
       const msg = data.failed

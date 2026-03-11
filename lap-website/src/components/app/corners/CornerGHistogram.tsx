@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { BACKEND_URL } from '@/lib/api-client';
+import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
 
 interface CornerInfo {
   corner_id: number;
@@ -37,7 +38,14 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
   // Fetch GG data
   useEffect(() => {
     const lap = bestLap ?? 1;
+    const headers: Record<string, string> = {};
+    const token = getAccessToken();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const wsId = getWorkspaceId();
+    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
+
     fetch(`${BACKEND_URL}/api/v1/sessions/${sessionId}/gg-data?lap=${lap}`, {
+      headers,
       credentials: 'include',
     })
       .then((r) => r.json())

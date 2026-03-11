@@ -88,8 +88,10 @@ class TestPipelineTrackLayout:
         layout = _extract_track_layout_for_picker(df, [])
         assert layout is not None, "Should return layout even with no corners"
         assert layout["corners"] == []
-        assert len(layout["lat"]) == 4
-        assert len(layout["lon"]) == 4
+        assert len(layout["latitudes"]) == 4
+        assert len(layout["longitudes"]) == 4
+        assert len(layout["distances"]) == 4
+        assert len(layout["speeds"]) == 4
         assert layout["n_points"] == 4
 
     def test_layout_with_corners(self):
@@ -114,6 +116,10 @@ class TestPipelineTrackLayout:
         assert len(layout["corners"]) == 2
         assert layout["corners"][0]["corner_id"] == 1
         assert layout["corners"][1]["corner_id"] == 2
+        # Verify corners are enriched with lat/lon/dist_m
+        assert "lat" in layout["corners"][0]
+        assert "lon" in layout["corners"][0]
+        assert "dist_m" in layout["corners"][0]
 
     def test_layout_returns_none_without_gps(self):
         import pandas as pd

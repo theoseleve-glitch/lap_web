@@ -29,14 +29,17 @@ def audit_log(conn, action: str, details: dict | None = None):
         ip = ""
         ua = ""
 
-    conn.execute(
-        "INSERT INTO audit_log (user_id, action, details, ip_address, user_agent) "
-        "VALUES (%(uid)s, %(action)s, %(details)s, %(ip)s, %(ua)s)",
-        {
-            "uid": user_id,
-            "action": action,
-            "details": json.dumps(details or {}),
-            "ip": ip[:45] or None,
-            "ua": ua[:500] or None,
-        },
-    )
+    try:
+        conn.execute(
+            "INSERT INTO audit_log (user_id, action, details, ip_address, user_agent) "
+            "VALUES (:uid, :action, :details, :ip, :ua)",
+            {
+                "uid": user_id,
+                "action": action,
+                "details": json.dumps(details or {}),
+                "ip": ip[:45] or None,
+                "ua": ua[:500] or None,
+            },
+        )
+    except Exception:
+        logger.debug("audit_log skipped (table may not exist): %s", action)

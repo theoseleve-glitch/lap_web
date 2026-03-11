@@ -880,14 +880,27 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
         ctx.save()
 
         corners = phase1_result.get("corners") or []
+        track_layout = phase1_result.get("track_layout")
         logger.info(
-            "Job %s: analyze complete — %d corners detected, continuing to finalize",
+            "Job %s: analyze complete — %d corners detected",
             job_id, len(corners),
         )
 
-        # Continue to finalize with all detected corners.
-        # Corner selection UI (InteractionRequired pause) can be re-enabled
-        # once the frontend supports it.
+        # Pause for corner selection if corners were detected and
+        # we have a track layout for the picker UI.
+        if corners and track_layout:
+            _update_job_progress(
+                job_id=job_id, status="awaiting_corner_selection",
+                stage_name="corner_detect", stage_index=7, stage_total=15,
+                pause_reason="corner_selection",
+            )
+            # Release workspace lock while waiting for user interaction.
+            # pipeline_finalize will re-acquire it on the resume path.
+            release_workspace_lock(redis_client, ctx.workspace_id, job_id)
+            logger.info("Job %s: pausing for corner selection (%d corners), lock released", job_id, len(corners))
+            return None  # Stop Celery chain — user resumes via /jobs/<id>/resume
+
+        # No corners or no layout — continue without pause
         _update_job_progress(
             job_id=job_id, status="running",
             stage_name="analyze_complete", stage_index=8, stage_total=15,
@@ -902,6 +915,8 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             stage_name="corner_detect", stage_index=7, stage_total=15,
             pause_reason=exc.reason,
         )
+        # Release workspace lock while waiting for user interaction.
+        release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         return None
     except FatalError as exc:
         _update_job_progress(

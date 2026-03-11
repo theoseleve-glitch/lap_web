@@ -299,19 +299,47 @@ def extract_track_layout_for_picker(
     if lat_col is None or lon_col is None:
         return None
 
+    # Speed column (optional — used for speed-colored track rendering)
+    speed_col = None
+    for c in (_COL_SPEED, "speed_mps", "Speed (m/s)"):
+        if c in best_lap_df.columns:
+            speed_col = c
+            break
+
     lat = pd.to_numeric(best_lap_df[lat_col], errors="coerce").values
     lon = pd.to_numeric(best_lap_df[lon_col], errors="coerce").values
     dist_arr = (
         pd.to_numeric(best_lap_df[dist_col], errors="coerce").values
         if dist_col else np.arange(len(lat), dtype=float)
     )
+    speed_arr = (
+        pd.to_numeric(best_lap_df[speed_col], errors="coerce").values
+        if speed_col else np.zeros(len(lat))
+    )
+
+    # Enrich corners with lat/lon from the lap data (for map marker placement)
+    enriched_corners = []
+    for cn in corners:
+        ecn = dict(cn)
+        s_apex = cn.get("s_apex")
+        s_mid = s_apex if s_apex is not None else (
+            ((cn.get("s_start") or 0) + (cn.get("s_end") or 0)) / 2
+        )
+        # Find closest index in dist_arr
+        idx = int(np.searchsorted(dist_arr, s_mid))
+        idx = min(idx, len(lat) - 1)
+        ecn["lat"] = float(lat[idx]) if np.isfinite(lat[idx]) else 0.0
+        ecn["lon"] = float(lon[idx]) if np.isfinite(lon[idx]) else 0.0
+        ecn["dist_m"] = float(dist_arr[idx])
+        enriched_corners.append(ecn)
 
     # Downsample for UI (max ~500 points)
     step = max(1, len(lat) // 500)
     return {
-        "lat": lat[::step].tolist(),
-        "lon": lon[::step].tolist(),
-        "distance_m": dist_arr[::step].tolist(),
-        "corners": corners,
+        "latitudes": lat[::step].tolist(),
+        "longitudes": lon[::step].tolist(),
+        "distances": dist_arr[::step].tolist(),
+        "speeds": speed_arr[::step].tolist(),
+        "corners": enriched_corners,
         "n_points": len(lat),
     }

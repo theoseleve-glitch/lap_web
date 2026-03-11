@@ -53,16 +53,35 @@ def run_track_detection(
 
     track_name = meta.get("track_name") or meta.get("track_id", "Unknown Track")
 
-    match = track_mod.register_or_match_track(trimmed_df, track_name=track_name)
-    track_id = match.track_id if match is not None else meta.get("track_id", "unknown_track")
+    # Compute fingerprint (needed for upsert_track in the DB)
+    fingerprint = track_mod.compute_track_fingerprint(trimmed_df)
 
-    logger.info("Track detected: %s (id=%s)", track_name, track_id)
+    result = track_mod.register_or_match_track(trimmed_df, track_name=track_name)
+    # register_or_match_track returns (MatchResult, database_list)
+    if isinstance(result, tuple):
+        match_result, _db = result
+    else:
+        match_result = result
+
+    track_id = match_result.track_id if match_result is not None else meta.get("track_id", "unknown_track")
+    matched_name = getattr(match_result, "track_name", track_name)
+
+    logger.info("Track detected: %s (id=%s, matched=%s, new=%s)",
+                matched_name, track_id,
+                getattr(match_result, "matched", None),
+                getattr(match_result, "is_new", None))
+
+    # Build a rich dict the orchestrator can pass to upsert_track.
+    # MatchResult.to_dict() has {track_id, track_name, ...} but lacks
+    # the fingerprint geometry that upsert_track needs for the DB row.
+    track_info = match_result.to_dict() if hasattr(match_result, "to_dict") else {}
+    track_info["fingerprint"] = fingerprint.to_dict()
 
     # ── Persist into SessionContext if both handles are available ──
     if context is not None and output_dir is not None:
         _persist_context(context, track_id, output_dir)
 
-    return match, track_id
+    return track_info, track_id
 
 
 def _persist_context(context: Any, track_id: str, output_dir: str) -> None:

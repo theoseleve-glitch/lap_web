@@ -368,10 +368,13 @@ def run_full_analysis(
         else:
             track_match, track_id = None, meta.get("track_id", "unknown_track")
         meta["track_id"] = track_id
-        summary["track_match"] = (
-            track_match.to_dict()
-            if track_match and hasattr(track_match, "to_dict") else None
-        )
+        # track_match is a dict (from s05_track) or a MatchResult with .to_dict()
+        if track_match and isinstance(track_match, dict):
+            summary["track_match"] = track_match
+        elif track_match and hasattr(track_match, "to_dict"):
+            summary["track_match"] = track_match.to_dict()
+        else:
+            summary["track_match"] = None
         summary["track_id"] = track_id
 
         # STEP 06 — Segment Laps
