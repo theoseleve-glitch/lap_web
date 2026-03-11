@@ -214,15 +214,35 @@ def get_all_drivers(conn: sqlite3.Connection) -> list[dict]:
     return drivers
 
 
-def delete_driver_cascade(conn: sqlite3.Connection, driver_id: int) -> dict:
-    """Delete a driver and all dependent data. Returns counts of deleted rows."""
-    counts = {}
+def _safe_delete(conn, sql: str, params: tuple, table: str, use_pg: bool) -> int:
+    """Execute a DELETE, isolating failures with SAVEPOINTs on PG.
 
-    # Get all session IDs for this driver.
-    session_rows = conn.execute(
-        "SELECT session_id FROM sessions WHERE driver_id = ?", (driver_id,)
-    ).fetchall()
-    sids = [r["session_id"] for r in session_rows]
+    On PostgreSQL, a failed statement aborts the entire transaction.
+    Using SAVEPOINT/ROLLBACK TO lets us skip missing tables without
+    poisoning the transaction for subsequent deletes.
+    """
+    if use_pg:
+        sp = f"sp_{table}"
+        conn.execute(f"SAVEPOINT {sp}")
+        try:
+            c = conn.execute(sql, params)
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+            return c.rowcount
+        except Exception:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            return 0
+    else:
+        try:
+            return conn.execute(sql, params).rowcount
+        except Exception:
+            return 0
+
+
+def delete_driver_cascade(conn, driver_id: int) -> dict:
+    """Delete a driver and all dependent data. Returns counts of deleted rows."""
+    import os
+    use_pg = os.environ.get("USE_PG", "0") == "1"
+    counts = {}
 
     # Delete session-level children.
     session_tables = [
@@ -233,15 +253,13 @@ def delete_driver_cascade(conn: sqlite3.Connection, driver_id: int) -> dict:
         "what_if_scenarios", "condition_markers", "weekend_sessions",
     ]
     for table in session_tables:
-        try:
-            c = conn.execute(
-                f"DELETE FROM {table} WHERE session_id IN "
-                f"(SELECT session_id FROM sessions WHERE driver_id = ?)",
-                (driver_id,),
-            )
-            counts[table] = c.rowcount
-        except Exception:
-            counts[table] = 0
+        counts[table] = _safe_delete(
+            conn,
+            f"DELETE FROM {table} WHERE session_id IN "
+            f"(SELECT session_id FROM sessions WHERE driver_id = ?)",
+            (driver_id,),
+            table, use_pg,
+        )
 
     # Sessions themselves.
     c = conn.execute("DELETE FROM sessions WHERE driver_id = ?", (driver_id,))
@@ -251,11 +269,12 @@ def delete_driver_cascade(conn: sqlite3.Connection, driver_id: int) -> dict:
     for table in ["driver_badges", "driver_stats_rollup", "export_jobs",
                    "driving_style_features", "driver_progression",
                    "driver_profiles", "development_plans"]:
-        try:
-            c = conn.execute(f"DELETE FROM {table} WHERE driver_id = ?", (driver_id,))
-            counts[table] = c.rowcount
-        except Exception:
-            counts[table] = 0
+        counts[table] = _safe_delete(
+            conn,
+            f"DELETE FROM {table} WHERE driver_id = ?",
+            (driver_id,),
+            table, use_pg,
+        )
 
     # The driver itself.
     conn.execute("DELETE FROM drivers WHERE driver_id = ?", (driver_id,))

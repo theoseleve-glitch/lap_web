@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
-import { CornerPicker, type TrackLayout } from '@/components/app/CornerPicker';
+import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
 
 /* ── Types ──────────────────────────────────────────── */
@@ -175,8 +175,11 @@ async function fetchTrackLayout(jobId: string): Promise<TrackLayout> {
   };
 }
 
-async function resumeWithCorners(jobId: string, selectedIds: number[]): Promise<void> {
-  await api.post(`/jobs/${jobId}/resume`, { selected_corner_ids: selectedIds });
+async function resumeWithCorners(
+  jobId: string,
+  corners: { s_start: number; s_apex: number; s_end: number }[],
+): Promise<void> {
+  await api.post(`/jobs/${jobId}/resume`, { corners });
 }
 
 /* ── Progress Bar ──────────────────────────────────────── */
@@ -565,12 +568,18 @@ function UploadPage() {
     }
   }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, jokerEnabled, jokerLap, connectSSE]);
 
-  // Corner selection submit
-  const handleCornerSubmit = useCallback(async (selectedIds: number[]) => {
+  // Corner editor submit (custom geometry)
+  const handleCornerSubmit = useCallback(async (
+    corners: { s_start: number; s_apex: number; s_end: number }[],
+  ) => {
     if (!jobId) return;
+    if (!corners || corners.length === 0) {
+      setErrorMessage('Please define at least one corner before submitting.');
+      return;
+    }
     setIsSubmittingCorners(true);
     try {
-      await resumeWithCorners(jobId, selectedIds);
+      await resumeWithCorners(jobId, corners);
       setPageState('tracking');
       setProgressPct(47); // ~7/15 stages
       connectSSE(jobId);
@@ -924,14 +933,14 @@ function UploadPage() {
         <div className="max-w-3xl">
           <div className="mb-4 p-4 rounded-lg bg-pit-orange/5 border border-pit-orange/20">
             <p className="text-chalk font-body text-sm mb-1">
-              Select corners for detailed analysis
+              Define corners for detailed analysis
             </p>
             <p className="text-steel text-xs font-body">
-              Click corners on the map or use the chips below to choose which turns get full coaching analysis.
-              All corners are selected by default.
+              Click on the track to place corners. Drag entry/exit handles to adjust zones.
+              Auto-detected corners will be used if you don&apos;t interact within 15 seconds.
             </p>
           </div>
-          <CornerPicker
+          <CornerEditor
             trackLayout={trackLayout}
             onSubmit={handleCornerSubmit}
             isSubmitting={isSubmittingCorners}

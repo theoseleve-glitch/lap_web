@@ -572,8 +572,29 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     resampled_laps, corners = _load_intermediate_state(ctx)
 
     if resampled_laps:
-        # Filter corners by user selection if specified
-        if ctx.selected_corner_ids is not None and corners:
+        # Custom corners override auto-detected; legacy filter as fallback
+        if ctx.custom_corners is not None:
+            from pipeline.helpers import enrich_custom_corners
+            import numpy as np
+
+            redis_client = ctx.redis_client
+            raw_layout = redis_client.get(f"pipeline:layout:{ctx.job_id}") if redis_client else None
+            if raw_layout:
+                layout = _json.loads(raw_layout)
+                lats = np.array(layout.get("latitudes", []))
+                lons = np.array(layout.get("longitudes", []))
+                dists = np.array(layout.get("distances", []))
+                corners = enrich_custom_corners(ctx.custom_corners, lats, lons, dists)
+            else:
+                corners = [
+                    {**cn, "corner_id": i, "lat": 0.0, "lon": 0.0, "direction": "S"}
+                    for i, cn in enumerate(ctx.custom_corners)
+                ]
+            logger.info(
+                "Job %s: using %d custom corners (user-defined)",
+                ctx.job_id, len(corners),
+            )
+        elif ctx.selected_corner_ids is not None and corners:
             selected_set = set(ctx.selected_corner_ids)
             corners = [c for c in corners if c.get("corner_id") in selected_set]
             logger.info(

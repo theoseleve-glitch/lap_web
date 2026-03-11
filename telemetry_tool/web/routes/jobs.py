@@ -300,10 +300,15 @@ def resume(job_id: str):
         )
 
     if current_status == "awaiting_corner_selection":
-        # Corner selection path
-        selected_ids = g.body.selected_corner_ids
-        if selected_ids is not None:
-            ctx.set_selected_corner_ids(selected_ids)
+        # Corner selection path — custom geometry or legacy ID filter
+        if g.body.corners is not None:
+            ctx.set_custom_corners([
+                {"s_start": c.s_start, "s_apex": c.s_apex, "s_end": c.s_end}
+                for c in g.body.corners
+            ])
+            ctx.save()
+        elif g.body.selected_corner_ids is not None:
+            ctx.set_selected_corner_ids(g.body.selected_corner_ids)
             ctx.save()
     else:
         # Joker decision path
