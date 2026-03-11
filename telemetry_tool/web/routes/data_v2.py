@@ -44,6 +44,7 @@ from web import models
 from web.api_utils import ErrorCode, api_error, api_response
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
+from web.repos.session_repo import soft_delete_session, restore_session
 
 logger = logging.getLogger(__name__)
 
@@ -1180,7 +1181,7 @@ def delete_session(session_id: str) -> tuple[dict, int]:
         audit_log(conn, "session.hard_delete", {"session_id": session_id})
     else:
         # Soft delete — mark deleted_at, data preserved
-        models.soft_delete_session(conn, session_id)
+        soft_delete_session(conn, session_id)
         audit_log(conn, "session.soft_delete", {"session_id": session_id})
 
     conn.commit()
@@ -1212,7 +1213,7 @@ def restore_session(session_id: str) -> tuple[dict, int]:
     if not session.get("deleted_at"):
         return api_error(ErrorCode.CONFLICT, "Session is not deleted", status=409)
 
-    models.restore_session(conn, session_id)
+    restore_session(conn, session_id)
     audit_log(conn, "session.restore", {"session_id": session_id})
     conn.commit()
 
@@ -1285,10 +1286,10 @@ def bulk_session_action() -> tuple[dict, int]:
             continue
 
         if action == "delete":
-            if models.soft_delete_session(conn, sid):
+            if soft_delete_session(conn, sid):
                 processed += 1
         elif action == "restore":
-            if models.restore_session(conn, sid):
+            if restore_session(conn, sid):
                 processed += 1
         elif action == "favorite":
             models.update_session_field(conn, sid, "is_favorite", 1)
@@ -4839,11 +4840,11 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
     # 1. Resolve best lap and load GPS trace
     best_lap = _resolve_lap_number(conn, session_id)
     if best_lap is None:
-        return api_error(ErrorCode.VALIDATION, "No laps for session", status=400)
+        return api_error(ErrorCode.VALIDATION_ERROR, "No laps for session", status=400)
 
     trace = models.get_gps_trace(conn, session_id, best_lap)
     if trace is None:
-        return api_error(ErrorCode.VALIDATION, "No GPS trace for best lap", status=400)
+        return api_error(ErrorCode.VALIDATION_ERROR, "No GPS trace for best lap", status=400)
 
     # 2. Reconstruct a best_lap DataFrame from stored trace data
     import numpy as np
@@ -4855,7 +4856,7 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
     lons = trace.get("longitudes", [])
 
     if not distances or not speeds:
-        return api_error(ErrorCode.VALIDATION, "Insufficient trace data", status=400)
+        return api_error(ErrorCode.VALIDATION_ERROR, "Insufficient trace data", status=400)
 
     best_lap_df = pd.DataFrame({
         "Distance (m)": distances,
@@ -4869,7 +4870,12 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
         best_lap_df["Longitudinal acceleration (G) *calc"] = trace["accel_long"]
 
     # 3. Run v2 corner coaching pipeline stages
-    from pipeline.stages import s10b_corners
+    try:
+        from pipeline.stages import s10b_corners
+    except ImportError:
+        logger.error("Cannot import s10b_corners — pipeline module not available")
+        return api_error(ErrorCode.INTERNAL_ERROR,
+                         "Corner coaching module not available", status=500)
 
     # Load existing corners as fallback for when decompose_track returns 0
     fallback_corners = None
@@ -4877,10 +4883,15 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
     if theo and theo.get("corner_coaching"):
         fallback_corners = theo["corner_coaching"]
 
-    v2_sections = s10b_corners.run_track_decomposition_v2(
-        best_lap_df, conn=conn, session_id=session_id,
-        fallback_corners=fallback_corners,
-    )
+    try:
+        v2_sections = s10b_corners.run_track_decomposition_v2(
+            best_lap_df, conn=conn, session_id=session_id,
+            fallback_corners=fallback_corners,
+        )
+    except Exception:
+        logger.exception("Track decomposition failed for session %s", session_id)
+        v2_sections = None
+
     if not v2_sections:
         return api_response({
             "status": "completed",
