@@ -50,3 +50,49 @@ class TestCornerEventsToDict:
         d = ev.to_dict()
         assert d["brake_point_m"] is None
         assert d["throttle_application_m"] is None
+
+
+class TestThresholdsAndTier:
+    """Vehicle class thresholds and tier auto-detection."""
+
+    def test_car_thresholds(self):
+        from coaching.corner_diagnosis import _get_thresholds
+
+        t = _get_thresholds("car")
+        assert t["v_entry_delta_kmh"] == 3.0
+        assert t["yaw_residual_dps"] == 10.0
+        assert t["coast_gap_s"] == 0.3
+        assert t["late_rotation_m"] == 8.0
+
+    def test_kart_thresholds(self):
+        from coaching.corner_diagnosis import _get_thresholds
+
+        t = _get_thresholds("kart")
+        assert t["v_entry_delta_kmh"] == 2.0
+        assert t["yaw_residual_dps"] == 8.0
+        assert t["coast_gap_s"] == 0.2
+        assert t["late_rotation_m"] == 4.0
+
+    def test_unknown_class_defaults_to_car(self):
+        from coaching.corner_diagnosis import _get_thresholds
+
+        t = _get_thresholds("unknown")
+        assert t["v_entry_delta_kmh"] == 3.0
+
+    def test_detect_tier_full(self):
+        from coaching.corner_diagnosis import _detect_tier
+
+        cols = {"Speed (m/s)", "Heading (rad)", "accel_lat_mps2", "Brake (%)"}
+        assert _detect_tier(cols) == "full"
+
+    def test_detect_tier_accel(self):
+        from coaching.corner_diagnosis import _detect_tier
+
+        cols = {"Speed (m/s)", "Heading (rad)", "accel_lat_mps2"}
+        assert _detect_tier(cols) == "accel"
+
+    def test_detect_tier_gps(self):
+        from coaching.corner_diagnosis import _detect_tier
+
+        cols = {"Speed (m/s)", "Heading (rad)"}
+        assert _detect_tier(cols) == "gps"
