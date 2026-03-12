@@ -943,11 +943,16 @@ def get_corners(session_id: str) -> tuple[dict, int]:
         for row in boundary_rows:
             cid = row["corner_id"]
             cc = coaching_map.get(cid)
+            s_start = _first_not_none(cc, "s_start", "distance_start") if cc else None
+            s_end = _first_not_none(cc, "s_end", "distance_end") if cc else None
+            s_apex = _first_not_none(cc, "s_apex", "distance_apex", "apex_distance_m") if cc else None
+            if s_apex is None and s_start is not None and s_end is not None:
+                s_apex = round((s_start + s_end) / 2, 2)
             corner: dict = {
                 "corner_id": cid,
-                "s_start":   cc.get("s_start") if cc else None,
-                "s_end":     cc.get("s_end") if cc else None,
-                "s_apex":    cc.get("s_apex") if cc else None,
+                "s_start":   s_start,
+                "s_end":     s_end,
+                "s_apex":    s_apex,
                 "direction": cc.get("direction") if cc else None,
             }
             if cc:
@@ -1047,11 +1052,16 @@ def get_corners(session_id: str) -> tuple[dict, int]:
     if coaching_list:
         corners = []
         for cc in coaching_list:
+            s_start = _first_not_none(cc, "s_start", "distance_start")
+            s_end = _first_not_none(cc, "s_end", "distance_end")
+            s_apex = _first_not_none(cc, "s_apex", "distance_apex", "apex_distance_m")
+            if s_apex is None and s_start is not None and s_end is not None:
+                s_apex = round((s_start + s_end) / 2, 2)
             corner = {
                 "corner_id": cc.get("corner_id"),
-                "s_start":   cc.get("s_start"),
-                "s_end":     cc.get("s_end"),
-                "s_apex":    cc.get("s_apex"),
+                "s_start":   s_start,
+                "s_end":     s_end,
+                "s_apex":    s_apex,
                 "direction": cc.get("direction"),
                 "available": True,
             }
@@ -2402,6 +2412,15 @@ def _closest_index(distances: list[float], target: float) -> int:
     return lo
 
 
+def _first_not_none(d: dict, *keys):
+    """Return the first non-None value for the given keys, or None."""
+    for k in keys:
+        v = d.get(k)
+        if v is not None:
+            return v
+    return None
+
+
 def _build_corner_positions(conn: Any, session_id: str) -> list[dict]:
     """Build corner GPS positions with brake point data (shared helper)."""
     theo = models.get_theoretical_data(conn, session_id)
@@ -2409,20 +2428,27 @@ def _build_corner_positions(conn: Any, session_id: str) -> list[dict]:
     if theo and theo.get("corner_coaching"):
         seen: set = set()
         for cc in theo["corner_coaching"]:
-            cid = cc.get("corner_id") or cc.get("corner_index")
+            cid = _first_not_none(cc, "corner_id", "corner_index")
             if cid is not None and cid not in seen:
                 seen.add(cid)
                 corners.append({
                     "corner_id": cid,
-                    "s_start": cc.get("s_start") or cc.get("distance_start"),
-                    "s_end": cc.get("s_end") or cc.get("distance_end"),
-                    "s_apex": cc.get("s_apex") or cc.get("distance_apex"),
+                    "s_start": _first_not_none(cc, "s_start", "distance_start"),
+                    "s_end": _first_not_none(cc, "s_end", "distance_end"),
+                    "s_apex": _first_not_none(cc, "s_apex", "distance_apex", "apex_distance_m"),
                     "direction": cc.get("direction"),
-                    "label": cc.get("label") or cc.get("name"),
+                    "label": _first_not_none(cc, "label", "name"),
                     "lat": cc.get("lat"),
                     "lon": cc.get("lon"),
                     "brake_point_m": None,
                 })
+
+    # Compute s_apex midpoint fallback for corners missing apex distance
+    for corner in corners:
+        if corner["s_apex"] is None:
+            s0, s1 = corner["s_start"], corner["s_end"]
+            if s0 is not None and s1 is not None:
+                corner["s_apex"] = round((s0 + s1) / 2, 2)
 
     if not corners:
         summary = models.get_corner_metrics_summary(conn, session_id)
@@ -3104,10 +3130,15 @@ def get_track_map(session_id: str) -> tuple[dict, int]:
 
         seen = set()
         for cc in theo["corner_coaching"]:
-            cid = cc.get("corner_id") or cc.get("corner_index")
+            cid = _first_not_none(cc, "corner_id", "corner_index")
             if cid is not None and cid not in seen:
                 seen.add(cid)
-                apex_d = cc.get("s_apex") or cc.get("distance_apex")
+                apex_d = _first_not_none(cc, "s_apex", "distance_apex", "apex_distance_m")
+                if apex_d is None:
+                    s0 = _first_not_none(cc, "s_start", "distance_start")
+                    s1 = _first_not_none(cc, "s_end", "distance_end")
+                    if s0 is not None and s1 is not None:
+                        apex_d = round((s0 + s1) / 2, 2)
                 lat = cc.get("lat")
                 lon = cc.get("lon")
                 if lat is None and apex_d is not None and dists:
@@ -3119,7 +3150,7 @@ def get_track_map(session_id: str) -> tuple[dict, int]:
                     "corner_id": cid,
                     "lat": lat,
                     "lon": lon,
-                    "label": cc.get("label") or cc.get("name"),
+                    "label": _first_not_none(cc, "label", "name"),
                     "distance_m": apex_d,
                 })
 
@@ -4224,21 +4255,21 @@ def get_corner_replay(session_id: str) -> tuple[dict, int]:
     if theo and theo.get("corner_coaching"):
         seen = set()
         for cc in theo["corner_coaching"]:
-            cid = cc.get("corner_id") or cc.get("corner_index")
+            cid = _first_not_none(cc, "corner_id", "corner_index")
             if cid is None or cid in seen:
                 continue
             if requested_corner_ids and cid not in requested_corner_ids:
                 continue
             seen.add(cid)
 
-            s_start = cc.get("s_start") or cc.get("distance_start") or 0
-            s_end = cc.get("s_end") or cc.get("distance_end") or 0
-            s_apex = cc.get("s_apex") or cc.get("distance_apex")
+            s_start = _first_not_none(cc, "s_start", "distance_start") or 0
+            s_end = _first_not_none(cc, "s_end", "distance_end") or 0
+            s_apex = _first_not_none(cc, "s_apex", "distance_apex", "apex_distance_m")
             dist_m = s_apex if s_apex is not None else (s_start + s_end) / 2
 
             corners.append({
                 "corner_id": str(cid),
-                "label": cc.get("label") or cc.get("name") or f"C{cid}",
+                "label": _first_not_none(cc, "label", "name") or f"C{cid}",
                 "lat": cc.get("lat"),
                 "lon": cc.get("lon"),
                 "dist_m": dist_m,
