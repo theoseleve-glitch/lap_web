@@ -275,7 +275,7 @@ export function FocusMode({
         toolId={toolId}
         sessionId={sessionId}
         apiBase={apiBase}
-        gpsLaps={[]}
+        gpsLaps={gpsLaps}
         bestLap={activeLap}
       />
     </div>

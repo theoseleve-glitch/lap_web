@@ -174,13 +174,8 @@ export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '
     return () => ro.disconnect();
   }, [draw]);
 
-  if (!gpsLaps.length) {
-    return (
-      <div className={`text-[#c4c4c4] text-sm text-center p-4 ${className}`}>
-        No laps with GPS data available.
-      </div>
-    );
-  }
+  // Corner data availability is handled by the API response (res.available),
+  // so no early gpsLaps guard — allows Focus Mode to render with gpsLaps=[]
 
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Corner analysis chart showing entry, minimum, and exit speeds per corner">

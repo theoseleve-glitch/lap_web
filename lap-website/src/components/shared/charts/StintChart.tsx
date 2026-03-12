@@ -70,7 +70,7 @@ export function StintChart({ sessionId, gpsLaps, bestLap, className = '' }: Stin
   useEffect(() => { if (!loading) draw(); }, [loading, draw]);
   useEffect(() => { const c = containerRef.current; if (!c) return; const ro = new ResizeObserver(() => draw()); ro.observe(c); return () => ro.disconnect(); }, [draw]);
 
-  if (!gpsLaps.length) return <div className={`text-sm text-center p-4 ${className}`} style={{ color: TEXT }}>No laps with GPS data available.</div>;
+  // Stint analysis uses lap times, not GPS — no gpsLaps guard needed
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Stint analysis chart">
       {loading && <span className="text-xs animate-pulse" style={{ color: TEXT }}>Loading...</span>}
