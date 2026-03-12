@@ -755,16 +755,33 @@ function OverviewTab({
   const [saving, setSaving] = useState(false);
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
 
+  // Entity suggestion lists for combobox autocomplete
+  const [driverNames, setDriverNames] = useState<string[]>([]);
+  const [trackNames, setTrackNames] = useState<string[]>([]);
+  const [kartNames, setKartNames] = useState<string[]>([]);
+
   const startEditing = useCallback(() => {
     setEditFields({
       session_date: session.session_date || '',
       driver_name: session.driver_name || '',
+      track_name: session.track_name || '',
+      kart_name: session.kart_name || '',
       session_type: session.session_type || 'practice',
       track_state: session.track_state || 'dry',
       display_name: session.display_name || '',
       notes: session.notes || '',
     });
     setEditing(true);
+    // Fetch entity lists for autocomplete
+    api.get<{ driver_name: string }[]>('/drivers').then((d) => {
+      if (Array.isArray(d)) setDriverNames(d.map((x) => x.driver_name).filter(Boolean));
+    }).catch(() => {});
+    api.get<{ track_name: string }[]>('/tracks').then((t) => {
+      if (Array.isArray(t)) setTrackNames(t.map((x) => x.track_name).filter(Boolean));
+    }).catch(() => {});
+    api.get<{ kart_name: string }[]>('/karts').then((k) => {
+      if (Array.isArray(k)) setKartNames(k.map((x) => x.kart_name).filter(Boolean));
+    }).catch(() => {});
   }, [session]);
 
   const cancelEditing = useCallback(() => {
@@ -963,10 +980,26 @@ function OverviewTab({
                 value={editFields.display_name || ''}
                 onChange={(v) => setEditFields({ ...editFields, display_name: v })}
               />
-              <EditRow
+              <ComboboxRow
                 label="Driver"
                 value={editFields.driver_name || ''}
+                suggestions={driverNames}
+                placeholder="Type or select driver"
                 onChange={(v) => setEditFields({ ...editFields, driver_name: v })}
+              />
+              <ComboboxRow
+                label="Track"
+                value={editFields.track_name || ''}
+                suggestions={trackNames}
+                placeholder="Type or select track"
+                onChange={(v) => setEditFields({ ...editFields, track_name: v })}
+              />
+              <ComboboxRow
+                label="Kart"
+                value={editFields.kart_name || ''}
+                suggestions={kartNames}
+                placeholder="Type or select kart"
+                onChange={(v) => setEditFields({ ...editFields, kart_name: v })}
               />
               <EditRow
                 label="Date"
@@ -1008,12 +1041,10 @@ function OverviewTab({
               <MetaRow label="File" value={session.csv_filename} />
               <MetaRow label="Driver" value={session.driver_name} />
               <MetaRow label="Track" value={session.track_name || 'Unknown'} />
+              <MetaRow label="Kart" value={session.kart_name || 'Not set'} />
               <MetaRow label="Type" value={session.session_type} />
               <MetaRow label="Conditions" value={session.track_state} />
               <MetaRow label="Date" value={formatDate(session.session_date)} />
-              {session.kart_name && (
-                <MetaRow label="Kart" value={session.kart_name} />
-              )}
               <MetaRow
                 label="Laps"
                 value={session.n_laps != null ? String(session.n_laps) : '\u2014'}
@@ -1148,6 +1179,42 @@ function SelectRow({
           </option>
         ))}
       </select>
+    </label>
+  );
+}
+
+function ComboboxRow({
+  label,
+  value,
+  suggestions,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  suggestions: string[];
+  placeholder?: string;
+  onChange: (v: string) => void;
+}) {
+  const listId = `dl-${label.toLowerCase().replace(/\s+/g, '-')}`;
+  return (
+    <label className="flex justify-between items-center">
+      <span className="text-steel text-sm font-body">{label}</span>
+      <div className="relative">
+        <input
+          type="text"
+          list={listId}
+          value={value}
+          placeholder={placeholder}
+          onChange={(e) => onChange(e.target.value)}
+          className="bg-asphalt text-chalk text-sm font-telemetry px-2 py-1 rounded border border-steel/20 focus:border-acid-green/50 outline-none w-40"
+        />
+        <datalist id={listId}>
+          {suggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      </div>
     </label>
   );
 }

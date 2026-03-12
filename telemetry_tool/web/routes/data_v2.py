@@ -1968,6 +1968,22 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                 cleaned["driver_name"] = value
             continue
 
+        if field == "track_name":
+            # track_name is handled separately (upsert); just pass through.
+            if value is not None and not isinstance(value, str):
+                errors.append({"field": "track_name", "message": "Must be a string."})
+            else:
+                cleaned["track_name"] = value
+            continue
+
+        if field == "kart_name":
+            # kart_name is handled separately (upsert); just pass through.
+            if value is not None and not isinstance(value, str):
+                errors.append({"field": "kart_name", "message": "Must be a string."})
+            else:
+                cleaned["kart_name"] = value
+            continue
+
         if field not in _UPDATABLE_FIELDS:
             continue  # silently ignore unknown fields
 
@@ -2125,6 +2141,20 @@ def update_session(session_id: str) -> tuple[dict, int]:
         models.update_session_field(conn, session_id, "driver_id", driver_id)
         updated_count += 1
 
+    # Handle track_name — upsert track by name, then update track_id.
+    track_name = cleaned.get("track_name")
+    if track_name and isinstance(track_name, str):
+        track_id = models.upsert_track_by_name(conn, track_name)
+        models.update_session_field(conn, session_id, "track_id", track_id)
+        updated_count += 1
+
+    # Handle kart_name — upsert kart by name, then update kart_id.
+    kart_name = cleaned.get("kart_name")
+    if kart_name and isinstance(kart_name, str):
+        kart_id = models.upsert_kart_by_name(conn, kart_name)
+        models.update_session_field(conn, session_id, "kart_id", kart_id)
+        updated_count += 1
+
     # Handle the validated fields.
     for field in _UPDATABLE_FIELDS:
         if field in cleaned:
@@ -2136,7 +2166,8 @@ def update_session(session_id: str) -> tuple[dict, int]:
             ErrorCode.VALIDATION_ERROR,
             "No updatable fields provided. "
             "Allowed: session_type, track_state, driver_name, driver_id, "
-            "track_id, kart_id, session_date, display_name, notes",
+            "track_name, track_id, kart_name, kart_id, session_date, "
+            "display_name, notes",
             status=400,
         )
 

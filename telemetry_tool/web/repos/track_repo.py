@@ -36,6 +36,23 @@ def upsert_track(conn: sqlite3.Connection, track: dict) -> None:
     })
 
 
+def upsert_track_by_name(conn: sqlite3.Connection, track_name: str) -> str:
+    """Find a track by name or create a minimal entry. Returns track_id."""
+    import uuid
+    clean = track_name.strip()
+    row = conn.execute(
+        "SELECT track_id FROM tracks WHERE track_name = ?", (clean,)
+    ).fetchone()
+    if row:
+        return row["track_id"]
+    track_id = str(uuid.uuid4())[:12]
+    conn.execute(
+        "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES (?, ?, 0)",
+        (track_id, clean),
+    )
+    return track_id
+
+
 def get_all_tracks(conn: sqlite3.Connection) -> list[dict]:
     rows = conn.execute(Q.SELECT_ALL_TRACKS).fetchall()
     return [dict(r) for r in rows]

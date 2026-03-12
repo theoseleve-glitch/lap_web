@@ -53,6 +53,7 @@ from web.repos.driver_repo import (  # noqa: F401
 # ── track ────────────────────────────────────────────────────────
 from web.repos.track_repo import (  # noqa: F401
     upsert_track,
+    upsert_track_by_name,
     get_all_tracks,
     rename_track,
     _update_tracks_json,
@@ -124,6 +125,7 @@ from web.repos.weekend_repo import (  # noqa: F401
 # ── karts ────────────────────────────────────────────────────────
 from web.repos.kart_repo import (  # noqa: F401
     create_kart,
+    upsert_kart_by_name,
     get_kart_by_id,
     get_all_karts,
     update_kart,

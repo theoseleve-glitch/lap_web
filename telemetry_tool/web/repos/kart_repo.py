@@ -55,6 +55,17 @@ def create_kart(
         return cur.lastrowid
 
 
+def upsert_kart_by_name(conn: sqlite3.Connection, kart_name: str) -> int:
+    """Find a kart by name or create one. Returns kart_id."""
+    clean = kart_name.strip()
+    row = conn.execute(
+        "SELECT kart_id FROM karts WHERE kart_name = ?", (clean,)
+    ).fetchone()
+    if row:
+        return row["kart_id"]
+    return create_kart(conn, clean)
+
+
 def get_kart_by_id(conn: sqlite3.Connection, kart_id: int) -> Optional[dict]:
     row = conn.execute("SELECT * FROM karts WHERE kart_id = ?", (kart_id,)).fetchone()
     return dict(row) if row else None
