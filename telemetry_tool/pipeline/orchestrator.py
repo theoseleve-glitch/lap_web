@@ -140,6 +140,7 @@ def run_full_analysis(
     filter_profile_name: Optional[str] = None,
     vehicle_overrides: Optional[dict[str, Any]] = None,
     deterministic: bool = False,
+    workspace_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     Orchestrate the full telemetry analysis pipeline.
@@ -1376,12 +1377,13 @@ def run_full_analysis(
     # ══════════════════════════════════════════════════════════════
     if db_session_id is not None:
         try:
-            _wid = None
-            try:
-                from flask import g as _ocp_g
-                _wid = getattr(_ocp_g, "workspace_id", None)
-            except (ImportError, RuntimeError):
-                pass
+            _wid = workspace_id
+            if _wid is None:
+                try:
+                    from flask import g as _ocp_g
+                    _wid = getattr(_ocp_g, "workspace_id", None)
+                except (ImportError, RuntimeError):
+                    pass
             _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
                 db_session_id, _wid,
             )

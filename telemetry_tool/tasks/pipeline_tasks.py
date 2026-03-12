@@ -496,6 +496,7 @@ def _run_analyze_stages(ctx: PipelineContext, job_id: str | None = None, conn=No
         enable_report=False,
         progress_callback=_make_progress_callback(_job_id, conn),
         stop_after_corners=True,
+        workspace_id=ctx.workspace_id,
     )
 
     resampled_laps = result.get("resampled_laps") or {}
@@ -633,6 +634,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
             resume_from_step8=True,
             preloaded_resampled_laps=resampled_laps,
             preloaded_corners=corners,
+            workspace_id=ctx.workspace_id,
         )
     else:
         # Fallback: full re-run (intermediate state expired or missing)
@@ -651,6 +653,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
             enable_report=False,
             progress_callback=_make_progress_callback(_job_id, conn),
             preloaded_corners=_fallback_corners,
+            workspace_id=ctx.workspace_id,
         )
 
     # ── Persist all session data to the database ──────────────────
