@@ -43,7 +43,6 @@ const navGroups: NavGroup[] = [
     label: 'COACHING',
     items: [
       { href: '/app/analytics', label: 'Analytics Hub', icon: '◇' },
-      { href: '/app/exports', label: 'Exports', icon: '↓' },
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },
       { href: '/app/drivers', label: 'Drivers', icon: '◈' },
       { href: '/app/karts', label: 'Karts', icon: '⊞' },
