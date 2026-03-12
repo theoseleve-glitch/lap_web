@@ -59,6 +59,21 @@ except ImportError:
         apply_discovery = None
 
 
+def _fetch_user_corners(conn, session_id: str) -> list[dict] | None:
+    """Fetch user-placed corner definitions for a session.
+
+    Returns [] on success with no rows, None when conn/session_id missing.
+    """
+    if conn is None or not session_id:
+        return None
+    cursor = conn.execute(
+        "SELECT corner_index, s_entry, s_apex, s_exit, lat_entry, lon_entry, "
+        "lat_apex, lon_apex, lat_exit, lon_exit FROM user_corners WHERE session_id = ?",
+        (session_id,),
+    )
+    return [dict(zip([d[0] for d in cursor.description], row)) for row in cursor.fetchall()]
+
+
 def run_full_analysis(
     csv_path: str | Path,
     session_meta: dict[str, Any],
@@ -999,6 +1014,35 @@ def run_full_analysis(
                 len(v2_coaching),
                 sum(1 for s in v2_sections if s.get("corner_type") == "user_defined"),
             )
+
+    # ── Step S10h: Corner diagnosis grid ──────────────────────────
+    user_corner_rows = None
+    _ucr, _err = _safe_step(
+        "S10h_fetch_user_corners",
+        lambda: _fetch_user_corners(_v2_conn, str(meta.get("session_id", ""))),
+    )
+    _record("S10h_fetch_user_corners", _ucr, _err)
+    if _ucr is not None:
+        user_corner_rows = _ucr
+
+    if user_corner_rows:
+        from coaching.corner_diagnosis import classify_all_corners as _classify_corners
+
+        corner_labels, _err = _safe_step(
+            "S10h_corner_labels",
+            lambda: _classify_corners(
+                resampled_laps=resampled_laps,
+                theoretical_lap=theoretical_lap,
+                user_corners=user_corner_rows,
+                vehicle_class=meta.get("vehicle_class", "car"),
+                valid_lap_numbers=[k for k in resampled_laps if k not in excluded_laps],
+                curvature_profile=curvature_profile,
+                mrp_events=summary.get("mrp_events_v2"),
+            ),
+        )
+        _record("S10h_corner_labels", corner_labels, _err)
+        if corner_labels is not None:
+            summary["corner_labels"] = corner_labels
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 5: Features, ML, Scoring, Reports, Persist (steps 11-15)

@@ -610,3 +610,34 @@ class TestClassifyAllCorners:
             valid_lap_numbers=[2],
         )
         assert result_kart["2"]["1"] == "entry_overspeed"
+
+
+class TestOrchestratorWiring:
+    """Test the _fetch_user_corners helper and pipeline integration."""
+
+    def test_fetch_user_corners_returns_list(self, test_db):
+        """_fetch_user_corners returns [] when no corners exist."""
+        from pipeline.orchestrator import _fetch_user_corners
+
+        rows = _fetch_user_corners(test_db, "nonexistent_session")
+        assert rows == []
+
+    def test_fetch_user_corners_with_data(self, test_db):
+        from pipeline.orchestrator import _fetch_user_corners
+
+        test_db.execute(
+            "INSERT INTO user_corners (session_id, corner_index, s_entry, s_apex, s_exit, "
+            "lat_entry, lon_entry, lat_apex, lon_apex, lat_exit, lon_exit) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("sess1", 1, 50.0, 100.0, 150.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        )
+        test_db.commit()
+        rows = _fetch_user_corners(test_db, "sess1")
+        assert len(rows) == 1
+        assert rows[0]["corner_index"] == 1
+        assert rows[0]["s_entry"] == 50.0
+
+    def test_fetch_user_corners_none_conn(self):
+        from pipeline.orchestrator import _fetch_user_corners
+
+        assert _fetch_user_corners(None, "sess1") is None
