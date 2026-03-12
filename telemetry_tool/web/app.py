@@ -594,11 +594,10 @@ def create_app(config: Config | None = None) -> Flask:
             and response.status_code == 200
             and "Cache-Control" not in response.headers
         ):
-            # Short private cache for read-only API responses.
-            # Auth/SSE/write endpoints set their own Cache-Control.
+            # Fallback: always revalidate so mutations (delete, update)
+            # are reflected immediately.  ETag still saves bandwidth.
             response.cache_control.private = True
-            response.cache_control.max_age = 60
-            response.cache_control.must_revalidate = True
+            response.cache_control.no_cache = True
         # Add API version header for client diagnostics
         if request.path.startswith("/api/"):
             from pipeline_version import PIPELINE_VERSION

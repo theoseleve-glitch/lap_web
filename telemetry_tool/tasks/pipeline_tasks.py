@@ -678,6 +678,7 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
         upsert_driver,
         upsert_session,
         upsert_track,
+        upsert_track_by_name,
     )
 
     conn = _get_pg_connection()
@@ -715,7 +716,23 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 logger.warning("Failed to upsert track for session %s", ctx.session_id, exc_info=True)
                 conn.rollback()
 
-        # 2b. Ensure fallback track exists (FK requires a valid tracks row).
+        # 2b. User-provided track name overrides pipeline detection.
+        # The user typed a track name in the upload form — honour it.
+        user_track_name = meta.get("user_track_name")
+        if user_track_name:
+            try:
+                user_tid = upsert_track_by_name(conn, user_track_name)
+                conn.commit()
+                result["track_id"] = user_tid
+                logger.info(
+                    "User-provided track '%s' → track_id=%s for job %s",
+                    user_track_name, user_tid, ctx.job_id,
+                )
+            except Exception:
+                logger.warning("Failed to upsert user track '%s'", user_track_name, exc_info=True)
+                conn.rollback()
+
+        # 2c. Ensure fallback track exists (FK requires a valid tracks row).
         # The tracks table has NOT NULL on lap_length_m and workspace_id
         # (workspace_id defaults from current_setting, set above).
         fallback_tid = result.get("track_id") or "unknown_track"

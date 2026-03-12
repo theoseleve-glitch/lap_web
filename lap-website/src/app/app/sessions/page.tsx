@@ -588,11 +588,14 @@ export default function SessionsPage() {
       setConfirmDelete(false);
       return { previous };
     },
-    onError: (_err, _ids, context) => {
+    onError: (err, _ids, context) => {
       // Roll back to the previous cache state on failure
       if (context?.previous) {
         queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
       }
+      // Show error to user so silent rollback isn't invisible
+      const msg = err instanceof Error ? err.message : 'Delete failed';
+      setBulkStatus(`Delete failed: ${msg}`);
     },
     onSettled: () => {
       // Always re-sync with server after mutation completes
