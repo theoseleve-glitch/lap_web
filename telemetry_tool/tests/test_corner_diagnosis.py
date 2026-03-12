@@ -406,3 +406,46 @@ class TestExitPhase:
                       "yaw_residual_dps": 10.0, "exit_yaw_understeer_dps": 8.0}
         labels = _check_exit_phase(metrics, theo, thresholds, "full")
         assert any(c.label == "throttle_lift" for c in labels)
+
+
+class TestOverallPhase:
+    """Overall label detection: good, slow_exit, scrappy."""
+
+    def test_slow_exit(self):
+        from coaching.corner_diagnosis import _check_overall
+
+        metrics = {"v_exit_mps": 22.0, "yaw_residual": np.zeros(100),
+                   "throttle": None}
+        theo = {"v_exit_mps": 24.0}  # 2 m/s = 7.2 km/h > 5 threshold
+        thresholds = {"v_exit_delta_kmh": 5.0, "good_time_tol_s": 0.15,
+                      "yaw_residual_dps": 10.0}
+        existing = []
+        labels = _check_overall(metrics, theo, thresholds, existing)
+        assert any(c.label == "slow_exit" for c in labels)
+
+    def test_slow_exit_suppressed_when_entry_cause_exists(self):
+        from coaching.corner_diagnosis import _check_overall, Candidate
+
+        metrics = {"v_exit_mps": 22.0, "yaw_residual": np.zeros(100),
+                   "throttle": None}
+        theo = {"v_exit_mps": 24.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "good_time_tol_s": 0.15,
+                      "yaw_residual_dps": 10.0}
+        existing = [Candidate("entry_overspeed", 2, "entry")]
+        labels = _check_overall(metrics, theo, thresholds, existing)
+        assert not any(c.label == "slow_exit" for c in labels)
+
+    def test_scrappy(self):
+        from coaching.corner_diagnosis import _check_overall
+
+        yaw = np.zeros(100)
+        yaw[10:20] = 15
+        yaw[20:30] = -15
+        yaw[30:40] = 15
+        yaw[40:50] = -15
+        metrics = {"v_exit_mps": 28.0, "yaw_residual": yaw, "throttle": None}
+        theo = {"v_exit_mps": 28.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "good_time_tol_s": 0.15,
+                      "yaw_residual_dps": 10.0}
+        labels = _check_overall(metrics, theo, thresholds, [])
+        assert any(c.label == "scrappy" for c in labels)

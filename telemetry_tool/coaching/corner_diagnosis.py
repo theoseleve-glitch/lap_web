@@ -539,3 +539,38 @@ def _check_exit_phase(
                     break
 
     return candidates
+
+
+def _check_overall(
+    metrics: dict, theo: dict | None, thresholds: dict,
+    existing_candidates: list[Candidate],
+) -> list[Candidate]:
+    """Check overall labels: slow_exit, scrappy."""
+    candidates: list[Candidate] = []
+
+    # Slow exit: exit speed deficit with no entry/apex cause
+    if theo and "v_exit_mps" in theo:
+        delta_kmh = (theo["v_exit_mps"] - metrics["v_exit_mps"]) * 3.6
+        has_upstream_cause = any(
+            c.phase in ("entry", "apex") for c in existing_candidates
+        )
+        if delta_kmh > thresholds["v_exit_delta_kmh"] and not has_upstream_cause:
+            candidates.append(Candidate(SLOW_EXIT, 3, "overall"))
+
+    # Scrappy: many yaw sign reversals (spec: >2 sign-reversals in residual)
+    yaw_res = metrics.get("yaw_residual")
+    if yaw_res is not None and len(yaw_res) > 2:
+        signs = np.sign(yaw_res)
+        reversals = int(np.sum(np.abs(np.diff(signs)) > 0))
+        if reversals > 2:
+            candidates.append(Candidate(SCRAPPY, 3, "overall"))
+
+    # Throttle modulations (scrappy via pedals)
+    throttle = metrics.get("throttle")
+    if throttle is not None and not any(c.label == SCRAPPY for c in candidates):
+        above = throttle > 20
+        transitions = np.sum(np.abs(np.diff(above.astype(int))))
+        if transitions > 4:
+            candidates.append(Candidate(SCRAPPY, 3, "overall"))
+
+    return candidates
