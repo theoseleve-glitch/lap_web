@@ -367,6 +367,9 @@ def get_session(session_id: str) -> tuple[dict, int]:
         dq = analysis.get("distance_quality")
         if dq:
             result["distance_quality"] = dq
+        # Check for OCP theoretical availability
+        if "theoretical_ocp" in analysis:
+            result["theoretical_ocp_available"] = True
     return api_response(result)
 
 
@@ -421,6 +424,28 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
             "available": False,
             "reason_code": "no_speed_trace",
             "message": f"No speed trace data for lap {lap_num}",
+        })
+
+    # OCP theoretical source — checked FIRST (takes priority over version)
+    source = request.args.get("source", "")
+    if source == "ocp":
+        row = conn.execute(
+            "SELECT analysis_json FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        aj = json.loads(row[0]) if row and row[0] else {}
+        ocp_data = aj.get("theoretical_ocp")
+        if ocp_data and "speed_profile" in ocp_data:
+            return api_response({
+                "available": True,
+                "source": "ocp",
+                "lap_time_s": ocp_data.get("lap_time_s"),
+                "speed_profile": ocp_data["speed_profile"],
+                "solver_meta": ocp_data.get("solver_meta", {}),
+            })
+        return api_response({
+            "available": False,
+            "reason_code": "ocp_not_available",
+            "message": "OCP theoretical not yet computed for this session",
         })
 
     # Check for v2 version parameter
