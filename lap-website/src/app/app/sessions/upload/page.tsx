@@ -75,6 +75,8 @@ const STAGE_LABELS: Record<string, string> = {
   scoring: 'Scoring Session',
   reports: 'Generating Reports',
   cleanup: 'Cleaning Up',
+  ocp_solver: 'OCP Solver (min-time lap)',
+  finalize_complete: 'Saving Results',
 };
 
 /* ── API helpers ──────────────────────────────────────── */
