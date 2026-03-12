@@ -708,7 +708,7 @@ def verify_email():
         return api_error(
             ErrorCode.TOKEN_EXPIRED, "Invalid or expired token", status=400,
         )
-    return api_response({"message": "Email verified"})
+    return api_response({"verified": True, "message": "Email verified"})
 
 
 @bp.route("/resend-verification", methods=["POST"])
@@ -772,7 +772,8 @@ def me():
 
     conn = _get_conn()
     cur = conn.execute(
-        "SELECT id, email, display_name, created_at, plan_tier, subscription_status "
+        "SELECT id, email, display_name, avatar_url, email_verified, "
+        "created_at, plan_tier, subscription_status, preferences "
         "FROM users WHERE id = %(user_id)s",
         {"user_id": user_id},
     )

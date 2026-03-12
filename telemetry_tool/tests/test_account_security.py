@@ -257,24 +257,21 @@ class TestAuditLog:
                    ip_address="1.2.3.4", user_agent="Mozilla/5.0")
         sql_calls = [c[0] for c in conn._calls]
         assert any("INSERT INTO audit_log" in s for s in sql_calls)
-        # Check params
+        # Check params — schema uses new_value (not details) and has no user_agent column
         insert_call = next(c for c in conn._calls if "INSERT INTO audit_log" in c[0])
         params = insert_call[1]
         assert params["uid"] == 42
         assert params["action"] == "login_password"
         assert params["ip"] == "1.2.3.4"
-        assert params["ua"] == "Mozilla/5.0"
 
     def test_log_audit_truncates_long_values(self):
-        """Long user_agent and ip_address are truncated."""
+        """Long ip_address is truncated."""
         from auth.service import _log_audit
         conn = FakeConn({})
-        long_ua = "x" * 1000
         long_ip = "y" * 100
-        _log_audit(conn, 1, "test", {}, ip_address=long_ip, user_agent=long_ua)
+        _log_audit(conn, 1, "test", {}, ip_address=long_ip)
         insert_call = next(c for c in conn._calls if "INSERT INTO audit_log" in c[0])
         params = insert_call[1]
-        assert len(params["ua"]) <= 500
         assert len(params["ip"]) <= 45
 
 

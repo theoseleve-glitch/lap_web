@@ -4,8 +4,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Any
 
-from telemetry_tool.gamification import queries as Q
-from telemetry_tool.gamification.xp import XP_STREAK_PER_DAY
+from gamification import queries as Q
+from gamification.xp import XP_STREAK_PER_DAY
 
 
 def update_streak(

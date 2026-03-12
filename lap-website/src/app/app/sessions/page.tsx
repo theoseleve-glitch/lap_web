@@ -50,14 +50,18 @@ const TYPE_STYLES: Record<string, { bg: string; text: string; label: string }> =
   race:       { bg: 'bg-safety-red/10', text: 'text-safety-red', label: 'Race' },
   test:       { bg: 'bg-blue-400/10', text: 'text-blue-400', label: 'Test' },
   endurance:  { bg: 'bg-purple-400/10', text: 'text-purple-400', label: 'Endurance' },
+  heat:       { bg: 'bg-pit-orange/10', text: 'text-pit-orange', label: 'Heat' },
+  final:      { bg: 'bg-safety-red/10', text: 'text-safety-red', label: 'Final' },
 };
 
 const CONDITION_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  dry:    { bg: 'bg-acid-green/10', text: 'text-acid-green', label: 'Dry' },
-  wet:    { bg: 'bg-blue-400/10', text: 'text-blue-400', label: 'Wet' },
-  damp:   { bg: 'bg-marshal-yellow/10', text: 'text-marshal-yellow', label: 'Damp' },
-  mixed:  { bg: 'bg-purple-400/10', text: 'text-purple-400', label: 'Mixed' },
-  greasy: { bg: 'bg-pit-orange/10', text: 'text-pit-orange', label: 'Greasy' },
+  dry:      { bg: 'bg-acid-green/10', text: 'text-acid-green', label: 'Dry' },
+  wet:      { bg: 'bg-blue-400/10', text: 'text-blue-400', label: 'Wet' },
+  damp:     { bg: 'bg-marshal-yellow/10', text: 'text-marshal-yellow', label: 'Damp' },
+  mixed:    { bg: 'bg-purple-400/10', text: 'text-purple-400', label: 'Mixed' },
+  green:    { bg: 'bg-emerald-400/10', text: 'text-emerald-400', label: 'Green' },
+  rubbered: { bg: 'bg-zinc-400/10', text: 'text-zinc-400', label: 'Rubbered' },
+  dusty:    { bg: 'bg-amber-400/10', text: 'text-amber-400', label: 'Dusty' },
 };
 
 function TypeBadge({ type }: { type: string | null }) {

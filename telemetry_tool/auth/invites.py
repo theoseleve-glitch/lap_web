@@ -89,14 +89,14 @@ def accept_invite(conn, token: str, user_id: int) -> dict:
     team_id = invite["team_id"]
     role = invite["role"]
 
-    # Get the workspace_id for this team
+    # Get the workspace_id for this team (workspaces.owner_team_id → teams.id)
     ws_row = conn.execute(
-        "SELECT workspace_id FROM teams WHERE id = %(tid)s",
+        "SELECT id AS workspace_id FROM workspaces WHERE owner_team_id = %(tid)s",
         {"tid": team_id},
     ).fetchone()
 
     if ws_row is None:
-        raise ValueError("Team not found")
+        raise ValueError("Team workspace not found")
 
     ws_data = dict(ws_row) if not isinstance(ws_row, dict) else ws_row
     workspace_id = ws_data["workspace_id"]

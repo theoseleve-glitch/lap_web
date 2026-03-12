@@ -93,7 +93,7 @@ def dispatch_batch(batch_job_id: int, workspace_id: int) -> None:
     # 3. Query sessions for the workspace
     cursor = conn.execute(
         text(
-            "SELECT session_id, file_path, file_size FROM sessions "
+            "SELECT session_id, csv_filename FROM sessions "
             "WHERE workspace_id = :ws ORDER BY session_id"
         ),
         {"ws": workspace_id},
@@ -123,8 +123,8 @@ def dispatch_batch(batch_job_id: int, workspace_id: int) -> None:
             conn,
             job_id=job_id,
             workspace_id=workspace_id,
-            file_path=row.get("file_path", ""),
-            file_size=row.get("file_size", 0),
+            file_path=row.get("csv_filename", ""),
+            file_size=0,
             batch_job_id=batch_job_id,
         )
 
@@ -138,7 +138,7 @@ def dispatch_batch(batch_job_id: int, workspace_id: int) -> None:
                 job_id=job_id,
                 workspace_id=str(workspace_id),
                 session_id=row["session_id"],
-                file_path=row.get("file_path", ""),
+                file_path=row.get("csv_filename", ""),
             )
         except Exception:
             logger.warning(

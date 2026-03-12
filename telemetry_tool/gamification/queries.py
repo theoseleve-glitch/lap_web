@@ -59,17 +59,21 @@ def insert_drill_execution(conn, workspace_id: int, driver_id: int,
                            plan_id: int, week_number: int, drill_index: int,
                            session_id: int | None, status: str,
                            notes: str | None = None) -> int:
-    """Log a drill execution. Returns lastrowid."""
+    """Log a drill execution. Returns the new row id."""
     sql = """
         INSERT INTO drill_executions
             (workspace_id, driver_id, plan_id, week_number, drill_index,
              session_id, status, notes)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        RETURNING id
     """
     result = conn.execute(sql, (workspace_id, driver_id, plan_id,
                                 week_number, drill_index, session_id,
                                 status, notes))
-    return result.lastrowid
+    row = result.fetchone()
+    if row is None:
+        return 0
+    return row[0] if not isinstance(row, dict) else row.get("id")
 
 
 def get_plan_executions(conn, plan_id: int, workspace_id: int) -> list[dict]:
@@ -85,17 +89,30 @@ def get_plan_executions(conn, plan_id: int, workspace_id: int) -> list[dict]:
 
 
 def count_driver_sessions(conn, driver_id: int, workspace_id: int) -> int:
-    """Count total sessions for a driver."""
+    """Count total sessions for a driver.
+
+    Note: workspace_id filtering is handled by PG RLS policies
+    (SQLite schema does not have workspace_id on sessions).
+    """
     sql = "SELECT COUNT(*) AS cnt FROM sessions WHERE driver_id = ?"
     row = conn.execute(sql, (driver_id,)).fetchone()
-    return row["cnt"] if row else 0
+    if row is None:
+        return 0
+    return row["cnt"] if isinstance(row, dict) else row[0]
 
 
 def get_driver_best_lap(conn, driver_id: int, workspace_id: int) -> float | None:
-    """Get driver's all-time best lap time."""
+    """Get driver's all-time best lap time.
+
+    Note: workspace_id filtering is handled by PG RLS policies
+    (SQLite schema does not have workspace_id on sessions).
+    """
     sql = """
         SELECT MIN(best_lap_time_s) AS best
         FROM sessions WHERE driver_id = ? AND best_lap_time_s IS NOT NULL
     """
     row = conn.execute(sql, (driver_id,)).fetchone()
-    return row["best"] if row else None
+    if row is None:
+        return None
+    val = row["best"] if isinstance(row, dict) else row[0]
+    return float(val) if val is not None else None

@@ -41,7 +41,7 @@ def client(db):
 def test_list_weekends_empty(client):
     resp = client.get("/api/v1/weekends")
     assert resp.status_code == 200
-    assert resp.get_json()["data"] == []
+    assert resp.get_json()["data"] == {"weekends": []}
 
 
 def test_create_weekend(client):

@@ -92,6 +92,9 @@ def create_override(
         },
     )
     row = cur.fetchone()
+    if row is None:
+        conn.commit()
+        raise RuntimeError("INSERT RETURNING id returned no row for entitlement_overrides")
     conn.commit()
 
     try:

@@ -17,9 +17,9 @@ def purge_dead_letters(days: int = 90) -> dict:
     """
     try:
         from tasks.dead_letter import purge_old_entries
-        from web.db_pg import get_pg_conn
+        from web.db_pg import get_pg_connection
 
-        conn = get_pg_conn()
+        conn = get_pg_connection()
         try:
             count = purge_old_entries(conn, days=days)
         finally:

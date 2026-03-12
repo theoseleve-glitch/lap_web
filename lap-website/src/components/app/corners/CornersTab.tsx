@@ -108,6 +108,28 @@ export function CornersTab({ corners: rawCorners, sessionId }: CornersTabProps) 
   const trackLayout = useMemo<TrackLayout | null>(() => {
     if (!gpsTrace?.latitudes?.length) return null;
     const positions = posData?.corners ?? [];
+    const dists = gpsTrace.distances;
+
+    // Interpolate lat/lon from GPS trace at a given distance
+    const interpolateAt = (dist: number): { lat: number; lon: number } | null => {
+      if (!dists?.length || dists.length !== gpsTrace.latitudes.length) return null;
+      // Clamp to trace bounds
+      if (dist <= dists[0]) return { lat: gpsTrace.latitudes[0], lon: gpsTrace.longitudes[0] };
+      if (dist >= dists[dists.length - 1]) return { lat: gpsTrace.latitudes[dists.length - 1], lon: gpsTrace.longitudes[dists.length - 1] };
+      // Binary search for bracketing indices
+      let lo = 0, hi = dists.length - 1;
+      while (lo < hi - 1) {
+        const mid = (lo + hi) >> 1;
+        if (dists[mid] <= dist) lo = mid; else hi = mid;
+      }
+      const span = dists[hi] - dists[lo];
+      const t = span > 0 ? (dist - dists[lo]) / span : 0;
+      return {
+        lat: gpsTrace.latitudes[lo] + t * (gpsTrace.latitudes[hi] - gpsTrace.latitudes[lo]),
+        lon: gpsTrace.longitudes[lo] + t * (gpsTrace.longitudes[hi] - gpsTrace.longitudes[lo]),
+      };
+    };
+
     return {
       latitudes: gpsTrace.latitudes,
       longitudes: gpsTrace.longitudes,
@@ -115,12 +137,20 @@ export function CornersTab({ corners: rawCorners, sessionId }: CornersTabProps) 
       speeds: gpsTrace.speeds ?? [],
       corners: corners.map((c) => {
         const pos = positions.find((p) => p.corner_id === c.corner_id);
+        const dist_m = c.s_apex ?? (c.s_start + c.s_end) / 2;
+        // Use position data if available, otherwise interpolate from GPS trace
+        let lat = pos?.lat ?? 0;
+        let lon = pos?.lon ?? 0;
+        if ((!lat || !lon) && dist_m != null) {
+          const interp = interpolateAt(dist_m);
+          if (interp) { lat = interp.lat; lon = interp.lon; }
+        }
         return {
           corner_id: c.corner_id,
           direction: c.direction ?? '',
-          lat: pos?.lat ?? 0,
-          lon: pos?.lon ?? 0,
-          dist_m: c.s_apex ?? (c.s_start + c.s_end) / 2,
+          lat,
+          lon,
+          dist_m,
           s_start: c.s_start ?? null,
           s_end: c.s_end ?? null,
           s_apex: c.s_apex ?? null,

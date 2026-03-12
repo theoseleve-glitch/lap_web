@@ -284,10 +284,13 @@ def upsert_track_sector(
     label = f"S{next_idx + 1}"
     cur = conn.execute(
         "INSERT INTO track_sectors (track_id, sector_index, latitude, longitude, distance_m, label) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         (track_id, next_idx, lat, lon, distance_m, label),
     )
-    return cur.lastrowid
+    _row = cur.fetchone()
+    if _row is None:
+        return None
+    return _row[0] if not isinstance(_row, dict) else _row.get("id")
 
 
 def delete_track_sector(conn: sqlite3.Connection, track_id: str, sector_id: int) -> None:

@@ -60,7 +60,10 @@ def new_kart():
             return redirect(url_for("karts.new_kart"))
 
         pred_id_raw = request.form.get("predefined_kart_id", "").strip()
-        pred_id = int(pred_id_raw) if pred_id_raw else None
+        try:
+            pred_id = int(pred_id_raw) if pred_id_raw else None
+        except (ValueError, TypeError):
+            pred_id = None
 
         def _flt(key):
             v = request.form.get(key, "").strip()

@@ -106,7 +106,7 @@ class TestDurationLimit:
 
         conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.lastrowid = 42
+        mock_cursor.fetchone.return_value = (42,)
         conn.execute.return_value = mock_cursor
 
         data = {
@@ -124,7 +124,7 @@ class TestDurationLimit:
 
         conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_cursor.lastrowid = 99
+        mock_cursor.fetchone.return_value = (99,)
         conn.execute.return_value = mock_cursor
 
         data = {

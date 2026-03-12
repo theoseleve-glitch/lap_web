@@ -303,7 +303,7 @@ def _purge_deleted_accounts_impl() -> dict[str, int]:
         try:
             # 2. Cascade delete workspace data
             ws_rows = conn.execute(
-                text("SELECT id FROM workspaces WHERE owner_id = :uid"),
+                text("SELECT id FROM workspaces WHERE owner_user_id = :uid"),
                 {"uid": uid},
             ).fetchall()
             workspace_ids = [r["id"] for r in ws_rows]
@@ -387,7 +387,7 @@ def _iter_workspace_tiers(conn) -> list[dict[str, Any]]:
 
     rows = conn.execute(
         "SELECT w.id AS workspace_id, "
-        "COALESCE(w.plan_tier, owner.billing_plan, 'demo') AS tier "
+        "COALESCE(w.billing_plan, owner.plan_tier, 'demo') AS tier "
         "FROM workspaces w "
         "LEFT JOIN users owner ON owner.id = w.owner_user_id"
     ).fetchall()
@@ -409,7 +409,7 @@ def _write_retention_audit(conn, workspace_id: int, tier: str, deleted_rows: int
     try:
         conn.execute(
             text(
-                "INSERT INTO audit_log (event_type, workspace_id, details_json, created_at) "
+                "INSERT INTO audit_log (action, workspace_id, new_value, created_at) "
                 "VALUES ('raw_retention_enforced', :ws, :details, now())"
             ),
             {

@@ -60,7 +60,7 @@ def check_compute_budget(
     # Count running/queued jobs for this workspace
     running_row = conn.execute(
         "SELECT COUNT(*) AS cnt FROM ingestion_jobs "
-        "WHERE workspace_id = %(wsid)s AND status IN ('queued', 'running')",
+        "WHERE workspace_id = %(wsid)s AND status IN ('pending', 'running', 'processing')",
         {"wsid": workspace_id},
     ).fetchone()
     running = (dict(running_row) if running_row and not isinstance(running_row, dict) else (running_row or {})).get(

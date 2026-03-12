@@ -58,9 +58,12 @@ def _get_pg_connection():
 
 _DATA_QUERIES: dict[str, str] = {
     "sessions": (
-        "SELECT session_id, csv_filename, driver_name, track_name, "
-        "session_date, n_laps, best_lap_time_s, total_score, grade "
-        "FROM sessions ORDER BY session_date DESC"
+        "SELECT s.session_id, s.csv_filename, d.driver_name, t.track_name, "
+        "s.session_date, s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
+        "FROM sessions s "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "ORDER BY s.session_date DESC"
     ),
     "laps": (
         "SELECT session_id, lap_number, lap_time_s, speed_mean_mps, "
@@ -68,11 +71,11 @@ _DATA_QUERIES: dict[str, str] = {
         "FROM laps ORDER BY session_id, lap_number"
     ),
     "drivers": (
-        "SELECT id, driver_name, created_at "
+        "SELECT driver_id, driver_name, created_at "
         "FROM drivers ORDER BY driver_name"
     ),
     "tracks": (
-        "SELECT id, track_name, lap_length_m, created_at "
+        "SELECT track_id, track_name, lap_length_m, created_at "
         "FROM tracks ORDER BY track_name"
     ),
     "scores": (
@@ -261,8 +264,7 @@ def _generate_export_impl(export_id: str) -> dict[str, Any]:
                 "  status = 'ready',"
                 "  file_path = :file_path,"
                 "  file_size = :file_size,"
-                "  completed_at = now(),"
-                "  updated_at = now() "
+                "  completed_at = now() "
                 "WHERE id = :id"
             ),
             {
@@ -303,11 +305,11 @@ def _update_export_status(
         "id": export_id,
         "status": status,
     }
-    set_clauses = ["status = :status", "updated_at = now()"]
+    set_clauses = ["status = :status"]
 
     if error_message is not None:
-        set_clauses.append("error_message = :error_message")
-        params["error_message"] = error_message
+        set_clauses.append("error = :error")
+        params["error"] = error_message
 
     sql = f"UPDATE exports SET {', '.join(set_clauses)} WHERE id = :id"
     conn.execute(text(sql), params)

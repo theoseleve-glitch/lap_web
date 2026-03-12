@@ -37,6 +37,7 @@ from services.race_strategy import (
     set_pit_type,
     toggle_fuel,
     update_race,
+    wake_driver,
 )
 from web.api_utils import ErrorCode, api_error, api_response
 
@@ -646,4 +647,50 @@ def get_summary_endpoint(race_id: int):
         return api_response(summary)
     except Exception as exc:
         logger.exception("get_summary failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/wake-driver — wake a sleeping driver early
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/wake-driver", methods=["POST"])
+@rate_limit(tier="write")
+def wake_driver_endpoint(race_id: int):
+    """Wake a sleeping driver early during an endurance race.
+
+    Requires ``driver_id`` in JSON body.
+
+    Returns:
+        200 with wake result.
+        400 if driver_id is missing.
+        404 if no active sleep window for this driver.
+    """
+    data = request.get_json(silent=True) or {}
+    driver_id = data.get("driver_id")
+    if not driver_id:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "driver_id is required",
+            status=400,
+        )
+
+    try:
+        conn = get_pg_connection()
+        result = wake_driver(conn, race_id, int(driver_id))
+        if result is None:
+            return api_error(
+                ErrorCode.NOT_FOUND,
+                "No active sleep window for this driver",
+                status=404,
+            )
+        return api_response(result)
+    except (ValueError, TypeError):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "driver_id must be an integer",
+            status=400,
+        )
+    except Exception as exc:
+        logger.exception("wake_driver failed for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)

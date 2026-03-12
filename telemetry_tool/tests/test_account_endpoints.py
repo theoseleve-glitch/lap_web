@@ -169,7 +169,7 @@ class TestRetention:
             "plan_tier": [{"plan_tier": "racer"}],
             "session_id": [{
                 "session_id": 42,
-                "file_name": "test_session.csv",
+                "csv_filename": "test_session.csv",
                 "created_at": created,
             }],
         })

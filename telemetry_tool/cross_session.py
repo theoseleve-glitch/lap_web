@@ -109,6 +109,7 @@ def compute_improvement_vs_last(
              AND driver_id = :driver_id
              AND session_id != :session_id
              AND best_lap_time_s IS NOT NULL
+             AND deleted_at IS NULL
            ORDER BY session_date DESC
            LIMIT 1""",
         {"track_id": track_id, "driver_id": driver_id,
@@ -392,7 +393,8 @@ def enrich_with_historical(
         all_scores = conn.execute(
             """SELECT total_score FROM sessions
                WHERE track_id = :track_id
-                 AND total_score IS NOT NULL""",
+                 AND total_score IS NOT NULL
+                 AND deleted_at IS NULL""",
             {"track_id": track_id},
         ).fetchall()
         scores = [r[0] for r in all_scores if r[0] is not None]

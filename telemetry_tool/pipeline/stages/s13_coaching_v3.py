@@ -130,16 +130,16 @@ def run_multi_session_lookup(
 
     Returns None if USE_PG=0 or driver/track not available.
     """
-    if not os.environ.get("USE_PG", "0") != "0":
+    if os.environ.get("USE_PG", "0") == "0":
         return None
     if not driver_id or not track_id or not corner_ids:
         return None
 
     try:
         from telemetry_tool.coaching.persistence.queries import get_driver_corner_trends
-        from telemetry_tool.web.db_pg import get_pg_conn
+        from web.db_pg import get_pg_connection
 
-        conn = get_pg_conn()
+        conn = get_pg_connection()
         return get_driver_corner_trends(conn, driver_id, track_id, corner_ids)
     except Exception:
         logger.debug("Multi-session lookup failed", exc_info=True)

@@ -115,7 +115,7 @@ def _check_queue_depth() -> dict[str, Any]:
         conn = _get_pg()
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM ingestion_jobs "
-            "WHERE status IN ('queued', 'running', 'processing')"
+            "WHERE status IN ('pending', 'running', 'processing')"
         ).fetchone()
         depth = (dict(row) if row and not isinstance(row, dict) else (row or {})).get("cnt", 0)
         status = "alert" if depth > QUEUE_DEPTH_THRESHOLD else "ok"
@@ -141,7 +141,7 @@ def _check_stuck_jobs() -> dict[str, Any]:
     try:
         conn = _get_pg()
         rows = conn.execute(
-            "SELECT job_id, file_name, started_at, "
+            "SELECT job_id, file_path, started_at, "
             "EXTRACT(EPOCH FROM (NOW() - started_at))/60 AS running_minutes "
             "FROM ingestion_jobs "
             "WHERE status IN ('running', 'processing') "

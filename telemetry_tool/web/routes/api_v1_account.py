@@ -210,7 +210,10 @@ def export_download(export_id: str):
         ),
     ]
     _resolved = _os.path.realpath(data["file_path"])
-    if not any(_resolved.startswith(d) for d in _ALLOWED_EXPORT_DIRS):
+    if not any(
+        _resolved == d or _resolved.startswith(d + _os.sep)
+        for d in _ALLOWED_EXPORT_DIRS
+    ):
         logger.warning("Export path traversal attempt: %s", data["file_path"])
         return api_error(ErrorCode.NOT_FOUND, "Export not found", status=404)
 
@@ -1213,13 +1216,19 @@ def login_activity():
     if user_id is None:
         return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
 
-    limit = min(int(request.args.get("limit", 20)), 100)
-    offset = max(int(request.args.get("offset", 0)), 0)
+    try:
+        limit = min(int(request.args.get("limit", 20)), 100)
+    except (ValueError, TypeError):
+        limit = 20
+    try:
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        offset = 0
 
     conn = get_pg_connection()
     rows = conn.execute(
         text(
-            "SELECT action, details, ip_address, user_agent, created_at "
+            "SELECT action, new_value AS details, ip_address, created_at "
             "FROM audit_log "
             "WHERE user_id = :uid "
             "ORDER BY created_at DESC "
@@ -1238,7 +1247,6 @@ def login_activity():
             "action": r["action"],
             "details": details,
             "ip_address": r.get("ip_address"),
-            "user_agent": r.get("user_agent"),
             "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
         })
 
@@ -1813,7 +1821,7 @@ def get_retention():
     if workspace_id is not None:
         rows = conn.execute(
             text(
-                "SELECT session_id, file_name, created_at "
+                "SELECT session_id, csv_filename, created_at "
                 "FROM sessions "
                 "WHERE workspace_id = :wsid "
                 "ORDER BY created_at DESC LIMIT 100"
@@ -1823,7 +1831,7 @@ def get_retention():
     else:
         rows = conn.execute(
             text(
-                "SELECT session_id, file_name, created_at "
+                "SELECT session_id, csv_filename, created_at "
                 "FROM sessions "
                 "WHERE user_id = :uid "
                 "ORDER BY created_at DESC LIMIT 100"
@@ -1845,7 +1853,7 @@ def get_retention():
         expires_at = created + timedelta(days=retention_days)
         sessions.append({
             "session_id": r.get("session_id"),
-            "file_name": r.get("file_name"),
+            "file_name": r.get("csv_filename"),
             "created_at": created.isoformat(),
             "expires_at": expires_at.isoformat(),
         })

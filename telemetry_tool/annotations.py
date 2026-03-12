@@ -69,11 +69,15 @@ def create_annotation(
     cur = conn.execute(
         "INSERT INTO session_annotations "
         "(session_id, lap_number, distance_m, annotation_type, title, body, tags_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
         (session_id, lap_number, distance_m, annotation_type, title, body.strip(), tags_json),
     )
+    _row = cur.fetchone()
+    if _row is None:
+        conn.commit()
+        raise RuntimeError("INSERT RETURNING id returned no row")
+    annotation_id = _row[0] if not isinstance(_row, dict) else _row.get("id")
     conn.commit()
-    annotation_id = cur.lastrowid
 
     logger.info("Created annotation #%d for session %s", annotation_id, session_id)
 
@@ -181,15 +185,19 @@ def search_annotations(
     if not query or not query.strip():
         return []
 
-    like_q = f"%{query.strip()}%"
+    # Escape LIKE wildcards so user input like "100%" doesn't match "1000".
+    sanitized = query.strip().replace("%", "\\%").replace("_", "\\_")
+    like_q = f"%{sanitized}%"
 
     rows = conn.execute(
         "SELECT sa.*, s.session_date, d.driver_name, t.track_name "
         "FROM session_annotations sa "
         "JOIN sessions s ON sa.session_id = s.session_id "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
-        "WHERE sa.body LIKE ? OR sa.title LIKE ? OR sa.tags_json LIKE ? "
+        "WHERE sa.body LIKE ? ESCAPE '\\' "
+        "OR sa.title LIKE ? ESCAPE '\\' "
+        "OR sa.tags_json LIKE ? ESCAPE '\\' "
         "ORDER BY sa.created_at DESC LIMIT ?",
         (like_q, like_q, like_q, limit),
     ).fetchall()

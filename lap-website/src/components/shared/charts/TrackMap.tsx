@@ -576,6 +576,7 @@ export function TrackMap(props: TrackMapProps) {
 
       if (state.hoverDistance !== null) {
         const dists = trace.distances;
+        if (dists.length === 0) return;
         let lo = 0, hi = dists.length - 1;
         while (lo < hi) {
           const mid = (lo + hi) >> 1;

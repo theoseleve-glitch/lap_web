@@ -68,8 +68,8 @@ export default function WeekendsPage() {
       const q = search.toLowerCase();
       list = list.filter(
         (w) =>
-          w.name.toLowerCase().includes(q) ||
-          w.track_name.toLowerCase().includes(q),
+          w.name?.toLowerCase().includes(q) ||
+          (w.track_name ?? '').toLowerCase().includes(q),
       );
     }
     list = [...list].sort((a, b) => {

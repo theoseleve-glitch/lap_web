@@ -296,7 +296,7 @@ def compute_best_ever_relative(
     track_bests = conn.execute(
         "SELECT s.track_id, t.track_name, MIN(s.best_lap_time_s) as best_time "
         "FROM sessions s JOIN tracks t ON s.track_id = t.track_id "
-        "WHERE s.driver_id = ? AND s.best_lap_time_s IS NOT NULL "
+        "WHERE s.driver_id = ? AND s.best_lap_time_s IS NOT NULL AND s.deleted_at IS NULL "
         "GROUP BY s.track_id",
         (driver_id,),
     ).fetchall()

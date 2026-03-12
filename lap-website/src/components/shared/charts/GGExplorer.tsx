@@ -370,6 +370,7 @@ export function GGExplorer({
 
       if (state.hoverDistance !== null) {
         const dists = ggData.distances!;
+        if (dists.length === 0) return;
         let lo = 0, hi = dists.length - 1;
         while (lo < hi) {
           const mid = (lo + hi) >> 1;

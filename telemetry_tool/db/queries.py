@@ -36,7 +36,7 @@ INSERT OR REPLACE INTO sessions (
 SELECT_SESSIONS = """
 SELECT s.*, d.driver_name, t.track_name, k.kart_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
 LEFT JOIN karts k ON s.kart_id = k.kart_id
 WHERE s.deleted_at IS NULL
@@ -45,6 +45,15 @@ LIMIT :limit OFFSET :offset;
 """
 
 SELECT_SESSION_BY_ID = """
+SELECT s.*, d.driver_name, t.track_name, k.kart_name
+FROM sessions s
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN tracks t ON s.track_id = t.track_id
+LEFT JOIN karts k ON s.kart_id = k.kart_id
+WHERE s.session_id = :session_id AND s.deleted_at IS NULL;
+"""
+
+SELECT_SESSION_BY_ID_ANY = """
 SELECT s.*, d.driver_name, t.track_name, k.kart_name
 FROM sessions s
 LEFT JOIN drivers d ON s.driver_id = d.driver_id
@@ -123,7 +132,8 @@ WHERE track_id = :track_id;
 SELECT_ALL_TRACKS = """
 SELECT t.*,
        COUNT(s.session_id) AS session_count,
-       MIN(s.best_lap_time_s) AS best_time_s
+       MIN(s.best_lap_time_s) AS best_time_s,
+       COALESCE(SUM(s.n_laps), 0) AS lap_count
 FROM tracks t
 LEFT JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL
 GROUP BY t.track_id
@@ -279,7 +289,8 @@ WHERE s.deleted_at IS NULL;
 
 INSERT_WEEKEND = """
 INSERT INTO weekends (name, track_id, start_date, end_date, notes)
-VALUES (:name, :track_id, :start_date, :end_date, :notes);
+VALUES (:name, :track_id, :start_date, :end_date, :notes)
+RETURNING weekend_id;
 """
 
 UPDATE_WEEKEND = """
@@ -333,9 +344,9 @@ SELECT_WEEKEND_SESSIONS = """
 SELECT s.*, d.driver_name, t.track_name, ws.session_order
 FROM weekend_sessions ws
 JOIN sessions s ON ws.session_id = s.session_id
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
-WHERE ws.weekend_id = :weekend_id
+WHERE ws.weekend_id = :weekend_id AND s.deleted_at IS NULL
 ORDER BY ws.session_order, s.session_date;
 """
 
@@ -393,7 +404,7 @@ ORDER BY lap_number;
 SELECT_SESSIONS_FOR_TRACK = """
 SELECT s.*, d.driver_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC;
 """
@@ -409,7 +420,7 @@ ORDER BY s.session_date DESC;
 SELECT_COMPARABLE_SESSIONS = """
 SELECT s.*, d.driver_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_id != :session_id
   AND s.deleted_at IS NULL
@@ -421,7 +432,7 @@ SELECT_HISTORICAL_BEST_TIMES = """
 SELECT s.session_id, s.session_date, s.best_lap_time_s,
        s.total_score, s.track_state, d.driver_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.best_lap_time_s IS NOT NULL
   AND s.deleted_at IS NULL
@@ -483,7 +494,7 @@ WHERE driver_id = :driver_id;
 SELECT_DRIVER_PROFILE = """
 SELECT dp.*, d.driver_name
 FROM driver_profiles dp
-JOIN drivers d ON dp.driver_id = d.driver_id
+LEFT JOIN drivers d ON dp.driver_id = d.driver_id
 WHERE dp.driver_id = :driver_id;
 """
 
@@ -546,7 +557,7 @@ SELECT_DRIVER_STYLE_HISTORY = """
 SELECT dsf.*, s.session_date
 FROM driving_style_features dsf
 JOIN sessions s ON dsf.session_id = s.session_id
-WHERE dsf.driver_id = :driver_id
+WHERE dsf.driver_id = :driver_id AND s.deleted_at IS NULL
 ORDER BY s.session_date;
 """
 
@@ -645,8 +656,9 @@ SELECT_ALL_DATA_HEALTH = """
 SELECT dh.*, s.session_date, s.track_id, d.driver_name, t.track_name
 FROM data_health dh
 JOIN sessions s ON dh.session_id = s.session_id
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
+WHERE s.deleted_at IS NULL
 ORDER BY dh.overall_score;
 """
 
@@ -673,7 +685,7 @@ SELECT_SESSIONS_BY_TAG = """
 SELECT s.*, d.driver_name, t.track_name, st.tag, st.confidence
 FROM session_tags st
 JOIN sessions s ON st.session_id = s.session_id
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
 WHERE st.tag = :tag AND s.deleted_at IS NULL
 ORDER BY s.session_date DESC;
@@ -793,8 +805,8 @@ SELECT sw.*, s.best_lap_time_s, s.session_date, s.session_type,
        d.driver_name
 FROM session_weather sw
 JOIN sessions s ON sw.session_id = s.session_id
-JOIN drivers d ON s.driver_id = d.driver_id
-WHERE s.track_id = :track_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
+WHERE s.track_id = :track_id AND s.deleted_at IS NULL
 ORDER BY s.session_date;
 """
 
@@ -802,7 +814,7 @@ SELECT_WEATHER_FOR_DRIVER_TRACK = """
 SELECT sw.*, s.best_lap_time_s, s.session_date, s.session_type
 FROM session_weather sw
 JOIN sessions s ON sw.session_id = s.session_id
-WHERE s.track_id = :track_id AND s.driver_id = :driver_id
+WHERE s.track_id = :track_id AND s.driver_id = :driver_id AND s.deleted_at IS NULL
 ORDER BY s.session_date;
 """
 
@@ -813,7 +825,7 @@ ORDER BY s.session_date;
 SELECT_COMPARABLE_SESSIONS_TYPED = """
 SELECT s.*, d.driver_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_id != :session_id
   AND s.session_type = :session_type
@@ -826,7 +838,7 @@ SELECT_HISTORICAL_BEST_TIMES_TYPED = """
 SELECT s.session_id, s.session_date, s.best_lap_time_s,
        s.total_score, s.track_state, d.driver_name
 FROM sessions s
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 WHERE s.track_id = :track_id
   AND s.session_type = :session_type
   AND s.best_lap_time_s IS NOT NULL
@@ -865,9 +877,10 @@ SEARCH_ANNOTATIONS = """
 SELECT sa.*, s.session_date, d.driver_name, t.track_name
 FROM session_annotations sa
 JOIN sessions s ON sa.session_id = s.session_id
-JOIN drivers d ON s.driver_id = d.driver_id
+LEFT JOIN drivers d ON s.driver_id = d.driver_id
 LEFT JOIN tracks t ON s.track_id = t.track_id
-WHERE sa.body LIKE :query OR sa.title LIKE :query OR sa.tags_json LIKE :query
+WHERE s.deleted_at IS NULL
+  AND (sa.body LIKE :query ESCAPE '\\' OR sa.title LIKE :query ESCAPE '\\' OR sa.tags_json LIKE :query ESCAPE '\\')
 ORDER BY sa.created_at DESC
 LIMIT :limit;
 """
@@ -885,7 +898,8 @@ ORDER BY tag;
 
 INSERT_DEVELOPMENT_PLAN = """
 INSERT INTO development_plans (driver_id, plan_name, template_id, level, weeks_json, progress_json)
-VALUES (:driver_id, :plan_name, :template_id, :level, :weeks_json, :progress_json);
+VALUES (:driver_id, :plan_name, :template_id, :level, :weeks_json, :progress_json)
+RETURNING id;
 """
 
 SELECT_PLANS_FOR_DRIVER = """

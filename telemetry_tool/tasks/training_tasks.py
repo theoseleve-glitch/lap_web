@@ -256,8 +256,9 @@ def _train_ml_models(conn) -> dict:
     # -- Per-driver models --
     try:
         drivers = conn.execute(
-            "SELECT DISTINCT driver_name FROM sessions "
-            "WHERE driver_name IS NOT NULL AND driver_name != ''"
+            "SELECT DISTINCT d.driver_name FROM sessions s "
+            "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+            "WHERE d.driver_name IS NOT NULL AND d.driver_name != ''"
         ).fetchall()
         driver_names = [
             (dict(r) if not isinstance(r, dict) else r).get("driver_name")

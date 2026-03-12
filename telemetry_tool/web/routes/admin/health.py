@@ -68,11 +68,11 @@ def health_overview():
         row = conn.execute(
             "SELECT COUNT(*) AS total, "
             "COUNT(*) FILTER (WHERE status = 'failed') AS failed, "
-            "COUNT(*) FILTER (WHERE status IN ('queued', 'running')) AS queue_depth, "
+            "COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'processing')) AS queue_depth, "
             "AVG(EXTRACT(EPOCH FROM (completed_at - started_at))) "
             "  FILTER (WHERE completed_at IS NOT NULL) AS avg_duration "
             "FROM ingestion_jobs "
-            "WHERE created_at > NOW() - INTERVAL '24 hours'"
+            "WHERE started_at > NOW() - INTERVAL '24 hours'"
         ).fetchone()
         jr = dict(row) if not isinstance(row, dict) else row
         total = jr.get("total", 0) or 0

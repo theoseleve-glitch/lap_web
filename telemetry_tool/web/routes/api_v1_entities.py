@@ -79,7 +79,7 @@ def get_driver(driver_id):
     row = conn.execute(
         "SELECT d.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS personal_best_s, AVG(s.total_score) AS mean_score "
-        "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id "
+        "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id AND s.deleted_at IS NULL "
         "WHERE d.driver_id = ? "
         "GROUP BY d.driver_id", (driver_id,)
     ).fetchone()
@@ -117,7 +117,7 @@ def patch_driver(driver_id):
     updated = conn.execute(
         "SELECT d.*, COUNT(s.session_id) AS session_count, "
         "MIN(s.best_lap_time_s) AS personal_best_s, AVG(s.total_score) AS mean_score "
-        "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id "
+        "FROM drivers d LEFT JOIN sessions s ON d.driver_id = s.driver_id AND s.deleted_at IS NULL "
         "WHERE d.driver_id = ? "
         "GROUP BY d.driver_id", (driver_id,)
     ).fetchone()
@@ -223,7 +223,7 @@ def delete_driver(driver_id):
         logger.info("DELETE /drivers/%s — success, impact=%s", driver_id, result["impact"])
     except Exception as exc:
         logger.exception("DELETE /drivers/%s — cascade failed: %s", driver_id, exc)
-        return api_error(ErrorCode.INTERNAL, "Delete failed", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
 
 
@@ -286,8 +286,9 @@ def get_track(track_id):
     conn = _get_conn()
     row = conn.execute(
         "SELECT t.*, COUNT(s.session_id) AS session_count, "
-        "MIN(s.best_lap_time_s) AS best_time_s "
-        "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id "
+        "MIN(s.best_lap_time_s) AS best_time_s, "
+        "COALESCE(SUM(s.n_laps), 0) AS lap_count "
+        "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL "
         "WHERE t.track_id = ? "
         "GROUP BY t.track_id", (track_id,)
     ).fetchone()
@@ -320,8 +321,9 @@ def patch_track(track_id):
     conn.commit()
     updated = conn.execute(
         "SELECT t.*, COUNT(s.session_id) AS session_count, "
-        "MIN(s.best_lap_time_s) AS best_time_s "
-        "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id "
+        "MIN(s.best_lap_time_s) AS best_time_s, "
+        "COALESCE(SUM(s.n_laps), 0) AS lap_count "
+        "FROM tracks t LEFT JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL "
         "WHERE t.track_id = ? "
         "GROUP BY t.track_id", (track_id,)
     ).fetchone()
@@ -556,7 +558,7 @@ def get_kart(kart_id):
         return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
     d = dict(kart) if not isinstance(kart, dict) else kart.copy()
     count = conn.execute(
-        "SELECT COUNT(*) AS c FROM sessions WHERE kart_id = ?", (kart_id,)
+        "SELECT COUNT(*) AS c FROM sessions WHERE kart_id = ? AND deleted_at IS NULL", (kart_id,)
     ).fetchone()
     d["session_count"] = count["c"] if count else 0
     return api_response(_map_kart(d))
@@ -632,7 +634,7 @@ def _map_weekend(row):
         "start_date": d.get("start_date"),
         "end_date": d.get("end_date"),
         "notes": d.get("notes"),
-        "session_count": d.get("session_count", 0),
+        "sessions_count": d.get("session_count", 0),
         "created_at": d.get("created_at"),
     }
 
@@ -641,7 +643,7 @@ def _map_weekend(row):
 def list_weekends():
     conn = _get_conn()
     rows = conn.execute(Q.SELECT_ALL_WEEKENDS).fetchall()
-    return api_response([_map_weekend(r) for r in rows])
+    return api_response({"weekends": [_map_weekend(r) for r in rows]})
 
 
 @bp.route("/weekends", methods=["POST"])
@@ -651,15 +653,18 @@ def create_weekend():
     name = body.get("name")
     if not name:
         return api_error(ErrorCode.VALIDATION_ERROR, "name is required", status=400)
-    conn.execute(Q.INSERT_WEEKEND, {
+    cur = conn.execute(Q.INSERT_WEEKEND, {
         "name": name,
         "track_id": body.get("track_id"),
         "start_date": body.get("start_date"),
         "end_date": body.get("end_date"),
         "notes": body.get("notes"),
     })
+    row = cur.fetchone()
     conn.commit()
-    wid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if row is None:
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create weekend", status=500)
+    wid = row[0] if not isinstance(row, dict) else row.get("weekend_id")
     row = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": wid}).fetchone()
     result = _map_weekend(row)
     result["session_count"] = 0
@@ -739,8 +744,12 @@ def leaderboard():
         where_clauses.append("s.track_id = ?")
         params.append(track_id)
     if driver_id:
+        try:
+            driver_id_int = int(driver_id)
+        except (ValueError, TypeError):
+            return api_error(ErrorCode.VALIDATION_ERROR, "driver_id must be an integer", status=400)
         where_clauses.append("s.driver_id = ?")
-        params.append(int(driver_id))
+        params.append(driver_id_int)
 
     where_sql = " AND ".join(where_clauses)
     params.append(limit)
@@ -750,7 +759,7 @@ def leaderboard():
         f"s.total_score, s.track_state, s.n_laps, "
         f"d.driver_name, t.track_name, s.track_id "
         f"FROM sessions s "
-        f"JOIN drivers d ON s.driver_id = d.driver_id "
+        f"LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         f"LEFT JOIN tracks t ON s.track_id = t.track_id "
         f"WHERE {where_sql} "
         f"ORDER BY s.best_lap_time_s ASC "
@@ -826,7 +835,7 @@ def create_dev_plan():
         except ValueError as exc:
             return api_error(ErrorCode.NOT_FOUND, str(exc), status=404)
 
-    conn.execute(Q.INSERT_DEVELOPMENT_PLAN, {
+    cur = conn.execute(Q.INSERT_DEVELOPMENT_PLAN, {
         "driver_id": driver_id,
         "plan_name": plan_name,
         "template_id": None,
@@ -834,8 +843,11 @@ def create_dev_plan():
         "weeks_json": body.get("weeks_json", "[]"),
         "progress_json": body.get("progress_json"),
     })
+    row = cur.fetchone()
     conn.commit()
-    pid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+    if row is None:
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create development plan", status=500)
+    pid = row[0] if not isinstance(row, dict) else row.get("id")
     row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": pid}).fetchone()
     return api_response(_map_plan(row), status=201)
 

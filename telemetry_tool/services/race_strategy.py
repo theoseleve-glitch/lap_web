@@ -192,28 +192,6 @@ def _compute_driver_sleep_status(
     return status
 
 
-def _get_last_insert_id(conn, cur, table: str, pk_col: str) -> int | None:
-    """Get the ID of the last inserted row.
-
-    Works for both SQLite (``cur.lastrowid``) and PostgreSQL (``currval``).
-    PG's RealDictCursor returns dicts so we handle both tuple and dict rows.
-    """
-    race_id = getattr(cur, "lastrowid", None)
-    if race_id is None or race_id == 0:
-        # PG mode: lastrowid not set, need explicit query
-        row = conn.execute(
-            "SELECT currval(pg_get_serial_sequence(?, ?)) AS last_id",
-            (table, pk_col),
-        ).fetchone()
-        if row is None:
-            return None
-        # Handle both dict rows (RealDictCursor) and tuple rows (SQLite)
-        if isinstance(row, dict):
-            race_id = row.get("last_id")
-        else:
-            race_id = row[0]
-    return race_id
-
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -322,7 +300,8 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        RETURNING race_id""",
         (
             race.get("race_name", "Untitled Race"),
             race.get("track_name"),
@@ -346,7 +325,10 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             _pg_bool(race.get("refueling_allowed", 1), default=True),
         ),
     )
-    race_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
+    _row = cur.fetchone()
+    if _row is None:
+        raise RuntimeError("INSERT RETURNING race_id returned no row")
+    race_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
 
     if drivers:
         _save_drivers(conn, race_id, drivers)
@@ -1011,7 +993,8 @@ def import_race(conn, data: dict) -> int:
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        RETURNING race_id""",
         (
             race.get("race_name"),
             race.get("track_name"),
@@ -1035,7 +1018,10 @@ def import_race(conn, data: dict) -> int:
             _pg_bool(race.get("refueling_allowed", 1), default=True),
         ),
     )
-    new_race_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
+    _row = cur.fetchone()
+    if _row is None:
+        raise RuntimeError("INSERT RETURNING race_id returned no row")
+    new_race_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
 
     # Insert drivers, building old_id -> new_id map
     id_map: dict[int, int] = {}
@@ -1046,7 +1032,8 @@ def import_race(conn, data: dict) -> int:
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
                 min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg,
                 com_channel, color_hex
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            RETURNING id""",
             (
                 new_race_id,
                 d["driver_name"],
@@ -1061,9 +1048,10 @@ def import_race(conn, data: dict) -> int:
                 d.get("color_hex"),
             ),
         )
-        new_driver_id = _get_last_insert_id(
-            conn, dcur, "race_drivers", "id"
-        )
+        _drow = dcur.fetchone()
+        if _drow is None:
+            continue
+        new_driver_id = _drow[0] if not isinstance(_drow, dict) else _drow.get("id")
         if old_id is not None and new_driver_id is not None:
             id_map[old_id] = new_driver_id
 
@@ -1183,7 +1171,8 @@ def duplicate_race(conn, race_id: int) -> int | None:
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        RETURNING race_id""",
         (
             r["race_name"] + " (copy)",
             r["track_name"],
@@ -1207,7 +1196,10 @@ def duplicate_race(conn, race_id: int) -> int | None:
             _pg_bool(r["refueling_allowed"], default=True),
         ),
     )
-    new_id = _get_last_insert_id(conn, cur, "race_configs", "race_id")
+    _row = cur.fetchone()
+    if _row is None:
+        return None
+    new_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
 
     # Copy drivers
     old_drivers = conn.execute(

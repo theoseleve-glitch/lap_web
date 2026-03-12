@@ -249,7 +249,7 @@ export function DeltaTimeChart({
     ctx.restore(); // unclip
 
     // ── Final delta annotation ───────────────────────────────
-    const finalDelta = deltas[deltas.length - 1];
+    const finalDelta = deltas.length > 0 ? deltas[deltas.length - 1] : 0;
     if (Math.abs(finalDelta) > 0.001) {
       const sign = finalDelta > 0 ? '+' : '';
       const color = finalDelta > 0 ? '#10b981' : '#ef4444';

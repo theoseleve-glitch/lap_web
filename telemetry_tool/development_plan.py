@@ -2297,13 +2297,18 @@ def create_plan_from_template(
 
     cur = conn.execute(
         "INSERT INTO development_plans (driver_id, plan_name, template_id, level, weeks_json, progress_json) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         (driver_id, name, template_id, tmpl["level"], weeks_json, progress_json),
     )
+    _row = cur.fetchone()
+    if _row is None:
+        conn.commit()
+        raise RuntimeError("INSERT RETURNING id returned no row")
+    _new_id = _row[0] if not isinstance(_row, dict) else _row.get("id")
     conn.commit()
 
     return {
-        "id": cur.lastrowid,
+        "id": _new_id,
         "driver_id": driver_id,
         "plan_name": name,
         "template_id": template_id,
@@ -2335,13 +2340,18 @@ def create_custom_plan(
 
     cur = conn.execute(
         "INSERT INTO development_plans (driver_id, plan_name, template_id, level, weeks_json, progress_json) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
         (driver_id, plan_name, None, level, weeks_json, progress_json),
     )
+    _row = cur.fetchone()
+    if _row is None:
+        conn.commit()
+        raise RuntimeError("INSERT RETURNING id returned no row")
+    _new_id = _row[0] if not isinstance(_row, dict) else _row.get("id")
     conn.commit()
 
     return {
-        "id": cur.lastrowid,
+        "id": _new_id,
         "driver_id": driver_id,
         "plan_name": plan_name,
         "level": level,

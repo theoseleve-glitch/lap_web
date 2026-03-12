@@ -259,6 +259,9 @@ def stripe_webhook():
     - invoice.payment_failed → mark subscription past_due
     - invoice.paid → clear past_due status
     """
+    if stripe is None:
+        logger.warning("Stripe library not installed — ignoring webhook")
+        return api_error(ErrorCode.SERVICE_UNAVAILABLE, "Stripe not available", status=503)
     if not STRIPE_SECRET_KEY or not STRIPE_WEBHOOK_SECRET:
         logger.warning("Stripe keys not configured — ignoring webhook")
         return api_error(ErrorCode.SERVICE_UNAVAILABLE, "Stripe not configured", status=503)
@@ -752,7 +755,7 @@ def _handle_charge_refunded(charge: dict):
     import json
     try:
         conn.execute(
-            "INSERT INTO audit_log (user_id, action, details) "
+            "INSERT INTO audit_log (user_id, action, new_value) "
             "VALUES (%(uid)s, %(action)s, %(details)s)",
             {
                 "uid": uid,

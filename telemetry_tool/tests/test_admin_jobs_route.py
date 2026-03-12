@@ -54,7 +54,7 @@ class TestListJobs:
                 cur.fetchall.return_value = [
                     {
                         "job_id": "abc-123",
-                        "file_name": "test.csv",
+                        "file_path": "test.csv",
                         "status": "completed",
                         "user_id": 1,
                         "workspace_id": 1,
@@ -129,7 +129,7 @@ class TestGetJobDetail:
                 cur = MagicMock()
                 cur.fetchone.return_value = {
                     "job_id": "abc-123",
-                    "file_name": "test.csv",
+                    "file_path": "test.csv",
                     "status": "failed",
                     "error_message": "Parse error",
                     "user_id": 1,
@@ -220,7 +220,7 @@ class TestRetryJob:
                             "job_id": "abc-123",
                             "status": "failed",
                             "retry_count": 0,
-                            "file_name": "test.csv",
+                            "file_path": "test.csv",
                             "user_id": 1,
                             "workspace_id": 1,
                         }

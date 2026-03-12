@@ -28,7 +28,10 @@ def create_weekend(
         "end_date":   end_date,
         "notes":      notes,
     })
-    return cur.lastrowid
+    row = cur.fetchone()
+    if row is None:
+        return None
+    return row[0] if not isinstance(row, dict) else row.get("weekend_id")
 
 
 def update_weekend(

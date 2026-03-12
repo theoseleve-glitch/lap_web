@@ -53,10 +53,10 @@ export default function TracksPage() {
     let list = tracks;
     if (search) {
       const q = search.toLowerCase();
-      list = list.filter((t) => t.name.toLowerCase().includes(q));
+      list = list.filter((t) => (t.name ?? '').toLowerCase().includes(q));
     }
     list = [...list].sort((a, b) => {
-      if (sort === 'name') return a.name.localeCompare(b.name);
+      if (sort === 'name') return (a.name ?? '').localeCompare(b.name ?? '');
       if (sort === 'sessions') return (b.session_count ?? 0) - (a.session_count ?? 0);
       if (sort === 'record') {
         if (a.best_time_s == null) return 1;

@@ -1160,11 +1160,11 @@ def run_full_analysis(
             from scoring import evaluate_badges as _eval_badges
 
             _gam_wid = getattr(g, "workspace_id", 1) if "g" in dir() else 1
-            _gam_driver = context.get("driver_id") if context else None
-            _gam_sid = context.get("session_id") if context else None
+            _gam_driver = _drv_id if "_drv_id" in dir() else None
+            _gam_sid = meta.get("session_id")
             _gam_date = meta.get("date", "")
 
-            if _gam_driver and conn:
+            if _gam_driver and _v2_conn:
                 _gam_badges = []
                 if score_result:
                     try:
@@ -1172,20 +1172,20 @@ def run_full_analysis(
                     except Exception:
                         pass
 
-                _prev_best = get_driver_best_lap(conn, _gam_driver, _gam_wid)
-                _cur_best = summary.get("best_lap_time_s")
+                _prev_best = get_driver_best_lap(_v2_conn, _gam_driver, _gam_wid)
+                _cur_best = min(valid_times) if valid_times else None
 
                 xp_result = award_session_xp(
-                    conn, _gam_driver, _gam_wid, _gam_sid,
+                    _v2_conn, _gam_driver, _gam_wid, _gam_sid,
                     badges=_gam_badges,
                     previous_best_lap=_prev_best,
                     current_best_lap=_cur_best,
                 )
-                streak_result = update_streak(conn, _gam_driver, _gam_wid, _gam_date)
-                _gam_count = count_driver_sessions(conn, _gam_driver, _gam_wid)
+                streak_result = update_streak(_v2_conn, _gam_driver, _gam_wid, _gam_date)
+                _gam_count = count_driver_sessions(_v2_conn, _gam_driver, _gam_wid)
 
                 new_achievements = check_achievements(
-                    conn, _gam_driver, _gam_wid, _gam_sid,
+                    _v2_conn, _gam_driver, _gam_wid, _gam_sid,
                     context={
                         "session_count": _gam_count,
                         "badges": _gam_badges,
@@ -1196,9 +1196,16 @@ def run_full_analysis(
 
                 summary["gamification"] = {
                     "xp_gained": xp_result["xp_gained"],
-                    "new_level": xp_result["new_level"] if xp_result["leveled_up"] else None,
-                    "new_achievements": [a["key"] for a in new_achievements],
-                    "streak": streak_result["current_streak"],
+                    "new_total": xp_result["new_total"],
+                    "old_level": xp_result["old_level"],
+                    "new_level": xp_result["new_level"],
+                    "leveled_up": xp_result["leveled_up"],
+                    "current_streak": streak_result["current_streak"],
+                    "new_achievements": [
+                        {"key": a["key"], "label": a["label"],
+                         "description": a["description"], "icon": a["icon"]}
+                        for a in new_achievements
+                    ],
                 }
                 logger.info(
                     "Gamification: driver=%s xp=+%d level=%d streak=%d achievements=%d",

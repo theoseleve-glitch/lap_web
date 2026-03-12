@@ -338,7 +338,7 @@ export default function SessionDetailPage() {
     if (gam.leveled_up) {
       setShowLevelUp(true);
     }
-    if (gam.new_achievements.length > 0) {
+    if (gam.new_achievements?.length > 0) {
       setToastAchievement(gam.new_achievements[0] ?? null);
     }
   }, [scores, gamShown]);
@@ -629,6 +629,7 @@ export default function SessionDetailPage() {
             const gam = scores?.gamification;
             if (!gam) { setToastAchievement(null); return; }
             const idx = gam.new_achievements.findIndex((a) => a.key === toastAchievement?.key);
+            if (idx < 0) { setToastAchievement(null); return; }
             const next = gam.new_achievements[idx + 1] ?? null;
             setToastAchievement(next);
           }}
@@ -994,13 +995,13 @@ function OverviewTab({
               <SelectRow
                 label="Type"
                 value={editFields.session_type || 'practice'}
-                options={['practice', 'qualifying', 'race', 'test', 'endurance']}
+                options={['practice', 'qualifying', 'race', 'test', 'endurance', 'heat', 'final']}
                 onChange={(v) => setEditFields({ ...editFields, session_type: v })}
               />
               <SelectRow
                 label="Conditions"
                 value={editFields.track_state || 'dry'}
-                options={['dry', 'wet', 'damp', 'mixed']}
+                options={['dry', 'wet', 'damp', 'mixed', 'green', 'rubbered', 'dusty']}
                 onChange={(v) => setEditFields({ ...editFields, track_state: v })}
               />
               <label className="block">
@@ -1059,11 +1060,11 @@ function OverviewTab({
               />
               <MetaRow
                 label="Avg Speed"
-                value={`${mpsToKmh(bestLapData.speed_mean_mps)} km/h`}
+                value={bestLapData.speed_mean_mps != null ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '\u2014'}
               />
               <MetaRow
                 label="Max Speed"
-                value={`${mpsToKmh(bestLapData.speed_max_mps)} km/h`}
+                value={bestLapData.speed_max_mps != null ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '\u2014'}
               />
             </dl>
           </div>
@@ -1273,7 +1274,7 @@ function LapConsistencyHistogram({
     }
 
     // Mean line
-    if (meanTime != null && meanTime >= lo && meanTime <= hi) {
+    if (meanTime != null && meanTime >= lo && meanTime <= hi && hi > lo) {
       const meanX = pad.left + ((meanTime - lo) / (hi - lo)) * cW;
       ctx.strokeStyle = 'rgba(255,140,0,0.6)';
       ctx.lineWidth = 1.5;
@@ -1535,8 +1536,8 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
           <StatCard label="Consistency" value={consistencyCV != null ? `${consistencyCV.toFixed(1)}%` : '\u2014'} sub="CV" accent={consistencyCV != null && consistencyCV < 1.5 ? 'text-acid-green' : consistencyCV != null && consistencyCV > 3 ? 'text-safety-red' : undefined} />
           <StatCard label="Total Laps" value={String(laps.length)} />
           <StatCard label="Valid Laps" value={String(validLaps.length)} />
-          <StatCard label="Best Avg Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '\u2014'} />
-          <StatCard label="Best Max Speed" value={bestLapData ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '\u2014'} />
+          <StatCard label="Best Avg Speed" value={bestLapData?.speed_mean_mps != null ? `${mpsToKmh(bestLapData.speed_mean_mps)} km/h` : '\u2014'} />
+          <StatCard label="Best Max Speed" value={bestLapData?.speed_max_mps != null ? `${mpsToKmh(bestLapData.speed_max_mps)} km/h` : '\u2014'} />
         </div>
       </div>
 
@@ -1644,16 +1645,16 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
                         )}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                        {mpsToKmh(lap.speed_mean_mps)} km/h
+                        {lap.speed_mean_mps != null ? `${mpsToKmh(lap.speed_mean_mps)} km/h` : '\u2014'}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                        {mpsToKmh(lap.speed_max_mps)} km/h
+                        {lap.speed_max_mps != null ? `${mpsToKmh(lap.speed_max_mps)} km/h` : '\u2014'}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                        {mps2ToG(lap.braking_max_mps2)} G
+                        {lap.braking_max_mps2 != null ? `${mps2ToG(lap.braking_max_mps2)} G` : '\u2014'}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
-                        {mps2ToG(lap.accel_max_mps2)} G
+                        {lap.accel_max_mps2 != null ? `${mps2ToG(lap.accel_max_mps2)} G` : '\u2014'}
                       </td>
                       <td className="px-4 py-3 text-right font-telemetry text-chalk">
                         {formatDistance(lap.line_length_m)} m

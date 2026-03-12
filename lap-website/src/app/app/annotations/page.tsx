@@ -49,9 +49,9 @@ export default function AnnotationsPage() {
     const q = search.toLowerCase();
     return annotations.filter(
       (a) =>
-        a.text.toLowerCase().includes(q) ||
-        a.session_label.toLowerCase().includes(q) ||
-        a.type.toLowerCase().includes(q),
+        (a.text ?? '').toLowerCase().includes(q) ||
+        (a.session_label ?? '').toLowerCase().includes(q) ||
+        (a.type ?? '').toLowerCase().includes(q),
     );
   }, [data, search]);
 

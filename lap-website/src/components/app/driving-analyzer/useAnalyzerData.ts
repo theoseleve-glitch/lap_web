@@ -218,7 +218,9 @@ export function useAnalyzerData(sessionId: string, cornerFilter?: number[]) {
     if (!raw || Object.keys(traces).length === 0) return [];
     // Use the first available trace to determine max distance
     const firstTrace = Object.values(traces)[0];
-    const maxDist = firstTrace ? firstTrace.distance[firstTrace.distance.length - 1] : 0;
+    const maxDist = firstTrace && firstTrace.distance.length > 0
+      ? firstTrace.distance[firstTrace.distance.length - 1]
+      : 0;
     return buildSections(raw.corners, maxDist);
   }, [raw, traces]);
 

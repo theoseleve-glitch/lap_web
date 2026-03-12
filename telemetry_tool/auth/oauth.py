@@ -91,7 +91,10 @@ def get_or_create_oauth_user(conn, provider: str, profile: dict, secret: str) ->
                     "RETURNING id",
                     {"email": email, "name": profile.get("name", email.split("@")[0])},
                 )
-                user_id = cur.fetchone()["id"]
+                row = cur.fetchone()
+                if row is None:
+                    raise AuthError("Failed to create user account", "DATABASE_ERROR")
+                user_id = row["id"]
 
             # Create OAuth connection
             conn.execute(
@@ -118,7 +121,10 @@ def get_or_create_oauth_user(conn, provider: str, profile: dict, secret: str) ->
         "SELECT id, email, display_name FROM users WHERE id = %(uid)s",
         {"uid": user_id},
     )
-    user = dict(cur.fetchone())
+    user_row = cur.fetchone()
+    if user_row is None:
+        raise AuthError("User not found after OAuth", "DATABASE_ERROR")
+    user = dict(user_row)
 
     return {
         "access_token": access_token,

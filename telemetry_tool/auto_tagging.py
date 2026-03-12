@@ -52,7 +52,7 @@ def auto_tag_session(conn: Any, session_id: str) -> list[dict[str, Any]]:
     row = conn.execute(
         "SELECT s.*, d.driver_name, t.track_name "
         "FROM sessions s "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
         "WHERE s.session_id = ?",
         (session_id,),
@@ -85,7 +85,7 @@ def auto_tag_session(conn: Any, session_id: str) -> list[dict[str, Any]]:
         prev = conn.execute(
             "SELECT best_lap_time_s FROM sessions "
             "WHERE driver_id = ? AND track_id = ? AND session_id != ? "
-            "AND best_lap_time_s IS NOT NULL "
+            "AND best_lap_time_s IS NOT NULL AND deleted_at IS NULL "
             "ORDER BY session_date DESC LIMIT 1",
             (sess["driver_id"], sess["track_id"], session_id),
         ).fetchone()
@@ -123,7 +123,7 @@ def auto_tag_session(conn: Any, session_id: str) -> list[dict[str, Any]]:
     if sess.get("best_lap_time_s") and sess.get("track_id") and sess.get("driver_id"):
         pb = conn.execute(
             "SELECT MIN(best_lap_time_s) FROM sessions "
-            "WHERE driver_id = ? AND track_id = ? AND best_lap_time_s IS NOT NULL",
+            "WHERE driver_id = ? AND track_id = ? AND best_lap_time_s IS NOT NULL AND deleted_at IS NULL",
             (sess["driver_id"], sess["track_id"]),
         ).fetchone()
         if pb and pb[0] and abs(sess["best_lap_time_s"] - pb[0]) < 0.001:
@@ -227,7 +227,7 @@ def get_sessions_by_tag(conn: Any, tag: str) -> list[dict[str, Any]]:
         "d.driver_name, t.track_name "
         "FROM session_tags st "
         "JOIN sessions s ON st.session_id = s.session_id "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
         "WHERE st.tag = ? "
         "ORDER BY s.session_date DESC",

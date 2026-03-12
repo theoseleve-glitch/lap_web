@@ -173,15 +173,20 @@ def create_dashboard(
 
     cur = conn.execute(
         "INSERT INTO custom_dashboards (driver_id, dashboard_name, layout_json, is_default) "
-        "VALUES (?, ?, ?, ?)",
+        "VALUES (?, ?, ?, ?) RETURNING id",
         (driver_id, name.strip(), layout_json, 1 if is_default else 0),
     )
+    _row = cur.fetchone()
+    if _row is None:
+        conn.commit()
+        raise RuntimeError("INSERT RETURNING id returned no row")
+    _new_id = _row[0] if not isinstance(_row, dict) else _row.get("id")
     conn.commit()
 
-    logger.info("Created dashboard '%s' (id=%d)", name, cur.lastrowid)
+    logger.info("Created dashboard '%s' (id=%s)", name, _new_id)
 
     return {
-        "id": cur.lastrowid,
+        "id": _new_id,
         "driver_id": driver_id,
         "dashboard_name": name.strip(),
         "layout": validated,
@@ -327,8 +332,9 @@ def _widget_recent_sessions(conn: Any, params: dict) -> dict:
         "SELECT s.session_id, s.session_date, s.n_laps, s.best_lap_time_s, "
         "s.total_score, s.grade, d.driver_name, t.track_name "
         "FROM sessions s "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE s.deleted_at IS NULL "
         "ORDER BY s.session_date DESC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -343,8 +349,8 @@ def _widget_leaderboard(conn: Any, params: dict) -> dict:
         "SELECT d.driver_name, MIN(s.best_lap_time_s) as best_time, "
         "COUNT(s.session_id) as n_sessions "
         "FROM sessions s "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
-        "WHERE s.track_id = ? AND s.best_lap_time_s IS NOT NULL "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "WHERE s.track_id = ? AND s.best_lap_time_s IS NOT NULL AND s.deleted_at IS NULL "
         "GROUP BY d.driver_id "
         "ORDER BY best_time ASC",
         (track_id,),
@@ -361,7 +367,7 @@ def _widget_personal_bests(conn: Any, params: dict) -> dict:
         "COUNT(s.session_id) as n_sessions "
         "FROM sessions s "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
-        "WHERE s.driver_id = ? AND s.best_lap_time_s IS NOT NULL "
+        "WHERE s.driver_id = ? AND s.best_lap_time_s IS NOT NULL AND s.deleted_at IS NULL "
         "GROUP BY s.track_id "
         "ORDER BY t.track_name",
         (driver_id,),
@@ -404,7 +410,7 @@ def _widget_consistency_gauge(conn: Any, params: dict) -> dict:
         "SELECT AVG(consistency_score / consistency_max * 100) as avg_consistency "
         "FROM score_details sd "
         "JOIN sessions s ON sd.session_id = s.session_id "
-        "WHERE s.driver_id = ? AND sd.consistency_max > 0",
+        "WHERE s.driver_id = ? AND sd.consistency_max > 0 AND s.deleted_at IS NULL",
         (driver_id,),
     ).fetchone()
     return {"consistency_pct": round(row["avg_consistency"] or 0, 1) if row else 0}

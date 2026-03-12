@@ -27,7 +27,10 @@ def rss_sessions():
     from web import models
 
     conn = get_db_connection()
-    limit = min(int(request.args.get("limit", 20)), _MAX_ITEMS)
+    try:
+        limit = min(int(request.args.get("limit", 20)), _MAX_ITEMS)
+    except (ValueError, TypeError):
+        limit = 20
     sessions = models.get_sessions(conn, limit=limit, offset=0)
 
     now = datetime.now(timezone.utc).strftime("%a, %d %b %Y %H:%M:%S +0000")

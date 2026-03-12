@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from telemetry_tool.gamification import queries as Q
+from gamification import queries as Q
 
 # ── Achievement Catalog ──────────────────────────────────────
 

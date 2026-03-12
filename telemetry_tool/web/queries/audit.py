@@ -35,14 +35,14 @@ def log_audit_event(conn, action: str, details: dict | None = None) -> None:
     details_json = json.dumps(details) if details else None
 
     conn.execute(
-        "INSERT INTO audit_log (user_id, workspace_id, action, details, ip_address, user_agent) "
-        "VALUES (:uid, :wid, :action, :details, :ip, :ua)",
+        "INSERT INTO audit_log (user_id, workspace_id, action, new_value, ip_address, request_id) "
+        "VALUES (:uid, :wid, :action, :details, :ip, :rid)",
         {
             "uid": user_id,
             "wid": workspace_id,
             "action": action,
             "details": details_json,
             "ip": ip_address,
-            "ua": user_agent,
+            "rid": None,
         },
     )

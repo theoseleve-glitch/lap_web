@@ -53,10 +53,10 @@ function SessionPicker({
       if (s.session_id === excludeId) return false;
       if (!q) return true;
       return (
-        s.driver_name.toLowerCase().includes(q) ||
-        (s.track_name || '').toLowerCase().includes(q) ||
-        s.session_date.includes(q) ||
-        (s.session_type || '').toLowerCase().includes(q)
+        (s.driver_name ?? '').toLowerCase().includes(q) ||
+        (s.track_name ?? '').toLowerCase().includes(q) ||
+        (s.session_date ?? '').includes(q) ||
+        (s.session_type ?? '').toLowerCase().includes(q)
       );
     });
   }, [sessions, query, excludeId]);

@@ -112,11 +112,12 @@ def generate_export():
     user_id = getattr(g, "current_user_id", None)
     workspace_id = getattr(g, "workspace_id", None)
 
-    # Insert export record (id is autoincrement Integer per migration 026)
-    conn.execute(
+    # Insert export record and get the auto-generated id atomically
+    row = conn.execute(
         text(
             "INSERT INTO exports (user_id, workspace_id, data_type, format, status) "
-            "VALUES (:user_id, :workspace_id, :data_type, :format, 'pending')"
+            "VALUES (:user_id, :workspace_id, :data_type, :format, 'pending') "
+            "RETURNING id"
         ),
         {
             "user_id": user_id,
@@ -124,22 +125,14 @@ def generate_export():
             "data_type": data_type,
             "format": file_format,
         },
-    )
+    ).fetchone()
     conn.commit()
 
-    # Retrieve the auto-generated id
-    row = conn.execute(
-        text(
-            "SELECT id FROM exports WHERE user_id = :user_id "
-            "ORDER BY created_at DESC LIMIT 1"
-        ),
-        {"user_id": user_id},
-    ).fetchone()
-    export_id = row["id"] if row else None
-
-    if export_id is None:
+    if row is None:
         return api_error(ErrorCode.INTERNAL_ERROR,
                          "Failed to create export record", status=500)
+    r = dict(row) if not isinstance(row, dict) else row
+    export_id = r.get("id")
 
     # Dispatch Celery task
     try:

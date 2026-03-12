@@ -73,10 +73,10 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
   }
 
   if (weaknesses.includes('pace')) {
-    const delta = worst?.time_loss_total_s ? `+${worst.time_loss_total_s.toFixed(1)} km/h` : 'more aggressively';
+    const delta = worst?.time_loss_total_s ? `(${worst.time_loss_total_s.toFixed(2)}s lost here)` : '';
     drills.push({
       title: 'Pace Attack',
-      description: `Attack ${worstLabel} entry ${delta}. Gradually increase corner entry speed over 3-5 laps.`,
+      description: `Attack ${worstLabel} more aggressively ${delta}. Gradually increase corner entry speed over 3-5 laps.`,
       target: worstLabel,
       color: '#ef4444',
     });

@@ -25,9 +25,10 @@ class TestAuditLog(unittest.TestCase):
         with app.test_request_context(
             "/api/v1/test",
             environ_base={"REMOTE_ADDR": "1.2.3.4"},
-            headers={"User-Agent": "TestAgent/1.0"},
+            headers={"User-Agent": "TestAgent/1.0", "X-Request-Id": "req-123"},
         ):
             g.current_user_id = 42
+            g.workspace_id = 7
             mock_conn = MagicMock()
             audit_log(mock_conn, "team_created", {"team_id": 1})
             mock_conn.execute.assert_called_once()
@@ -35,9 +36,10 @@ class TestAuditLog(unittest.TestCase):
             self.assertIn("INSERT INTO audit_log", args[0][0])
             params = args[0][1]
             self.assertEqual(params["uid"], 42)
+            self.assertEqual(params["wsid"], 7)
             self.assertEqual(params["action"], "team_created")
             self.assertEqual(params["ip"], "1.2.3.4")
-            self.assertEqual(params["ua"], "TestAgent/1.0")
+            self.assertEqual(params["rid"], "req-123")
             details = json.loads(params["details"])
             self.assertEqual(details["team_id"], 1)
 
@@ -54,23 +56,20 @@ class TestAuditLog(unittest.TestCase):
             self.assertIsNone(params["uid"])
 
     def test_audit_log_truncates_long_values(self):
-        """IP truncated to 45 chars, UA to 500 chars."""
+        """IP truncated to 45 chars."""
         from web.middleware.audit import audit_log
 
         app = self._make_app()
         long_ip = "x" * 100
-        long_ua = "y" * 1000
         with app.test_request_context(
             "/api/v1/test",
             environ_base={"REMOTE_ADDR": long_ip},
-            headers={"User-Agent": long_ua},
         ):
             g.current_user_id = 1
             mock_conn = MagicMock()
             audit_log(mock_conn, "test", {})
             params = mock_conn.execute.call_args[0][1]
             self.assertEqual(len(params["ip"]), 45)
-            self.assertEqual(len(params["ua"]), 500)
 
     def test_audit_log_empty_details(self):
         """audit_log() with None details stores empty JSON object."""

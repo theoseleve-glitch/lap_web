@@ -187,8 +187,14 @@ def list_tickets():
 
     conn = _get_pg_conn()
 
-    limit = min(int(request.args.get("limit", 20)), 50)
-    offset = max(int(request.args.get("offset", 0)), 0)
+    try:
+        limit = min(int(request.args.get("limit", 20)), 50)
+    except (ValueError, TypeError):
+        limit = 20
+    try:
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except (ValueError, TypeError):
+        offset = 0
 
     rows = conn.execute(
         text(

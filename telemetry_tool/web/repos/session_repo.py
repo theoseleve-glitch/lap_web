@@ -195,10 +195,12 @@ def get_sessions(
         params["f_max_score"] = filters["max_score"]
     if filters.get("search"):
         clauses.append(
-            "(d.driver_name LIKE :f_search OR t.track_name LIKE :f_search "
-            "OR s.csv_filename LIKE :f_search)"
+            "(d.driver_name LIKE :f_search ESCAPE '\\' "
+            "OR t.track_name LIKE :f_search ESCAPE '\\' "
+            "OR s.csv_filename LIKE :f_search ESCAPE '\\')"
         )
-        params["f_search"] = f"%{filters['search']}%"
+        _s = filters["search"].replace("%", "\\%").replace("_", "\\_")
+        params["f_search"] = f"%{_s}%"
     if filters.get("favorite"):
         clauses.append("s.is_favorite = 1")
     if "archived" in (filters or {}):
@@ -231,7 +233,7 @@ def get_sessions(
     sql = f"""
         SELECT s.*, d.driver_name, t.track_name, k.kart_name
         FROM sessions s
-        JOIN drivers d ON s.driver_id = d.driver_id
+        LEFT JOIN drivers d ON s.driver_id = d.driver_id
         LEFT JOIN tracks t ON s.track_id = t.track_id
         LEFT JOIN karts k ON s.kart_id = k.kart_id
         WHERE {where}
@@ -279,10 +281,12 @@ def count_sessions_filtered(
         params["f_max_score"] = filters["max_score"]
     if filters.get("search"):
         clauses.append(
-            "(d.driver_name LIKE :f_search OR t.track_name LIKE :f_search "
-            "OR s.csv_filename LIKE :f_search)"
+            "(d.driver_name LIKE :f_search ESCAPE '\\' "
+            "OR t.track_name LIKE :f_search ESCAPE '\\' "
+            "OR s.csv_filename LIKE :f_search ESCAPE '\\')"
         )
-        params["f_search"] = f"%{filters['search']}%"
+        _s = filters["search"].replace("%", "\\%").replace("_", "\\_")
+        params["f_search"] = f"%{_s}%"
     if "archived" in (filters or {}):
         if filters["archived"]:
             clauses.append("COALESCE(s.archived, 0) = 1")
@@ -294,7 +298,7 @@ def count_sessions_filtered(
     where = " AND ".join(clauses)
     sql = f"""
         SELECT COUNT(*) FROM sessions s
-        JOIN drivers d ON s.driver_id = d.driver_id
+        LEFT JOIN drivers d ON s.driver_id = d.driver_id
         LEFT JOIN tracks t ON s.track_id = t.track_id
         LEFT JOIN karts k ON s.kart_id = k.kart_id
         WHERE {where};
@@ -311,10 +315,10 @@ def count_sessions_filtered(
 def get_session_by_id(
     conn: sqlite3.Connection,
     session_id: str,
+    include_deleted: bool = False,
 ) -> Optional[dict]:
-    row = conn.execute(
-        Q.SELECT_SESSION_BY_ID, {"session_id": session_id}
-    ).fetchone()
+    query = Q.SELECT_SESSION_BY_ID_ANY if include_deleted else Q.SELECT_SESSION_BY_ID
+    row = conn.execute(query, {"session_id": session_id}).fetchone()
     return dict(row) if row else None
 
 
@@ -329,6 +333,7 @@ def update_session_field(
         "session_date", "driver_id", "track_id",
         "session_type", "track_state", "notes",
         "display_name", "kart_id", "is_favorite",
+        "archived",
     }
     if field_name not in allowed:
         raise ValueError(f"Field {field_name!r} not editable on sessions.")

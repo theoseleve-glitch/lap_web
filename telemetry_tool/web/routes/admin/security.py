@@ -173,6 +173,9 @@ def create_incident():
         },
     )
     row = cur.fetchone()
+    if row is None:
+        conn.commit()
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create incident", status=500)
     r = dict(row) if not isinstance(row, dict) else row
     conn.commit()
 

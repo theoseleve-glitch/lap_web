@@ -57,12 +57,13 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
     const { accel_lat, distances } = ggData;
     const result: Record<number, number[]> = {};
 
+    const len = Math.min(distances.length, accel_lat.length);
     for (const c of corners) {
       const gValues: number[] = [];
-      for (let i = 0; i < distances.length; i++) {
+      for (let i = 0; i < len; i++) {
         if (distances[i] >= c.s_start && distances[i] <= c.s_end) {
           const absG = Math.abs(accel_lat[i] / 9.81); // convert m/s² to G
-          gValues.push(absG);
+          if (Number.isFinite(absG)) gValues.push(absG);
         }
       }
       if (gValues.length > 0) {
@@ -213,7 +214,7 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
         aria-label="Histogram of lateral G-force for the selected corner"
       />
 
-      {selectedCorner !== null && cornerGData[selectedCorner] && (
+      {selectedCorner !== null && cornerGData[selectedCorner]?.length > 0 && (
         <div className="flex gap-4 mt-2 text-xs text-steel font-body">
           <span>{cornerGData[selectedCorner].length} data points</span>
           <span>

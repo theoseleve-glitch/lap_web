@@ -185,7 +185,7 @@ class TestInviteService:
                 "role": "member", "inviter_id": 5,
                 "expires_at": future,
             }],
-            "SELECT workspace_id FROM teams": [{"workspace_id": 100}],
+            "FROM workspaces WHERE owner_team_id": [{"workspace_id": 100}],
         })
         result = accept_invite(conn, "valid-token", user_id=42)
         assert result["team_id"] == 10

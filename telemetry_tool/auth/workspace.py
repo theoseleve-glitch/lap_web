@@ -17,7 +17,10 @@ def create_personal_workspace(
         "VALUES (%(type)s, %(uid)s, %(name)s) RETURNING id",
         {"type": "personal", "uid": user_id, "name": display_name},
     )
-    ws_id = cur.fetchone()["id"]
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create personal workspace — INSERT returned no rows")
+    ws_id = row["id"]
 
     conn.execute(
         "UPDATE users SET default_workspace_id = %(ws)s WHERE id = %(uid)s",
@@ -34,7 +37,10 @@ def create_team_workspace(conn, team_id: int, display_name: str) -> int:
         "VALUES (%(type)s, %(tid)s, %(name)s) RETURNING id",
         {"type": "team", "tid": team_id, "name": display_name},
     )
-    ws_id = cur.fetchone()["id"]
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("Failed to create team workspace — INSERT returned no rows")
+    ws_id = row["id"]
     conn.commit()
     return ws_id
 

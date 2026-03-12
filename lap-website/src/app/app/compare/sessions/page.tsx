@@ -718,8 +718,8 @@ export default function CompareSessionsPage() {
                       return (
                         <CompareRow
                           label="Best Lap Avg Speed"
-                          valueA={bestA ? `${mpsToKmh(bestA.speed_mean_mps)} km/h` : '\u2014'}
-                          valueB={bestB ? `${mpsToKmh(bestB.speed_mean_mps)} km/h` : '\u2014'}
+                          valueA={bestA?.speed_mean_mps != null ? `${mpsToKmh(bestA.speed_mean_mps)} km/h` : '\u2014'}
+                          valueB={bestB?.speed_mean_mps != null ? `${mpsToKmh(bestB.speed_mean_mps)} km/h` : '\u2014'}
                           delta={speedDelta != null ? `${formatDelta(speedDelta)} km/h` : null}
                           deltaColorClass={speedDelta != null ? deltaColor(speedDelta) : 'text-steel'}
                         />
@@ -737,8 +737,8 @@ export default function CompareSessionsPage() {
                       return (
                         <CompareRow
                           label="Best Lap Max Speed"
-                          valueA={bestA ? `${mpsToKmh(bestA.speed_max_mps)} km/h` : '\u2014'}
-                          valueB={bestB ? `${mpsToKmh(bestB.speed_max_mps)} km/h` : '\u2014'}
+                          valueA={bestA?.speed_max_mps != null ? `${mpsToKmh(bestA.speed_max_mps)} km/h` : '\u2014'}
+                          valueB={bestB?.speed_max_mps != null ? `${mpsToKmh(bestB.speed_max_mps)} km/h` : '\u2014'}
                           delta={speedDelta != null ? `${formatDelta(speedDelta)} km/h` : null}
                           deltaColorClass={speedDelta != null ? deltaColor(speedDelta) : 'text-steel'}
                         />

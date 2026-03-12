@@ -481,13 +481,12 @@ def _log_audit(
     """Insert a row into audit_log."""
     import json
     conn.execute(
-        "INSERT INTO audit_log (user_id, action, details, ip_address, user_agent) "
-        "VALUES (%(uid)s, %(action)s, %(details)s, %(ip)s, %(ua)s)",
+        "INSERT INTO audit_log (user_id, action, new_value, ip_address) "
+        "VALUES (%(uid)s, %(action)s, %(details)s, %(ip)s)",
         {
             "uid": user_id,
             "action": action,
             "details": json.dumps(details),
             "ip": (ip_address or "")[:45] or None,
-            "ua": (user_agent or "")[:500] or None,
         },
     )

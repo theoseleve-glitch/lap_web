@@ -274,6 +274,26 @@ def _persist_analysis_json(conn: sqlite3.Connection, session_id: str, summary: d
     if fe and isinstance(fe, dict):
         blob["friction_envelope"] = fe
 
+    # Coaching V3 (physics-based corner coaching, drills, narrative)
+    cv3 = summary.get("coaching_v3")
+    if cv3 and isinstance(cv3, dict):
+        blob["coaching_v3"] = cv3
+
+    # Gamification (XP, level, achievements, streak)
+    gam = summary.get("gamification")
+    if gam and isinstance(gam, dict):
+        blob["gamification"] = gam
+
+    # Lap validation analysis (invalid, incomplete, anomalous, deviation)
+    for key in ("invalid_lap_analysis", "incomplete_lap_analysis",
+                "anomalous_lap_analysis", "line_deviation_analysis"):
+        val = summary.get(key)
+        if val and isinstance(val, dict):
+            serialisable = {}
+            for k, v in val.items():
+                serialisable[k] = sorted(v) if isinstance(v, set) else v
+            blob[key] = serialisable
+
     if blob:
         insert_analysis_json(conn, session_id, blob)
         logger.info("Persisted analysis_json (%d keys) for session %s",
@@ -380,8 +400,8 @@ def upload_session() -> tuple[Response, int]:
                      tmp_path, tmp_path.stat().st_size)
 
         # ── 4. Build session metadata ─────────────────────────────
-        _VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance"}
-        _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed"}
+        _VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance", "heat", "final"}
+        _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed", "green", "rubbered", "dusty"}
 
         raw_session_type = request.form.get("session_type", "practice")
         raw_track_state = request.form.get("track_state", "dry")
@@ -435,7 +455,14 @@ def upload_session() -> tuple[Response, int]:
         vehicle_overrides: dict[str, Any] = {}
         _mass = request.form.get("mass_kg")
         if _mass is not None:
-            _m = float(_mass)
+            try:
+                _m = float(_mass)
+            except (ValueError, TypeError):
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"mass_kg must be a number, got '{_mass}'",
+                    status=400,
+                )
             if not (30 <= _m <= 2000):
                 return api_error(
                     ErrorCode.VALIDATION_ERROR,
@@ -446,7 +473,14 @@ def upload_session() -> tuple[Response, int]:
 
         _power = request.form.get("power_kw")
         if _power is not None:
-            _p = float(_power)
+            try:
+                _p = float(_power)
+            except (ValueError, TypeError):
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    f"power_kw must be a number, got '{_power}'",
+                    status=400,
+                )
             if not (1 <= _p <= 1000):
                 return api_error(
                     ErrorCode.VALIDATION_ERROR,

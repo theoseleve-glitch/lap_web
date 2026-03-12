@@ -25,8 +25,8 @@ interface TrendPoint {
 
 interface DriverStats {
   sessions: number;
-  avg_score: number;
-  best_score: number;
+  avg_score: number | null;
+  best_score: number | null;
   tracks: number;
 }
 
@@ -647,8 +647,8 @@ export default function CompareDriversPage() {
     const b = comparison.driver_b;
 
     const sessionsDelta = a.stats.sessions - b.stats.sessions;
-    const avgScoreDelta = a.stats.avg_score - b.stats.avg_score;
-    const bestScoreDelta = a.stats.best_score - b.stats.best_score;
+    const avgScoreDelta = (a.stats.avg_score ?? 0) - (b.stats.avg_score ?? 0);
+    const bestScoreDelta = (a.stats.best_score ?? 0) - (b.stats.best_score ?? 0);
     const tracksDelta = a.stats.tracks - b.stats.tracks;
 
     return { sessionsDelta, avgScoreDelta, bestScoreDelta, tracksDelta };

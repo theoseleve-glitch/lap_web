@@ -315,6 +315,26 @@ def _build_analysis_blob(result: dict) -> dict:
     if ds and isinstance(ds, dict):
         blob["driving_style"] = ds
 
+    # Grip map (distance-binned friction coefficients)
+    gm = result.get("grip_map")
+    if gm and isinstance(gm, dict):
+        blob["grip_map"] = gm
+
+    # Friction envelope (speed-binned combined G limits)
+    fe = result.get("friction_envelope")
+    if fe and isinstance(fe, dict):
+        blob["friction_envelope"] = fe
+
+    # Coaching V3 (physics-based corner coaching, drills, narrative)
+    cv3 = result.get("coaching_v3")
+    if cv3 and isinstance(cv3, dict):
+        blob["coaching_v3"] = cv3
+
+    # Gamification (XP, level, achievements, streak)
+    gam = result.get("gamification")
+    if gam and isinstance(gam, dict):
+        blob["gamification"] = gam
+
     # Lap validation analysis (invalid, incomplete, anomalous, deviation)
     # These are needed by insert_laps() and for the frontend to show status.
     for key in ("invalid_lap_analysis", "incomplete_lap_analysis",
@@ -574,6 +594,7 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     if resampled_laps:
         # Custom corners override auto-detected; legacy filter as fallback
         if ctx.custom_corners is not None:
+            import json as _json
             from pipeline.helpers import enrich_custom_corners
             import numpy as np
 

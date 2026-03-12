@@ -53,7 +53,7 @@ def driver_detail(driver_id: int):
             "SELECT COUNT(*) as n_sessions, SUM(n_laps) as total_laps, "
             "MIN(best_lap_time_s) as best_time, "
             "AVG(total_score) as avg_score "
-            "FROM sessions WHERE driver_id = :did",
+            "FROM sessions WHERE driver_id = :did AND deleted_at IS NULL",
             {"did": driver_id},
         ).fetchone()
         stats = dict(stats) if stats else {}
@@ -61,7 +61,7 @@ def driver_detail(driver_id: int):
         # Find best ever track
         best_track_row = conn.execute(
             "SELECT track_id FROM sessions WHERE driver_id = :did "
-            "AND best_lap_time_s IS NOT NULL "
+            "AND best_lap_time_s IS NOT NULL AND deleted_at IS NULL "
             "ORDER BY best_lap_time_s LIMIT 1",
             {"did": driver_id},
         ).fetchone()
@@ -89,7 +89,7 @@ def driver_detail(driver_id: int):
     sessions = conn.execute(
         "SELECT s.*, t.track_name FROM sessions s "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
-        "WHERE s.driver_id = :did ORDER BY s.session_date DESC",
+        "WHERE s.driver_id = :did AND s.deleted_at IS NULL ORDER BY s.session_date DESC",
         {"did": driver_id},
     ).fetchall()
     sessions = [dict(r) for r in sessions]

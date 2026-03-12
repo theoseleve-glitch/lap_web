@@ -154,7 +154,7 @@ def transition_subscription(
 
     try:
         conn.execute(
-            "INSERT INTO audit_log (user_id, action, details, ip_address) "
+            "INSERT INTO audit_log (user_id, action, new_value, ip_address) "
             "VALUES (%(uid)s, %(action)s, %(details)s, %(ip)s)",
             {
                 "uid": user_id,

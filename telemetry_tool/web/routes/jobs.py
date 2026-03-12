@@ -198,23 +198,51 @@ def retry(job_id: str):
     except Exception:
         logger.warning("Compute budget check failed — allowing retry", exc_info=True)
 
-    # Create a new job entry as a retry
+    # Create a new job entry as a retry (copy file_path and required NOT NULL cols)
     import uuid
-    new_job_id = str(uuid.uuid4())
+    new_job_id = uuid.uuid4().hex
+
+    # Get original job's file_path for the PipelineContext
+    original_file_path = job.get("file_path", "")
+
     conn.execute(
         text(
-            "INSERT INTO ingestion_jobs (job_id, workspace_id, file_name, status, stage_name) "
-            "SELECT :new_id, workspace_id, file_name, 'queued', 'retry_queued' "
+            "INSERT INTO ingestion_jobs "
+            "  (job_id, workspace_id, file_path, file_size, sha256_partial, "
+            "   status, stage_name, stage_index, stage_total, updated_at) "
+            "SELECT :new_id, workspace_id, file_path, file_size, "
+            "  COALESCE(sha256_partial, ''), "
+            "  'pending', 'retry_queued', 0, 14, now() "
             "FROM ingestion_jobs WHERE job_id = :old_id AND workspace_id = :ws"
         ),
         {"new_id": new_job_id, "old_id": job_id, "ws": g.workspace_id},
     )
     conn.commit()
 
-    # Dispatch the pipeline task
+    # Seed PipelineContext in Redis (required by Celery workers)
     try:
-        from tasks.pipeline_tasks import run_pipeline
-        run_pipeline.delay(new_job_id)
+        from pipeline_context import PipelineContext
+
+        redis_client = _get_redis()
+        PipelineContext.create(
+            redis_client=redis_client,
+            job_id=new_job_id,
+            workspace_id=str(g.workspace_id),
+            session_id=new_job_id,
+            file_path=original_file_path,
+        )
+
+        # Copy session metadata from original job if available
+        original_meta = redis_client.get(f"pipeline:meta:{job_id}")
+        if original_meta:
+            redis_client.set(f"pipeline:meta:{new_job_id}", original_meta, ex=7200)
+    except Exception:
+        logger.warning("Failed to seed PipelineContext for retry %s", new_job_id, exc_info=True)
+
+    # Dispatch the pipeline chain (ingest → analyze → finalize)
+    try:
+        from tasks.pipeline_tasks import build_pipeline_chain
+        build_pipeline_chain(new_job_id).apply_async()
     except Exception:
         logger.exception("Failed to dispatch retry task for %s", new_job_id)
 
@@ -358,10 +386,18 @@ def stream(job_id: str):
                     return
 
                 try:
-                    conn = get_pg_connection()
+                    if conn is None:
+                        conn = get_pg_connection()
                     job = get_job(conn, job_id, workspace_id)
                 except Exception:
                     logger.warning("SSE: failed to query job %s", job_id, exc_info=True)
+                    # Close broken connection so next iteration creates a fresh one
+                    if conn is not None:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        conn = None
                     yield f"data: {json.dumps({'status': 'error', 'error_message': 'DB query failed'})}\n\n"
                     time.sleep(_SSE_POLL_INTERVAL)
                     continue
@@ -413,6 +449,12 @@ def stream(job_id: str):
         except GeneratorExit:
             # Client disconnected — clean up gracefully
             logger.debug("SSE: client disconnected for job %s", job_id)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     return Response(
         _generate(),

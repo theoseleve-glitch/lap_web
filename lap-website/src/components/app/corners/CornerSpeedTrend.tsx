@@ -175,6 +175,7 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
       }
 
       // Legend label on the right
+      if (pts.length === 0) continue;
       const lastPt = pts[pts.length - 1];
       ctx.fillStyle = color;
       ctx.font = '9px -apple-system, sans-serif';

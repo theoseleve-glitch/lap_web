@@ -21,7 +21,10 @@ def create_team(conn, owner_id: int, name: str, slug: str) -> dict:
             "VALUES (%(name)s, %(slug)s, %(owner)s) RETURNING id",
             {"name": name, "slug": slug, "owner": owner_id},
         )
-        team_id = cur.fetchone()["id"]
+        row = cur.fetchone()
+        if row is None:
+            raise RuntimeError("Failed to create team — INSERT returned no rows")
+        team_id = row["id"]
 
         conn.execute(
             "INSERT INTO team_members (team_id, user_id, role, accepted_at) "

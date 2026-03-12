@@ -43,7 +43,7 @@ def track_detail(track_id: str):
     sessions = conn.execute(
         "SELECT s.*, COALESCE(d.driver_name, 'Unknown') AS driver_name FROM sessions s "
         "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
-        "WHERE s.track_id = :track_id "
+        "WHERE s.track_id = :track_id AND s.deleted_at IS NULL "
         "ORDER BY s.session_date DESC;",
         {"track_id": track_id},
     ).fetchall()
@@ -63,8 +63,8 @@ def track_detail(track_id: str):
             ref_sess = conn.execute(
                 "SELECT s.session_id, s.session_date, s.best_lap_time_s, "
                 "d.driver_name FROM sessions s "
-                "JOIN drivers d ON s.driver_id = d.driver_id "
-                "WHERE s.session_id = :sid",
+                "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+                "WHERE s.session_id = :sid AND s.deleted_at IS NULL",
                 {"sid": ref_sid},
             ).fetchone()
             ref_info[cond] = dict(ref_sess) if ref_sess else None

@@ -172,13 +172,22 @@ def dashboard_stats() -> tuple[dict, int]:
         for s in recent[:10]  # Table shows 10 most recent
     ]
 
-    # Identify which session holds the personal best
+    # Identify which session holds the personal best — query directly
+    # instead of scanning recent (which is limited to 20 sessions).
     pb_session_id = None
     if stats.get("overall_best_time_s") is not None:
-        for s in recent:
-            if s.get("best_lap_time_s") == stats["overall_best_time_s"]:
-                pb_session_id = s.get("session_id")
-                break
+        try:
+            pb_row = conn.execute(
+                "SELECT session_id FROM sessions "
+                "WHERE best_lap_time_s = :best AND deleted_at IS NULL "
+                "ORDER BY session_date DESC LIMIT 1",
+                {"best": stats["overall_best_time_s"]},
+            ).fetchone()
+            if pb_row:
+                sid = pb_row["session_id"] if isinstance(pb_row, dict) else pb_row[0]
+                pb_session_id = str(sid) if sid and isinstance(sid, (str, int)) else None
+        except Exception:
+            pass
 
     result = {
         "total_sessions": stats.get("total_sessions", 0),
@@ -1138,7 +1147,7 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     conn.commit()
 
     try:
-        from telemetry_tool.web.rollups import refresh_rollups
+        from web.rollups import refresh_rollups
         refresh_rollups(conn, int(g.workspace_id))
     except Exception:
         logger.warning("Rollup refresh failed after delete", exc_info=True)
@@ -1169,7 +1178,7 @@ def session_delete_impact(session_id: str) -> tuple[dict, int]:
 def restore_session(session_id: str) -> tuple[dict, int]:
     """Restore a soft-deleted session."""
     conn = get_db_connection()
-    session = models.get_session_by_id(conn, session_id)
+    session = models.get_session_by_id(conn, session_id, include_deleted=True)
     if session is None:
         return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
     if not session.get("deleted_at"):
@@ -1541,7 +1550,7 @@ def _driver_data(conn: Any, driver_id: int) -> dict | None:
         for r in conn.execute(
             "SELECT s.session_id, s.session_date, s.total_score, s.track_id "
             "FROM sessions s "
-            "WHERE s.driver_id = :driver_id "
+            "WHERE s.driver_id = :driver_id AND s.deleted_at IS NULL "
             "ORDER BY s.session_date ASC",
             {"driver_id": driver_id},
         ).fetchall()
@@ -1551,13 +1560,13 @@ def _driver_data(conn: Any, driver_id: int) -> dict | None:
         return {
             "driver": driver,
             "avg_scores": {
-                "pace": 0, "consistency": 0,
-                "execution": 0, "robustness": 0,
+                "pace": None, "consistency": None,
+                "execution": None, "robustness": None,
             },
             "trend": [],
             "stats": {
-                "sessions": 0, "avg_score": 0,
-                "best_score": 0, "tracks": 0,
+                "sessions": 0, "avg_score": None,
+                "best_score": None, "tracks": 0,
             },
         }
 
@@ -1580,8 +1589,8 @@ def _driver_data(conn: Any, driver_id: int) -> dict | None:
         if scores.get("robustness_score") is not None:
             robustness_vals.append(scores["robustness_score"])
 
-    def _avg(vals: list[float]) -> float:
-        return round(sum(vals) / len(vals), 1) if vals else 0
+    def _avg(vals: list[float]) -> float | None:
+        return round(sum(vals) / len(vals), 1) if vals else None
 
     avg_scores = {
         "pace": _avg(pace_vals),
@@ -1608,8 +1617,8 @@ def _driver_data(conn: Any, driver_id: int) -> dict | None:
 
     stats = {
         "sessions": len(sessions),
-        "avg_score": round(sum(total_scores) / len(total_scores), 1) if total_scores else 0,
-        "best_score": max(total_scores) if total_scores else 0,
+        "avg_score": round(sum(total_scores) / len(total_scores), 1) if total_scores else None,
+        "best_score": max(total_scores) if total_scores else None,
         "tracks": len(unique_tracks),
     }
 
@@ -1715,7 +1724,8 @@ def get_report(session_id: str) -> tuple | Response:
     if custom_results:
         allowed_dirs.append(Path(custom_results).resolve())
 
-    if not any(str(path).startswith(str(d)) for d in allowed_dirs):
+    import os as _os
+    if not any(str(path) == str(d) or str(path).startswith(str(d) + _os.sep) for d in allowed_dirs):
         logger.warning("Report path traversal attempt: %s", report_path)
         return api_error(
             ErrorCode.NOT_FOUND,
@@ -1748,7 +1758,10 @@ def get_report(session_id: str) -> tuple | Response:
 def export_scores_csv() -> tuple:
     """Export scoring history as CSV with session metadata."""
     conn = get_db_connection()
-    limit = min(int(request.args.get("limit", 500)), 2000)
+    try:
+        limit = min(int(request.args.get("limit", 500)), 2000)
+    except (ValueError, TypeError):
+        limit = 500
 
     sessions = models.get_sessions(conn, limit=limit, offset=0)
     if not sessions:
@@ -1896,8 +1909,8 @@ _UPDATABLE_FIELDS = {
     "session_type", "track_state", "kart_id", "notes",
 }
 
-_VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test"}
-_VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed"}
+_VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance", "heat", "final"}
+_VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed", "green", "rubbered", "dusty"}
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
@@ -2096,11 +2109,18 @@ def update_session(session_id: str) -> tuple[dict, int]:
     conn.commit()
 
     # Re-fetch and return the updated session (strip internal fields).
-    updated = dict(models.get_session_by_id(conn, session_id))
+    refetched = models.get_session_by_id(conn, session_id)
+    if refetched is None:
+        return api_response({"session_id": session_id, "updated_fields": updated_count})
+    updated = dict(refetched)
     updated.pop("source_path", None)
     updated.pop("html_report_path", None)
     if updated.get("csv_filename"):
         updated["csv_filename"] = Path(updated["csv_filename"]).name
+    # Derive track_unnamed flag (same logic as GET detail endpoint)
+    tid = updated.get("track_id") or ""
+    tname = (updated.get("track_name") or "").strip()
+    updated["track_unnamed"] = bool(tid and (not tname or tname == tid))
     return api_response(updated)
 
 
@@ -3219,7 +3239,7 @@ def get_session_compare_sectors(session_id: str) -> tuple[dict, int]:
             "corners": [],
             "session_a": {"session_id": session_id},
             "session_b": {"session_id": session_b_id},
-            "available": not summary_a and not summary_b,
+            "available": False,
             "reason_code": "NO_CORNER_DATA",
             "message": "Corner metrics not available for one or both sessions",
         })
@@ -3874,7 +3894,7 @@ def get_cross_session(session_id: str) -> tuple[dict, int]:
                         if prev_time is None or lt < prev_time:
                             prev_time = lt
 
-            if prev_time is not None:
+            if prev_time is not None and prev_time > 0:
                 delta_s = focus_time - prev_time
                 improvement = {
                     "delta_s": round(delta_s, 3),
@@ -4504,7 +4524,7 @@ def get_driver_achievements() -> tuple[dict, int]:
         "SELECT s.session_id, s.session_date, t.track_name, d.driver_name, "
         "       s.n_laps, s.best_lap_time_s, s.total_score, s.grade "
         "FROM sessions s "
-        "JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
         "LEFT JOIN tracks t ON s.track_id = t.track_id "
         "WHERE s.deleted_at IS NULL "
         "ORDER BY s.session_date DESC"
@@ -4748,7 +4768,7 @@ def save_user_corners(session_id: str) -> tuple[dict, int]:
 
     conn.commit()
     logger.info("Saved %d user-defined corners for session %s", count, session_id)
-    return api_response({"saved": count}), 200
+    return api_response({"saved": count})
 
 
 @bp.route("/sessions/<session_id>/user-corners", methods=["GET"])
@@ -4916,6 +4936,270 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
         "sections_count": len(v2_sections),
         "corner_coaching_v2": v2_coaching or [],
     })
+
+
+# ══════════════════════════════════════════════════════════════════
+# Annotations JSON API
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/annotations", methods=["GET"])
+@_safe_api
+def list_annotations() -> tuple[dict, int]:
+    """List all annotations across sessions, newest first.
+
+    Query params:
+        search (str)  — optional search filter
+        limit  (int)  — max results (default 100, max 500)
+    """
+    conn = get_db_connection()
+    search = request.args.get("search", "").strip()
+    try:
+        limit = min(int(request.args.get("limit", 100)), 500)
+    except (ValueError, TypeError):
+        limit = 100
+
+    if search:
+        from annotations import search_annotations
+        rows = search_annotations(conn, search, limit=limit)
+    else:
+        raw = conn.execute(
+            "SELECT sa.*, s.session_date, d.driver_name, t.track_name "
+            "FROM session_annotations sa "
+            "JOIN sessions s ON sa.session_id = s.session_id "
+            "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+            "LEFT JOIN tracks t ON s.track_id = t.track_id "
+            "WHERE s.deleted_at IS NULL "
+            "ORDER BY sa.created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        import json as _json
+        rows = []
+        for r in raw:
+            d = dict(r)
+            d["tags"] = _json.loads(d["tags_json"]) if d.get("tags_json") else []
+            rows.append(d)
+
+    # Map to the frontend's AnnotationRow interface
+    annotations = []
+    for row in rows:
+        annotations.append({
+            "id": row.get("id"),
+            "session_id": row.get("session_id"),
+            "session_label": (
+                f"{row.get('driver_name', '')} — {row.get('track_name', 'Unknown')} "
+                f"({row.get('session_date', '')})"
+            ),
+            "type": row.get("annotation_type", "note"),
+            "text": row.get("body", ""),
+            "timestamp_s": row.get("distance_m"),
+            "created_at": row.get("created_at", ""),
+        })
+
+    return api_response({"annotations": annotations})
+
+
+# ══════════════════════════════════════════════════════════════════
+# Data Health JSON API
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/data-health/stats", methods=["GET"])
+@_safe_api
+def data_health_stats() -> tuple[dict, int]:
+    """Aggregate ingestion job statistics."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT "
+            "  COUNT(*) AS total_files, "
+            "  SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS success_count, "
+            "  SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed_count "
+            "FROM ingestion_jobs"
+        ).fetchone()
+    except Exception:
+        # Table might not exist in SQLite mode
+        return api_response({
+            "total_files": 0, "success_count": 0,
+            "failed_count": 0, "success_rate": 0, "avg_process_time_s": None,
+        })
+
+    d = dict(row) if row else {}
+    total = d.get("total_files", 0) or 0
+    success = d.get("success_count", 0) or 0
+    return api_response({
+        "total_files": total,
+        "success_count": success,
+        "failed_count": d.get("failed_count", 0) or 0,
+        "success_rate": round(success / total * 100, 1) if total > 0 else 0,
+        "avg_process_time_s": None,
+    })
+
+
+@bp.route("/data-health/jobs", methods=["GET"])
+@_safe_api
+def data_health_jobs() -> tuple[dict, int]:
+    """List recent ingestion jobs."""
+    conn = get_db_connection()
+    try:
+        limit = min(int(request.args.get("limit", 50)), 200)
+    except (ValueError, TypeError):
+        limit = 50
+
+    try:
+        rows = conn.execute(
+            "SELECT * FROM ingestion_jobs "
+            "ORDER BY COALESCE(started_at, '1970-01-01') DESC "
+            "LIMIT ?",
+            (limit,),
+        ).fetchall()
+    except Exception:
+        return api_response({"jobs": []})
+
+    jobs = []
+    for r in rows:
+        d = dict(r)
+        # Handle SQLite (file_path/elapsed_s) vs PG (file_name/duration_s) columns
+        fname = d.get("file_name") or ""
+        if not fname and d.get("file_path"):
+            import os as _os
+            fname = _os.path.basename(d["file_path"])
+        jobs.append({
+            "id": d.get("job_id"),
+            "file_name": fname,
+            "status": d.get("status", "pending"),
+            "started_at": d.get("started_at"),
+            "completed_at": d.get("completed_at"),
+            "duration_s": d.get("duration_s") or d.get("elapsed_s"),
+            "peak_rss_mb": d.get("peak_rss_mb"),
+            "throughput_mb_s": d.get("throughput_mb_s"),
+            "error_message": d.get("error_message"),
+        })
+
+    return api_response({"jobs": jobs})
+
+
+@bp.route("/data-health/jobs/<job_id>", methods=["GET"])
+@_safe_api
+def data_health_job_detail(job_id: str) -> tuple[dict, int]:
+    """Get detail for a single ingestion job."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM ingestion_jobs WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    except Exception:
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+
+    if row is None:
+        return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
+
+    d = dict(row)
+    # Handle SQLite (file_path/file_size/elapsed_s/sha256) vs PG columns
+    fname = d.get("file_name") or ""
+    if not fname and d.get("file_path"):
+        import os as _os
+        fname = _os.path.basename(d["file_path"])
+    file_size = d.get("file_size_bytes") or d.get("file_size")
+    return api_response({
+        "id": d.get("job_id"),
+        "file_name": fname,
+        "file_size_mb": round(file_size / (1024 * 1024), 2) if file_size else None,
+        "status": d.get("status", "pending"),
+        "started_at": d.get("started_at"),
+        "completed_at": d.get("completed_at"),
+        "duration_s": d.get("duration_s") or d.get("elapsed_s"),
+        "peak_rss_mb": d.get("peak_rss_mb"),
+        "throughput_mb_s": d.get("throughput_mb_s"),
+        "rows_processed": d.get("rows_processed") or d.get("n_rows_loaded"),
+        "chunks_written": d.get("chunks_written") or d.get("n_chunks"),
+        "checksum": d.get("checksum_sha256") or d.get("sha256"),
+        "error_message": d.get("error_message"),
+        "session_id": d.get("session_id"),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# Setup Status JSON API
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/setup/status", methods=["GET"])
+@_safe_api
+def setup_status() -> tuple[dict, int]:
+    """Return setup completion status based on actual data.
+
+    Checks whether the user has: uploaded sessions, configured tracks,
+    configured drivers, run analysis, compared sessions, etc.
+    """
+    conn = get_db_connection()
+
+    steps = []
+
+    # Always complete — they're on the app
+    steps.append({"id": "create_account", "status": "complete"})
+
+    # Check if any sessions exist
+    session_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM sessions WHERE deleted_at IS NULL"
+    ).fetchone()
+    has_sessions = (dict(session_row).get("n", 0) or 0) > 0
+    steps.append({"id": "upload_session", "status": "complete" if has_sessions else "pending"})
+
+    # Check if tracks are configured (named, not "Unknown")
+    track_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM tracks WHERE track_name NOT LIKE '%nknown%'"
+    ).fetchone()
+    has_tracks = (dict(track_row).get("n", 0) or 0) > 0
+    steps.append({"id": "configure_tracks", "status": "complete" if has_tracks else "pending"})
+
+    # Check if drivers exist
+    driver_row = conn.execute("SELECT COUNT(*) AS n FROM drivers").fetchone()
+    has_drivers = (dict(driver_row).get("n", 0) or 0) > 0
+    steps.append({"id": "configure_drivers", "status": "complete" if has_drivers else "pending"})
+
+    # Check if analysis has run (sessions with scores)
+    score_row = conn.execute(
+        "SELECT COUNT(*) AS n FROM sessions WHERE total_score IS NOT NULL AND deleted_at IS NULL"
+    ).fetchone()
+    has_analysis = (dict(score_row).get("n", 0) or 0) > 0
+    steps.append({"id": "run_analysis", "status": "complete" if has_analysis else "pending"})
+
+    # View dashboard — same as having sessions
+    steps.append({"id": "view_dashboard", "status": "complete" if has_sessions else "pending"})
+
+    # Compare sessions — need 2+ sessions
+    multi_sessions = (dict(session_row).get("n", 0) or 0) >= 2
+    steps.append({"id": "compare_sessions", "status": "complete" if multi_sessions else "pending"})
+
+    # Kart setup
+    try:
+        kart_row = conn.execute("SELECT COUNT(*) AS n FROM karts").fetchone()
+        has_karts = (dict(kart_row).get("n", 0) or 0) > 0
+    except Exception:
+        has_karts = False
+    steps.append({"id": "setup_kart", "status": "complete" if has_karts else "pending"})
+
+    # Race strategy
+    try:
+        strat_row = conn.execute("SELECT COUNT(*) AS n FROM race_configs").fetchone()
+        has_strategy = (dict(strat_row).get("n", 0) or 0) > 0
+    except Exception:
+        has_strategy = False
+    steps.append({"id": "create_strategy", "status": "complete" if has_strategy else "pending"})
+
+    # Export data — check if any export templates exist or sessions have reports
+    try:
+        export_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions WHERE html_report_path IS NOT NULL AND deleted_at IS NULL"
+        ).fetchone()
+        has_exports = (dict(export_row).get("n", 0) or 0) > 0
+    except Exception:
+        has_exports = False
+    steps.append({"id": "export_data", "status": "complete" if has_exports else "pending"})
+
+    return api_response({"steps": steps})
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

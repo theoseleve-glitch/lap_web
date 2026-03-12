@@ -42,10 +42,9 @@ def _serialize_row(row):
 @bp.route("/jobs", methods=["GET"])
 @require_superadmin
 def list_jobs():
-    """List jobs cross-workspace. Filters: status, user_id, workspace_id, time range."""
+    """List jobs cross-workspace. Filters: status, workspace_id, time range."""
     conn = _get_conn()
     status = request.args.get("status")
-    user_id = request.args.get("user_id", type=int)
     workspace_id = request.args.get("workspace_id", type=int)
     limit = request.args.get("limit", 50, type=int)
     limit = min(limit, 200)
@@ -58,26 +57,22 @@ def list_jobs():
         conditions.append("status = %(status)s")
         params["status"] = status
 
-    if user_id:
-        conditions.append("user_id = %(user_id)s")
-        params["user_id"] = user_id
-
     if workspace_id:
         conditions.append("workspace_id = %(workspace_id)s")
         params["workspace_id"] = workspace_id
 
     if cursor:
-        conditions.append("created_at < %(cursor)s")
+        conditions.append("started_at < %(cursor)s")
         params["cursor"] = cursor
 
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
 
     rows = conn.execute(
-        f"SELECT job_id, file_name, status, user_id, workspace_id, "
-        f"created_at, started_at, completed_at, error_message, "
+        f"SELECT job_id, file_path, status, workspace_id, "
+        f"started_at, completed_at, error_message, "
         f"EXTRACT(EPOCH FROM (COALESCE(completed_at, NOW()) - started_at)) AS duration_s "
         f"FROM ingestion_jobs {where} "
-        f"ORDER BY created_at DESC LIMIT %(limit)s",
+        f"ORDER BY started_at DESC LIMIT %(limit)s",
         params,
     ).fetchall()
 
@@ -93,7 +88,7 @@ def job_stats():
     row = conn.execute(
         "SELECT COUNT(*) AS total, "
         "COUNT(*) FILTER (WHERE status = 'failed') AS failed, "
-        "COUNT(*) FILTER (WHERE status IN ('queued', 'running')) AS queue_depth, "
+        "COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'processing')) AS queue_depth, "
         "PERCENTILE_CONT(0.5) WITHIN GROUP "
         "  (ORDER BY EXTRACT(EPOCH FROM (completed_at - started_at))) "
         "  FILTER (WHERE completed_at IS NOT NULL) AS p50_duration, "
@@ -101,7 +96,7 @@ def job_stats():
         "  (ORDER BY EXTRACT(EPOCH FROM (completed_at - started_at))) "
         "  FILTER (WHERE completed_at IS NOT NULL) AS p95_duration "
         "FROM ingestion_jobs "
-        "WHERE created_at > NOW() - INTERVAL '24 hours'"
+        "WHERE started_at > NOW() - INTERVAL '24 hours'"
     ).fetchone()
 
     stats = _serialize_row(row)
@@ -112,7 +107,7 @@ def job_stats():
         "COUNT(*) AS cnt "
         "FROM ingestion_jobs "
         "WHERE status = 'failed' AND error_message IS NOT NULL "
-        "AND created_at > NOW() - INTERVAL '24 hours' "
+        "AND started_at > NOW() - INTERVAL '24 hours' "
         "GROUP BY error_class ORDER BY cnt DESC LIMIT 5"
     ).fetchall()
 
@@ -132,9 +127,9 @@ def get_job_detail(job_id: str):
     conn = _get_conn()
 
     row = conn.execute(
-        "SELECT job_id, file_name, status, user_id, workspace_id, "
-        "error_message, celery_task_id, retry_count, "
-        "created_at, started_at, completed_at, "
+        "SELECT job_id, file_path, status, workspace_id, "
+        "error_message, celery_task_id, "
+        "started_at, completed_at, "
         "peak_rss_mb, throughput_mb_s "
         "FROM ingestion_jobs WHERE job_id = %(jid)s",
         {"jid": job_id},
@@ -156,7 +151,7 @@ def retry_job(job_id: str):
     reason = body.get("reason", "Admin retry")
 
     row = conn.execute(
-        "SELECT job_id, status, retry_count, file_name, user_id, workspace_id "
+        "SELECT job_id, status, file_path, workspace_id "
         "FROM ingestion_jobs WHERE job_id = %(jid)s",
         {"jid": job_id},
     ).fetchone()
@@ -173,14 +168,39 @@ def retry_job(job_id: str):
             status=400,
         )
 
-    # Reset to pending
+    # Reset to pending and dispatch
     conn.execute(
-        "UPDATE ingestion_jobs SET status = 'queued', "
-        "error_message = NULL, retry_count = retry_count + 1 "
+        "UPDATE ingestion_jobs SET status = 'pending', "
+        "error_message = NULL, "
+        "stage_name = 'admin_retry', stage_index = 0, updated_at = NOW() "
         "WHERE job_id = %(jid)s",
         {"jid": job_id},
     )
     conn.commit()
+
+    # Seed PipelineContext in Redis (required by Celery workers)
+    try:
+        import redis
+        from pipeline_context import PipelineContext
+        from web.config import Config
+
+        redis_client = redis.Redis.from_url(Config.REDIS_URL)
+        PipelineContext.create(
+            redis_client=redis_client,
+            job_id=job_id,
+            workspace_id=str(job.get("workspace_id", "")),
+            session_id=job_id,
+            file_path=job.get("file_path", ""),
+        )
+    except Exception:
+        logger.warning("Failed to seed PipelineContext for admin retry %s", job_id, exc_info=True)
+
+    # Dispatch the pipeline chain (ingest → analyze → finalize)
+    try:
+        from tasks.pipeline_tasks import build_pipeline_chain
+        build_pipeline_chain(job_id).apply_async()
+    except Exception:
+        logger.exception("Failed to dispatch admin retry task for %s", job_id)
 
     # Audit
     try:
@@ -195,7 +215,7 @@ def retry_job(job_id: str):
     except Exception:
         logger.debug("Failed to log job retry", exc_info=True)
 
-    return api_response({"job_id": job_id, "new_status": "queued"})
+    return api_response({"job_id": job_id, "new_status": "pending"})
 
 
 @bp.route("/jobs/<job_id>/cancel", methods=["POST"])

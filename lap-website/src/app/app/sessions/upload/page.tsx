@@ -40,12 +40,14 @@ const SESSION_TYPES = [
   { value: 'heat', label: 'Heat' },
   { value: 'final', label: 'Final' },
   { value: 'endurance', label: 'Endurance' },
+  { value: 'test', label: 'Test' },
 ];
 
 const TRACK_STATES = [
   { value: 'dry', label: 'Dry' },
   { value: 'wet', label: 'Wet' },
   { value: 'damp', label: 'Damp' },
+  { value: 'mixed', label: 'Mixed' },
   { value: 'green', label: 'Green' },
   { value: 'rubbered', label: 'Rubbered' },
   { value: 'dusty', label: 'Dusty' },
@@ -143,7 +145,13 @@ function uploadSession(
         reject(new Error(`Server returned non-JSON response (${xhr.status})`));
         return;
       }
-      const envelope = JSON.parse(xhr.responseText);
+      let envelope;
+      try {
+        envelope = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new Error(`Invalid JSON in server response (${xhr.status})`));
+        return;
+      }
       if (envelope.ok && envelope.data) {
         resolve(envelope.data as UploadResponse);
       } else {
@@ -233,6 +241,7 @@ function UploadPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const sseRef = useRef<EventSource | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const sseAbortRef = useRef<AbortController | null>(null);
 
   // Resume support: ?resume=<jobId>
   const resumeJobId = searchParams.get('resume');
@@ -347,6 +356,12 @@ function UploadPage() {
       sseRef.current.close();
       sseRef.current = null;
     }
+    // Abort any previous SSE fetch
+    if (sseAbortRef.current) {
+      sseAbortRef.current.abort();
+    }
+    const sseController = new AbortController();
+    sseAbortRef.current = sseController;
 
     const hdrs = authHeaders();
     const url = new URL(`${BACKEND_URL}/api/v1/jobs/${jId}/stream`);
@@ -357,6 +372,7 @@ function UploadPage() {
         const res = await fetch(url.toString(), {
           headers: hdrs,
           credentials: 'include',
+          signal: sseController.signal,
         });
         if (!res.ok || !res.body) return;
 
@@ -436,6 +452,7 @@ function UploadPage() {
           }
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         logger.error('SSE connection error:', err);
       }
     };
@@ -462,6 +479,15 @@ function UploadPage() {
       }
     })();
   }, [resumeJobId, connectSSE]);
+
+  // Cleanup on unmount — abort any in-flight SSE or upload fetches
+  useEffect(() => {
+    return () => {
+      if (sseAbortRef.current) sseAbortRef.current.abort();
+      if (abortRef.current) abortRef.current.abort();
+      if (sseRef.current) sseRef.current.close();
+    };
+  }, []);
 
   // Drag-and-drop handlers
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -598,6 +624,10 @@ function UploadPage() {
       abortRef.current = null;
     }
     // Close SSE stream
+    if (sseAbortRef.current) {
+      sseAbortRef.current.abort();
+      sseAbortRef.current = null;
+    }
     if (sseRef.current) {
       sseRef.current.close();
       sseRef.current = null;

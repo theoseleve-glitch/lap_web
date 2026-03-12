@@ -28,9 +28,9 @@ def _get_pg_conn():
     if os.environ.get("USE_PG", "0") not in ("1", "true", "yes"):
         return None
     try:
-        from web.db_pg import get_pg_conn
+        from web.db_pg import get_pg_connection
 
-        return get_pg_conn()
+        return get_pg_connection()
     except Exception:
         logger.debug("Could not obtain PG connection for DLQ", exc_info=True)
         return None

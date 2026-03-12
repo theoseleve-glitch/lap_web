@@ -63,6 +63,9 @@ function ConditionBadge({ state }: { state: string | null }) {
     wet: 'bg-blue-500/20 text-blue-400',
     damp: 'bg-yellow-500/20 text-yellow-400',
     mixed: 'bg-purple-500/20 text-purple-400',
+    green: 'bg-emerald-400/20 text-emerald-400',
+    rubbered: 'bg-zinc-400/20 text-zinc-400',
+    dusty: 'bg-amber-400/20 text-amber-400',
   };
   return (
     <span

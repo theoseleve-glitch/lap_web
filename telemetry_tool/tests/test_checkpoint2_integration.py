@@ -161,7 +161,7 @@ def test_leaderboard_returns_data(client):
 def test_weekends_empty_state(client):
     resp = client.get("/api/v1/weekends")
     assert resp.status_code == 200
-    assert resp.get_json()["data"] == []
+    assert resp.get_json()["data"] == {"weekends": []}
 
 
 # ══════════════════════════════════════════════════════════════════

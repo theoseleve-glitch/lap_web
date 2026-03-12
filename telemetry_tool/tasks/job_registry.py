@@ -72,10 +72,10 @@ def create_job(
     conn.execute(
         text(
             "INSERT INTO ingestion_jobs "
-            "  (job_id, workspace_id, file_path, file_size, "
+            "  (job_id, workspace_id, file_path, file_size, sha256_partial, "
             "   celery_task_id, batch_job_id, status) "
             "VALUES "
-            "  (:job_id, :workspace_id, :file_path, :file_size, "
+            "  (:job_id, :workspace_id, :file_path, :file_size, :sha256_partial, "
             "   :celery_task_id, :batch_job_id, 'pending')"
         ),
         {
@@ -83,6 +83,7 @@ def create_job(
             "workspace_id": workspace_id,
             "file_path": file_path,
             "file_size": file_size,
+            "sha256_partial": "",
             "celery_task_id": celery_task_id,
             "batch_job_id": batch_job_id,
         },

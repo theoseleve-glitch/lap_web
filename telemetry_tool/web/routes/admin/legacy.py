@@ -148,7 +148,7 @@ def get_user_detail(user_id: int):
 
     # Recent audit log entries
     audit_rows = conn.execute(
-        "SELECT action, details, ip_address, created_at "
+        "SELECT action, new_value AS details, ip_address, created_at "
         "FROM audit_log WHERE user_id = %(uid)s "
         "ORDER BY created_at DESC LIMIT 20",
         {"uid": user_id},
@@ -223,7 +223,7 @@ def create_override(user_id: int):
         )
 
     conn.execute(
-        "INSERT INTO entitlement_overrides (user_id, feature, value, reason, expires_at) "
+        "INSERT INTO entitlement_overrides (user_id, override_key, override_value, reason, expires_at) "
         "VALUES (%(uid)s, %(feature)s, %(value)s, %(reason)s, %(expires)s)",
         {
             "uid": user_id,
@@ -368,7 +368,7 @@ def list_audit_log():
     where_clause = f"WHERE {where}" if where else ""
 
     rows = conn.execute(
-        f"SELECT id, user_id, action, details, ip_address, user_agent, created_at "
+        f"SELECT id, user_id, action, new_value AS details, ip_address, request_id, created_at "
         f"FROM audit_log {where_clause} "
         f"ORDER BY created_at DESC LIMIT %(limit)s OFFSET %(offset)s",
         params,

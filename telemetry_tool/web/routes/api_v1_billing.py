@@ -209,7 +209,10 @@ def get_invoices():
     if not customer_id:
         return api_response({"invoices": []})
 
-    limit = min(int(request.args.get("limit", 10)), 50)
+    try:
+        limit = min(int(request.args.get("limit", 10)), 50)
+    except (ValueError, TypeError):
+        limit = 10
     starting_after = request.args.get("starting_after")
 
     stripe = _get_stripe()

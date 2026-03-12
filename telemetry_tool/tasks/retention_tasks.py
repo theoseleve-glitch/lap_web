@@ -132,7 +132,7 @@ def _find_expiring_sessions(conn, workspace_id: int, cutoff_date, limit: int):
     """Find sessions past the retention cutoff that aren't already expired."""
     cur = conn.cursor()
     cur.execute(
-        "SELECT session_id, file_name, created_at FROM sessions "
+        "SELECT session_id, csv_filename, created_at FROM sessions "
         "WHERE workspace_id = %s "
         "AND created_at < %s "
         "AND (retention_expired IS NULL OR retention_expired = FALSE) "
@@ -147,7 +147,7 @@ def _find_warning_sessions(conn, workspace_id: int, warning_date, cutoff_date, l
     """Find sessions that will expire within the warning window (7 days)."""
     cur = conn.cursor()
     cur.execute(
-        "SELECT session_id, file_name, created_at FROM sessions "
+        "SELECT session_id, csv_filename, created_at FROM sessions "
         "WHERE workspace_id = %s "
         "AND created_at >= %s AND created_at < %s "
         "AND (retention_expired IS NULL OR retention_expired = FALSE) "
@@ -207,7 +207,7 @@ def _log_audit(conn, workspace_id: int, action: str, details: dict):
     """Record retention action in audit_log (legacy compatibility)."""
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO audit_log (workspace_id, action, details_json) "
+        "INSERT INTO audit_log (workspace_id, action, new_value) "
         "VALUES (%s, %s, %s)",
         (workspace_id, action, json.dumps(details)),
     )
@@ -327,7 +327,7 @@ def _enforce_retention_impl() -> dict:
                         from auth.email import send_retention_warning
                         sessions_info = [
                             {"session_id": s["session_id"],
-                             "file_name": s.get("file_name", "Unknown"),
+                             "file_name": s.get("csv_filename", "Unknown"),
                              "created_at": str(s["created_at"])}
                             for s in warning_sessions
                         ]
@@ -411,7 +411,7 @@ def _enforce_retention_impl() -> dict:
                         from auth.email import send_retention_deleted
                         sessions_info = [
                             {"session_id": s["session_id"],
-                             "file_name": s.get("file_name", "Unknown"),
+                             "file_name": s.get("csv_filename", "Unknown"),
                              "created_at": str(s["created_at"])}
                             for s in expired_sessions
                         ]

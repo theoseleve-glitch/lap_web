@@ -286,7 +286,7 @@ def _get_job_metrics(redis_client) -> dict:
         conn = get_pg_connection()
         row = conn.execute(
             "SELECT "
-            "COUNT(*) FILTER (WHERE status IN ('queued', 'running', 'processing')) AS active, "
+            "COUNT(*) FILTER (WHERE status IN ('pending', 'running', 'processing')) AS active, "
             "COUNT(*) FILTER (WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '24 hours') AS failed_24h, "
             "COUNT(*) FILTER (WHERE status = 'completed' AND updated_at > NOW() - INTERVAL '24 hours') AS completed_24h "
             "FROM ingestion_jobs"

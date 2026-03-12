@@ -97,11 +97,13 @@ function GradeBadge({ score }: { score: number | null }) {
 function ConditionBadge({ condition }: { condition: string | null }) {
   if (!condition) return <span className="text-steel/60">{'\u2014'}</span>;
   const styles: Record<string, { bg: string; text: string }> = {
-    dry:    { bg: 'bg-acid-green/10', text: 'text-acid-green' },
-    wet:    { bg: 'bg-blue-400/10', text: 'text-blue-400' },
-    damp:   { bg: 'bg-marshal-yellow/10', text: 'text-marshal-yellow' },
-    mixed:  { bg: 'bg-purple-400/10', text: 'text-purple-400' },
-    greasy: { bg: 'bg-pit-orange/10', text: 'text-pit-orange' },
+    dry:      { bg: 'bg-acid-green/10', text: 'text-acid-green' },
+    wet:      { bg: 'bg-blue-400/10', text: 'text-blue-400' },
+    damp:     { bg: 'bg-marshal-yellow/10', text: 'text-marshal-yellow' },
+    mixed:    { bg: 'bg-purple-400/10', text: 'text-purple-400' },
+    green:    { bg: 'bg-emerald-400/10', text: 'text-emerald-400' },
+    rubbered: { bg: 'bg-zinc-400/10', text: 'text-zinc-400' },
+    dusty:    { bg: 'bg-amber-400/10', text: 'text-amber-400' },
   };
   const s = styles[condition] ?? { bg: 'bg-steel/10', text: 'text-steel' };
   return (

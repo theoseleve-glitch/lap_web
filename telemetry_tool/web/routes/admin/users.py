@@ -101,7 +101,7 @@ def get_user_detail(user_id: int):
 
     # Workspaces
     ws_rows = conn.execute(
-        "SELECT w.id, w.name, wm.role "
+        "SELECT w.id, w.display_name AS name, wm.role "
         "FROM workspace_members wm "
         "JOIN workspaces w ON w.id = wm.workspace_id "
         "WHERE wm.user_id = %(uid)s",
@@ -135,14 +135,15 @@ def get_user_timeline(user_id: int):
     except Exception:
         logger.debug("Timeline: security events query failed", exc_info=True)
 
-    # Ingestion jobs
+    # Ingestion jobs (via workspace membership — ingestion_jobs has no user_id)
     try:
         rows = conn.execute(
-            "SELECT 'job' AS source, status AS event_type, "
-            "file_name AS details_json, created_at "
-            "FROM ingestion_jobs "
-            "WHERE user_id = %(uid)s "
-            "ORDER BY created_at DESC LIMIT %(limit)s",
+            "SELECT 'job' AS source, ij.status AS event_type, "
+            "ij.file_path AS details_json, ij.started_at AS created_at "
+            "FROM ingestion_jobs ij "
+            "JOIN workspace_members wm ON ij.workspace_id = wm.workspace_id "
+            "WHERE wm.user_id = %(uid)s "
+            "ORDER BY ij.started_at DESC LIMIT %(limit)s",
             {"uid": user_id, "limit": limit},
         ).fetchall()
         events.extend([_serialize_row(r) for r in rows])
@@ -163,7 +164,7 @@ def get_user_workspaces(user_id: int):
     conn = _get_conn()
 
     rows = conn.execute(
-        "SELECT w.id, w.name, w.workspace_type, wm.role, wm.joined_at "
+        "SELECT w.id, w.display_name AS name, w.type AS workspace_type, wm.role, wm.joined_at "
         "FROM workspace_members wm "
         "JOIN workspaces w ON w.id = wm.workspace_id "
         "WHERE wm.user_id = %(uid)s "

@@ -123,6 +123,9 @@ _PG_CONFLICT_TARGETS: dict[str, tuple[str, ...]] = {
     "driver_progression":    ("driver_id", "session_id"),
     "driving_style_features": ("driver_id", "session_id"),
     "export_templates":      ("template_name",),
+    "user_corners":          ("session_id", "corner_index"),
+    "stint_analysis":        ("session_id", "stint_number"),
+    "predefined_track_coords": ("track_name",),
 }
 
 

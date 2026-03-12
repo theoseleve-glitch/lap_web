@@ -22,23 +22,27 @@ def audit_log(conn, action: str, details: dict | None = None):
     """
     if has_request_context():
         user_id = getattr(g, "current_user_id", None)
+        workspace_id = getattr(g, "workspace_id", None)
         ip = request.remote_addr or ""
-        ua = request.headers.get("User-Agent", "")
+        request_id = request.headers.get("X-Request-Id", "")
     else:
         user_id = None
+        workspace_id = None
         ip = ""
-        ua = ""
+        request_id = ""
 
     try:
         conn.execute(
-            "INSERT INTO audit_log (user_id, action, details, ip_address, user_agent) "
-            "VALUES (:uid, :action, :details, :ip, :ua)",
+            "INSERT INTO audit_log "
+            "(workspace_id, user_id, action, new_value, ip_address, request_id) "
+            "VALUES (:wsid, :uid, :action, :details, :ip, :rid)",
             {
+                "wsid": workspace_id,
                 "uid": user_id,
                 "action": action,
                 "details": json.dumps(details or {}),
                 "ip": ip[:45] or None,
-                "ua": ua[:500] or None,
+                "rid": request_id[:255] or None,
             },
         )
     except Exception:

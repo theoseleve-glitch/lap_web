@@ -24,19 +24,21 @@ def leaderboard():
     """
     conn = get_db_connection()
     track_id = request.args.get("track", "")
-    sort_by = request.args.get("sort", "best_time")  # best_time | avg_score | sessions
+    sort_by = request.args.get("sort", "best_time")
+    if sort_by not in ("best_time", "avg_score", "sessions"):
+        sort_by = "best_time"
 
     # Get tracks for filter dropdown.
     tracks = conn.execute(
         "SELECT t.track_id, t.track_name, COUNT(s.session_id) as n_sessions "
-        "FROM tracks t JOIN sessions s ON t.track_id = s.track_id "
-        "GROUP BY t.track_id ORDER BY t.track_name"
+        "FROM tracks t JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL "
+        "GROUP BY t.track_id, t.track_name ORDER BY t.track_name"
     ).fetchall()
     tracks = [dict(r) for r in tracks]
 
     # Build leaderboard query.
     # In PG mode, join with users to respect leaderboard_visible preference.
-    where_clauses = []
+    where_clauses = ["s.deleted_at IS NULL"]
     params = {}
     if track_id:
         where_clauses.append("s.track_id = :track_id")
@@ -71,8 +73,8 @@ def leaderboard():
         JOIN sessions s ON d.driver_id = s.driver_id
         {privacy_join}
         {where}
-        GROUP BY d.driver_id
-        HAVING session_count > 0
+        GROUP BY d.driver_id, d.driver_name
+        HAVING COUNT(DISTINCT s.session_id) > 0
         ORDER BY
             CASE WHEN :sort_by = 'best_time' THEN MIN(s.best_lap_time_s) END ASC,
             CASE WHEN :sort_by = 'avg_score' THEN AVG(s.total_score) END DESC,

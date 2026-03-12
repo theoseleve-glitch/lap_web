@@ -312,7 +312,7 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
         reports_used = usage.get("report_generated", 0)
         entitlements["reports_used"] = reports_used
         entitlements["reports_remaining"] = (
-            None if reports_limit is None
+            None if reports_limit is None or reports_limit == -1
             else max(0, reports_limit - reports_used)
         )
     else:
@@ -433,7 +433,7 @@ def check_quota(conn, user_id: int, workspace_id: int, meter_key: str, cost: int
         return True, {"remaining": None, "limit": None}
 
     limit = entitlements.get(quota_col)
-    if limit is None:
+    if limit is None or limit == -1:
         # Unlimited
         return True, {"remaining": None, "limit": None}
 
@@ -573,7 +573,7 @@ def log_audit_event(conn, action: str, details: dict | None = None,
     details_json = json.dumps(details) if details else None
 
     conn.execute(
-        "INSERT INTO audit_log (user_id, workspace_id, action, details_json, ip_address) "
+        "INSERT INTO audit_log (user_id, workspace_id, action, new_value, ip_address) "
         "VALUES (%(uid)s, %(wsid)s, %(action)s, %(details)s, %(ip)s)",
         {"uid": uid, "wsid": wsid, "action": action,
          "details": details_json, "ip": ip},

@@ -38,7 +38,7 @@ _SSE_MAX_ITERATIONS = 7200  # 7200 * 0.5s = 1 hour max
 def _check_flag():
     """Return error response if INGEST_V2 is not enabled."""
     try:
-        from telemetry_tool.ingest.config import INGEST_V2
+        from ingest.config import INGEST_V2
         if not INGEST_V2:
             return api_error(ErrorCode.NOT_FOUND, "INGEST_V2 feature flag is not enabled", status=404)
     except ImportError:
@@ -64,7 +64,7 @@ class JobStore:
     def _get_conn(self):
         """Lazy import to avoid circular imports at module load time."""
         try:
-            from telemetry_tool.web.db import get_db_connection
+            from web.db import get_db_connection
             conn = get_db_connection()
             self._db_available = True
             return conn
@@ -156,7 +156,7 @@ class JobStore:
                 job["error"] = error
 
         status = "failed" if error else "complete"
-        elapsed = job["elapsed_s"] if job else 0
+        elapsed = job.get("elapsed_s", 0) if job else 0
         fields: dict[str, Any] = {
             "status": status,
             "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),

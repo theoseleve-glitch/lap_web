@@ -330,7 +330,8 @@ def _import_race_from_dict(conn, data: dict) -> int:
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        RETURNING race_id""",
         (
             race.get("race_name"), race.get("track_name"), race.get("team_name"),
             race["race_duration_s"], race.get("reference_weight_kg"),
@@ -344,7 +345,8 @@ def _import_race_from_dict(conn, data: dict) -> int:
             race.get("mandatory_driver_change", 1), race.get("refueling_allowed", 1),
         ),
     )
-    new_race_id = cur.lastrowid
+    _row = cur.fetchone()
+    new_race_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
 
     # Insert drivers, building old_id -> new_id map
     id_map = {}
@@ -354,7 +356,8 @@ def _import_race_from_dict(conn, data: dict) -> int:
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
                 min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg, com_channel, color_hex
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            RETURNING id""",
             (
                 new_race_id, d["driver_name"], d.get("driver_order", 1),
                 d.get("min_stint_s"), d.get("max_stint_s"),
@@ -364,7 +367,8 @@ def _import_race_from_dict(conn, data: dict) -> int:
             ),
         )
         if old_id is not None:
-            id_map[old_id] = cur.lastrowid
+            _drow = cur.fetchone()
+            id_map[old_id] = _drow[0] if not isinstance(_drow, dict) else _drow.get("id")
 
     # Insert stints with remapped driver IDs
     for s in data.get("stints", []):
@@ -445,7 +449,8 @@ def new_race():
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        RETURNING race_id""",
         (
             request.form.get("race_name", "Untitled Race"),
             request.form.get("track_name") or None,
@@ -469,7 +474,8 @@ def new_race():
             1 if request.form.get("refueling_allowed") else 0,
         ),
     )
-    race_id = cur.lastrowid
+    _row = cur.fetchone()
+    race_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
 
     # Save drivers and windows
     _save_drivers(conn, race_id, request.form)
@@ -579,7 +585,8 @@ def duplicate(race_id: int):
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
             mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')""",
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        RETURNING race_id""",
         (r["race_name"] + " (copy)", r["track_name"], r["team_name"],
          r["race_duration_s"], r["reference_weight_kg"], r["desired_stints"],
          r["fuel_autonomy_s"], r["min_pit_stop_s"], r["pit_speed_kmh"],
@@ -589,7 +596,8 @@ def duplicate(race_id: int):
          r["refuel_after_quali"], r["mandatory_driver_change"],
          r["refueling_allowed"]),
     )
-    new_id = cur.lastrowid
+    _row = cur.fetchone()
+    new_id = _row[0] if not isinstance(_row, dict) else _row.get("race_id")
     # Copy drivers
     old_drivers = conn.execute("SELECT * FROM race_drivers WHERE race_id = ?", (race_id,)).fetchall()
     for d in old_drivers:
@@ -746,6 +754,8 @@ def finish(race_id: int):
     """End the race."""
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        abort(404)
 
     # Compute final elapsed time for active stint
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
@@ -965,6 +975,8 @@ def api_stint_end(race_id: int):
     """End the current active stint."""
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
 
     active = conn.execute(
         "SELECT * FROM race_stints WHERE race_id = ? AND status = 'active'", (race_id,)
@@ -1030,6 +1042,8 @@ def api_reoptimize(race_id: int):
 
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
     drivers = _rows_to_list(conn.execute(
         "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order", (race_id,)
     ).fetchall())
@@ -1379,11 +1393,17 @@ def api_add_rival(race_id: int):
     notes = (data.get("notes") or "").strip()
     conn = get_db_connection()
     cur = conn.execute(
-        "INSERT INTO race_rivals (race_id, team_name, car_number, notes) VALUES (?,?,?,?)",
+        "INSERT INTO race_rivals (race_id, team_name, car_number, notes) VALUES (?,?,?,?) RETURNING id",
         (race_id, team_name, car_number or None, notes or None),
     )
+    _rrow = cur.fetchone()
+    if _rrow is None:
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create rival", status=500)
+    rival_id = _rrow[0] if not isinstance(_rrow, dict) else _rrow.get("id")
     conn.commit()
-    row = conn.execute("SELECT * FROM race_rivals WHERE id = ?", (cur.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM race_rivals WHERE id = ?", (rival_id,)).fetchone()
+    if row is None:
+        return jsonify({"id": rival_id, "team_name": team_name})
     return jsonify(dict(row))
 
 
@@ -1398,6 +1418,8 @@ def api_add_rival_event(race_id: int, rival_id: int):
     detail = data.get("detail")
     conn = get_db_connection()
     race = _row_to_dict(conn.execute("SELECT * FROM race_configs WHERE race_id = ?", (race_id,)).fetchone())
+    if not race:
+        return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
     elapsed = _compute_elapsed_s(race.get("race_start_ts"))
     try:
         at_s = int(data.get("at_s", elapsed))
