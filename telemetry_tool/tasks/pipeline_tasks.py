@@ -637,11 +637,20 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     else:
         # Fallback: full re-run (intermediate state expired or missing)
         logger.warning("Job %s: intermediate state missing, running full pipeline", ctx.job_id)
+        _fallback_corners = None
+        if ctx.custom_corners is not None:
+            _fallback_corners = [
+                {**cn, "corner_id": i, "lat": 0.0, "lon": 0.0, "direction": "S"}
+                for i, cn in enumerate(ctx.custom_corners)
+            ]
+            logger.info("Job %s: passing %d custom corners to full re-run",
+                         ctx.job_id, len(_fallback_corners))
         result = run_full_analysis(
             csv_path=ctx.file_path,
             session_meta=session_meta,
             enable_report=False,
             progress_callback=_make_progress_callback(_job_id, conn),
+            preloaded_corners=_fallback_corners,
         )
 
     # ── Persist all session data to the database ──────────────────
