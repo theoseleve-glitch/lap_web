@@ -40,6 +40,7 @@ from web.models import (
     insert_stint_analysis,
     insert_theoretical_data,
     upsert_driver,
+    upsert_kart_by_name,
     upsert_session,
     upsert_track,
 )
@@ -421,12 +422,24 @@ def upload_session() -> tuple[Response, int]:
         if _sd:
             session_meta["session_date"] = _sd[:30]
 
-        kart_id_str = request.form.get("kart_id")
-        if kart_id_str:
-            try:
-                session_meta["kart_id"] = int(kart_id_str)
-            except (ValueError, TypeError):
-                pass  # Ignore invalid kart_id
+        # Kart: accept kart_name (upsert → kart_id) or raw kart_id
+        kart_name_raw = request.form.get("kart_name")
+        if kart_name_raw and kart_name_raw.strip():
+            session_meta["kart_id"] = upsert_kart_by_name(
+                conn, kart_name_raw.strip()[:100],
+            )
+        else:
+            kart_id_str = request.form.get("kart_id")
+            if kart_id_str:
+                try:
+                    session_meta["kart_id"] = int(kart_id_str)
+                except (ValueError, TypeError):
+                    pass
+
+        # Track name: stored for post-pipeline override (pipeline auto-detects from GPS)
+        track_name_raw = request.form.get("track_name")
+        if track_name_raw and track_name_raw.strip():
+            session_meta["user_track_name"] = track_name_raw.strip()[:100]
 
         exclude_laps = _parse_exclude_laps(request.form.get("exclude_laps"))
         if exclude_laps:
