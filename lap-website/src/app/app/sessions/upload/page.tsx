@@ -96,7 +96,8 @@ function uploadSession(
     track_state: string;
     lap_range?: string;
     exclude_laps?: string;
-    kart_id?: string;
+    kart_name?: string;
+    track_name?: string;
     session_date?: string;
     joker_enabled?: boolean;
     joker_lap?: string;
@@ -112,7 +113,8 @@ function uploadSession(
     formData.append('track_state', metadata.track_state);
     if (metadata.lap_range) formData.append('lap_range', metadata.lap_range);
     if (metadata.exclude_laps) formData.append('exclude_laps', metadata.exclude_laps);
-    if (metadata.kart_id) formData.append('kart_id', metadata.kart_id);
+    if (metadata.kart_name) formData.append('kart_name', metadata.kart_name);
+    if (metadata.track_name) formData.append('track_name', metadata.track_name);
     if (metadata.session_date) formData.append('session_date', metadata.session_date);
     if (metadata.joker_enabled) {
       formData.append('joker_enabled', '1');
@@ -254,11 +256,14 @@ function UploadPage() {
   const [trackState, setTrackState] = useState('dry');
   const [lapRange, setLapRange] = useState('');
   const [excludeLaps, setExcludeLaps] = useState('');
-  const [kartId, setKartId] = useState('');
+  const [kartName, setKartName] = useState('');
+  const [trackName, setTrackName] = useState('');
   const [sessionDate, setSessionDate] = useState('');
   const [jokerEnabled, setJokerEnabled] = useState(false);
   const [jokerLap, setJokerLap] = useState('');
-  const [karts, setKarts] = useState<{ kart_id: number; kart_name: string }[]>([]);
+  const [kartNames, setKartNames] = useState<string[]>([]);
+  const [trackNames, setTrackNames] = useState<string[]>([]);
+  const [driverNames, setDriverNames] = useState<string[]>([]);
 
   // Page state machine
   const [pageState, setPageState] = useState<PageState>(resumeJobId ? 'awaiting_corners' : 'idle');
@@ -279,6 +284,7 @@ function UploadPage() {
   const [batchTotal, setBatchTotal] = useState(0);
   const batchQueueRef = useRef<File[]>([]);
   const connectSSERef = useRef<(jId: string) => void>(() => {});
+  const trackNameRef = useRef('');
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -288,18 +294,21 @@ function UploadPage() {
     }
   }, []);
 
-  // Fetch karts for dropdown (uses api client for auth + 401 retry)
+  // Fetch entity lists for combobox suggestions
   useEffect(() => {
     api.get<Array<{ id: number; name: string }>>('/karts')
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setKarts(data.map((k) => ({ kart_id: k.id, kart_name: k.name })));
-        }
-      })
-      .catch(() => {
-        // Non-critical — kart dropdown will just be empty
-      });
+      .then((data) => { if (Array.isArray(data)) setKartNames(data.map((k) => k.name).filter(Boolean)); })
+      .catch(() => {});
+    api.get<Array<{ id: number; name: string }>>('/tracks')
+      .then((data) => { if (Array.isArray(data)) setTrackNames(data.map((t) => t.name).filter(Boolean)); })
+      .catch(() => {});
+    api.get<Array<{ id: number; name: string }>>('/drivers')
+      .then((data) => { if (Array.isArray(data)) setDriverNames(data.map((d) => d.name).filter(Boolean)); })
+      .catch(() => {});
   }, []);
+
+  // Keep ref in sync for SSE callback access
+  useEffect(() => { trackNameRef.current = trackName; }, [trackName]);
 
   // Upload next file in batch queue (called after a file completes)
   const uploadNextInBatch = useCallback(async () => {
@@ -325,7 +334,8 @@ function UploadPage() {
         track_state: trackState,
         lap_range: lapRange.trim() || undefined,
         exclude_laps: excludeLaps.trim() || undefined,
-        kart_id: kartId || undefined,
+        kart_name: kartName.trim() || undefined,
+        track_name: trackName.trim() || undefined,
         session_date: sessionDate || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
@@ -348,7 +358,7 @@ function UploadPage() {
     }
     return true;
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate]);
+  }, [driverName, sessionType, trackState, lapRange, excludeLaps, kartName, trackName, sessionDate]);
 
   // ── SSE connection ──────────────────────────────────
   const connectSSE = useCallback((jId: string) => {
@@ -413,6 +423,11 @@ function UploadPage() {
 
               if (event.status === 'completed') {
                 const sid = event.session_id || jId;
+                // Apply user-specified track name (pipeline auto-detects, this overrides)
+                const tn = trackNameRef.current?.trim();
+                if (tn && sid) {
+                  api.patch(`/sessions/${sid}`, { track_name: tn }).catch(() => {});
+                }
                 // Record batch result
                 if (batchTotal > 1) {
                   setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: sid, error: null }]);
@@ -568,7 +583,8 @@ function UploadPage() {
         track_state: trackState,
         lap_range: lapRange.trim() || undefined,
         exclude_laps: excludeLaps.trim() || undefined,
-        kart_id: kartId || undefined,
+        kart_name: kartName.trim() || undefined,
+        track_name: trackName.trim() || undefined,
         session_date: sessionDate || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
@@ -592,7 +608,7 @@ function UploadPage() {
         setErrorRequestId(null);
       }
     }
-  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartId, sessionDate, jokerEnabled, jokerLap, connectSSE]);
+  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartName, trackName, sessionDate, jokerEnabled, jokerLap, connectSSE]);
 
   // Corner editor submit (custom geometry)
   const handleCornerSubmit = useCallback(async (
@@ -782,11 +798,14 @@ function UploadPage() {
               <label htmlFor="driver-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
                 Driver Name <span className="text-safety-red">*</span>
               </label>
-              <input id="driver-name" type="text" value={driverName} onChange={(e) => setDriverName(e.target.value)}
+              <input id="driver-name" type="text" list="dl-drivers" value={driverName} onChange={(e) => setDriverName(e.target.value)}
                 disabled={isFormDisabled} required placeholder="e.g. Alex Rossi"
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
                   placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
+              <datalist id="dl-drivers">
+                {driverNames.map((d) => (<option key={d} value={d} />))}
+              </datalist>
             </div>
             <div>
               <label htmlFor="session-type" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">Session Type</label>
@@ -797,6 +816,19 @@ function UploadPage() {
               </select>
             </div>
             <div>
+              <label htmlFor="track-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+                Track <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from GPS)</span>
+              </label>
+              <input id="track-name" type="text" list="dl-tracks" value={trackName} onChange={(e) => setTrackName(e.target.value)}
+                disabled={isFormDisabled} placeholder="Type or select track"
+                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
+                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  disabled:opacity-50 disabled:cursor-not-allowed" />
+              <datalist id="dl-tracks">
+                {trackNames.map((t) => (<option key={t} value={t} />))}
+              </datalist>
+            </div>
+            <div>
               <label htmlFor="track-state" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">Track Condition</label>
               <select id="track-state" value={trackState} onChange={(e) => setTrackState(e.target.value)} disabled={isFormDisabled}
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
@@ -804,19 +836,19 @@ function UploadPage() {
                 {TRACK_STATES.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
               </select>
             </div>
-            {karts.length > 0 && (
-              <div>
-                <label htmlFor="kart-id" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
-                  Kart <span className="text-steel/60 text-xs normal-case">(optional)</span>
-                </label>
-                <select id="kart-id" value={kartId} onChange={(e) => setKartId(e.target.value)} disabled={isFormDisabled}
-                  className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                    focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 disabled:opacity-50 disabled:cursor-not-allowed">
-                  <option value="">None</option>
-                  {karts.map((k) => (<option key={k.kart_id} value={String(k.kart_id)}>{k.kart_name}</option>))}
-                </select>
-              </div>
-            )}
+            <div>
+              <label htmlFor="kart-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+                Kart <span className="text-steel/60 text-xs normal-case">(optional — type to create new)</span>
+              </label>
+              <input id="kart-name" type="text" list="dl-karts" value={kartName} onChange={(e) => setKartName(e.target.value)}
+                disabled={isFormDisabled} placeholder="Type or select kart"
+                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
+                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                  disabled:opacity-50 disabled:cursor-not-allowed" />
+              <datalist id="dl-karts">
+                {kartNames.map((k) => (<option key={k} value={k} />))}
+              </datalist>
+            </div>
             <div>
               <label htmlFor="session-date" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
                 Session Date <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from CSV)</span>
