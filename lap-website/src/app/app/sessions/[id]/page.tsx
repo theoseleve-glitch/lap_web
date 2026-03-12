@@ -802,15 +802,20 @@ function OverviewTab({
             const robMax  = scores.robustness_max ?? 15;
             const adaptMax = Math.max(0, 100 - paceMax - consMax - execMax - robMax);
 
+            // Build dimension list — only include those with non-zero max (weight)
+            const allDims = [
+              { key: 'pace', label: 'Pace', score: scores.pace_score, max: paceMax, accentColor: '#B6FF2E', metricColor: 'text-acid-green' },
+              { key: 'consistency', label: 'Consistency', score: scores.consistency_score, max: consMax, accentColor: '#00d4ff', metricColor: 'text-cyan-400' },
+              { key: 'execution', label: 'Execution', score: scores.execution_score, max: execMax, accentColor: '#D946EF', metricColor: 'text-racing-purple' },
+              { key: 'robustness', label: 'Robustness', score: scores.robustness_score, max: robMax, accentColor: '#FF6A00', metricColor: 'text-pit-orange' },
+              { key: 'adaptation', label: 'Adaptation', score: scores.adaptation_score, max: adaptMax, accentColor: '#FFD400', metricColor: 'text-marshal-yellow' },
+            ];
+            const activeDims = allDims.filter((d) => d.max > 0);
+
             // Compute displayed total as sum of visible sub-scores
             // (backend total_score has confidence weighting that makes it diverge)
-            const subScores = [
-              scores.pace_score, scores.consistency_score,
-              scores.execution_score, scores.robustness_score,
-              scores.adaptation_score,
-            ];
-            const computedTotal = subScores.reduce<number>(
-              (sum, v) => sum + (v ?? 0), 0,
+            const computedTotal = activeDims.reduce<number>(
+              (sum, d) => sum + (d.score ?? 0), 0,
             );
 
             return (
@@ -818,7 +823,7 @@ function OverviewTab({
               {/* Total score */}
               <div className="flex items-center gap-4 mb-6 pb-4 border-b border-steel/10">
                 <div className="text-4xl font-monument text-chalk">
-                  {subScores.some((v) => v != null)
+                  {activeDims.some((d) => d.score != null)
                     ? <AnimatedCounter value={Math.round(computedTotal)} duration={1400} />
                     : '\u2014'}
                 </div>
@@ -832,37 +837,16 @@ function OverviewTab({
                 )}
               </div>
 
-              {/* Category bars */}
-              <ScoreBar
-                label="Pace"
-                score={scores.pace_score}
-                max={paceMax}
-                accentColor="#B6FF2E"
-              />
-              <ScoreBar
-                label="Consistency"
-                score={scores.consistency_score}
-                max={consMax}
-                accentColor="#00d4ff"
-              />
-              <ScoreBar
-                label="Execution"
-                score={scores.execution_score}
-                max={execMax}
-                accentColor="#D946EF"
-              />
-              <ScoreBar
-                label="Robustness"
-                score={scores.robustness_score}
-                max={robMax}
-                accentColor="#FF6A00"
-              />
-              <ScoreBar
-                label="Adaptation"
-                score={scores.adaptation_score}
-                max={adaptMax}
-                accentColor="#FFD400"
-              />
+              {/* Category bars — only dimensions with non-zero weight */}
+              {activeDims.map((d) => (
+                <ScoreBar
+                  key={d.key}
+                  label={d.label}
+                  score={d.score}
+                  max={d.max}
+                  accentColor={d.accentColor}
+                />
+              ))}
 
               {/* Strengths / Weaknesses */}
               {(scores.strengths?.length > 0 || scores.weaknesses?.length > 0) && (
@@ -910,11 +894,9 @@ function OverviewTab({
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
                     { label: 'Total', value: computedTotal, max: 100, color: 'text-chalk' },
-                    { label: 'Pace', value: scores.pace_score, max: paceMax, color: 'text-acid-green' },
-                    { label: 'Consistency', value: scores.consistency_score, max: consMax, color: 'text-cyan-400' },
-                    { label: 'Execution', value: scores.execution_score, max: execMax, color: 'text-racing-purple' },
-                    { label: 'Robustness', value: scores.robustness_score, max: robMax, color: 'text-pit-orange' },
-                    { label: 'Adaptation', value: scores.adaptation_score, max: adaptMax, color: 'text-marshal-yellow' },
+                    ...activeDims.map((d) => ({
+                      label: d.label, value: d.score, max: d.max, color: d.metricColor,
+                    })),
                   ].map((m) => (
                     <div key={m.label} className="bg-asphalt rounded-lg p-3">
                       <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
