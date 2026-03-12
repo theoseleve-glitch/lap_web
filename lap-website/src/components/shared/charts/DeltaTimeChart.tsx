@@ -101,7 +101,7 @@ export function DeltaTimeChart({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const pad = { top: 20, right: 20, bottom: 38, left: 58 };
+    const pad = { top: 20, right: 120, bottom: 38, left: 58 };
     const pW = w - pad.left - pad.right;
     const pH = h - pad.top - pad.bottom;
 
@@ -152,10 +152,11 @@ export function DeltaTimeChart({
     // Y grid — symmetric around zero
     const yStep = maxAbs <= 0.2 ? 0.05 : maxAbs <= 0.5 ? 0.1 : maxAbs <= 1 ? 0.2 : maxAbs <= 2 ? 0.5 : 1;
     for (let v = -maxAbs; v <= maxAbs + 0.001; v += yStep) {
-      const y = yToPixel(v);
+      const rv = Math.round(v * 1000) / 1000;
+      const y = yToPixel(rv);
       ctx.beginPath();
       ctx.moveTo(pad.left, y);
-      ctx.lineTo(w - pad.right, y);
+      ctx.lineTo(pad.left + pW, y);
       ctx.stroke();
     }
 
@@ -178,14 +179,16 @@ export function DeltaTimeChart({
     ctx.lineTo(w - pad.right, yToPixel(0));
     ctx.stroke();
 
-    // Y axis labels
+    // Y axis labels — use consistent decimal places per step size
     ctx.fillStyle = '#888888';
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
+    const yDecimals = yStep < 0.1 ? 3 : yStep < 1 ? 2 : 1;
     for (let v = -maxAbs; v <= maxAbs + 0.001; v += yStep) {
-      const label = v === 0 ? '0' : (v > 0 ? '+' : '') + v.toFixed(v % 1 === 0 ? 0 : Math.abs(v) < 0.5 ? 2 : 1);
-      ctx.fillText(label + 's', pad.left - 6, yToPixel(v));
+      const rv = Math.round(v * 1000) / 1000; // snap to avoid floating-point drift
+      const label = rv === 0 ? '0' : (rv > 0 ? '+' : '') + rv.toFixed(yDecimals);
+      ctx.fillText(label + 's', pad.left - 6, yToPixel(rv));
     }
 
     // X axis labels
@@ -248,18 +251,18 @@ export function DeltaTimeChart({
 
     ctx.restore(); // unclip
 
-    // ── Final delta annotation ───────────────────────────────
+    // ── Final delta annotation (in right margin) ───────────
     const finalDelta = deltas.length > 0 ? deltas[deltas.length - 1] : 0;
+    const rightCol = pad.left + pW + 10; // right margin start
     if (Math.abs(finalDelta) > 0.001) {
       const sign = finalDelta > 0 ? '+' : '';
       const color = finalDelta > 0 ? '#10b981' : '#ef4444';
       ctx.fillStyle = color;
       ctx.font = 'bold 12px "Space Mono", monospace';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = finalDelta > 0 ? 'bottom' : 'top';
-      const fx = xToPixel(dists[dists.length - 1]) - 4;
-      const fy = yToPixel(finalDelta) + (finalDelta > 0 ? -4 : 4);
-      ctx.fillText(sign + finalDelta.toFixed(3) + 's', fx, fy);
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const labelY = Math.max(pad.top + 8, Math.min(pad.top + pH - 8, yToPixel(finalDelta)));
+      ctx.fillText(`${sign}${finalDelta.toFixed(3)}s`, rightCol, labelY);
     }
 
     // ── Hover crosshair ─────────────────────────────────────
@@ -309,20 +312,17 @@ export function DeltaTimeChart({
       }
     }
 
-    // ── Legend ───────────────────────────────────────────────
-    ctx.fillStyle = '#888888';
+    // ── Legend (right margin, below final delta) ────────────
     ctx.font = '10px "Space Mono", monospace';
-    ctx.textAlign = 'right';
+    ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    const legend = `Lap ${lapA} vs Lap ${lapB}`;
-    ctx.fillText(legend, w - pad.right, pad.top + 2);
 
-    // Green/red legend items
-    ctx.textAlign = 'right';
+    // Green/red legend items at bottom of right margin
+    const legendY = pad.top + pH - 28;
     ctx.fillStyle = '#10b981';
-    ctx.fillText(`▲ Lap ${lapA} faster`, w - pad.right, pad.top + 16);
+    ctx.fillText(`▲ Lap ${lapA} faster`, rightCol, legendY);
     ctx.fillStyle = '#ef4444';
-    ctx.fillText(`▼ Lap ${lapA} slower`, w - pad.right, pad.top + 30);
+    ctx.fillText(`▼ Lap ${lapA} slower`, rightCol, legendY + 14);
   }, [lapA, lapB]);
 
   // ── Redraw when data changes ──────────────────────────────

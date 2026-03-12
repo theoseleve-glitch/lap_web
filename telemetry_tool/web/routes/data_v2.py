@@ -3125,6 +3125,14 @@ def get_session_compare_overlay(session_id: str) -> tuple[dict, int]:
         return api_error(ErrorCode.NOT_FOUND,
                          "Insufficient trace data for comparison", status=404)
 
+    # Normalize to per-lap 0-based distances
+    if dist_a and len(dist_a) > 1 and dist_a[0] != 0:
+        d0 = dist_a[0]
+        dist_a = [d - d0 for d in dist_a]
+    if dist_b and len(dist_b) > 1 and dist_b[0] != 0:
+        d0 = dist_b[0]
+        dist_b = [d - d0 for d in dist_b]
+
     # Common distance axis (shorter lap's range, up to 500 points)
     max_dist = min(dist_a[-1], dist_b[-1])
     if max_dist <= 0:
