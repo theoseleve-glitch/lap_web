@@ -469,6 +469,12 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
                 cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
             distances = cum
 
+    # Normalize per-lap distances to start from 0 (stored as
+    # session-cumulative, e.g. Lap 6 might be 5000–6200m).
+    if distances and len(distances) > 1 and distances[0] != 0:
+        _d_off = distances[0]
+        distances = [d - _d_off for d in distances]
+
     result = {
         "distances": distances,
         "speeds": trace.get("speeds", []),
@@ -490,8 +496,10 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
                 ref_dists = ref_trace.get("distances", [])
                 ref_speeds = ref_trace.get("speeds", [])
                 if ref_dists and ref_speeds:
-                    primary_dists = trace.get("distances", [])
-                    interp = np.interp(primary_dists, ref_dists, ref_speeds)
+                    # Normalize ref lap distances to 0-based
+                    if ref_dists[0] != 0:
+                        ref_dists = [d - ref_dists[0] for d in ref_dists]
+                    interp = np.interp(distances, ref_dists, ref_speeds)
                     result["ref_speeds"] = interp.tolist()
                     result["ref_lap_number"] = ref_lap
 
@@ -501,8 +509,7 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
             import numpy as np
 
             all_laps = models.get_laps_for_session(conn, session_id)
-            primary_dists = trace.get("distances", [])
-            if all_laps and primary_dists:
+            if all_laps and distances:
                 speed_arrays = []
                 for lap_row in all_laps:
                     ln = lap_row.get("lap_number")
@@ -511,8 +518,12 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
                         continue
                     lt = models.get_gps_trace(conn, session_id, ln)
                     if lt and lt.get("distances") and lt.get("speeds"):
+                        lt_dists = lt["distances"]
+                        # Normalize other lap distances to 0-based
+                        if lt_dists and lt_dists[0] != 0:
+                            lt_dists = [d - lt_dists[0] for d in lt_dists]
                         interp_s = np.interp(
-                            primary_dists, lt["distances"], lt["speeds"]
+                            distances, lt_dists, lt["speeds"]
                         )
                         speed_arrays.append(interp_s)
                 if len(speed_arrays) >= 2:
@@ -640,6 +651,17 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
     distances = trace.get("distances") or []
     has_accel = bool(lat_g and lon_g)
 
+    # Convert m/s² to G if needed.  Kart/car lateral G peaks at ~3G;
+    # values >5 almost certainly indicate m/s² (5G ≈ 49 m/s²).
+    if has_accel:
+        _max_mag = max(
+            (abs(v) for v in (*lat_g, *lon_g) if v is not None and isinstance(v, (int, float))),
+            default=0,
+        )
+        if _max_mag > 5:
+            lat_g = [v / 9.81 if v is not None else None for v in lat_g]
+            lon_g = [v / 9.81 if v is not None else None for v in lon_g]
+
     # Reconstruct real distances from GPS if stored values are row indices
     lats = trace.get("latitudes") or []
     lons = trace.get("longitudes") or []
@@ -662,6 +684,11 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
                  * math.sin(dlon / 2) ** 2)
             cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
         distances = cum
+
+    # Normalize per-lap distances to 0-based
+    if distances and len(distances) > 1 and distances[0] != 0:
+        _d_off = distances[0]
+        distances = [d - _d_off for d in distances]
 
     result = {
         "accel_lat": lat_g if has_accel else [],
@@ -2456,6 +2483,14 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "available": False, "reason_code": "insufficient_trace_data",
             "message": "Insufficient trace data for delta computation",
         })
+
+    # Normalize per-lap distances to 0-based (stored as session-cumulative)
+    if dist_a and dist_a[0] != 0:
+        _off = dist_a[0]
+        dist_a = [d - _off for d in dist_a]
+    if dist_b and dist_b[0] != 0:
+        _off = dist_b[0]
+        dist_b = [d - _off for d in dist_b]
 
     time_a = _cumulative_time(dist_a, spd_a)
     time_b = _cumulative_time(dist_b, spd_b)
