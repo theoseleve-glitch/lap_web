@@ -265,3 +265,69 @@ class TestEntryPhase:
                       "yaw_residual_dps": 10.0}
         labels = _check_entry_phase(metrics, theo, thresholds, "gps")
         assert len(labels) == 0
+
+
+class TestApexPhase:
+    """Apex/mid-corner phase label detection."""
+
+    def test_low_min_speed(self):
+        from coaching.corner_diagnosis import _check_apex_phase
+
+        metrics = {"v_min_mps": 18.0, "s_vmin": 100.0, "s_apex": 100.0,
+                   "s_entry": 50.0, "s_exit": 150.0, "v": np.full(100, 20.0),
+                   "d": np.linspace(50, 150, 100), "kappa_sign": 1.0,
+                   "yaw_residual": None, "lon_g": None, "brake": None,
+                   "throttle": None}
+        theo = {"v_min_mps": 20.0}  # 20 - 18 = 2 m/s = 7.2 km/h > 4 threshold
+        thresholds = {"v_min_delta_kmh": 4.0, "apex_offset_m": 5.0,
+                      "yaw_residual_dps": 10.0, "coast_gap_s": 0.3}
+        labels = _check_apex_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "low_min_speed" for c in labels)
+
+    def test_early_apex(self):
+        from coaching.corner_diagnosis import _check_apex_phase
+
+        metrics = {"v_min_mps": 20.0, "s_vmin": 90.0, "s_apex": 100.0,
+                   "s_entry": 50.0, "s_exit": 150.0, "v": np.full(100, 20.0),
+                   "d": np.linspace(50, 150, 100), "kappa_sign": 1.0,
+                   "yaw_residual": None, "lon_g": None, "brake": None,
+                   "throttle": None}
+        theo = {"v_min_mps": 20.0}
+        thresholds = {"v_min_delta_kmh": 4.0, "apex_offset_m": 5.0,
+                      "yaw_residual_dps": 10.0, "coast_gap_s": 0.3}
+        labels = _check_apex_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "early_apex" for c in labels)
+
+    def test_late_apex(self):
+        from coaching.corner_diagnosis import _check_apex_phase
+
+        metrics = {"v_min_mps": 20.0, "s_vmin": 112.0, "s_apex": 100.0,
+                   "s_entry": 50.0, "s_exit": 150.0, "v": np.full(100, 20.0),
+                   "d": np.linspace(50, 150, 100), "kappa_sign": 1.0,
+                   "yaw_residual": None, "lon_g": None, "brake": None,
+                   "throttle": None}
+        theo = {"v_min_mps": 20.0}
+        thresholds = {"v_min_delta_kmh": 4.0, "apex_offset_m": 5.0,
+                      "yaw_residual_dps": 10.0, "coast_gap_s": 0.3}
+        labels = _check_apex_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "late_apex" for c in labels)
+
+    def test_coast_hesitation_gps_tier(self):
+        from coaching.corner_diagnosis import _check_apex_phase
+
+        n = 100
+        d = np.linspace(50, 150, n)
+        v = np.concatenate([
+            np.linspace(30, 20, 30),
+            np.full(40, 20.0),
+            np.linspace(20, 28, 30),
+        ])
+        metrics = {"v_min_mps": 20.0, "s_vmin": 100.0, "s_apex": 100.0,
+                   "s_entry": 50.0, "s_exit": 150.0, "v": v, "d": d,
+                   "kappa_sign": 1.0, "yaw_residual": None,
+                   "lon_g": None, "brake": None, "throttle": None}
+        theo = {"v_min_mps": 20.0}
+        thresholds = {"v_min_delta_kmh": 4.0, "apex_offset_m": 5.0,
+                      "yaw_residual_dps": 10.0, "coast_gap_s": 0.3}
+        labels = _check_apex_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "coast_hesitation" for c in labels)

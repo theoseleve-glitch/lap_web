@@ -371,3 +371,109 @@ def _check_entry_phase(
             candidates.append(Candidate(INSUFFICIENT_TRAIL_BRAKE, 3, "entry"))
 
     return candidates
+
+
+def _check_apex_phase(
+    metrics: dict, theo: dict | None, thresholds: dict, tier: str,
+) -> list[Candidate]:
+    """Check apex/mid-corner phase labels."""
+    candidates: list[Candidate] = []
+    s_apex = metrics["s_apex"]
+    s_entry = metrics["s_entry"]
+    s_exit = metrics["s_exit"]
+    v_min = metrics["v_min_mps"]
+    s_vmin = metrics["s_vmin"]
+    d = metrics["d"]
+    v = metrics["v"]
+    apex_offset = thresholds["apex_offset_m"]
+
+    # Low min speed (all tiers)
+    if theo and "v_min_mps" in theo:
+        delta_kmh = (theo["v_min_mps"] - v_min) * 3.6
+        if delta_kmh > thresholds["v_min_delta_kmh"]:
+            candidates.append(Candidate(LOW_MIN_SPEED, 2, "apex"))
+
+    # Apex position (all tiers)
+    if s_vmin < s_apex - apex_offset:
+        candidates.append(Candidate(EARLY_APEX, 2, "apex"))
+    elif s_vmin > s_apex + apex_offset:
+        candidates.append(Candidate(LATE_APEX, 3, "apex"))
+
+    # Yaw residual in apex zone (all tiers)
+    apex_zone_start = s_apex - 0.15 * (s_exit - s_entry)
+    apex_zone_end = s_apex + 0.15 * (s_exit - s_entry)
+    apex_mask = (d >= apex_zone_start) & (d <= apex_zone_end)
+
+    yaw_res = metrics.get("yaw_residual")
+    if yaw_res is not None and apex_mask.sum() >= 3:
+        apex_yaw = yaw_res[apex_mask]
+        yaw_thresh = thresholds["yaw_residual_dps"]
+        if np.sum(apex_yaw > yaw_thresh) >= 3:
+            candidates.append(Candidate(MID_CORNER_OVERSTEER, 1, "apex"))
+        elif np.sum(apex_yaw < -yaw_thresh) >= 3:
+            candidates.append(Candidate(MID_CORNER_UNDERSTEER, 2, "apex"))
+
+    # Coast hesitation
+    coast_gap_s = thresholds["coast_gap_s"]
+    _check_coast_hesitation(metrics, tier, coast_gap_s, candidates)
+
+    return candidates
+
+
+def _check_coast_hesitation(
+    metrics: dict, tier: str, coast_gap_s: float, candidates: list[Candidate],
+) -> None:
+    """Detect coast hesitation across all three tiers."""
+    d = metrics["d"]
+    v = metrics["v"]
+
+    if tier == "full":
+        brake = metrics.get("brake")
+        throttle = metrics.get("throttle")
+        if brake is not None and throttle is not None:
+            coast_mask = (brake < 5) & (throttle < 10)
+            if _sustained_run(coast_mask, d, coast_gap_s):
+                candidates.append(Candidate(COAST_HESITATION, 3, "apex"))
+                return
+
+    if tier in ("accel", "full"):
+        lon_g = metrics.get("lon_g")
+        if lon_g is not None:
+            coast_mask = np.abs(lon_g) < 0.05 * 9.81
+            if _sustained_run(coast_mask, d, coast_gap_s):
+                candidates.append(Candidate(COAST_HESITATION, 3, "apex"))
+                return
+
+    # GPS tier only: smoothed speed derivative
+    if tier == "gps" and len(v) >= 3 and len(d) >= 3:
+        v_smooth = np.convolve(v, [0.25, 0.5, 0.25], mode="same")
+        dd = np.diff(d)
+        dd = np.where(np.abs(dd) > 1e-9, dd, 1e-9)
+        dv_ds = np.diff(v_smooth) / dd
+        v_avg = (v_smooth[:-1] + v_smooth[1:]) / 2
+        accel_approx = dv_ds * v_avg
+        coast_mask_gps = np.abs(accel_approx) < 0.5
+        coast_mask_full = np.zeros(len(d), dtype=bool)
+        coast_mask_full[:-1] = coast_mask_gps
+        if _sustained_run(coast_mask_full, d, coast_gap_s):
+            candidates.append(Candidate(COAST_HESITATION, 3, "apex"))
+
+
+def _sustained_run(mask: np.ndarray, distances: np.ndarray, min_duration_s: float) -> bool:
+    """Check if a boolean mask has a contiguous True run spanning >= min_duration_s.
+
+    Uses distance span as proxy for time (assumes ~constant speed in the zone).
+    """
+    if not mask.any():
+        return False
+    min_dist = min_duration_s * 20.0  # conservative ~20 m/s
+
+    runs = np.diff(np.concatenate([[0], mask.astype(int), [0]]))
+    starts = np.where(runs == 1)[0]
+    ends = np.where(runs == -1)[0]
+    for s, e in zip(starts, ends):
+        if e <= len(distances) and s < len(distances):
+            span = distances[min(e, len(distances) - 1)] - distances[s]
+            if span >= min_dist:
+                return True
+    return False
