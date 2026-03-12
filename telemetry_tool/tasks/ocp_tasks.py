@@ -61,7 +61,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
         from solver.vehicle_params import OCPVehicleParams, params_for_class
         from solver.tire_model import LoadSensitiveTire
-        from solver.track_model import build_mesh_from_curvature_profile
+        from solver.track_model import build_mesh_from_curvature_profile, refine_mesh
         from solver.ocp_solver import solve_ocp
         from solver.param_extractor import extract_session_params
         from solver.calibrator import calibrate_params
@@ -79,8 +79,8 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             logger.info("OCP skipped: missing best_lap_df or curvature_profile")
             return None
 
-        # Build track mesh
-        mesh = build_mesh_from_curvature_profile(curvature_profile, n_nodes=500)
+        # Build track mesh — 2000 nodes for ~1.5–2.5m resolution
+        mesh = build_mesh_from_curvature_profile(curvature_profile, n_nodes=2000)
         if mesh is None:
             logger.warning("OCP skipped: could not build track mesh")
             return None
@@ -104,9 +104,20 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         # Warm start from QSS if available
         warm_start = _extract_warm_start(analysis_json, mesh)
 
-        # Solve + calibrate loop (spec Section 6)
-        logger.info("Starting OCP solve for session %s (%d nodes)", session_id, len(mesh.s))
+        # Stage 1: coarse solve on initial mesh
+        logger.info("OCP stage 1: coarse solve for session %s (%d nodes)", session_id, len(mesh.s))
         result = solve_ocp(mesh, params, tire, warm_start=warm_start)
+
+        # Stage 2: adaptive refinement around corners (high speed gradient zones)
+        refined = refine_mesh(mesh, result.speed_profile, gradient_threshold=0.3)
+        if len(refined.s) > len(mesh.s):
+            logger.info(
+                "OCP stage 2: refined mesh %d→%d nodes, re-solving",
+                len(mesh.s), len(refined.s),
+            )
+            warm_refined = np.interp(refined.s, mesh.s, result.speed_profile)
+            result = solve_ocp(refined, params, tire, warm_start=warm_refined)
+            mesh = refined
 
         actual_apex = _extract_actual_apex_speeds(analysis_json)
         actual_straights = _extract_actual_straight_speeds(analysis_json)
@@ -160,7 +171,8 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         )
 
         # Update downstream: scoring, coaching, corner targets
-        _update_downstream(conn, session_id, result, result_dict, analysis_json, workspace_id=workspace_id)
+        _update_downstream(conn, session_id, result, result_dict, analysis_json,
+                           workspace_id=workspace_id, best_lap_df=best_lap_df)
 
         return result_dict
 
@@ -176,23 +188,73 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
 
 def _load_session_data(session_id, workspace_id):
-    """Load session data needed for OCP from the database."""
+    """Load session data needed for OCP from the database.
+
+    Reads best-lap speed trace from gps_traces, curvature from
+    reference_lines, and vehicle params from analysis_json.
+    """
     from web.db import get_db_connection
+    from web.repos import gps_repo, theoretical_repo, lap_repo
+    import numpy as np
     import pandas as pd
 
     conn = get_db_connection()
 
+    # Set RLS context if PG
+    if workspace_id is not None:
+        _set_rls_if_pg(conn, workspace_id)
+
+    # Load analysis_json for corners, scoring, vehicle params
     row = conn.execute(
         "SELECT analysis_json FROM sessions WHERE id = ?", (session_id,)
     ).fetchone()
     if row is None:
         raise ValueError(f"Session {session_id} not found")
-
     analysis_json = json.loads(row[0]) if row[0] else {}
 
-    best_lap_df = _reconstruct_best_lap_df(analysis_json)
-    curvature_profile = _reconstruct_curvature_profile(analysis_json)
+    # ── Best lap speed trace from GPS trace table ──
+    best_lap_df = None
+    laps = lap_repo.get_laps_for_session(conn, session_id)
+    best_lap_num = None
+    if laps:
+        for lap in laps:
+            if lap.get("is_best"):
+                best_lap_num = lap["lap_number"]
+                break
+        if best_lap_num is None:
+            best_lap_num = laps[0]["lap_number"]
 
+    if best_lap_num is not None:
+        trace = gps_repo.get_gps_trace(conn, session_id, best_lap_num)
+        if trace:
+            dists = trace.get("distances", [])
+            speeds = trace.get("speeds", [])
+            if dists and speeds and len(dists) == len(speeds) and len(dists) > 10:
+                # Normalize distances to start from 0
+                d0 = dists[0] if dists[0] != 0 else 0
+                best_lap_df = pd.DataFrame({
+                    "Distance (m)": [d - d0 for d in dists],
+                    "Speed (m/s)": speeds,
+                })
+                logger.info("OCP: loaded best lap %d (%d points)", best_lap_num, len(dists))
+
+    # ── Curvature from reference line ──
+    curvature_profile = None
+    ref_line = theoretical_repo.get_reference_line(conn, session_id)
+    if ref_line:
+        ref_dists = ref_line.get("distances", [])
+        ref_lats = ref_line.get("latitudes", [])
+        ref_lons = ref_line.get("longitudes", [])
+        if ref_dists and ref_lats and ref_lons and len(ref_dists) > 10:
+            curvature_profile = _curvature_from_reference_line(
+                np.array(ref_dists, dtype=float),
+                np.array(ref_lats, dtype=float),
+                np.array(ref_lons, dtype=float),
+            )
+            if curvature_profile is not None:
+                logger.info("OCP: computed curvature from reference line (%d points)", len(curvature_profile))
+
+    # ── Vehicle params from analysis_json ──
     vehicle_params = None
     vp_data = analysis_json.get("vehicle_params")
     if vp_data:
@@ -212,37 +274,72 @@ def _load_session_data(session_id, workspace_id):
     return conn, analysis_json, best_lap_df, curvature_profile, vehicle_params
 
 
-def _reconstruct_best_lap_df(analysis_json: dict):
-    """Reconstruct best lap DataFrame from stored data."""
+def _curvature_from_reference_line(distances, lats, lons):
+    """Compute curvature profile from reference line GPS coordinates.
+
+    Uses finite-difference on local ENU projection to get kappa(s).
+    Returns a DataFrame with distance_m and curvature_1pm columns.
+    """
     import numpy as np
     import pandas as pd
 
-    speed_trace = analysis_json.get("speed_trace_best")
-    if not speed_trace:
+    n = len(distances)
+    if n < 20:
         return None
 
-    if isinstance(speed_trace, list) and len(speed_trace) > 10:
-        df = pd.DataFrame(speed_trace)
-        rename_map = {
-            "distance_m": "Distance (m)",
-            "speed_mps": "Speed (m/s)",
-        }
-        df = df.rename(columns={k: v for k, v in rename_map.items() if k in df.columns})
-        return df
+    # Convert lat/lon to local meters (simple equirectangular)
+    lat0 = np.mean(lats)
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * np.cos(np.radians(lat0))
+    x = (lons - lons[0]) * m_per_deg_lon
+    y = (lats - lats[0]) * m_per_deg_lat
 
-    return None
+    # Smooth to reduce GPS noise (Savgol-like: local averaging)
+    win = min(11, n // 4)
+    if win % 2 == 0:
+        win += 1
+    if win >= 3:
+        kernel = np.ones(win) / win
+        x_s = np.convolve(x, kernel, mode="same")
+        y_s = np.convolve(y, kernel, mode="same")
+        # Keep original endpoints
+        hw = win // 2
+        x_s[:hw] = x[:hw]
+        x_s[-hw:] = x[-hw:]
+        y_s[:hw] = y[:hw]
+        y_s[-hw:] = y[-hw:]
+    else:
+        x_s, y_s = x, y
 
+    # First and second derivatives w.r.t. arc length
+    ds = np.diff(distances)
+    ds[ds < 1e-6] = 1e-6
+    dx = np.diff(x_s) / ds
+    dy = np.diff(y_s) / ds
 
-def _reconstruct_curvature_profile(analysis_json: dict):
-    """Reconstruct curvature profile from stored data."""
-    import pandas as pd
+    ddx = np.diff(dx) / ds[:-1]
+    ddy = np.diff(dy) / ds[:-1]
 
-    curv_data = analysis_json.get("curvature_profile")
-    if not curv_data:
-        return None
+    # Curvature: |x'y'' - y'x''| / (x'^2 + y'^2)^1.5
+    dx_m = (dx[:-1] + dx[1:]) / 2
+    dy_m = (dy[:-1] + dy[1:]) / 2
+    denom = (dx_m**2 + dy_m**2) ** 1.5
+    denom[denom < 1e-12] = 1e-12
+    kappa = np.abs(dx_m * ddy - dy_m * ddx) / denom
 
-    if isinstance(curv_data, list) and len(curv_data) > 10:
-        return pd.DataFrame(curv_data)
+    # Pad to match distance array length
+    kappa_full = np.zeros(n)
+    kappa_full[1:-1] = kappa
+    kappa_full[0] = kappa[0] if len(kappa) > 0 else 0
+    kappa_full[-1] = kappa[-1] if len(kappa) > 0 else 0
+
+    # Clip extreme curvature values (GPS noise)
+    kappa_full = np.clip(kappa_full, 0, 0.5)
+
+    return pd.DataFrame({
+        "distance_m": distances,
+        "curvature_1pm": kappa_full,
+    })
 
     return None
 
@@ -303,7 +400,7 @@ def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]
 
 
 def _update_downstream(conn, session_id, result, result_dict, analysis_json,
-                       workspace_id=None):
+                       workspace_id=None, best_lap_df=None):
     """Re-run corner analysis, coaching, and scoring with OCP theoretical data.
 
     Called after _store_ocp_result so analysis_json["theoretical_ocp"] already
@@ -336,8 +433,7 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
             "confidence": 1.0 if result.converged else 0.7,
         }
 
-        # 2. Reconstruct dependencies from analysis_json
-        best_lap_df = _reconstruct_best_lap_df(analysis_json)
+        # 2. Use best_lap_df passed from caller (already loaded from DB)
         corners = analysis_json.get("corners", [])
         friction_model = analysis_json.get("friction_model") or {"max_lateral_g": 1.2}
         resampled_laps = {0: best_lap_df} if best_lap_df is not None else {}

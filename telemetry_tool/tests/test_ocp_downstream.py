@@ -94,6 +94,16 @@ class TestBuildTheoreticalResultDict:
 # ── Task 2: Full _update_downstream chain ──
 
 
+def _make_best_lap_df():
+    """Minimal best-lap DataFrame with columns expected by corner analysis."""
+    return pd.DataFrame({
+        "distance_m": np.linspace(0, 500, 500),
+        "speed_mps": 15.0 + 0.01 * np.arange(500),
+        "a_lat": np.zeros(500),
+        "a_long": np.zeros(500),
+    })
+
+
 def _make_analysis_json():
     """Minimal analysis_json with required keys."""
     return {
@@ -155,7 +165,8 @@ class TestUpdateDownstream:
                 {"corner_id": 0, "time_loss_s": 0.3},
                 {"corner_id": 1, "time_loss_s": 0.5},
             ]
-            _update_downstream(conn, "sess-1", result, result_dict, analysis_json)
+            _update_downstream(conn, "sess-1", result, result_dict, analysis_json,
+                               best_lap_df=_make_best_lap_df())
             mock_ca.assert_called_once()
             # Verify theoretical_lap arg is a DataFrame (3rd positional arg)
             call_args = mock_ca.call_args
@@ -175,7 +186,8 @@ class TestUpdateDownstream:
 
         with patch("pipeline.stages.s10b_corners.run_corner_analysis", side_effect=RuntimeError("boom")):
             # Should NOT raise — graceful degradation
-            _update_downstream(conn, "sess-1", result, result_dict, analysis_json)
+            _update_downstream(conn, "sess-1", result, result_dict, analysis_json,
+                               best_lap_df=_make_best_lap_df())
 
         # Scoring should still be updated even if corners failed
         assert analysis_json["simulation_method"] == "ocp"
