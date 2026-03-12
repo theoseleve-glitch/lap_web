@@ -8,12 +8,8 @@ import { S2Pipeline } from '@/components/rooms/S2Pipeline';
 import { S2Versus } from '@/components/rooms/S2Versus';
 import { S3Product } from '@/components/rooms/S3Product';
 import { S4WorkflowCoverage } from '@/components/rooms/S4WorkflowCoverage';
-import { PitStop } from '@/components/rooms/PitStop';
 import { Garage } from '@/components/rooms/Garage';
 import { Podium } from '@/components/rooms/Podium';
-import { SocialProof } from '@/components/rooms/SocialProof';
-import { PlatformStats } from '@/components/rooms/PlatformStats';
-import { LogoWall } from '@/components/rooms/LogoWall';
 import { MarqueeStrip } from '@/components/ui/MarqueeStrip';
 import { AudienceChooser } from '@/components/rooms/AudienceChooser';
 import { SocialProofPopup } from '@/components/marketing/SocialProofPopup';
@@ -41,11 +37,6 @@ function DriverHome({ onSwitch }: { onSwitch: () => void }) {
       <S3Product />
       <S4WorkflowCoverage />
       <MarqueeStrip items={MARQUEE_MID} speed={40} reverse />
-      <SocialProof />
-      <PlatformStats />
-      <LogoWall />
-      <div id="s5-personas" aria-hidden="true" />
-      <PitStop />
       <Garage />
       <Podium />
       <SocialProofPopup />
