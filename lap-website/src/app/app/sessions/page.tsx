@@ -571,11 +571,8 @@ export default function SessionsPage() {
       await Promise.all(ids.map((id) => api.delete(`/sessions/${id}`)));
     },
     onMutate: async (ids) => {
-      // Cancel in-flight refetches so they don't overwrite our optimistic update
       await queryClient.cancelQueries({ queryKey: ['sessions', 'list'] });
-      // Snapshot current data for rollback
       const previous = queryClient.getQueryData<ListResponse>(['sessions', 'list', queryParams]);
-      // Optimistically remove deleted sessions from the cached list
       if (previous) {
         const idSet = new Set(ids);
         queryClient.setQueryData<ListResponse>(['sessions', 'list', queryParams], {
@@ -588,18 +585,16 @@ export default function SessionsPage() {
       setConfirmDelete(false);
       return { previous };
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    },
     onError: (err, _ids, context) => {
-      // Roll back to the previous cache state on failure
       if (context?.previous) {
         queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
       }
-      // Show error to user so silent rollback isn't invisible
       const msg = err instanceof Error ? err.message : 'Delete failed';
       setBulkStatus(`Delete failed: ${msg}`);
-    },
-    onSettled: () => {
-      // Always re-sync with server after mutation completes
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      console.error('[session-delete]', err);
     },
   });
 
@@ -676,11 +671,25 @@ export default function SessionsPage() {
     },
     {
       label: archiveView === 'archived' ? 'Unarchive' : 'Archive',
-      onClick: (row) => {
+      onClick: async (row) => {
         const newArchived = archiveView !== 'archived';
-        api.post(`/sessions/${row.session_id}/archive`, { archived: newArchived }).then(() => {
+        // Optimistically remove from current view
+        await queryClient.cancelQueries({ queryKey: ['sessions', 'list'] });
+        const prev = queryClient.getQueryData<ListResponse>(['sessions', 'list', queryParams]);
+        if (prev) {
+          queryClient.setQueryData<ListResponse>(['sessions', 'list', queryParams], {
+            ...prev,
+            sessions: prev.sessions.filter((s) => s.session_id !== row.session_id),
+            total: prev.total - 1,
+          });
+        }
+        try {
+          await api.post(`/sessions/${row.session_id}/archive`, { archived: newArchived });
           queryClient.invalidateQueries({ queryKey: ['sessions'] });
-        });
+        } catch {
+          // Rollback on failure
+          if (prev) queryClient.setQueryData(['sessions', 'list', queryParams], prev);
+        }
       },
     },
     {

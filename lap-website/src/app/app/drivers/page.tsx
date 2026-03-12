@@ -58,11 +58,13 @@ export default function DriversPage() {
       setConfirmDelete(null);
       return { prev };
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
+    },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(queryKeys.drivers.all, context.prev);
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
+      const msg = _err instanceof Error ? _err.message : 'Delete failed';
+      console.error('[driver-delete]', _err);
     },
   });
 

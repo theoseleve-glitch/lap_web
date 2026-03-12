@@ -118,29 +118,48 @@ CASCADE_CONFIG: dict[str, dict[str, Any]] = {
 
 
 def _safe_delete(conn: sqlite3.Connection, sql: str, params: dict) -> int:
-    """Execute a DELETE/UPDATE and return rowcount, 0 on missing table."""
+    """Execute a DELETE/UPDATE and return rowcount, 0 on missing table.
+
+    Uses SAVEPOINT so a failure (e.g. missing table in PG) doesn't
+    abort the entire transaction — without this, PostgreSQL enters
+    InFailedSqlTransaction and all subsequent statements silently fail.
+    """
+    sp = f"sp_{id(sql) % 100000}"
     try:
+        conn.execute(f"SAVEPOINT {sp}")
         cur = conn.execute(sql, params)
         rc = cur.rowcount
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
         return rc if isinstance(rc, int) else 0
     except Exception as exc:
-        # Table may not exist in all DB versions (SQLite vs PG, schema version)
         logger.debug("Skipping: %s — %s", sql[:80], exc)
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            pass
         return 0
 
 
 def _safe_count(conn: sqlite3.Connection, sql: str, params: dict) -> int:
     """Execute a COUNT query and return the count, 0 on error."""
+    sp = f"sp_{id(sql) % 100000}"
     try:
+        conn.execute(f"SAVEPOINT {sp}")
         row = conn.execute(sql, params).fetchone()
+        conn.execute(f"RELEASE SAVEPOINT {sp}")
         if row is None:
             return 0
-        # Handle both dict-like and tuple rows
         if isinstance(row, dict):
             return row.get("c", 0)
         return row[0]
     except Exception as exc:
         logger.debug("Skipping count: %s — %s", sql[:80], exc)
+        try:
+            conn.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+            conn.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            pass
         return 0
 
 

@@ -80,11 +80,8 @@ export default function RaceStrategyListPage() {
     mutationFn: (raceId: number) => api.delete(`/race-strategy/${raceId}`),
     onMutate: async (raceId) => {
       setDeleteError('');
-      // Cancel running refetches so they don't overwrite our optimistic update
       await queryClient.cancelQueries({ queryKey: ['race-strategy'] });
-      // Snapshot current data for rollback
       const prev = queryClient.getQueryData<{ races: RaceRow[] }>(['race-strategy']);
-      // Optimistically remove the race from the list
       if (prev) {
         queryClient.setQueryData<{ races: RaceRow[] }>(['race-strategy'], {
           ...prev,
@@ -94,21 +91,19 @@ export default function RaceStrategyListPage() {
       setConfirmDelete(null);
       return { prev };
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['race-strategy'] });
+    },
     onError: (_err, _raceId, context) => {
-      // 404 means the race is already gone — treat as success, don't rollback
       if (_err instanceof Error && 'status' in _err && (_err as any).status === 404) {
         return;
       }
-      // Rollback to the previous data for real errors
       if (context?.prev) {
         queryClient.setQueryData(['race-strategy'], context.prev);
       }
       const msg = _err instanceof Error ? _err.message : 'Delete failed';
       setDeleteError(msg);
-    },
-    onSettled: () => {
-      // Always refetch to be sure we're in sync with the server
-      queryClient.invalidateQueries({ queryKey: ['race-strategy'] });
+      console.error('[race-delete]', _err);
     },
   });
 
