@@ -485,7 +485,7 @@ def stream(job_id: str):
 
                 # Compute progress percentage
                 stage_index = job.get("stage_index") or 0
-                stage_total = job.get("stage_total") or 15
+                stage_total = job.get("stage_total") or 16
                 progress_pct = round((stage_index / stage_total) * 100, 1) if stage_total > 0 else 0
 
                 # Sanitise error_message for SSE: don't leak internals

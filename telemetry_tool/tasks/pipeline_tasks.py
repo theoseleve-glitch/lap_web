@@ -659,16 +659,24 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     # ── Persist all session data to the database ──────────────────
     _persist_session_data(ctx, result)
 
-    # ── Queue OCP theoretical solver (async, after all data is in PG) ──
+    # ── Run OCP theoretical solver (after all data is in PG) ──
+    _update_job_progress(
+        job_id=job_id or ctx.job_id, status="running",
+        stage_name="ocp_solver", stage_index=14, stage_total=16,
+    )
     try:
         from pipeline.stages import s10_theoretical
         _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
             ctx.session_id, ctx.workspace_id,
         )
         if _ocp_task_id:
-            logger.info("OCP task queued for session %s: task_id=%s", ctx.session_id, _ocp_task_id)
+            logger.info("OCP solver completed for session %s: task_id=%s", ctx.session_id, _ocp_task_id)
     except Exception:
-        logger.debug("OCP queue skipped in finalize", exc_info=True)
+        logger.debug("OCP solver skipped in finalize", exc_info=True)
+    _update_job_progress(
+        job_id=job_id or ctx.job_id, status="running",
+        stage_name="finalize_complete", stage_index=15, stage_total=16,
+    )
 
     # Mark all finalize stages as completed
     for i, stage in enumerate(_FINALIZE_STAGES):
@@ -1065,7 +1073,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
     if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
         raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job (resume path)")
 
-    _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=15)
+    _update_job_progress(job_id=job_id, status="running", stage_name="finalize", stage_index=8, stage_total=16)
 
     try:
         _finalize_conn = _get_pg_connection()
