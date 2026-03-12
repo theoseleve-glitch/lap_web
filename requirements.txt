@@ -76,3 +76,6 @@ scipy>=1.11
 
 # Error tracking (optional — app works without it)
 sentry-sdk[flask,celery]>=2.0,<3.0
+
+# OCP theoretical solver
+casadi>=3.6,<4.0
