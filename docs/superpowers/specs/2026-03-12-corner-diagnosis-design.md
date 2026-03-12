@@ -58,7 +58,7 @@ Keys are lap numbers (strings), values are `{corner_id: label}`. One dominant la
 
 Existing `SessionCoaching` model structure, unchanged. Now sourced from user corners instead of auto-detected corners.
 
-## Label Taxonomy (22 labels)
+## Label Taxonomy (23 labels)
 
 ### Entry Phase (s_entry -> s_apex) - 8 labels
 
@@ -84,13 +84,14 @@ Existing `SessionCoaching` model structure, unchanged. Now sourced from user cor
 | `mid_corner_oversteer` | Rear breaks loose mid-corner | yaw_residual > +10 dps in apex zone | lat_g spike > 1.1x zone mean | same |
 | `coast_hesitation` | Dead zone, no input | smoothed speed derivative (3-pt Gaussian) in [-0.5, +0.5] m/s^2 for >0.3s between decel and accel phases | abs(lon_g) < 0.05g for >0.3s between decel and accel | brake < 5% AND throttle < 10% for >0.3s |
 
-### Exit Phase (s_apex -> s_exit) - 5 labels
+### Exit Phase (s_apex -> s_exit) - 6 labels
 
 | Label | Meaning | GPS-only | +Accel | +Pedals |
 |-------|---------|----------|--------|---------|
 | `exit_understeer` | Front washing wide on power | yaw_residual < -8 dps post-apex | lat_g dropping faster than speed rising | same + throttle > 60% |
 | `exit_oversteer` | Power oversteer / snap | yaw_residual > +10 dps post-apex | lat_g spike + speed drop | same + throttle lift follows |
-| `early_throttle` | On power before rotation done | -- | -- | throttle > 50% before v_min point |
+| `early_throttle` | On power before rotation done | -- | -- | throttle > 50% before MRP + 2m (falls back to v_min when MRP unavailable) |
+| `late_rotation` | Peak rotation much later than intended apex | mrp_apex_delta_m > 8m (car) / 4m (kart) | same | same |
 | `late_throttle` | Hesitating on power | -- | -- | s_throttle - s_apex > 0.4 * (s_exit - s_apex) |
 | `throttle_lift` | Forced to lift after initial application | -- | -- | throttle drops >20% abs before s_exit |
 
@@ -134,6 +135,15 @@ All threshold comparisons in the label tables use `yaw_residual_norm`, not raw r
 2. Derived: `d(Bearing)/dt` with Gaussian smoothing + speed gate (zeroed < 2 m/s)
 3. Bearing from GPS — virtually all loggers (RaceChrono, RaceBox) output this
 
+## MRP Integration
+
+The Maximum Rotation Point (MRP) — the position of peak yaw rate in a corner — is already computed at S10g2 via `mrp_detector.py` and stored in `summary["mrp_events_v2"]` as `dict[int, CornerEvents]`. The classifier uses MRP data for two purposes:
+
+1. **`early_throttle` reference**: `coaching_advanced.py` already uses MRP (not v_min) as the throttle timing reference. The classifier mirrors this: throttle > 50% before `mrp_m + 2m` triggers `early_throttle`. Falls back to v_min when MRP is unavailable.
+2. **`late_rotation` label**: When `CornerEvents.mrp_apex_delta_m` (= mrp_m - geometric_apex_m) exceeds 8m (car) or 4m (kart), the driver's peak rotation is significantly late. This is a GPS-tier label (yaw rate is derived from heading). Cannot fire when `mrp_events` is None.
+
+MRP events are keyed by `section_id` from the track decomposition. The classifier maps user corner indices to section IDs when MRP data is available; when the mapping fails (e.g. user corners don't correspond to decomposition sections), MRP features are silently skipped.
+
 ## Detection Tiers
 
 The classifier auto-detects available channels and adjusts:
@@ -142,7 +152,7 @@ The classifier auto-detects available channels and adjusts:
 |------|-------------------|-------------------|
 | `gps` | Speed, Bearing -> yaw_rate, lat/lon -> curvature | Speed deltas, apex position, yaw residual (over/understeer), coast, countersteer |
 | `accel` | Above + lat_g, lon_g | All above + friction circle, combined G, braking from lon_g |
-| `full` | Above + brake %, throttle % | All 22 labels |
+| `full` | Above + brake %, throttle % | All 23 labels |
 
 Tier detection:
 ```python
@@ -161,6 +171,7 @@ entry_overspeed -> mid_corner_understeer -> slow_exit
 late_braking -> excessive_trail_brake -> entry_oversteer
 insufficient_trail_brake -> entry_understeer
 early_throttle -> exit_understeer OR exit_oversteer
+late_rotation -> slow_exit (rotation delay costs exit speed)
 early_apex -> slow_exit (always)
 coast_hesitation -> late_throttle -> slow_exit
 ```
@@ -181,6 +192,7 @@ Priority when no causal link:
 | Coast gap | 0.2s | 0.3s |
 | Yaw residual threshold | 8 dps | 10 dps |
 | "good" time tolerance | 0.10s | 0.15s |
+| late_rotation delta | 4m | 8m |
 
 ## Classifier Architecture
 
@@ -198,8 +210,15 @@ def classify_all_corners(
     vehicle_class: str,
     valid_lap_numbers: list[int],
     curvature_profile: dict | None = None,
+    mrp_events: dict[int, CornerEvents] | None = None,
 ) -> dict[str, dict[str, str]]:
-    """Returns {lap_num: {corner_id: label}} for all valid laps x user corners."""
+    """Returns {lap_num: {corner_id: label}} for all valid laps x user corners.
+
+    mrp_events: from summary["mrp_events_v2"], keyed by section_id.
+    Used for early_throttle (MRP as throttle timing reference) and
+    late_rotation (mrp_apex_delta_m threshold). When None, early_throttle
+    falls back to v_min point, late_rotation cannot fire.
+    """
 ```
 
 The `curvature_profile` parameter is the distance-indexed curvature dict/DataFrame from the pipeline's reference line computation (S05). It is NOT a column in the per-lap resampled DataFrames.
@@ -266,6 +285,7 @@ corner_labels = _safe_step(
         vehicle_class=meta.get("vehicle_class", "car"),
         valid_lap_numbers=[k for k in resampled_laps if k not in excluded_laps],
         curvature_profile=curvature_profile,  # from S05 reference line
+        mrp_events=summary.get("mrp_events_v2"),  # from S10g2
     ),
 )
 if corner_labels is not None:
@@ -342,6 +362,8 @@ No new dependencies. No new DB tables. No migration.
    - Throttle gap >0.4s -> `coast_hesitation`
    - All within tolerance -> `good`
    - 3 countersteer events -> `scrappy`
+   - MRP 10m past geometric apex -> `late_rotation` (car)
+   - Throttle at 60% 3m before MRP -> `early_throttle`
 
 2. **Tier degradation** — same corner with full/accel/gps columns:
    - GPS-only: `late_braking` can't fire, `entry_oversteer` detected via yaw
