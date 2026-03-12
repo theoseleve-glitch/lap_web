@@ -55,15 +55,31 @@ def create_kart(
         return cur.lastrowid
 
 
-def upsert_kart_by_name(conn: sqlite3.Connection, kart_name: str) -> int:
-    """Find a kart by name or create one. Returns kart_id."""
+def upsert_kart_by_name(
+    conn: sqlite3.Connection,
+    kart_name: str,
+    details: Optional[dict] = None,
+) -> int:
+    """Find a kart by name or create one. Returns kart_id.
+
+    When creating, ``details`` may contain manufacturer, model, engine,
+    power_hp, kart_weight_kg to populate the new kart record.
+    """
     clean = kart_name.strip()
     row = conn.execute(
         "SELECT kart_id FROM karts WHERE kart_name = ?", (clean,)
     ).fetchone()
     if row:
         return row["kart_id"]
-    return create_kart(conn, clean)
+    d = details or {}
+    return create_kart(
+        conn, clean,
+        manufacturer=d.get("manufacturer"),
+        model=d.get("model"),
+        engine=d.get("engine"),
+        power_hp=d.get("power_hp"),
+        kart_weight_kg=d.get("kart_weight_kg"),
+    )
 
 
 def get_kart_by_id(conn: sqlite3.Connection, kart_id: int) -> Optional[dict]:

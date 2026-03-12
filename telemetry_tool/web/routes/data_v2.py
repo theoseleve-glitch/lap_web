@@ -1984,6 +1984,14 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                 cleaned["kart_name"] = value
             continue
 
+        if field == "kart_details":
+            # Optional details when creating a new kart (manufacturer, model, etc.)
+            if value is not None and not isinstance(value, dict):
+                errors.append({"field": "kart_details", "message": "Must be an object."})
+            else:
+                cleaned["kart_details"] = value
+            continue
+
         if field not in _UPDATABLE_FIELDS:
             continue  # silently ignore unknown fields
 
@@ -2149,9 +2157,12 @@ def update_session(session_id: str) -> tuple[dict, int]:
         updated_count += 1
 
     # Handle kart_name — upsert kart by name, then update kart_id.
+    # kart_details (manufacturer, model, engine, etc.) are passed through
+    # to create_kart when the kart doesn't exist yet.
     kart_name = cleaned.get("kart_name")
     if kart_name and isinstance(kart_name, str):
-        kart_id = models.upsert_kart_by_name(conn, kart_name)
+        kart_details = cleaned.get("kart_details") or {}
+        kart_id = models.upsert_kart_by_name(conn, kart_name, details=kart_details)
         models.update_session_field(conn, session_id, "kart_id", kart_id)
         updated_count += 1
 

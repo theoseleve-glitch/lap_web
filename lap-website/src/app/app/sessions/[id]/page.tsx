@@ -760,6 +760,10 @@ function OverviewTab({
   const [trackNames, setTrackNames] = useState<string[]>([]);
   const [kartNames, setKartNames] = useState<string[]>([]);
 
+  // Expanded kart details for new kart creation
+  const [kartDetails, setKartDetails] = useState<Record<string, string>>({});
+  const isNewKart = !!(editFields.kart_name && editFields.kart_name.trim() && !kartNames.includes(editFields.kart_name.trim()));
+
   const startEditing = useCallback(() => {
     setEditFields({
       session_date: session.session_date || '',
@@ -787,22 +791,35 @@ function OverviewTab({
   const cancelEditing = useCallback(() => {
     setEditing(false);
     setEditFields({});
+    setKartDetails({});
   }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      const resp = await api.patch(`/sessions/${session.session_id}`, editFields);
+      // Attach kart_details when creating a new kart
+      const payload: Record<string, unknown> = { ...editFields };
+      if (isNewKart && Object.values(kartDetails).some((v) => v.trim())) {
+        const d: Record<string, string | number> = {};
+        if (kartDetails.manufacturer?.trim()) d.manufacturer = kartDetails.manufacturer.trim();
+        if (kartDetails.model?.trim()) d.model = kartDetails.model.trim();
+        if (kartDetails.engine?.trim()) d.engine = kartDetails.engine.trim();
+        if (kartDetails.power_hp?.trim()) d.power_hp = parseFloat(kartDetails.power_hp);
+        if (kartDetails.kart_weight_kg?.trim()) d.kart_weight_kg = parseFloat(kartDetails.kart_weight_kg);
+        payload.kart_details = d;
+      }
+      const resp = await api.patch(`/sessions/${session.session_id}`, payload);
       if (resp) {
         onSessionUpdate({ ...session, ...resp } as SessionData);
         setEditing(false);
+        setKartDetails({});
       }
     } catch {
       // API errors handled by api-client
     } finally {
       setSaving(false);
     }
-  }, [session, editFields, onSessionUpdate]);
+  }, [session, editFields, isNewKart, kartDetails, onSessionUpdate]);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1001,6 +1018,16 @@ function OverviewTab({
                 placeholder="Type or select kart"
                 onChange={(v) => setEditFields({ ...editFields, kart_name: v })}
               />
+              {isNewKart && (
+                <div className="ml-2 pl-3 border-l-2 border-acid-green/30 space-y-2 py-2">
+                  <p className="text-[10px] text-acid-green font-body uppercase tracking-wider">New kart — add details</p>
+                  <EditRow label="Manufacturer" value={kartDetails.manufacturer || ''} onChange={(v) => setKartDetails({ ...kartDetails, manufacturer: v })} />
+                  <EditRow label="Model" value={kartDetails.model || ''} onChange={(v) => setKartDetails({ ...kartDetails, model: v })} />
+                  <EditRow label="Engine" value={kartDetails.engine || ''} onChange={(v) => setKartDetails({ ...kartDetails, engine: v })} />
+                  <EditRow label="Power (HP)" value={kartDetails.power_hp || ''} onChange={(v) => setKartDetails({ ...kartDetails, power_hp: v })} />
+                  <EditRow label="Weight (kg)" value={kartDetails.kart_weight_kg || ''} onChange={(v) => setKartDetails({ ...kartDetails, kart_weight_kg: v })} />
+                </div>
+              )}
               <EditRow
                 label="Date"
                 value={editFields.session_date || ''}
