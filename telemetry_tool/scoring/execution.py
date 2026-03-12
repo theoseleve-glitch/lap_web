@@ -67,7 +67,7 @@ def _score_execution(
     Missing values fall back to partial credit (0.5 ratio).
     """
     is_physics = simulation_method in (
-        "physics", "hybrid",
+        "physics", "hybrid", "ocp",
         "kart_envelope_qss", "kart_envelope_casadi",
     )
 
