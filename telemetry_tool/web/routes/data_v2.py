@@ -2964,10 +2964,14 @@ def get_track_map(session_id: str) -> tuple[dict, int]:
     for ln in lap_numbers:
         trace = models.get_gps_trace(conn, session_id, ln)
         if trace:
+            distances = trace.get("distances", [])
+            if distances and len(distances) > 1 and distances[0] != 0:
+                d0 = distances[0]
+                distances = [d - d0 for d in distances]
             laps_data[str(ln)] = {
                 "latitudes": trace.get("latitudes", []),
                 "longitudes": trace.get("longitudes", []),
-                "distances": trace.get("distances", []),
+                "distances": distances,
                 "speeds": trace.get("speeds", []),
             }
 
@@ -2983,7 +2987,12 @@ def get_track_map(session_id: str) -> tuple[dict, int]:
     theo = models.get_theoretical_data(conn, session_id)
     if theo and theo.get("corner_coaching"):
         best_gps = models.get_gps_trace(conn, session_id, best_lap)
-        dists = best_gps.get("distances", []) if best_gps else []
+        raw_dists = best_gps.get("distances", []) if best_gps else []
+        if raw_dists and len(raw_dists) > 1 and raw_dists[0] != 0:
+            d0 = raw_dists[0]
+            dists = [d - d0 for d in raw_dists]
+        else:
+            dists = raw_dists
         lats = best_gps.get("latitudes", []) if best_gps else []
         lons = best_gps.get("longitudes", []) if best_gps else []
 
