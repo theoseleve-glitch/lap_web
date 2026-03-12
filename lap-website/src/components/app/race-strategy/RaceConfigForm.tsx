@@ -156,6 +156,54 @@ const labelCls =
 const sectionCls = 'bg-concrete border border-steel/20 p-5 mb-4';
 
 /* ------------------------------------------------------------------ */
+/*  Duration mm:ss input                                               */
+/* ------------------------------------------------------------------ */
+
+function DurationMmSs({ value, onChange, id, label }: {
+  value: string;
+  onChange: (v: string) => void;
+  id: string;
+  label: string;
+}) {
+  const totalS = parseInt(value) || 0;
+  const hasValue = value !== '' && value != null;
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        id={id}
+        type="number"
+        aria-label={`${label} minutes`}
+        className={`${inputCls} w-12 text-center`}
+        value={hasValue ? Math.floor(totalS / 60) : ''}
+        onChange={(e) => {
+          const mm = parseInt(e.target.value) || 0;
+          const ss = hasValue ? totalS % 60 : 0;
+          onChange(e.target.value === '' && ss === 0 ? '' : String(mm * 60 + ss));
+        }}
+        min="0"
+        placeholder="m"
+      />
+      <span className="text-steel/60 text-xs font-telemetry">:</span>
+      <input
+        type="number"
+        aria-label={`${label} seconds`}
+        className={`${inputCls} w-12 text-center`}
+        value={hasValue ? totalS % 60 : ''}
+        onChange={(e) => {
+          const ss = Math.min(59, parseInt(e.target.value) || 0);
+          const mm = hasValue ? Math.floor(totalS / 60) : 0;
+          onChange(e.target.value === '' && mm === 0 ? '' : String(mm * 60 + ss));
+        }}
+        min="0"
+        max="59"
+        placeholder="s"
+      />
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Props                                                              */
 /* ------------------------------------------------------------------ */
 
@@ -223,7 +271,6 @@ export function RaceConfigForm({
   const [emptyKart, setEmptyKart] = useState('');
   const [fullTank, setFullTank] = useState('');
   const [minTotal, setMinTotal] = useState('');
-  const [referenceWeight, setReferenceWeight] = useState('');
   const [weighOnExit, setWeighOnExit] = useState(false);
 
   const [showQuali, setShowQuali] = useState(false);
@@ -258,7 +305,6 @@ export function RaceConfigForm({
     setEmptyKart(str(r.empty_kart_kg));
     setFullTank(str(r.full_tank_kg));
     setMinTotal(str(r.min_total_kart_kg));
-    setReferenceWeight(str(r.reference_weight_kg));
     setWeighOnExit(!!r.weigh_on_pit_exit);
 
     if (r.qualifying_duration_s) {
@@ -375,7 +421,7 @@ export function RaceConfigForm({
         empty_kart_kg: parseNum(emptyKart),
         full_tank_kg: parseNum(fullTank),
         min_total_kart_kg: parseNum(minTotal),
-        reference_weight_kg: parseNum(referenceWeight),
+        reference_weight_kg: null,
         weigh_on_pit_exit: weighOnExit ? 1 : 0,
         qualifying_duration_s: parseNum(qualiDuration),
         refuel_after_quali: refuelAfterQuali ? 1 : 0,
@@ -494,12 +540,12 @@ export function RaceConfigForm({
                   )}
                 </div>
                 {d.showConstraints && (
-                  <div className="grid grid-cols-5 gap-2 mt-2 pl-11">
-                    <div><label htmlFor={`${fieldId}-d${i}-min-stint`} className={labelCls}>Min stint(s)</label><input id={`${fieldId}-d${i}-min-stint`} className={inputCls} value={d.min_stint_s} onChange={(e) => updateDriver(i, 'min_stint_s', e.target.value)} type="number" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-max-stint`} className={labelCls}>Max stint(s)</label><input id={`${fieldId}-d${i}-max-stint`} className={inputCls} value={d.max_stint_s} onChange={(e) => updateDriver(i, 'max_stint_s', e.target.value)} type="number" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-min-total`} className={labelCls}>Min total(s)</label><input id={`${fieldId}-d${i}-min-total`} className={inputCls} value={d.min_cumulative_s} onChange={(e) => updateDriver(i, 'min_cumulative_s', e.target.value)} type="number" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-max-total`} className={labelCls}>Max total(s)</label><input id={`${fieldId}-d${i}-max-total`} className={inputCls} value={d.max_cumulative_s} onChange={(e) => updateDriver(i, 'max_cumulative_s', e.target.value)} type="number" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-min-rest`} className={labelCls}>Min rest(s)</label><input id={`${fieldId}-d${i}-min-rest`} className={inputCls} value={d.min_rest_s} onChange={(e) => updateDriver(i, 'min_rest_s', e.target.value)} type="number" /></div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-2 pl-11">
+                    <div><label htmlFor={`${fieldId}-d${i}-min-stint`} className={labelCls}>Min Stint</label><DurationMmSs id={`${fieldId}-d${i}-min-stint`} value={d.min_stint_s} onChange={(v) => updateDriver(i, 'min_stint_s', v)} label="Min stint" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-max-stint`} className={labelCls}>Max Stint</label><DurationMmSs id={`${fieldId}-d${i}-max-stint`} value={d.max_stint_s} onChange={(v) => updateDriver(i, 'max_stint_s', v)} label="Max stint" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-min-total`} className={labelCls}>Min Total</label><DurationMmSs id={`${fieldId}-d${i}-min-total`} value={d.min_cumulative_s} onChange={(v) => updateDriver(i, 'min_cumulative_s', v)} label="Min total" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-max-total`} className={labelCls}>Max Total</label><DurationMmSs id={`${fieldId}-d${i}-max-total`} value={d.max_cumulative_s} onChange={(v) => updateDriver(i, 'max_cumulative_s', v)} label="Max total" /></div>
+                    <div><label htmlFor={`${fieldId}-d${i}-min-rest`} className={labelCls}>Min Rest</label><DurationMmSs id={`${fieldId}-d${i}-min-rest`} value={d.min_rest_s} onChange={(v) => updateDriver(i, 'min_rest_s', v)} label="Min rest" /></div>
                   </div>
                 )}
               </div>
@@ -683,8 +729,11 @@ export function RaceConfigForm({
             </div>
             <div><label htmlFor={`${fieldId}-empty-kart`} className={labelCls}>Empty Kart (kg)</label><input id={`${fieldId}-empty-kart`} type="number" className={inputCls} value={emptyKart} onChange={(e) => setEmptyKart(e.target.value)} step="0.1" /></div>
             <div><label htmlFor={`${fieldId}-full-tank`} className={labelCls}>Full Tank (kg)</label><input id={`${fieldId}-full-tank`} type="number" className={inputCls} value={fullTank} onChange={(e) => setFullTank(e.target.value)} step="0.1" /></div>
-            <div><label htmlFor={`${fieldId}-min-total-kg`} className={labelCls}>Min Total (kg)</label><input id={`${fieldId}-min-total-kg`} type="number" className={inputCls} value={minTotal} onChange={(e) => setMinTotal(e.target.value)} step="0.1" /></div>
-            <div><label htmlFor={`${fieldId}-ref-weight`} className={labelCls}>Reference Weight (kg)</label><input id={`${fieldId}-ref-weight`} type="number" className={inputCls} value={referenceWeight} onChange={(e) => setReferenceWeight(e.target.value)} step="0.1" /></div>
+            <div>
+              <label htmlFor={`${fieldId}-min-total-kg`} className={labelCls}>Min Kart+Driver (kg)</label>
+              <input id={`${fieldId}-min-total-kg`} type="number" className={inputCls} value={minTotal} onChange={(e) => setMinTotal(e.target.value)} step="0.1" placeholder="e.g. 170" />
+              <span className="text-steel/40 font-body text-[10px] mt-0.5 block">Regulation minimum on the scales</span>
+            </div>
             <div className="flex items-end pb-2">
               <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
                 <input type="checkbox" checked={weighOnExit} onChange={(e) => setWeighOnExit(e.target.checked)} className="accent-pit-orange" />
@@ -701,7 +750,7 @@ export function RaceConfigForm({
           </button>
           {showQuali && (
             <div className="grid grid-cols-2 gap-4 mt-4">
-              <div><label htmlFor={`${fieldId}-quali-dur`} className={labelCls}>Duration (s)</label><input id={`${fieldId}-quali-dur`} type="number" className={inputCls} value={qualiDuration} onChange={(e) => setQualiDuration(e.target.value)} /></div>
+              <div><label htmlFor={`${fieldId}-quali-dur`} className={labelCls}>Duration</label><DurationMmSs id={`${fieldId}-quali-dur`} value={qualiDuration} onChange={setQualiDuration} label="Qualifying duration" /></div>
               <div className="flex items-end pb-2">
                 <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
                   <input type="checkbox" checked={refuelAfterQuali} onChange={(e) => setRefuelAfterQuali(e.target.checked)} className="accent-pit-orange" />

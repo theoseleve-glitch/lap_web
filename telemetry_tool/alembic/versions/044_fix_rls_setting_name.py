@@ -36,17 +36,22 @@ _BROKEN_POLICIES = [
      "current_setting('app.workspace_id')::int"),
 ]
 
-_CORRECT_EXPR = "current_setting('app.current_workspace_id')::integer"
+_CORRECT_EXPR_INT = "current_setting('app.current_workspace_id')::integer"
+_CORRECT_EXPR_TEXT = "current_setting('app.current_workspace_id')"
+
+# Tables where workspace_id is TEXT, not INTEGER
+_TEXT_WS_TABLES = {"session_weather_laps"}
 
 
 def upgrade() -> None:
     for table, policy, _ in _BROKEN_POLICIES:
+        expr = _CORRECT_EXPR_TEXT if table in _TEXT_WS_TABLES else _CORRECT_EXPR_INT
         op.execute(sa.text(
             f"DROP POLICY IF EXISTS {policy} ON {table}"
         ))
         op.execute(sa.text(
             f"CREATE POLICY {policy} ON {table} "
-            f"USING (workspace_id = {_CORRECT_EXPR})"
+            f"USING (workspace_id = {expr})"
         ))
 
 
