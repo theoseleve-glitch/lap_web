@@ -17,7 +17,7 @@ sqlalchemy>=2.0
 
 # Task queue + caching
 celery>=5.3,<6
-redis>=5.0,<6
+redis>=5.0,<8
 
 # Authentication
 PyJWT>=2.8
