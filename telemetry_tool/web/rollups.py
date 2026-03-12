@@ -29,7 +29,7 @@ def refresh_driver_rollup(conn, workspace_id: int) -> None:
             MIN(s.best_lap_time_s),
             AVG({_TOTAL_SCORE_EXPR}),
             AVG(sd.consistency_score),
-            MAX(s.session_date)
+            MAX(s.session_date)::date
         FROM sessions s
         LEFT JOIN score_details sd ON sd.session_id = s.session_id
         WHERE s.workspace_id = %(ws)s
@@ -58,7 +58,7 @@ def refresh_track_rollup(conn, workspace_id: int) -> None:
             COUNT(DISTINCT s.session_id),
             MIN(s.best_lap_time_s),
             AVG({_TOTAL_SCORE_EXPR}),
-            MAX(s.session_date),
+            MAX(s.session_date)::date,
             COUNT(DISTINCT s.driver_id)
         FROM sessions s
         LEFT JOIN score_details sd ON sd.session_id = s.session_id
@@ -72,11 +72,22 @@ def refresh_track_rollup(conn, workspace_id: int) -> None:
 
 
 def refresh_rollups(conn, workspace_id: int) -> None:
-    """Refresh all rollup tables for a workspace. Safe to call anytime."""
+    """Refresh all rollup tables for a workspace.
+
+    Wrapped in a SAVEPOINT so a failure cannot poison the PG connection
+    (which would break subsequent queries or teardown on the same conn).
+    """
     try:
+        conn.execute("SAVEPOINT sp_rollups")
         refresh_driver_rollup(conn, workspace_id)
         refresh_track_rollup(conn, workspace_id)
+        conn.execute("RELEASE SAVEPOINT sp_rollups")
         conn.commit()
         logger.info("Refreshed rollups for workspace %s", workspace_id)
     except Exception:
+        try:
+            conn.execute("ROLLBACK TO SAVEPOINT sp_rollups")
+            conn.execute("RELEASE SAVEPOINT sp_rollups")
+        except Exception:
+            pass
         logger.exception("Failed to refresh rollups for workspace %s", workspace_id)
