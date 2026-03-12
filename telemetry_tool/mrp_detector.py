@@ -57,6 +57,11 @@ class CornerEvents:
     geometric_apex_m: float
     mrp_apex_delta_m: float  # positive = late rotation
 
+    def to_dict(self) -> dict:
+        """Serialise to plain dict for JSON storage."""
+        import dataclasses
+        return dataclasses.asdict(self)
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
