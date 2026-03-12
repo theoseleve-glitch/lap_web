@@ -14,11 +14,100 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# ── Seed / stall tuning constants ────────────────────────────
+_ROLLING_MIN_SEED = 3          # candidates before attempting partition
+_ROLLING_MAX_COLLECT = 6       # hard cap — use median fallback
+_ROLLING_STALL_THRESHOLD = 5   # consecutive rejects → window reset
+_SEED_GAP_RATIO = 0.20         # relative gap threshold for partition
+
+
+def _partition_seed_candidates(
+    candidates: list[tuple[int, float, float | None]],
+    min_gap_ratio: float = _SEED_GAP_RATIO,
+) -> tuple[
+    list[tuple[int, float, float | None]] | None,
+    list[tuple[int, float, float | None]] | None,
+]:
+    """Split seed candidates into inliers and outliers via gap detection.
+
+    Sorts by time, finds the largest relative gap between consecutive
+    times.  If no gap exceeds *min_gap_ratio*, all candidates are a
+    homogeneous group (all returned as inliers, empty outliers).
+
+    When a gap is found and the faster (lower-time) group is at least
+    as large as the slower group, the faster group is returned as
+    inliers — in motorsport, outliers are almost always slow laps
+    (traffic, spins, pit stops).  If the fast group is smaller, the
+    split is ambiguous and ``(None, None)`` is returned to signal
+    that the caller should collect more candidates.
+    """
+    if len(candidates) < 3:
+        return candidates, []
+
+    sorted_cands = sorted(candidates, key=lambda x: x[1])
+    times = [t for _, t, _ in sorted_cands]
+
+    best_idx = -1
+    best_ratio = 0.0
+    for i in range(len(times) - 1):
+        ref = times[i] if times[i] > 0 else 1.0
+        ratio = (times[i + 1] - times[i]) / ref
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_idx = i
+
+    if best_ratio < min_gap_ratio:
+        return candidates, []  # homogeneous — all inliers
+
+    fast_group = sorted_cands[: best_idx + 1]
+    slow_group = sorted_cands[best_idx + 1 :]
+
+    if len(fast_group) >= len(slow_group):
+        return fast_group, slow_group
+    return None, None  # ambiguous — caller should collect more
+
+
+def _commit_seed_fallback(
+    seed_pool: list[tuple[int, float, float | None]],
+    result: dict[int, tuple[bool, str | None]],
+    valid_times: list[float],
+    valid_dists: list[float],
+) -> None:
+    """Median-based fallback when gap partitioning fails at MAX_COLLECT.
+
+    Accepts candidates within 15% of the median time; flags the rest.
+    If no candidates pass, accepts all (degenerate session).
+    """
+    all_t = sorted(ts for _, ts, _ in seed_pool)
+    median_t = all_t[len(all_t) // 2]
+
+    accepted_any = False
+    for ln, ts, dm in seed_pool:
+        dev = abs(ts - median_t) / median_t if median_t > 0 else 0
+        if dev <= 0.15:
+            result[ln] = (True, None)
+            valid_times.append(ts)
+            if dm is not None:
+                valid_dists.append(dm)
+            accepted_any = True
+        else:
+            result[ln] = (False, "Time anomaly")
+
+    if not accepted_any:
+        # All candidates are spread out — accept all as last resort
+        for ln, ts, dm in seed_pool:
+            result[ln] = (True, None)
+            valid_times.append(ts)
+            if dm is not None:
+                valid_dists.append(dm)
+
+
 def _rolling_avg_validity(
     lap_metrics: list[dict[str, Any]],
     window: int = 5,
     lo: float = 0.90,
     hi: float = 1.10,
+    exclude_laps: set[int] | None = None,
 ) -> dict[int, tuple[bool, str | None]]:
     """Determine lap validity using rolling average of valid laps.
 
@@ -28,47 +117,90 @@ def _rolling_avg_validity(
     of the rolling average.  Invalid laps are excluded from the rolling
     window so one bad lap cannot cascade-invalidate subsequent good laps.
 
+    Seed hardening
+    ~~~~~~~~~~~~~~
+    Instead of blindly accepting the first 2 laps, collects up to
+    ``_ROLLING_MIN_SEED`` candidates and uses gap-based outlier
+    detection to reject anomalous early laps before they can poison
+    the window.
+
+    Stall recovery
+    ~~~~~~~~~~~~~~
+    If ``_ROLLING_STALL_THRESHOLD`` consecutive laps are rejected, the
+    window is likely poisoned despite defenses.  The window resets to
+    the median of all post-seed times seen so far.
+
+    Parameters
+    ----------
+    exclude_laps : set[int] | None
+        Lap numbers already flagged by the pipeline.  Skipped entirely
+        so a known-bad lap cannot contaminate the seed or rolling window.
+
     Returns {lap_number: (is_valid, invalid_reason)}.
     """
-    # Sort by lap number and extract time+distance
     ordered = sorted(lap_metrics, key=lambda lm: lm.get("lap_number", 0))
+    exclude_laps = exclude_laps or set()
 
-    valid_times: list[float] = []   # rolling window of valid lap times
-    valid_dists: list[float] = []   # rolling window of valid lap distances
+    valid_times: list[float] = []
+    valid_dists: list[float] = []
     result: dict[int, tuple[bool, str | None]] = {}
+
+    seed_pool: list[tuple[int, float, float | None]] = []
+    seed_committed = False
+    consecutive_rejects = 0
+    all_post_seed_times: list[float] = []  # for stall recovery
 
     for lm in ordered:
         lap_num = lm.get("lap_number")
         if lap_num is None:
             continue
 
+        if lap_num in exclude_laps:
+            continue
+
         time_s = _safe_float(lm.get("lap_time_s"))
         dist_m = _safe_float(lm.get("line_length_m"))
 
-        # Skip laps with missing data — mark invalid
         if time_s is None or time_s <= 0:
             result[lap_num] = (False, "No lap time")
             continue
         if dist_m is None or dist_m <= 0:
-            # Distance may be missing for some sessions — only check time
             dist_m = None
 
-        # Not enough valid laps yet to form a rolling average — accept
-        # the first few laps to seed the window (need at least 2).
-        if len(valid_times) < 2:
-            result[lap_num] = (True, None)
-            valid_times.append(time_s)
-            if dist_m is not None:
-                valid_dists.append(dist_m)
+        # ── Seed collection phase ──────────────────────────────
+        if not seed_committed:
+            seed_pool.append((lap_num, time_s, dist_m))
+
+            if len(seed_pool) >= _ROLLING_MIN_SEED:
+                inliers, outliers = _partition_seed_candidates(seed_pool)
+
+                if inliers is not None and len(inliers) >= 2:
+                    # Clean partition or homogeneous group
+                    for ln, ts, dm in inliers:
+                        result[ln] = (True, None)
+                        valid_times.append(ts)
+                        if dm is not None:
+                            valid_dists.append(dm)
+                    if outliers:
+                        for ln, ts, dm in outliers:
+                            result[ln] = (False, "Time anomaly")
+                    seed_committed = True
+                elif len(seed_pool) >= _ROLLING_MAX_COLLECT:
+                    _commit_seed_fallback(
+                        seed_pool, result, valid_times, valid_dists,
+                    )
+                    seed_committed = True
             continue
 
-        # Compute rolling averages from last N valid laps
+        all_post_seed_times.append(time_s)
+
+        # ── Rolling average validation ──────────────────────────
         recent_times = valid_times[-window:]
         avg_time = sum(recent_times) / len(recent_times)
 
         time_ok = (avg_time * lo) <= time_s <= (avg_time * hi)
 
-        dist_ok = True  # default if no distance data available
+        dist_ok = True
         reason_parts: list[str] = []
 
         if dist_m is not None and len(valid_dists) >= 2:
@@ -86,9 +218,30 @@ def _rolling_avg_validity(
             valid_times.append(time_s)
             if dist_m is not None:
                 valid_dists.append(dist_m)
+            consecutive_rejects = 0
         else:
             result[lap_num] = (False, " + ".join(reason_parts))
-            # Do NOT add to rolling window — keeps it robust
+            consecutive_rejects += 1
+
+            # Stall recovery — window likely poisoned
+            if (consecutive_rejects >= _ROLLING_STALL_THRESHOLD
+                    and all_post_seed_times):
+                stall_sorted = sorted(all_post_seed_times)
+                median_reset = stall_sorted[len(stall_sorted) // 2]
+                valid_times.clear()
+                valid_times.append(median_reset)
+                consecutive_rejects = 0
+                logger.info(
+                    "Rolling-avg stall: resetting window to median %.2fs "
+                    "after %d consecutive rejects.",
+                    median_reset, _ROLLING_STALL_THRESHOLD,
+                )
+
+    # Very short session — seed never committed
+    if not seed_committed:
+        for ln, ts, dm in seed_pool:
+            if ln not in result:
+                result[ln] = (True, None)
 
     return result
 
@@ -235,8 +388,13 @@ def insert_laps(
     # Layer 2: Rolling-average catches anything the pipeline missed
     # (e.g. laps that slipped through pipeline detection).
     # Pipeline labels take priority; rolling-avg fills gaps.
+    # Pipeline-flagged laps are excluded from the rolling-avg seed
+    # so a known-bad lap cannot poison the rolling window.
     pipeline_validity = _pipeline_validity(summary)
-    rolling_validity = _rolling_avg_validity(lap_metrics)
+    pipeline_flagged = set(pipeline_validity.keys())
+    rolling_validity = _rolling_avg_validity(
+        lap_metrics, exclude_laps=pipeline_flagged,
+    )
 
     # Merge: pipeline wins where it has data, rolling-avg fills rest
     validity: dict[int, tuple[bool, str | None]] = {}

@@ -9,7 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from db.migrate import ensure_schema
 from web.models import insert_laps
-from web.repos.lap_repo import _rolling_avg_validity, _pipeline_validity
+from web.repos.lap_repo import (
+    _rolling_avg_validity,
+    _pipeline_validity,
+    _partition_seed_candidates,
+)
 
 
 @pytest.fixture
@@ -339,11 +343,13 @@ class TestRollingAvgUnit:
         assert result[6][0] is True
         assert result[7][0] is True
 
-    def test_first_two_laps_always_accepted(self):
+    def test_seed_laps_accepted(self):
+        """First 3 seed candidates (homogeneous) are all accepted."""
         metrics = _make_laps(n=5)
         result = _rolling_avg_validity(metrics)
         assert result[1][0] is True
         assert result[2][0] is True
+        assert result[3][0] is True
 
     def test_missing_time_invalid(self):
         metrics = _make_laps(n=5, time_overrides={3: None})
@@ -410,3 +416,187 @@ class TestRollingAvgFallbackIntegration:
         }
         count = insert_laps(db, "s1", summary)
         assert count == 6
+
+
+# ═══════════════════════════════════════════════════════════════
+# Seed hardening tests
+# ═══════════════════════════════════════════════════════════════
+
+
+class TestPartitionSeedCandidates:
+    """Unit tests for _partition_seed_candidates()."""
+
+    def test_homogeneous_group_all_inliers(self):
+        cands = [(1, 60.0, 500.0), (2, 60.1, 500.0), (3, 60.2, 500.0)]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert len(inliers) == 3
+        assert outliers == []
+
+    def test_one_slow_outlier_detected(self):
+        cands = [(1, 60.0, 500.0), (2, 60.1, 500.0), (3, 120.0, 500.0)]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert len(inliers) == 2
+        assert len(outliers) == 1
+        assert outliers[0][0] == 3  # lap 3 is the outlier
+
+    def test_two_candidates_returns_all(self):
+        """With < 3 candidates, can't partition — all returned as inliers."""
+        cands = [(1, 60.0, 500.0), (2, 120.0, 500.0)]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert len(inliers) == 2
+        assert outliers == []
+
+    def test_ambiguous_returns_none(self):
+        """When fast group is smaller, returns (None, None) for ambiguity."""
+        cands = [(1, 60.0, 500.0), (2, 120.0, 500.0), (3, 122.0, 500.0)]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert inliers is None
+        assert outliers is None
+
+    def test_tie_prefers_fast_group(self):
+        """Equal-sized groups → fast group wins (motorsport domain rule)."""
+        cands = [
+            (1, 60.0, 500.0), (2, 61.0, 500.0),
+            (3, 120.0, 500.0), (4, 121.0, 500.0),
+        ]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert len(inliers) == 2
+        assert all(t < 100 for _, t, _ in inliers)
+
+    def test_multiple_outliers(self):
+        """Largest gap cleanly separates cluster from multiple outliers."""
+        cands = [
+            (1, 88.0, None), (2, 89.0, None), (3, 92.0, None),
+            (4, 130.0, None), (5, 135.0, None),
+        ]
+        inliers, outliers = _partition_seed_candidates(cands)
+        assert len(inliers) == 3
+        assert all(t < 100 for _, t, _ in inliers)
+        assert len(outliers) == 2
+
+
+class TestSeedHardening:
+    """Rolling-avg seed is no longer blindly poisoned by early slow laps."""
+
+    def test_slow_lap2_in_seed_position_caught(self):
+        """Reproduces the original bug: Lap 2 is very slow (2:09)
+        but Lap 1 is a mild outlap.  Without hardening, all real laps
+        (3-8) would be false-flagged as 'Time anomaly'."""
+        metrics = _make_laps(
+            n=9,
+            base_time=88.0,
+            base_dist=1255.0,
+            time_overrides={1: 92.5, 2: 129.7},
+            dist_overrides={1: 1241.0, 2: 1268.0},
+        )
+        result = _rolling_avg_validity(metrics)
+        # Lap 2 should be flagged (outlier in seed)
+        assert result[2][0] is False
+        # Laps 3-8 should be VALID (no false positives)
+        for i in range(3, 9):
+            assert result[i][0] is True, f"Lap {i} should be valid, got {result[i]}"
+
+    def test_slow_lap_any_position_in_seed(self):
+        """Slow lap at position 3 (last seed candidate) is also caught."""
+        metrics = _make_laps(
+            n=8,
+            base_time=60.0,
+            time_overrides={3: 120.0},
+        )
+        result = _rolling_avg_validity(metrics)
+        assert result[3][0] is False
+        assert result[4][0] is True
+        assert result[5][0] is True
+
+    def test_exclude_laps_skipped(self):
+        """Pipeline-excluded laps don't appear in rolling-avg result."""
+        metrics = _make_laps(n=6)
+        result = _rolling_avg_validity(metrics, exclude_laps={2, 4})
+        assert 2 not in result
+        assert 4 not in result
+        assert result[1][0] is True
+        assert result[3][0] is True
+
+    def test_pipeline_exclusion_prevents_seed_poison(self):
+        """If the pipeline flags a very slow Lap 2, the rolling avg
+        should exclude it from seeding and not cascade-invalidate."""
+        metrics = _make_laps(
+            n=9,
+            base_time=88.0,
+            time_overrides={1: 92.5, 2: 129.7},
+        )
+        # Simulate: pipeline caught lap 2
+        result = _rolling_avg_validity(metrics, exclude_laps={2})
+        # Seed is now {1, 3, 4} (all ~88-92s) — no poison
+        for i in [1, 3, 4, 5, 6, 7, 8, 9]:
+            assert result[i][0] is True, f"Lap {i} should be valid, got {result[i]}"
+
+    def test_short_session_two_laps(self):
+        """Sessions with only 2 laps should accept both."""
+        metrics = _make_laps(n=2)
+        result = _rolling_avg_validity(metrics)
+        assert result[1][0] is True
+        assert result[2][0] is True
+
+    def test_short_session_one_lap(self):
+        metrics = _make_laps(n=1)
+        result = _rolling_avg_validity(metrics)
+        assert result[1][0] is True
+
+
+class TestStallRecovery:
+    """If the rolling window is somehow still poisoned, stall recovery
+    resets it after consecutive rejects."""
+
+    def test_stall_triggers_reset(self):
+        """A poisoned seed that survives partitioning gets recovered
+        via stall detection after 5 consecutive rejects."""
+        # Create a session where the seed is mildly bad but not
+        # enough for gap detection: laps 1-3 around 95s, then
+        # a run of laps at 60s.  The 95s seed gives a rolling avg
+        # where 60s laps are barely below threshold (90% × 95 = 85.5,
+        # and 60 < 85.5).  After 5 rejects, stall recovery kicks in.
+        metrics = _make_laps(
+            n=12,
+            base_time=60.0,
+            time_overrides={1: 95.0, 2: 94.0, 3: 96.0},
+        )
+        result = _rolling_avg_validity(metrics)
+        # Laps 4-8 may be flagged (poisoned seed), but stall recovery
+        # should allow laps 9+ to pass.  At minimum, the session
+        # should not have ALL post-seed laps flagged.
+        post_seed_valid = sum(
+            1 for i in range(4, 13) if result.get(i, (False,))[0] is True
+        )
+        assert post_seed_valid >= 3, (
+            f"Stall recovery should rescue later laps, only {post_seed_valid} valid"
+        )
+
+
+class TestPipelineExclusionIntegration:
+    """End-to-end: pipeline flags + rolling avg exclusion in insert_laps."""
+
+    def test_pipeline_flagged_slow_lap_doesnt_cascade(self, db):
+        """The user's exact scenario: pipeline flags Lap 2 as slow,
+        rolling avg excludes it, and Laps 3-8 remain valid."""
+        metrics = _make_laps(
+            n=9,
+            base_time=88.0,
+            base_dist=1255.0,
+            time_overrides={1: 92.5, 2: 129.7},
+            dist_overrides={1: 1241.0, 2: 1268.0},
+        )
+        summary = _make_summary(
+            lap_metrics=metrics,
+            best_key=8,
+            time_flagged=[2],
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        # Lap 2 flagged by pipeline
+        assert laps[2]["is_valid"] == 0
+        # Laps 3-8 should be valid (no cascade)
+        for n in range(3, 9):
+            assert laps[n]["is_valid"] == 1, (
+                f"Lap {n} should be valid, got reason={laps[n]['invalid_reason']}"
+            )
