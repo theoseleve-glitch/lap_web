@@ -31,6 +31,8 @@ interface SSEEvent {
   progress_pct: number;
   error_message: string | null;
   session_id?: string;
+  /** Milestone data — key facts from completed stages */
+  milestones?: Record<string, string>;
 }
 
 const SESSION_TYPES = [
@@ -78,6 +80,100 @@ const STAGE_LABELS: Record<string, string> = {
   ocp_solver: 'OCP Solver (min-time lap)',
   finalize_complete: 'Saving Results',
 };
+
+/* ── Telemetry Tips ───────────────────────────────────── */
+
+const TELEMETRY_TIPS = [
+  { title: 'Trail Braking', text: 'Gradually release brake pressure as you turn in. This keeps weight on the front tyres for maximum grip through corner entry.' },
+  { title: 'Consistency Wins', text: 'A driver who laps within 0.3s of their best every lap will beat a faster but inconsistent driver over a race distance.' },
+  { title: 'Reading Speed Traces', text: 'Compare your speed trace to the theoretical line — flat spots before corners reveal early braking, while dips mid-corner show hesitation.' },
+  { title: 'G-G Diagram', text: 'The G-G plot shows how much of your tyre grip you\'re using. A full "diamond" means you\'re combining braking and cornering efficiently.' },
+  { title: 'Corner Exit Speed', text: 'Exit speed matters more than entry speed. A 2 km/h higher exit carries through the entire following straight.' },
+  { title: 'Reference Line', text: 'The reference line is computed from your fastest sectors stitched together — it represents your theoretical best lap from this session.' },
+  { title: 'Braking Point', text: 'Moving your braking point 2 metres later can save 0.05s per corner. Over 12 corners, that\'s 0.6s per lap.' },
+  { title: 'Tyre Temperature', text: 'Kart tyres work best at 50-70C. Your first 2-3 laps are warm-up — exclude them from analysis for cleaner data.' },
+  { title: 'Throttle Application', text: 'Smooth, progressive throttle on exit prevents wheelspin. The speed trace will show a smooth curve instead of jagged spikes.' },
+  { title: 'What is OCP?', text: 'The Optimal Control Problem solver computes the physically fastest possible lap given your track layout, kart mass, and grip limits.' },
+  { title: 'Scoring System', text: 'Your session score (0-100) combines Pace, Consistency, Execution, and Robustness — each worth 25 points.' },
+  { title: 'Track Evolution', text: 'Rubber builds up on the racing line throughout a session. Your later laps should naturally be faster as grip improves.' },
+  { title: 'Data Quality', text: 'GPS at 10 Hz gives ~3m position accuracy. Higher sample rates improve corner detection and speed trace resolution.' },
+  { title: 'Comparing Sessions', text: 'Compare sessions on the same track to see progression. The delta map highlights exactly where you\'re gaining or losing time.' },
+];
+
+/** Rotating tips carousel shown during analysis. */
+function TelemetryTips() {
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * TELEMETRY_TIPS.length));
+  const [fade, setFade] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setFade(false);
+      setTimeout(() => {
+        setIndex((i) => (i + 1) % TELEMETRY_TIPS.length);
+        setFade(true);
+      }, 300);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const tip = TELEMETRY_TIPS[index];
+  return (
+    <div className="mt-6 rounded-lg bg-concrete border border-steel/10 p-4 overflow-hidden">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="w-5 h-5 rounded-full bg-pit-orange/10 flex items-center justify-center flex-shrink-0">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-pit-orange">
+            <circle cx="8" cy="8" r="7" stroke="currentColor" strokeWidth="1.5" />
+            <path d="M8 5v3m0 2.5v.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span className="text-xs font-telemetry text-steel uppercase tracking-wider">Did you know?</span>
+        <span className="text-[10px] text-steel/30 ml-auto font-telemetry">{index + 1}/{TELEMETRY_TIPS.length}</span>
+      </div>
+      <div
+        className={`transition-opacity duration-300 ${fade ? 'opacity-100' : 'opacity-0'}`}
+      >
+        <p className="text-sm font-telemetry text-pit-orange mb-1">{tip.title}</p>
+        <p className="text-xs font-body text-steel leading-relaxed">{tip.text}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Stage milestone insights shown as stages complete. */
+function StageInsights({ stageName, milestones }: { stageName: string | null; milestones: Record<string, string> }) {
+  const entries = Object.entries(milestones);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded-lg bg-concrete border border-steel/10 p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-5 h-5 rounded-full bg-acid-green/10 flex items-center justify-center flex-shrink-0">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-acid-green">
+            <path d="M3 8h10M8 3v10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </div>
+        <span className="text-xs font-telemetry text-steel uppercase tracking-wider">Analysis Progress</span>
+      </div>
+      <div className="space-y-1.5">
+        {entries.map(([key, value]) => (
+          <div key={key} className="flex items-center gap-2 text-xs">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="text-acid-green flex-shrink-0">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M5 8l2 2 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-steel font-body">{value}</span>
+          </div>
+        ))}
+        {stageName && STAGE_LABELS[stageName] && (
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-3 h-3 border border-pit-orange/50 border-t-pit-orange rounded-full animate-spin flex-shrink-0" />
+            <span className="text-pit-orange font-body">{STAGE_LABELS[stageName]}...</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 /* ── API helpers ──────────────────────────────────────── */
 
@@ -280,6 +376,7 @@ function UploadPage() {
   const [isSubmittingCorners, setIsSubmittingCorners] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploadPct, setUploadPct] = useState(0);
+  const [milestones, setMilestones] = useState<Record<string, string>>({});
 
   // Batch upload tracking
   const [batchResults, setBatchResults] = useState<{ name: string; sessionId: string | null; error: string | null }[]>([]);
@@ -325,6 +422,7 @@ function UploadPage() {
     setStageName(null);
     setSseStatus('');
     setErrorMessage('');
+    setMilestones({});
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -408,6 +506,39 @@ function UploadPage() {
               setStageName(event.stage_name);
               setSseStatus(event.status);
               if (event.session_id) setSessionId(event.session_id);
+
+              // Accumulate milestones from backend or derive from stage transitions
+              if (event.milestones) {
+                setMilestones((prev) => ({ ...prev, ...event.milestones }));
+              }
+              // Generate frontend-side milestones from completed stages
+              if (event.stage_name) {
+                const stageMap: Record<string, string> = {
+                  gps_filter: 'GPS data validated',
+                  track_detect: 'Track identified',
+                  corner_detect: 'Corners detected',
+                  resample: 'Laps resampled',
+                  features: 'Telemetry features computed',
+                  reference_line: 'Reference line built',
+                  physics_models: 'Physics model fitted',
+                  theoretical_lap: 'Theoretical lap calculated',
+                  scoring: 'Performance scored',
+                  ocp_solver: 'Computing optimal lap (this may take a few minutes)',
+                };
+                // Mark all stages BEFORE current as complete
+                const stageOrder = ['gps_filter', 'track_detect', 'corner_detect', 'resample', 'features', 'reference_line', 'physics_models', 'theoretical_lap', 'scoring', 'ocp_solver'];
+                const currentIdx = stageOrder.indexOf(event.stage_name);
+                if (currentIdx > 0) {
+                  setMilestones((prev) => {
+                    const next = { ...prev };
+                    for (let i = 0; i < currentIdx; i++) {
+                      const key = stageOrder[i];
+                      if (stageMap[key] && !next[key]) next[key] = stageMap[key];
+                    }
+                    return next;
+                  });
+                }
+              }
 
               if (event.status === 'awaiting_corner_selection') {
                 setPageState('awaiting_corners');
@@ -568,6 +699,7 @@ function UploadPage() {
     setPageState('uploading');
     setErrorMessage('');
     setUploadPct(0);
+    setMilestones({});
 
     // Initialize batch tracking
     const totalFiles = 1 + fileQueue.length;
@@ -980,12 +1112,16 @@ function UploadPage() {
             </div>
           )}
           {(pageState === 'tracking' || pageState === 'resuming') && (
-            <PipelineProgress pct={progressPct} stageName={stageName} status={sseStatus} />
+            <>
+              <PipelineProgress pct={progressPct} stageName={stageName} status={sseStatus} />
+              <StageInsights stageName={stageName} milestones={milestones} />
+              <TelemetryTips />
+            </>
           )}
           <button
             type="button"
             onClick={handleCancel}
-            className="mt-2 px-4 py-2 text-sm font-body text-steel hover:text-safety-red border border-steel/20 hover:border-safety-red/30 rounded-lg transition-colors"
+            className="mt-4 px-4 py-2 text-sm font-body text-steel hover:text-safety-red border border-steel/20 hover:border-safety-red/30 rounded-lg transition-colors"
           >
             Cancel
           </button>
