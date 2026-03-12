@@ -1931,6 +1931,36 @@ def export_session_telemetry(session_id: str) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 12b. GET /api/v1/sessions/<id>/track-match — GPS mismatch check
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-match", methods=["GET"])
+@_safe_api
+def check_track_match(session_id: str) -> tuple[dict, int]:
+    """Check if a track's GPS fingerprint matches this session's GPS data.
+
+    Query params:
+        track_id (str) — the track to compare against
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_id = request.args.get("track_id")
+    if not track_id:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "track_id query parameter required",
+            status=400,
+        )
+
+    result = models.check_track_gps_match(conn, session_id, track_id)
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
 # 13. PATCH /api/v1/sessions/<id> — Update session fields
 # ══════════════════════════════════════════════════════════════════
 
@@ -1990,6 +2020,13 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                 errors.append({"field": "kart_details", "message": "Must be an object."})
             else:
                 cleaned["kart_details"] = value
+            continue
+
+        if field == "track_details":
+            if value is not None and not isinstance(value, dict):
+                errors.append({"field": "track_details", "message": "Must be an object."})
+            else:
+                cleaned["track_details"] = value
             continue
 
         if field not in _UPDATABLE_FIELDS:
@@ -2150,10 +2187,15 @@ def update_session(session_id: str) -> tuple[dict, int]:
         updated_count += 1
 
     # Handle track_name — upsert track by name, then update track_id.
+    # Also auto-populate the track's GPS fingerprint from this session
+    # and save detected corners for cross-session analysis.
     track_name = cleaned.get("track_name")
     if track_name and isinstance(track_name, str):
-        track_id = models.upsert_track_by_name(conn, track_name)
+        track_details = cleaned.get("track_details") or {}
+        track_id = models.upsert_track_by_name(conn, track_name, details=track_details)
         models.update_session_field(conn, session_id, "track_id", track_id)
+        models.populate_track_from_session_gps(conn, session_id, track_id)
+        models.save_session_corners_to_track(conn, session_id, track_id)
         updated_count += 1
 
     # Handle kart_name — upsert kart by name, then update kart_id.

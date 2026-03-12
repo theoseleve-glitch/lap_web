@@ -36,8 +36,15 @@ def upsert_track(conn: sqlite3.Connection, track: dict) -> None:
     })
 
 
-def upsert_track_by_name(conn: sqlite3.Connection, track_name: str) -> str:
-    """Find a track by name or create a minimal entry. Returns track_id."""
+def upsert_track_by_name(
+    conn: sqlite3.Connection,
+    track_name: str,
+    details: Optional[dict] = None,
+) -> str:
+    """Find a track by name or create a minimal entry. Returns track_id.
+
+    When creating, ``details`` may contain lap_length_m to pre-populate.
+    """
     import uuid
     clean = track_name.strip()
     row = conn.execute(
@@ -45,10 +52,12 @@ def upsert_track_by_name(conn: sqlite3.Connection, track_name: str) -> str:
     ).fetchone()
     if row:
         return row["track_id"]
+    d = details or {}
     track_id = str(uuid.uuid4())[:12]
+    lap_length = d.get("lap_length_m") or 0
     conn.execute(
-        "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES (?, ?, 0)",
-        (track_id, clean),
+        "INSERT INTO tracks (track_id, track_name, lap_length_m) VALUES (?, ?, ?)",
+        (track_id, clean, lap_length),
     )
     return track_id
 
@@ -457,3 +466,212 @@ def auto_set_track_reference(
         {"sid": session_id, "tid": track_id},
     )
     return condition
+
+
+def save_session_corners_to_track(
+    conn: sqlite3.Connection,
+    session_id: str,
+    track_id: str,
+) -> int:
+    """Persist detected corner positions from a session into track_key_corners.
+
+    Uses corner_metrics for corner IDs, GPS trace + brake/throttle distances
+    to estimate apex positions.  Replaces any existing corners for this track.
+    Returns number of corners saved.
+    """
+    import bisect
+
+    corner_rows = conn.execute(
+        "SELECT corner_id, AVG(brake_point_m) AS avg_brake_m, "
+        "AVG(throttle_onset_m) AS avg_throttle_m "
+        "FROM corner_metrics WHERE session_id = ? "
+        "GROUP BY corner_id ORDER BY corner_id",
+        (session_id,),
+    ).fetchall()
+    if not corner_rows:
+        return 0
+
+    best = conn.execute(
+        "SELECT lap_number FROM laps WHERE session_id = ? AND is_best = 1 LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    if not best:
+        return 0
+
+    gps = conn.execute(
+        "SELECT latitude, longitude, distance_m FROM gps_traces "
+        "WHERE session_id = ? AND lap_number = ? ORDER BY elapsed_s",
+        (session_id, best["lap_number"]),
+    ).fetchall()
+    if not gps:
+        return 0
+
+    dists = [float(g["distance_m"] or 0) for g in gps]
+    lats = [float(g["latitude"] or 0) for g in gps]
+    lons = [float(g["longitude"] or 0) for g in gps]
+
+    if not dists:
+        return 0
+
+    conn.execute("DELETE FROM track_key_corners WHERE track_id = ?", (track_id,))
+
+    count = 0
+    for row in corner_rows:
+        cid = row["corner_id"]
+        brake_m = _safe_float(row["avg_brake_m"])
+        throttle_m = _safe_float(row["avg_throttle_m"])
+
+        if brake_m is not None and throttle_m is not None:
+            dist_m = (brake_m + throttle_m) / 2
+        elif brake_m is not None:
+            dist_m = brake_m
+        else:
+            continue
+
+        idx = bisect.bisect_left(dists, dist_m)
+        idx = min(idx, len(dists) - 1)
+
+        conn.execute(
+            "INSERT OR REPLACE INTO track_key_corners "
+            "(track_id, corner_id, label, lat, lon, dist_m) VALUES (?, ?, ?, ?, ?, ?)",
+            (track_id, cid, f"T{cid}", lats[idx], lons[idx], dist_m),
+        )
+        count += 1
+
+    return count
+
+
+def populate_track_from_session_gps(
+    conn: sqlite3.Connection,
+    session_id: str,
+    track_id: str,
+) -> None:
+    """Auto-populate a track's fingerprint from session GPS data.
+
+    Only fills empty fields (lap_length_m == 0) — won't overwrite existing.
+    """
+    track = get_track_by_id(conn, track_id)
+    if not track:
+        return
+    if track.get("lap_length_m") and float(track["lap_length_m"]) > 0:
+        return
+
+    best = conn.execute(
+        "SELECT line_length_m FROM laps WHERE session_id = ? AND is_best = 1 LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    lap_length = _safe_float(best["line_length_m"]) if best else 0
+
+    gps_agg = conn.execute(
+        "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
+        "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
+        "FROM gps_traces WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+
+    start_pt = conn.execute(
+        "SELECT latitude, longitude FROM gps_traces "
+        "WHERE session_id = ? ORDER BY elapsed_s LIMIT 1",
+        (session_id,),
+    ).fetchone()
+
+    sets: list[str] = []
+    vals: list[Any] = []
+
+    if lap_length and lap_length > 0:
+        sets.append("lap_length_m = ?")
+        vals.append(lap_length)
+
+    if gps_agg and gps_agg["lat_min"] is not None:
+        sets.extend([
+            "bbox_lat_min = ?", "bbox_lat_max = ?",
+            "bbox_lon_min = ?", "bbox_lon_max = ?",
+        ])
+        vals.extend([
+            gps_agg["lat_min"], gps_agg["lat_max"],
+            gps_agg["lon_min"], gps_agg["lon_max"],
+        ])
+
+    if start_pt and start_pt["latitude"] is not None:
+        sets.extend(["start_lat = ?", "start_lon = ?"])
+        vals.extend([start_pt["latitude"], start_pt["longitude"]])
+
+    if sets:
+        vals.append(track_id)
+        conn.execute(
+            f"UPDATE tracks SET {', '.join(sets)}, updated_at = datetime('now') "
+            "WHERE track_id = ?",
+            vals,
+        )
+
+
+def check_track_gps_match(
+    conn: sqlite3.Connection,
+    session_id: str,
+    track_id: str,
+) -> dict:
+    """Compare session GPS fingerprint vs stored track fingerprint.
+
+    Returns dict with match status and detail fields.
+    """
+    track = get_track_by_id(conn, track_id)
+    if not track:
+        return {"match": True, "reason": "no_track_data"}
+
+    track_length = _safe_float(track.get("lap_length_m")) or 0
+
+    best = conn.execute(
+        "SELECT line_length_m FROM laps WHERE session_id = ? AND is_best = 1 LIMIT 1",
+        (session_id,),
+    ).fetchone()
+    session_length = _safe_float(best["line_length_m"]) if best else 0
+
+    # Track has no fingerprint yet — can't compare
+    if track_length == 0:
+        return {"match": True, "reason": "new_track"}
+
+    # Lap length comparison: 6% tolerance (same as track_detection.py)
+    length_ok = True
+    if track_length > 0 and session_length and session_length > 0:
+        ratio = session_length / track_length
+        length_ok = 0.94 <= ratio <= 1.06
+
+    # Bbox IoU comparison
+    bbox_ok = True
+    t_bb = {
+        "lat_min": _safe_float(track.get("bbox_lat_min")),
+        "lat_max": _safe_float(track.get("bbox_lat_max")),
+        "lon_min": _safe_float(track.get("bbox_lon_min")),
+        "lon_max": _safe_float(track.get("bbox_lon_max")),
+    }
+
+    if all(v is not None for v in t_bb.values()):
+        gps_agg = conn.execute(
+            "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
+            "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
+            "FROM gps_traces WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+
+        if gps_agg and gps_agg["lat_min"] is not None:
+            o_lat = max(0, min(t_bb["lat_max"], gps_agg["lat_max"])
+                        - max(t_bb["lat_min"], gps_agg["lat_min"]))
+            o_lon = max(0, min(t_bb["lon_max"], gps_agg["lon_max"])
+                        - max(t_bb["lon_min"], gps_agg["lon_min"]))
+            overlap = o_lat * o_lon
+
+            t_area = ((t_bb["lat_max"] - t_bb["lat_min"])
+                      * (t_bb["lon_max"] - t_bb["lon_min"]))
+            s_area = ((gps_agg["lat_max"] - gps_agg["lat_min"])
+                      * (gps_agg["lon_max"] - gps_agg["lon_min"]))
+            union = t_area + s_area - overlap
+            iou = overlap / union if union > 0 else 0
+            bbox_ok = iou >= 0.5
+
+    return {
+        "match": length_ok and bbox_ok,
+        "track_length_m": round(track_length, 1),
+        "session_length_m": round(session_length, 1) if session_length else None,
+        "length_match": length_ok,
+        "bbox_match": bbox_ok,
+    }

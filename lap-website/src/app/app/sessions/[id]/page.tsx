@@ -757,12 +757,33 @@ function OverviewTab({
 
   // Entity suggestion lists for combobox autocomplete
   const [driverNames, setDriverNames] = useState<string[]>([]);
-  const [trackNames, setTrackNames] = useState<string[]>([]);
+  const [trackList, setTrackList] = useState<{ track_id: string; track_name: string }[]>([]);
+  const trackNames = useMemo(() => trackList.map((t) => t.track_name).filter(Boolean), [trackList]);
   const [kartNames, setKartNames] = useState<string[]>([]);
 
   // Expanded kart details for new kart creation
   const [kartDetails, setKartDetails] = useState<Record<string, string>>({});
   const isNewKart = !!(editFields.kart_name && editFields.kart_name.trim() && !kartNames.includes(editFields.kart_name.trim()));
+
+  // Track: new detection + GPS mismatch warning
+  const isNewTrack = !!(editFields.track_name && editFields.track_name.trim() && !trackNames.includes(editFields.track_name.trim()));
+  const [trackMismatch, setTrackMismatch] = useState<{
+    match: boolean; track_length_m?: number; session_length_m?: number | null;
+  } | null>(null);
+
+  const checkTrackMatch = useCallback(async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) { setTrackMismatch(null); return; }
+    const existing = trackList.find((t) => t.track_name === trimmed);
+    if (!existing) { setTrackMismatch(null); return; }
+    try {
+      const result = await api.get<{ match: boolean; track_length_m?: number; session_length_m?: number | null }>(
+        `/sessions/${session.session_id}/track-match?track_id=${encodeURIComponent(existing.track_id)}`,
+      );
+      if (result && !result.match) setTrackMismatch(result);
+      else setTrackMismatch(null);
+    } catch { setTrackMismatch(null); }
+  }, [session.session_id, trackList]);
 
   const startEditing = useCallback(() => {
     setEditFields({
@@ -776,12 +797,13 @@ function OverviewTab({
       notes: session.notes || '',
     });
     setEditing(true);
+    setTrackMismatch(null);
     // Fetch entity lists for autocomplete
     api.get<{ driver_name: string }[]>('/drivers').then((d) => {
       if (Array.isArray(d)) setDriverNames(d.map((x) => x.driver_name).filter(Boolean));
     }).catch(() => {});
-    api.get<{ track_name: string }[]>('/tracks').then((t) => {
-      if (Array.isArray(t)) setTrackNames(t.map((x) => x.track_name).filter(Boolean));
+    api.get<{ track_id: string; track_name: string }[]>('/tracks').then((t) => {
+      if (Array.isArray(t)) setTrackList(t);
     }).catch(() => {});
     api.get<{ kart_name: string }[]>('/karts').then((k) => {
       if (Array.isArray(k)) setKartNames(k.map((x) => x.kart_name).filter(Boolean));
@@ -792,13 +814,14 @@ function OverviewTab({
     setEditing(false);
     setEditFields({});
     setKartDetails({});
+    setTrackMismatch(null);
   }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      // Attach kart_details when creating a new kart
       const payload: Record<string, unknown> = { ...editFields };
+      // Attach kart_details when creating a new kart
       if (isNewKart && Object.values(kartDetails).some((v) => v.trim())) {
         const d: Record<string, string | number> = {};
         if (kartDetails.manufacturer?.trim()) d.manufacturer = kartDetails.manufacturer.trim();
@@ -813,6 +836,7 @@ function OverviewTab({
         onSessionUpdate({ ...session, ...resp } as SessionData);
         setEditing(false);
         setKartDetails({});
+        setTrackMismatch(null);
       }
     } catch {
       // API errors handled by api-client
@@ -1009,8 +1033,32 @@ function OverviewTab({
                 value={editFields.track_name || ''}
                 suggestions={trackNames}
                 placeholder="Type or select track"
-                onChange={(v) => setEditFields({ ...editFields, track_name: v })}
+                onChange={(v) => { setEditFields({ ...editFields, track_name: v }); setTrackMismatch(null); }}
+                onBlur={() => checkTrackMatch(editFields.track_name || '')}
               />
+              {isNewTrack && (
+                <div className="ml-2 pl-3 border-l-2 border-acid-green/30 py-1">
+                  <p className="text-[10px] text-acid-green font-body uppercase tracking-wider">
+                    New track — GPS data from this session will define the layout
+                  </p>
+                </div>
+              )}
+              {trackMismatch && !trackMismatch.match && (
+                <div className="ml-2 pl-3 border-l-2 border-red-500/30 py-2 space-y-1">
+                  <p className="text-[10px] text-red-400 font-body uppercase tracking-wider">
+                    GPS mismatch — this session&apos;s track map doesn&apos;t match &ldquo;{editFields.track_name}&rdquo;
+                  </p>
+                  <p className="text-[10px] text-steel font-body">
+                    Track: {trackMismatch.track_length_m}m — Session: {trackMismatch.session_length_m ?? '?'}m
+                  </p>
+                  <button
+                    onClick={() => { setEditFields({ ...editFields, track_name: '' }); setTrackMismatch(null); }}
+                    className="text-[10px] text-pit-orange hover:text-chalk font-body transition-colors"
+                  >
+                    Clear track selection
+                  </button>
+                </div>
+              )}
               <ComboboxRow
                 label="Kart"
                 value={editFields.kart_name || ''}
@@ -1067,7 +1115,19 @@ function OverviewTab({
             <dl className="space-y-3">
               <MetaRow label="File" value={session.csv_filename} />
               <MetaRow label="Driver" value={session.driver_name} />
-              <MetaRow label="Track" value={session.track_name || 'Unknown'} />
+              {session.track_name && !session.track_unnamed ? (
+                <MetaRow label="Track" value={session.track_name} />
+              ) : (
+                <div className="flex justify-between items-center">
+                  <dt className="text-steel text-sm font-body">Track</dt>
+                  <button
+                    onClick={startEditing}
+                    className="text-sm text-pit-orange hover:text-acid-green font-body transition-colors"
+                  >
+                    Select track
+                  </button>
+                </div>
+              )}
               <MetaRow label="Kart" value={session.kart_name || 'Not set'} />
               <MetaRow label="Type" value={session.session_type} />
               <MetaRow label="Conditions" value={session.track_state} />
@@ -1216,12 +1276,14 @@ function ComboboxRow({
   suggestions,
   placeholder,
   onChange,
+  onBlur,
 }: {
   label: string;
   value: string;
   suggestions: string[];
   placeholder?: string;
   onChange: (v: string) => void;
+  onBlur?: () => void;
 }) {
   const listId = `dl-${label.toLowerCase().replace(/\s+/g, '-')}`;
   return (
@@ -1234,6 +1296,7 @@ function ComboboxRow({
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           className="bg-asphalt text-chalk text-sm font-telemetry px-2 py-1 rounded border border-steel/20 focus:border-acid-green/50 outline-none w-40"
         />
         <datalist id={listId}>

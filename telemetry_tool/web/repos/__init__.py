@@ -71,6 +71,9 @@ from web.repos.track_repo import (  # noqa: F401
     delete_track_cascade,
     create_track_from_predefined,
     auto_set_track_reference,
+    save_session_corners_to_track,
+    populate_track_from_session_gps,
+    check_track_gps_match,
 )
 
 # ── gps / channels ──────────────────────────────────────────────
