@@ -715,6 +715,21 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
                 logger.warning("Failed to upsert track for session %s", ctx.session_id, exc_info=True)
                 conn.rollback()
 
+        # 2b. Ensure fallback track exists (FK requires a valid tracks row)
+        fallback_tid = result.get("track_id") or "unknown_track"
+        if not track_match or track_match.get("track_id") != fallback_tid:
+            try:
+                conn.execute(
+                    "INSERT INTO tracks (track_id, track_name) "
+                    "VALUES (%(track_id)s, %(track_name)s) "
+                    "ON CONFLICT (track_id) DO NOTHING",
+                    {"track_id": fallback_tid, "track_name": fallback_tid},
+                )
+                conn.commit()
+            except Exception:
+                logger.debug("Fallback track upsert failed (non-critical)", exc_info=True)
+                conn.rollback()
+
         # 3. Upsert session (critical — must succeed)
         session_id = upsert_session(conn, result, driver_id)
         conn.commit()
