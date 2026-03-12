@@ -311,12 +311,11 @@ class TestCacheControl:
         resp = client.get("/api/v1/sessions/s1/scores")
         assert "max-age=300" in resp.headers.get("Cache-Control", "")
 
-    def test_default_api_short_cache(self, client):
-        """Default API GET gets short cache with stale-while-revalidate."""
+    def test_default_api_no_cache(self, client):
+        """Default API GET uses no-cache (revalidate every time, ETag saves bandwidth)."""
         resp = client.get("/api/v1/sessions")
         cc = resp.headers.get("Cache-Control", "")
-        assert "max-age=60" in cc
-        assert "stale-while-revalidate" in cc
+        assert "no-cache" in cc
 
     def test_mutating_no_store(self, client):
         """DELETE/POST/PATCH responses get no-store."""

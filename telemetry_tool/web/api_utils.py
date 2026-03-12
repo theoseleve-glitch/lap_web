@@ -373,9 +373,8 @@ def init_request_id(app: Flask) -> None:
                     # Scores: cache 5 minutes
                     response.headers["Cache-Control"] = "private, max-age=300"
                 else:
-                    # Default API: private, short cache (60s) + stale-while-revalidate
-                    response.headers["Cache-Control"] = (
-                        "private, max-age=60, stale-while-revalidate=120"
-                    )
+                    # Default API: always revalidate (ETag still saves bandwidth
+                    # via 304), but never serve stale data after mutations.
+                    response.headers["Cache-Control"] = "private, no-cache"
 
         return response
