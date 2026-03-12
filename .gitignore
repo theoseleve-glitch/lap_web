@@ -92,3 +92,6 @@ lap-website/node_modules/
 node_modules/
 lap-og-worker/node_modules/
 lap-og-worker/package-lock.json
+
+# Git worktrees
+.worktrees/
