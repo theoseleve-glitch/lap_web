@@ -659,6 +659,17 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     # ── Persist all session data to the database ──────────────────
     _persist_session_data(ctx, result)
 
+    # ── Queue OCP theoretical solver (async, after all data is in PG) ──
+    try:
+        from pipeline.stages import s10_theoretical
+        _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
+            ctx.session_id, ctx.workspace_id,
+        )
+        if _ocp_task_id:
+            logger.info("OCP task queued for session %s: task_id=%s", ctx.session_id, _ocp_task_id)
+    except Exception:
+        logger.debug("OCP queue skipped in finalize", exc_info=True)
+
     # Mark all finalize stages as completed
     for i, stage in enumerate(_FINALIZE_STAGES):
         ctx.update_stage(stage, "completed")
