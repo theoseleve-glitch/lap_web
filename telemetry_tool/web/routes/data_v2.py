@@ -595,6 +595,13 @@ def get_gps_trace(session_id: str) -> tuple[dict, int]:
             cum.append(cum[-1] + _R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
         distances = cum
 
+    # Normalize to per-lap 0-based distances (stored values are
+    # session-cumulative).  Other chart endpoints do the same so
+    # the cross-chart hover sync works on a shared distance axis.
+    if distances and len(distances) > 1 and distances[0] != 0:
+        d0 = distances[0]
+        distances = [d - d0 for d in distances]
+
     return api_response({
         "latitudes": lats,
         "longitudes": lons,
@@ -2295,10 +2302,15 @@ def get_best_lap_gps(session_id: str) -> tuple[dict, int]:
             "message": f"No GPS trace for best lap {lap_num}",
         })
 
+    distances = trace.get("distances", [])
+    if distances and len(distances) > 1 and distances[0] != 0:
+        d0 = distances[0]
+        distances = [d - d0 for d in distances]
+
     return api_response({
         "latitudes": trace.get("latitudes", []),
         "longitudes": trace.get("longitudes", []),
-        "distances": trace.get("distances", []),
+        "distances": distances,
         "speeds": trace.get("speeds", []),
         "lap_number": lap_num,
     })
@@ -2364,7 +2376,12 @@ def _build_corner_positions(conn: Any, session_id: str) -> list[dict]:
     best_gps = models.get_gps_trace(conn, session_id, best_lap) if best_lap else None
 
     if best_gps:
-        dists = best_gps.get("distances", [])
+        raw_dists = best_gps.get("distances", [])
+        if raw_dists and len(raw_dists) > 1 and raw_dists[0] != 0:
+            d0 = raw_dists[0]
+            dists = [d - d0 for d in raw_dists]
+        else:
+            dists = raw_dists
         lats = best_gps.get("latitudes", [])
         lons = best_gps.get("longitudes", [])
         if dists and lats and lons:
