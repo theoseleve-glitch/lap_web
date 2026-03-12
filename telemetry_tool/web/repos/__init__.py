@@ -28,6 +28,7 @@ from web.repos.session_repo import (  # noqa: F401
 # ── lap ──────────────────────────────────────────────────────────
 from web.repos.lap_repo import (  # noqa: F401
     insert_laps,
+    revalidate_session_laps,
     get_laps_for_session,
     get_gps_lap_numbers,
 )

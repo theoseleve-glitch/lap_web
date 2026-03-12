@@ -2185,6 +2185,28 @@ def archive_session(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 12c. POST /api/v1/sessions/<id>/revalidate
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/revalidate", methods=["POST"])
+@_safe_api
+def revalidate_session(session_id: str) -> tuple[dict, int]:
+    """Re-run lap validity detection with the latest algorithm.
+
+    Useful for sessions uploaded before seed-hardening or other
+    validation improvements.  Returns a list of changed laps.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    result = models.revalidate_session_laps(conn, session_id)
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
 # 13. GET /api/v1/sessions/<id>/theoretical
 # ══════════════════════════════════════════════════════════════════
 

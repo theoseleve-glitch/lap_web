@@ -443,6 +443,90 @@ def insert_laps(
     return count
 
 
+def revalidate_session_laps(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> dict[str, Any]:
+    """Re-run blended validity on an existing session's laps.
+
+    Reads stored lap metrics + analysis_json, reconstructs the summary,
+    and re-applies pipeline + rolling-avg validation with seed hardening.
+    Updates laps table in-place.  Returns change summary.
+    """
+    from web.repos.analysis_repo import get_analysis_json
+
+    laps = conn.execute(
+        Q.SELECT_LAPS_FOR_SESSION, {"session_id": session_id}
+    ).fetchall()
+    if not laps:
+        return {"updated": 0, "changes": []}
+
+    # Reconstruct lap_metrics from stored rows
+    lap_metrics = []
+    for r in laps:
+        lap_metrics.append({
+            "lap_number": r["lap_number"],
+            "lap_time_s": r["lap_time_s"],
+            "line_length_m": r["line_length_m"],
+        })
+
+    # Reconstruct partial summary from analysis_json
+    analysis = get_analysis_json(conn, session_id) or {}
+    summary: dict[str, Any] = {
+        "lap_metrics": lap_metrics,
+    }
+    for key in ("invalid_lap_analysis", "incomplete_lap_analysis",
+                "anomalous_lap_analysis", "line_deviation_analysis",
+                "trim_report"):
+        if key in analysis:
+            summary[key] = analysis[key]
+
+    # Re-run blended validity
+    pipeline_validity = _pipeline_validity(summary)
+    pipeline_flagged = set(pipeline_validity.keys())
+    rolling_validity = _rolling_avg_validity(
+        lap_metrics, exclude_laps=pipeline_flagged,
+    )
+
+    all_lap_nums = {lm["lap_number"] for lm in lap_metrics}
+    validity: dict[int, tuple[bool, str | None]] = {}
+    for lap_num in all_lap_nums:
+        if lap_num in pipeline_validity:
+            validity[lap_num] = pipeline_validity[lap_num]
+        elif lap_num in rolling_validity:
+            validity[lap_num] = rolling_validity[lap_num]
+        else:
+            validity[lap_num] = (True, None)
+
+    # Compare and update changed laps
+    changes = []
+    for r in laps:
+        ln = r["lap_number"]
+        old_valid = bool(r["is_valid"])
+        old_reason = r["invalid_reason"]
+        new_valid, new_reason = validity.get(ln, (True, None))
+
+        # Preserve joker status
+        if r.get("is_joker"):
+            continue
+
+        if old_valid != new_valid or old_reason != new_reason:
+            conn.execute(
+                "UPDATE laps SET is_valid = :valid, invalid_reason = :reason "
+                "WHERE session_id = :sid AND lap_number = :ln",
+                {"valid": new_valid, "reason": new_reason,
+                 "sid": session_id, "ln": ln},
+            )
+            changes.append({
+                "lap": ln,
+                "was": {"valid": old_valid, "reason": old_reason},
+                "now": {"valid": new_valid, "reason": new_reason},
+            })
+
+    conn.commit()
+    return {"updated": len(changes), "changes": changes}
+
+
 def get_laps_for_session(
     conn: sqlite3.Connection,
     session_id: str,
