@@ -82,7 +82,7 @@ Existing `SessionCoaching` model structure, unchanged. Now sourced from user cor
 | `late_apex` | Min-speed point after user apex | s_vmin > s_apex + 5m | same | same |
 | `mid_corner_understeer` | Front washing out mid-corner | yaw_residual < -10 dps in apex zone | lat_g plateau while speed > v_min | same + throttle present |
 | `mid_corner_oversteer` | Rear breaks loose mid-corner | yaw_residual > +10 dps in apex zone | lat_g spike > 1.1x zone mean | same |
-| `coast_hesitation` | Dead zone, no input | smoothed speed derivative (3-pt Gaussian) in [-0.5, +0.5] m/s^2 for >0.3s between decel and accel phases | abs(lon_g) < 0.05g for >0.3s between decel and accel | brake < 5% AND throttle < 10% for >0.3s |
+| `coast_hesitation` | Dead zone, no input | smoothed speed derivative (3-pt Gaussian) in [-0.5, +0.5] m/s^2 for >coast_gap between decel and accel phases | abs(lon_g) < 0.05g for >coast_gap between decel and accel | brake < 5% AND throttle < 10% for >coast_gap |
 
 ### Exit Phase (s_apex -> s_exit) - 6 labels
 
@@ -137,12 +137,20 @@ All threshold comparisons in the label tables use `yaw_residual_norm`, not raw r
 
 ## MRP Integration
 
-The Maximum Rotation Point (MRP) — the position of peak yaw rate in a corner — is already computed at S10g2 via `mrp_detector.py` and stored in `summary["mrp_events_v2"]` as `dict[int, CornerEvents]`. The classifier uses MRP data for two purposes:
+The Maximum Rotation Point (MRP) — the position of peak yaw rate in a corner — is already computed at S10g2 via `mrp_detector.py` and stored in `summary["mrp_events_v2"]`. Currently `CornerEvents` is a plain `@dataclass` with **no `to_dict()` method**, and `run_mrp_detection_v2()` in s10b_corners.py line 688 uses `ev.to_dict() if hasattr(ev, 'to_dict') else ev` — which falls through to the raw dataclass instance. **Prerequisite**: add a `to_dict()` method to the `CornerEvents` dataclass in `mrp_detector.py` (using `dataclasses.asdict` or a manual method). This ensures `summary["mrp_events_v2"]` values are plain dicts, and the classifier accesses MRP data via dict key access (e.g. `mrp_event["mrp_m"]`, `mrp_event["mrp_apex_delta_m"]`).
 
-1. **`early_throttle` reference**: `coaching_advanced.py` already uses MRP (not v_min) as the throttle timing reference. The classifier mirrors this: throttle > 50% before `mrp_m + 2m` triggers `early_throttle`. Falls back to v_min when MRP is unavailable.
-2. **`late_rotation` label**: When `CornerEvents.mrp_apex_delta_m` (= mrp_m - geometric_apex_m) exceeds 8m (car) or 4m (kart), the driver's peak rotation is significantly late. This is a GPS-tier label (yaw rate is derived from heading). Cannot fire when `mrp_events` is None.
+The classifier uses MRP data for two purposes:
 
-MRP events are keyed by `section_id` from the track decomposition. The classifier maps user corner indices to section IDs when MRP data is available; when the mapping fails (e.g. user corners don't correspond to decomposition sections), MRP features are silently skipped.
+1. **`early_throttle` reference**: `coaching_advanced.py` already uses MRP (not v_min) as the throttle timing reference. The classifier mirrors this: throttle > 50% before `mrp_event["mrp_m"] + 2m` triggers `early_throttle`. Falls back to v_min when MRP is unavailable.
+2. **`late_rotation` label**: When `mrp_event["mrp_apex_delta_m"]` (= mrp_m - geometric_apex_m) exceeds 8m (car) or 4m (kart), the driver's peak rotation is significantly late. This is a GPS-tier label (yaw rate is derived from heading). Cannot fire when `mrp_events` is None.
+
+### MRP key mapping: user corners → MRP events
+
+MRP events are keyed by `section_id` from `_user_corners_to_sections()` (s10b_corners.py line 606), which assigns `section_id = i + 1` (1-based, in insertion order). The `user_corner_rows` from `_fetch_user_corners()` are sorted by `corner_index` ascending. The mapping is therefore **positional**: sort user corners by `corner_index`, sort MRP dict keys numerically, and zip them together. If the counts don't match (e.g. MRP detection skipped a corner due to insufficient data), fall back to a spatial match: find the MRP event whose `[s_start, s_end]` range overlaps with the user corner's `[s_entry, s_exit]`. If neither positional nor spatial matching produces a hit, MRP features are silently skipped for that corner.
+
+### Coupled failure mode
+
+`summary["mrp_events_v2"]` is only set when `v2_sections` is truthy (orchestrator lines 969-979). When `v2_sections` is empty (track decomposition returned nothing), MRP data is absent AND user corners are likely also absent (the same `_user_corners_to_sections()` feeds both). The classifier handles both cases identically: `mrp_events=None` → MRP-dependent labels (`late_rotation`, MRP-based `early_throttle`) cannot fire; `user_corner_rows=None` → `corner_labels = None` and the pipeline skips the grid entirely.
 
 ## Detection Tiers
 
@@ -150,7 +158,7 @@ The classifier auto-detects available channels and adjusts:
 
 | Tier | Available Channels | Detectable Labels |
 |------|-------------------|-------------------|
-| `gps` | Speed, Bearing -> yaw_rate, lat/lon -> curvature | Speed deltas, apex position, yaw residual (over/understeer), coast, countersteer |
+| `gps` | Speed, Bearing -> yaw_rate, lat/lon -> curvature | `entry_overspeed`, `entry_underspeed`, `entry_understeer`, `entry_oversteer`, `low_min_speed`, `early_apex`, `late_apex`, `mid_corner_understeer`, `mid_corner_oversteer`, `coast_hesitation`, `late_rotation` (if MRP), `good`, `slow_exit`, `scrappy`. Note: exit-phase yaw labels (`exit_understeer`, `exit_oversteer`) excluded — GPS bearing too noisy post-apex under power |
 | `accel` | Above + lat_g, lon_g | All above + friction circle, combined G, braking from lon_g |
 | `full` | Above + brake %, throttle % | All 23 labels |
 
@@ -209,22 +217,25 @@ def classify_all_corners(
     user_corners: list[dict],
     vehicle_class: str,
     valid_lap_numbers: list[int],
-    curvature_profile: dict | None = None,
-    mrp_events: dict[int, CornerEvents] | None = None,
+    curvature_profile: pd.DataFrame | None = None,
+    mrp_events: dict[int, dict] | None = None,
 ) -> dict[str, dict[str, str]]:
     """Returns {lap_num: {corner_id: label}} for all valid laps x user corners.
 
+    curvature_profile: pd.DataFrame from S09b with columns distance_m,
+    curvature_1pm (signed, 1/m), and optionally grade.
     mrp_events: from summary["mrp_events_v2"], keyed by section_id.
+    Values are serialised CornerEvents dicts (requires to_dict() prerequisite).
     Used for early_throttle (MRP as throttle timing reference) and
     late_rotation (mrp_apex_delta_m threshold). When None, early_throttle
     falls back to v_min point, late_rotation cannot fire.
     """
 ```
 
-The `curvature_profile` parameter is the distance-indexed curvature dict/DataFrame from the pipeline's reference line computation (S05). It is NOT a column in the per-lap resampled DataFrames.
+The `curvature_profile` parameter is a `pd.DataFrame` from `s09_physics.run_curvature()` (S09b), with columns `distance_m` (float, monotonic), `curvature_1pm` (signed curvature in 1/m), and optionally `grade`. It is NOT a column in the per-lap resampled DataFrames.
 
 Internal structure:
-- `_extract_corner_segment(lap_df, corner, curvature_profile)` — slice DataFrame by s_entry/s_exit. Also interpolates `kappa_sign` from `curvature_profile` at `s_apex` distance via `np.interp`. Fallback when `curvature_profile` is None: compute sign from GPS heading change across the segment using wrap-safe angular difference:
+- `_extract_corner_segment(lap_df, corner, curvature_profile)` — slice DataFrame by s_entry/s_exit. Also interpolates `kappa_sign` from `curvature_profile` at `s_apex` distance via `np.interp(s_apex, curvature_profile["distance_m"].values, curvature_profile["curvature_1pm"].values)` and takes `np.sign()`. Fallback when `curvature_profile` is None: compute sign from GPS heading change across the segment using wrap-safe angular difference:
 ```python
 delta = (bearing_exit - bearing_entry + 180) % 360 - 180  # wrap to [-180, +180]
 kappa_sign = np.sign(delta)  # positive = left turn (CCW bearing increase), matches Frenet-Serret convention
@@ -247,8 +258,8 @@ Add a fetch early in the pipeline (after session_id is known, around the S10 blo
 
 ```python
 # Fetch user corners from DB (already have conn + session_id at this point)
-user_corner_rows = _safe_step(
-    "S10h_load_user_corners",
+user_corner_rows, _err = _safe_step(
+    "S10h_fetch_user_corners",
     lambda: _fetch_user_corners(_v2_conn, str(meta.get("session_id", ""))),
 )
 ```
@@ -269,14 +280,14 @@ def _fetch_user_corners(conn, session_id):
 
 Uses positional `?` param style to match existing `s10b_corners.py` convention (line 563). `sql_compat` handles PG translation automatically.
 
-Return semantics: returns `[]` (empty list) when the query succeeds but finds zero rows — this is the success path for sessions with no saved corners. Returns `None` only when `conn` or `session_id` is missing. For SQLite mode (no `user_corners` table), the `_safe_step()` wrapper catches the exception and returns `None`.
+Return semantics: returns `[]` (empty list) when the query succeeds but finds zero rows — this is the success path for sessions with no saved corners. Returns `None` only when `conn` or `session_id` is missing. For any DB exception (missing table, bad column, connection error), the `_safe_step()` wrapper catches and returns `(None, error_msg)`.
 
 ### New step S10h in orchestrator.py
 
 Inserted after S10g (V2 coaching), before S13e (V3 deep coaching):
 
 ```python
-corner_labels = _safe_step(
+corner_labels, _err = _safe_step(
     "S10h corner_labels",
     lambda: classify_all_corners(
         resampled_laps=resampled_laps,
@@ -284,7 +295,7 @@ corner_labels = _safe_step(
         user_corners=user_corner_rows,
         vehicle_class=meta.get("vehicle_class", "car"),
         valid_lap_numbers=[k for k in resampled_laps if k not in excluded_laps],
-        curvature_profile=curvature_profile,  # from S05 reference line
+        curvature_profile=curvature_profile,  # pd.DataFrame from S09b
         mrp_events=summary.get("mrp_events_v2"),  # from S10g2
     ),
 )
@@ -310,15 +321,17 @@ v3_corner_perfs = (
 
 # Then pass v3_corner_perfs (not corner_performances) to S13e, S13f, S13g, S13g2:
 analyzer_bundle = run_coaching_analyzers(v3_corner_perfs, best_lap_df, ...)
-driver_history = run_multi_session_lookup(driver_id, track_id,
-    [c["corner_id"] for c in (v3_corner_perfs or [])])
+driver_history = run_multi_session_lookup(
+    driver_id=_drv_id if '_drv_id' in dir() else None,
+    track_id=meta.get("track_id"),
+    corner_ids=[c["corner_id"] for c in (v3_corner_perfs or [])])
 coaching_v3 = run_enhanced_coaching(v3_corner_perfs, ...)
 persist_coaching_v3(coaching_v3, ..., corner_coaching=...)
 ```
 
 All other consumers (scoring, coaching_v2, driving_style, HTML report) continue to receive the original `corner_performances` from auto-detected corners — unchanged.
 
-`_build_corner_perfs_from_user_corners()` is a ~40-line adapter converting user_corner rows to the corner_perf dict format V3 analyzers expect. **Key mapping**: `s_entry` -> `s_start`, `s_exit` -> `s_end`, `s_apex` passes through unchanged, `corner_index` -> `corner_id`. Additional keys (`braking_decel_mps2`, `cornering_accel_mps2`, `exit_accel_mps2`, `vehicle_class`) are extracted from the best lap segment for each corner. When `_sim_result` is None or lacks per-corner data, fallback defaults are used: `braking_decel_mps2=6.0`, `cornering_accel_mps2=5.0`, `exit_accel_mps2=3.0` — matching the existing fallbacks in `run_coaching_analyzers` at lines 95-97 of `s13_coaching_v3.py` (`abs(cp.get("braking_decel_mps2", 0) or 6.0)`). This rename is critical — `_get_corner_lap_slice()` in `s13_coaching_v3.py` reads `s_start`/`s_end`, not `s_entry`/`s_exit`.
+`_build_corner_perfs_from_user_corners()` is a ~40-line adapter converting user_corner rows to the corner_perf dict format V3 analyzers expect. **Key mapping**: `s_entry` -> `s_start`, `s_exit` -> `s_end`, `s_apex` passes through unchanged, `corner_index` -> `corner_id`. Additional keys (`braking_decel_mps2`, `cornering_accel_mps2`, `exit_accel_mps2`, `vehicle_class`) are extracted from the best lap segment for each corner. When `_sim_result` is None or lacks per-corner data, fallback defaults are used: `braking_decel_mps2=6.0`, `cornering_accel_mps2=5.0`, `exit_accel_mps2=3.0` — matching the existing fallbacks in `run_coaching_analyzers` at lines 95-97 of `s13_coaching_v3.py` (`abs(cp.get("braking_decel_mps2", 0) or 6.0)`). Note: the `or` coercion means a value of exactly `0.0` also triggers the fallback — this matches the existing V3 behavior. `v3_corner_perfs` may be `None` (not just empty list) when both user corners and auto-detected corners are absent — downstream code uses `(v3_corner_perfs or [])` guards. This rename is critical — `_get_corner_lap_slice()` in `s13_coaching_v3.py` reads `s_start`/`s_end`, not `s_entry`/`s_exit`.
 
 ### Fallback behavior
 
@@ -345,6 +358,7 @@ All other consumers (scoring, coaching_v2, driving_style, HTML report) continue 
 
 | File | Action | Estimated Lines |
 |------|--------|-----------------|
+| `telemetry_tool/mrp_detector.py` | EDIT | ~5 lines (add `to_dict()` method to `CornerEvents` dataclass) |
 | `telemetry_tool/coaching/corner_diagnosis.py` | NEW | ~300 |
 | `telemetry_tool/pipeline/orchestrator.py` | EDIT | ~60 lines changed (fetch user corners, S10h step, rewire V3 block, adapter function) |
 | `telemetry_tool/tests/test_corner_diagnosis.py` | NEW | ~250 |
