@@ -41,14 +41,16 @@ def upsert_track_by_name(
     track_name: str,
     details: Optional[dict] = None,
 ) -> str:
-    """Find a track by name or create a minimal entry. Returns track_id.
+    """Find a track by name (case-insensitive) or create a minimal entry.
 
-    When creating, ``details`` may contain lap_length_m to pre-populate.
+    Returns track_id.  When creating, ``details`` may contain
+    lap_length_m to pre-populate.
     """
     import uuid
     clean = track_name.strip()
     row = conn.execute(
-        "SELECT track_id FROM tracks WHERE track_name = ?", (clean,)
+        "SELECT track_id FROM tracks WHERE LOWER(track_name) = LOWER(?)",
+        (clean,),
     ).fetchone()
     if row:
         return row["track_id"]
@@ -68,8 +70,48 @@ def get_all_tracks(conn: sqlite3.Connection) -> list[dict]:
 
 
 def rename_track(conn: sqlite3.Connection, track_id: str, new_name: str) -> None:
-    """Rename a track in the tracks table and persist to tracks.json."""
+    """Rename a track in the tracks table and persist to tracks.json.
+
+    If another track already has the same name (case-insensitive),
+    merge the current track into the existing one instead of renaming.
+    """
     clean_name = new_name.strip()
+
+    # Check if another track already has this name (case-insensitive)
+    existing = conn.execute(
+        "SELECT track_id FROM tracks "
+        "WHERE LOWER(track_name) = LOWER(?) AND track_id != ?",
+        (clean_name, track_id),
+    ).fetchone()
+
+    if existing:
+        # Merge: reassign sessions + children from this track to existing
+        keep_id = existing["track_id"] if isinstance(existing, dict) else existing[0]
+        conn.execute(
+            "UPDATE sessions SET track_id = ? WHERE track_id = ?",
+            (keep_id, track_id),
+        )
+        for child_table in (
+            "track_sectors", "track_records", "track_key_corners",
+            "corner_best_practices",
+        ):
+            try:
+                conn.execute(
+                    f"UPDATE {child_table} SET track_id = ? WHERE track_id = ?",
+                    (keep_id, track_id),
+                )
+            except Exception:
+                try:
+                    conn.execute(
+                        f"DELETE FROM {child_table} WHERE track_id = ?",
+                        (track_id,),
+                    )
+                except Exception:
+                    pass
+        conn.execute("DELETE FROM tracks WHERE track_id = ?", (track_id,))
+        logger.info("Renamed track %s merged into existing %s (%s)", track_id, keep_id, clean_name)
+        return
+
     conn.execute(
         "UPDATE tracks SET track_name = :name, updated_at = datetime('now') "
         "WHERE track_id = :tid",
@@ -91,6 +133,84 @@ def _update_tracks_json(track_id: str, new_name: str) -> None:
         save_track_database(db)
     except Exception as exc:
         logger.warning("Could not update tracks.json for %s: %s", track_id, exc)
+
+
+def merge_named_duplicate_tracks(conn: sqlite3.Connection) -> int:
+    """Merge tracks that share the same name (case-insensitive).
+
+    For each group of duplicates, keeps the track with the most sessions
+    (ties broken by earliest created_at).  Reassigns all child rows
+    from duplicates to the keeper, then deletes the duplicates.
+
+    Returns the number of duplicate tracks merged away.
+    """
+    # Find groups with >1 track sharing the same lowercased name
+    groups = conn.execute(
+        "SELECT LOWER(track_name) AS lname, COUNT(*) AS cnt "
+        "FROM tracks GROUP BY LOWER(track_name) HAVING COUNT(*) > 1"
+    ).fetchall()
+
+    if not groups:
+        return 0
+
+    merged = 0
+    for g in groups:
+        lname = g["lname"] if isinstance(g, dict) else g[0]
+
+        # Get all tracks in this group, ordered by session count desc, then oldest first
+        tracks = conn.execute(
+            "SELECT t.track_id, t.track_name, "
+            "  COUNT(s.session_id) AS sess_count "
+            "FROM tracks t "
+            "LEFT JOIN sessions s ON t.track_id = s.track_id AND s.deleted_at IS NULL "
+            "WHERE LOWER(t.track_name) = ? "
+            "GROUP BY t.track_id "
+            "ORDER BY sess_count DESC, t.created_at ASC",
+            (lname,),
+        ).fetchall()
+
+        if len(tracks) < 2:
+            continue
+
+        keep_id = tracks[0]["track_id"] if isinstance(tracks[0], dict) else tracks[0][0]
+
+        for dup_row in tracks[1:]:
+            dup_id = dup_row["track_id"] if isinstance(dup_row, dict) else dup_row[0]
+
+            # Reassign sessions
+            conn.execute(
+                "UPDATE sessions SET track_id = ? WHERE track_id = ?",
+                (keep_id, dup_id),
+            )
+            # Reassign child tables
+            for child_table in (
+                "track_sectors", "track_records", "track_key_corners",
+                "corner_best_practices",
+            ):
+                try:
+                    conn.execute(
+                        f"UPDATE {child_table} SET track_id = ? WHERE track_id = ?",
+                        (keep_id, dup_id),
+                    )
+                except Exception:
+                    # Table may not exist or have unique constraint — skip
+                    try:
+                        conn.execute(
+                            f"DELETE FROM {child_table} WHERE track_id = ?",
+                            (dup_id,),
+                        )
+                    except Exception:
+                        pass
+
+            # Delete the duplicate track
+            conn.execute("DELETE FROM tracks WHERE track_id = ?", (dup_id,))
+            merged += 1
+            logger.info(
+                "Merged duplicate track %s into %s (name=%s)",
+                dup_id, keep_id, lname,
+            )
+
+    return merged
 
 
 def merge_duplicate_tracks(conn: sqlite3.Connection) -> int:

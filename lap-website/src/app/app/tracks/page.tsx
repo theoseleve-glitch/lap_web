@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useState, useMemo } from 'react';
 import { api } from '@/lib/api-client';
@@ -39,8 +39,10 @@ function fmtLength(m: number | null): string {
 
 export default function TracksPage() {
 
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'record'>('sessions');
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tracks'],
@@ -48,6 +50,26 @@ export default function TracksPage() {
   });
 
   const tracks = data ?? [];
+
+  const deleteMutation = useMutation({
+    mutationFn: (trackId: string) => api.delete(`/tracks/${trackId}`),
+    onMutate: async (trackId) => {
+      await queryClient.cancelQueries({ queryKey: ['tracks'] });
+      const prev = queryClient.getQueryData<TrackRow[]>(['tracks']);
+      queryClient.setQueryData<TrackRow[]>(['tracks'], (old) =>
+        old ? old.filter((t) => t.id !== trackId) : [],
+      );
+      setConfirmDelete(null);
+      return { prev };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tracks'] });
+    },
+    onError: (_err, _id, context) => {
+      if (context?.prev) queryClient.setQueryData(['tracks'], context.prev);
+      console.error('[track-delete]', _err);
+    },
+  });
 
   const filtered = useMemo(() => {
     let list = tracks;
@@ -149,10 +171,41 @@ export default function TracksPage() {
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all"
             >
-              {/* Track name */}
-              <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors truncate">
-                {track.name}
-              </h3>
+              {/* Track name + delete */}
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors truncate">
+                  {track.name}
+                </h3>
+                <div className="flex items-center gap-2 shrink-0">
+                  {confirmDelete === track.id ? (
+                    <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                      <button
+                        onClick={(e) => { e.preventDefault(); deleteMutation.mutate(track.id); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
+                      >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
+                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.preventDefault(); setConfirmDelete(track.id); }}
+                      title="Delete track"
+                      className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
 
               {/* Meta row */}
               <div className="flex items-center gap-3 mt-2 text-steel font-telemetry text-xs">
