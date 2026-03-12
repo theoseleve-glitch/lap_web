@@ -160,7 +160,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         )
 
         # Update downstream: scoring, coaching, corner targets
-        _update_downstream(conn, session_id, result, result_dict, analysis_json)
+        _update_downstream(conn, session_id, result, result_dict, analysis_json, workspace_id=workspace_id)
 
         return result_dict
 
@@ -302,24 +302,29 @@ def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]
     return apex_speeds
 
 
-def _update_downstream(conn, session_id, result, result_dict, analysis_json):
-    """Re-run scoring, corner analysis, and coaching with OCP theoretical data.
+def _update_downstream(conn, session_id, result, result_dict, analysis_json,
+                       workspace_id=None):
+    """Re-run corner analysis, coaching, and scoring with OCP theoretical data.
 
     Called after _store_ocp_result so analysis_json["theoretical_ocp"] already
-    exists in the DB.  This function updates the *same* DB row with refreshed
-    scores, corner metrics, and coaching text derived from the OCP result.
+    exists in the DB.  Updates the same DB row with refreshed scores, corner
+    metrics, and coaching text.
     """
     import numpy as np
     import pandas as pd
 
     try:
-        # 1. Build theoretical_lap DataFrame from OCP speed profile
+        # 0. Set RLS context before any writes
+        _set_rls_if_pg(conn, workspace_id)
+
+        # 1. Build data shapes from OCP result
         theo_df = _ocp_result_to_dataframe(result)
         if theo_df is None or len(theo_df) < 10:
             logger.debug("OCP downstream: could not build theoretical DataFrame")
             return
 
-        # 2. Build theoretical_metrics dict (same shape as helpers.theoretical_metrics_from_lap)
+        theo_result_dict = _build_theoretical_result_dict(result)
+
         speeds = np.array(result.speed_profile)
         theo_metrics = {
             "best_s": float(result.lap_time_s),
@@ -331,50 +336,89 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json):
             "confidence": 1.0 if result.converged else 0.7,
         }
 
-        # 3. Build observed metrics from analysis_json
+        # 2. Reconstruct dependencies from analysis_json
+        best_lap_df = _reconstruct_best_lap_df(analysis_json)
+        corners = analysis_json.get("corners", [])
+        friction_model = analysis_json.get("friction_model") or {"max_lateral_g": 1.2}
+        resampled_laps = {0: best_lap_df} if best_lap_df is not None else {}
+        available_columns = set(best_lap_df.columns) if best_lap_df is not None else set()
+
+        # 3. Build observed metrics
         observed_metrics = _extract_observed_metrics(analysis_json)
         if not observed_metrics.get("best_s"):
-            logger.debug("OCP downstream: no observed best_s, skipping scoring")
+            logger.debug("OCP downstream: no observed best_s, skipping")
             return
 
-        # 4. Re-score with OCP theoretical
+        # 4. Re-run corner analysis with OCP theoretical
+        corner_perfs = None
+        if corners and best_lap_df is not None:
+            try:
+                from pipeline.stages.s10b_corners import run_corner_analysis
+                corner_perfs = run_corner_analysis(
+                    corners, best_lap_df, theo_df, friction_model, resampled_laps,
+                )
+                if corner_perfs:
+                    analysis_json["corner_perfs"] = corner_perfs
+            except Exception:
+                logger.warning("OCP downstream: corner analysis failed", exc_info=True)
+
+        # 5. Re-run coaching analyzers
+        analyzer_bundle = None
+        if corner_perfs:
+            try:
+                from pipeline.stages.s13_coaching_v3 import run_coaching_analyzers
+                analyzer_bundle = run_coaching_analyzers(
+                    corner_perfs, best_lap_df, theo_result_dict,
+                    friction_model, resampled_laps, available_columns,
+                )
+            except Exception:
+                logger.warning("OCP downstream: coaching analyzers failed", exc_info=True)
+
+        # 6. Re-score with OCP theoretical
         from scoring.scorer import score_session
 
         session_type = analysis_json.get("session_type", "practice")
-        corner_coaching = analysis_json.get("corner_coaching", [])
-
         new_scores = score_session(
-            observed_metrics,
-            theo_metrics,
-            session_type,
-            corner_coaching=corner_coaching,
+            observed_metrics, theo_metrics, session_type,
+            corner_coaching=corner_perfs or [],
         )
 
-        # 5. Update analysis_json with new scores and theoretical method
+        # 7. Re-run enhanced coaching
+        if corner_perfs:
+            try:
+                from pipeline.stages.s13_coaching_v3 import run_enhanced_coaching
+                coaching_v2 = analysis_json.get("coaching_v3") or analysis_json.get("coaching")
+                driving_style = analysis_json.get("driving_style")
+                vehicle_class = (analysis_json.get("vehicle_params") or {}).get("vehicle_class", "car")
+                coaching_v3 = run_enhanced_coaching(
+                    corner_perfs, coaching_v2, new_scores,
+                    lap_metrics=None, driving_style=driving_style,
+                    analyzer_bundle=analyzer_bundle, driver_history=None,
+                    vehicle_class=vehicle_class,
+                )
+                if coaching_v3:
+                    analysis_json["coaching_v3"] = coaching_v3
+            except Exception:
+                logger.warning("OCP downstream: enhanced coaching failed", exc_info=True)
+
+        # 8. Update corner speed targets via interpolation (always, even if corner analysis failed)
+        _update_corner_targets(analysis_json, result, corners)
+
+        # 9. Store everything in analysis_json
         analysis_json["score_result"] = new_scores
         analysis_json["theoretical_metrics"] = theo_metrics
         analysis_json["simulation_method"] = "ocp"
 
-        # 6. Re-run corner analysis if corners exist
-        corners = analysis_json.get("corners", [])
-        if corners and len(corners) > 0:
-            _update_corner_targets(analysis_json, result, corners)
-
-        # 7. Persist updated analysis_json
-        _persist_updated_analysis(conn, session_id, analysis_json)
-
-        # 8. Update score_details table (used by /scores API endpoint)
-        _update_score_details_table(conn, session_id, new_scores)
-
-        # 9. Update sessions.total_score and sessions.grade columns
-        _update_session_score_columns(conn, session_id, new_scores)
+        # 10. Persist — single transaction for RLS safety
+        _persist_all(conn, session_id, analysis_json, new_scores)
 
         logger.info(
             "OCP downstream update complete for session %s: "
-            "score=%.1f/%s, method=ocp",
+            "score=%.1f/%s, method=ocp, corners=%d",
             session_id,
             new_scores.get("total_score", 0),
             new_scores.get("grade", "?"),
+            len(corner_perfs) if corner_perfs else 0,
         )
 
     except Exception:
@@ -411,6 +455,36 @@ def _ocp_result_to_dataframe(result):
         "a_long": np.array(result.a_long_profile),
         "a_lat": np.array(result.a_lat_profile),
     })
+
+
+def _build_theoretical_result_dict(result) -> dict:
+    """Build the dict shape that run_coaching_analyzers expects for theoretical_result.
+
+    Shape: {"speed_profile": [{"distance_m": ..., "speed_mps": ...}, ...], "track_length_m": float}
+    """
+    import numpy as np
+    dist = np.array(result.distance_profile)
+    speed = np.array(result.speed_profile)
+    return {
+        "speed_profile": [
+            {"distance_m": round(float(dist[i]), 2), "speed_mps": round(float(speed[i]), 3)}
+            for i in range(len(dist))
+        ],
+        "track_length_m": float(dist[-1]) if len(dist) > 0 else 0.0,
+    }
+
+
+def _set_rls_if_pg(conn, workspace_id):
+    """Set workspace RLS context if running on PG."""
+    if workspace_id is None:
+        return
+    if os.environ.get("USE_PG", "0") in ("0", "false", "no"):
+        return
+    try:
+        from auth.workspace import set_workspace_context
+        set_workspace_context(conn, workspace_id)
+    except Exception:
+        logger.debug("RLS context setup skipped", exc_info=True)
 
 
 def _extract_observed_metrics(analysis_json: dict) -> dict:
@@ -497,10 +571,15 @@ def _update_corner_targets(analysis_json, result, corners):
     analysis_json["corner_coaching"] = updated_coaching
 
 
-def _persist_updated_analysis(conn, session_id, analysis_json):
-    """Persist the fully updated analysis_json (scores + coaching + OCP) to DB."""
-    import os
-    if os.environ.get("USE_PG", "0") not in ("0", "false", "no"):
+def _persist_all(conn, session_id, analysis_json, new_scores):
+    """Persist analysis_json, score_details, and session score columns in one commit.
+
+    Uses a single conn.commit() to preserve SET LOCAL RLS context on PG.
+    """
+    use_pg = os.environ.get("USE_PG", "0") not in ("0", "false", "no")
+
+    # 1. analysis_json blob
+    if use_pg:
         conn.execute(
             "UPDATE sessions SET analysis_json = ?::jsonb WHERE id = ?",
             (json.dumps(analysis_json), session_id),
@@ -510,33 +589,22 @@ def _persist_updated_analysis(conn, session_id, analysis_json):
             "UPDATE sessions SET analysis_json = ? WHERE id = ?",
             (json.dumps(analysis_json), session_id),
         )
-    conn.commit()
 
+    # 2. sessions.total_score + grade
+    conn.execute(
+        "UPDATE sessions SET total_score = ?, grade = ? WHERE id = ?",
+        (new_scores.get("total_score"), new_scores.get("grade"), session_id),
+    )
 
-def _update_score_details_table(conn, session_id, new_scores):
-    """Update the score_details table so /scores API serves OCP-based scores."""
+    # 3. score_details table
     try:
         from web.repos.score_repo import insert_score_details
-        # insert_score_details expects a summary dict with "score_result" key
-        summary = {"score_result": new_scores}
-        insert_score_details(conn, session_id, summary)
-        conn.commit()
+        insert_score_details(conn, session_id, {"score_result": new_scores})
     except Exception:
-        logger.debug("score_details table update skipped", exc_info=True)
+        logger.debug("score_details update skipped", exc_info=True)
 
-
-def _update_session_score_columns(conn, session_id, new_scores):
-    """Update sessions.total_score and sessions.grade so list endpoint reflects OCP scores."""
-    try:
-        total = new_scores.get("total_score")
-        grade = new_scores.get("grade")
-        conn.execute(
-            "UPDATE sessions SET total_score = ?, grade = ? WHERE id = ?",
-            (total, grade, session_id),
-        )
-        conn.commit()
-    except Exception:
-        logger.debug("sessions score columns update skipped", exc_info=True)
+    # Single commit preserves SET LOCAL RLS context
+    conn.commit()
 
 
 def _store_ocp_result(conn, session_id, result_dict: dict):
