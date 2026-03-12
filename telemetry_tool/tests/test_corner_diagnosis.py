@@ -519,3 +519,94 @@ class TestCausalResolution:
         ]
         label = _resolve_and_pick(candidates)
         assert label == "coast_hesitation"
+
+
+class TestClassifyAllCorners:
+    """End-to-end classify_all_corners tests."""
+
+    def test_basic_grid_shape(self):
+        from coaching.corner_diagnosis import classify_all_corners
+
+        lap_df = _make_lap_df(v_entry_mps=30.0, v_min_mps=20.0, v_exit_mps=28.0)
+        corners = [_make_corner(s_entry=50.0, s_apex=100.0, s_exit=150.0, corner_index=1)]
+        theo_df = _make_lap_df(v_entry_mps=30.0, v_min_mps=20.0, v_exit_mps=28.0)
+
+        result = classify_all_corners(
+            resampled_laps={2: lap_df},
+            theoretical_lap=theo_df,
+            user_corners=corners,
+            vehicle_class="car",
+            valid_lap_numbers=[2],
+        )
+        assert "2" in result
+        assert "1" in result["2"]
+        assert isinstance(result["2"]["1"], str)
+
+    def test_multiple_laps_and_corners(self):
+        from coaching.corner_diagnosis import classify_all_corners
+
+        lap_df_fast = _make_lap_df(v_entry_mps=33.0, v_min_mps=20.0, v_exit_mps=28.0)
+        lap_df_good = _make_lap_df(v_entry_mps=30.0, v_min_mps=20.0, v_exit_mps=28.0)
+        theo = _make_lap_df(v_entry_mps=30.0, v_min_mps=20.0, v_exit_mps=28.0)
+
+        corners = [
+            _make_corner(s_entry=50.0, s_apex=100.0, s_exit=150.0, corner_index=1),
+        ]
+        result = classify_all_corners(
+            resampled_laps={2: lap_df_fast, 3: lap_df_good},
+            theoretical_lap=theo,
+            user_corners=corners,
+            vehicle_class="car",
+            valid_lap_numbers=[2, 3],
+        )
+        assert "2" in result and "3" in result
+        assert result["2"]["1"] == "entry_overspeed"
+
+    def test_empty_corners_returns_empty(self):
+        from coaching.corner_diagnosis import classify_all_corners
+
+        result = classify_all_corners(
+            resampled_laps={2: _make_lap_df()},
+            theoretical_lap=_make_lap_df(),
+            user_corners=[],
+            vehicle_class="car",
+            valid_lap_numbers=[2],
+        )
+        assert result == {}
+
+    def test_no_theoretical_returns_null_labels(self):
+        from coaching.corner_diagnosis import classify_all_corners
+
+        corners = [_make_corner()]
+        result = classify_all_corners(
+            resampled_laps={2: _make_lap_df()},
+            theoretical_lap=None,
+            user_corners=corners,
+            vehicle_class="car",
+            valid_lap_numbers=[2],
+        )
+        assert "2" in result
+
+    def test_kart_thresholds_applied(self):
+        from coaching.corner_diagnosis import classify_all_corners
+
+        v_over = 30.0 + 2.5 / 3.6
+        lap_df = _make_lap_df(v_entry_mps=v_over, v_min_mps=20.0, v_exit_mps=28.0)
+        theo = _make_lap_df(v_entry_mps=30.0, v_min_mps=20.0, v_exit_mps=28.0)
+        corners = [_make_corner()]
+
+        result_kart = classify_all_corners(
+            resampled_laps={2: lap_df},
+            theoretical_lap=theo,
+            user_corners=corners,
+            vehicle_class="kart",
+            valid_lap_numbers=[2],
+        )
+        result_car = classify_all_corners(
+            resampled_laps={2: lap_df},
+            theoretical_lap=theo,
+            user_corners=corners,
+            vehicle_class="car",
+            valid_lap_numbers=[2],
+        )
+        assert result_kart["2"]["1"] == "entry_overspeed"

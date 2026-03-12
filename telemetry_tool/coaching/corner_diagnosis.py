@@ -607,3 +607,136 @@ def _resolve_and_pick(candidates: list[Candidate]) -> str:
     # Sort by priority (lower = higher priority), then prefer safety labels
     filtered.sort(key=lambda c: (c.priority, c.label not in _SAFETY_LABELS))
     return filtered[0].label
+
+
+# ---------------------------------------------------------------------------
+# MRP key mapping
+# ---------------------------------------------------------------------------
+def _map_mrp_to_corners(
+    user_corners: list[dict], mrp_events: dict[int, dict] | None,
+) -> dict[int, dict | None]:
+    """Map user corner_index to MRP event dict.
+
+    Strategy: positional match first (sorted corner_index vs sorted section_id),
+    then spatial fallback (overlapping distance ranges).
+    Returns {corner_index: mrp_event_dict_or_None}.
+    """
+    result: dict[int, dict | None] = {c["corner_index"]: None for c in user_corners}
+    if not mrp_events:
+        return result
+
+    sorted_corners = sorted(user_corners, key=lambda c: c["corner_index"])
+    sorted_mrp_keys = sorted(mrp_events.keys())
+
+    # Positional match
+    if len(sorted_corners) == len(sorted_mrp_keys):
+        for corner, mrp_key in zip(sorted_corners, sorted_mrp_keys):
+            result[corner["corner_index"]] = mrp_events[mrp_key]
+        return result
+
+    # Spatial fallback: overlap between corner [s_entry, s_exit] and MRP [s_start, s_end]
+    for corner in sorted_corners:
+        s_entry = corner["s_entry"]
+        s_exit = corner["s_exit"]
+        for mrp_key, mrp_ev in mrp_events.items():
+            mrp_m = mrp_ev.get("mrp_m", 0)
+            if s_entry <= mrp_m <= s_exit:
+                result[corner["corner_index"]] = mrp_ev
+                break
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Theoretical metrics extraction
+# ---------------------------------------------------------------------------
+def _extract_theo_metrics(
+    theoretical_lap: pd.DataFrame | None, corner: dict,
+) -> dict | None:
+    """Extract theoretical speed metrics for a corner from the theoretical lap."""
+    if theoretical_lap is None:
+        return None
+    if _COL_DIST not in theoretical_lap.columns or _COL_SPEED not in theoretical_lap.columns:
+        return None
+
+    d = theoretical_lap[_COL_DIST].values
+    v = theoretical_lap[_COL_SPEED].values
+    s_entry = corner["s_entry"]
+    s_apex = corner["s_apex"]
+    s_exit = corner["s_exit"]
+
+    mask = (d >= s_entry) & (d <= s_exit)
+    if mask.sum() < 3:
+        return None
+
+    seg_d = d[mask]
+    seg_v = v[mask]
+
+    return {
+        "v_entry_mps": float(np.interp(s_entry, seg_d, seg_v)),
+        "v_min_mps": float(np.min(seg_v)),
+        "v_exit_mps": float(np.interp(s_exit, seg_d, seg_v)),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+def classify_all_corners(
+    resampled_laps: dict[int, pd.DataFrame],
+    theoretical_lap: pd.DataFrame | None,
+    user_corners: list[dict],
+    vehicle_class: str,
+    valid_lap_numbers: list[int],
+    curvature_profile: pd.DataFrame | None = None,
+    mrp_events: dict[int, dict] | None = None,
+) -> dict[str, dict[str, str | None]]:
+    """Classify driving symptoms for each user corner on every valid lap.
+
+    Returns {lap_num_str: {corner_index_str: label}}.
+    """
+    if not user_corners or not valid_lap_numbers:
+        return {}
+
+    thresholds = _get_thresholds(vehicle_class)
+    mrp_map = _map_mrp_to_corners(user_corners, mrp_events)
+
+    # Pre-compute theoretical metrics per corner
+    theo_per_corner: dict[int, dict | None] = {}
+    for corner in user_corners:
+        cid = corner["corner_index"]
+        theo_per_corner[cid] = _extract_theo_metrics(theoretical_lap, corner)
+
+    result: dict[str, dict[str, str]] = {}
+
+    for lap_num in valid_lap_numbers:
+        lap_df = resampled_laps.get(lap_num)
+        if lap_df is None or lap_df.empty:
+            continue
+
+        tier = _detect_tier(set(lap_df.columns))
+        lap_labels: dict[str, str] = {}
+
+        for corner in user_corners:
+            cid = corner["corner_index"]
+            mrp_event = mrp_map.get(cid)
+            theo = theo_per_corner.get(cid)
+
+            metrics = _extract_corner_metrics(lap_df, corner, curvature_profile, mrp_event)
+            if metrics is None:
+                lap_labels[str(cid)] = None
+                continue
+
+            # Run all phase checkers
+            entry = _check_entry_phase(metrics, theo, thresholds, tier)
+            apex = _check_apex_phase(metrics, theo, thresholds, tier)
+            exit_ = _check_exit_phase(metrics, theo, thresholds, tier)
+            all_phase = entry + apex + exit_
+            overall = _check_overall(metrics, theo, thresholds, all_phase)
+            all_candidates = all_phase + overall
+
+            lap_labels[str(cid)] = _resolve_and_pick(all_candidates)
+
+        result[str(lap_num)] = lap_labels
+
+    return result
