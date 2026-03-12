@@ -125,3 +125,163 @@ def _detect_tier(columns: set[str]) -> str:
     if columns & _ACCEL_COLS:
         return "accel"
     return "gps"
+
+
+# ---------------------------------------------------------------------------
+# Segment extraction and metrics
+# ---------------------------------------------------------------------------
+_COL_DIST = "Distance (m)"
+_COL_SPEED = "Speed (m/s)"
+_COL_HEADING = "Heading (rad)"
+_COL_ACCEL_LONG = "accel_long_mps2"
+_COL_ACCEL_LAT = "accel_lat_mps2"
+_COL_BRAKE = "Brake (%)"
+_COL_THROTTLE = "Throttle (%)"
+
+
+def _extract_corner_metrics(
+    lap_df: pd.DataFrame,
+    corner: dict,
+    curvature_profile: "pd.DataFrame | None",
+    mrp_event: "dict | None",
+) -> "dict | None":
+    """Slice a lap DataFrame for one corner and compute all metrics.
+
+    Returns None if the segment has fewer than 5 data points.
+    """
+    s_entry = corner["s_entry"]
+    s_apex = corner["s_apex"]
+    s_exit = corner["s_exit"]
+
+    if _COL_DIST not in lap_df.columns or _COL_SPEED not in lap_df.columns:
+        return None
+
+    dist = lap_df[_COL_DIST].values
+    # Include 50m pre-corner buffer for early_braking detection
+    mask = (dist >= s_entry - 50.0) & (dist <= s_exit)
+    core_mask = (dist >= s_entry) & (dist <= s_exit)
+    if core_mask.sum() < 5:
+        return None
+
+    seg = lap_df[mask]  # boolean indexing (not .loc) — safe regardless of index type
+    d = seg[_COL_DIST].values
+    v = seg[_COL_SPEED].values
+
+    # Basic speed metrics
+    v_entry_mps = float(np.interp(s_entry, d, v))
+    v_exit_mps = float(np.interp(s_exit, d, v))
+    vmin_idx = int(np.argmin(v))
+    v_min_mps = float(v[vmin_idx])
+    s_vmin = float(d[vmin_idx])
+
+    # Kappa sign (corner direction)
+    kappa_sign = _compute_kappa_sign(seg, s_apex, curvature_profile)
+
+    # Yaw residual (direction-normalised)
+    yaw_residual = _compute_yaw_residual(seg, curvature_profile, kappa_sign)
+
+    # Accel channels (may be None)
+    lon_g = seg[_COL_ACCEL_LONG].values if _COL_ACCEL_LONG in seg.columns else None
+    lat_g = seg[_COL_ACCEL_LAT].values if _COL_ACCEL_LAT in seg.columns else None
+
+    # Pedal channels (may be None)
+    brake = seg[_COL_BRAKE].values if _COL_BRAKE in seg.columns else None
+    throttle = seg[_COL_THROTTLE].values if _COL_THROTTLE in seg.columns else None
+
+    metrics = {
+        "s_entry": s_entry,
+        "s_apex": s_apex,
+        "s_exit": s_exit,
+        "d": d,
+        "v": v,
+        "v_entry_mps": v_entry_mps,
+        "v_exit_mps": v_exit_mps,
+        "v_min_mps": v_min_mps,
+        "s_vmin": s_vmin,
+        "kappa_sign": kappa_sign,
+        "yaw_residual": yaw_residual,
+        "lon_g": lon_g,
+        "lat_g": lat_g,
+        "brake": brake,
+        "throttle": throttle,
+        # MRP fields (may be None)
+        "mrp_m": mrp_event["mrp_m"] if mrp_event else None,
+        "mrp_apex_delta_m": mrp_event["mrp_apex_delta_m"] if mrp_event else None,
+    }
+    return metrics
+
+
+def _compute_kappa_sign(
+    seg: pd.DataFrame, s_apex: float, curvature_profile: "pd.DataFrame | None",
+) -> float:
+    """Determine corner direction: +1 = left turn, -1 = right turn."""
+    if curvature_profile is not None and len(curvature_profile) > 1:
+        cp_dist = curvature_profile["distance_m"].values
+        cp_curv = curvature_profile["curvature_1pm"].values
+        kappa_at_apex = float(np.interp(s_apex, cp_dist, cp_curv))
+        if abs(kappa_at_apex) > 1e-6:
+            return float(np.sign(kappa_at_apex))
+
+    # Fallback: heading change across segment
+    if _COL_HEADING in seg.columns:
+        h = seg[_COL_HEADING].values
+        if len(h) >= 2:
+            delta_rad = h[-1] - h[0]
+            delta_rad = (delta_rad + np.pi) % (2 * np.pi) - np.pi
+            if abs(delta_rad) > 1e-6:
+                return float(np.sign(delta_rad))
+
+    return 1.0  # default left turn if unknown
+
+
+def _compute_yaw_residual(
+    seg: pd.DataFrame, curvature_profile: "pd.DataFrame | None", kappa_sign: float,
+) -> "np.ndarray | None":
+    """Compute direction-normalised yaw residual for the segment.
+
+    yaw_residual_norm = (yaw_measured - yaw_expected) * sign(kappa)
+    Positive = oversteer, Negative = understeer.
+    Returns None if heading data is unavailable.
+    """
+    if _COL_HEADING not in seg.columns or _COL_SPEED not in seg.columns:
+        return None
+    if _COL_DIST not in seg.columns:
+        return None
+
+    d = seg[_COL_DIST].values
+    v = seg[_COL_SPEED].values
+    h = seg[_COL_HEADING].values
+
+    if len(d) < 3:
+        return None
+
+    # Measured yaw rate: dh/dd (rad/m) * v (m/s) = rad/s, then * (180/pi) = deg/s
+    dd = np.diff(d)
+    dd = np.where(np.abs(dd) > 1e-9, dd, 1e-9)
+    dh = np.diff(h)
+    dh = (dh + np.pi) % (2 * np.pi) - np.pi  # wrap
+    yaw_rate_radpm = dh / dd
+    yaw_rate_radpm = np.append(yaw_rate_radpm, yaw_rate_radpm[-1])
+    # Convert to deg/s: yaw_rate_radpm * speed * (180/pi)
+    yaw_measured_dps = yaw_rate_radpm * v * (180.0 / np.pi)
+
+    # Expected yaw rate from curvature
+    if curvature_profile is not None and len(curvature_profile) > 1:
+        cp_dist = curvature_profile["distance_m"].values
+        cp_curv = curvature_profile["curvature_1pm"].values
+        kappa = np.interp(d, cp_dist, cp_curv)
+    else:
+        # No curvature profile: assume uniform curvature from heading change
+        total_heading_change = h[-1] - h[0]
+        total_heading_change = (total_heading_change + np.pi) % (2 * np.pi) - np.pi
+        total_dist = d[-1] - d[0]
+        if abs(total_dist) > 1e-6:
+            kappa = np.full(len(d), total_heading_change / total_dist)
+        else:
+            return None
+
+    yaw_expected_dps = v * kappa * (180.0 / np.pi)
+
+    # Direction-normalised residual
+    residual = (yaw_measured_dps - yaw_expected_dps) * kappa_sign
+    return residual
