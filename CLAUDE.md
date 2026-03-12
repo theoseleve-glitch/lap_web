@@ -222,6 +222,7 @@ Handles 10GB+ files with <1GB peak memory. Modules in `telemetry_tool/ingest/`:
 - Auth token stored in-memory JS (NOT localStorage) — page refresh requires silent refresh via httpOnly cookie.
 - `docs/deployment.md` is outdated (references nginx/Vercel) — this CLAUDE.md and the Docker configs are the source of truth.
 - Alembic migrations 004-008 (workspace/RLS) may not be applied in prod — verify with `alembic current`.
+- **Docker deploy requires `build`, not just `restart`**: API source code is `COPY`'d into the Docker image at build time — there are NO bind mounts for source files. `scp` + `docker compose restart` does NOTHING because the container still runs the old image. The correct deploy sequence is: `scp files → docker compose -f docker-compose.prod.yml build api && docker compose -f docker-compose.prod.yml up -d api`. NEVER use `restart` alone after updating source files.
 
 ## Test Fixtures
 
