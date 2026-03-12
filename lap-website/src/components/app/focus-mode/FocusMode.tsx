@@ -2,6 +2,15 @@
 
 import { useEffect, useCallback, useMemo, useState } from 'react';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
+import {
+  DeltaTimeChart,
+  BrakeAnalysisChart,
+  LapProgressChart,
+  LapDistributionChart,
+  StintChart,
+  FingerprintChart,
+  CornerAnalysisChart,
+} from '@/components/shared/charts';
 import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 import { BACKEND_URL } from '@/lib/api-client';
 import { SplitPane } from './SplitPane';
@@ -63,6 +72,83 @@ function ToolRenderer({
           <GGExplorer
             sessionId={sessionId}
             apiBase={apiBase}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'lap-overlay':
+      return (
+        <ChartErrorBoundary chartName="DeltaTime" minHeight="200px">
+          <DeltaTimeChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'lap-progress':
+      return (
+        <ChartErrorBoundary chartName="LapProgress" minHeight="200px">
+          <LapProgressChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'lap-distribution':
+      return (
+        <ChartErrorBoundary chartName="LapDistribution" minHeight="200px">
+          <LapDistributionChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'brake-analysis':
+      return (
+        <ChartErrorBoundary chartName="BrakeAnalysis" minHeight="200px">
+          <BrakeAnalysisChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'corner-analysis':
+      return (
+        <ChartErrorBoundary chartName="CornerAnalysis" minHeight="200px">
+          <CornerAnalysisChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'stint-chart':
+      return (
+        <ChartErrorBoundary chartName="StintChart" minHeight="200px">
+          <StintChart
+            sessionId={sessionId}
+            gpsLaps={gpsLaps}
+            bestLap={bestLap}
+            className="w-full h-full"
+          />
+        </ChartErrorBoundary>
+      );
+    case 'fingerprint':
+      return (
+        <ChartErrorBoundary chartName="Fingerprint" minHeight="200px">
+          <FingerprintChart
+            sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
             className="w-full h-full"
