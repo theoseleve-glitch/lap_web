@@ -1372,6 +1372,25 @@ def run_full_analysis(
     summary["db_session_id"] = db_session_id
 
     # ══════════════════════════════════════════════════════════════
+    # QUEUE OCP THEORETICAL (background, non-blocking)
+    # ══════════════════════════════════════════════════════════════
+    if db_session_id is not None:
+        try:
+            _wid = None
+            try:
+                from flask import g as _ocp_g
+                _wid = getattr(_ocp_g, "workspace_id", None)
+            except (ImportError, RuntimeError):
+                pass
+            _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
+                db_session_id, _wid,
+            )
+            if _ocp_task_id:
+                summary["ocp_task_id"] = _ocp_task_id
+        except Exception as _ocp_err:
+            logger.debug("OCP queue skipped: %s", _ocp_err)
+
+    # ══════════════════════════════════════════════════════════════
     # FINALIZE
     # ══════════════════════════════════════════════════════════════
     n_ok = len(summary["steps_ok"])

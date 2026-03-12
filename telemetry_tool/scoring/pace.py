@@ -57,7 +57,7 @@ def _score_pace(
     gap_pct = 100.0 * gap_s / theory_best
 
     is_physics = simulation_method in (
-        "physics", "hybrid",
+        "physics", "hybrid", "ocp",
         "kart_envelope_qss", "kart_envelope_casadi",
     )
 
