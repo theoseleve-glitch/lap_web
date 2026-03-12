@@ -209,3 +209,59 @@ class TestSegmentExtraction:
         corner = _make_corner(s_entry=500.0, s_apex=550.0, s_exit=600.0)
         m = _extract_corner_metrics(lap_df, corner, None, mrp_event=None)
         assert m is None
+
+
+class TestEntryPhase:
+    """Entry phase label detection."""
+
+    def test_entry_overspeed(self):
+        from coaching.corner_diagnosis import _check_entry_phase
+
+        metrics = {"v_entry_mps": 30.0, "s_apex": 100.0, "s_entry": 50.0,
+                   "kappa_sign": 1.0, "yaw_residual": None,
+                   "lon_g": None, "lat_g": None, "brake": None, "d": np.linspace(50, 150, 100)}
+        theo = {"v_entry_mps": 28.6}  # 30 - 28.6 = 1.4 m/s = 5.04 km/h
+        thresholds = {"v_entry_delta_kmh": 3.0, "yaw_residual_dps": 10.0}
+        labels = _check_entry_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "entry_overspeed" for c in labels)
+
+    def test_entry_underspeed(self):
+        from coaching.corner_diagnosis import _check_entry_phase
+
+        metrics = {"v_entry_mps": 25.0, "s_apex": 100.0, "s_entry": 50.0,
+                   "kappa_sign": 1.0, "yaw_residual": None,
+                   "lon_g": None, "lat_g": None, "brake": None, "d": np.linspace(50, 150, 100)}
+        theo = {"v_entry_mps": 27.0}  # 27 - 25 = 2 m/s = 7.2 km/h > 5 threshold
+        thresholds = {"v_entry_delta_kmh": 3.0, "v_underspeed_delta_kmh": 5.0,
+                      "yaw_residual_dps": 10.0}
+        labels = _check_entry_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "entry_underspeed" for c in labels)
+
+    def test_entry_oversteer_via_yaw(self):
+        from coaching.corner_diagnosis import _check_entry_phase
+
+        n = 100
+        yaw_res = np.zeros(n)
+        yaw_res[:50] = 15.0  # oversteer in entry half
+        metrics = {"v_entry_mps": 28.0, "s_apex": 100.0, "s_entry": 50.0,
+                   "kappa_sign": 1.0, "yaw_residual": yaw_res,
+                   "lon_g": None, "lat_g": None, "brake": None,
+                   "d": np.linspace(50, 150, n)}
+        theo = {"v_entry_mps": 28.0}
+        thresholds = {"v_entry_delta_kmh": 3.0, "v_underspeed_delta_kmh": 5.0,
+                      "yaw_residual_dps": 10.0}
+        labels = _check_entry_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "entry_oversteer" for c in labels)
+
+    def test_no_labels_when_within_tolerance(self):
+        from coaching.corner_diagnosis import _check_entry_phase
+
+        metrics = {"v_entry_mps": 28.0, "s_apex": 100.0, "s_entry": 50.0,
+                   "kappa_sign": 1.0, "yaw_residual": np.zeros(100),
+                   "lon_g": None, "lat_g": None, "brake": None,
+                   "d": np.linspace(50, 150, 100)}
+        theo = {"v_entry_mps": 28.0}
+        thresholds = {"v_entry_delta_kmh": 3.0, "v_underspeed_delta_kmh": 5.0,
+                      "yaw_residual_dps": 10.0}
+        labels = _check_entry_phase(metrics, theo, thresholds, "gps")
+        assert len(labels) == 0

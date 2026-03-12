@@ -285,3 +285,89 @@ def _compute_yaw_residual(
     # Direction-normalised residual
     residual = (yaw_measured_dps - yaw_expected_dps) * kappa_sign
     return residual
+
+
+@dataclass
+class Candidate:
+    """A candidate label with priority for resolution."""
+    label: str
+    priority: int  # lower = higher priority (safety=1, time-loss=2, misc=3)
+    phase: str     # "entry", "apex", "exit", "overall"
+
+
+def _check_entry_phase(
+    metrics: dict, theo: dict | None, thresholds: dict, tier: str,
+) -> list[Candidate]:
+    """Check entry phase labels. Returns list of candidates."""
+    candidates: list[Candidate] = []
+    v_entry = metrics["v_entry_mps"]
+    d = metrics["d"]
+    s_entry = metrics["s_entry"]
+    s_apex = metrics["s_apex"]
+
+    # Entry half indices
+    entry_mask = d <= s_apex
+
+    # Speed-based checks (all tiers)
+    if theo and "v_entry_mps" in theo:
+        v_theo = theo["v_entry_mps"]
+        delta_kmh = (v_entry - v_theo) * 3.6
+        if delta_kmh > thresholds["v_entry_delta_kmh"]:
+            candidates.append(Candidate(ENTRY_OVERSPEED, 2, "entry"))
+        elif -delta_kmh > thresholds.get("v_underspeed_delta_kmh", 5.0):
+            candidates.append(Candidate(ENTRY_UNDERSPEED, 3, "entry"))
+
+    # Yaw residual checks (all tiers)
+    yaw_res = metrics.get("yaw_residual")
+    if yaw_res is not None and entry_mask.sum() >= 5:
+        entry_yaw = yaw_res[entry_mask]
+        yaw_thresh = thresholds["yaw_residual_dps"]
+        # Oversteer: sustained positive residual
+        if np.sum(entry_yaw > yaw_thresh) >= 5:
+            candidates.append(Candidate(ENTRY_OVERSTEER, 1, "entry"))
+        # Understeer: sustained negative residual
+        elif np.sum(entry_yaw < -yaw_thresh) >= 5:
+            candidates.append(Candidate(ENTRY_UNDERSTEER, 2, "entry"))
+
+    # Accel-tier checks
+    lon_g = metrics.get("lon_g")
+    if tier in ("accel", "full") and lon_g is not None:
+        # Late braking: lon_g < -0.3g past s_apex
+        past_apex = d > s_apex
+        if past_apex.any() and np.any(lon_g[past_apex] < -0.3 * 9.81):
+            candidates.append(Candidate(LATE_BRAKING, 2, "entry"))
+        # Early braking: lon_g < -0.3g starts >15m before s_entry
+        pre_entry = d < (s_entry - 15.0)
+        if pre_entry.any() and np.any(lon_g[pre_entry] < -0.3 * 9.81):
+            candidates.append(Candidate(EARLY_BRAKING, 3, "entry"))
+        # Excessive trail brake: lon_g < -0.2g at s_apex
+        apex_idx = np.argmin(np.abs(d - s_apex))
+        if lon_g[apex_idx] < -0.2 * 9.81:
+            candidates.append(Candidate(EXCESSIVE_TRAIL_BRAKE, 2, "entry"))
+
+    # Pedal-tier checks
+    brake = metrics.get("brake")
+    if tier == "full" and brake is not None:
+        # Late braking: brake > 20% past s_apex
+        past_apex = d > s_apex
+        if past_apex.any() and np.any(brake[past_apex] > 20):
+            if not any(c.label == LATE_BRAKING for c in candidates):
+                candidates.append(Candidate(LATE_BRAKING, 2, "entry"))
+        # Early braking: brake > 10% starts >15m before s_entry
+        pre_entry = d < (s_entry - 15.0)
+        if pre_entry.any() and np.any(brake[pre_entry] > 10):
+            if not any(c.label == EARLY_BRAKING for c in candidates):
+                candidates.append(Candidate(EARLY_BRAKING, 3, "entry"))
+        # Excessive trail brake: brake > 30% at s_apex
+        apex_idx = np.argmin(np.abs(d - s_apex))
+        if brake[apex_idx] > 30:
+            if not any(c.label == EXCESSIVE_TRAIL_BRAKE for c in candidates):
+                candidates.append(Candidate(EXCESSIVE_TRAIL_BRAKE, 2, "entry"))
+        # Insufficient trail brake: brake to 0 before first 10% of corner
+        corner_len = s_apex - s_entry
+        first_10pct = s_entry + corner_len * 0.1
+        early_mask = d <= first_10pct
+        if early_mask.any() and np.all(brake[early_mask] < 1):
+            candidates.append(Candidate(INSUFFICIENT_TRAIL_BRAKE, 3, "entry"))
+
+    return candidates
