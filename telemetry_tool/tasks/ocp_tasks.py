@@ -206,11 +206,13 @@ def _load_session_data(session_id, workspace_id):
 
     # Load analysis_json for corners, scoring, vehicle params
     row = conn.execute(
-        "SELECT analysis_json FROM sessions WHERE id = ?", (session_id,)
+        "SELECT analysis_json FROM sessions WHERE session_id = :sid",
+        {"sid": session_id},
     ).fetchone()
     if row is None:
         raise ValueError(f"Session {session_id} not found")
-    analysis_json = json.loads(row[0]) if row[0] else {}
+    raw = row["analysis_json"] if isinstance(row, dict) else row[0]
+    analysis_json = json.loads(raw) if raw else {}
 
     # ── Best lap speed trace from GPS trace table ──
     best_lap_df = None
