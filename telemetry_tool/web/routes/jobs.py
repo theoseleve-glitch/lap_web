@@ -102,6 +102,60 @@ def _load_pipeline_context(redis_client, job_id: str):
     return PipelineContext.load(redis_client, job_id)
 
 
+def _reconstruct_context_from_db(conn, job_id: str, redis_client, temp_root: str = "/tmp"):
+    """Reconstruct PipelineContext from DB when Redis state is gone.
+
+    Used for corner re-selection on completed sessions. Returns None if
+    the job is not found or the original CSV no longer exists.
+    """
+    from pathlib import Path
+    from pipeline_context import PipelineContext
+
+    row = conn.execute(
+        text("SELECT job_id, workspace_id, file_path FROM ingestion_jobs WHERE job_id = :job_id"),
+        {"job_id": job_id},
+    ).fetchone()
+
+    if row is None:
+        return None
+
+    file_path = row["file_path"] if isinstance(row, dict) else row[2]
+    workspace_id = row["workspace_id"] if isinstance(row, dict) else row[1]
+
+    if not file_path or not Path(file_path).exists():
+        return None
+
+    return PipelineContext.create(
+        redis_client=redis_client,
+        job_id=job_id,
+        workspace_id=str(workspace_id) if workspace_id else None,
+        session_id=job_id,  # convention: session_id == job_id
+        file_path=str(file_path),
+        temp_root=temp_root,
+    )
+
+
+def _revoke_inflight_ocp(conn, job_id: str):
+    """Revoke an in-flight OCP Celery task to prevent race conditions."""
+    try:
+        row = conn.execute(
+            text("SELECT analysis_json FROM sessions WHERE id = :sid"),
+            {"sid": job_id},
+        ).fetchone()
+        if row:
+            aj = json.loads(row[0]) if row[0] else {}
+            ocp_task_id = aj.get("ocp_task_id")
+            if ocp_task_id:
+                try:
+                    from tasks.celery_app import celery
+                    celery.control.revoke(ocp_task_id, terminate=True)
+                    logger.info("Revoked in-flight OCP task %s for job %s", ocp_task_id, job_id)
+                except ImportError:
+                    pass
+    except Exception:
+        logger.debug("OCP revocation skipped for job %s", job_id, exc_info=True)
+
+
 def _dispatch_finalize(job_id: str):
     """Dispatch the pipeline_finalize Celery task (deferred import for testability)."""
     from tasks.pipeline_tasks import pipeline_finalize
@@ -310,7 +364,7 @@ def resume(job_id: str):
         return api_error(ErrorCode.NOT_FOUND, "Job not found", status=404)
 
     current_status = job.get("status")
-    if current_status not in ("paused", "awaiting_corner_selection"):
+    if current_status not in ("paused", "awaiting_corner_selection", "completed"):
         return api_error(
             ErrorCode.CONFLICT,
             f"Job is not resumable (current status: {current_status})",
@@ -320,6 +374,15 @@ def resume(job_id: str):
     redis_client = _get_redis()
     ctx = _load_pipeline_context(redis_client, job_id)
 
+    if ctx is None and current_status == "completed":
+        ctx = _reconstruct_context_from_db(conn, job_id, redis_client)
+        if ctx is None:
+            return api_error(
+                ErrorCode.CONFLICT,
+                "Original session file no longer available. Please re-upload.",
+                status=409,
+            )
+
     if ctx is None:
         return api_error(
             ErrorCode.CONFLICT,
@@ -327,7 +390,7 @@ def resume(job_id: str):
             status=409,
         )
 
-    if current_status == "awaiting_corner_selection":
+    if current_status in ("awaiting_corner_selection", "completed"):
         # Corner selection path — custom geometry or legacy ID filter
         if g.body.corners is not None:
             ctx.set_custom_corners([
@@ -354,6 +417,10 @@ def resume(job_id: str):
         {"job_id": job_id, "workspace_id": g.workspace_id},
     )
     conn.commit()
+
+    # Revoke any in-flight OCP task from the previous run
+    if current_status == "completed":
+        _revoke_inflight_ocp(conn, job_id)
 
     # Dispatch pipeline_finalize task
     _dispatch_finalize(job_id)
