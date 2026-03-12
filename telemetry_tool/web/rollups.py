@@ -19,14 +19,14 @@ def refresh_driver_rollup(conn, workspace_id: int) -> None:
         SELECT
             s.workspace_id,
             s.driver_id,
-            COUNT(DISTINCT s.id),
+            COUNT(DISTINCT s.session_id),
             COALESCE(SUM(s.lap_count), 0),
             MIN(s.best_lap_time_s),
             AVG(sd.total_score),
             AVG(sd.consistency_score),
             MAX(s.session_date)
         FROM sessions s
-        LEFT JOIN score_details sd ON sd.session_id = s.id
+        LEFT JOIN score_details sd ON sd.session_id = s.session_id
         WHERE s.workspace_id = %(ws)s
           AND s.driver_id IS NOT NULL
         GROUP BY s.workspace_id, s.driver_id
@@ -49,13 +49,13 @@ def refresh_track_rollup(conn, workspace_id: int) -> None:
         SELECT
             s.workspace_id,
             s.track_id,
-            COUNT(DISTINCT s.id),
+            COUNT(DISTINCT s.session_id),
             MIN(s.best_lap_time_s),
             AVG(sd.total_score),
             MAX(s.session_date),
             COUNT(DISTINCT s.driver_id)
         FROM sessions s
-        LEFT JOIN score_details sd ON sd.session_id = s.id
+        LEFT JOIN score_details sd ON sd.session_id = s.session_id
         WHERE s.workspace_id = %(ws)s
           AND s.track_id IS NOT NULL
         GROUP BY s.workspace_id, s.track_id

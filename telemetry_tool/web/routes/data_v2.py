@@ -2582,7 +2582,12 @@ def get_corner_metrics_summary(session_id: str) -> tuple[dict, int]:
 @bp.route("/sessions/<session_id>/delta", methods=["GET"])
 @_safe_api
 def get_delta(session_id: str) -> tuple[dict, int]:
-    """Compute time delta between two laps on the fly."""
+    """Compute time delta between two laps on the fly.
+
+    Uses speed-trace shape to show WHERE time is gained/lost, but
+    scales cumulative times to match the actual recorded lap times
+    so the final delta equals the true lap-time difference.
+    """
     conn = get_db_connection()
     session = models.get_session_by_id(conn, session_id)
     if session is None:
@@ -2599,6 +2604,12 @@ def get_delta(session_id: str) -> tuple[dict, int]:
         return api_error(ErrorCode.VALIDATION_ERROR,
                          "Both lap_a and lap_b are required", status=400)
 
+    # Fetch actual lap times from DB
+    all_laps = models.get_laps_for_session(conn, session_id) or []
+    lap_times = {l["lap_number"]: l.get("lap_time_s") for l in all_laps}
+    real_time_a = lap_times.get(lap_a)
+    real_time_b = lap_times.get(lap_b)
+
     trace_a = models.get_gps_trace(conn, session_id, lap_a)
     trace_b = models.get_gps_trace(conn, session_id, lap_b)
 
@@ -2608,15 +2619,16 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "message": "GPS trace not found for one or both laps",
         })
 
-    # Compute cumulative time from distance and speed for each lap
     def _cumulative_time(distances: list[float], speeds: list[float]) -> list[float]:
-        """Build cumulative time array from distance/speed arrays."""
+        """Build cumulative time array using trapezoidal integration."""
         t = [0.0]
         for i in range(1, len(distances)):
             ds = distances[i] - distances[i - 1]
-            v = speeds[i] if speeds[i] and speeds[i] > 0 else speeds[i - 1]
-            if v and v > 0:
-                t.append(t[-1] + ds / v)
+            v0 = speeds[i - 1] if speeds[i - 1] and speeds[i - 1] > 0 else 0
+            v1 = speeds[i] if speeds[i] and speeds[i] > 0 else 0
+            v_avg = (v0 + v1) / 2 if (v0 + v1) > 0 else 0
+            if v_avg > 0:
+                t.append(t[-1] + ds / v_avg)
             else:
                 t.append(t[-1])
         return t
@@ -2642,6 +2654,15 @@ def get_delta(session_id: str) -> tuple[dict, int]:
 
     time_a = _cumulative_time(dist_a, spd_a)
     time_b = _cumulative_time(dist_b, spd_b)
+
+    # Scale cumulative times to match actual lap times so the final
+    # delta equals the true lap-time difference.
+    if real_time_a and time_a[-1] > 0:
+        scale_a = real_time_a / time_a[-1]
+        time_a = [t * scale_a for t in time_a]
+    if real_time_b and time_b[-1] > 0:
+        scale_b = real_time_b / time_b[-1]
+        time_b = [t * scale_b for t in time_b]
 
     # Interpolate to common distance axis (use shorter lap)
     import numpy as np
