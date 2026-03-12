@@ -612,3 +612,38 @@ def run_optimal_v2(
             logger.debug("Corner coaching labels failed", exc_info=True)
 
     return output
+
+
+# ── Step 10c: Queue OCP theoretical (background) ─────────────────────
+
+
+def queue_ocp_theoretical(
+    session_id: int | str | None,
+    workspace_id: int | None,
+) -> Optional[str]:
+    """Queue the OCP solver as a background Celery task.
+
+    Returns the Celery task ID, or None if skipped.
+    Non-blocking — the pipeline continues immediately.
+    """
+    if session_id is None:
+        return None
+    if os.environ.get("THEORETICAL_OCP", "1") in ("0", "false", "no"):
+        return None
+
+    try:
+        from tasks.ocp_tasks import run_ocp_for_session
+
+        # Use .delay() for async Celery dispatch if available
+        if hasattr(run_ocp_for_session, "delay"):
+            task = run_ocp_for_session.delay(session_id, workspace_id)
+            logger.info("OCP task queued for session %s: task_id=%s", session_id, task.id)
+            return str(task.id)
+
+        # Fallback: run synchronously (local dev without Celery)
+        logger.info("OCP running synchronously for session %s (no Celery)", session_id)
+        run_ocp_for_session(session_id, workspace_id)
+        return "direct"
+    except Exception:
+        logger.debug("OCP theoretical queuing failed", exc_info=True)
+        return None
