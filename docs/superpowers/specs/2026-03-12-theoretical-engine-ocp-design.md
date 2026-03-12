@@ -155,7 +155,14 @@ The solver adapts to available telemetry channels.
 - Track geometry: curvature kappa(s) from GPS heading
 - Vehicle params: extracted from peak lateral g, peak longitudinal accel, peak braking decel
 - Friction calibration: mu_ref anchored to driver's best corner performance
-- Output: optimal speed profile v(s)
+- **Understeer/oversteer detection** from yaw rate residual (no steering data needed):
+  - `yaw_expected = v * kappa(s)` (what curvature demands)
+  - `yaw_measured = d(heading)/dt` (from GPS heading changes)
+  - `residual = (yaw_measured - yaw_expected) * sign(kappa)`
+  - Positive = oversteer (more rotation than geometry requires), Negative = understeer (less rotation)
+  - Same approach as `corner_diagnosis.py`'s `_compute_yaw_residual()`
+  - Per-corner understeer/oversteer classification included in OCP result
+- Output: optimal speed profile v(s) + per-corner handling balance
 
 **Tier 2 — GPS + Accel + Throttle/Brake**:
 - All of Tier 1, plus:
@@ -165,9 +172,12 @@ The solver adapts to available telemetry channels.
 
 **Tier 3 — GPS + Accel + Pedals + Steering**:
 - All of Tier 2, plus:
-- Understeer/oversteer detection from steering angle vs. required curvature
-- Tire model parameter refinement from estimated slip angles
-- Output adds: handling balance diagnostics per corner
+- **Refined understeer/oversteer** from actual slip angles:
+  - Front slip angle: `alpha_f = steering_angle / steering_ratio - atan(v * kappa * L_front / v)`
+  - Understeer gradient: `K_us = (alpha_f - alpha_r) / a_lat` — a true vehicle dynamics measurement
+  - Replaces Tier 1's yaw-residual approximation with a physics-grounded slip angle calculation
+- Tire model parameter refinement from estimated slip angles (Pacejka curve fitting)
+- Output adds: per-corner understeer gradient, slip angle estimates, refined tire model parameters
 
 **Tier detection**: Auto-detected from available DataFrame columns (same approach as corner_diagnosis.py `_detect_tier`).
 
