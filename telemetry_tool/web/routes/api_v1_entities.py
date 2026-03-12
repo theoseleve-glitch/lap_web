@@ -273,6 +273,26 @@ def _map_track(row):
 @bp.route("/tracks", methods=["GET"])
 def list_tracks():
     conn = _get_conn()
+
+    # Auto-merge tracks that share the same name (case-insensitive).
+    # Wrapped in SAVEPOINT — no conn.commit() mid-request (would reset
+    # SET LOCAL RLS context).  Merge is visible within the same txn;
+    # request teardown commits.
+    try:
+        from web.repos.track_repo import merge_named_duplicate_tracks
+        conn.execute("SAVEPOINT sp_merge_tracks")
+        merged = merge_named_duplicate_tracks(conn)
+        conn.execute("RELEASE SAVEPOINT sp_merge_tracks")
+        if merged:
+            logger.info("Auto-merged %d duplicate tracks by name", merged)
+    except Exception:
+        try:
+            conn.execute("ROLLBACK TO SAVEPOINT sp_merge_tracks")
+            conn.execute("RELEASE SAVEPOINT sp_merge_tracks")
+        except Exception:
+            pass
+        logger.debug("Track merge skipped", exc_info=True)
+
     include_unnamed = request.args.get("include_unnamed", "0") == "1"
     rows = conn.execute(Q.SELECT_ALL_TRACKS).fetchall()
     mapped = [_map_track(r) for r in rows]

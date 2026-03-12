@@ -52,6 +52,7 @@ export default function DevelopmentPlansPage() {
 
   const [driverFilter, setDriverFilter] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [formName, setFormName] = useState('');
   const [formDriverId, setFormDriverId] = useState<number | ''>('');
 
@@ -91,6 +92,27 @@ export default function DevelopmentPlansPage() {
     }
     return m;
   }, [drivers]);
+
+  /* Delete mutation */
+  const deleteMutation = useMutation({
+    mutationFn: (planId: number) => api.delete(`/dev-plans/${planId}`),
+    onMutate: async (planId) => {
+      await queryClient.cancelQueries({ queryKey: ['dev-plans'] });
+      const prev = queryClient.getQueryData<DevPlan[]>(['dev-plans', driverFilter]);
+      queryClient.setQueryData<DevPlan[]>(['dev-plans', driverFilter], (old) =>
+        old ? old.filter((p) => p.id !== planId) : [],
+      );
+      setConfirmDelete(null);
+      return { prev };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dev-plans'] });
+    },
+    onError: (_err, _id, context) => {
+      if (context?.prev) queryClient.setQueryData(['dev-plans', driverFilter], context.prev);
+      console.error('[devplan-delete]', _err);
+    },
+  });
 
   /* Create mutation */
   const createMutation = useMutation({
@@ -245,16 +267,45 @@ export default function DevelopmentPlansPage() {
               className="group text-left bg-concrete rounded-lg border border-steel/20 p-5
                 hover:border-acid-green/40 transition-all cursor-pointer"
             >
-              {/* Name + Status badge */}
+              {/* Name + Status badge + delete */}
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-monument text-lg text-chalk group-hover:text-acid-green transition-colors truncate">
                   {plan.plan_name}
                 </h3>
-                <span
-                  className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-telemetry uppercase border ${statusBadgeClass(plan.status)}`}
-                >
-                  {plan.status}
-                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span
+                    className={`px-2 py-0.5 rounded text-[10px] font-telemetry uppercase border ${statusBadgeClass(plan.status)}`}
+                  >
+                    {plan.status}
+                  </span>
+                  {confirmDelete === plan.id ? (
+                    <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                      <button
+                        onClick={(e) => { e.preventDefault(); deleteMutation.mutate(plan.id); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
+                      >
+                        {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
+                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </span>
+                  ) : (
+                    <button
+                      onClick={(e) => { e.preventDefault(); setConfirmDelete(plan.id); }}
+                      title="Delete plan"
+                      className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Driver */}
