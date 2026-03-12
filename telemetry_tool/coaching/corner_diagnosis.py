@@ -477,3 +477,65 @@ def _sustained_run(mask: np.ndarray, distances: np.ndarray, min_duration_s: floa
             if span >= min_dist:
                 return True
     return False
+
+
+def _check_exit_phase(
+    metrics: dict, theo: dict | None, thresholds: dict, tier: str,
+) -> list[Candidate]:
+    """Check exit phase labels."""
+    candidates: list[Candidate] = []
+    s_apex = metrics["s_apex"]
+    s_exit = metrics["s_exit"]
+    d = metrics["d"]
+    v = metrics["v"]
+
+    exit_mask = d >= s_apex
+
+    # Late rotation (all tiers, requires MRP data)
+    mrp_delta = metrics.get("mrp_apex_delta_m")
+    if mrp_delta is not None and mrp_delta > thresholds["late_rotation_m"]:
+        candidates.append(Candidate(LATE_ROTATION, 2, "exit"))
+
+    # Yaw residual in exit zone (accel + full tiers only)
+    yaw_res = metrics.get("yaw_residual")
+    if tier in ("accel", "full") and yaw_res is not None and exit_mask.sum() >= 3:
+        exit_yaw = yaw_res[exit_mask]
+        if np.sum(exit_yaw > thresholds["yaw_residual_dps"]) >= 3:
+            candidates.append(Candidate(EXIT_OVERSTEER, 1, "exit"))
+        elif np.sum(exit_yaw < -thresholds["exit_yaw_understeer_dps"]) >= 3:
+            candidates.append(Candidate(EXIT_UNDERSTEER, 2, "exit"))
+
+    # Pedal-tier checks
+    throttle = metrics.get("throttle")
+    if tier == "full" and throttle is not None:
+        mrp_m = metrics.get("mrp_m")
+
+        # Early throttle: throttle > 50% before MRP + 2m (or v_min fallback)
+        reference_m = (mrp_m + 2.0) if mrp_m is not None else metrics["s_vmin"]
+        before_ref = (d >= s_apex) & (d < reference_m)
+        if before_ref.any() and np.any(throttle[before_ref] > 50):
+            candidates.append(Candidate(EARLY_THROTTLE, 2, "exit"))
+
+        # Late throttle: first throttle application > 40% of exit zone past apex
+        exit_zone_len = s_exit - s_apex
+        late_threshold_m = s_apex + 0.4 * exit_zone_len
+        first_throttle_idx = None
+        for i in range(len(d)):
+            if d[i] >= s_apex and throttle[i] > 10:
+                first_throttle_idx = i
+                break
+        if first_throttle_idx is not None and d[first_throttle_idx] > late_threshold_m:
+            candidates.append(Candidate(LATE_THROTTLE, 3, "exit"))
+
+        # Throttle lift: drop > 20% before s_exit after initial application
+        exit_throttle = throttle[exit_mask]
+        if len(exit_throttle) > 5:
+            peak_throttle = 0.0
+            for val in exit_throttle:
+                if val > peak_throttle:
+                    peak_throttle = val
+                elif peak_throttle > 20 and (peak_throttle - val) > 20:
+                    candidates.append(Candidate(THROTTLE_LIFT, 2, "exit"))
+                    break
+
+    return candidates

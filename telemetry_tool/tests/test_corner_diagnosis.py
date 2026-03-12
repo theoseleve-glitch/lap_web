@@ -331,3 +331,78 @@ class TestApexPhase:
                       "yaw_residual_dps": 10.0, "coast_gap_s": 0.3}
         labels = _check_apex_phase(metrics, theo, thresholds, "gps")
         assert any(c.label == "coast_hesitation" for c in labels)
+
+
+class TestExitPhase:
+    """Exit phase label detection."""
+
+    def test_late_rotation_from_mrp(self):
+        from coaching.corner_diagnosis import _check_exit_phase
+
+        metrics = {"s_apex": 100.0, "s_exit": 150.0, "s_vmin": 100.0,
+                   "v_exit_mps": 28.0, "v": np.full(100, 25.0),
+                   "d": np.linspace(50, 150, 100), "kappa_sign": 1.0,
+                   "yaw_residual": None, "lon_g": None,
+                   "brake": None, "throttle": None,
+                   "mrp_m": 115.0, "mrp_apex_delta_m": 10.0}
+        theo = {"v_exit_mps": 28.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "late_rotation_m": 8.0,
+                      "yaw_residual_dps": 10.0, "exit_yaw_understeer_dps": 8.0}
+        labels = _check_exit_phase(metrics, theo, thresholds, "gps")
+        assert any(c.label == "late_rotation" for c in labels)
+
+    def test_late_rotation_not_fired_below_threshold(self):
+        from coaching.corner_diagnosis import _check_exit_phase
+
+        metrics = {"s_apex": 100.0, "s_exit": 150.0, "s_vmin": 100.0,
+                   "v_exit_mps": 28.0, "v": np.full(100, 25.0),
+                   "d": np.linspace(50, 150, 100), "kappa_sign": 1.0,
+                   "yaw_residual": None, "lon_g": None,
+                   "brake": None, "throttle": None,
+                   "mrp_m": 105.0, "mrp_apex_delta_m": 5.0}
+        theo = {"v_exit_mps": 28.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "late_rotation_m": 8.0,
+                      "yaw_residual_dps": 10.0, "exit_yaw_understeer_dps": 8.0}
+        labels = _check_exit_phase(metrics, theo, thresholds, "gps")
+        assert not any(c.label == "late_rotation" for c in labels)
+
+    def test_early_throttle_with_mrp_reference(self):
+        from coaching.corner_diagnosis import _check_exit_phase
+
+        n = 100
+        d = np.linspace(50, 150, n)
+        throttle = np.zeros(n)
+        throttle_start_idx = np.searchsorted(d, 95.0)
+        throttle[throttle_start_idx:] = 60.0
+
+        metrics = {"s_apex": 100.0, "s_exit": 150.0, "s_vmin": 100.0,
+                   "v_exit_mps": 28.0, "v": np.full(n, 25.0), "d": d,
+                   "kappa_sign": 1.0, "yaw_residual": None, "lon_g": None,
+                   "brake": None, "throttle": throttle,
+                   "mrp_m": 110.0, "mrp_apex_delta_m": 5.0}
+        theo = {"v_exit_mps": 28.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "late_rotation_m": 8.0,
+                      "yaw_residual_dps": 10.0, "exit_yaw_understeer_dps": 8.0}
+        labels = _check_exit_phase(metrics, theo, thresholds, "full")
+        assert any(c.label == "early_throttle" for c in labels)
+
+    def test_throttle_lift(self):
+        from coaching.corner_diagnosis import _check_exit_phase
+
+        n = 100
+        d = np.linspace(50, 150, n)
+        throttle = np.zeros(n)
+        throttle[50:70] = 80
+        throttle[70:80] = 50  # 30% drop
+        throttle[80:] = 80
+
+        metrics = {"s_apex": 100.0, "s_exit": 150.0, "s_vmin": 100.0,
+                   "v_exit_mps": 28.0, "v": np.full(n, 25.0), "d": d,
+                   "kappa_sign": 1.0, "yaw_residual": None, "lon_g": None,
+                   "brake": None, "throttle": throttle,
+                   "mrp_m": None, "mrp_apex_delta_m": None}
+        theo = {"v_exit_mps": 28.0}
+        thresholds = {"v_exit_delta_kmh": 5.0, "late_rotation_m": 8.0,
+                      "yaw_residual_dps": 10.0, "exit_yaw_understeer_dps": 8.0}
+        labels = _check_exit_phase(metrics, theo, thresholds, "full")
+        assert any(c.label == "throttle_lift" for c in labels)
