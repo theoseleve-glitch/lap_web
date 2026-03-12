@@ -406,6 +406,32 @@ class TestRollingAvgFallbackIntegration:
         assert laps[2]["is_best"] == 1
         assert laps[1]["is_best"] == 0
 
+    def test_best_lap_reassigned_when_invalid(self, db):
+        """If pipeline picks a best lap that rolling-avg flags as
+        invalid (e.g. distance anomaly), best_lap falls back to
+        the fastest *valid* lap."""
+        metrics = _make_laps(
+            n=8,
+            base_time=89.0,
+            base_dist=1255.0,
+            # Lap 8: fastest but short distance (distance anomaly)
+            time_overrides={8: 86.5},
+            dist_overrides={8: 1117.0},
+        )
+        summary = _make_summary(
+            lap_metrics=metrics,
+            best_key=8,  # pipeline picked lap 8 (fastest)
+        )
+        insert_laps(db, "s1", summary)
+        laps = _get_laps(db)
+        # Lap 8 should be invalid (distance anomaly)
+        assert laps[8]["is_valid"] == 0
+        assert laps[8]["is_best"] == 0
+        # Some other valid lap should be best
+        best_laps = [n for n, l in laps.items() if l["is_best"] == 1]
+        assert len(best_laps) == 1
+        assert laps[best_laps[0]]["is_valid"] == 1
+
     def test_count_returned(self, db):
         metrics = _make_laps(n=6)
         summary = {

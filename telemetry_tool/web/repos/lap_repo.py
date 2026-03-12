@@ -409,6 +409,33 @@ def insert_laps(
         else:
             validity[lap_num] = (True, None)
 
+    # If the pipeline's best_key is no longer valid after blended
+    # validation (e.g. rolling-avg flagged it as distance anomaly),
+    # fall back to the fastest valid lap.
+    if best_key is not None:
+        bk_valid, _ = validity.get(best_key, (True, None))
+        if not bk_valid:
+            # Also check joker override
+            if joker_lap_number is not None and best_key == joker_lap_number:
+                bk_valid = False
+            if not bk_valid:
+                # Pick fastest valid lap
+                fallback = None
+                for lm in lap_metrics:
+                    ln = lm.get("lap_number")
+                    if ln is None:
+                        continue
+                    v, _ = validity.get(ln, (True, None))
+                    if not v:
+                        continue
+                    if joker_lap_number is not None and ln == joker_lap_number:
+                        continue
+                    t = _safe_float(lm.get("lap_time_s"))
+                    if t is not None and t > 0:
+                        if fallback is None or t < fallback[1]:
+                            fallback = (ln, t)
+                best_key = fallback[0] if fallback else None
+
     count = 0
     for lm in lap_metrics:
         lap_num = lm.get("lap_number")
@@ -521,6 +548,41 @@ def revalidate_session_laps(
                 "lap": ln,
                 "was": {"valid": old_valid, "reason": old_reason},
                 "now": {"valid": new_valid, "reason": new_reason},
+            })
+
+    # Reassign best lap if the current best is now invalid
+    current_best = [r for r in laps if r.get("is_best")]
+    if current_best:
+        best_ln = current_best[0]["lap_number"]
+        bv, _ = validity.get(best_ln, (True, None))
+        if not bv:
+            # Clear old best, find fastest valid
+            conn.execute(
+                "UPDATE laps SET is_best = 0 "
+                "WHERE session_id = :sid AND is_best = 1",
+                {"sid": session_id},
+            )
+            fastest = None
+            for lm in lap_metrics:
+                ln = lm["lap_number"]
+                v, _ = validity.get(ln, (True, None))
+                if not v:
+                    continue
+                if any(r.get("is_joker") for r in laps if r["lap_number"] == ln):
+                    continue
+                t = _safe_float(lm.get("lap_time_s"))
+                if t and t > 0 and (fastest is None or t < fastest[1]):
+                    fastest = (ln, t)
+            if fastest:
+                conn.execute(
+                    "UPDATE laps SET is_best = 1 "
+                    "WHERE session_id = :sid AND lap_number = :ln",
+                    {"sid": session_id, "ln": fastest[0]},
+                )
+            changes.append({
+                "lap": best_ln,
+                "best_reassigned": True,
+                "new_best": fastest[0] if fastest else None,
             })
 
     conn.commit()
