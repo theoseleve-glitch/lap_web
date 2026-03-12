@@ -8,7 +8,7 @@ interface StartLightsProps {
   reducedMotion?: boolean;
 }
 
-const LIGHT_INTERVAL_MS = 1000;
+const LIGHT_INTERVAL_MS = 500;
 
 export function StartLights({ onComplete, reducedMotion = false }: StartLightsProps) {
   const [litCount, setLitCount] = useState(0);
@@ -42,7 +42,7 @@ export function StartLights({ onComplete, reducedMotion = false }: StartLightsPr
     setLitCount(0);
     setLightsOut(false);
 
-    // Light one immediately, then every second
+    // Light one immediately, then every 0.5s
     countRef.current = 1;
     setLitCount(1);
 
