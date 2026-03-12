@@ -574,3 +574,36 @@ def _check_overall(
             candidates.append(Candidate(SCRAPPY, 3, "overall"))
 
     return candidates
+
+
+def _resolve_and_pick(candidates: list[Candidate]) -> str:
+    """Resolve causal chains and return the single dominant label.
+
+    1. Remove labels that are downstream of a present root cause.
+    2. Pick the highest-priority remaining label.
+    3. Return "good" if nothing remains.
+    """
+    if not candidates:
+        return GOOD
+
+    # Build set of present labels
+    present = {c.label for c in candidates}
+
+    # Remove downstream labels when their upstream cause is present
+    to_remove: set[str] = set()
+    for child, parent in _CAUSAL_PARENT.items():
+        if child in present and parent in present:
+            to_remove.add(child)
+
+    # Also check "always" chains (e.g. slow_exit removed when early_apex or late_rotation present)
+    for child, parents in _CAUSAL_ALWAYS.items():
+        if child in present and any(p in present for p in parents):
+            to_remove.add(child)
+
+    filtered = [c for c in candidates if c.label not in to_remove]
+    if not filtered:
+        return GOOD
+
+    # Sort by priority (lower = higher priority), then prefer safety labels
+    filtered.sort(key=lambda c: (c.priority, c.label not in _SAFETY_LABELS))
+    return filtered[0].label

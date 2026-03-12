@@ -449,3 +449,73 @@ class TestOverallPhase:
                       "yaw_residual_dps": 10.0}
         labels = _check_overall(metrics, theo, thresholds, [])
         assert any(c.label == "scrappy" for c in labels)
+
+
+class TestCausalResolution:
+    """Causal chain resolution and dominant label picking."""
+
+    def test_entry_overspeed_is_root_of_entry_understeer(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("entry_overspeed", 2, "entry"),
+            Candidate("entry_understeer", 2, "entry"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "entry_overspeed"
+
+    def test_safety_label_wins_over_time_loss(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("entry_overspeed", 2, "entry"),
+            Candidate("exit_oversteer", 1, "exit"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "exit_oversteer"
+
+    def test_good_when_no_candidates(self):
+        from coaching.corner_diagnosis import _resolve_and_pick
+
+        label = _resolve_and_pick([])
+        assert label == "good"
+
+    def test_early_apex_is_root_over_slow_exit(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("early_apex", 2, "apex"),
+            Candidate("slow_exit", 3, "overall"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "early_apex"
+
+    def test_late_rotation_is_root_over_slow_exit(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("late_rotation", 2, "exit"),
+            Candidate("slow_exit", 3, "overall"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "late_rotation"
+
+    def test_early_throttle_is_root_of_exit_understeer(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("early_throttle", 2, "exit"),
+            Candidate("exit_understeer", 2, "exit"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "early_throttle"
+
+    def test_coast_hesitation_chain(self):
+        from coaching.corner_diagnosis import _resolve_and_pick, Candidate
+
+        candidates = [
+            Candidate("coast_hesitation", 3, "apex"),
+            Candidate("late_throttle", 3, "exit"),
+        ]
+        label = _resolve_and_pick(candidates)
+        assert label == "coast_hesitation"
