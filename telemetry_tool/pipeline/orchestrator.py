@@ -74,6 +74,51 @@ def _fetch_user_corners(conn, session_id: str) -> list[dict] | None:
     return [dict(zip([d[0] for d in cursor.description], row)) for row in cursor.fetchall()]
 
 
+def _build_corner_perfs_from_user_corners(
+    user_corner_rows: list[dict],
+    best_lap_df,
+    sim_result,
+    vehicle_class: str = "car",
+) -> list[dict]:
+    """Convert user corner rows to corner_perf dicts for V3 analyzers.
+
+    Key mapping: s_entry->s_start, s_exit->s_end, corner_index->corner_id.
+    """
+    import numpy as np
+    perfs = []
+    for row in user_corner_rows:
+        perf = {
+            "corner_id": row["corner_index"],
+            "s_start": row["s_entry"],
+            "s_end": row["s_exit"],
+            "s_apex": row["s_apex"],
+            "braking_decel_mps2": 6.0,
+            "cornering_accel_mps2": 5.0,
+            "exit_accel_mps2": 3.0,
+            "vehicle_class": vehicle_class,
+        }
+        # Try to extract actual values from best lap segment
+        if best_lap_df is not None and "Distance (m)" in best_lap_df.columns:
+            d = best_lap_df["Distance (m)"].values
+            mask = (d >= row["s_entry"]) & (d <= row["s_exit"])
+            if mask.sum() > 5:
+                seg = best_lap_df[mask]
+                if "accel_long_mps2" in seg.columns:
+                    a_long = seg["accel_long_mps2"].values
+                    braking = a_long[a_long < 0]
+                    accel = a_long[a_long > 0]
+                    if len(braking) > 0:
+                        perf["braking_decel_mps2"] = abs(float(np.mean(braking)))
+                    if len(accel) > 0:
+                        perf["exit_accel_mps2"] = float(np.mean(accel))
+                if "accel_lat_mps2" in seg.columns:
+                    lat = np.abs(seg["accel_lat_mps2"].values)
+                    if len(lat) > 0:
+                        perf["cornering_accel_mps2"] = float(np.mean(lat))
+        perfs.append(perf)
+    return perfs
+
+
 def run_full_analysis(
     csv_path: str | Path,
     session_meta: dict[str, Any],
@@ -1143,13 +1188,26 @@ def run_full_analysis(
         plan_dict = plan_result.to_dict() if hasattr(plan_result, "to_dict") else plan_result
         summary["practice_plan"] = plan_dict
 
+    # Build user-corner-based perfs for V3 if user corners available
+    v3_corner_perfs = corner_performances  # default: auto-detected
+    if user_corner_rows:
+        _v3_perfs, _err = _safe_step(
+            "S10h_build_v3_perfs",
+            lambda: _build_corner_perfs_from_user_corners(
+                user_corner_rows, best_lap_df, _sim_result,
+                vehicle_class=meta.get("vehicle_class", "car"),
+            ),
+        )
+        if _v3_perfs:
+            v3_corner_perfs = _v3_perfs
+
     # ── Coaching V3 (feature-flagged, default ON) ──
     if os.environ.get("COACHING_V3", "1") != "0":
         from pipeline.stages import s13_coaching_v3
 
         _analyzer_bundle, err = _safe_step(
             "13e_analyzers", s13_coaching_v3.run_coaching_analyzers,
-            corner_perfs=corner_performances,
+            corner_perfs=v3_corner_perfs,
             best_lap_df=best_lap_df,
             theoretical_result=_sim_result,
             friction_model=corrected_friction or friction_circle,
@@ -1162,13 +1220,13 @@ def run_full_analysis(
             "13f_multi_session", s13_coaching_v3.run_multi_session_lookup,
             driver_id=_drv_id if '_drv_id' in dir() else None,
             track_id=meta.get("track_id"),
-            corner_ids=[c["corner_id"] for c in (corner_performances or [])],
+            corner_ids=[c["corner_id"] for c in (v3_corner_perfs or [])],
         )
         _record("13f_multi_session", _driver_history, err)
 
         _coaching_v3, err = _safe_step(
             "13g_coaching_v3", s13_coaching_v3.run_enhanced_coaching,
-            corner_perfs=corner_performances,
+            corner_perfs=v3_corner_perfs,
             coaching_v2=summary.get("coaching_v2"),
             scores=score_result,
             lap_metrics=summary.get("metrics"),
