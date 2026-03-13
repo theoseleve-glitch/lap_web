@@ -943,10 +943,14 @@ def _update_corner_targets(analysis_json, result, corners):
         # Corner coaching entries may use either set of field names:
         #   - Corner detection:  s_start, s_end, s_apex
         #   - Coaching stage:    entry_distance_m, exit_distance_m, apex_distance_m
-        # Try both variants (same pattern as data_v2.py _first_not_none).
-        entry_m = cc.get("s_start") or cc.get("entry_distance_m")
-        exit_m = cc.get("s_end") or cc.get("exit_distance_m")
-        apex_m = cc.get("s_apex") or cc.get("apex_distance_m")
+        # Must use `is not None` (not `or`) because 0.0 is a valid distance
+        # at the start/finish line — `or` treats 0.0 as falsy.
+        _s = cc.get("s_start")
+        entry_m = _s if _s is not None else cc.get("entry_distance_m")
+        _s = cc.get("s_end")
+        exit_m = _s if _s is not None else cc.get("exit_distance_m")
+        _s = cc.get("s_apex")
+        apex_m = _s if _s is not None else cc.get("apex_distance_m")
         if apex_m is None and entry_m is not None and exit_m is not None:
             apex_m = (float(entry_m) + float(exit_m)) / 2.0
 

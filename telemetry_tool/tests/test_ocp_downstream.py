@@ -673,3 +673,75 @@ class TestRefLineArrayLengthMismatch:
 
         # Should produce None curvature (not crash with shape mismatch)
         assert cp is None
+
+
+# ── Task 18: Corner target falsy-distance fallback (Bug 23) ──
+
+
+class TestCornerTargetZeroDistance:
+    """Verify that _update_corner_targets handles s_start/s_end/s_apex = 0.0 correctly.
+
+    The `or` operator treats 0.0 as falsy, causing fallback to the wrong field.
+    After the fix, explicit `is not None` checks should use the correct field.
+    """
+
+    def test_zero_s_start_not_skipped(self):
+        """A corner at the start/finish line has s_start=0.0; should still interpolate."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1, "s_start": 0.0, "s_end": 50.0, "s_apex": 25.0}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "s_start": 0.0, "s_end": 50.0, "s_apex": 25.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        coaching = analysis_json["corner_coaching"]
+        assert len(coaching) == 1
+        cc = coaching[0]
+        # entry_m should be 0.0 (from s_start), NOT None (from missing entry_distance_m)
+        assert "entry_speed_target_kmh" in cc, "s_start=0.0 should not be skipped"
+        assert "apex_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+
+    def test_zero_s_apex_still_computes_speed_delta(self):
+        """If s_apex=0.0 and actual_apex is known, speed_delta_pct should be computed."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1, "s_start": 480.0, "s_end": 20.0, "s_apex": 0.0}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "s_start": 480.0, "s_end": 20.0, "s_apex": 0.0,
+                 "actual_apex_speed_mps": 12.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc, "s_apex=0.0 should not be skipped"
+        assert "speed_delta_pct" in cc, "speed_delta_pct should be computed for s_apex=0.0"
+
+    def test_fallback_to_entry_distance_m_when_s_start_missing(self):
+        """If s_start is absent, should fall back to entry_distance_m."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "entry_distance_m": 100.0, "exit_distance_m": 200.0,
+                 "apex_distance_m": 150.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "entry_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+        assert "apex_speed_target_kmh" in cc
