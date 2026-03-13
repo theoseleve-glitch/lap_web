@@ -302,6 +302,7 @@ def _load_session_data(session_id, workspace_id):
                     has_abs=vp_data.get("has_abs", False),
                     rolling_resistance_est=vp_data.get("rolling_resistance_est", 0.015),
                     aero_drag_factor_est=vp_data.get("aero_drag_factor_est", 0.0),
+                    downforce_coeff_est=vp_data.get("downforce_coeff_est", 0.0),
                 )
             except Exception:
                 logger.warning("Failed to parse vehicle_params, using class defaults", exc_info=True)
