@@ -439,20 +439,21 @@ export function CornerEditor({ trackLayout, onSubmit, isSubmitting }: CornerEdit
   }, []);
 
   // ── Drawing ──────────────────────────────────────
-  useEffect(() => {
+  const renderRef = useRef<() => void>(() => {});
+  renderRef.current = () => {
     if (!canvasRef.current) return;
     projRef.current = drawEditorMap(canvasRef.current, trackLayout, corners, hoverIdx, timerPct, mode);
-  }, [trackLayout, corners, hoverIdx, timerPct, mode]);
+  };
+
+  useEffect(() => { renderRef.current(); }, [trackLayout, corners, hoverIdx, timerPct, mode]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ro = new ResizeObserver(() => {
-      projRef.current = drawEditorMap(canvas, trackLayout, corners, hoverIdx, timerPct, mode);
-    });
+    const ro = new ResizeObserver(() => renderRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [trackLayout, corners, hoverIdx, timerPct, mode]);
+  }, []);
 
   // ── Hit testing ──────────────────────────────────
   const hitTest = useCallback((cx: number, cy: number): { type: 'apex' | 'handle'; cornerId: string; handle?: 'start' | 'end' } | null => {
