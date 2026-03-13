@@ -87,7 +87,17 @@ export function Dropdown({ options, value, onChange, placeholder = 'Select...', 
   return (
     <div ref={containerRef} className={`relative ${className}`} onKeyDown={handleKeyDown}>
       {trigger ? (
-        <div onClick={() => setOpen(!open)}>{trigger}</div>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setOpen(!open)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              setOpen(!open);
+            }
+          }}
+        >{trigger}</div>
       ) : (
         <button
           type="button"

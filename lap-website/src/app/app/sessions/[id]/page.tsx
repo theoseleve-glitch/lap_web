@@ -196,6 +196,57 @@ function TrackNamePrompt({
   );
 }
 
+// ── Export dropdown (click-based, mobile-friendly) ───────────────
+
+function ExportDropdown({ sessionId }: { sessionId: string }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', onClickOutside);
+    return () => document.removeEventListener('mousedown', onClickOutside);
+  }, [open]);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
+        data-print="hide"
+        aria-haspopup="true"
+        aria-expanded={open}
+      >
+        Export Data
+      </button>
+      {open && (
+        <div className="absolute top-full mt-1 right-0 z-20 flex flex-col bg-concrete border border-steel/20 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
+          <a
+            href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=aim`}
+            className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+            download
+            onClick={() => setOpen(false)}
+          >
+            AiM RaceStudio CSV
+          </a>
+          <a
+            href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=motec`}
+            className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+            download
+            onClick={() => setOpen(false)}
+          >
+            MoTeC i2 CSV
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Score bar for Overview tab ───────────────────────────────────
 
 const SCORE_TOOLTIPS: Record<string, string> = {
@@ -460,31 +511,7 @@ export default function SessionDetailPage() {
           </a>
 
           {/* Export to AiM/MoTeC */}
-          <div className="relative group/export">
-            <button
-              type="button"
-              className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
-              data-print="hide"
-            >
-              Export Data
-            </button>
-            <div className="hidden group-hover/export:flex absolute top-full mt-1 right-0 z-20 flex-col bg-concrete border border-steel/20 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
-              <a
-                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=aim`}
-                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
-                download
-              >
-                AiM RaceStudio CSV
-              </a>
-              <a
-                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=motec`}
-                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
-                download
-              >
-                MoTeC i2 CSV
-              </a>
-            </div>
-          </div>
+          <ExportDropdown sessionId={sessionId} />
 
           {/* Driving Analyzer */}
           <button
