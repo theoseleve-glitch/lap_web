@@ -327,7 +327,7 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
         className="hidden"
       />
 
-      <PitButton type="submit" className="w-full sm:w-auto">
+      <PitButton type="submit" className="w-full sm:w-auto" loading={isSubmitting}>
         {isSubmitting ? t('form.submitting') : submitLabel}
       </PitButton>
     </form>

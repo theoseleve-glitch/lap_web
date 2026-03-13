@@ -12,6 +12,8 @@ interface StampButtonProps {
   type?: 'button' | 'submit';
   /** Lint-enforced: max 1 primary per page. Defaults to 'primary' for backwards compat. */
   variant?: StampVariant;
+  disabled?: boolean;
+  loading?: boolean;
 }
 
 export function StampButton({
@@ -21,8 +23,11 @@ export function StampButton({
   className = '',
   type = 'button',
   variant = 'primary',
+  disabled = false,
+  loading = false,
 }: StampButtonProps) {
   const isPrimary = variant === 'primary';
+  const isDisabled = disabled || loading;
   const baseClass = `
     inline-flex items-center justify-center
     min-h-[48px] px-8 py-3.5
@@ -34,26 +39,29 @@ export function StampButton({
     ${isPrimary ? 'hover:bg-chalk hover:text-asphalt hover:shadow-[0_0_24px_rgba(240,237,229,0.12)]' : 'hover:text-chalk hover:border-steel'}
     active:scale-[0.98]
     focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2
+    ${isDisabled ? 'opacity-40 pointer-events-none' : ''}
     ${className}
   `.trim();
+
+  const safeOnClick = isDisabled ? undefined : onClick;
 
   if (href) {
     if (href.startsWith('/')) {
       return (
-        <Link href={href} className={baseClass} onClick={onClick}>
+        <Link href={href} className={baseClass} onClick={safeOnClick} aria-disabled={isDisabled || undefined} tabIndex={isDisabled ? -1 : undefined}>
           {children}
         </Link>
       );
     }
     return (
-      <a href={href} className={baseClass} onClick={onClick}>
+      <a href={isDisabled ? undefined : href} className={baseClass} onClick={safeOnClick} aria-disabled={isDisabled || undefined} tabIndex={isDisabled ? -1 : undefined}>
         {children}
       </a>
     );
   }
 
   return (
-    <button type={type} className={baseClass} onClick={onClick}>
+    <button type={type} className={baseClass} onClick={safeOnClick} disabled={isDisabled}>
       {children}
     </button>
   );
