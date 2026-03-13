@@ -310,6 +310,12 @@ def _curvature_from_reference_line(distances, lats, lons):
     lats = lats[valid]
     lons = lons[valid]
 
+    # Ensure strictly increasing distances (GPS can produce duplicates/decreases)
+    mono_mask = np.concatenate(([True], np.diff(distances) > 0.01))
+    distances = distances[mono_mask]
+    lats = lats[mono_mask]
+    lons = lons[mono_mask]
+
     n = len(distances)
     if n < 20:
         return None
@@ -382,12 +388,18 @@ def _extract_warm_start(analysis_json: dict, mesh) -> Any:
         return None
 
     try:
-        distances = np.array([p["distance_m"] for p in speed_data])
-        speeds = np.array([p["speed_mps"] for p in speed_data])
-        warm = np.interp(mesh.s, distances, speeds)
+        distances = np.array([p["distance_m"] for p in speed_data], dtype=float)
+        speeds = np.array([p["speed_mps"] for p in speed_data], dtype=float)
+        # Filter NaN from QSS result before interpolating
+        valid = np.isfinite(distances) & np.isfinite(speeds)
+        if valid.sum() < 10:
+            return None
+        warm = np.interp(mesh.s, distances[valid], speeds[valid])
         warm = np.maximum(warm, 2.0)
+        # Final NaN safety (shouldn't happen after filtering, but belt-and-suspenders)
+        warm = np.nan_to_num(warm, nan=10.0)
         return warm
-    except (KeyError, ValueError):
+    except (KeyError, ValueError, TypeError):
         return None
 
 
