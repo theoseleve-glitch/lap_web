@@ -448,7 +448,7 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
     Uses braking_point_actual_m and s_start from CornerPerformance dicts.
     Raw corners don't have braking data; corner_perfs does.
     """
-    corner_perfs = analysis_json.get("corner_perfs", [])
+    corner_perfs = analysis_json.get("corner_performances", [])
     if not isinstance(corner_perfs, list):
         return []
     dists = []
@@ -539,7 +539,7 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
                     corners, best_lap_df, theo_df, friction_model, resampled_laps,
                 )
                 if corner_perfs:
-                    analysis_json["corner_perfs"] = corner_perfs
+                    analysis_json["corner_performances"] = corner_perfs
             except Exception:
                 logger.warning("OCP downstream: corner analysis failed", exc_info=True)
 
