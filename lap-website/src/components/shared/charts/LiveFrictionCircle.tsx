@@ -64,50 +64,45 @@ export function LiveFrictionCircle({
   const [selectedLap, setSelectedLap] = useState(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
   // ── Fetch data ──────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    if (!selectedLap) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [gg, pedals] = await Promise.all([
-        apiFetch<(GGData & { available: boolean }) | { available: false }>(
-          `/sessions/${encodeURIComponent(sessionId)}/gg-data?lap=${selectedLap}`,
-        ),
-        apiFetch<(PedalData & { available: boolean }) | { available: false }>(
-          `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
-        ).catch(() => ({ available: false as const })),
-      ]);
-
-      if ('accel_lat' in gg && gg.available !== false) {
-        ggRef.current = gg as GGData;
-      } else {
-        ggRef.current = null;
-        setError('No G-G data available');
-      }
-
-      if ('throttle' in pedals && pedals.available !== false) {
-        pedalRef.current = pedals as PedalData;
-      } else {
-        pedalRef.current = null;
-      }
-    } catch (err) {
-      ggRef.current = null;
-      pedalRef.current = null;
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, selectedLap]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!selectedLap) return;
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); ggRef.current = null; pedalRef.current = null;
+    (async () => {
+      try {
+        const [gg, pedals] = await Promise.all([
+          apiFetch<(GGData & { available: boolean }) | { available: false }>(
+            `/sessions/${encodeURIComponent(sessionId)}/gg-data?lap=${selectedLap}`,
+          ),
+          apiFetch<(PedalData & { available: boolean }) | { available: false }>(
+            `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
+          ).catch(() => ({ available: false as const })),
+        ]);
+        if (ver !== fetchVersionRef.current) return;
+
+        if ('accel_lat' in gg && gg.available !== false) {
+          ggRef.current = gg as GGData;
+        } else {
+          setError('No G-G data available');
+        }
+
+        if ('throttle' in pedals && pedals.available !== false) {
+          pedalRef.current = pedals as PedalData;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+      }
+      setLoading(false);
+    })();
+  }, [sessionId, selectedLap]);
 
   // ── Classify point input ────────────────────────────────────
   const classifyInput = useCallback(

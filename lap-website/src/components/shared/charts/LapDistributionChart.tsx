@@ -38,29 +38,29 @@ export function LapDistributionChart({
   const dataRef = useRef<DistributionData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch<DistributionData>(
-        `/sessions/${encodeURIComponent(sessionId)}/lap-distribution`,
-      );
-      if (!data.bins || data.bins.length < 2) {
-        dataRef.current = null;
-        setError('Not enough laps for distribution');
-      } else {
-        dataRef.current = data;
+  useEffect(() => {
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const data = await apiFetch<DistributionData>(
+          `/sessions/${encodeURIComponent(sessionId)}/lap-distribution`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if (!data.bins || data.bins.length < 2) {
+          setError('Not enough laps for distribution');
+        } else {
+          dataRef.current = data;
+        }
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load distribution');
       }
-    } catch (e) {
-      dataRef.current = null;
-      setError(e instanceof Error ? e.message : 'Failed to load distribution');
-    } finally {
       setLoading(false);
-    }
+    })();
   }, [sessionId]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;

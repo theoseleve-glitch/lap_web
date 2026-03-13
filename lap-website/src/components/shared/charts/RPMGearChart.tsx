@@ -65,40 +65,35 @@ export function RPMGearChart({
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
   // -- Fetch RPM/gear data -----------------------------------------------
-  const fetchData = useCallback(async () => {
-    if (!selectedLap) {
-      dataRef.current = null;
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch<RPMGearData>(
-        `/sessions/${encodeURIComponent(sessionId)}/rpm-gear?lap=${selectedLap}`,
-      );
-      if (!data.available) {
-        dataRef.current = null;
-        setError('No RPM/gear data available for this lap');
-      } else {
-        dataRef.current = data;
-      }
-    } catch (err) {
-      dataRef.current = null;
-      setError(err instanceof Error ? err.message : 'Failed to load RPM/gear data');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, selectedLap]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!selectedLap) { dataRef.current = null; return; }
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const data = await apiFetch<RPMGearData>(
+          `/sessions/${encodeURIComponent(sessionId)}/rpm-gear?lap=${selectedLap}`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if (!data.available) {
+          setError('No RPM/gear data available for this lap');
+        } else {
+          dataRef.current = data;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load RPM/gear data');
+      }
+      setLoading(false);
+    })();
+  }, [sessionId, selectedLap]);
 
   // -- Draw chart --------------------------------------------------------
   const draw = useCallback((hoverDist: number | null = null) => {

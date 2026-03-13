@@ -45,27 +45,33 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
     if (!selectedLap) { tempRef.current = null; pedalRef.current = null; return; }
-    setLoading(true); setError(null);
-    try {
-      const [td, pd] = await Promise.all([
-        apiFetch<BrakeTempData>(`/sessions/${encodeURIComponent(sessionId)}/brake-temps?lap=${selectedLap}`),
-        apiFetch<PedalData>(`/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`)
-          .catch(() => ({ distances: [], brake: [], available: false } as PedalData)),
-      ]);
-      if (!td.available) { tempRef.current = null; pedalRef.current = null; setError('No brake temperature data available'); }
-      else { tempRef.current = td; pedalRef.current = pd.available ? pd : null; }
-    } catch (e) { tempRef.current = null; pedalRef.current = null; setError(e instanceof Error ? e.message : 'Failed to load brake data'); }
-    finally { setLoading(false); }
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); tempRef.current = null; pedalRef.current = null;
+    (async () => {
+      try {
+        const [td, pd] = await Promise.all([
+          apiFetch<BrakeTempData>(`/sessions/${encodeURIComponent(sessionId)}/brake-temps?lap=${selectedLap}`),
+          apiFetch<PedalData>(`/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`)
+            .catch(() => ({ distances: [], brake: [], available: false } as PedalData)),
+        ]);
+        if (ver !== fetchVersionRef.current) return;
+        if (!td.available) { setError('No brake temperature data available'); }
+        else { tempRef.current = td; pedalRef.current = pd.available ? pd : null; }
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load brake data');
+      }
+      setLoading(false);
+    })();
   }, [sessionId, selectedLap]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback((hoverDist: number | null = null) => {
     const canvas = canvasRef.current; if (!canvas) return;

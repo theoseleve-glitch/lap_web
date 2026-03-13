@@ -43,23 +43,29 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
     if (!selectedLap) { dataRef.current = null; return; }
-    setLoading(true); setError(null);
-    try {
-      const d = await apiFetch<WheelSlipData>(`/sessions/${encodeURIComponent(sessionId)}/wheel-slip?lap=${selectedLap}`);
-      if (!d.available) { dataRef.current = null; setError('No wheel slip data available for this lap'); }
-      else dataRef.current = d;
-    } catch (e) { dataRef.current = null; setError(e instanceof Error ? e.message : 'Failed to load wheel slip'); }
-    finally { setLoading(false); }
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const d = await apiFetch<WheelSlipData>(`/sessions/${encodeURIComponent(sessionId)}/wheel-slip?lap=${selectedLap}`);
+        if (ver !== fetchVersionRef.current) return;
+        if (!d.available) { setError('No wheel slip data available for this lap'); }
+        else dataRef.current = d;
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load wheel slip');
+      }
+      setLoading(false);
+    })();
   }, [sessionId, selectedLap]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback((hoverDist: number | null = null) => {
     const canvas = canvasRef.current; if (!canvas) return;

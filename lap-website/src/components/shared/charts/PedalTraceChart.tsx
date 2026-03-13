@@ -50,40 +50,35 @@ export function PedalTraceChart({
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
   // -- Fetch pedal data -------------------------------------------------
-  const fetchData = useCallback(async () => {
-    if (!selectedLap) {
-      dataRef.current = null;
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await apiFetch<PedalData>(
-        `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
-      );
-      if (!data.available) {
-        dataRef.current = null;
-        setError('No pedal data available for this lap');
-      } else {
-        dataRef.current = data;
-      }
-    } catch (err) {
-      dataRef.current = null;
-      setError(err instanceof Error ? err.message : 'Failed to load pedal data');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, selectedLap]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!selectedLap) { dataRef.current = null; return; }
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const data = await apiFetch<PedalData>(
+          `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if (!data.available) {
+          setError('No pedal data available for this lap');
+        } else {
+          dataRef.current = data;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load pedal data');
+      }
+      setLoading(false);
+    })();
+  }, [sessionId, selectedLap]);
 
   // -- Draw chart -------------------------------------------------------
   const draw = useCallback((hoverDist: number | null = null) => {
