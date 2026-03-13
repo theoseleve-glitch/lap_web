@@ -643,3 +643,33 @@ class TestScoringCrashGracefulDegradation:
         # Existing scores should be preserved as fallback
         persisted_scores = mock_persist.call_args[0][3]
         assert persisted_scores.get("total_score") == 55
+
+
+# ── Task 17: Reference line array length mismatch guard ──
+
+
+class TestRefLineArrayLengthMismatch:
+    def test_mismatched_ref_line_arrays_produce_no_curvature(self):
+        """If ref line arrays have different lengths, curvature should be None (not crash)."""
+        from tasks.ocp_tasks import _load_session_data
+        import json as _json
+
+        mock_conn = MagicMock()
+        analysis = {"lap_times": [74.0]}
+        mock_row = {"analysis_json": _json.dumps(analysis)}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        # Reference line with mismatched arrays (distances=500, lats=400)
+        ref_line = {
+            "distances": list(range(500)),
+            "latitudes": [45.0] * 400,    # wrong length!
+            "longitudes": [9.0] * 500,
+        }
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with patch("web.repos.lap_repo.get_laps_for_session", return_value=[]):
+                with patch("web.repos.theoretical_repo.get_reference_line", return_value=ref_line):
+                    conn, aj, bldf, cp, vp = _load_session_data("sess-1", None)
+
+        # Should produce None curvature (not crash with shape mismatch)
+        assert cp is None

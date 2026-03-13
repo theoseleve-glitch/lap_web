@@ -269,7 +269,9 @@ def _load_session_data(session_id, workspace_id):
             ref_dists = ref_line.get("distances", [])
             ref_lats = ref_line.get("latitudes", [])
             ref_lons = ref_line.get("longitudes", [])
-            if ref_dists and ref_lats and ref_lons and len(ref_dists) > 10:
+            if (ref_dists and ref_lats and ref_lons
+                    and len(ref_dists) > 10
+                    and len(ref_dists) == len(ref_lats) == len(ref_lons)):
                 curvature_profile = _curvature_from_reference_line(
                     np.array(ref_dists, dtype=float),
                     np.array(ref_lats, dtype=float),
