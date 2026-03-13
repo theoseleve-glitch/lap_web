@@ -29,6 +29,7 @@ interface GGExplorerProps {
   className?: string;
   gpsLaps?: number[];
   bestLap?: number | null;
+  controlledLap?: boolean;
 }
 
 /* ── Density color (blue → cyan → green → yellow → red) ── */
@@ -254,6 +255,7 @@ export function GGExplorer({
   className = '',
   gpsLaps = [],
   bestLap = null,
+  controlledLap = false,
 }: GGExplorerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ggData, setGgData] = useState<GGData | null>(preFetchedData ?? null);
@@ -261,6 +263,11 @@ export function GGExplorer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  // Sync when parent controls the lap (Focus Mode)
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   const activeLap = selectedLap ?? bestLap ?? gpsLaps[0] ?? null;
 
@@ -447,7 +454,7 @@ export function GGExplorer({
 
       {/* Lap selector + stats */}
       <div className="flex items-center gap-3 mt-2 flex-wrap shrink-0">
-        {gpsLaps.length > 0 && (
+        {!controlledLap && gpsLaps.length > 0 && (
           <>
             <label className="font-telemetry text-[10px] text-steel uppercase tracking-wider">Lap</label>
             <select

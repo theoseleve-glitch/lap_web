@@ -44,6 +44,7 @@ interface TrackMapProps {
   gpsLaps?: number[];
   bestLap?: number | null;
   apiBase?: string;
+  controlledLap?: boolean;
 }
 
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
@@ -472,6 +473,7 @@ export function TrackMap(props: TrackMapProps) {
     className = '',
     gpsLaps = [],
     bestLap = null,
+    controlledLap = false,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -480,6 +482,10 @@ export function TrackMap(props: TrackMapProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   const activeLap = selectedLap ?? bestLap ?? gpsLaps[0] ?? null;
 
@@ -663,7 +669,7 @@ export function TrackMap(props: TrackMapProps) {
 
       {/* Lap selector + speed legend */}
       <div className="flex items-center gap-3 mt-2 flex-wrap shrink-0">
-        {gpsLaps.length > 0 && (
+        {!controlledLap && gpsLaps.length > 0 && (
           <>
             <label className="font-telemetry text-[10px] text-steel uppercase tracking-wider">Lap</label>
             <select

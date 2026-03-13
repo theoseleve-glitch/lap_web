@@ -49,6 +49,8 @@ interface SpeedTraceChartProps {
   primaryLapTime?: number | null;
   /** Actual lap time of the compare lap (seconds) */
   compareLapTime?: number | null;
+  /** When true, lap selection is controlled by parent (hides per-chart selector) */
+  controlledLap?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -541,6 +543,7 @@ export function SpeedTraceChart({
   compareLap = null,
   primaryLapTime = null,
   compareLapTime = null,
+  controlledLap = false,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -556,6 +559,11 @@ export function SpeedTraceChart({
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
   const clearHover = useChartHoverStore((s) => s.clearHover);
+
+  // Sync selectedLap when controlled externally (e.g. Focus Mode unified selector)
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   const activeLap = selectedLap ?? bestLap ?? (gpsLaps.length > 0 ? gpsLaps[0] : null);
 
@@ -719,7 +727,7 @@ export function SpeedTraceChart({
   // (including self) setting hover triggers a React re-render.
 
   // ── Lap selector ───────────────────────────────────────────
-  const showLapSelector = !!sessionId && gpsLaps.length > 1;
+  const showLapSelector = !controlledLap && !!sessionId && gpsLaps.length > 1;
 
   // ── Render ─────────────────────────────────────────────────
   if (error && !chartData) {

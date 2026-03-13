@@ -29,6 +29,7 @@ interface RPMGearChartProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 const GEAR_COLORS: Record<number, string> = {
@@ -51,6 +52,7 @@ export function RPMGearChart({
   gpsLaps,
   bestLap,
   className = '',
+  controlledLap = false,
 }: RPMGearChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -63,6 +65,10 @@ export function RPMGearChart({
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   // -- Fetch RPM/gear data -----------------------------------------------
   const fetchData = useCallback(async () => {
@@ -445,7 +451,7 @@ export function RPMGearChart({
     <div ref={containerRef} className={className} role="img" aria-label="RPM and gear chart showing engine speed and gear selection">
       {/* Lap selector */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <label className="flex items-center gap-1.5 text-gray-400">
+        {!controlledLap && (<label className="flex items-center gap-1.5 text-gray-400">
           Lap:
           <select
             value={selectedLap}
@@ -458,7 +464,7 @@ export function RPMGearChart({
               </option>
             ))}
           </select>
-        </label>
+        </label>)}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>

@@ -29,6 +29,7 @@ interface PedalTraceChartProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 export function PedalTraceChart({
@@ -36,6 +37,7 @@ export function PedalTraceChart({
   gpsLaps,
   bestLap,
   className = '',
+  controlledLap = false,
 }: PedalTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -48,6 +50,10 @@ export function PedalTraceChart({
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   // -- Fetch pedal data -------------------------------------------------
   const fetchData = useCallback(async () => {
@@ -446,20 +452,22 @@ export function PedalTraceChart({
     <div ref={containerRef} className={className} role="img" aria-label="Pedal trace chart showing throttle and brake input over distance">
       {/* Lap selector */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <label className="flex items-center gap-1.5 text-gray-400">
-          Lap:
-          <select
-            value={selectedLap}
-            onChange={(e) => setSelectedLap(Number(e.target.value))}
-            className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
-          >
-            {gpsLaps.map((l) => (
-              <option key={l} value={l}>
-                Lap {l}{l === bestLap ? ' (Best)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!controlledLap && (
+          <label className="flex items-center gap-1.5 text-gray-400">
+            Lap:
+            <select
+              value={selectedLap}
+              onChange={(e) => setSelectedLap(Number(e.target.value))}
+              className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
+            >
+              {gpsLaps.map((l) => (
+                <option key={l} value={l}>
+                  Lap {l}{l === bestLap ? ' (Best)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>

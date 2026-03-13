@@ -50,6 +50,7 @@ function ToolRenderer({
             apiBase={apiBase}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -62,6 +63,7 @@ function ToolRenderer({
             apiBase={apiBase}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -74,6 +76,7 @@ function ToolRenderer({
             apiBase={apiBase}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -85,6 +88,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -96,6 +100,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -107,6 +112,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -118,6 +124,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -129,6 +136,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -140,6 +148,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>
@@ -151,6 +160,7 @@ function ToolRenderer({
             sessionId={sessionId}
             gpsLaps={gpsLaps}
             bestLap={bestLap}
+            controlledLap
             className="w-full h-full"
           />
         </ChartErrorBoundary>

@@ -33,6 +33,7 @@ interface LiveFrictionCircleProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 const COLORS = {
@@ -53,6 +54,7 @@ export function LiveFrictionCircle({
   gpsLaps,
   bestLap,
   className = '',
+  controlledLap = false,
 }: LiveFrictionCircleProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,10 @@ export function LiveFrictionCircle({
   const [selectedLap, setSelectedLap] = useState(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   // ── Fetch data ──────────────────────────────────────────────
   const fetchData = useCallback(async () => {
@@ -347,7 +353,7 @@ export function LiveFrictionCircle({
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Live friction circle showing real-time G-force utilization">
       <div className="flex items-center gap-3 mb-2">
-        <select
+        {!controlledLap && <select
           value={selectedLap}
           onChange={(e) => setSelectedLap(Number(e.target.value))}
           className="bg-concrete border border-steel/20 text-chalk text-xs rounded px-2 py-1"
@@ -358,7 +364,7 @@ export function LiveFrictionCircle({
               {lap === bestLap ? ' (best)' : ''}
             </option>
           ))}
-        </select>
+        </select>}
         {loading && <span className="text-xs text-steel/60">Loading...</span>}
       </div>
       {error ? (

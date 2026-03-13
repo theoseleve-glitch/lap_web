@@ -15,6 +15,7 @@ interface TireTempData {
 }
 interface TireHeatmapChartProps {
   sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string;
+  controlledLap?: boolean;
 }
 
 function tempToColor(temp: number): string {
@@ -35,13 +36,17 @@ function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w:
   ctx.arcTo(x, y + h, x, y + h - r, r); ctx.arcTo(x, y, x + r, y, r); ctx.closePath();
 }
 
-export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '' }: TireHeatmapChartProps) {
+export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '', controlledLap = false }: TireHeatmapChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dataRef = useRef<TireTempData | null>(null);
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setSelectedLap(bestLap);
+  }, [controlledLap, bestLap]);
 
   const fetchData = useCallback(async () => {
     if (!selectedLap) { dataRef.current = null; return; }
@@ -154,13 +159,15 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '' }
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Tire heatmap showing temperature distribution across tires">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <label className="flex items-center gap-1.5 text-gray-400">
-          Lap:
-          <select value={selectedLap} onChange={(e) => setSelectedLap(Number(e.target.value))}
-            className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700">
-            {gpsLaps.map((l) => <option key={l} value={l}>Lap {l}{l === bestLap ? ' (Best)' : ''}</option>)}
-          </select>
-        </label>
+        {!controlledLap && (
+          <label className="flex items-center gap-1.5 text-gray-400">
+            Lap:
+            <select value={selectedLap} onChange={(e) => setSelectedLap(Number(e.target.value))}
+              className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700">
+              {gpsLaps.map((l) => <option key={l} value={l}>Lap {l}{l === bestLap ? ' (Best)' : ''}</option>)}
+            </select>
+          </label>
+        )}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
         {error && <span className="text-xs text-red-400">{error}</span>}
       </div>
