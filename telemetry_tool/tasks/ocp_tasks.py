@@ -971,13 +971,27 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
         {"aj": json.dumps(analysis_json), "sid": session_id},
     )
 
-    # 2. sessions.total_score + grade
+    # 2. Sync OCP-updated corner coaching to theoretical_data table.
+    #    The corners API reads from theoretical_data.corner_coaching_json,
+    #    not from sessions.analysis_json, so this is necessary for the
+    #    frontend to see OCP speed targets.
+    corner_coaching = analysis_json.get("corner_coaching")
+    if corner_coaching:
+        try:
+            conn.execute(
+                "UPDATE theoretical_data SET corner_coaching_json = :ccj WHERE session_id = :sid",
+                {"ccj": json.dumps(corner_coaching), "sid": session_id},
+            )
+        except Exception:
+            logger.debug("theoretical_data corner_coaching update skipped", exc_info=True)
+
+    # 3. sessions.total_score + grade
     conn.execute(
         "UPDATE sessions SET total_score = :ts, grade = :gr WHERE session_id = :sid",
         {"ts": new_scores.get("total_score"), "gr": new_scores.get("grade"), "sid": session_id},
     )
 
-    # 3. score_details table
+    # 4. score_details table
     try:
         from web.repos.score_repo import insert_score_details
         insert_score_details(conn, session_id, {"score_result": new_scores})

@@ -481,7 +481,50 @@ class TestPairedBrakingDists:
         assert theo == []
 
 
-# ── Task 12: Curvature periodicity ──
+# ── Task 12: theoretical_data sync ──
+
+
+class TestPersistAllSyncsTheoreticalData:
+    def test_updates_theoretical_data_corner_coaching(self):
+        """_persist_all must write corner_coaching to theoretical_data table."""
+        from tasks.ocp_tasks import _persist_all
+
+        conn = MagicMock()
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 0, "apex_speed_target_kmh": 85.0},
+            ],
+        }
+        scores = {"total_score": 72, "grade": "B"}
+
+        _persist_all(conn, "sess-1", analysis_json, scores)
+
+        # Should have called execute at least 3 times:
+        # 1. UPDATE sessions SET analysis_json
+        # 2. UPDATE theoretical_data SET corner_coaching_json
+        # 3. UPDATE sessions SET total_score + grade
+        calls = conn.execute.call_args_list
+        sql_strs = [str(c[0][0]) for c in calls]
+        assert any("theoretical_data" in s for s in sql_strs), (
+            f"Expected theoretical_data UPDATE, got: {sql_strs}"
+        )
+
+    def test_skips_theoretical_update_when_no_coaching(self):
+        """No corner_coaching → no theoretical_data UPDATE."""
+        from tasks.ocp_tasks import _persist_all
+
+        conn = MagicMock()
+        analysis_json = {}
+        scores = {"total_score": 72, "grade": "B"}
+
+        _persist_all(conn, "sess-1", analysis_json, scores)
+
+        calls = conn.execute.call_args_list
+        sql_strs = [str(c[0][0]) for c in calls]
+        assert not any("theoretical_data" in s for s in sql_strs)
+
+
+# ── Task 13: Curvature periodicity ──
 
 
 class TestCurvaturePeriodicity:
