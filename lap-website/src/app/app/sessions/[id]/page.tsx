@@ -788,8 +788,8 @@ function OverviewTab({
 
   // Entity suggestion lists for combobox autocomplete
   const [driverNames, setDriverNames] = useState<string[]>([]);
-  const [trackList, setTrackList] = useState<{ track_id: string; track_name: string }[]>([]);
-  const trackNames = useMemo(() => trackList.map((t) => t.track_name).filter(Boolean), [trackList]);
+  const [trackList, setTrackList] = useState<{ id: string; name: string }[]>([]);
+  const trackNames = useMemo(() => trackList.map((t) => t.name).filter(Boolean), [trackList]);
   const [kartNames, setKartNames] = useState<string[]>([]);
 
   // Expanded kart details for new kart creation
@@ -805,11 +805,11 @@ function OverviewTab({
   const checkTrackMatch = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) { setTrackMismatch(null); return; }
-    const existing = trackList.find((t) => t.track_name === trimmed);
+    const existing = trackList.find((t) => t.name === trimmed);
     if (!existing) { setTrackMismatch(null); return; }
     try {
       const result = await api.get<{ match: boolean; track_length_m?: number; session_length_m?: number | null }>(
-        `/sessions/${session.session_id}/track-match?track_id=${encodeURIComponent(existing.track_id)}`,
+        `/sessions/${session.session_id}/track-match?track_id=${encodeURIComponent(existing.id)}`,
       );
       if (result && !result.match) setTrackMismatch(result);
       else setTrackMismatch(null);
@@ -830,14 +830,14 @@ function OverviewTab({
     setEditing(true);
     setTrackMismatch(null);
     // Fetch entity lists for autocomplete
-    api.get<{ driver_name: string }[]>('/drivers').then((d) => {
-      if (Array.isArray(d)) setDriverNames(d.map((x) => x.driver_name).filter(Boolean));
+    api.get<{ name: string }[]>('/drivers').then((d) => {
+      if (Array.isArray(d)) setDriverNames(d.map((x) => x.name).filter(Boolean));
     }).catch(() => {});
-    api.get<{ track_id: string; track_name: string }[]>('/tracks').then((t) => {
+    api.get<{ id: string; name: string }[]>('/tracks').then((t) => {
       if (Array.isArray(t)) setTrackList(t);
     }).catch(() => {});
-    api.get<{ kart_name: string }[]>('/karts').then((k) => {
-      if (Array.isArray(k)) setKartNames(k.map((x) => x.kart_name).filter(Boolean));
+    api.get<{ name: string }[]>('/karts').then((k) => {
+      if (Array.isArray(k)) setKartNames(k.map((x) => x.name).filter(Boolean));
     }).catch(() => {});
   }, [session]);
 
