@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 type ModalSize = 'sm' | 'md' | 'lg';
@@ -22,6 +22,12 @@ const SIZE_MAP: Record<ModalSize, string> = {
 export function Modal({ open, onClose, title, size = 'md', children }: ModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   useFocusTrap(containerRef, open, onClose);
+
+  useEffect(() => {
+    if (!open) return;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = ''; };
+  }, [open]);
 
   if (!open) return null;
 
