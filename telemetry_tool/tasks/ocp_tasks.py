@@ -365,11 +365,19 @@ def _extract_warm_start(analysis_json: dict, mesh) -> Any:
 
 
 def _extract_actual_apex_speeds(analysis_json: dict) -> list[float]:
-    """Extract actual apex speeds from corner data."""
+    """Extract actual apex speeds from corner data.
+
+    Only includes corners that have both apex_speed_mps AND apex_distance_m,
+    ensuring correspondence with _extract_theoretical_apex_speeds.
+    """
     corners = analysis_json.get("corners", [])
-    if isinstance(corners, list):
-        return [c.get("apex_speed_mps", 0.0) for c in corners if c.get("apex_speed_mps")]
-    return []
+    if not isinstance(corners, list):
+        return []
+    return [
+        float(c["apex_speed_mps"])
+        for c in corners
+        if c.get("apex_speed_mps") and c.get("apex_distance_m") is not None
+    ]
 
 
 def _extract_actual_straight_speeds(analysis_json: dict) -> list[float]:
@@ -402,7 +410,11 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
 
 
 def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]:
-    """Extract theoretical apex speeds from OCP result at corner locations."""
+    """Extract theoretical apex speeds from OCP result at corner locations.
+
+    Only includes corners that have both apex_speed_mps AND apex_distance_m,
+    ensuring correspondence with _extract_actual_apex_speeds.
+    """
     import numpy as np
     corners = analysis_json.get("corners", [])
     if not corners:
@@ -410,7 +422,7 @@ def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]
     apex_speeds = []
     for c in corners:
         apex_m = c.get("apex_distance_m")
-        if apex_m is not None:
+        if apex_m is not None and c.get("apex_speed_mps"):
             v = float(np.interp(apex_m, result.distance_profile, result.speed_profile))
             apex_speeds.append(v)
     return apex_speeds
