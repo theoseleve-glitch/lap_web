@@ -758,13 +758,17 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
                 logger.warning("OCP downstream: coaching analyzers failed", exc_info=True)
 
         # 6. Re-score with OCP theoretical
-        from scoring.scorer import score_session
+        new_scores = analysis_json.get("score_result", {})
+        try:
+            from scoring.scorer import score_session
 
-        session_type = analysis_json.get("session_type", "practice")
-        new_scores = score_session(
-            observed_metrics, theo_metrics, session_type,
-            corner_coaching=corner_perfs or [],
-        )
+            session_type = analysis_json.get("session_type", "practice")
+            new_scores = score_session(
+                observed_metrics, theo_metrics, session_type,
+                corner_coaching=corner_perfs or [],
+            )
+        except Exception:
+            logger.warning("OCP downstream: scoring failed, keeping existing scores", exc_info=True)
 
         # 7. Re-run enhanced coaching
         if corner_perfs:

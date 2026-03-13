@@ -614,3 +614,32 @@ class TestCornerTargetZeroSpeed:
         cc = analysis_json["corner_coaching"][0]
         # speed_delta_pct should be present (not skipped due to falsy 0.0)
         assert "speed_delta_pct" in cc
+
+
+# ── Task 16: Scoring crash graceful degradation ──
+
+
+class TestScoringCrashGracefulDegradation:
+    @patch("tasks.ocp_tasks._persist_all")
+    def test_scoring_crash_still_persists_corner_targets(self, mock_persist):
+        """If score_session crashes, corner targets and OCP data must still be persisted."""
+        from tasks.ocp_tasks import _update_downstream
+
+        result = _FakeResult(n=100, lap_time=68.5)
+        result_dict = result.to_dict()
+        analysis_json = _make_analysis_json()
+        # Pre-set an existing score to verify it's kept as fallback
+        analysis_json["score_result"] = {"total_score": 55, "grade": "C"}
+        conn = MagicMock()
+
+        with patch("scoring.scorer.score_session", side_effect=RuntimeError("scorer crashed")):
+            _update_downstream(conn, "sess-1", result, result_dict, analysis_json,
+                               best_lap_df=_make_best_lap_df())
+
+        # Corner targets should still be set (via _update_corner_targets)
+        assert analysis_json.get("simulation_method") == "ocp"
+        # _persist_all should still be called (scoring fallback to existing scores)
+        mock_persist.assert_called_once()
+        # Existing scores should be preserved as fallback
+        persisted_scores = mock_persist.call_args[0][3]
+        assert persisted_scores.get("total_score") == 55
