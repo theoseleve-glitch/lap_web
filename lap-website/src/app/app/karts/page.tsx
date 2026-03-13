@@ -57,6 +57,7 @@ export default function KartsPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'power'>('sessions');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['karts'],
@@ -68,6 +69,7 @@ export default function KartsPage() {
   const deleteMutation = useMutation({
     mutationFn: (kartId: number) => api.delete(`/karts/${kartId}`),
     onMutate: async (kartId) => {
+      setDeleteError(null);
       await queryClient.cancelQueries({ queryKey: ['karts'] });
       const prev = queryClient.getQueryData<KartRow[]>(['karts']);
       queryClient.setQueryData<KartRow[]>(['karts'], (old) =>
@@ -81,7 +83,7 @@ export default function KartsPage() {
     },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(['karts'], context.prev);
-      console.error('[kart-delete]', _err);
+      setDeleteError(_err instanceof Error ? _err.message : 'Failed to delete kart');
     },
   });
 
@@ -163,6 +165,14 @@ export default function KartsPage() {
         </select>
       </div>
 
+      {/* ── Delete Error ──────────────────────────────── */}
+      {deleteError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{deleteError}</p>
+          <button type="button" onClick={() => setDeleteError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
       {/* ── Content ─────────────────────────────────────── */}
       {isLoading ? (
         <SkeletonCardGrid count={6} cols={3} />
@@ -229,8 +239,9 @@ export default function KartsPage() {
                       </button>
                       <button
                         type="button"
-                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
-                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); setDeleteError(null); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors disabled:opacity-50"
                       >
                         Cancel
                       </button>
