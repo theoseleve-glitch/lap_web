@@ -91,8 +91,7 @@ export function ChartAnnotations({ sessionId, canvasId = 'speed-chart' }: Props)
       if (!bounds) return;
 
       const rect = canvas.getBoundingClientRect();
-      const scaleX = canvas.width / rect.width;
-      const x = (e.clientX - rect.left) * scaleX;
+      const x = e.clientX - rect.left;
 
       // Convert pixel to distance
       const relX = (x - bounds.plotX) / bounds.plotW;
