@@ -144,6 +144,7 @@ export default function UpgradePage() {
               ) : isDowngrade ? (
                 <>
                   <button
+                    type="button"
                     onClick={() => setShowDowngradeWarning(
                       showDowngradeWarning === plan.slug ? null : plan.slug,
                     )}

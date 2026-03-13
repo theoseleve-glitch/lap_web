@@ -55,6 +55,7 @@ export function SessionExpiredModal({ onRetry, retrying }: SessionExpiredModalPr
 
           <div className="flex items-center gap-3">
             <button
+              type="button"
               onClick={onRetry}
               disabled={retrying}
               className="px-4 py-2.5 border border-steel/30 text-chalk font-telemetry text-sm rounded
@@ -71,6 +72,7 @@ export function SessionExpiredModal({ onRetry, retrying }: SessionExpiredModalPr
               )}
             </button>
             <button
+              type="button"
               onClick={handleLogin}
               className="px-4 py-2.5 bg-gold text-carbon font-monument text-sm rounded
                 hover:bg-gold/90 transition-colors"

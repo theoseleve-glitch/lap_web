@@ -45,6 +45,7 @@ export function KeyboardShortcuts() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-chalk font-heading text-lg">Keyboard Shortcuts</h2>
           <button
+            type="button"
             onClick={() => setOpen(false)}
             className="text-steel hover:text-chalk transition-colors text-sm"
           >

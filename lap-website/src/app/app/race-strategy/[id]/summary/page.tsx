@@ -382,6 +382,7 @@ export default function SummaryPage() {
           Export
         </a>
         <button
+          type="button"
           onClick={() => duplicateMut.mutate()}
           disabled={duplicateMut.isPending}
           className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors disabled:opacity-50"

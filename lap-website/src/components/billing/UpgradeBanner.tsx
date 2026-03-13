@@ -96,6 +96,7 @@ export function UpgradeBanner({
             </Link>
             {onDismiss && (
               <button
+                type="button"
                 onClick={onDismiss}
                 className="border border-chalk/20 px-4 py-2.5 text-sm text-steel transition-colors hover:border-chalk/40 hover:text-chalk"
               >
@@ -129,6 +130,7 @@ export function UpgradeBanner({
           </Link>
           {onDismiss && (
             <button
+              type="button"
               onClick={onDismiss}
               className="text-xs text-steel hover:text-chalk"
               aria-label="Dismiss"

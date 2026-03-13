@@ -220,6 +220,7 @@ export default function KartsPage() {
                   {confirmDelete === kart.id ? (
                     <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
                       <button
+                        type="button"
                         onClick={(e) => { e.preventDefault(); deleteMutation.mutate(kart.id); }}
                         disabled={deleteMutation.isPending}
                         className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
@@ -227,6 +228,7 @@ export default function KartsPage() {
                         {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
                       </button>
                       <button
+                        type="button"
                         onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
                         className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
                       >
@@ -235,6 +237,7 @@ export default function KartsPage() {
                     </span>
                   ) : (
                     <button
+                      type="button"
                       onClick={(e) => { e.preventDefault(); setConfirmDelete(kart.id); }}
                       title="Delete kart"
                       className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"

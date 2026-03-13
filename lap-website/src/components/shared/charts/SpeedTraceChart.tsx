@@ -689,14 +689,18 @@ export function SpeedTraceChart({
     render();
   }, [render]);
 
+  // Stable ref for ResizeObserver — avoids re-attaching on every hover
+  const renderRef = useRef(render);
+  renderRef.current = render;
+
   // ── ResizeObserver ──────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const observer = new ResizeObserver(() => render());
+    const observer = new ResizeObserver(() => renderRef.current());
     observer.observe(canvas);
     return () => observer.disconnect();
-  }, [render]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Mouse hover → emit distance ────────────────────────────
   const handleMouseMove = useCallback(

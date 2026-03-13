@@ -121,6 +121,7 @@ export function SiteHeader() {
               {t('nav.signup')}
             </Link>
             <button
+              type="button"
               onClick={() => setDrawerOpen((prev) => !prev)}
               className="min-h-[44px] min-w-[44px] flex items-center justify-center border border-chalk/20 text-steel hover:text-chalk hover:border-steel transition-colors duration-200 cursor-pointer"
               aria-label={drawerOpen ? 'Close menu' : 'Open menu'}

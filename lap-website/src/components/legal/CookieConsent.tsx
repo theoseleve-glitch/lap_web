@@ -154,6 +154,7 @@ export function CookieConsent() {
             </label>
 
             <button
+              type="button"
               onClick={handleSaveCustom}
               className="w-full bg-gold text-asphalt font-telemetry text-sm py-2 rounded-md hover:brightness-110 transition"
             >
@@ -163,18 +164,21 @@ export function CookieConsent() {
         ) : (
           <div className="flex flex-wrap gap-2">
             <button
+              type="button"
               onClick={handleAcceptAll}
               className="bg-gold text-asphalt font-telemetry text-xs px-4 py-2 rounded-md hover:brightness-110 transition"
             >
               Accept All
             </button>
             <button
+              type="button"
               onClick={handleRejectOptional}
               className="bg-concrete border border-steel/30 text-steel font-telemetry text-xs px-4 py-2 rounded-md hover:text-chalk transition"
             >
               Necessary Only
             </button>
             <button
+              type="button"
               onClick={() => setExpanded(true)}
               className="bg-concrete border border-steel/30 text-steel font-telemetry text-xs px-4 py-2 rounded-md hover:text-chalk transition"
             >

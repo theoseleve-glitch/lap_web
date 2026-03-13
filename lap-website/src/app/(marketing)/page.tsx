@@ -44,6 +44,7 @@ function DriverHome({ onSwitch }: { onSwitch: () => void }) {
       {/* Switch link */}
       <div className="flex justify-center pb-8">
         <button
+          type="button"
           className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel/60 hover:text-steel transition-colors"
           onClick={onSwitch}
         >

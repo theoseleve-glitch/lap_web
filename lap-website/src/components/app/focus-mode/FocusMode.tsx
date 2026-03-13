@@ -380,6 +380,7 @@ export function FocusMode({
             </div>
           )}
           <button
+            type="button"
             onClick={onClose}
             className="px-2 py-0.5 text-[10px] text-steel/60 font-telemetry uppercase tracking-wider hover:text-chalk transition-colors"
             aria-label="Close focus mode"

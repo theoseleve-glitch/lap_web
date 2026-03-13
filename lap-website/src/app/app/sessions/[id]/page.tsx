@@ -461,6 +461,7 @@ export default function SessionDetailPage() {
 
           {/* Print */}
           <button
+            type="button"
             onClick={() => window.print()}
             data-print="hide"
             className="px-3 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-steel font-body hover:text-chalk hover:bg-steel/10 transition-colors"
@@ -514,6 +515,7 @@ export default function SessionDetailPage() {
 
           {/* Driving Analyzer */}
           <button
+            type="button"
             onClick={() => setAnalyzerOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-gold/10 transition-colors"
             aria-label="Open Driving Analyzer (D)"
@@ -538,6 +540,7 @@ export default function SessionDetailPage() {
 
           {/* Focus Mode */}
           <button
+            type="button"
             onClick={() => setFocusOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
             aria-label="Open focus mode (F)"
@@ -1016,6 +1019,7 @@ function OverviewTab({
             <h2 className="text-lg font-monument text-chalk">Session Info</h2>
             {!editing ? (
               <button
+                type="button"
                 onClick={startEditing}
                 className="text-xs text-steel hover:text-acid-green transition-colors font-body"
               >
@@ -1024,6 +1028,7 @@ function OverviewTab({
             ) : (
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={cancelEditing}
                   className="text-xs text-steel hover:text-chalk transition-colors font-body"
                   disabled={saving}
@@ -1031,6 +1036,7 @@ function OverviewTab({
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleSave}
                   disabled={saving}
                   className="text-xs text-acid-green hover:text-chalk transition-colors font-body disabled:opacity-50"
@@ -1078,6 +1084,7 @@ function OverviewTab({
                     Track: {trackMismatch.track_length_m}m — Session: {trackMismatch.session_length_m ?? '?'}m
                   </p>
                   <button
+                    type="button"
                     onClick={() => { setEditFields({ ...editFields, track_name: '' }); setTrackMismatch(null); }}
                     className="text-[10px] text-pit-orange hover:text-chalk font-body transition-colors"
                   >
@@ -1147,6 +1154,7 @@ function OverviewTab({
                 <div className="flex justify-between items-center">
                   <dt className="text-steel text-sm font-body">Track</dt>
                   <button
+                    type="button"
                     onClick={startEditing}
                     className="text-sm text-pit-orange hover:text-acid-green font-body transition-colors"
                   >

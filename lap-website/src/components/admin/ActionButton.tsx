@@ -38,6 +38,7 @@ export function ActionButton({
   if (!open) {
     return (
       <button
+        type="button"
         onClick={() => setOpen(true)}
         className={`rounded px-3 py-1 text-xs font-medium transition-colors ${colors}`}
       >
@@ -59,6 +60,7 @@ export function ActionButton({
       )}
       <div className="flex gap-2">
         <button
+          type="button"
           onClick={handleConfirm}
           disabled={loading || (requireReason && !reason.trim())}
           className="rounded bg-red-500/20 px-3 py-1 text-xs text-red-400 transition-colors hover:bg-red-500/30 disabled:opacity-50"
@@ -66,6 +68,7 @@ export function ActionButton({
           {loading ? 'Working...' : 'Confirm'}
         </button>
         <button
+          type="button"
           onClick={() => { setOpen(false); setReason(''); }}
           className="rounded px-3 py-1 text-xs text-steel hover:text-chalk"
         >

@@ -41,6 +41,7 @@ export function CornerNavBar({ sessionId }: CornerNavBarProps) {
               : 'text-acid-green';
         return (
           <button
+            type="button"
             key={c.corner_id}
             className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-telemetry bg-asphalt/50 border border-steel/10 hover:border-acid-green/30 transition-colors ${color}`}
             title={c.corner_name}

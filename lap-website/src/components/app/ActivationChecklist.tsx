@@ -59,6 +59,7 @@ export function ActivationChecklist() {
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-monument text-sm text-chalk">Getting Started</h3>
         <button
+          type="button"
           onClick={dismiss}
           className="text-steel/40 hover:text-steel text-xs font-telemetry transition-colors"
         >
@@ -83,6 +84,7 @@ export function ActivationChecklist() {
           return (
             <li key={item.id} className="flex items-start gap-3">
               <button
+                type="button"
                 onClick={() => toggle(item.id)}
                 className={`mt-0.5 w-5 h-5 rounded border flex-shrink-0 flex items-center justify-center transition-colors ${
                   done ? 'bg-acid-green border-acid-green text-carbon' : 'border-steel/30 hover:border-steel/60'

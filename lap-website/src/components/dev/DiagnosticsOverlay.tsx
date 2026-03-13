@@ -91,6 +91,7 @@ export function DiagnosticsOverlay() {
           <span className={warnCount > 0 ? 'text-gold' : 'text-steel/60'}>{warnCount} warns</span>
           {entries.length > 0 && (
             <button
+              type="button"
               onClick={() => setShowLog((v) => !v)}
               className="text-acid-green hover:underline"
             >
@@ -99,6 +100,7 @@ export function DiagnosticsOverlay() {
           )}
           {entries.length > 0 && (
             <button
+              type="button"
               onClick={() => setEntries([])}
               className="text-steel/40 hover:text-steel"
             >

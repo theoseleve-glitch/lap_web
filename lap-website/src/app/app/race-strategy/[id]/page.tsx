@@ -227,6 +227,7 @@ export default function RaceDetailPage() {
       <div className="flex items-center gap-3 flex-wrap">
         {editable && (
           <button
+            type="button"
             onClick={() => optimizeMut.mutate()}
             disabled={optimizeMut.isPending}
             className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
@@ -237,6 +238,7 @@ export default function RaceDetailPage() {
         {race.status === 'ready' && (
           canUseFeature('race_strategy_full') ? (
             <button
+              type="button"
               onClick={() => {
                 if (window.confirm('Start the race? This will set the timer running.')) {
                   goLiveMut.mutate();
@@ -249,7 +251,7 @@ export default function RaceDetailPage() {
             </button>
           ) : (
             <div className="relative group inline-block">
-              <button disabled className="px-4 py-2 bg-steel/30 text-steel font-telemetry text-sm rounded cursor-not-allowed">
+              <button type="button" disabled className="px-4 py-2 bg-steel/30 text-steel font-telemetry text-sm rounded cursor-not-allowed">
                 Go Live
               </button>
               <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block
@@ -275,6 +277,7 @@ export default function RaceDetailPage() {
           Export
         </a>
         <button
+          type="button"
           onClick={() => duplicateMut.mutate()}
           disabled={duplicateMut.isPending}
           className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors disabled:opacity-50"
@@ -282,6 +285,7 @@ export default function RaceDetailPage() {
           {duplicateMut.isPending ? 'Duplicating...' : 'Duplicate'}
         </button>
         <button
+          type="button"
           onClick={del.requestDelete}
           disabled={del.isPending}
           className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors disabled:opacity-50"

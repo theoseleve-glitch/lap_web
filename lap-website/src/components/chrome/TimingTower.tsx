@@ -74,6 +74,7 @@ export function TimingTower() {
 
           return (
             <button
+              type="button"
               key={sector.id}
               onClick={() => handleClick(tab.id)}
               className="flex items-center gap-2 py-1 pl-1 pr-3 transition-all duration-[420ms] group"
@@ -109,6 +110,7 @@ export function TimingTower() {
 
           return (
             <button
+              type="button"
               key={sector.id}
               onClick={() => handleClick(tab.id)}
               className="w-2 h-2 rounded-full transition-all duration-[420ms]"

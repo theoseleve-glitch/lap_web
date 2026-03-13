@@ -21,6 +21,7 @@ export default function CornerCoachingCard({ corner }: CornerCoachingCardProps) 
     <div className="bg-concrete rounded-xl border border-steel/10 overflow-hidden">
       {/* Collapsed header */}
       <button
+        type="button"
         onClick={() => setExpanded(!expanded)}
         className="w-full flex items-center justify-between p-4 text-left hover:bg-asphalt/30 transition-colors"
       >

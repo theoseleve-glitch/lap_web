@@ -34,6 +34,7 @@ export default function DrillCard({ drill }: DrillCardProps) {
           <div className="flex gap-2 mb-4">
             {availableLevels.map((level) => (
               <button
+                type="button"
                 key={level}
                 onClick={() => setActiveTab(level)}
                 className={`text-xs font-telemetry uppercase px-3 py-1 rounded-full border transition-colors ${

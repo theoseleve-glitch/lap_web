@@ -203,6 +203,7 @@ export default function JobsPage() {
           </p>
           {statusFilter !== 'all' && (
             <button
+              type="button"
               onClick={() => setStatusFilter('all')}
               className="mt-3 text-pit-orange font-telemetry text-xs hover:underline"
             >
@@ -281,6 +282,7 @@ export default function JobsPage() {
                       )}
                       {(job.status === 'running' || job.status === 'processing' || job.status === 'queued') && (
                         <button
+                          type="button"
                           onClick={() => cancelMut.mutate(job.job_id)}
                           disabled={cancelMut.isPending}
                           className="px-2 py-1 text-[10px] font-telemetry uppercase text-safety-red border border-safety-red/20 rounded
@@ -291,6 +293,7 @@ export default function JobsPage() {
                       )}
                       {(job.status === 'failed' || job.status === 'cancelled') && (
                         <button
+                          type="button"
                           onClick={() => retryMut.mutate(job.job_id)}
                           disabled={retryMut.isPending}
                           className="px-2 py-1 text-[10px] font-telemetry uppercase text-acid-green border border-acid-green/20 rounded

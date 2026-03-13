@@ -15,6 +15,7 @@ export default function DeferredAreas({ areas }: DeferredAreasProps) {
   return (
     <div className="bg-asphalt/30 rounded-xl border border-steel/5 p-5">
       <button
+        type="button"
         onClick={() => setOpen(!open)}
         className="w-full flex items-center justify-between text-left"
       >

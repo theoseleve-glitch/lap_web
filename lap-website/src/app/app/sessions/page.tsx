@@ -162,9 +162,9 @@ function SessionCalendar({ sessions }: { sessions: SessionRow[] }) {
   return (
     <div className="bg-concrete rounded-xl border border-steel/10 p-4">
       <div className="flex items-center justify-between mb-4">
-        <button onClick={prevMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Previous month">&lt;</button>
+        <button type="button" onClick={prevMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Previous month">&lt;</button>
         <span className="font-monument text-chalk text-sm">{monthLabel}</span>
-        <button onClick={nextMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Next month">&gt;</button>
+        <button type="button" onClick={nextMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Next month">&gt;</button>
       </div>
       <div className="grid grid-cols-7 gap-px">
         {days.map((d) => (
@@ -1166,6 +1166,7 @@ export default function SessionsPage() {
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelectedKeys(new Set()); }}
                   disabled={page <= 1}
                   className="px-3 py-1.5 rounded bg-concrete border border-steel/20 text-steel text-xs font-telemetry
@@ -1186,6 +1187,7 @@ export default function SessionsPage() {
                   }
                   return (
                     <button
+                      type="button"
                       key={pageNum}
                       onClick={() => { setPage(pageNum); setSelectedKeys(new Set()); }}
                       className={`w-8 h-8 rounded text-xs font-telemetry transition-colors ${
@@ -1199,6 +1201,7 @@ export default function SessionsPage() {
                   );
                 })}
                 <button
+                  type="button"
                   onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setSelectedKeys(new Set()); }}
                   disabled={page >= totalPages}
                   className="px-3 py-1.5 rounded bg-concrete border border-steel/20 text-steel text-xs font-telemetry

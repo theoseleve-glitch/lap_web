@@ -56,6 +56,7 @@ export function FaqAccordion({ items, onExpand, className = '' }: FaqAccordionPr
         return (
           <div key={i}>
             <button
+              type="button"
               id={buttonId}
               data-faq={i}
               className="w-full flex items-center justify-between py-4 px-2 text-left font-body text-chalk hover:text-[var(--accent)] transition-colors duration-[420ms]"

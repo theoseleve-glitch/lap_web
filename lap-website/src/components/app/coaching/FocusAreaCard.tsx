@@ -68,6 +68,7 @@ export default function FocusAreaCard({ area }: FocusAreaCardProps) {
       {hasSteps && (
         <div>
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="text-xs text-steel hover:text-chalk font-body flex items-center gap-1 transition-colors"
           >

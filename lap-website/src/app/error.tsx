@@ -64,6 +64,7 @@ export default function Error({
           </p>
         )}
         <button
+          type="button"
           onClick={reset}
           className="border border-pit-orange text-pit-orange px-6 py-2.5 font-telemetry text-sm uppercase tracking-wider hover:bg-pit-orange/10 transition-colors"
         >

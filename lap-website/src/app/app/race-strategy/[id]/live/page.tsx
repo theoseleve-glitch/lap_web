@@ -350,6 +350,7 @@ export default function LiveDashboardPage() {
                       )}
                     </div>
                     <button
+                      type="button"
                       onClick={() => wakeDriverMut.mutate(activeStint.driver_id)}
                       disabled={wakeDriverMut.isPending}
                       className="text-xs bg-acid-green/20 text-acid-green border border-acid-green/30 rounded px-2 py-1 hover:bg-acid-green/30 disabled:opacity-50"
@@ -414,6 +415,7 @@ export default function LiveDashboardPage() {
                       )}
                     </div>
                     <button
+                      type="button"
                       onClick={() => wakeDriverMut.mutate(nextStint.driver_id)}
                       disabled={wakeDriverMut.isPending}
                       className="text-xs bg-acid-green/20 text-acid-green border border-acid-green/30 rounded px-2 py-1 hover:bg-acid-green/30 disabled:opacity-50"
@@ -546,6 +548,7 @@ export default function LiveDashboardPage() {
       {/* Action Buttons */}
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
         <button
+          type="button"
           onClick={() => {
             if (state?.next_stint && state?.driver_sleep_status) {
               const nextDriverId = state.next_stint.driver_id;
@@ -563,6 +566,7 @@ export default function LiveDashboardPage() {
           {endStintMut.isPending ? 'Ending Stint...' : 'End Stint'}
         </button>
         <button
+          type="button"
           onClick={() => reoptimizeMut.mutate()}
           disabled={reoptimizeMut.isPending}
           className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
@@ -570,6 +574,7 @@ export default function LiveDashboardPage() {
           {reoptimizeMut.isPending ? 'Re-Optimizing...' : 'Re-Optimize'}
         </button>
         <button
+          type="button"
           onClick={() => {
             if (window.confirm('Finish the race? This will end the live session.')) {
               finishMut.mutate();
@@ -599,11 +604,11 @@ export default function LiveDashboardPage() {
               {' '}Are you sure you want to assign them to the next stint?
             </p>
             <div className="flex gap-3 justify-end">
-              <button onClick={() => setShowSleepWarning(false)}
+              <button type="button" onClick={() => setShowSleepWarning(false)}
                 className="px-4 py-2 text-sm text-steel border border-steel/30 rounded-lg hover:bg-steel/10">
                 Cancel
               </button>
-              <button onClick={() => { setShowSleepWarning(false); endStintMut.mutate(); }}
+              <button type="button" onClick={() => { setShowSleepWarning(false); endStintMut.mutate(); }}
                 className="px-4 py-2 text-sm bg-safety-red/20 text-safety-red border border-safety-red/30 rounded-lg hover:bg-safety-red/30">
                 Assign Anyway
               </button>

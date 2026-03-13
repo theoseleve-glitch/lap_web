@@ -77,6 +77,7 @@ export function AnalyzerPlaybar({
     <div className="flex items-center gap-3 px-4 py-2.5 bg-concrete border-t border-steel/10">
       {/* Play/Pause */}
       <button
+        type="button"
         onClick={onTogglePlay}
         className="w-8 h-8 flex items-center justify-center rounded bg-asphalt border border-steel/20 text-chalk hover:bg-steel/10 transition-colors"
         title={playing ? 'Pause (Space)' : 'Play (Space)'}
@@ -97,6 +98,7 @@ export function AnalyzerPlaybar({
       <div className="flex items-center gap-0.5">
         {PLAYBACK_SPEEDS.map((s) => (
           <button
+            type="button"
             key={s}
             onClick={() => onSpeedChange(s)}
             className={`px-1.5 py-0.5 text-[10px] font-telemetry rounded transition-colors ${

@@ -61,6 +61,7 @@ export function CornerReplayControls({
       <div className="flex items-center gap-1">
         {MODES.map((m) => (
           <button
+            type="button"
             key={m.value}
             onClick={() => onModeChange(m.value)}
             className={`px-3 py-1.5 rounded text-xs font-telemetry transition-colors ${
@@ -77,6 +78,7 @@ export function CornerReplayControls({
       {/* Corner pills + navigation */}
       <div className="flex items-center gap-2 flex-wrap">
         <button
+          type="button"
           onClick={onPrevCorner}
           className="w-7 h-7 flex items-center justify-center rounded bg-steel/10 text-steel hover:text-chalk transition-colors text-sm"
           aria-label="Previous corner"
@@ -86,6 +88,7 @@ export function CornerReplayControls({
         <div className="flex gap-1 flex-wrap">
           {corners.map((c, i) => (
             <button
+              type="button"
               key={c.corner_id}
               onClick={() => onCornerChange(i)}
               className={`min-w-[28px] h-7 px-1.5 rounded text-xs font-telemetry transition-colors ${
@@ -100,6 +103,7 @@ export function CornerReplayControls({
           ))}
         </div>
         <button
+          type="button"
           onClick={onNextCorner}
           className="w-7 h-7 flex items-center justify-center rounded bg-steel/10 text-steel hover:text-chalk transition-colors text-sm"
           aria-label="Next corner"
@@ -171,6 +175,7 @@ export function CornerReplayControls({
         <div className="flex items-center justify-between gap-4">
           {/* Play/pause */}
           <button
+            type="button"
             onClick={onTogglePlay}
             className="w-8 h-8 flex items-center justify-center rounded-md bg-asphalt hover:bg-steel/20 transition-colors text-chalk"
             aria-label={playing ? 'Pause' : 'Play'}
@@ -195,6 +200,7 @@ export function CornerReplayControls({
           <div className="flex items-center gap-1">
             {SPEEDS.map((s) => (
               <button
+                type="button"
                 key={s}
                 onClick={() => onSpeedChange(s)}
                 className={`px-2 py-1 rounded text-xs font-telemetry transition-colors ${

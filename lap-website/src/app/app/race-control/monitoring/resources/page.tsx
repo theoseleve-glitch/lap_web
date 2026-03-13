@@ -70,6 +70,7 @@ export default function UserResourcesPage() {
           { key: 'last_upload', label: 'Last Upload' },
         ].map(opt => (
           <button
+            type="button"
             key={opt.key}
             onClick={() => setSortBy(opt.key)}
             className={`rounded px-2 py-0.5 text-xs transition-colors ${
@@ -106,6 +107,7 @@ export default function UserResourcesPage() {
               Daily Usage — {users?.find(u => u.user_id === selectedUser)?.email ?? `User #${selectedUser}`}
             </h2>
             <button
+              type="button"
               onClick={() => setSelectedUser(null)}
               className="text-xs text-steel hover:text-chalk"
             >

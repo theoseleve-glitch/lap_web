@@ -285,6 +285,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
           <span>[ ]: Speed</span>
         </div>
         <button
+          type="button"
           onClick={() => setAnalyzerOpen(true)}
           className="px-3 py-1.5 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-gold/10 transition-colors"
         >

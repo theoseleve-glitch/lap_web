@@ -528,21 +528,25 @@ export function TrackMap(props: TrackMapProps) {
   }, [sessionId, preFetchedData, activeLap]);
 
   // ── Draw on canvas ──────────────────────────────────────
-  useEffect(() => {
+  const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
     drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined);
   }, [trace, corners, hoverIdx]);
 
-  // Redraw on resize
+  useEffect(() => { draw(); }, [draw]);
+
+  // Stable ref for ResizeObserver — avoids re-attaching on every hover
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
+  // Redraw on resize — attached once per trace/corners change, not per hover
   useEffect(() => {
     if (!trace || !canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ro = new ResizeObserver(() => {
-      drawTrack(canvas, trace, corners, hoverIdx ?? undefined);
-    });
+    const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [trace, corners, hoverIdx]);
+  }, [trace, corners]);
 
   // ── Hover handling ──────────────────────────────────────
   const handleCanvasMove = useCallback(

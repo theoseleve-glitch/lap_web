@@ -66,6 +66,7 @@ export default function DataHealthPage() {
         subtitle="Processing job status and file ingestion metrics"
         actions={
           <button
+            type="button"
             onClick={() => window.location.reload()}
             className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
           >

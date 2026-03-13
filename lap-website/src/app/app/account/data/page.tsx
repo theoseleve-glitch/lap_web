@@ -189,6 +189,7 @@ export default function DataPrivacyPage() {
           GPS coordinates are rounded for privacy.
         </p>
         <button
+          type="button"
           onClick={() => exportMutation.mutate()}
           disabled={exportMutation.isPending}
           className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -256,6 +257,7 @@ export default function DataPrivacyPage() {
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => deleteStep2.mutate(deleteToken)}
                 disabled={deleteStep2.isPending}
                 className="bg-safety-red text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -263,6 +265,7 @@ export default function DataPrivacyPage() {
                 {deleteStep2.isPending ? 'Deleting...' : 'Permanently Delete'}
               </button>
               <button
+                type="button"
                 onClick={() => { setDeleteToken(null); setDeleteSessions([]); }}
                 className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
               >
@@ -291,6 +294,7 @@ export default function DataPrivacyPage() {
                 className="bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm flex-1 focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <button
+                type="button"
                 onClick={() => deleteStep1.mutate(selectedSessions)}
                 disabled={selectedSessions.length === 0 || deleteStep1.isPending}
                 className="bg-safety-red/80 text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:bg-safety-red transition disabled:opacity-50"
@@ -316,6 +320,7 @@ export default function DataPrivacyPage() {
         </p>
         {!showDeleteAccount ? (
           <button
+            type="button"
             onClick={() => setShowDeleteAccount(true)}
             className="bg-concrete border border-safety-red/30 text-safety-red font-telemetry text-sm px-4 py-2 rounded-md hover:bg-safety-red/10 transition"
           >
@@ -339,6 +344,7 @@ export default function DataPrivacyPage() {
             />
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => deleteAccountMutation.mutate()}
                 disabled={!deletePassword || deleteAccountMutation.isPending}
                 className="bg-safety-red text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
@@ -346,6 +352,7 @@ export default function DataPrivacyPage() {
                 {deleteAccountMutation.isPending ? 'Deleting...' : 'Confirm Account Deletion'}
               </button>
               <button
+                type="button"
                 onClick={() => { setShowDeleteAccount(false); setDeletePassword(''); }}
                 className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
               >

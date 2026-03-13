@@ -102,6 +102,7 @@ export function RadioCard({
             {sender} → {receiver}
           </span>
           <button
+            type="button"
             onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
             className="text-white/60 hover:text-white text-xs"
             aria-label="Collapse radio card"

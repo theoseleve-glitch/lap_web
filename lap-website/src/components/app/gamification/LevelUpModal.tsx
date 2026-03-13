@@ -141,6 +141,7 @@ export default function LevelUpModal({
 
         {/* Continue button */}
         <button
+          type="button"
           onClick={handleClose}
           className="w-full py-2.5 px-6 rounded-lg font-monument text-sm font-bold uppercase tracking-wider transition-colors"
           style={{
