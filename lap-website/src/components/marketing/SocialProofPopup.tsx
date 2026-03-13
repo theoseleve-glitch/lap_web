@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const NOTIFICATIONS = [
   { name: 'A driver in Germany', action: 'just uploaded a session', track: 'Nurburgring GP', time: '2m ago' },
@@ -14,19 +14,21 @@ const NOTIFICATIONS = [
 export function SocialProofPopup() {
   const [current, setCurrent] = useState<number | null>(null);
   const [visible, setVisible] = useState(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const showNext = useCallback(() => {
     const idx = Math.floor(Math.random() * NOTIFICATIONS.length);
     setCurrent(idx);
     setVisible(true);
-    setTimeout(() => setVisible(false), 4000);
+    clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setVisible(false), 4000);
   }, []);
 
   useEffect(() => {
     // First popup after 8 seconds, then every 30 seconds
     const initial = setTimeout(showNext, 8000);
     const interval = setInterval(showNext, 30000);
-    return () => { clearTimeout(initial); clearInterval(interval); };
+    return () => { clearTimeout(initial); clearInterval(interval); clearTimeout(hideTimerRef.current); };
   }, [showNext]);
 
   if (current === null) return null;
