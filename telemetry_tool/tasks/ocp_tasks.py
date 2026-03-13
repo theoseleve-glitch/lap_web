@@ -14,8 +14,8 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_MAX_CALIBRATION_PASSES = 3
-_CONVERGENCE_PCT = 1.0  # residual % threshold
+_MAX_CALIBRATION_PASSES = 1
+_CONVERGENCE_PCT = 2.0  # residual % threshold (relaxed for speed)
 
 
 def _is_ocp_enabled() -> bool:
@@ -61,7 +61,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
         from solver.vehicle_params import OCPVehicleParams, params_for_class
         from solver.tire_model import LoadSensitiveTire
-        from solver.track_model import build_mesh_from_curvature_profile, refine_mesh
+        from solver.track_model import build_mesh_from_curvature_profile
         from solver.ocp_solver import solve_ocp
         from solver.param_extractor import extract_session_params
         from solver.calibrator import calibrate_params
@@ -79,8 +79,11 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             logger.info("OCP skipped: missing best_lap_df or curvature_profile")
             return None
 
-        # Build track mesh — 2000 nodes for ~1.5–2.5m resolution
-        mesh = build_mesh_from_curvature_profile(curvature_profile, n_nodes=2000)
+        # Adaptive mesh: ~3-4m spacing, clamped 150–400 nodes
+        track_len = float(curvature_profile["distance_m"].iloc[-1] - curvature_profile["distance_m"].iloc[0])
+        n_nodes = max(150, min(400, int(track_len / 3)))
+        logger.info("OCP mesh: track_len=%.0fm → %d nodes (%.1fm spacing)", track_len, n_nodes, track_len / n_nodes)
+        mesh = build_mesh_from_curvature_profile(curvature_profile, n_nodes=n_nodes)
         if mesh is None:
             logger.warning("OCP skipped: could not build track mesh")
             return None
@@ -104,20 +107,9 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         # Warm start from QSS if available
         warm_start = _extract_warm_start(analysis_json, mesh)
 
-        # Stage 1: coarse solve on initial mesh
-        logger.info("OCP stage 1: coarse solve for session %s (%d nodes)", session_id, len(mesh.s))
-        result = solve_ocp(mesh, params, tire, warm_start=warm_start)
-
-        # Stage 2: adaptive refinement around corners (high speed gradient zones)
-        refined = refine_mesh(mesh, result.speed_profile, gradient_threshold=0.3)
-        if len(refined.s) > len(mesh.s):
-            logger.info(
-                "OCP stage 2: refined mesh %d→%d nodes, re-solving",
-                len(mesh.s), len(refined.s),
-            )
-            warm_refined = np.interp(refined.s, mesh.s, result.speed_profile)
-            result = solve_ocp(refined, params, tire, warm_start=warm_refined)
-            mesh = refined
+        # Single-stage solve (refinement skipped for speed — target <30s/lap)
+        logger.info("OCP solve: session %s, %d nodes", session_id, len(mesh.s))
+        result = solve_ocp(mesh, params, tire, warm_start=warm_start, max_iter=500, tol=1e-4)
 
         actual_apex = _extract_actual_apex_speeds(analysis_json)
         actual_straights = _extract_actual_straight_speeds(analysis_json)
@@ -679,19 +671,19 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
     # 1. analysis_json blob
     if use_pg:
         conn.execute(
-            "UPDATE sessions SET analysis_json = ?::jsonb WHERE id = ?",
-            (json.dumps(analysis_json), session_id),
+            "UPDATE sessions SET analysis_json = :aj::jsonb WHERE session_id = :sid",
+            {"aj": json.dumps(analysis_json), "sid": session_id},
         )
     else:
         conn.execute(
-            "UPDATE sessions SET analysis_json = ? WHERE id = ?",
-            (json.dumps(analysis_json), session_id),
+            "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
+            {"aj": json.dumps(analysis_json), "sid": session_id},
         )
 
     # 2. sessions.total_score + grade
     conn.execute(
-        "UPDATE sessions SET total_score = ?, grade = ? WHERE id = ?",
-        (new_scores.get("total_score"), new_scores.get("grade"), session_id),
+        "UPDATE sessions SET total_score = :ts, grade = :gr WHERE session_id = :sid",
+        {"ts": new_scores.get("total_score"), "gr": new_scores.get("grade"), "sid": session_id},
     )
 
     # 3. score_details table
@@ -712,21 +704,22 @@ def _store_ocp_result(conn, session_id, result_dict: dict):
         # PostgreSQL: atomic jsonb_set avoids race condition
         conn.execute(
             "UPDATE sessions SET analysis_json = jsonb_set("
-            "  COALESCE(analysis_json, '{}'), '{theoretical_ocp}', ?::jsonb"
-            ") WHERE id = ?",
-            (json.dumps(result_dict), session_id),
+            "  COALESCE(analysis_json, '{}'), '{theoretical_ocp}', :rd::jsonb"
+            ") WHERE session_id = :sid",
+            {"rd": json.dumps(result_dict), "sid": session_id},
         )
     else:
         # SQLite: read-modify-write (single-writer, no race)
         row = conn.execute(
-            "SELECT analysis_json FROM sessions WHERE id = ?", (session_id,)
+            "SELECT analysis_json FROM sessions WHERE session_id = :sid",
+            {"sid": session_id},
         ).fetchone()
         if row is None:
             return
         analysis_json = json.loads(row[0]) if row[0] else {}
         analysis_json["theoretical_ocp"] = result_dict
         conn.execute(
-            "UPDATE sessions SET analysis_json = ? WHERE id = ?",
-            (json.dumps(analysis_json), session_id),
+            "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
+            {"aj": json.dumps(analysis_json), "sid": session_id},
         )
     conn.commit()

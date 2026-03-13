@@ -34,8 +34,8 @@ def solve_ocp(
     params: OCPVehicleParams,
     tire: LoadSensitiveTire,
     warm_start: Optional[np.ndarray] = None,
-    max_iter: int = 2000,
-    tol: float = 1e-6,
+    max_iter: int = 500,
+    tol: float = 1e-4,
 ) -> TheoreticalResult:
     """Solve the minimum-time OCP using CasADi + IPOPT.
 
@@ -160,7 +160,7 @@ def solve_ocp(
     opts = {
         "ipopt.max_iter": max_iter,
         "ipopt.tol": tol,
-        "ipopt.acceptable_tol": 1e-4,
+        "ipopt.acceptable_tol": 1e-3,
         "ipopt.print_level": 0,
         "ipopt.warm_start_init_point": "yes",
         "print_time": False,
