@@ -55,6 +55,7 @@ export function SocialProofPopup() {
           <p className="text-steel/40 text-[10px] font-telemetry mt-0.5">{notif.time}</p>
         </div>
         <button
+          type="button"
           onClick={() => setVisible(false)}
           className="text-steel/30 hover:text-steel text-xs shrink-0 ml-1"
           aria-label="Dismiss notification"

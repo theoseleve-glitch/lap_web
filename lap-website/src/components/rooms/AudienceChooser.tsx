@@ -27,6 +27,7 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
     >
       {/* Driver half */}
       <button
+        type="button"
         className={`
           relative flex-1 flex flex-col items-center justify-center gap-6 p-8
           bg-asphalt border-b md:border-b-0 md:border-r border-chalk/10
@@ -64,6 +65,7 @@ export function AudienceChooser({ onChoose }: AudienceChooserProps) {
 
       {/* Venue half */}
       <button
+        type="button"
         className={`
           relative flex-1 flex flex-col items-center justify-center gap-6 p-8
           bg-concrete transition-all duration-500 cursor-pointer group

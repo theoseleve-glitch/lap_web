@@ -88,6 +88,7 @@ export function PitStop() {
             {t('home.pitStop.monthly')}
           </span>
           <button
+            type="button"
             role="switch"
             aria-checked={billingPeriod === 'annual'}
             className="relative w-12 h-6 bg-concrete border border-steel/30"
