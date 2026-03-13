@@ -145,12 +145,22 @@ def solve_ocp(
     if warm_start is not None:
         opti.set_initial(v, warm_start)
     else:
-        v_guess = np.full(N, 20.0)
+        # Power-limited top speed: P = F*v, at top speed drag = drive
+        # 0.5 * rho * Cd * A * v^3 = P_max  =>  v_max = (2*P/(rho*Cd*A))^(1/3)
+        drag_coeff = 0.5 * params.rho * params.Cd * params.A
+        if drag_coeff > 1e-6:
+            v_top = (params.P_max / drag_coeff) ** (1.0 / 3.0)
+        else:
+            v_top = 50.0  # fallback for zero-drag (karts)
+        v_straight = min(v_top, 50.0)  # cap at 180 km/h
+
+        v_guess = np.full(N, v_straight)
         for i in range(N):
             k = abs(float(mesh.kappa[i]))
             if k > 1e-4:
                 v_corner = np.sqrt(params.mu_ref * _G / k)
                 v_guess[i] = min(v_guess[i], v_corner)
+        v_guess = np.maximum(v_guess, _V_MIN)
         opti.set_initial(v, v_guess)
 
     opti.set_initial(u_thr, 0.5)
@@ -161,6 +171,9 @@ def solve_ocp(
         "ipopt.max_iter": max_iter,
         "ipopt.tol": tol,
         "ipopt.acceptable_tol": 1e-3,
+        "ipopt.acceptable_iter": 15,      # accept if in acceptable region for 15 iters
+        "ipopt.acceptable_obj_change_tol": 1e-4,  # stop if objective barely moves
+        "ipopt.mu_strategy": "adaptive",  # adaptive barrier parameter
         "ipopt.print_level": 0,
         "ipopt.warm_start_init_point": "yes",
         "print_time": False,

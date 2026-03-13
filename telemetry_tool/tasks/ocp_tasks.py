@@ -373,13 +373,32 @@ def _extract_actual_apex_speeds(analysis_json: dict) -> list[float]:
 
 
 def _extract_actual_straight_speeds(analysis_json: dict) -> list[float]:
-    """Extract peak straight-end speeds."""
-    return []  # TODO: extract from speed trace straight segments
+    """Extract peak straight-end speeds from corner data (entry speeds of next corner)."""
+    corners = analysis_json.get("corners", [])
+    if not isinstance(corners, list):
+        return []
+    speeds = []
+    for c in corners:
+        entry = c.get("entry_speed_mps")
+        if entry and isinstance(entry, (int, float)) and entry > 0:
+            speeds.append(float(entry))
+    return speeds
 
 
 def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
-    """Extract actual braking distances."""
-    return []  # TODO: extract from corner events
+    """Extract actual braking distances from corner events."""
+    corners = analysis_json.get("corners", [])
+    if not isinstance(corners, list):
+        return []
+    dists = []
+    for c in corners:
+        bp = c.get("braking_point_m")
+        apex = c.get("apex_distance_m")
+        if bp is not None and apex is not None:
+            d = abs(float(apex) - float(bp))
+            if d > 1.0:
+                dists.append(d)
+    return dists
 
 
 def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]:

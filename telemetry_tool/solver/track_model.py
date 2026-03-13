@@ -44,7 +44,7 @@ def build_mesh_from_curvature_profile(curvature_profile_df, n_nodes: int = 500) 
         _log.warning("build_mesh: input is None")
         return None
     cols = list(curvature_profile_df.columns)
-    _log.info("build_mesh: cols=%s, rows=%d, n_nodes=%d", cols, len(curvature_profile_df), n_nodes)
+    _log.debug("build_mesh: cols=%s, rows=%d, n_nodes=%d", cols, len(curvature_profile_df), n_nodes)
     if "distance_m" not in curvature_profile_df.columns:
         _log.warning("build_mesh: missing distance_m column")
         return None
@@ -57,7 +57,7 @@ def build_mesh_from_curvature_profile(curvature_profile_df, n_nodes: int = 500) 
     n_valid = int(valid.sum())
     n_dist_nan = int((~np.isfinite(distances)).sum()) if len(distances) > 0 else 0
     n_curv_nan = int((~np.isfinite(curvatures)).sum()) if len(curvatures) > 0 else 0
-    _log.info("build_mesh: valid=%d/%d (dist_nan=%d, curv_nan=%d)", n_valid, len(distances), n_dist_nan, n_curv_nan)
+    _log.debug("build_mesh: valid=%d/%d (dist_nan=%d, curv_nan=%d)", n_valid, len(distances), n_dist_nan, n_curv_nan)
     if n_valid < 10:
         _log.warning("build_mesh: too few valid points (%d < 10)", n_valid)
         return None
