@@ -454,9 +454,9 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
                        workspace_id=None, best_lap_df=None):
     """Re-run corner analysis, coaching, and scoring with OCP theoretical data.
 
-    Called after _store_ocp_result so analysis_json["theoretical_ocp"] already
-    exists in the DB.  Updates the same DB row with refreshed scores, corner
-    metrics, and coaching text.
+    Called after analysis_json["theoretical_ocp"] is set in-memory and
+    persisted via _persist_ocp_only.  Updates the same DB row with
+    refreshed scores, corner metrics, and coaching text.
     """
     import numpy as np
     import pandas as pd
@@ -723,8 +723,6 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
 
     Uses a single conn.commit() to preserve SET LOCAL RLS context on PG.
     """
-    use_pg = os.environ.get("USE_PG", "0") not in ("0", "false", "no")
-
     # 1. analysis_json blob (column is text, not jsonb — no cast needed)
     conn.execute(
         "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
