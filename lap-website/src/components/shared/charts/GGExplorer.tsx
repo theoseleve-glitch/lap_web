@@ -65,6 +65,7 @@ function drawGG(
   const rect = canvas.getBoundingClientRect();
   const w = rect.width;
   const h = rect.height;
+  if (w === 0 || h === 0) return;
 
   canvas.width = w * dpr;
   canvas.height = h * dpr;

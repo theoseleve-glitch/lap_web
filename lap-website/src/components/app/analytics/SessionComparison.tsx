@@ -91,6 +91,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = 200 * dpr;
     canvas.style.height = '200px';
@@ -204,6 +205,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = 60 * dpr;
     canvas.style.height = '60px';
