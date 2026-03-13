@@ -198,6 +198,11 @@ def solve_ocp(
         iterations = max_iter
 
     v_arr = np.array(v_sol).flatten()
+    # Sanitize NaN from failed solver iterates (IPOPT can produce NaN on hard failure)
+    nan_mask = ~np.isfinite(v_arr)
+    if nan_mask.any():
+        logger.warning("IPOPT produced %d NaN speed values — replacing with V_MIN", int(nan_mask.sum()))
+        v_arr[nan_mask] = _V_MIN
     v_arr = np.maximum(v_arr, _V_MIN)
 
     # Compute derived quantities
@@ -206,6 +211,9 @@ def solve_ocp(
     for i in range(N - 1):
         a_long_arr[i] = (v_arr[i + 1] ** 2 - v_arr[i] ** 2) / (2.0 * ds[i])
     a_long_arr[-1] = a_long_arr[-2]
+    # Sanitize derived arrays
+    a_lat_arr = np.nan_to_num(a_lat_arr, nan=0.0, posinf=0.0, neginf=0.0)
+    a_long_arr = np.nan_to_num(a_long_arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Lap time
     lap_time = 0.0

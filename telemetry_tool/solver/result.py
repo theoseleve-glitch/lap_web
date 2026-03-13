@@ -24,19 +24,27 @@ class TheoreticalResult:
     tier: int                       # data tier (1, 2, or 3)
     converged: bool = True
 
+    @staticmethod
+    def _safe_float(v: float, default: float = 0.0) -> float:
+        """Convert to float, replacing NaN/Inf with default (JSON-safe)."""
+        import math
+        f = float(v)
+        return f if math.isfinite(f) else default
+
     def to_dict(self) -> dict[str, Any]:
-        """Serialize for storage in analysis_json."""
+        """Serialize for storage in analysis_json (NaN-safe for valid JSON)."""
+        sf = self._safe_float
         speed_profile_list = [
             {
-                "distance_m": round(float(self.distance_profile[i]), 2),
-                "speed_mps": round(float(self.speed_profile[i]), 3),
-                "a_long": round(float(self.a_long_profile[i]), 3),
-                "a_lat": round(float(self.a_lat_profile[i]), 3),
+                "distance_m": round(sf(self.distance_profile[i]), 2),
+                "speed_mps": round(sf(self.speed_profile[i]), 3),
+                "a_long": round(sf(self.a_long_profile[i]), 3),
+                "a_lat": round(sf(self.a_lat_profile[i]), 3),
             }
             for i in range(len(self.speed_profile))
         ]
         return {
-            "lap_time_s": round(self.lap_time_s, 3),
+            "lap_time_s": round(sf(self.lap_time_s), 3),
             "speed_profile": speed_profile_list,
             "corner_times": self.corner_times,
             "vehicle_params_used": self.vehicle_params_used,
