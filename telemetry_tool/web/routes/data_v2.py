@@ -430,7 +430,7 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
     source = request.args.get("source", "")
     if source == "ocp":
         row = conn.execute(
-            "SELECT analysis_json FROM sessions WHERE id = ?", (session_id,)
+            "SELECT analysis_json FROM sessions WHERE session_id = ?", (session_id,)
         ).fetchone()
         aj = json.loads(row[0]) if row and row[0] else {}
         ocp_data = aj.get("theoretical_ocp")
