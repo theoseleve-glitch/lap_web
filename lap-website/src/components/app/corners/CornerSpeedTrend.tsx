@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 
 interface CornerMetric {
@@ -69,7 +69,7 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
   );
 
   // Draw
-  useEffect(() => {
+  const drawTrend = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || cornerIds.length === 0) return;
 
@@ -184,6 +184,15 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
       ctx.fillText(`T${cid}`, pad.left + pW + 6, yToPixel(lastPt.speed));
     }
   }, [cornerIds, cornerSeries]);
+
+  useEffect(() => { drawTrend(); }, [drawTrend]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawTrend());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawTrend]);
 
   if (!available || cornerIds.length === 0) {
     return (

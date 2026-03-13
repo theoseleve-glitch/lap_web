@@ -7,7 +7,7 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 
 interface CornerInfo {
@@ -81,7 +81,7 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
   }, [cornerGData, corners, selectedCorner]);
 
   // Draw histogram
-  useEffect(() => {
+  const drawHistogram = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || selectedCorner === null) return;
 
@@ -176,6 +176,15 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
     ctx.textBaseline = 'top';
     ctx.fillText(`Avg: ${mean.toFixed(2)}G`, meanX + 4, pad.top + 2);
   }, [selectedCorner, cornerGData]);
+
+  useEffect(() => { drawHistogram(); }, [drawHistogram]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawHistogram());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawHistogram]);
 
   if (!ggData?.available || Object.keys(cornerGData).length === 0) {
     return (

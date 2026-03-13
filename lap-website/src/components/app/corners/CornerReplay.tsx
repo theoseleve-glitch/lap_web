@@ -619,7 +619,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     traces.some((t) => t.accel_lat != null) || (data?.has_pedal_data ?? false);
 
   // Draw cockpit
-  useEffect(() => {
+  const renderCockpit = useCallback(() => {
     if (cockpitRef.current) {
       drawCockpit(
         cockpitRef.current,
@@ -634,8 +634,17 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     }
   }, [speedKmh, gLat, gLon, hasAccel, brake, throttle, data?.has_pedal_data]);
 
-  // Draw GPS map
+  useEffect(() => { renderCockpit(); }, [renderCockpit]);
   useEffect(() => {
+    const c = cockpitRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => renderCockpit());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [renderCockpit]);
+
+  // Draw GPS map
+  const renderMap = useCallback(() => {
     if (mapRef.current) {
       drawGpsMap(
         mapRef.current,
@@ -647,6 +656,15 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
       );
     }
   }, [traces, state.frame, cornerPos]);
+
+  useEffect(() => { renderMap(); }, [renderMap]);
+  useEffect(() => {
+    const c = mapRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => renderMap());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [renderMap]);
 
   // Animation interval
   const tick = useCallback(() => {
