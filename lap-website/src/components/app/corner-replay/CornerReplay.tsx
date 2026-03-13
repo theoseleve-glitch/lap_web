@@ -28,6 +28,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
   const [state, dispatch] = useReducer(replayReducer, initialReplayState);
   const rafRef = useRef<number | null>(null);
   const lastTimeRef = useRef(0);
+  const frameRef = useRef(0);
 
   // Fetch batch data
   const cornerParam = cornerIds?.length ? `?corners=${cornerIds.join(',')}` : '';
@@ -83,7 +84,11 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
     return frame;
   }, [traces, state.lapA, state.frame, currentWindow, data?.has_pedal_data, data?.has_steering_data]);
 
-  // Animation loop
+  // Keep frame ref in sync so the animation loop reads current frame
+  // without needing state.frame in its dependency array.
+  frameRef.current = state.frame;
+
+  // Animation loop — reads frame from ref to avoid recreating callback every tick
   const animate = useCallback(
     (timestamp: number) => {
       if (!state.playing || totalFrames === 0) return;
@@ -97,7 +102,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
 
       if (elapsed >= frameDuration) {
         lastTimeRef.current = timestamp;
-        const nextFrame = state.frame + 1;
+        const nextFrame = frameRef.current + 1;
         if (nextFrame >= totalFrames) {
           dispatch({ type: 'SET_FRAME', frame: totalFrames - 1 });
           dispatch({ type: 'TOGGLE_PLAY' }); // stop at end
@@ -108,7 +113,7 @@ export function CornerReplay({ sessionId, cornerIds }: CornerReplayProps) {
 
       rafRef.current = requestAnimationFrame(animate);
     },
-    [state.playing, state.speed, state.frame, totalFrames],
+    [state.playing, state.speed, totalFrames],
   );
 
   useEffect(() => {
