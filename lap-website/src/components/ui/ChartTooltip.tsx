@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 
 interface Props {
   title: string;
@@ -17,15 +17,35 @@ interface Props {
 export function ChartTooltip({ title, description, tips }: Props) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const [flipUp, setFlipUp] = useState(false);
+  const [flipLeft, setFlipLeft] = useState(false);
+
+  const checkPosition = useCallback(() => {
+    if (!popoverRef.current) return;
+    const rect = popoverRef.current.getBoundingClientRect();
+    setFlipUp(rect.bottom > window.innerHeight - 8);
+    setFlipLeft(rect.right > window.innerWidth - 8);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
+    // Check position on next frame so the DOM has settled
+    requestAnimationFrame(checkPosition);
+
     const handleClick = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [open]);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open, checkPosition]);
 
   return (
     <div ref={ref} className="relative inline-flex">
@@ -35,12 +55,18 @@ export function ChartTooltip({ title, description, tips }: Props) {
         className="w-5 h-5 rounded-full border border-steel/20 text-steel text-[10px] font-telemetry
           hover:text-chalk hover:border-steel/40 transition-colors flex items-center justify-center"
         aria-label={`Help: ${title}`}
+        aria-expanded={open}
         title={`What is ${title}?`}
       >
         ?
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-64 bg-concrete border border-steel/20 rounded-lg p-3 shadow-xl">
+        <div
+          ref={popoverRef}
+          className={`absolute z-30 w-64 bg-concrete border border-steel/20 rounded-lg p-3 shadow-xl ${
+            flipUp ? 'bottom-full mb-1' : 'top-full mt-1'
+          } ${flipLeft ? 'left-0' : 'right-0'}`}
+        >
           <h4 className="text-xs font-monument text-chalk mb-1">{title}</h4>
           <p className="text-[11px] font-body text-steel leading-relaxed mb-2">{description}</p>
           {tips && tips.length > 0 && (

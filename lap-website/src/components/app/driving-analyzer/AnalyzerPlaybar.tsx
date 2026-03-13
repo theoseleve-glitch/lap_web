@@ -73,6 +73,26 @@ export function AnalyzerPlaybar({
     [handleScrub],
   );
 
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      dragging.current = true;
+      if (e.touches[0]) handleScrub(e.touches[0].clientX);
+
+      const handleMove = (ev: TouchEvent) => {
+        ev.preventDefault(); // prevent scroll during scrub
+        if (ev.touches[0]) handleScrub(ev.touches[0].clientX);
+      };
+      const handleEnd = () => {
+        dragging.current = false;
+        window.removeEventListener('touchmove', handleMove);
+        window.removeEventListener('touchend', handleEnd);
+      };
+      window.addEventListener('touchmove', handleMove, { passive: false });
+      window.addEventListener('touchend', handleEnd);
+    },
+    [handleScrub],
+  );
+
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-concrete border-t border-steel/10">
       {/* Play/Pause */}
@@ -80,6 +100,7 @@ export function AnalyzerPlaybar({
         type="button"
         onClick={onTogglePlay}
         className="w-8 h-8 flex items-center justify-center rounded bg-asphalt border border-steel/20 text-chalk hover:bg-steel/10 transition-colors"
+        aria-label={playing ? 'Pause' : 'Play'}
         title={playing ? 'Pause (Space)' : 'Play (Space)'}
       >
         {playing ? (
@@ -115,8 +136,9 @@ export function AnalyzerPlaybar({
       {/* Scrubber bar */}
       <div
         ref={scrubberRef}
-        className="flex-1 h-6 flex items-center cursor-pointer group"
+        className="flex-1 h-6 flex items-center cursor-pointer group touch-none"
         onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
       >
         <div className="w-full h-1.5 bg-asphalt rounded-full relative overflow-hidden">
           {/* Progress fill */}
