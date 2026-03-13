@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import type { Plan } from '@/data/pricing';
 import { useCurrency } from '@/hooks/useCurrency';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { PitButton } from './PitButton';
 import { StampButton } from './StampButton';
 
@@ -50,16 +51,8 @@ export function PricingTable({
   const [expanded, setExpanded] = useState(false);
   const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
   const { currency } = useCurrency();
-
-  // Dismiss checkout confirmation on Escape
-  useEffect(() => {
-    if (!confirmPlan) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setConfirmPlan(null);
-    };
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [confirmPlan]);
+  const confirmRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(confirmRef, !!confirmPlan, () => setConfirmPlan(null));
 
   async function proceedToCheckout(plan: Plan) {
     setConfirmPlan(null);
@@ -213,6 +206,7 @@ export function PricingTable({
       {/* Checkout confirmation dialog */}
       {confirmPlan && (
         <div
+          ref={confirmRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-carbon/80 backdrop-blur-sm"
           onClick={() => setConfirmPlan(null)}
           role="dialog"

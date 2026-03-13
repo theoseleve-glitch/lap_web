@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 const SHORTCUTS = [
   { keys: ['?'], description: 'Toggle this help overlay' },
@@ -15,6 +16,8 @@ const SHORTCUTS = [
 
 export function KeyboardShortcuts() {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(containerRef, open, () => setOpen(false));
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -23,20 +26,21 @@ export function KeyboardShortcuts() {
         e.preventDefault();
         setOpen((v) => !v);
       }
-      if (e.key === 'Escape' && open) {
-        setOpen(false);
-      }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [open]);
+  }, []);
 
   if (!open) return null;
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={() => setOpen(false)}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Keyboard shortcuts"
     >
       <div
         className="bg-concrete border border-steel/20 rounded-xl p-6 max-w-md w-full mx-4 shadow-2xl"
