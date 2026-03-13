@@ -111,8 +111,8 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         logger.info("OCP solve: session %s, %d nodes", session_id, len(mesh.s))
         result = solve_ocp(mesh, params, tire, warm_start=warm_start, max_iter=1000, tol=1e-4)
 
-        actual_apex = _extract_actual_apex_speeds(analysis_json)
-        actual_straights = _extract_actual_straight_speeds(analysis_json)
+        actual_apex = _extract_actual_apex_speeds(analysis_json, best_lap_df)
+        actual_straights = _extract_actual_straight_speeds(analysis_json, best_lap_df)
         actual_braking = _extract_actual_braking_dists(analysis_json)
         theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
 
@@ -386,56 +386,89 @@ def _extract_warm_start(analysis_json: dict, mesh) -> Any:
         return None
 
 
-def _extract_actual_apex_speeds(analysis_json: dict) -> list[float]:
-    """Extract actual apex speeds from corner data.
+def _extract_actual_apex_speeds(analysis_json: dict, best_lap_df=None) -> list[float]:
+    """Extract actual apex speeds by interpolating best_lap speed at each corner's s_apex.
 
-    Only includes corners that have both apex_speed_mps AND apex_distance_m,
-    ensuring correspondence with _extract_theoretical_apex_speeds.
+    Raw corners from corner_detection only have geometric fields (s_apex, s_start, s_end).
+    Speed must be interpolated from the driver's best lap speed trace.
     """
+    import numpy as np
     corners = analysis_json.get("corners", [])
-    if not isinstance(corners, list):
+    if not isinstance(corners, list) or not corners:
         return []
-    return [
-        float(c["apex_speed_mps"])
-        for c in corners
-        if c.get("apex_speed_mps") and c.get("apex_distance_m") is not None
-    ]
-
-
-def _extract_actual_straight_speeds(analysis_json: dict) -> list[float]:
-    """Extract peak straight-end speeds from corner data (entry speeds of next corner)."""
-    corners = analysis_json.get("corners", [])
-    if not isinstance(corners, list):
+    if best_lap_df is None:
         return []
+    dist_col = best_lap_df.get("Distance (m)")
+    speed_col = best_lap_df.get("Speed (m/s)")
+    if dist_col is None or speed_col is None:
+        return []
+    dist_arr = np.array(dist_col, dtype=float)
+    speed_arr = np.array(speed_col, dtype=float)
     speeds = []
     for c in corners:
-        entry = c.get("entry_speed_mps")
-        if entry and isinstance(entry, (int, float)) and entry > 0:
-            speeds.append(float(entry))
+        s_apex = c.get("s_apex")
+        if s_apex is not None:
+            v = float(np.interp(float(s_apex), dist_arr, speed_arr))
+            if v > 0.5:
+                speeds.append(v)
+    return speeds
+
+
+def _extract_actual_straight_speeds(analysis_json: dict, best_lap_df=None) -> list[float]:
+    """Extract straight-end speeds by interpolating best_lap speed at each corner's s_start.
+
+    The speed at corner entry (s_start) approximates the peak speed
+    at the end of the preceding straight.
+    """
+    import numpy as np
+    corners = analysis_json.get("corners", [])
+    if not isinstance(corners, list) or not corners:
+        return []
+    if best_lap_df is None:
+        return []
+    dist_col = best_lap_df.get("Distance (m)")
+    speed_col = best_lap_df.get("Speed (m/s)")
+    if dist_col is None or speed_col is None:
+        return []
+    dist_arr = np.array(dist_col, dtype=float)
+    speed_arr = np.array(speed_col, dtype=float)
+    speeds = []
+    for c in corners:
+        s_start = c.get("s_start")
+        if s_start is not None:
+            v = float(np.interp(float(s_start), dist_arr, speed_arr))
+            if v > 0.5:
+                speeds.append(v)
     return speeds
 
 
 def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
-    """Extract actual braking distances from corner events."""
-    corners = analysis_json.get("corners", [])
-    if not isinstance(corners, list):
+    """Extract actual braking distances from corner_perfs (corner_analysis output).
+
+    Uses braking_point_actual_m and s_start from CornerPerformance dicts.
+    Raw corners don't have braking data; corner_perfs does.
+    """
+    corner_perfs = analysis_json.get("corner_perfs", [])
+    if not isinstance(corner_perfs, list):
         return []
     dists = []
-    for c in corners:
-        bp = c.get("braking_point_m")
-        apex = c.get("apex_distance_m")
-        if bp is not None and apex is not None:
-            d = abs(float(apex) - float(bp))
-            if d > 1.0:
-                dists.append(d)
+    for cp in corner_perfs:
+        bp = cp.get("braking_point_actual_m")
+        s_start = cp.get("s_start")
+        if bp is not None and s_start is not None:
+            import math
+            if math.isfinite(float(bp)) and math.isfinite(float(s_start)):
+                d = abs(float(s_start) - float(bp))
+                if d > 1.0:
+                    dists.append(d)
     return dists
 
 
 def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]:
-    """Extract theoretical apex speeds from OCP result at corner locations.
+    """Extract theoretical apex speeds from OCP result at each corner's s_apex.
 
-    Only includes corners that have both apex_speed_mps AND apex_distance_m,
-    ensuring correspondence with _extract_actual_apex_speeds.
+    Uses the same corner set as _extract_actual_apex_speeds to ensure
+    paired correspondence for calibration.
     """
     import numpy as np
     corners = analysis_json.get("corners", [])
@@ -443,10 +476,11 @@ def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]
         return []
     apex_speeds = []
     for c in corners:
-        apex_m = c.get("apex_distance_m")
-        if apex_m is not None and c.get("apex_speed_mps"):
-            v = float(np.interp(apex_m, result.distance_profile, result.speed_profile))
-            apex_speeds.append(v)
+        s_apex = c.get("s_apex")
+        if s_apex is not None:
+            v = float(np.interp(float(s_apex), result.distance_profile, result.speed_profile))
+            if v > 0.5:
+                apex_speeds.append(v)
     return apex_speeds
 
 
@@ -687,27 +721,31 @@ def _update_corner_targets(analysis_json, result, corners):
     updated_coaching = []
     for cc in corner_coaching:
         cc = dict(cc)  # copy to avoid mutating original
-        apex_m = cc.get("apex_distance_m")
-        entry_m = cc.get("entry_distance_m")
-        exit_m = cc.get("exit_distance_m")
+        # Corner coaching entries use s_start/s_end from pipeline.
+        # Apex can be s_apex (if from corner detection) or midpoint of s_start/s_end.
+        entry_m = cc.get("s_start")
+        exit_m = cc.get("s_end")
+        apex_m = cc.get("s_apex")
+        if apex_m is None and entry_m is not None and exit_m is not None:
+            apex_m = (float(entry_m) + float(exit_m)) / 2.0
 
         if apex_m is not None:
-            v_apex = float(np.interp(apex_m, dist, speed))
+            v_apex = float(np.interp(float(apex_m), dist, speed))
             cc["apex_speed_target_kmh"] = round(v_apex * 3.6, 1)
             cc["theoretical_apex_mps"] = round(v_apex, 3)
         if entry_m is not None:
-            v_entry = float(np.interp(entry_m, dist, speed))
+            v_entry = float(np.interp(float(entry_m), dist, speed))
             cc["entry_speed_target_kmh"] = round(v_entry * 3.6, 1)
             cc["theoretical_entry_mps"] = round(v_entry, 3)
         if exit_m is not None:
-            v_exit = float(np.interp(exit_m, dist, speed))
+            v_exit = float(np.interp(float(exit_m), dist, speed))
             cc["exit_speed_target_kmh"] = round(v_exit * 3.6, 1)
             cc["theoretical_exit_mps"] = round(v_exit, 3)
 
         # Recompute time loss if actual and theoretical apex known
         actual_apex = cc.get("actual_apex_speed_mps")
         if actual_apex and apex_m is not None:
-            v_theo = float(np.interp(apex_m, dist, speed))
+            v_theo = float(np.interp(float(apex_m), dist, speed))
             if v_theo > 0:
                 cc["speed_delta_pct"] = round(
                     100.0 * (v_theo - actual_apex) / v_theo, 1
