@@ -59,6 +59,16 @@ def extract_session_params(
         params.P_max = params.F_drive_max * 20.0
 
     # Safety clamps: degenerate values cause solver division-by-zero or infeasibility
+    # Upper clamp: no production tire exceeds mu ≈ 2.2 (even F1 slicks).
+    # Higher values indicate measured lateral-g is inflated by aerodynamic
+    # downforce; the solver already models downforce separately via Cl,
+    # so leaving mu_ref uncapped would double-count the grip contribution.
+    _MU_CEILING = 2.2
+    if params.mu_ref > _MU_CEILING:
+        logger.warning("mu_ref=%.3f exceeds physical tire limit (%.1f), "
+                        "likely inflated by aero downforce — clamping",
+                        params.mu_ref, _MU_CEILING)
+        params.mu_ref = _MU_CEILING
     if params.mu_ref < 0.3:
         logger.warning("mu_ref=%.3f too low (sensor failure?), clamping to base %.3f",
                         params.mu_ref, base_params.mu_ref)
