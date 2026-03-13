@@ -52,7 +52,7 @@ function UndoToastItem({ toast }: { toast: UndoAction }) {
   }, [toast, dismiss]);
 
   return (
-    <div className="bg-concrete border border-steel/20 rounded-lg shadow-xl px-4 py-3 flex items-center gap-3 min-w-[280px] animate-in slide-in-from-bottom-2">
+    <div className="relative bg-concrete border border-steel/20 rounded-lg shadow-xl px-4 py-3 flex items-center gap-3 min-w-[280px] animate-in slide-in-from-bottom-2">
       <p className="text-sm text-chalk flex-1">{toast.message}</p>
       <button
         type="button"

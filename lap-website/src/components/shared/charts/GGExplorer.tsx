@@ -316,16 +316,20 @@ export function GGExplorer({
     drawGG(canvasRef.current, ggData, hoverIdx);
   }, [ggData, hoverIdx]);
 
-  // Redraw on resize
+  // Stable draw ref for ResizeObserver — avoids re-attaching on every hover
+  const drawRef = useRef<() => void>(() => {});
+  drawRef.current = () => {
+    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx);
+  };
+
+  // Redraw on resize — attached once per data change, not per hover
   useEffect(() => {
     if (!ggData || !canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ro = new ResizeObserver(() => {
-      drawGG(canvas, ggData, hoverIdx);
-    });
+    const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [ggData, hoverIdx]);
+  }, [ggData]);
 
   // ── Hover handling ──────────────────────────────────────
   const handleCanvasMove = useCallback(
