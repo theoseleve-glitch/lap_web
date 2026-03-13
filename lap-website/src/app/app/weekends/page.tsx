@@ -56,6 +56,7 @@ export default function WeekendsPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'date' | 'name' | 'sessions'>('date');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['weekends'],
@@ -67,6 +68,7 @@ export default function WeekendsPage() {
   const deleteMutation = useMutation({
     mutationFn: (weekendId: number) => api.delete(`/weekends/${weekendId}`),
     onMutate: async (weekendId) => {
+      setDeleteError(null);
       await queryClient.cancelQueries({ queryKey: ['weekends'] });
       const prev = queryClient.getQueryData<{ weekends: WeekendRow[] }>(['weekends']);
       if (prev) {
@@ -83,7 +85,7 @@ export default function WeekendsPage() {
     },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(['weekends'], context.prev);
-      console.error('[weekend-delete]', _err);
+      setDeleteError(_err instanceof Error ? _err.message : 'Failed to delete weekend');
     },
   });
 
@@ -156,6 +158,14 @@ export default function WeekendsPage() {
           <option value="sessions">Most Sessions</option>
         </select>
       </div>
+
+      {/* ── Delete Error ──────────────────────────────── */}
+      {deleteError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{deleteError}</p>
+          <button type="button" onClick={() => setDeleteError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
 
       {/* ── Content ─────────────────────────────────────── */}
       {isLoading ? (
@@ -235,8 +245,9 @@ export default function WeekendsPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
-                          className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                          onClick={(e) => { e.preventDefault(); setConfirmDelete(null); setDeleteError(null); }}
+                          disabled={deleteMutation.isPending}
+                          className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors disabled:opacity-50"
                         >
                           Cancel
                         </button>
