@@ -138,12 +138,12 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             if cal.residual_pct <= _CONVERGENCE_PCT:
                 break
 
-            # Update params and re-solve
+            # Update params and re-solve (clamp to prevent degenerate values)
             params = dataclasses.replace(
                 params,
-                mu_ref=cal.mu_ref_final,
-                P_max=cal.P_max_final,
-                F_brake_max=cal.F_brake_final,
+                mu_ref=max(cal.mu_ref_final, 0.3),
+                P_max=max(cal.P_max_final, 1000.0),
+                F_brake_max=max(cal.F_brake_final, 500.0),
             )
             tire = LoadSensitiveTire(
                 mu_ref=params.mu_ref,

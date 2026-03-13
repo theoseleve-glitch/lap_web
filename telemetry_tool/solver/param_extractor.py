@@ -58,6 +58,23 @@ def extract_session_params(
     if params.P_max <= 0 and params.F_drive_max > 0:
         params.P_max = params.F_drive_max * 20.0
 
+    # Safety clamps: degenerate values cause solver division-by-zero or infeasibility
+    if params.mu_ref < 0.3:
+        logger.warning("mu_ref=%.3f too low (sensor failure?), clamping to base %.3f",
+                        params.mu_ref, base_params.mu_ref)
+        params.mu_ref = max(params.mu_ref, base_params.mu_ref * 0.5)
+        params.mu_ref = max(params.mu_ref, 0.3)  # absolute floor
+    if params.P_max < 1000.0:
+        logger.warning("P_max=%.0fW too low, clamping to base %.0fW",
+                        params.P_max, base_params.P_max)
+        params.P_max = max(params.P_max, base_params.P_max * 0.5)
+    if params.F_brake_max < 500.0:
+        logger.warning("F_brake_max=%.0fN too low, clamping to base %.0fN",
+                        params.F_brake_max, base_params.F_brake_max)
+        params.F_brake_max = max(params.F_brake_max, base_params.F_brake_max * 0.5)
+    if params.F_drive_max < 200.0:
+        params.F_drive_max = max(params.F_drive_max, base_params.F_drive_max * 0.5)
+
     logger.info("OCP params extracted: mu_ref=%.3f, P_max=%.0fW, F_brake=%.0fN, F_drive=%.0fN",
                 params.mu_ref, params.P_max, params.F_brake_max, params.F_drive_max)
     return params
