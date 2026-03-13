@@ -152,7 +152,10 @@ def solve_ocp(
             v_top = (params.P_max / drag_coeff) ** (1.0 / 3.0)
         else:
             v_top = 50.0  # fallback for zero-drag (karts)
-        v_straight = min(v_top, 50.0)  # cap at 180 km/h
+        # Cap at 100 m/s (360 km/h) — covers all ground vehicles.
+        # 50 m/s was too conservative for cars (v_top≈70) and formula (v_top≈82),
+        # forcing IPOPT to spend extra iterations pushing up straight speeds.
+        v_straight = min(v_top, 100.0)
 
         v_guess = np.full(N, v_straight)
         for i in range(N):

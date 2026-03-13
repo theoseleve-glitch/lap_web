@@ -55,6 +55,7 @@ def make_celery(app=None) -> Celery:
             "tasks.training_tasks",
             "tasks.rollup_tasks",
             "tasks.dead_letter_tasks",
+            "tasks.ocp_tasks",
         ],
     )
     celery.conf.update(
@@ -67,6 +68,7 @@ def make_celery(app=None) -> Celery:
         task_routes={
             "tasks.pipeline_tasks.*": {"queue": "pipeline"},
             "tasks.training_tasks.*": {"queue": "pipeline"},
+            "tasks.ocp_tasks.*": {"queue": "pipeline"},
             "tasks.batch_tasks.*": {"queue": "default"},
         },
         task_default_queue="default",

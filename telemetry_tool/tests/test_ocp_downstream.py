@@ -331,3 +331,65 @@ class TestEndToEndSmoke:
         assert obs["best_s"] == 74.3
         assert obs["n_laps"] == 3
         assert obs["cv_pct"] > 0
+
+
+# ── Task 8: Corner time computation ──
+
+
+class TestComputeCornerTimes:
+    def test_computes_times_for_corners(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = _make_analysis_json()
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 2
+        assert corner_times[0]["corner_id"] == 0
+        assert corner_times[1]["corner_id"] == 1
+        # Each corner traversal must take positive time
+        assert corner_times[0]["time_s"] > 0
+        assert corner_times[1]["time_s"] > 0
+        # Apex speed should be positive
+        assert corner_times[0]["apex_speed_mps"] > 0
+        assert corner_times[0]["min_speed_mps"] > 0
+
+    def test_returns_empty_for_no_corners(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=50)
+        corner_times = _compute_corner_times(result, {"corners": []})
+        assert corner_times == []
+
+    def test_skips_corners_without_distances(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=50)
+        # Corner missing s_start/s_end
+        analysis_json = {"corners": [{"corner_id": 0}]}
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert corner_times == []
+
+
+# ── Task 9: Curvature periodicity ──
+
+
+class TestCurvaturePeriodicity:
+    def test_start_end_curvatures_match(self):
+        from tasks.ocp_tasks import _curvature_from_reference_line
+        import numpy as np
+
+        # Simulate an oval track (closed circuit) — curvatures at
+        # start and end should match after periodicity enforcement.
+        n = 200
+        distances = np.linspace(0, 500, n)
+        # Circle: offset so start ≠ end in raw lat/lon
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        lats = 45.0 + 0.001 * np.cos(theta)
+        lons = 9.0 + 0.001 * np.sin(theta)
+
+        cp = _curvature_from_reference_line(distances, lats, lons)
+        assert cp is not None
+        kappa = cp["curvature_1pm"].to_numpy()
+        # Start and end curvature must be identical
+        assert kappa[0] == kappa[-1]

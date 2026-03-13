@@ -159,6 +159,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
         result_dict = result.to_dict()
         result_dict["calibration"] = calibration_meta
+        result_dict["corner_times"] = _compute_corner_times(result, analysis_json)
 
         # Store OCP result in the in-memory analysis_json so that
         # _update_downstream (which persists analysis_json) doesn't
@@ -390,6 +391,14 @@ def _curvature_from_reference_line(distances, lats, lons):
     # Clip extreme curvature values (GPS noise)
     kappa_full = np.clip(kappa_full, 0, 0.5)
 
+    # Enforce periodicity for closed circuits: the solver constrains
+    # v[0] == v[N-1], so start/end curvatures must match to avoid
+    # conflicting friction ellipse constraints at the join.
+    if n > 2:
+        kappa_avg = (kappa_full[0] + kappa_full[-1]) / 2.0
+        kappa_full[0] = kappa_avg
+        kappa_full[-1] = kappa_avg
+
     return pd.DataFrame({
         "distance_m": distances,
         "curvature_1pm": kappa_full,
@@ -557,6 +566,67 @@ def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[floa
             dists.append(d)
     return dists
 
+
+def _compute_corner_times(result, analysis_json: dict) -> list[dict]:
+    """Compute per-corner theoretical time from OCP speed profile.
+
+    For each corner with s_start/s_end, integrates dt = ds / v_avg over the
+    OCP speed profile to get the theoretical time through that corner.
+    Returns list of {"corner_id", "time_s", "apex_speed_mps", "min_speed_mps"}.
+    """
+    import numpy as np
+
+    corners = analysis_json.get("corners", [])
+    if not corners:
+        return []
+
+    dist = np.array(result.distance_profile, dtype=float)
+    speed = np.array(result.speed_profile, dtype=float)
+    if len(dist) < 2:
+        return []
+
+    # Precompute cumulative time
+    ds = np.diff(dist)
+    v_avg = np.maximum((speed[:-1] + speed[1:]) / 2.0, 2.0)
+    dt = ds / v_avg
+    cum_time = np.zeros(len(dist))
+    cum_time[1:] = np.cumsum(dt)
+
+    corner_times = []
+    for c in corners:
+        cid = c.get("corner_id")
+        s_start = c.get("s_start")
+        s_end = c.get("s_end")
+        s_apex = c.get("s_apex")
+        if s_start is None or s_end is None:
+            continue
+
+        s_start_f = float(s_start)
+        s_end_f = float(s_end)
+
+        # Interpolate cumulative time at entry and exit
+        t_entry = float(np.interp(s_start_f, dist, cum_time))
+        t_exit = float(np.interp(s_end_f, dist, cum_time))
+        corner_time = t_exit - t_entry
+
+        # Speed at apex
+        apex_speed = None
+        if s_apex is not None:
+            apex_speed = round(float(np.interp(float(s_apex), dist, speed)), 3)
+
+        # Min speed in corner section
+        mask = (dist >= s_start_f) & (dist <= s_end_f)
+        section_speeds = speed[mask]
+        min_speed = round(float(section_speeds.min()), 3) if len(section_speeds) > 0 else apex_speed
+
+        corner_times.append({
+            "corner_id": cid,
+            "time_s": round(corner_time, 4),
+            "apex_speed_mps": apex_speed,
+            "min_speed_mps": min_speed,
+        })
+
+    return corner_times
 
 
 def _update_downstream(conn, session_id, result, result_dict, analysis_json,
