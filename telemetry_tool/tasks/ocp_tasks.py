@@ -952,7 +952,15 @@ def _update_corner_targets(analysis_json, result, corners):
         _s = cc.get("s_apex")
         apex_m = _s if _s is not None else cc.get("apex_distance_m")
         if apex_m is None and entry_m is not None and exit_m is not None:
-            apex_m = (float(entry_m) + float(exit_m)) / 2.0
+            e, x = float(entry_m), float(exit_m)
+            if e <= x:
+                apex_m = (e + x) / 2.0
+            else:
+                # Wrap-around corner: entry near track end, exit near start.
+                # Simple midpoint would land on the opposite side of the track.
+                track_len = float(dist[-1]) if len(dist) > 0 else 1.0
+                span = (track_len - e) + x
+                apex_m = (e + span / 2.0) % track_len
 
         if apex_m is not None:
             v_apex = float(np.interp(float(apex_m), dist, speed))

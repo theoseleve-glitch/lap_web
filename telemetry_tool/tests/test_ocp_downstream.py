@@ -745,3 +745,38 @@ class TestCornerTargetZeroDistance:
         assert "entry_speed_target_kmh" in cc
         assert "exit_speed_target_kmh" in cc
         assert "apex_speed_target_kmh" in cc
+
+    def test_wraparound_apex_midpoint_uses_modular_arithmetic(self):
+        """Wrap-around corner (entry > exit) missing apex should compute
+        midpoint via modular arithmetic, not simple average."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        # Build a custom result with a monotonically increasing speed profile
+        # so speeds at 0m vs 250m are clearly different.
+        n = 200
+        result = _FakeResult(n=n)
+        result.distance_profile = np.linspace(0, 500, n)
+        result.speed_profile = np.linspace(5.0, 30.0, n)  # 5 m/s at 0m, 30 m/s at 500m
+        # Speed at 250m (midpoint) ≈ 17.5 m/s = 63 km/h
+        # Speed at 0m (correct apex for wrap-around) ≈ 5.0 m/s = 18 km/h
+
+        corners = []
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 99, "s_start": 480.0, "s_end": 20.0}
+                # no s_apex / apex_distance_m → triggers midpoint fallback
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc, "apex should be computed from midpoint"
+        assert "theoretical_apex_mps" in cc
+        # Correct apex for wrap-around 480→20 on 500m track is at 0m (speed ≈ 5 m/s).
+        # Wrong apex (simple average) would be at 250m (speed ≈ 17.5 m/s).
+        apex_mps = cc["theoretical_apex_mps"]
+        assert apex_mps < 10.0, (
+            f"Wrap-around apex should be near 0m (speed ~5 m/s), "
+            f"got {apex_mps} m/s — likely using simple midpoint at 250m"
+        )
