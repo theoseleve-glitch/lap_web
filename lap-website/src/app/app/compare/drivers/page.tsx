@@ -187,31 +187,29 @@ function RadarChart({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
+  const drawRadar = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const maybeCtx = canvas.getContext('2d');
     if (!maybeCtx) return;
-    const c = maybeCtx; // non-null alias for nested functions
+    const c = maybeCtx;
 
     const dpr = window.devicePixelRatio || 1;
-    const logicalW = 400;
-    const logicalH = 400;
+    const rect = canvas.getBoundingClientRect();
+    const logicalW = rect.width || 400;
+    const logicalH = rect.width || 400; // keep square
     canvas.width = logicalW * dpr;
     canvas.height = logicalH * dpr;
-    canvas.style.width = `${logicalW}px`;
-    canvas.style.height = `${logicalH}px`;
     c.scale(dpr, dpr);
 
     const cx = logicalW / 2;
     const cy = logicalH / 2;
-    const radius = 140;
+    const radius = Math.min(cx, cy) - 40;
     const numAxes = 4;
     const angleStep = (2 * Math.PI) / numAxes;
-    const startAngle = -Math.PI / 2; // Top
+    const startAngle = -Math.PI / 2;
 
-    // Clear
     c.clearRect(0, 0, logicalW, logicalH);
 
     // Draw grid rings
@@ -255,7 +253,7 @@ function RadarChart({
       c.fillText(RADAR_LABELS[i], lx, ly);
     }
 
-    // Draw ring value labels (right side of top axis)
+    // Draw ring value labels
     c.fillStyle = '#8A8F98';
     c.font = '10px IBM Plex Mono, monospace';
     c.textAlign = 'left';
@@ -265,7 +263,6 @@ function RadarChart({
       c.fillText(String(ring), cx + 4, cy - r);
     }
 
-    // Helper to draw a polygon for a set of scores
     function drawPolygon(
       scores: (number | null)[],
       strokeColor: string,
@@ -288,7 +285,6 @@ function RadarChart({
       c.lineWidth = 2;
       c.stroke();
 
-      // Draw dots at vertices
       for (let i = 0; i < numAxes; i++) {
         const val = Math.max(0, Math.min(scores[i] ?? 0, RADAR_MAX));
         const r = (val / RADAR_MAX) * radius;
@@ -305,32 +301,36 @@ function RadarChart({
     const valsA = [scoresA.pace, scoresA.consistency, scoresA.execution, scoresA.robustness];
     const valsB = [scoresB.pace, scoresB.consistency, scoresB.execution, scoresB.robustness];
 
-    // Draw B first (behind), then A
-    drawPolygon(valsB, colorB, colorB + '4D'); // 0.3 alpha ~ 4D hex
+    drawPolygon(valsB, colorB, colorB + '4D');
     drawPolygon(valsA, colorA, colorA + '4D');
 
     // Legend
     const legendY = logicalH - 16;
     c.font = '11px Inter, sans-serif';
-
-    // Driver A legend
     c.fillStyle = colorA;
     c.fillRect(cx - 120, legendY - 6, 12, 12);
     c.fillStyle = '#F3F0E8';
     c.textAlign = 'left';
     c.fillText(driverAName, cx - 104, legendY);
-
-    // Driver B legend
     c.fillStyle = colorB;
     c.fillRect(cx + 20, legendY - 6, 12, 12);
     c.fillStyle = '#F3F0E8';
     c.fillText(driverBName, cx + 36, legendY);
   }, [scoresA, scoresB, colorA, colorB, driverAName, driverBName]);
 
+  useEffect(() => { drawRadar(); }, [drawRadar]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawRadar());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawRadar]);
+
   return (
     <canvas
       ref={canvasRef}
-      className="w-full max-w-[400px] h-auto mx-auto"
+      className="w-full max-w-[400px] mx-auto"
       style={{ aspectRatio: '1 / 1' }}
     />
   );
@@ -355,24 +355,22 @@ function TrendChart({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
+  const drawTrend = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const maybeCtx = canvas.getContext('2d');
     if (!maybeCtx) return;
-    const c = maybeCtx; // non-null alias for nested functions
+    const c = maybeCtx;
 
     const dpr = window.devicePixelRatio || 1;
-    const logicalW = 600;
-    const logicalH = 400;
+    const rect = canvas.getBoundingClientRect();
+    const logicalW = rect.width || 600;
+    const logicalH = rect.height || logicalW * (2 / 3);
     canvas.width = logicalW * dpr;
     canvas.height = logicalH * dpr;
-    canvas.style.width = '100%';
-    canvas.style.height = 'auto';
     c.scale(dpr, dpr);
 
-    // Chart area with margins
     const marginLeft = 50;
     const marginRight = 20;
     const marginTop = 20;
@@ -382,7 +380,6 @@ function TrendChart({
 
     c.clearRect(0, 0, logicalW, logicalH);
 
-    // Combine all dates for the x-axis
     const allDates = [
       ...trendA.map((p) => p.session_date),
       ...trendB.map((p) => p.session_date),
@@ -401,7 +398,6 @@ function TrendChart({
     const yMax = 100;
     const ySteps = [0, 20, 40, 60, 80, 100];
 
-    // Map date string to x position
     function dateToX(date: string): number {
       const idx = uniqueDates.indexOf(date);
       if (uniqueDates.length === 1) return marginLeft + chartW / 2;
@@ -412,7 +408,7 @@ function TrendChart({
       return marginTop + chartH - ((val - yMin) / (yMax - yMin)) * chartH;
     }
 
-    // Draw Y grid lines
+    // Y grid lines
     c.strokeStyle = '#8A8F9820';
     c.lineWidth = 1;
     c.fillStyle = '#8A8F98';
@@ -428,7 +424,7 @@ function TrendChart({
       c.fillText(String(step), marginLeft - 8, y);
     }
 
-    // Draw X axis labels (show a subset if many)
+    // X axis labels
     c.fillStyle = '#8A8F98';
     c.font = '10px IBM Plex Mono, monospace';
     c.textAlign = 'center';
@@ -437,8 +433,7 @@ function TrendChart({
     const labelStep = Math.max(1, Math.ceil(uniqueDates.length / maxLabels));
     for (let i = 0; i < uniqueDates.length; i += labelStep) {
       const x = dateToX(uniqueDates[i]);
-      // Shorten date display
-      const shortDate = uniqueDates[i].slice(5); // "MM-DD" from "YYYY-MM-DD"
+      const shortDate = uniqueDates[i].slice(5);
       c.save();
       c.translate(x, marginTop + chartH + 8);
       c.rotate(Math.PI / 6);
@@ -456,10 +451,8 @@ function TrendChart({
     c.fillText('Total Score', 0, 0);
     c.restore();
 
-    // Draw line for a trend dataset
     function drawLine(trend: TrendPoint[], color: string) {
       if (trend.length === 0) return;
-
       const sorted = [...trend].sort((a, b) => a.session_date.localeCompare(b.session_date));
 
       c.strokeStyle = color;
@@ -475,7 +468,6 @@ function TrendChart({
       }
       c.stroke();
 
-      // Dots
       for (const pt of sorted) {
         const x = dateToX(pt.session_date);
         const y = valToY(pt.total_score);
@@ -496,18 +488,25 @@ function TrendChart({
     const legendY = logicalH - 12;
     c.font = '11px Inter, sans-serif';
     c.textBaseline = 'middle';
-
     c.fillStyle = colorA;
     c.fillRect(logicalW / 2 - 120, legendY - 6, 12, 12);
     c.fillStyle = '#F3F0E8';
     c.textAlign = 'left';
     c.fillText(driverAName, logicalW / 2 - 104, legendY);
-
     c.fillStyle = colorB;
     c.fillRect(logicalW / 2 + 20, legendY - 6, 12, 12);
     c.fillStyle = '#F3F0E8';
     c.fillText(driverBName, logicalW / 2 + 36, legendY);
   }, [trendA, trendB, colorA, colorB, driverAName, driverBName]);
+
+  useEffect(() => { drawTrend(); }, [drawTrend]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawTrend());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawTrend]);
 
   return (
     <canvas

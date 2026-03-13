@@ -62,7 +62,7 @@ export default function SpeedOverlayPanel({
   }, [sessionAId, sessionBId]);
 
   // Draw speed traces
-  useEffect(() => {
+  const drawCharts = useCallback(() => {
     if (!overlay || !speedCanvasRef.current || !deltaCanvasRef.current) return;
 
     const { distances, speeds_a, speeds_b, delta_s } = overlay;
@@ -71,6 +71,18 @@ export default function SpeedOverlayPanel({
     drawSpeedCanvas(speedCanvasRef.current, distances, speeds_a, speeds_b, colorA, colorB);
     drawDeltaCanvas(deltaCanvasRef.current, distances, delta_s, colorA, colorB);
   }, [overlay, colorA, colorB]);
+
+  useEffect(() => { drawCharts(); }, [drawCharts]);
+
+  useEffect(() => {
+    const s = speedCanvasRef.current;
+    const d = deltaCanvasRef.current;
+    if (!s || !d) return;
+    const ro = new ResizeObserver(() => drawCharts());
+    ro.observe(s);
+    ro.observe(d);
+    return () => ro.disconnect();
+  }, [drawCharts]);
 
   // Hover handlers
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {

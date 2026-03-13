@@ -183,6 +183,17 @@ export default function GpsOverlayPanel({
     }
   }, [hoverDistance, hoverSource, data, draw]);
 
+  // Resize observer
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => {
+      if (dataRef.current) draw(hoverDistance);
+    });
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [draw, hoverDistance]);
+
   if (loading) {
     return (
       <div className="bg-zinc-900 rounded-lg p-4 flex items-center justify-center py-12">
