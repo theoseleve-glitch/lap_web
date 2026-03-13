@@ -36,12 +36,14 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
 
   // Fetch GG data (uses api client for auth headers + 401 retry)
   useEffect(() => {
+    let cancelled = false;
     const lap = bestLap ?? 1;
 
     api.get<{ available: boolean; accel_lat?: number[]; distances?: number[] }>(
       `/sessions/${sessionId}/gg-data?lap=${lap}`,
     )
       .then((d) => {
+        if (cancelled) return;
         if (d.available && d.accel_lat?.length) {
           setGGData({ accel_lat: d.accel_lat, distances: d.distances ?? [], available: true });
         }
@@ -49,6 +51,7 @@ export function CornerGHistogram({ sessionId, corners, bestLap }: CornerGHistogr
       .catch(() => {
         // Non-critical chart — silent fail is acceptable
       });
+    return () => { cancelled = true; };
   }, [sessionId, bestLap]);
 
   // Compute per-corner lateral G arrays

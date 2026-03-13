@@ -32,17 +32,20 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
   const [available, setAvailable] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     api.get<{ available: boolean; metrics?: CornerMetric[] }>(
       `/sessions/${sessionId}/corners/per-lap`,
     )
       .then((d) => {
+        if (cancelled) return;
         if (!d.available || !d.metrics?.length) {
           setAvailable(false);
           return;
         }
         setMetrics(d.metrics);
       })
-      .catch(() => setAvailable(false));
+      .catch(() => { if (!cancelled) setAvailable(false); });
+    return () => { cancelled = true; };
   }, [sessionId]);
 
   // Group by corner_id
