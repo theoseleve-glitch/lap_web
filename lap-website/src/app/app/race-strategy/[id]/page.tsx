@@ -294,6 +294,16 @@ export default function RaceDetailPage() {
         </button>
       </div>
 
+      {/* Mutation errors */}
+      {(optimizeMut.error || goLiveMut.error || duplicateMut.error) && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mt-4">
+          <p className="text-safety-red font-telemetry text-xs">
+            {((optimizeMut.error || goLiveMut.error || duplicateMut.error) as Error).message || 'Action failed'}
+          </p>
+          <button type="button" onClick={() => { optimizeMut.reset(); goLiveMut.reset(); duplicateMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
       {/* Delete confirmation panel */}
       <DeleteConfirmPanel {...del} entityName={race.race_name} entityType="race strategy" />
 

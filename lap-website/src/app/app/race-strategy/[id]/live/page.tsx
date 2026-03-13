@@ -593,6 +593,16 @@ export default function LiveDashboardPage() {
         </Link>
       </div>
 
+      {/* Mutation errors */}
+      {(endStintMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error) && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mt-4">
+          <p className="text-safety-red font-telemetry text-xs">
+            {((endStintMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error) as Error).message || 'Action failed'}
+          </p>
+          <button type="button" onClick={() => { endStintMut.reset(); reoptimizeMut.reset(); wakeDriverMut.reset(); finishMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
       {/* Sleep Warning Dialog */}
       {showSleepWarning && state?.next_stint && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
