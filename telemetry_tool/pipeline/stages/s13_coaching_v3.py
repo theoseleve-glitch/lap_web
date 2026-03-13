@@ -109,7 +109,12 @@ def run_coaching_analyzers(
     # Exit cascades (needs all corners + theoretical)
     try:
         if best_lap_df is not None and theoretical_result is not None:
-            track_length = theoretical_result.get("track_length_m", 0) if isinstance(theoretical_result, dict) else 0
+            if isinstance(theoretical_result, dict):
+                track_length = theoretical_result.get("track_length_m", 0)
+            elif hasattr(theoretical_result, "columns") and "Distance (m)" in theoretical_result.columns:
+                track_length = float(theoretical_result["Distance (m)"].iloc[-1])
+            else:
+                track_length = 0
             if track_length > 0:
                 cascades = analyze_exit_cascades(
                     corner_perfs, best_lap_df, theoretical_result, track_length,

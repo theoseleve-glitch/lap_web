@@ -636,12 +636,21 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
                 logger.warning("OCP downstream: corner analysis failed", exc_info=True)
 
         # 5. Re-run coaching analyzers
+        #    Build a coaching-compatible theoretical DataFrame with column names
+        #    that analyze_exit_cascades expects: "Distance (m)" and "Speed (m/s)".
+        #    The dict format (theo_result_dict) silently fails in exit cascade
+        #    analysis because it lacks .empty and column access.
+        theo_coaching_df = pd.DataFrame({
+            "Distance (m)": np.array(result.distance_profile),
+            "Speed (m/s)": np.array(result.speed_profile),
+        })
+
         analyzer_bundle = None
         if corner_perfs:
             try:
                 from pipeline.stages.s13_coaching_v3 import run_coaching_analyzers
                 analyzer_bundle = run_coaching_analyzers(
-                    corner_perfs, best_lap_df, theo_result_dict,
+                    corner_perfs, best_lap_df, theo_coaching_df,
                     friction_model, resampled_laps, available_columns,
                 )
             except Exception:
