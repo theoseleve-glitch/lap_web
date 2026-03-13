@@ -166,6 +166,7 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDo
         const isActive = activeTools.has(tool.id);
         return (
           <button
+            type="button"
             key={tool.id}
             onClick={() => onToggle(tool.id)}
             className={`w-9 h-9 flex items-center justify-center rounded-md transition-colors relative ${
@@ -190,6 +191,7 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDo
 
       {/* Reset layout */}
       <button
+        type="button"
         onClick={onReset}
         className="w-9 h-9 flex items-center justify-center rounded-md text-steel hover:text-chalk hover:bg-asphalt/50 transition-colors"
         title="Reset layout (R)"

@@ -13,6 +13,7 @@ export function LapWordmark({ onIndexToggle }: LapWordmarkProps) {
 
   return (
     <button
+      type="button"
       className="fixed top-4 left-4 font-monument text-2xl px-3 py-1 border-2 border-chalk transition-colors duration-[420ms]"
       style={{
         zIndex: 'var(--z-nav)' as unknown as number,

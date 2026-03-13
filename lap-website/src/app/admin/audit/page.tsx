@@ -127,6 +127,7 @@ export default function AdminAuditPage() {
 
       <div className="mt-4 flex items-center justify-between">
         <button
+          type="button"
           onClick={() => setOffset(Math.max(0, offset - limit))}
           disabled={offset === 0}
           className="rounded px-3 py-1 text-sm text-white/50 hover:text-white disabled:opacity-30"
@@ -137,6 +138,7 @@ export default function AdminAuditPage() {
           Showing {offset + 1}–{offset + entries.length}
         </span>
         <button
+          type="button"
           onClick={() => setOffset(offset + limit)}
           disabled={entries.length < limit}
           className="rounded px-3 py-1 text-sm text-white/50 hover:text-white disabled:opacity-30"

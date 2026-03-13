@@ -201,7 +201,7 @@ export default function RaceStrategyListPage() {
       {deleteError && (
         <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 text-safety-red font-body text-sm flex items-center justify-between">
           <span>Delete failed: {deleteError}</span>
-          <button onClick={() => setDeleteError('')} className="text-safety-red/60 hover:text-safety-red ml-4">{'\u2715'}</button>
+          <button type="button" onClick={() => setDeleteError('')} className="text-safety-red/60 hover:text-safety-red ml-4">{'\u2715'}</button>
         </div>
       )}
 
@@ -250,6 +250,7 @@ export default function RaceStrategyListPage() {
                 No races match your filters
               </p>
               <button
+                type="button"
                 onClick={() => { setSearch(''); setStatusFilter('all'); }}
                 className="mt-3 text-pit-orange font-telemetry text-xs hover:underline"
               >
@@ -306,6 +307,7 @@ export default function RaceStrategyListPage() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <button
+                            type="button"
                             onClick={() => deleteMutation.mutate(race.race_id)}
                             disabled={deleteMutation.isPending}
                             className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
@@ -313,6 +315,7 @@ export default function RaceStrategyListPage() {
                             {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
                           </button>
                           <button
+                            type="button"
                             onClick={() => setConfirmDelete(null)}
                             className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
                           >
@@ -321,6 +324,7 @@ export default function RaceStrategyListPage() {
                         </span>
                       ) : (
                         <button
+                          type="button"
                           onClick={(e) => { e.stopPropagation(); setConfirmDelete(race.race_id); }}
                           title="Delete race"
                           className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"

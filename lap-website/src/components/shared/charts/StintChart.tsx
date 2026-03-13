@@ -34,25 +34,34 @@ export function StintChart({ sessionId, gpsLaps, bestLap, className = '' }: Stin
   const modeRef = useRef<'stints' | 'fallback' | 'none'>('none');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    const ver = ++fetchVersionRef.current;
+    let done = false;
     setLoading(true); setError(null);
     stintsRef.current = []; fallbackRef.current = []; modeRef.current = 'none';
-    try {
-      const res = await apiFetch<StintResponse>(`/sessions/${encodeURIComponent(sessionId)}/stint-analysis`);
-      if (res.stints && res.stints.length > 0) { stintsRef.current = res.stints; modeRef.current = 'stints'; return; }
-    } catch { /* try fallback */ }
-    try {
-      const p = await apiFetch<LapProgressResponse>(`/sessions/${encodeURIComponent(sessionId)}/lap-progress`);
-      if (p.lap_numbers && p.lap_numbers.length > 0) {
-        fallbackRef.current = p.lap_numbers.map((num, i) => ({ lap_number: num, lap_time: p.times[i] ?? 0 })).filter(l => l.lap_time > 0);
-        modeRef.current = fallbackRef.current.length > 0 ? 'fallback' : 'none';
+    (async () => {
+      try {
+        const res = await apiFetch<StintResponse>(`/sessions/${encodeURIComponent(sessionId)}/stint-analysis`);
+        if (ver !== fetchVersionRef.current) return;
+        if (res.stints && res.stints.length > 0) { stintsRef.current = res.stints; modeRef.current = 'stints'; done = true; }
+      } catch { /* try fallback */ }
+      if (done || ver !== fetchVersionRef.current) { if (!done) return; setLoading(false); return; }
+      try {
+        const p = await apiFetch<LapProgressResponse>(`/sessions/${encodeURIComponent(sessionId)}/lap-progress`);
+        if (ver !== fetchVersionRef.current) return;
+        if (p.lap_numbers && p.lap_numbers.length > 0) {
+          fallbackRef.current = p.lap_numbers.map((num, i) => ({ lap_number: num, lap_time: p.times[i] ?? 0 })).filter(l => l.lap_time > 0);
+          modeRef.current = fallbackRef.current.length > 0 ? 'fallback' : 'none';
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load stint data');
       }
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to load stint data'); }
-    setLoading(false);
+      setLoading(false);
+    })();
   }, [sessionId]);
-
-  useEffect(() => { fetchData().finally(() => setLoading(false)); }, [fetchData]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return;

@@ -51,6 +51,7 @@ export function Garage() {
           {panels.map((panel, i) => (
             <div key={panel.titleKey} className="border-b border-chalk/15">
               <button
+                type="button"
                 className="w-full flex items-center justify-between py-4 text-left font-monument text-[var(--text-h3)] hover:text-chalk transition-colors duration-300"
                 onClick={() => togglePanel(i)}
                 aria-expanded={openPanel === i}

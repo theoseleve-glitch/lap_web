@@ -41,6 +41,7 @@ export default function DriversPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'score'>('sessions');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data: drivers = [], isLoading, error, refetch } = useQuery({
     queryKey: queryKeys.drivers.all,
@@ -50,6 +51,7 @@ export default function DriversPage() {
   const deleteMutation = useMutation({
     mutationFn: (driverId: number) => api.delete(`/drivers/${driverId}`),
     onMutate: async (driverId) => {
+      setDeleteError(null);
       await queryClient.cancelQueries({ queryKey: queryKeys.drivers.all });
       const prev = queryClient.getQueryData<Driver[]>(queryKeys.drivers.all);
       queryClient.setQueryData<Driver[]>(queryKeys.drivers.all, (old) =>
@@ -63,8 +65,7 @@ export default function DriversPage() {
     },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(queryKeys.drivers.all, context.prev);
-      const msg = _err instanceof Error ? _err.message : 'Delete failed';
-      console.error('[driver-delete]', _err);
+      setDeleteError(_err instanceof Error ? _err.message : 'Failed to delete driver');
     },
   });
 
@@ -125,7 +126,15 @@ export default function DriversPage() {
         </select>
       </div>
 
-      {/* ── Content ─────────────────────────────────────── */}
+      {/* ── Delete Error ──────────────────────────────── */}
+      {deleteError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{deleteError}</p>
+          <button type="button" onClick={() => setDeleteError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
+      {/* ── Content ────────────────────────────────────── */}
       {isLoading ? (
         <SkeletonCardGrid count={6} cols={3} />
       ) : error ? (
@@ -181,6 +190,7 @@ export default function DriversPage() {
                         onClick={(e) => e.preventDefault()}
                       >
                         <button
+                          type="button"
                           onClick={(e) => { e.preventDefault(); deleteMutation.mutate(driver.id); }}
                           disabled={deleteMutation.isPending}
                           className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
@@ -188,14 +198,17 @@ export default function DriversPage() {
                           {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
                         </button>
                         <button
-                          onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
-                          className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                          type="button"
+                          onClick={(e) => { e.preventDefault(); setConfirmDelete(null); setDeleteError(null); }}
+                          disabled={deleteMutation.isPending}
+                          className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors disabled:opacity-50"
                         >
                           Cancel
                         </button>
                       </span>
                     ) : (
                       <button
+                        type="button"
                         onClick={(e) => { e.preventDefault(); setConfirmDelete(driver.id); }}
                         title="Delete driver"
                         className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"

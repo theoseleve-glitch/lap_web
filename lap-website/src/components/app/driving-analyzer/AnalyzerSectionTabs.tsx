@@ -22,6 +22,7 @@ export function AnalyzerSectionTabs({ sections, activeSection, onSectionChange }
         const base = TYPE_STYLES[s.type] ?? TYPE_STYLES.straight;
         return (
           <button
+            type="button"
             key={s.id}
             onClick={() => onSectionChange(s.id)}
             className={`shrink-0 px-3 py-1.5 text-xs font-telemetry rounded border transition-all ${

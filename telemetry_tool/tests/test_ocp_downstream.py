@@ -54,7 +54,7 @@ class TestOcpResultToDataframe:
         df = _ocp_result_to_dataframe(result)
 
         assert isinstance(df, pd.DataFrame)
-        assert set(df.columns) == {"distance_m", "speed_mps", "time_s", "a_long", "a_lat"}
+        assert set(df.columns) == {"distance_m", "speed_mps", "time_s", "accel_long_mps2", "accel_lat_mps2"}
         assert len(df) == 50
 
     def test_cumulative_time_increases(self):
@@ -226,6 +226,79 @@ class TestRlsContext:
             mock_rls.assert_called_once_with(conn, 1)
 
 
+# ── Task 4: Connection leak prevention ──
+
+
+class TestConnectionLeakPrevention:
+    def test_load_session_data_closes_conn_on_db_error(self):
+        """Connection must be closed if _load_session_data raises internally."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = RuntimeError("DB gone")
+
+        with patch("tasks.ocp_tasks.get_db_connection" if False else
+                   "web.db.get_db_connection", return_value=mock_conn):
+            with pytest.raises(RuntimeError, match="DB gone"):
+                _load_session_data("sess-X", workspace_id=None)
+        mock_conn.close.assert_called_once()
+
+    def test_load_session_data_closes_conn_on_bad_json(self):
+        """Connection closed when analysis_json column contains bad JSON."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        mock_row = {"analysis_json": "{INVALID JSON"}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with pytest.raises(Exception):
+                _load_session_data("sess-X", workspace_id=None)
+        mock_conn.close.assert_called_once()
+
+    def test_run_ocp_impl_does_not_double_close(self):
+        """If _load_session_data succeeds, _run_ocp_impl manages the conn."""
+        from tasks.ocp_tasks import _run_ocp_impl
+
+        with patch("tasks.ocp_tasks._load_session_data") as mock_load:
+            mock_conn = MagicMock()
+            mock_load.return_value = (mock_conn, {}, None, None, None)
+
+            result = _run_ocp_impl("sess-1")
+            # Should return None (no best_lap_df) and close once
+            assert result is None
+            mock_conn.close.assert_called_once()
+
+
+# ── Task 5: VehicleClass fault tolerance ──
+
+
+class TestVehicleClassFaultTolerance:
+    def test_bad_vehicle_class_uses_fallback(self):
+        """Invalid vehicle_class in analysis_json should not crash loading."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        analysis = {
+            "vehicle_params": {
+                "vehicle_class": "NONEXISTENT_CLASS_XYZ",
+                "peak_lateral_g": 1.0,
+                "rolling_resistance_est": 0.015,
+                "aero_drag_factor_est": 0.0,
+            }
+        }
+        import json as _json
+        mock_row = {"analysis_json": _json.dumps(analysis)}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with patch("web.repos.lap_repo.get_laps_for_session", return_value=[]):
+                with patch("web.repos.theoretical_repo.get_reference_line", return_value=None):
+                    conn, aj, bldf, cp, vp = _load_session_data("sess-1", None)
+        # Should not crash; vehicle_params falls back gracefully
+        assert conn is mock_conn
+
+
 # ── Task 7: End-to-end smoke test ──
 
 
@@ -258,3 +331,452 @@ class TestEndToEndSmoke:
         assert obs["best_s"] == 74.3
         assert obs["n_laps"] == 3
         assert obs["cv_pct"] > 0
+
+
+# ── Task 8: Corner time computation ──
+
+
+class TestComputeCornerTimes:
+    def test_computes_times_for_corners(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = _make_analysis_json()
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 2
+        assert corner_times[0]["corner_id"] == 0
+        assert corner_times[1]["corner_id"] == 1
+        # Each corner traversal must take positive time
+        assert corner_times[0]["time_s"] > 0
+        assert corner_times[1]["time_s"] > 0
+        # Apex speed should be positive
+        assert corner_times[0]["apex_speed_mps"] > 0
+        assert corner_times[0]["min_speed_mps"] > 0
+
+    def test_returns_empty_for_no_corners(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=50)
+        corner_times = _compute_corner_times(result, {"corners": []})
+        assert corner_times == []
+
+    def test_skips_corners_without_distances(self):
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=50)
+        # Corner missing s_start/s_end
+        analysis_json = {"corners": [{"corner_id": 0}]}
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert corner_times == []
+
+
+# ── Task 9: Corner target field-name aliasing ──
+
+
+class TestUpdateCornerTargets:
+    def test_uses_coaching_field_names(self):
+        """corner_coaching entries use entry_distance_m/exit_distance_m/apex_distance_m."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [],
+            "corner_coaching": [
+                {"corner_id": 0, "apex_distance_m": 75.0,
+                 "entry_distance_m": 50.0, "exit_distance_m": 100.0,
+                 "actual_apex_speed_mps": 12.0},
+            ],
+        }
+
+        _update_corner_targets(analysis_json, result, [])
+
+        cc = analysis_json["corner_coaching"][0]
+        # Speed targets must be populated (not None / missing)
+        assert "apex_speed_target_kmh" in cc
+        assert cc["apex_speed_target_kmh"] > 0
+        assert "entry_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+        assert "theoretical_apex_mps" in cc
+
+    def test_uses_corner_detection_field_names(self):
+        """corner_coaching entries seeded from raw corners use s_start/s_end/s_apex."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 0, "s_start": 50.0, "s_apex": 75.0, "s_end": 100.0},
+            ],
+            "corner_coaching": [],  # empty → seeds from corners
+        }
+
+        _update_corner_targets(analysis_json, result, analysis_json["corners"])
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc
+        assert cc["apex_speed_target_kmh"] > 0
+
+
+# ── Task 10: Warm start monotonicity ──
+
+
+class TestWarmStartMonotonicity:
+    def test_non_monotonic_distances_handled(self):
+        """Non-monotonic QSS distances should not crash or give NaN."""
+        from tasks.ocp_tasks import _extract_warm_start
+
+        class FakeMesh:
+            s = np.linspace(0, 100, 50)
+
+        # Intentionally non-monotonic distances
+        analysis_json = {
+            "optimal_v2": {
+                "speed_profile": [
+                    {"distance_m": 0.0, "speed_mps": 10.0},
+                    {"distance_m": 50.0, "speed_mps": 20.0},
+                    {"distance_m": 30.0, "speed_mps": 15.0},  # out of order
+                    {"distance_m": 70.0, "speed_mps": 25.0},
+                    {"distance_m": 100.0, "speed_mps": 10.0},
+                ] + [{"distance_m": float(i), "speed_mps": 15.0} for i in range(5, 100, 10)]
+            }
+        }
+
+        warm = _extract_warm_start(analysis_json, FakeMesh())
+        assert warm is not None
+        assert len(warm) == 50
+        assert np.all(np.isfinite(warm))
+        # Should be monotonically sensible after sorting
+        assert np.all(warm >= 2.0)
+
+
+# ── Task 11: Paired braking distance extraction ──
+
+
+class TestPairedBrakingDists:
+    def test_paired_lists_same_length(self):
+        """actual and theoretical braking dists must always be the same length."""
+        from tasks.ocp_tasks import _extract_paired_braking_dists
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corner_performances": [
+                {"corner_id": 0, "s_start": 50.0, "braking_point_actual_m": 30.0},
+                {"corner_id": 1, "s_start": 200.0, "braking_point_actual_m": 180.0},
+                {"corner_id": 2, "s_start": 350.0, "braking_point_actual_m": 349.5},  # tiny actual (< 1m)
+            ],
+        }
+
+        actual, theo = _extract_paired_braking_dists(result, analysis_json)
+        assert len(actual) == len(theo)
+        # Corner 2 has actual dist < 1m, so both lists should exclude it
+        # (actual or theoretical might also be < 1m depending on OCP profile)
+
+    def test_returns_empty_for_no_corner_perfs(self):
+        from tasks.ocp_tasks import _extract_paired_braking_dists
+
+        result = _FakeResult(n=50)
+        actual, theo = _extract_paired_braking_dists(result, {})
+        assert actual == []
+        assert theo == []
+
+
+# ── Task 12: theoretical_data sync ──
+
+
+class TestPersistAllSyncsTheoreticalData:
+    def test_updates_theoretical_data_corner_coaching(self):
+        """_persist_all must write corner_coaching to theoretical_data table."""
+        from tasks.ocp_tasks import _persist_all
+
+        conn = MagicMock()
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 0, "apex_speed_target_kmh": 85.0},
+            ],
+        }
+        scores = {"total_score": 72, "grade": "B"}
+
+        _persist_all(conn, "sess-1", analysis_json, scores)
+
+        # Should have called execute at least 3 times:
+        # 1. UPDATE sessions SET analysis_json
+        # 2. UPDATE theoretical_data SET corner_coaching_json
+        # 3. UPDATE sessions SET total_score + grade
+        calls = conn.execute.call_args_list
+        sql_strs = [str(c[0][0]) for c in calls]
+        assert any("theoretical_data" in s for s in sql_strs), (
+            f"Expected theoretical_data UPDATE, got: {sql_strs}"
+        )
+
+    def test_skips_theoretical_update_when_no_coaching(self):
+        """No corner_coaching → no theoretical_data UPDATE."""
+        from tasks.ocp_tasks import _persist_all
+
+        conn = MagicMock()
+        analysis_json = {}
+        scores = {"total_score": 72, "grade": "B"}
+
+        _persist_all(conn, "sess-1", analysis_json, scores)
+
+        calls = conn.execute.call_args_list
+        sql_strs = [str(c[0][0]) for c in calls]
+        assert not any("theoretical_data" in s for s in sql_strs)
+
+
+# ── Task 13: Curvature periodicity ──
+
+
+class TestCurvaturePeriodicity:
+    def test_start_end_curvatures_match(self):
+        from tasks.ocp_tasks import _curvature_from_reference_line
+        import numpy as np
+
+        # Simulate an oval track (closed circuit) — curvatures at
+        # start and end should match after periodicity enforcement.
+        n = 200
+        distances = np.linspace(0, 500, n)
+        # Circle: offset so start ≠ end in raw lat/lon
+        theta = np.linspace(0, 2 * np.pi, n, endpoint=False)
+        lats = 45.0 + 0.001 * np.cos(theta)
+        lons = 9.0 + 0.001 * np.sin(theta)
+
+        cp = _curvature_from_reference_line(distances, lats, lons)
+        assert cp is not None
+        kappa = cp["curvature_1pm"].to_numpy()
+        # Start and end curvature must be identical
+        assert kappa[0] == kappa[-1]
+
+
+# ── Task 14: Corner time wrap-around ──
+
+
+class TestCornerTimeWrapAround:
+    def test_wraparound_corner_has_positive_time(self):
+        """A corner that spans the start/finish line (s_start > s_end)
+        must produce positive time, not negative."""
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        # Corner wraps: starts at 480m, ends at 20m (on a ~500m track)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 99, "s_start": 480.0, "s_end": 20.0, "s_apex": 490.0},
+            ],
+        }
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 1
+        assert corner_times[0]["corner_id"] == 99
+        assert corner_times[0]["time_s"] > 0, (
+            f"Wrap-around corner time should be positive, got {corner_times[0]['time_s']}"
+        )
+        # min_speed must come from the wrap-around section, not fallback to apex
+        assert corner_times[0]["min_speed_mps"] is not None
+        assert corner_times[0]["min_speed_mps"] > 0
+
+    def test_normal_corner_unaffected(self):
+        """Non-wrapping corners still work correctly."""
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 0, "s_start": 50.0, "s_end": 100.0, "s_apex": 75.0},
+            ],
+        }
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 1
+        assert corner_times[0]["time_s"] > 0
+
+
+# ── Task 15: Truthy check on actual_apex speed ──
+
+
+class TestCornerTargetZeroSpeed:
+    def test_zero_actual_apex_still_computes_delta(self):
+        """actual_apex_speed_mps == 0.0 should not skip speed_delta_pct computation."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [],
+            "corner_coaching": [
+                {"corner_id": 0, "apex_distance_m": 75.0,
+                 "entry_distance_m": 50.0, "exit_distance_m": 100.0,
+                 "actual_apex_speed_mps": 0.0},  # zero speed (edge case)
+            ],
+        }
+
+        _update_corner_targets(analysis_json, result, [])
+
+        cc = analysis_json["corner_coaching"][0]
+        # speed_delta_pct should be present (not skipped due to falsy 0.0)
+        assert "speed_delta_pct" in cc
+
+
+# ── Task 16: Scoring crash graceful degradation ──
+
+
+class TestScoringCrashGracefulDegradation:
+    @patch("tasks.ocp_tasks._persist_all")
+    def test_scoring_crash_still_persists_corner_targets(self, mock_persist):
+        """If score_session crashes, corner targets and OCP data must still be persisted."""
+        from tasks.ocp_tasks import _update_downstream
+
+        result = _FakeResult(n=100, lap_time=68.5)
+        result_dict = result.to_dict()
+        analysis_json = _make_analysis_json()
+        # Pre-set an existing score to verify it's kept as fallback
+        analysis_json["score_result"] = {"total_score": 55, "grade": "C"}
+        conn = MagicMock()
+
+        with patch("scoring.scorer.score_session", side_effect=RuntimeError("scorer crashed")):
+            _update_downstream(conn, "sess-1", result, result_dict, analysis_json,
+                               best_lap_df=_make_best_lap_df())
+
+        # Corner targets should still be set (via _update_corner_targets)
+        assert analysis_json.get("simulation_method") == "ocp"
+        # _persist_all should still be called (scoring fallback to existing scores)
+        mock_persist.assert_called_once()
+        # Existing scores should be preserved as fallback
+        persisted_scores = mock_persist.call_args[0][3]
+        assert persisted_scores.get("total_score") == 55
+
+
+# ── Task 17: Reference line array length mismatch guard ──
+
+
+class TestRefLineArrayLengthMismatch:
+    def test_mismatched_ref_line_arrays_produce_no_curvature(self):
+        """If ref line arrays have different lengths, curvature should be None (not crash)."""
+        from tasks.ocp_tasks import _load_session_data
+        import json as _json
+
+        mock_conn = MagicMock()
+        analysis = {"lap_times": [74.0]}
+        mock_row = {"analysis_json": _json.dumps(analysis)}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        # Reference line with mismatched arrays (distances=500, lats=400)
+        ref_line = {
+            "distances": list(range(500)),
+            "latitudes": [45.0] * 400,    # wrong length!
+            "longitudes": [9.0] * 500,
+        }
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with patch("web.repos.lap_repo.get_laps_for_session", return_value=[]):
+                with patch("web.repos.theoretical_repo.get_reference_line", return_value=ref_line):
+                    conn, aj, bldf, cp, vp = _load_session_data("sess-1", None)
+
+        # Should produce None curvature (not crash with shape mismatch)
+        assert cp is None
+
+
+# ── Task 18: Corner target falsy-distance fallback (Bug 23) ──
+
+
+class TestCornerTargetZeroDistance:
+    """Verify that _update_corner_targets handles s_start/s_end/s_apex = 0.0 correctly.
+
+    The `or` operator treats 0.0 as falsy, causing fallback to the wrong field.
+    After the fix, explicit `is not None` checks should use the correct field.
+    """
+
+    def test_zero_s_start_not_skipped(self):
+        """A corner at the start/finish line has s_start=0.0; should still interpolate."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1, "s_start": 0.0, "s_end": 50.0, "s_apex": 25.0}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "s_start": 0.0, "s_end": 50.0, "s_apex": 25.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        coaching = analysis_json["corner_coaching"]
+        assert len(coaching) == 1
+        cc = coaching[0]
+        # entry_m should be 0.0 (from s_start), NOT None (from missing entry_distance_m)
+        assert "entry_speed_target_kmh" in cc, "s_start=0.0 should not be skipped"
+        assert "apex_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+
+    def test_zero_s_apex_still_computes_speed_delta(self):
+        """If s_apex=0.0 and actual_apex is known, speed_delta_pct should be computed."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1, "s_start": 480.0, "s_end": 20.0, "s_apex": 0.0}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "s_start": 480.0, "s_end": 20.0, "s_apex": 0.0,
+                 "actual_apex_speed_mps": 12.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc, "s_apex=0.0 should not be skipped"
+        assert "speed_delta_pct" in cc, "speed_delta_pct should be computed for s_apex=0.0"
+
+    def test_fallback_to_entry_distance_m_when_s_start_missing(self):
+        """If s_start is absent, should fall back to entry_distance_m."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=100)
+        corners = [{"corner_id": 1}]
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 1, "entry_distance_m": 100.0, "exit_distance_m": 200.0,
+                 "apex_distance_m": 150.0}
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "entry_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+        assert "apex_speed_target_kmh" in cc
+
+    def test_wraparound_apex_midpoint_uses_modular_arithmetic(self):
+        """Wrap-around corner (entry > exit) missing apex should compute
+        midpoint via modular arithmetic, not simple average."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        # Build a custom result with a monotonically increasing speed profile
+        # so speeds at 0m vs 250m are clearly different.
+        n = 200
+        result = _FakeResult(n=n)
+        result.distance_profile = np.linspace(0, 500, n)
+        result.speed_profile = np.linspace(5.0, 30.0, n)  # 5 m/s at 0m, 30 m/s at 500m
+        # Speed at 250m (midpoint) ≈ 17.5 m/s = 63 km/h
+        # Speed at 0m (correct apex for wrap-around) ≈ 5.0 m/s = 18 km/h
+
+        corners = []
+        analysis_json = {
+            "corner_coaching": [
+                {"corner_id": 99, "s_start": 480.0, "s_end": 20.0}
+                # no s_apex / apex_distance_m → triggers midpoint fallback
+            ]
+        }
+
+        _update_corner_targets(analysis_json, result, corners)
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc, "apex should be computed from midpoint"
+        assert "theoretical_apex_mps" in cc
+        # Correct apex for wrap-around 480→20 on 500m track is at 0m (speed ≈ 5 m/s).
+        # Wrong apex (simple average) would be at 250m (speed ≈ 17.5 m/s).
+        apex_mps = cc["theoretical_apex_mps"]
+        assert apex_mps < 10.0, (
+            f"Wrap-around apex should be near 0m (speed ~5 m/s), "
+            f"got {apex_mps} m/s — likely using simple midpoint at 250m"
+        )

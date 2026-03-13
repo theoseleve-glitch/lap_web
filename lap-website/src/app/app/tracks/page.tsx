@@ -43,6 +43,7 @@ export default function TracksPage() {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<'name' | 'sessions' | 'record'>('sessions');
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['tracks'],
@@ -54,6 +55,7 @@ export default function TracksPage() {
   const deleteMutation = useMutation({
     mutationFn: (trackId: string) => api.delete(`/tracks/${trackId}`),
     onMutate: async (trackId) => {
+      setDeleteError(null);
       await queryClient.cancelQueries({ queryKey: ['tracks'] });
       const prev = queryClient.getQueryData<TrackRow[]>(['tracks']);
       queryClient.setQueryData<TrackRow[]>(['tracks'], (old) =>
@@ -67,7 +69,7 @@ export default function TracksPage() {
     },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(['tracks'], context.prev);
-      console.error('[track-delete]', _err);
+      setDeleteError(_err instanceof Error ? _err.message : 'Failed to delete track');
     },
   });
 
@@ -132,6 +134,14 @@ export default function TracksPage() {
         </select>
       </div>
 
+      {/* ── Delete Error ──────────────────────────────── */}
+      {deleteError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{deleteError}</p>
+          <button type="button" onClick={() => setDeleteError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
       {/* ── Loading / Error / Content ─────────────────── */}
       {isLoading ? (
         <SkeletonCardGrid count={6} cols={3} />
@@ -180,6 +190,7 @@ export default function TracksPage() {
                   {confirmDelete === track.id ? (
                     <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
                       <button
+                        type="button"
                         onClick={(e) => { e.preventDefault(); deleteMutation.mutate(track.id); }}
                         disabled={deleteMutation.isPending}
                         className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
@@ -187,14 +198,17 @@ export default function TracksPage() {
                         {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
                       </button>
                       <button
-                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
-                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); setDeleteError(null); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors disabled:opacity-50"
                       >
                         Cancel
                       </button>
                     </span>
                   ) : (
                     <button
+                      type="button"
                       onClick={(e) => { e.preventDefault(); setConfirmDelete(track.id); }}
                       title="Delete track"
                       className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"

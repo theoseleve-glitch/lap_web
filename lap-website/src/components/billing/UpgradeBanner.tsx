@@ -1,6 +1,8 @@
 'use client';
 
+import { useRef } from 'react';
 import { useEntitlements } from '@/hooks/useEntitlements';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import Link from 'next/link';
 
 interface UpgradeBannerProps {
@@ -39,6 +41,8 @@ export function UpgradeBanner({
   onDismiss,
 }: UpgradeBannerProps) {
   const { requiresUpgrade, entitlements } = useEntitlements();
+  const modalRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(modalRef, variant === 'modal' && !!onDismiss, onDismiss);
 
   const upgrade = requiresUpgrade(feature);
   if (!upgrade) return null;
@@ -76,8 +80,17 @@ export function UpgradeBanner({
 
   if (variant === 'modal') {
     return (
-      <div className="fixed inset-0 z-overlay flex items-center justify-center bg-asphalt/80 backdrop-blur-sm">
-        <div className="mx-4 w-full max-w-md border border-chalk/15 bg-concrete p-6 shadow-xl">
+      <div
+        ref={modalRef}
+        className="fixed inset-0 z-overlay flex items-center justify-center bg-asphalt/80 backdrop-blur-sm"
+        onClick={onDismiss}
+        role="dialog"
+        aria-modal="true"
+      >
+        <div
+          className="mx-4 w-full max-w-md border border-chalk/15 bg-concrete p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
           <h3 className="font-monument text-xl text-chalk">
             Upgrade to {tierLabel}
           </h3>
@@ -96,6 +109,7 @@ export function UpgradeBanner({
             </Link>
             {onDismiss && (
               <button
+                type="button"
                 onClick={onDismiss}
                 className="border border-chalk/20 px-4 py-2.5 text-sm text-steel transition-colors hover:border-chalk/40 hover:text-chalk"
               >
@@ -129,6 +143,7 @@ export function UpgradeBanner({
           </Link>
           {onDismiss && (
             <button
+              type="button"
               onClick={onDismiss}
               className="text-xs text-steel hover:text-chalk"
               aria-label="Dismiss"

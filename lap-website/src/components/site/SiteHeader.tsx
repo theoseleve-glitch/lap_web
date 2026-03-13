@@ -41,12 +41,10 @@ export function SiteHeader() {
 
   // Lock body scroll when drawer is open
   useEffect(() => {
-    if (drawerOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
-    return () => { document.body.style.overflow = ''; };
+    if (!drawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
   }, [drawerOpen]);
 
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -121,6 +119,7 @@ export function SiteHeader() {
               {t('nav.signup')}
             </Link>
             <button
+              type="button"
               onClick={() => setDrawerOpen((prev) => !prev)}
               className="min-h-[44px] min-w-[44px] flex items-center justify-center border border-chalk/20 text-steel hover:text-chalk hover:border-steel transition-colors duration-200 cursor-pointer"
               aria-label={drawerOpen ? 'Close menu' : 'Open menu'}

@@ -59,6 +59,7 @@ export function Placard({
           )}
           {revealContent && (
             <button
+              type="button"
               className="mt-4 font-telemetry text-[11px] tracking-[0.12em] uppercase text-[var(--accent)] hover:underline"
               onClick={handleReveal}
               aria-expanded={flipped}
@@ -81,6 +82,7 @@ export function Placard({
           >
             <div className="font-body text-steel leading-relaxed text-sm">{revealContent}</div>
             <button
+              type="button"
               className="mt-4 font-telemetry text-[11px] tracking-[0.12em] uppercase text-[var(--accent)] hover:underline"
               onClick={() => setFlipped(false)}
               aria-label={`Close ${title}`}

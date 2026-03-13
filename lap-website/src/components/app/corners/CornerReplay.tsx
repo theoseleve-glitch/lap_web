@@ -126,6 +126,7 @@ function drawCockpit(
 ) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');
@@ -313,6 +314,7 @@ function drawGpsMap(
 ) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');
@@ -330,10 +332,13 @@ function drawGpsMap(
   // Map projection
   const lats = traces.map((t) => t.lat);
   const lons = traces.map((t) => t.lon);
-  const latMin = Math.min(...lats);
-  const latMax = Math.max(...lats);
-  const lonMin = Math.min(...lons);
-  const lonMax = Math.max(...lons);
+  let latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
+  for (let i = 0; i < lats.length; i++) {
+    if (lats[i] < latMin) latMin = lats[i];
+    if (lats[i] > latMax) latMax = lats[i];
+    if (lons[i] < lonMin) lonMin = lons[i];
+    if (lons[i] > lonMax) lonMax = lons[i];
+  }
   const latRange = latMax - latMin || 0.0001;
   const lonRange = lonMax - lonMin || 0.0001;
   const scaleX = (W - 2 * pad) / lonRange;
@@ -381,7 +386,8 @@ function drawGpsMap(
 
   // Speed-colored traveled path
   const frameIdx = Math.min(frame, traces.length - 1);
-  const maxSpd = Math.max(...traces.map((t) => t.speed_mps), 1);
+  let maxSpd = 1;
+  for (let i = 0; i < traces.length; i++) if (traces[i].speed_mps > maxSpd) maxSpd = traces[i].speed_mps;
   for (let i = 1; i <= frameIdx; i++) {
     const spd = traces[i].speed_mps;
     const frac = spd / maxSpd;
@@ -619,7 +625,7 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     traces.some((t) => t.accel_lat != null) || (data?.has_pedal_data ?? false);
 
   // Draw cockpit
-  useEffect(() => {
+  const renderCockpit = useCallback(() => {
     if (cockpitRef.current) {
       drawCockpit(
         cockpitRef.current,
@@ -634,8 +640,17 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
     }
   }, [speedKmh, gLat, gLon, hasAccel, brake, throttle, data?.has_pedal_data]);
 
-  // Draw GPS map
+  useEffect(() => { renderCockpit(); }, [renderCockpit]);
   useEffect(() => {
+    const c = cockpitRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => renderCockpit());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [renderCockpit]);
+
+  // Draw GPS map
+  const renderMap = useCallback(() => {
     if (mapRef.current) {
       drawGpsMap(
         mapRef.current,
@@ -647,6 +662,15 @@ export function CornerReplay({ sessionId, corners }: CornerReplayProps) {
       );
     }
   }, [traces, state.frame, cornerPos]);
+
+  useEffect(() => { renderMap(); }, [renderMap]);
+  useEffect(() => {
+    const c = mapRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => renderMap());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [renderMap]);
 
   // Animation interval
   const tick = useCallback(() => {

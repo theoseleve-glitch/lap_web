@@ -38,13 +38,13 @@ function gradeBg(grade: string): string {
   const g = grade.toUpperCase().charAt(0);
   switch (g) {
     case 'A':
-      return 'bg-green-400';
+      return 'bg-green-400/60';
     case 'B':
-      return 'bg-amber-400';
+      return 'bg-amber-400/60';
     case 'C':
-      return 'bg-yellow-400';
+      return 'bg-yellow-400/60';
     default:
-      return 'bg-red-400';
+      return 'bg-red-400/60';
   }
 }
 
@@ -134,7 +134,7 @@ export function CornerMasteryCard({ sessionId }: CornerMasteryCardProps) {
             </span>
             <div className="flex-1 h-2 bg-asphalt rounded-full overflow-hidden">
               <div
-                className={`h-full rounded-full ${gradeBg(c.grade)}/60`}
+                className={`h-full rounded-full ${gradeBg(c.grade)}`}
                 style={{ width: `${Math.max(0, Math.min(100, c.mastery_score))}%` }}
               />
             </div>

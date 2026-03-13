@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import type { Plan } from '@/data/pricing';
 import { useCurrency } from '@/hooks/useCurrency';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { PitButton } from './PitButton';
 import { StampButton } from './StampButton';
 
@@ -50,6 +51,8 @@ export function PricingTable({
   const [expanded, setExpanded] = useState(false);
   const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
   const { currency } = useCurrency();
+  const confirmRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(confirmRef, !!confirmPlan, () => setConfirmPlan(null));
 
   async function proceedToCheckout(plan: Plan) {
     setConfirmPlan(null);
@@ -173,6 +176,8 @@ export function PricingTable({
                 <PitButton
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
+                  loading={isLoading}
+                  disabled={loadingPlan !== null && !isLoading}
                 >
                   {isLoading ? 'Redirecting...' : ctaText}
                 </PitButton>
@@ -180,6 +185,8 @@ export function PricingTable({
                 <StampButton
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
+                  loading={isLoading}
+                  disabled={loadingPlan !== null && !isLoading}
                 >
                   {isLoading ? 'Redirecting...' : ctaText}
                 </StampButton>
@@ -192,6 +199,7 @@ export function PricingTable({
       {/* Expand/collapse toggle */}
       <div className="flex justify-center mt-4">
         <button
+          type="button"
           className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition-colors duration-300 border border-chalk/15 px-4 py-2"
           onClick={() => setExpanded(!expanded)}
         >
@@ -202,6 +210,7 @@ export function PricingTable({
       {/* Checkout confirmation dialog */}
       {confirmPlan && (
         <div
+          ref={confirmRef}
           className="fixed inset-0 z-50 flex items-center justify-center bg-carbon/80 backdrop-blur-sm"
           onClick={() => setConfirmPlan(null)}
           role="dialog"
@@ -245,6 +254,7 @@ export function PricingTable({
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setConfirmPlan(null)}
                 className="flex-1 py-2.5 border border-chalk/15 text-steel font-telemetry text-xs tracking-[0.08em] uppercase hover:text-chalk transition-colors"
               >
@@ -253,8 +263,9 @@ export function PricingTable({
               <PitButton
                 onClick={() => proceedToCheckout(confirmPlan)}
                 className="flex-1"
+                loading={loadingPlan !== null}
               >
-                Continue to payment
+                {loadingPlan ? 'Redirecting...' : 'Continue to payment'}
               </PitButton>
             </div>
           </div>

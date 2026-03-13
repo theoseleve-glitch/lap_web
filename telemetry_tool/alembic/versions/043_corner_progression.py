@@ -19,8 +19,19 @@ depends_on = None
 
 def upgrade() -> None:
     conn = op.get_bind()
+
+    # Guard: skip everything if table already exists.
+    # Plain CREATE TABLE IF NOT EXISTS + SERIAL fails in PG when the
+    # implicit sequence name already exists (pg_type_typname_nsp_index).
+    exists = conn.execute(text(
+        "SELECT 1 FROM pg_tables WHERE schemaname = 'public' "
+        "AND tablename = 'corner_progression'"
+    )).fetchone()
+    if exists:
+        return
+
     conn.execute(text("""
-        CREATE TABLE IF NOT EXISTS corner_progression (
+        CREATE TABLE corner_progression (
             id              SERIAL PRIMARY KEY,
             workspace_id    INTEGER NOT NULL DEFAULT current_setting('app.current_workspace_id')::integer,
             driver_id       INTEGER NOT NULL,
@@ -59,10 +70,13 @@ def upgrade() -> None:
         'ALTER TABLE corner_progression ENABLE ROW LEVEL SECURITY'
     ))
     conn.execute(text("""
-        CREATE POLICY corner_progression_tenant_isolation
-        ON corner_progression
-        USING (workspace_id = current_setting('app.current_workspace_id')::integer)
-        WITH CHECK (workspace_id = current_setting('app.current_workspace_id')::integer)
+        DO $$ BEGIN
+            CREATE POLICY corner_progression_tenant_isolation
+            ON corner_progression
+            USING (workspace_id = current_setting('app.current_workspace_id')::integer)
+            WITH CHECK (workspace_id = current_setting('app.current_workspace_id')::integer);
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$
     """))
 
 

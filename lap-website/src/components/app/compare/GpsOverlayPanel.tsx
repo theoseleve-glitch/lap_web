@@ -10,6 +10,17 @@ interface GpsOverlayData {
   gps_b: { latitudes: number[]; longitudes: number[] };
 }
 
+function minOf(arr: number[]): number {
+  let v = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < v) v = arr[i];
+  return v;
+}
+function maxOf(arr: number[]): number {
+  let v = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > v) v = arr[i];
+  return v;
+}
+
 export default function GpsOverlayPanel({
   sessionAId,
   sessionBId,
@@ -68,6 +79,7 @@ export default function GpsOverlayPanel({
 
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       const ctx = canvas.getContext('2d');
@@ -79,13 +91,14 @@ export default function GpsOverlayPanel({
 
       const padding = 30;
 
-      // Gather all lat/lon to compute bounds
+      // Gather all lat/lon to compute bounds (loop instead of Math.min/max
+      // spread — spread overflows the call stack with 5000+ GPS points)
       const allLat = [...d.gps_a.latitudes, ...d.gps_b.latitudes];
       const allLon = [...d.gps_a.longitudes, ...d.gps_b.longitudes];
-      const minLat = Math.min(...allLat);
-      const maxLat = Math.max(...allLat);
-      const minLon = Math.min(...allLon);
-      const maxLon = Math.max(...allLon);
+      const minLat = minOf(allLat);
+      const maxLat = maxOf(allLat);
+      const minLon = minOf(allLon);
+      const maxLon = maxOf(allLon);
 
       const latRange = maxLat - minLat || 1e-6;
       const lonRange = maxLon - minLon || 1e-6;
@@ -171,10 +184,10 @@ export default function GpsOverlayPanel({
     [colorA, colorB],
   );
 
-  // Redraw on data change
+  // Redraw on data or draw-function change (NOT hover — that's separate)
   useEffect(() => {
-    if (data) draw(hoverDistance);
-  }, [data, draw, hoverDistance]);
+    if (data) draw(useChartHoverStore.getState().hoverDistance);
+  }, [data, draw]);
 
   // Redraw on hover change (only when source is not us)
   useEffect(() => {
@@ -182,6 +195,20 @@ export default function GpsOverlayPanel({
       draw(hoverDistance);
     }
   }, [hoverDistance, hoverSource, data, draw]);
+
+  // Stable resize observer — uses render ref to avoid churn on hover
+  const drawRef = useRef<(d: number | null) => void>(draw);
+  drawRef.current = draw;
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => {
+      if (dataRef.current) drawRef.current(useChartHoverStore.getState().hoverDistance);
+    });
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, []);
 
   if (loading) {
     return (

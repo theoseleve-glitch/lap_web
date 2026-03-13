@@ -71,11 +71,20 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
     [primaryTrace],
   );
 
+  // Refs for values that change every frame — keeps animate() stable so
+  // the rAF loop isn't canceled+restarted on every dispatch.
+  const currentDistRef = useRef(state.currentDistance);
+  currentDistRef.current = state.currentDistance;
+  const playbackSpeedRef = useRef(state.playbackSpeed);
+  playbackSpeedRef.current = state.playbackSpeed;
+  const playMaxRef = useRef(playMax);
+  playMaxRef.current = playMax;
+  const getSpeedRef = useRef(getSpeedAtDistance);
+  getSpeedRef.current = getSpeedAtDistance;
+
   // rAF playback engine — advances distance based on car's actual speed
   const animate = useCallback(
     (timestamp: number) => {
-      if (!state.playing) return;
-
       if (lastTimeRef.current === 0) {
         lastTimeRef.current = timestamp;
         rafRef.current = requestAnimationFrame(animate);
@@ -85,12 +94,12 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
       const elapsed = timestamp - lastTimeRef.current;
       lastTimeRef.current = timestamp;
 
-      const speedMps = getSpeedAtDistance(state.currentDistance);
-      const distanceDelta = speedMps * (elapsed / 1000) * state.playbackSpeed;
-      const next = state.currentDistance + distanceDelta;
+      const speedMps = getSpeedRef.current(currentDistRef.current);
+      const distanceDelta = speedMps * (elapsed / 1000) * playbackSpeedRef.current;
+      const next = currentDistRef.current + distanceDelta;
 
-      if (next >= playMax) {
-        dispatch({ type: 'SET_DISTANCE', distance: playMax });
+      if (next >= playMaxRef.current) {
+        dispatch({ type: 'SET_DISTANCE', distance: playMaxRef.current });
         dispatch({ type: 'TOGGLE_PLAY' });
         return;
       }
@@ -98,7 +107,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
       dispatch({ type: 'SET_DISTANCE', distance: next });
       rafRef.current = requestAnimationFrame(animate);
     },
-    [state.playing, state.playbackSpeed, state.currentDistance, playMax, getSpeedAtDistance],
+    [], // stable — reads everything from refs
   );
 
   useEffect(() => {
@@ -117,7 +126,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
   // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
 
       switch (e.key) {
         case ' ':
@@ -125,6 +134,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           dispatch({ type: 'TOGGLE_PLAY' });
           break;
         case 'ArrowLeft':
+          if (e.altKey || e.metaKey) return; // browser back / OS nav
           e.preventDefault();
           dispatch({
             type: 'SET_DISTANCE',
@@ -132,6 +142,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           });
           break;
         case 'ArrowRight':
+          if (e.altKey || e.metaKey) return; // browser forward / OS nav
           e.preventDefault();
           dispatch({
             type: 'SET_DISTANCE',
@@ -153,7 +164,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           break;
         default:
           // Number keys 1-9 jump to sections
-          if (e.key >= '1' && e.key <= '9') {
+          if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
             const secIdx = Number(e.key) - 1;
             if (secIdx < filteredSections.length) {
               dispatch({ type: 'SET_SECTION', section: filteredSections[secIdx].id });
@@ -222,7 +233,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           <p className="text-steel/60 text-xs mb-4">
             {error instanceof Error ? error.message : 'The session may lack GPS data.'}
           </p>
-          <button onClick={onClose} className="px-4 py-2 bg-concrete border border-steel/20 rounded text-chalk text-sm font-body hover:bg-steel/10">
+          <button type="button" onClick={onClose} className="px-4 py-2 bg-concrete border border-steel/20 rounded text-chalk text-sm font-body hover:bg-steel/10">
             Close
           </button>
         </div>
@@ -245,6 +256,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           />
         </div>
         <button
+          type="button"
           onClick={onClose}
           className="flex items-center gap-1.5 px-3 py-1.5 text-steel hover:text-chalk text-xs font-telemetry transition-colors"
         >

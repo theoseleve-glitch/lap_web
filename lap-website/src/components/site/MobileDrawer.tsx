@@ -104,6 +104,7 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
         <div className="flex items-center justify-between px-6 py-4 border-b border-chalk/10">
           <span className="font-monument text-xl text-chalk">LAP</span>
           <button
+            type="button"
             onClick={onClose}
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-steel hover:text-chalk transition-colors cursor-pointer"
             aria-label="Close menu"

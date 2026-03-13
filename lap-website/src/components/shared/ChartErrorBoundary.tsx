@@ -33,6 +33,7 @@ export class ChartErrorBoundary extends Component<Props, State> {
           <p className="text-steel text-sm">
             Chart failed to render.{' '}
             <button
+              type="button"
               onClick={() => this.setState({ hasError: false })}
               className="text-pit-orange hover:underline"
             >

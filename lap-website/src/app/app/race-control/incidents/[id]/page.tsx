@@ -60,6 +60,7 @@ export default function IncidentDetailPage() {
       {/* Edit form */}
       {!editing ? (
         <button
+          type="button"
           onClick={() => {
             setForm({
               status: incident.status as string,
@@ -105,6 +106,7 @@ export default function IncidentDetailPage() {
           />
           <div className="flex gap-2">
             <button
+              type="button"
               onClick={() => updateMutation.mutate()}
               disabled={updateMutation.isPending}
               className="rounded bg-red-500/20 px-3 py-1 text-xs text-red-400 disabled:opacity-50"
@@ -112,6 +114,7 @@ export default function IncidentDetailPage() {
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </button>
             <button
+              type="button"
               onClick={() => setEditing(false)}
               className="rounded px-3 py-1 text-xs text-steel hover:text-chalk transition-colors"
             >

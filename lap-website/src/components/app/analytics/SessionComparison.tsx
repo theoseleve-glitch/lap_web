@@ -3,6 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 
+// Loop-based min/max — Math.min(...arr) overflows the call stack with large arrays
+function minOf(arr: number[]): number {
+  let v = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < v) v = arr[i];
+  return v;
+}
+function maxOf(arr: number[]): number {
+  let v = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > v) v = arr[i];
+  return v;
+}
+
 interface SessionSummary {
   session_id: string;
   csv_filename: string;
@@ -83,7 +95,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
   }, [sessionId]);
 
   // Draw speed overlay canvas
-  useEffect(() => {
+  const drawSpeed = useCallback(() => {
     if (!compareData || !speedCanvasRef.current) return;
     const canvas = speedCanvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -91,6 +103,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = 200 * dpr;
     canvas.style.height = '200px';
@@ -109,13 +122,14 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const { distances, speeds_a, speeds_b } = compareData;
     if (!distances?.length) return;
 
-    const xMax = Math.max(...distances);
+    const xMax = maxOf(distances) || 1;
     const allSpeeds = [...speeds_a, ...speeds_b].filter(isFinite);
-    const yMin = Math.min(...allSpeeds) * 0.95;
-    const yMax = Math.max(...allSpeeds) * 1.05;
+    const yMin = minOf(allSpeeds) * 0.95;
+    const yMax = maxOf(allSpeeds) * 1.05 || 1;
+    const yRange = yMax - yMin || 1;
 
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
-    const yScale = (v: number) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
+    const yScale = (v: number) => pad.top + ph - ((v - yMin) / yRange) * ph;
 
     // Grid lines — matches SpeedTraceChart
     ctx.strokeStyle = '#30363d';
@@ -153,7 +167,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let i = 0; i <= ySteps; i++) {
-      const val = yMax - (yMax - yMin) * (i / ySteps);
+      const val = yMax - yRange * (i / ySteps);
       const y = pad.top + (ph * i) / ySteps;
       ctx.fillText(val.toFixed(0), pad.left - 6, y);
     }
@@ -186,8 +200,17 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
   }, [compareData]);
 
-  // Draw cumulative delta strip
+  useEffect(() => { drawSpeed(); }, [drawSpeed]);
   useEffect(() => {
+    const c = speedCanvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawSpeed());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawSpeed]);
+
+  // Draw cumulative delta strip
+  const drawDelta = useCallback(() => {
     if (!compareData || !deltaCanvasRef.current) return;
     const canvas = deltaCanvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -195,6 +218,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = 60 * dpr;
     canvas.style.height = '60px';
@@ -212,8 +236,12 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const { distances, delta_s } = compareData;
     if (!distances?.length || !delta_s?.length) return;
 
-    const xMax = Math.max(...distances);
-    const absMax = Math.max(...delta_s.map(Math.abs), 0.001);
+    const xMax = maxOf(distances);
+    let absMax = 0.001;
+    for (let i = 0; i < delta_s.length; i++) {
+      const a = Math.abs(delta_s[i]);
+      if (a > absMax) absMax = a;
+    }
 
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
     const yMid = h / 2;
@@ -269,6 +297,15 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
   }, [compareData]);
+
+  useEffect(() => { drawDelta(); }, [drawDelta]);
+  useEffect(() => {
+    const c = deltaCanvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawDelta());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawDelta]);
 
   return (
     <div className={className}>

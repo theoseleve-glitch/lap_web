@@ -27,6 +27,7 @@ export function SectorTabs() {
 
           return (
             <button
+              type="button"
               key={tab.id}
               onClick={() => handleClick(tab.id)}
               className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-left pl-3 py-1 transition-all duration-[420ms]"
@@ -55,6 +56,7 @@ export function SectorTabs() {
 
           return (
             <button
+              type="button"
               key={tab.id}
               onClick={() => handleClick(tab.id)}
               className={`rounded-full transition-all duration-[420ms] ${isActive ? 'w-2.5 h-2.5 ring-1 ring-white/30' : 'w-2 h-2'}`}

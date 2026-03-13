@@ -120,6 +120,7 @@ export default function TrainingPage() {
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-steel">Configuration</h2>
           <button
+            type="button"
             onClick={() => { setEditConfig(!editConfig); setConfigDraft(config ?? {}); }}
             className="rounded px-2 py-0.5 text-xs text-acid-green hover:bg-gold/10"
           >
@@ -148,6 +149,7 @@ export default function TrainingPage() {
               </label>
             ))}
             <button
+              type="button"
               onClick={() => configMutation.mutate(configDraft)}
               disabled={configMutation.isPending}
               className="mt-2 rounded bg-acid-green/20 px-3 py-1 text-xs text-acid-green hover:bg-gold/30 disabled:opacity-50"

@@ -35,6 +35,7 @@ export function AnimatedCounter({ value, duration = 1200, decimals = 0, classNam
     );
     observer.observe(el);
 
+    let rafId = 0;
     function animate() {
       const start = performance.now();
       function tick(now: number) {
@@ -43,12 +44,15 @@ export function AnimatedCounter({ value, duration = 1200, decimals = 0, classNam
         // Ease-out cubic
         const eased = 1 - Math.pow(1 - progress, 3);
         setDisplay(eased * value);
-        if (progress < 1) requestAnimationFrame(tick);
+        if (progress < 1) rafId = requestAnimationFrame(tick);
       }
-      requestAnimationFrame(tick);
+      rafId = requestAnimationFrame(tick);
     }
 
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(rafId);
+    };
   }, [value, duration]);
 
   return (

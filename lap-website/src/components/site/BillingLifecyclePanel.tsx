@@ -75,6 +75,8 @@ export function BillingLifecyclePanel() {
           />
         </div>
         <PitButton
+          loading={loadingAction === 'checkout'}
+          disabled={loadingAction !== null && loadingAction !== 'checkout'}
           onClick={async () => {
             setLoadingAction('checkout');
             setStatus('');
@@ -117,6 +119,8 @@ export function BillingLifecyclePanel() {
           />
         </div>
         <StampButton
+          loading={loadingAction === 'portal'}
+          disabled={loadingAction !== null && loadingAction !== 'portal'}
           onClick={async () => {
             setLoadingAction('portal');
             setStatus('');
@@ -168,6 +172,8 @@ export function BillingLifecyclePanel() {
           </select>
         </div>
         <StampButton
+          loading={loadingAction === 'switch'}
+          disabled={loadingAction !== null && loadingAction !== 'switch'}
           onClick={async () => {
             setLoadingAction('switch');
             setStatus('');

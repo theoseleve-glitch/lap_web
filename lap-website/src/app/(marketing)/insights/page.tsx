@@ -41,6 +41,7 @@ export default function InsightsPage() {
         />
         <div className="flex flex-wrap gap-2">
           <button
+            type="button"
             className={`px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase ${
               activeTag === 'all' ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
             }`}
@@ -51,6 +52,7 @@ export default function InsightsPage() {
           {insightTags.map((tag) => (
             <button
               key={tag}
+              type="button"
               className={`px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase ${
                 activeTag === tag ? 'border-pit-orange text-chalk' : 'border-steel/30 text-steel'
               }`}

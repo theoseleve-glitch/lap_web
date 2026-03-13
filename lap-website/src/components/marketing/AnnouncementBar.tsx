@@ -38,6 +38,7 @@ export function AnnouncementBar({ id, message, link }: AnnouncementBarProps) {
         )}
       </span>
       <button
+        type="button"
         onClick={dismiss}
         className="absolute right-3 top-1/2 -translate-y-1/2 text-steel hover:text-chalk transition-colors"
         aria-label="Dismiss announcement"

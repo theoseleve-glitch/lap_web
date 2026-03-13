@@ -93,6 +93,7 @@ export function AnalyzerTrackMap({
     const rect = container.getBoundingClientRect();
     const w = rect.width;
     const h = rect.height;
+    if (w === 0 || h === 0) return;
     canvas.width = w * dpr;
     canvas.height = h * dpr;
     canvas.style.width = w + 'px';
@@ -226,17 +227,21 @@ export function AnalyzerTrackMap({
     }
   }, [trace, overlayTrace, currentDistance, activeSection, sections]);
 
+  // Stable ref for ResizeObserver — avoids re-attaching 60x/sec during playback
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
   // Draw on every relevant change
   useEffect(() => { draw(); }, [draw]);
 
-  // Resize observer
+  // Resize observer — attached once, always calls latest draw via ref
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const ro = new ResizeObserver(() => draw());
+    const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(container);
     return () => ro.disconnect();
-  }, [draw]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div ref={containerRef} className="relative w-full h-full min-h-[250px]" style={{ background: '#0B0C0F' }}>

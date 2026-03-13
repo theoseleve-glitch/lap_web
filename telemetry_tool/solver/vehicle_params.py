@@ -66,12 +66,46 @@ _FORMULA_DEFAULTS: dict[str, Any] = {
     "F_drive_max": 12_000.0,
 }
 
+_GT_DEFAULTS: dict[str, Any] = {
+    "mass": 1300.0,         # GT3-class with driver
+    "h_cg": 0.42,
+    "wheelbase": 2.7,
+    "track_width": 1.65,
+    "A": 2.1,
+    "Cd": 0.40,
+    "Cl": 1.2,              # significant aero but less than formula
+    "rho": 1.225,
+    "Cr": 0.010,
+    "mu_ref": 1.35,          # slick compound, wide tires
+    "load_sensitivity": -0.12,
+    "P_max": 400_000.0,     # ~540 hp typical GT3
+    "F_brake_max": 25_000.0,
+    "F_drive_max": 10_000.0,
+}
+
+_TOURING_DEFAULTS: dict[str, Any] = {
+    "mass": 1285.0,         # TCR/BTCC-class with ballast
+    "h_cg": 0.42,
+    "wheelbase": 2.65,
+    "track_width": 1.55,
+    "A": 2.0,
+    "Cd": 0.38,
+    "Cl": 0.4,              # modest aero package
+    "rho": 1.225,
+    "Cr": 0.012,
+    "mu_ref": 1.2,           # control slick, narrower than GT3
+    "load_sensitivity": -0.12,
+    "P_max": 260_000.0,     # ~350 hp TCR-class
+    "F_brake_max": 18_000.0,
+    "F_drive_max": 8_500.0,
+}
+
 # Map VehicleClass enum value strings to default tables
 _CLASS_MAP: dict[str, dict[str, Any]] = {
     "kart": _KART_DEFAULTS,
     "formula": _FORMULA_DEFAULTS,
-    "gt": _CAR_DEFAULTS,
-    "touring": _CAR_DEFAULTS,
+    "gt": _GT_DEFAULTS,
+    "touring": _TOURING_DEFAULTS,
     "road_car": _CAR_DEFAULTS,
     # Aliases
     "car": _CAR_DEFAULTS,

@@ -43,23 +43,29 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '', 
   const [selectedLap, setSelectedLap] = useState<number>(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
     if (!selectedLap) { dataRef.current = null; return; }
-    setLoading(true); setError(null);
-    try {
-      const d = await apiFetch<TireTempData>(`/sessions/${encodeURIComponent(sessionId)}/tire-temps?lap=${selectedLap}`);
-      if (!d.available) { dataRef.current = null; setError('No tire temperature data available for this lap'); }
-      else dataRef.current = d;
-    } catch (e) { dataRef.current = null; setError(e instanceof Error ? e.message : 'Failed to load tire temps'); }
-    finally { setLoading(false); }
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const d = await apiFetch<TireTempData>(`/sessions/${encodeURIComponent(sessionId)}/tire-temps?lap=${selectedLap}`);
+        if (ver !== fetchVersionRef.current) return;
+        if (!d.available) { setError('No tire temperature data available for this lap'); }
+        else dataRef.current = d;
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load tire temps');
+      }
+      setLoading(false);
+    })();
   }, [sessionId, selectedLap]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return;

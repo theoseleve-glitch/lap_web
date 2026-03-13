@@ -28,6 +28,7 @@ export default function GlobalError({
             </p>
           )}
           <button
+            type="button"
             onClick={reset}
             className="px-6 py-2 bg-gold text-asphalt font-bold rounded hover:bg-gold/90 transition-colors"
           >

@@ -251,21 +251,27 @@ export function AnalyzerCockpit({
     if (!ctx) return;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     ctx.scale(dpr, dpr);
     drawCockpit(ctx, rect.width, rect.height, speed, gLat, gLon, brake, throttle, steering, hasPedalData, hasSteeringData);
   }, [speed, gLat, gLon, brake, throttle, steering, hasPedalData, hasSteeringData]);
 
+  // Stable ref for ResizeObserver — avoids re-attaching 60x/sec during playback
+  const renderRef = useRef(render);
+  renderRef.current = render;
+
   useEffect(() => { render(); }, [render]);
 
+  // Resize observer — attached once, always calls latest render via ref
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ro = new ResizeObserver(() => render());
+    const ro = new ResizeObserver(() => renderRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [render]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="relative w-full h-full bg-concrete overflow-hidden">

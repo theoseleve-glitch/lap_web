@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useCallback, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 type ModalSize = 'sm' | 'md' | 'lg';
 
@@ -19,30 +20,21 @@ const SIZE_MAP: Record<ModalSize, string> = {
 };
 
 export function Modal({ open, onClose, title, size = 'md', children }: ModalProps) {
-  const closeRef = useRef<HTMLButtonElement>(null);
-
-  const handleKey = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose],
-  );
+  const containerRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(containerRef, open, onClose);
 
   useEffect(() => {
     if (!open) return;
-    closeRef.current?.focus();
-    document.addEventListener('keydown', handleKey);
+    const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', handleKey);
-      document.body.style.overflow = '';
-    };
-  }, [open, handleKey]);
+    return () => { document.body.style.overflow = prev; };
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div
+      ref={containerRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onClick={onClose}
       role="dialog"
@@ -59,7 +51,6 @@ export function Modal({ open, onClose, title, size = 'md', children }: ModalProp
           <div className="flex items-center justify-between px-5 py-4 border-b border-steel/10">
             <h2 className="font-monument text-sm text-chalk">{title}</h2>
             <button
-              ref={closeRef}
               type="button"
               onClick={onClose}
               className="text-steel hover:text-chalk text-lg transition-colors"

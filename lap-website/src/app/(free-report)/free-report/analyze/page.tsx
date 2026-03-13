@@ -43,6 +43,7 @@ export default function FreeReportAnalyzePage() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatusData | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // One-report limit
   const [alreadyUsed, setAlreadyUsed] = useState(false);
@@ -116,7 +117,8 @@ export default function FreeReportAnalyzePage() {
   // Step 3: Upload file + metadata in one request, then poll for progress.
   // The backend's /sessions/upload accepts file + metadata and returns job_id.
   const handleSubmit = async () => {
-    if (!file) return;
+    if (!file || uploading) return;
+    setUploading(true);
     setStep(3);
     setSubmitError(null);
     try {
@@ -306,9 +308,10 @@ export default function FreeReportAnalyzePage() {
             <button
               type="button"
               onClick={handleSubmit}
-              className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors"
+              disabled={uploading}
+              className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t('freeReport.startAnalysis')}
+              {uploading ? t('freeReport.uploading', 'Uploading...') : t('freeReport.startAnalysis')}
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 interface LevelUpModalProps {
   oldLevel: number;
@@ -46,7 +47,15 @@ export default function LevelUpModal({
   onClose,
 }: LevelUpModalProps) {
   const [visible, setVisible] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   useLevelUpPulseStyle();
+
+  const handleClose = useCallback(() => {
+    setVisible(false);
+    setTimeout(onClose, 200);
+  }, [onClose]);
+
+  useFocusTrap(containerRef, visible, handleClose);
 
   useEffect(() => {
     // Trigger fade-in on mount
@@ -57,15 +66,14 @@ export default function LevelUpModal({
   // Guard: don't render if no actual level-up occurred
   if (oldLevel === newLevel || newLevel <= 0) return null;
 
-  function handleClose() {
-    setVisible(false);
-    setTimeout(onClose, 200);
-  }
-
   return (
     /* Backdrop */
     <div
+      ref={containerRef}
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Level up"
       style={{
         backgroundColor: visible
           ? 'rgba(0, 0, 0, 0.6)'
@@ -141,6 +149,7 @@ export default function LevelUpModal({
 
         {/* Continue button */}
         <button
+          type="button"
           onClick={handleClose}
           className="w-full py-2.5 px-6 rounded-lg font-monument text-sm font-bold uppercase tracking-wider transition-colors"
           style={{

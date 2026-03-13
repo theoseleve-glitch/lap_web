@@ -26,6 +26,7 @@ function deltaColor(absVal: number): string {
 function drawBrakeChart(canvas: HTMLCanvasElement, brakeData: BrakeData[]) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');

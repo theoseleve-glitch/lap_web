@@ -104,6 +104,7 @@ export function Podium() {
 
           {showRestart && (
             <button
+              type="button"
               className="font-telemetry text-steel/50 hover:text-steel transition-opacity duration-[420ms] mt-8"
               onClick={handleRestart}
             >

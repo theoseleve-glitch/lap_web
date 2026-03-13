@@ -67,7 +67,7 @@ export function NpsSurvey({ sessionCount }: NpsSurveyProps) {
         <>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-monument text-xs text-chalk">Quick Feedback</h3>
-            <button type="button" onClick={dismiss} className="text-steel/30 hover:text-steel text-sm">&times;</button>
+            <button type="button" onClick={dismiss} className="text-steel/30 hover:text-steel text-sm" aria-label="Dismiss survey">&times;</button>
           </div>
           <p className="text-steel text-xs font-body mb-3">
             How likely are you to recommend LAP to a fellow racer?

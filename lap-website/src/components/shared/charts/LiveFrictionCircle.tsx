@@ -64,50 +64,45 @@ export function LiveFrictionCircle({
   const [selectedLap, setSelectedLap] = useState(bestLap ?? gpsLaps[0] ?? 0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
   }, [controlledLap, bestLap]);
 
   // ── Fetch data ──────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
-    if (!selectedLap) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const [gg, pedals] = await Promise.all([
-        apiFetch<(GGData & { available: boolean }) | { available: false }>(
-          `/sessions/${encodeURIComponent(sessionId)}/gg-data?lap=${selectedLap}`,
-        ),
-        apiFetch<(PedalData & { available: boolean }) | { available: false }>(
-          `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
-        ).catch(() => ({ available: false as const })),
-      ]);
-
-      if ('accel_lat' in gg && gg.available !== false) {
-        ggRef.current = gg as GGData;
-      } else {
-        ggRef.current = null;
-        setError('No G-G data available');
-      }
-
-      if ('throttle' in pedals && pedals.available !== false) {
-        pedalRef.current = pedals as PedalData;
-      } else {
-        pedalRef.current = null;
-      }
-    } catch (err) {
-      ggRef.current = null;
-      pedalRef.current = null;
-      setError(err instanceof Error ? err.message : 'Failed to load data');
-    } finally {
-      setLoading(false);
-    }
-  }, [sessionId, selectedLap]);
-
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (!selectedLap) return;
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); ggRef.current = null; pedalRef.current = null;
+    (async () => {
+      try {
+        const [gg, pedals] = await Promise.all([
+          apiFetch<(GGData & { available: boolean }) | { available: false }>(
+            `/sessions/${encodeURIComponent(sessionId)}/gg-data?lap=${selectedLap}`,
+          ),
+          apiFetch<(PedalData & { available: boolean }) | { available: false }>(
+            `/sessions/${encodeURIComponent(sessionId)}/pedals?lap=${selectedLap}`,
+          ).catch(() => ({ available: false as const })),
+        ]);
+        if (ver !== fetchVersionRef.current) return;
+
+        if ('accel_lat' in gg && gg.available !== false) {
+          ggRef.current = gg as GGData;
+        } else {
+          setError('No G-G data available');
+        }
+
+        if ('throttle' in pedals && pedals.available !== false) {
+          pedalRef.current = pedals as PedalData;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load data');
+      }
+      setLoading(false);
+    })();
+  }, [sessionId, selectedLap]);
 
   // ── Classify point input ────────────────────────────────────
   const classifyInput = useCallback(
@@ -162,8 +157,10 @@ export function LiveFrictionCircle({
       const cy = h / 2;
 
       // Compute data bounds (symmetric)
-      const maxLat = Math.max(...gg.accel_lat.map(Math.abs), 0.1);
-      const maxLong = Math.max(...gg.accel_long.map(Math.abs), 0.1);
+      let maxLat = 0.1;
+      for (let i = 0; i < gg.accel_lat.length; i++) { const a = Math.abs(gg.accel_lat[i]); if (a > maxLat) maxLat = a; }
+      let maxLong = 0.1;
+      for (let i = 0; i < gg.accel_long.length; i++) { const a = Math.abs(gg.accel_long[i]); if (a > maxLong) maxLong = a; }
       const maxG = Math.ceil(Math.max(maxLat, maxLong) * 2) / 2;
 
       const scale = plotSize / 2 / maxG;
@@ -318,8 +315,10 @@ export function LiveFrictionCircle({
       const cy = h / 2;
       const pad = 50;
       const plotSize = Math.min(w - pad * 2, h - pad * 2);
-      const maxLat = Math.max(...gg.accel_lat.map(Math.abs), 0.1);
-      const maxLong = Math.max(...gg.accel_long.map(Math.abs), 0.1);
+      let maxLat = 0.1;
+      for (let i = 0; i < gg.accel_lat.length; i++) { const a = Math.abs(gg.accel_lat[i]); if (a > maxLat) maxLat = a; }
+      let maxLong = 0.1;
+      for (let i = 0; i < gg.accel_long.length; i++) { const a = Math.abs(gg.accel_long[i]); if (a > maxLong) maxLong = a; }
       const maxG = Math.ceil(Math.max(maxLat, maxLong) * 2) / 2;
       const scale = plotSize / 2 / maxG;
 

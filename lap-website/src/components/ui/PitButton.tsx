@@ -9,6 +9,8 @@ interface PitButtonProps {
   href?: string;
   className?: string;
   type?: 'button' | 'submit';
+  disabled?: boolean;
+  loading?: boolean;
 }
 
 export function PitButton({
@@ -17,13 +19,16 @@ export function PitButton({
   href,
   className = '',
   type = 'button',
+  disabled = false,
+  loading = false,
 }: PitButtonProps) {
+  const isDisabled = disabled || loading;
   const magnetRef = useRef<HTMLDivElement>(null);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const rafRef = useRef(false);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (rafRef.current) return;
+    if (isDisabled || rafRef.current) return;
     rafRef.current = true;
     requestAnimationFrame(() => {
       const rect = magnetRef.current?.getBoundingClientRect();
@@ -34,7 +39,7 @@ export function PitButton({
       }
       rafRef.current = false;
     });
-  }, []);
+  }, [isDisabled]);
 
   const handleMouseLeave = useCallback(() => {
     setOffset({ x: 0, y: 0 });
@@ -51,6 +56,7 @@ export function PitButton({
     hover:brightness-110 hover:shadow-[0_0_32px_rgba(201,168,76,0.25),2px_2px_0_rgba(240,237,229,0.2)]
     active:scale-[0.98]
     focus-visible:outline focus-visible:outline-[3px] focus-visible:outline-[var(--accent)] focus-visible:outline-offset-2
+    ${isDisabled ? 'opacity-40 pointer-events-none' : ''}
     ${className}
   `.trim();
 
@@ -61,18 +67,20 @@ export function PitButton({
       : 'transform 0.15s ease-out',
   };
 
+  const safeOnClick = isDisabled ? undefined : onClick;
+
   const inner = href ? (
     href.startsWith('/') ? (
-      <Link href={href} className={baseClass} onClick={onClick}>
+      <Link href={href} className={baseClass} onClick={safeOnClick} aria-disabled={isDisabled || undefined} tabIndex={isDisabled ? -1 : undefined}>
         {children}
       </Link>
     ) : (
-      <a href={href} className={baseClass} onClick={onClick}>
+      <a href={isDisabled ? undefined : href} className={baseClass} onClick={safeOnClick} aria-disabled={isDisabled || undefined} tabIndex={isDisabled ? -1 : undefined}>
         {children}
       </a>
     )
   ) : (
-    <button type={type} className={baseClass} onClick={onClick}>
+    <button type={type} className={baseClass} onClick={safeOnClick} disabled={isDisabled}>
       {children}
     </button>
   );

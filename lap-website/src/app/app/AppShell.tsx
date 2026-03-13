@@ -88,6 +88,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </Link>
           )}
           <button
+            type="button"
             onClick={toggle}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             className="text-steel hover:text-chalk transition-colors text-lg shrink-0"

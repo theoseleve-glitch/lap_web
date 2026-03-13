@@ -19,19 +19,25 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
   const dataRef = useRef<FuelData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
   void gpsLaps; void bestLap; // props for API consistency
 
-  const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const d = await apiFetch<FuelData>(`/sessions/${encodeURIComponent(sessionId)}/fuel`);
-      if (!d.available) { dataRef.current = null; setError('No fuel data available for this session'); }
-      else dataRef.current = d;
-    } catch (e) { dataRef.current = null; setError(e instanceof Error ? e.message : 'Failed to load fuel data'); }
-    finally { setLoading(false); }
+  useEffect(() => {
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = null;
+    (async () => {
+      try {
+        const d = await apiFetch<FuelData>(`/sessions/${encodeURIComponent(sessionId)}/fuel`);
+        if (ver !== fetchVersionRef.current) return;
+        if (!d.available) { setError('No fuel data available for this session'); }
+        else dataRef.current = d;
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load fuel data');
+      }
+      setLoading(false);
+    })();
   }, [sessionId]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current; if (!canvas) return;

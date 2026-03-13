@@ -229,17 +229,22 @@ export function AnalyzerChart({
     }
   }, [trace, overlayTrace, config, currentDistance, sectionRange]);
 
+  // Stable ref for ResizeObserver — avoids re-attaching 60x/sec during playback
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
   useEffect(() => { draw(); }, [draw]);
 
+  // Resize observer — attached once, always calls latest draw via ref
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const ro = new ResizeObserver(() => draw());
+    const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(container);
     return () => ro.disconnect();
-  }, [draw]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mouse scrubbing
+  // Mouse scrubbing — reads boundsRef (already a ref), no need to depend on draw
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !onScrub) return;
@@ -256,7 +261,7 @@ export function AnalyzerChart({
 
     canvas.addEventListener('mousemove', handleMove);
     return () => canvas.removeEventListener('mousemove', handleMove);
-  }, [onScrub, draw]);
+  }, [onScrub]);
 
   return (
     <div ref={containerRef} className="w-full h-full min-h-[60px]">

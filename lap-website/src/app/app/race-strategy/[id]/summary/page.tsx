@@ -373,6 +373,14 @@ export default function SummaryPage() {
       )}
 
       {/* Actions */}
+      {duplicateMut.error && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2">
+          <p className="text-safety-red font-telemetry text-xs">
+            {(duplicateMut.error as Error).message || 'Failed to duplicate race'}
+          </p>
+          <button type="button" onClick={() => duplicateMut.reset()} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
         <a
           href={`${BACKEND_URL}/api/v1/race-strategy/${raceId}/export`}
@@ -382,6 +390,7 @@ export default function SummaryPage() {
           Export
         </a>
         <button
+          type="button"
           onClick={() => duplicateMut.mutate()}
           disabled={duplicateMut.isPending}
           className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors disabled:opacity-50"

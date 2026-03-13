@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 interface ScreenshotItem {
   title: string;
@@ -16,22 +17,10 @@ interface ScreenshotGalleryProps {
 export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green)' }: ScreenshotGalleryProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
 
   const closeLightbox = useCallback(() => setLightboxOpen(false), []);
-
-  // Focus trap + Escape handler for lightbox
-  useEffect(() => {
-    if (!lightboxOpen) return;
-
-    closeRef.current?.focus();
-
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeLightbox();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [lightboxOpen, closeLightbox]);
+  useFocusTrap(lightboxRef, lightboxOpen, closeLightbox);
 
   if (items.length === 0) return null;
   const active = items[activeIndex];
@@ -83,6 +72,7 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
       {/* Lightbox modal */}
       {lightboxOpen && (
         <div
+          ref={lightboxRef}
           className="fixed inset-0 z-[999] bg-asphalt/95 flex items-center justify-center p-4"
           onClick={closeLightbox}
           role="dialog"
@@ -90,7 +80,6 @@ export function ScreenshotGallery({ items, accentColor = 'var(--color-acid-green
           aria-label={`${active.title} — full size`}
         >
           <button
-            ref={closeRef}
             type="button"
             className="absolute top-4 right-4 text-steel hover:text-chalk text-2xl"
             onClick={closeLightbox}

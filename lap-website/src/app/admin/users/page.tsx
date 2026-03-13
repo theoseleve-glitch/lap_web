@@ -122,6 +122,7 @@ export default function AdminUsersPage() {
                   <td className="px-4 py-3">
                     {user.suspended_at ? (
                       <button
+                        type="button"
                         onClick={() => unsuspendMut.mutate(user.id)}
                         disabled={unsuspendMut.isPending}
                         className="rounded px-2 py-1 text-xs text-green-400 hover:bg-green-500/10 disabled:opacity-50"
@@ -130,6 +131,7 @@ export default function AdminUsersPage() {
                       </button>
                     ) : (
                       <button
+                        type="button"
                         onClick={() => {
                           const reason = prompt("Suspension reason:");
                           if (reason)
@@ -152,6 +154,7 @@ export default function AdminUsersPage() {
       {total > limit && (
         <div className="mt-4 flex items-center justify-between">
           <button
+            type="button"
             onClick={() => setOffset(Math.max(0, offset - limit))}
             disabled={offset === 0}
             className="rounded px-3 py-1 text-sm text-white/50 hover:text-white disabled:opacity-30"
@@ -162,6 +165,7 @@ export default function AdminUsersPage() {
             {offset + 1}–{Math.min(offset + limit, total)} of {total}
           </span>
           <button
+            type="button"
             onClick={() => setOffset(offset + limit)}
             disabled={offset + limit >= total}
             className="rounded px-3 py-1 text-sm text-white/50 hover:text-white disabled:opacity-30"

@@ -33,6 +33,7 @@ export function ModeSelector({ value, onChange, className = '' }: ModeSelectorPr
       </span>
 
       <button
+        type="button"
         className="relative w-[56px] h-[28px] bg-concrete border-2 border-steel rounded-none cursor-pointer"
         style={{ minHeight: '44px', minWidth: '56px' }}
         onClick={() => onChange(isB2B ? 'b2c' : 'b2b')}

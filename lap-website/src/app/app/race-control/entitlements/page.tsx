@@ -75,6 +75,7 @@ export default function EntitlementsPage() {
       {/* Create override */}
       <div className="mt-6">
         <button
+          type="button"
           onClick={() => setShowForm(!showForm)}
           className="rounded bg-acid-green/20 px-3 py-1 text-xs font-medium text-acid-green hover:bg-gold/30 transition-colors"
         >
@@ -92,6 +93,7 @@ export default function EntitlementsPage() {
             <label htmlFor="ent-reason" className="sr-only">Reason</label>
             <input id="ent-reason" placeholder="Reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} disabled={createMutation.isPending} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed" />
             <button
+              type="button"
               onClick={() => createMutation.mutate()}
               disabled={createMutation.isPending || !form.override_key || !form.reason}
               className="rounded bg-acid-green/20 px-3 py-1 text-xs text-acid-green disabled:opacity-50"

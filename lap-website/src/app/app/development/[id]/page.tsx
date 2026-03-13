@@ -74,6 +74,7 @@ export default function DevelopmentPlanDetailPage() {
   const planId = params.id;
 
   const [newItemText, setNewItemText] = useState('');
+  const [patchError, setPatchError] = useState<string | null>(null);
 
   /* Fetch plan detail */
   const {
@@ -97,7 +98,11 @@ export default function DevelopmentPlanDetailPage() {
         progress_json: JSON.stringify(progressJson),
       }),
     onSuccess: () => {
+      setPatchError(null);
       queryClient.invalidateQueries({ queryKey: ['dev-plan', planId] });
+    },
+    onError: (err) => {
+      setPatchError(err instanceof Error ? err.message : 'Failed to update checklist');
     },
   });
 
@@ -130,8 +135,9 @@ export default function DevelopmentPlanDetailPage() {
       const updated: ProgressJson = {
         items: [...progress.items, { text: newItemText.trim(), done: false }],
       };
-      patchMutation.mutate(updated);
-      setNewItemText('');
+      patchMutation.mutate(updated, {
+        onSuccess: () => setNewItemText(''),
+      });
     },
     [progress, newItemText, patchMutation],
   );
@@ -227,6 +233,14 @@ export default function DevelopmentPlanDetailPage() {
               style={{ width: `${progressPercent}%` }}
             />
           </div>
+        </div>
+      )}
+
+      {/* -- Patch Error ------------------------------------- */}
+      {patchError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{patchError}</p>
+          <button type="button" onClick={() => setPatchError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
         </div>
       )}
 

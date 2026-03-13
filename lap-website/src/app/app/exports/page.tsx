@@ -40,6 +40,7 @@ const statusColors: Record<string, string> = {
 export default function ExportsPage() {
   const fieldId = useId();
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv');
   const [exportType, setExportType] = useState('sessions');
 
@@ -59,14 +60,15 @@ export default function ExportsPage() {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setGenerateError(null);
     try {
       await api.post('/exports/generate', {
         type: exportType,
         format: selectedFormat,
       });
       await refetch();
-    } catch {
-      // Error handling in UI
+    } catch (err) {
+      setGenerateError(err instanceof Error ? err.message : 'Export generation failed');
     } finally {
       setGenerating(false);
     }
@@ -137,6 +139,9 @@ export default function ExportsPage() {
             {generating ? 'Generating...' : 'Generate'}
           </button>
         </div>
+        {generateError && (
+          <p className="text-safety-red text-xs font-telemetry mt-3">{generateError}</p>
+        )}
       </div>
 
       {/* Exports list */}

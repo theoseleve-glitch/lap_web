@@ -3,7 +3,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { useSearchParams, usePathname } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
@@ -162,9 +162,9 @@ function SessionCalendar({ sessions }: { sessions: SessionRow[] }) {
   return (
     <div className="bg-concrete rounded-xl border border-steel/10 p-4">
       <div className="flex items-center justify-between mb-4">
-        <button onClick={prevMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Previous month">&lt;</button>
+        <button type="button" onClick={prevMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Previous month">&lt;</button>
         <span className="font-monument text-chalk text-sm">{monthLabel}</span>
-        <button onClick={nextMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Next month">&gt;</button>
+        <button type="button" onClick={nextMonth} className="text-steel hover:text-chalk transition-colors px-2 py-1 text-sm" aria-label="Next month">&gt;</button>
       </div>
       <div className="grid grid-cols-7 gap-px">
         {days.map((d) => (
@@ -362,9 +362,29 @@ function ColumnCustomizer({
   onChange: (cols: Set<string>) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close on outside click or Escape
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e: Event) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen(!open)}
@@ -470,9 +490,11 @@ export default function SessionsPage() {
       filterDateFrom, filterDateTo, filterMinScore, filterMaxScore, sortBy, sortDir,
       pathname, router]);
 
-  // Bulk action confirm
+  // Bulk action confirm — reset when selection changes so the
+  // confirmation isn't stale after clear → re-select.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  useEffect(() => { setConfirmDelete(false); }, [selectedKeys]);
 
   // View mode: list, calendar, or grouped by event
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'grouped'>('list');
@@ -701,7 +723,7 @@ export default function SessionsPage() {
         }
       },
     },
-  ], [router, deleteMutation, archiveView, queryClient]);
+  ], [router, deleteMutation, archiveView, queryClient, queryParams]);
 
   const columns = useMemo(() => [
     {
@@ -1146,6 +1168,7 @@ export default function SessionsPage() {
               </span>
               <div className="flex items-center gap-2">
                 <button
+                  type="button"
                   onClick={() => { setPage((p) => Math.max(1, p - 1)); setSelectedKeys(new Set()); }}
                   disabled={page <= 1}
                   className="px-3 py-1.5 rounded bg-concrete border border-steel/20 text-steel text-xs font-telemetry
@@ -1166,6 +1189,7 @@ export default function SessionsPage() {
                   }
                   return (
                     <button
+                      type="button"
                       key={pageNum}
                       onClick={() => { setPage(pageNum); setSelectedKeys(new Set()); }}
                       className={`w-8 h-8 rounded text-xs font-telemetry transition-colors ${
@@ -1179,6 +1203,7 @@ export default function SessionsPage() {
                   );
                 })}
                 <button
+                  type="button"
                   onClick={() => { setPage((p) => Math.min(totalPages, p + 1)); setSelectedKeys(new Set()); }}
                   disabled={page >= totalPages}
                   className="px-3 py-1.5 rounded bg-concrete border border-steel/20 text-steel text-xs font-telemetry

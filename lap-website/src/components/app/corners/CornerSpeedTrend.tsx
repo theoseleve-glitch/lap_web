@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 
 interface CornerMetric {
@@ -32,17 +32,20 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
   const [available, setAvailable] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     api.get<{ available: boolean; metrics?: CornerMetric[] }>(
       `/sessions/${sessionId}/corners/per-lap`,
     )
       .then((d) => {
+        if (cancelled) return;
         if (!d.available || !d.metrics?.length) {
           setAvailable(false);
           return;
         }
         setMetrics(d.metrics);
       })
-      .catch(() => setAvailable(false));
+      .catch(() => { if (!cancelled) setAvailable(false); });
+    return () => { cancelled = true; };
   }, [sessionId]);
 
   // Group by corner_id
@@ -69,7 +72,7 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
   );
 
   // Draw
-  useEffect(() => {
+  const drawTrend = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || cornerIds.length === 0) return;
 
@@ -184,6 +187,15 @@ export function CornerSpeedTrend({ sessionId }: CornerSpeedTrendProps) {
       ctx.fillText(`T${cid}`, pad.left + pW + 6, yToPixel(lastPt.speed));
     }
   }, [cornerIds, cornerSeries]);
+
+  useEffect(() => { drawTrend(); }, [drawTrend]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawTrend());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawTrend]);
 
   if (!available || cornerIds.length === 0) {
     return (

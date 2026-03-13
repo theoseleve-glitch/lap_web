@@ -110,6 +110,7 @@ export default function SupportPage() {
                 We&apos;ll respond within 24 hours.
               </p>
               <button
+                type="button"
                 onClick={() => submitTicket.reset()}
                 className="mt-4 text-acid-green text-xs font-telemetry hover:underline"
               >

@@ -36,6 +36,7 @@ function drawRadar(
 ) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');
@@ -131,22 +132,21 @@ export function DrivingStyleSection({ sessionId }: { sessionId: string }) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  // Draw radar when data arrives
-  const draw = useCallback(() => {
+  // Draw radar when data arrives or container resizes
+  const renderRadar = useCallback(() => {
     if (data?.features && canvasRef.current) {
       drawRadar(canvasRef.current, data.features);
     }
   }, [data]);
 
-  useEffect(() => { draw(); }, [draw]);
-
+  useEffect(() => { renderRadar(); }, [renderRadar]);
   useEffect(() => {
     const c = canvasRef.current;
     if (!c) return;
-    const ro = new ResizeObserver(() => draw());
+    const ro = new ResizeObserver(() => renderRadar());
     ro.observe(c);
     return () => ro.disconnect();
-  }, [draw]);
+  }, [renderRadar]);
 
   if (loading) {
     return (

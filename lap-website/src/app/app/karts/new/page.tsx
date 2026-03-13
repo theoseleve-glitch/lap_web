@@ -126,6 +126,7 @@ export default function NewKartPage() {
         subtitle="Add a kart to your fleet"
         actions={
           <button
+            type="button"
             onClick={() => router.back()}
             className="px-4 py-2 border border-steel/30 text-steel font-telemetry text-sm rounded hover:text-chalk hover:border-steel/60 transition-colors"
           >

@@ -34,23 +34,27 @@ export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '
   const dataRef = useRef<CornerMetric[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
-  const fetchData = useCallback(async () => {
-    setLoading(true); setError(null);
-    try {
-      const res = await apiFetch<CornerSummaryResponse>(
-        `/sessions/${encodeURIComponent(sessionId)}/corner-metrics/summary`,
-      );
-      if (!res.available || !res.corners.length) {
-        dataRef.current = []; setError('No corner data available');
-      } else { dataRef.current = res.corners; }
-    } catch (e) {
-      dataRef.current = [];
-      setError(e instanceof Error ? e.message : 'Failed to load corner data');
-    } finally { setLoading(false); }
+  useEffect(() => {
+    const ver = ++fetchVersionRef.current;
+    setLoading(true); setError(null); dataRef.current = [];
+    (async () => {
+      try {
+        const res = await apiFetch<CornerSummaryResponse>(
+          `/sessions/${encodeURIComponent(sessionId)}/corner-metrics/summary`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if (!res.available || !res.corners.length) {
+          setError('No corner data available');
+        } else { dataRef.current = res.corners; }
+      } catch (e) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(e instanceof Error ? e.message : 'Failed to load corner data');
+      }
+      setLoading(false);
+    })();
   }, [sessionId]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;

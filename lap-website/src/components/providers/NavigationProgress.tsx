@@ -46,12 +46,15 @@ export function NavigationProgress() {
 
   // Trickle progress while loading
   useEffect(() => {
-    if (!loading || progress >= 90) return;
+    if (!loading) return;
     const timer = setInterval(() => {
-      setProgress((p) => Math.min(p + Math.random() * 8, 90));
+      setProgress((p) => {
+        if (p >= 90) return p;
+        return Math.min(p + Math.random() * 8, 90);
+      });
     }, 400);
     return () => clearInterval(timer);
-  }, [loading, progress]);
+  }, [loading]);
 
   if (!loading && progress === 0) return null;
 

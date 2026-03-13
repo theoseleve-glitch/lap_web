@@ -242,6 +242,7 @@ function drawPickerMap(
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const w = rect.width, h = rect.height;
+  if (w === 0 || h === 0) return null;
   canvas.width = w * dpr;
   canvas.height = h * dpr;
   ctx.scale(dpr, dpr);
@@ -449,21 +450,22 @@ export function CornerPicker({
   }, [controlled, externalClearAll]);
 
   // Draw
-  useEffect(() => {
+  const renderRef = useRef<() => void>(() => {});
+  renderRef.current = () => {
     if (!canvasRef.current) return;
     projRef.current = drawPickerMap(canvasRef.current, trackLayout, selected, corners);
-  }, [trackLayout, selected]);
+  };
 
-  // Resize
+  useEffect(() => { renderRef.current(); }, [trackLayout, selected]);
+
+  // Resize — stable observer, never re-attaches
   useEffect(() => {
     if (!canvasRef.current) return;
     const canvas = canvasRef.current;
-    const ro = new ResizeObserver(() => {
-      projRef.current = drawPickerMap(canvas, trackLayout, selected, corners);
-    });
+    const ro = new ResizeObserver(() => renderRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [trackLayout, selected]);
+  }, []);
 
   // Click handler — toggle nearest corner (marker dot first, then track segment snap)
   const handleClick = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {

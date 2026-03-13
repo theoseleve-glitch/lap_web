@@ -47,30 +47,32 @@ export function FingerprintChart({ sessionId, className = '' }: FingerprintChart
 
   const [loading, setLoading] = useState(true);
   const [statusMsg, setStatusMsg] = useState<StatusMsg>(null);
+  const fetchVersionRef = useRef(0);
 
   // -- Fetch ------------------------------------------------------------------
-  const fetchData = useCallback(async () => {
+  useEffect(() => {
+    const ver = ++fetchVersionRef.current;
     setLoading(true);
     setStatusMsg(null);
-    try {
-      const res = await apiFetch<FingerprintData | { available: false; reason_code: string }>(
-        `/sessions/${encodeURIComponent(sessionId)}/fingerprint`,
-      );
-      if ('available' in res && res.available === false) {
-        dataRef.current = null;
-        setStatusMsg('No scoring data available for this session.');
-      } else {
-        dataRef.current = res as FingerprintData;
+    dataRef.current = null;
+    (async () => {
+      try {
+        const res = await apiFetch<FingerprintData | { available: false; reason_code: string }>(
+          `/sessions/${encodeURIComponent(sessionId)}/fingerprint`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if ('available' in res && res.available === false) {
+          setStatusMsg('No scoring data available for this session.');
+        } else {
+          dataRef.current = res as FingerprintData;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setStatusMsg(err instanceof Error ? err.message : 'Failed to load fingerprint');
       }
-    } catch (err) {
-      dataRef.current = null;
-      setStatusMsg(err instanceof Error ? err.message : 'Failed to load fingerprint');
-    } finally {
       setLoading(false);
-    }
+    })();
   }, [sessionId]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
 
   // -- Draw -------------------------------------------------------------------
   const draw = useCallback(() => {

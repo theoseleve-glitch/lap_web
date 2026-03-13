@@ -62,7 +62,7 @@ export default function SpeedOverlayPanel({
   }, [sessionAId, sessionBId]);
 
   // Draw speed traces
-  useEffect(() => {
+  const drawCharts = useCallback(() => {
     if (!overlay || !speedCanvasRef.current || !deltaCanvasRef.current) return;
 
     const { distances, speeds_a, speeds_b, delta_s } = overlay;
@@ -71,6 +71,18 @@ export default function SpeedOverlayPanel({
     drawSpeedCanvas(speedCanvasRef.current, distances, speeds_a, speeds_b, colorA, colorB);
     drawDeltaCanvas(deltaCanvasRef.current, distances, delta_s, colorA, colorB);
   }, [overlay, colorA, colorB]);
+
+  useEffect(() => { drawCharts(); }, [drawCharts]);
+
+  useEffect(() => {
+    const s = speedCanvasRef.current;
+    const d = deltaCanvasRef.current;
+    if (!s || !d) return;
+    const ro = new ResizeObserver(() => drawCharts());
+    ro.observe(s);
+    ro.observe(d);
+    return () => ro.disconnect();
+  }, [drawCharts]);
 
   // Hover handlers
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -156,6 +168,18 @@ export default function SpeedOverlayPanel({
   );
 }
 
+// Loop-based min/max — Math.min(...arr) overflows the call stack with 5000+ GPS points
+function minOf(arr: number[]): number {
+  let v = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < v) v = arr[i];
+  return v;
+}
+function maxOf(arr: number[]): number {
+  let v = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > v) v = arr[i];
+  return v;
+}
+
 /** Draw overlaid speed traces on canvas */
 function drawSpeedCanvas(
   canvas: HTMLCanvasElement,
@@ -167,6 +191,7 @@ function drawSpeedCanvas(
 ) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');
@@ -181,13 +206,14 @@ function drawSpeedCanvas(
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
-  const maxDist = distances[distances.length - 1];
+  const maxDist = distances[distances.length - 1] || 1;
   const allSpeeds = [...speedsA, ...speedsB];
-  const maxSpeed = Math.max(...allSpeeds) * 3.6;
-  const minSpeed = Math.max(0, Math.min(...allSpeeds) * 3.6 - 5);
+  const maxSpeed = maxOf(allSpeeds) * 3.6;
+  const minSpeed = Math.max(0, minOf(allSpeeds) * 3.6 - 5);
+  const speedRange = maxSpeed - minSpeed || 1;
 
   const xScale = (d: number) => pad.left + (d / maxDist) * cW;
-  const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / (maxSpeed - minSpeed)) * cH;
+  const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / speedRange) * cH;
 
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -206,7 +232,7 @@ function drawSpeedCanvas(
   ctx.font = '10px monospace';
   ctx.textAlign = 'right';
   for (let i = 0; i <= nGridY; i++) {
-    const val = maxSpeed - (i / nGridY) * (maxSpeed - minSpeed);
+    const val = maxSpeed - (i / nGridY) * speedRange;
     const y = pad.top + (i / nGridY) * cH;
     ctx.fillText(`${val.toFixed(0)}`, pad.left - 5, y + 3);
   }
@@ -261,6 +287,7 @@ function drawDeltaCanvas(
 ) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return;
   canvas.width = rect.width * dpr;
   canvas.height = rect.height * dpr;
   const ctx = canvas.getContext('2d');
@@ -276,7 +303,11 @@ function drawDeltaCanvas(
   const cH = H - pad.top - pad.bottom;
 
   const maxDist = distances[distances.length - 1];
-  const absMax = Math.max(0.01, ...delta.map(Math.abs));
+  let absMax = 0.01;
+  for (let i = 0; i < delta.length; i++) {
+    const a = Math.abs(delta[i]);
+    if (a > absMax) absMax = a;
+  }
 
   const xScale = (d: number) => pad.left + (d / maxDist) * cW;
   const yScale = (d: number) => pad.top + cH / 2 - (d / absMax) * (cH / 2);

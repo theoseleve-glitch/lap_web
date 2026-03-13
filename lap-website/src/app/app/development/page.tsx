@@ -53,6 +53,7 @@ export default function DevelopmentPlansPage() {
   const [driverFilter, setDriverFilter] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formDriverId, setFormDriverId] = useState<number | ''>('');
 
@@ -97,6 +98,7 @@ export default function DevelopmentPlansPage() {
   const deleteMutation = useMutation({
     mutationFn: (planId: number) => api.delete(`/dev-plans/${planId}`),
     onMutate: async (planId) => {
+      setDeleteError(null);
       await queryClient.cancelQueries({ queryKey: ['dev-plans'] });
       const prev = queryClient.getQueryData<DevPlan[]>(['dev-plans', driverFilter]);
       queryClient.setQueryData<DevPlan[]>(['dev-plans', driverFilter], (old) =>
@@ -110,7 +112,7 @@ export default function DevelopmentPlansPage() {
     },
     onError: (_err, _id, context) => {
       if (context?.prev) queryClient.setQueryData(['dev-plans', driverFilter], context.prev);
-      console.error('[devplan-delete]', _err);
+      setDeleteError(_err instanceof Error ? _err.message : 'Failed to delete plan');
     },
   });
 
@@ -239,6 +241,14 @@ export default function DevelopmentPlansPage() {
         </div>
       )}
 
+      {/* -- Delete Error ------------------------------------- */}
+      {deleteError && (
+        <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mb-4">
+          <p className="text-safety-red font-telemetry text-xs">{deleteError}</p>
+          <button type="button" onClick={() => setDeleteError(null)} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+        </div>
+      )}
+
       {/* -- Content ----------------------------------------- */}
       {plansLoading ? (
         <SkeletonCardGrid count={6} cols={3} />
@@ -281,6 +291,7 @@ export default function DevelopmentPlansPage() {
                   {confirmDelete === plan.id ? (
                     <span className="inline-flex items-center gap-1" onClick={(e) => e.preventDefault()}>
                       <button
+                        type="button"
                         onClick={(e) => { e.preventDefault(); deleteMutation.mutate(plan.id); }}
                         disabled={deleteMutation.isPending}
                         className="px-2 py-0.5 text-[10px] font-telemetry uppercase bg-safety-red/20 text-safety-red border border-safety-red/40 rounded hover:bg-safety-red/30 transition-colors disabled:opacity-50"
@@ -288,14 +299,17 @@ export default function DevelopmentPlansPage() {
                         {deleteMutation.isPending ? 'Deleting...' : 'Confirm'}
                       </button>
                       <button
-                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); }}
-                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors"
+                        type="button"
+                        onClick={(e) => { e.preventDefault(); setConfirmDelete(null); setDeleteError(null); }}
+                        disabled={deleteMutation.isPending}
+                        className="px-1.5 py-0.5 text-[10px] font-telemetry text-steel hover:text-chalk transition-colors disabled:opacity-50"
                       >
                         Cancel
                       </button>
                     </span>
                   ) : (
                     <button
+                      type="button"
                       onClick={(e) => { e.preventDefault(); setConfirmDelete(plan.id); }}
                       title="Delete plan"
                       className="p-1 text-steel/40 hover:text-safety-red transition-colors opacity-0 group-hover:opacity-100"

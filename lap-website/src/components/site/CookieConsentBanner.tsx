@@ -54,18 +54,21 @@ export function CookieConsentBanner() {
             </p>
             <div className="flex flex-wrap gap-2">
               <button
+                type="button"
                 onClick={() => accept({ analytics: true, marketing: true })}
                 className="border border-pit-orange bg-pit-orange text-asphalt px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
               >
                 Accept All
               </button>
               <button
+                type="button"
                 onClick={() => accept({ analytics: false, marketing: false })}
                 className="border border-steel/40 px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition"
               >
                 Necessary Only
               </button>
               <button
+                type="button"
                 onClick={() => setPhase('details')}
                 className="border border-steel/40 px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition"
               >
@@ -149,18 +152,21 @@ export function CookieConsentBanner() {
 
             <div className="flex flex-wrap gap-2">
               <button
+                type="button"
                 onClick={() => accept({ analytics, marketing })}
                 className="border border-pit-orange bg-pit-orange text-asphalt px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
               >
                 Save Preferences
               </button>
               <button
+                type="button"
                 onClick={() => accept({ analytics: true, marketing: true })}
                 className="border border-steel/40 px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition"
               >
                 Accept All
               </button>
               <button
+                type="button"
                 onClick={() => setPhase('banner')}
                 className="px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition"
               >

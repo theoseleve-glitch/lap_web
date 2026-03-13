@@ -79,7 +79,7 @@ export function DiagnosticsOverlay() {
     <div className="fixed bottom-4 right-4 z-[9999] bg-asphalt/95 border border-steel/30 rounded-lg p-4 text-xs font-telemetry text-steel shadow-lg max-w-sm">
       <div className="flex justify-between items-center mb-2">
         <span className="text-acid-green font-bold">Diagnostics</span>
-        <button onClick={() => setVisible(false)} className="text-steel hover:text-chalk">
+        <button type="button" onClick={() => setVisible(false)} className="text-steel hover:text-chalk" aria-label="Close diagnostics">
           &times;
         </button>
       </div>
@@ -91,6 +91,7 @@ export function DiagnosticsOverlay() {
           <span className={warnCount > 0 ? 'text-gold' : 'text-steel/60'}>{warnCount} warns</span>
           {entries.length > 0 && (
             <button
+              type="button"
               onClick={() => setShowLog((v) => !v)}
               className="text-acid-green hover:underline"
             >
@@ -99,6 +100,7 @@ export function DiagnosticsOverlay() {
           )}
           {entries.length > 0 && (
             <button
+              type="button"
               onClick={() => setEntries([])}
               className="text-steel/40 hover:text-steel"
             >

@@ -75,6 +75,7 @@ export default function AnnotationsPage() {
             </span>
             {search && (
               <button
+                type="button"
                 onClick={() => setSearch('')}
                 aria-label="Clear search"
                 className="absolute right-2.5 top-1/2 -translate-y-1/2 text-steel hover:text-chalk text-xs transition-colors"
@@ -102,6 +103,7 @@ export default function AnnotationsPage() {
               sortable: true,
               render: (row: AnnotationRow) => (
                 <button
+                  type="button"
                   onClick={(e) => {
                     e.stopPropagation();
                     router.push(`/app/sessions/${row.session_id}`);

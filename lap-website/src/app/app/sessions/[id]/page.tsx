@@ -315,6 +315,8 @@ export default function SessionDetailPage() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [trackNamed, setTrackNamed] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   // Gamification state
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -406,10 +408,30 @@ export default function SessionDetailPage() {
     setActiveTab(tab);
   }, []);
 
+  // Close export dropdown on outside click or Escape
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handleClick = (e: Event) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [exportOpen]);
+
   // F-key shortcut to open Focus Mode, D-key for Driving Analyzer
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'f') setFocusOpen(true);
       if (e.key === 'd') setAnalyzerOpen(true);
     }
@@ -491,6 +513,7 @@ export default function SessionDetailPage() {
 
           {/* Print */}
           <button
+            type="button"
             onClick={() => window.print()}
             data-print="hide"
             className="px-3 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-steel font-body hover:text-chalk hover:bg-steel/10 transition-colors"
@@ -515,6 +538,7 @@ export default function SessionDetailPage() {
 
           {/* Driving Analyzer */}
           <button
+            type="button"
             onClick={() => setAnalyzerOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-gold/10 transition-colors"
             aria-label="Open Driving Analyzer (D)"
@@ -539,6 +563,7 @@ export default function SessionDetailPage() {
 
           {/* Focus Mode */}
           <button
+            type="button"
             onClick={() => setFocusOpen(true)}
             className="flex items-center gap-2 px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
             aria-label="Open focus mode (F)"
@@ -780,12 +805,13 @@ function OverviewTab({
   // Editable session info state
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
 
   // Entity suggestion lists for combobox autocomplete
   const [driverNames, setDriverNames] = useState<string[]>([]);
-  const [trackList, setTrackList] = useState<{ track_id: string; track_name: string }[]>([]);
-  const trackNames = useMemo(() => trackList.map((t) => t.track_name).filter(Boolean), [trackList]);
+  const [trackList, setTrackList] = useState<{ id: string; name: string }[]>([]);
+  const trackNames = useMemo(() => trackList.map((t) => t.name).filter(Boolean), [trackList]);
   const [kartNames, setKartNames] = useState<string[]>([]);
 
   // Expanded kart details for new kart creation
@@ -801,11 +827,11 @@ function OverviewTab({
   const checkTrackMatch = useCallback(async (name: string) => {
     const trimmed = name.trim();
     if (!trimmed) { setTrackMismatch(null); return; }
-    const existing = trackList.find((t) => t.track_name === trimmed);
+    const existing = trackList.find((t) => t.name === trimmed);
     if (!existing) { setTrackMismatch(null); return; }
     try {
       const result = await api.get<{ match: boolean; track_length_m?: number; session_length_m?: number | null }>(
-        `/sessions/${session.session_id}/track-match?track_id=${encodeURIComponent(existing.track_id)}`,
+        `/sessions/${session.session_id}/track-match?track_id=${encodeURIComponent(existing.id)}`,
       );
       if (result && !result.match) setTrackMismatch(result);
       else setTrackMismatch(null);
@@ -826,14 +852,14 @@ function OverviewTab({
     setEditing(true);
     setTrackMismatch(null);
     // Fetch entity lists for autocomplete
-    api.get<{ driver_name: string }[]>('/drivers').then((d) => {
-      if (Array.isArray(d)) setDriverNames(d.map((x) => x.driver_name).filter(Boolean));
+    api.get<{ name: string }[]>('/drivers').then((d) => {
+      if (Array.isArray(d)) setDriverNames(d.map((x) => x.name).filter(Boolean));
     }).catch(() => {});
-    api.get<{ track_id: string; track_name: string }[]>('/tracks').then((t) => {
+    api.get<{ id: string; name: string }[]>('/tracks').then((t) => {
       if (Array.isArray(t)) setTrackList(t);
     }).catch(() => {});
-    api.get<{ kart_name: string }[]>('/karts').then((k) => {
-      if (Array.isArray(k)) setKartNames(k.map((x) => x.kart_name).filter(Boolean));
+    api.get<{ name: string }[]>('/karts').then((k) => {
+      if (Array.isArray(k)) setKartNames(k.map((x) => x.name).filter(Boolean));
     }).catch(() => {});
   }, [session]);
 
@@ -842,10 +868,12 @@ function OverviewTab({
     setEditFields({});
     setKartDetails({});
     setTrackMismatch(null);
+    setSaveError(null);
   }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const payload: Record<string, unknown> = { ...editFields };
       // Attach kart_details when creating a new kart
@@ -865,8 +893,8 @@ function OverviewTab({
         setKartDetails({});
         setTrackMismatch(null);
       }
-    } catch {
-      // API errors handled by api-client
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save session');
     } finally {
       setSaving(false);
     }
@@ -1017,6 +1045,7 @@ function OverviewTab({
             <h2 className="text-lg font-monument text-chalk">Session Info</h2>
             {!editing ? (
               <button
+                type="button"
                 onClick={startEditing}
                 className="text-xs text-steel hover:text-acid-green transition-colors font-body"
               >
@@ -1025,6 +1054,7 @@ function OverviewTab({
             ) : (
               <div className="flex gap-2">
                 <button
+                  type="button"
                   onClick={cancelEditing}
                   className="text-xs text-steel hover:text-chalk transition-colors font-body"
                   disabled={saving}
@@ -1032,6 +1062,7 @@ function OverviewTab({
                   Cancel
                 </button>
                 <button
+                  type="button"
                   onClick={handleSave}
                   disabled={saving}
                   className="text-xs text-acid-green hover:text-chalk transition-colors font-body disabled:opacity-50"
@@ -1043,6 +1074,9 @@ function OverviewTab({
           </div>
           {editing ? (
             <div className="space-y-3">
+              {saveError && (
+                <p className="text-safety-red text-xs font-telemetry">{saveError}</p>
+              )}
               <EditRow
                 label="Name"
                 value={editFields.display_name || ''}
@@ -1079,6 +1113,7 @@ function OverviewTab({
                     Track: {trackMismatch.track_length_m}m — Session: {trackMismatch.session_length_m ?? '?'}m
                   </p>
                   <button
+                    type="button"
                     onClick={() => { setEditFields({ ...editFields, track_name: '' }); setTrackMismatch(null); }}
                     className="text-[10px] text-pit-orange hover:text-chalk font-body transition-colors"
                   >
@@ -1148,6 +1183,7 @@ function OverviewTab({
                 <div className="flex justify-between items-center">
                   <dt className="text-steel text-sm font-body">Track</dt>
                   <button
+                    type="button"
                     onClick={startEditing}
                     className="text-sm text-pit-orange hover:text-acid-green font-body transition-colors"
                   >
@@ -1353,6 +1389,7 @@ function LapConsistencyHistogram({
   meanTime: number | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const histContainerRef = useRef<HTMLDivElement>(null);
 
   const drawHistogram = useCallback(() => {
     if (!canvasRef.current || times.length < 3) return;
@@ -1475,11 +1512,12 @@ function LapConsistencyHistogram({
 
   useEffect(() => { drawHistogram(); }, [drawHistogram]);
 
+  // ResizeObserver for the histogram canvas
   useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
+    const el = histContainerRef.current;
+    if (!el) return;
     const ro = new ResizeObserver(() => drawHistogram());
-    ro.observe(c);
+    ro.observe(el);
     return () => ro.disconnect();
   }, [drawHistogram]);
 
@@ -1497,7 +1535,7 @@ function LapConsistencyHistogram({
         </button>
       </div>
       <p className="text-steel text-xs font-body mb-4">Distribution of valid lap times — tighter clustering means higher consistency</p>
-      <div className="rounded-lg overflow-hidden bg-asphalt">
+      <div ref={histContainerRef} className="rounded-lg overflow-hidden bg-asphalt">
         <canvas
           ref={canvasRef}
           role="img"
@@ -1511,6 +1549,7 @@ function LapConsistencyHistogram({
 
 function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhases: ConditionPhase[] }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartContainerRef2 = useRef<HTMLDivElement>(null);
 
   // Derived stats
   const validLaps = useMemo(() => laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0), [laps]);
@@ -1545,7 +1584,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
   }, [conditionPhases]);
 
   // Lap times bar chart
-  const drawLapTimes = useCallback(() => {
+  const drawLapChart = useCallback(() => {
     if (!chartRef.current || validLaps.length === 0) return;
 
     const canvas = chartRef.current;
@@ -1692,15 +1731,16 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     ctx.fillText('Incomplete', incLegX + 14, legendY + 2);
   }, [laps, validLaps, meanTime, bestTime]);
 
-  useEffect(() => { drawLapTimes(); }, [drawLapTimes]);
+  useEffect(() => { drawLapChart(); }, [drawLapChart]);
 
+  // ResizeObserver for the lap times canvas
   useEffect(() => {
-    const c = chartRef.current;
-    if (!c) return;
-    const ro = new ResizeObserver(() => drawLapTimes());
-    ro.observe(c);
+    const el = chartContainerRef2.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => drawLapChart());
+    ro.observe(el);
     return () => ro.disconnect();
-  }, [drawLapTimes]);
+  }, [drawLapChart]);
 
   if (laps.length === 0) {
     return (
@@ -1741,7 +1781,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
               Export PNG
             </button>
           </div>
-          <div className="rounded-lg overflow-hidden bg-asphalt">
+          <div ref={chartContainerRef2} className="rounded-lg overflow-hidden bg-asphalt">
             <canvas
               ref={chartRef}
               style={{ width: '100%', height: '220px', display: 'block' }}
@@ -2025,6 +2065,7 @@ const DOT_COLORS: Record<string, string> = {
 
 function TimelineTab({ sessionId }: { sessionId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [timeline, setTimeline] = useState<SessionTimelineData | null>(null);
   const [progress, setProgress] = useState<LapProgressData | null>(null);
   const [stints, setStints] = useState<StintData | null>(null);
@@ -2050,7 +2091,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   // Draw lap progress chart
-  const drawProgress = useCallback(() => {
+  const drawProgressChart = useCallback(() => {
     if (!progress || !canvasRef.current) return;
     const { lap_numbers, times, rolling_avg, is_improving, trend_slope } = progress;
     if (times.length === 0) return;
@@ -2192,15 +2233,16 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.fillText('Best Lap', bestX + 16, legendY);
   }, [progress]);
 
-  useEffect(() => { drawProgress(); }, [drawProgress]);
+  useEffect(() => { drawProgressChart(); }, [drawProgressChart]);
 
+  // ResizeObserver for the lap progress canvas
   useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ro = new ResizeObserver(() => drawProgress());
-    ro.observe(c);
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => drawProgressChart());
+    ro.observe(el);
     return () => ro.disconnect();
-  }, [drawProgress]);
+  }, [drawProgressChart]);
 
   if (loading) {
     return (
@@ -2329,7 +2371,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
               </span>
             </div>
           </div>
-          <div className="rounded-lg overflow-hidden bg-asphalt">
+          <div ref={chartContainerRef} className="rounded-lg overflow-hidden bg-asphalt">
             <canvas
               ref={canvasRef}
               style={{ width: '100%', height: '250px', display: 'block' }}
