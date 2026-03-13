@@ -21,7 +21,7 @@ interface CornerMetric {
 
 interface CornerSummaryResponse { corners: CornerMetric[]; available: boolean; }
 interface CornerAnalysisChartProps {
-  sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string;
+  sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string; controlledLap?: boolean;
 }
 
 const FONT = '10px "JetBrains Mono", monospace';

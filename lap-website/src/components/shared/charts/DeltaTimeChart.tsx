@@ -26,6 +26,7 @@ interface DeltaTimeChartProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 export function DeltaTimeChart({
@@ -33,6 +34,7 @@ export function DeltaTimeChart({
   gpsLaps,
   bestLap,
   className = '',
+  controlledLap = false,
 }: DeltaTimeChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -52,6 +54,10 @@ export function DeltaTimeChart({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (controlledLap && bestLap != null) setLapA(bestLap);
+  }, [controlledLap, bestLap]);
 
   // ── Fetch delta data ──────────────────────────────────────────
   const fetchDelta = useCallback(async () => {
@@ -400,38 +406,40 @@ export function DeltaTimeChart({
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Delta time chart showing time difference between laps">
       {/* Lap selectors */}
-      <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <label className="flex items-center gap-1.5 text-steel font-body">
-          Primary:
-          <select
-            value={lapA}
-            onChange={(e) => setLapA(Number(e.target.value))}
-            className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
-          >
-            {safeLaps.map((l) => (
-              <option key={l} value={l}>
-                Lap {l}{l === bestLap ? ' (Best)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1.5 text-steel font-body">
-          Reference:
-          <select
-            value={lapB}
-            onChange={(e) => setLapB(Number(e.target.value))}
-            className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
-          >
-            {safeLaps.map((l) => (
-              <option key={l} value={l}>
-                Lap {l}{l === bestLap ? ' (Best)' : ''}
-              </option>
-            ))}
-          </select>
-        </label>
-        {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
-      </div>
+      {!controlledLap && (
+        <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
+          <label className="flex items-center gap-1.5 text-steel font-body">
+            Primary:
+            <select
+              value={lapA}
+              onChange={(e) => setLapA(Number(e.target.value))}
+              className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
+            >
+              {safeLaps.map((l) => (
+                <option key={l} value={l}>
+                  Lap {l}{l === bestLap ? ' (Best)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-steel font-body">
+            Reference:
+            <select
+              value={lapB}
+              onChange={(e) => setLapB(Number(e.target.value))}
+              className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
+            >
+              {safeLaps.map((l) => (
+                <option key={l} value={l}>
+                  Lap {l}{l === bestLap ? ' (Best)' : ''}
+                </option>
+              ))}
+            </select>
+          </label>
+          {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
+          {error && <span className="text-xs text-red-400">{error}</span>}
+        </div>
+      )}
 
       {/* Chart canvas */}
       <div className="relative" style={{ width: '100%' }}>

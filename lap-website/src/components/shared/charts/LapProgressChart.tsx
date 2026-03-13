@@ -26,6 +26,7 @@ interface LapProgressChartProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 const STEEL = '#c4c4c4';

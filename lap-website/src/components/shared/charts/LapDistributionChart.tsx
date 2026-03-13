@@ -20,6 +20,7 @@ interface LapDistributionChartProps {
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
+  controlledLap?: boolean;
 }
 
 const ACID = '#b4ff39';

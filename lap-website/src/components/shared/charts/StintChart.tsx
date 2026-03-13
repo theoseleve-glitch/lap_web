@@ -14,7 +14,7 @@ interface Stint {
 }
 interface StintResponse { stints: Stint[]; available?: boolean; robustness_metrics?: { consistency_pct: number } }
 interface LapProgressResponse { lap_numbers: number[]; times: number[] }
-interface StintChartProps { sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string }
+interface StintChartProps { sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string; controlledLap?: boolean }
 
 type LapEntry = { lap_number: number; lap_time: number };
 
