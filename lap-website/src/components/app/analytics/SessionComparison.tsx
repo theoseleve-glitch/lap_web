@@ -122,13 +122,14 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const { distances, speeds_a, speeds_b } = compareData;
     if (!distances?.length) return;
 
-    const xMax = maxOf(distances);
+    const xMax = maxOf(distances) || 1;
     const allSpeeds = [...speeds_a, ...speeds_b].filter(isFinite);
     const yMin = minOf(allSpeeds) * 0.95;
-    const yMax = maxOf(allSpeeds) * 1.05;
+    const yMax = maxOf(allSpeeds) * 1.05 || 1;
+    const yRange = yMax - yMin || 1;
 
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
-    const yScale = (v: number) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
+    const yScale = (v: number) => pad.top + ph - ((v - yMin) / yRange) * ph;
 
     // Grid lines — matches SpeedTraceChart
     ctx.strokeStyle = '#30363d';
@@ -166,7 +167,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let i = 0; i <= ySteps; i++) {
-      const val = yMax - (yMax - yMin) * (i / ySteps);
+      const val = yMax - yRange * (i / ySteps);
       const y = pad.top + (ph * i) / ySteps;
       ctx.fillText(val.toFixed(0), pad.left - 6, y);
     }

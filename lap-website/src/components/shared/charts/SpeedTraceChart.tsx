@@ -155,7 +155,7 @@ function drawSpeedTrace(
   };
   const validSpeeds = speeds.filter((s): s is number => s != null && isFinite(s));
   const xMin = 0;
-  const xMax = safeMax(distances);
+  const xMax = safeMax(distances) || 1;
   const yMin = 0;
   let yMax = (validSpeeds.length > 0 ? safeMax(validSpeeds) : 1) * 3.6 * 1.1;
 
@@ -168,6 +168,7 @@ function drawSpeedTrace(
     const avgMax = safeMax(avgSpeeds) * 3.6 * 1.1;
     if (avgMax > yMax) yMax = avgMax;
   }
+  if (yMax <= yMin) yMax = yMin + 1;
 
   const bounds = { xMin, xMax, yMin, yMax, plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH };
 
@@ -412,7 +413,7 @@ function drawDeltaChart(
 
   const n = Math.min(distances.length, deltaSeconds.length);
   const xMin = 0;
-  const xMax = distances[distances.length - 1];
+  const xMax = distances[distances.length - 1] || 1;
 
   // Y range — symmetric around zero
   let maxAbs = 0;
