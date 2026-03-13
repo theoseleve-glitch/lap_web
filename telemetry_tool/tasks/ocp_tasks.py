@@ -113,10 +113,9 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
         actual_apex, theo_apex = _extract_paired_apex_speeds(analysis_json, result, best_lap_df)
         actual_straights, theo_straights = _extract_paired_straight_speeds(analysis_json, result, best_lap_df)
-        actual_braking = _extract_actual_braking_dists(analysis_json)
-        theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
+        actual_braking, theo_braking = _extract_paired_braking_dists(result, analysis_json)
 
-        logger.info("OCP calibration data: %d apex pairs, %d straight pairs, %d braking",
+        logger.info("OCP calibration data: %d apex pairs, %d straight pairs, %d braking pairs",
                      len(actual_apex), len(actual_straights), len(actual_braking))
 
         calibration_meta = {}
@@ -152,7 +151,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             result = solve_ocp(mesh, params, tire, warm_start=result.speed_profile)
             actual_apex, theo_apex = _extract_paired_apex_speeds(analysis_json, result, best_lap_df)
             actual_straights, theo_straights = _extract_paired_straight_speeds(analysis_json, result, best_lap_df)
-            theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
+            actual_braking, theo_braking = _extract_paired_braking_dists(result, analysis_json)
 
         if not result.converged:
             logger.warning("OCP solver did not converge for session %s", session_id)
@@ -424,7 +423,14 @@ def _extract_warm_start(analysis_json: dict, mesh) -> Any:
         valid = np.isfinite(distances) & np.isfinite(speeds)
         if valid.sum() < 10:
             return None
-        warm = np.interp(mesh.s, distances[valid], speeds[valid])
+        d_valid = distances[valid]
+        s_valid = speeds[valid]
+        # np.interp requires monotonically increasing xp; enforce it by
+        # sorting on distance (handles rare corruption / duplicate distances).
+        sort_idx = np.argsort(d_valid)
+        d_valid = d_valid[sort_idx]
+        s_valid = s_valid[sort_idx]
+        warm = np.interp(mesh.s, d_valid, s_valid)
         warm = np.maximum(warm, 2.0)
         # Final NaN safety (shouldn't happen after filtering, but belt-and-suspenders)
         warm = np.nan_to_num(warm, nan=10.0)
@@ -497,12 +503,68 @@ def _extract_paired_straight_speeds(analysis_json: dict, result, best_lap_df=Non
     return actual, theo
 
 
-def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
-    """Extract actual braking distances from corner_perfs (corner_analysis output).
+def _extract_paired_braking_dists(result, analysis_json: dict):
+    """Extract paired (actual, theoretical) braking distances for calibration.
 
-    Uses braking_point_actual_m and s_start from CornerPerformance dicts.
-    Raw corners don't have braking data; corner_perfs does.
+    Returns two lists of the same length — one actual, one theoretical —
+    for the exact same corners.  Uses paired iteration to prevent the
+    independent-filter pairing bug where different d > 1.0 thresholds
+    could cause misaligned lists.
     """
+    import math
+    import numpy as np
+
+    corner_perfs = analysis_json.get("corner_performances", [])
+    if not isinstance(corner_perfs, list) or not corner_perfs:
+        return [], []
+
+    dist_arr = np.array(result.distance_profile, dtype=float)
+    speed_arr = np.array(result.speed_profile, dtype=float)
+    if len(dist_arr) < 10:
+        return [], []
+
+    # Compute acceleration profile from OCP speed
+    ds = np.diff(dist_arr)
+    dv = np.diff(speed_arr)
+    avg_v = (speed_arr[:-1] + speed_arr[1:]) / 2.0 + 1e-6
+    dt = np.where(ds > 0.01, ds / avg_v, 0.01)
+    accel = dv / dt
+    accel = np.where(np.isfinite(accel), accel, 0.0)
+
+    actual, theo = [], []
+    for cp in corner_perfs:
+        s_start = cp.get("s_start")
+        bp_actual = cp.get("braking_point_actual_m")
+        if s_start is None or bp_actual is None:
+            continue
+        if not math.isfinite(float(bp_actual)) or not math.isfinite(float(s_start)):
+            continue
+
+        s_start_f = float(s_start)
+        d_actual = abs(s_start_f - float(bp_actual))
+
+        # Find OCP braking point: walk backwards from s_start along
+        # the OCP profile until deceleration ends (accel >= 0)
+        idx = np.searchsorted(dist_arr, s_start_f) - 1
+        if idx < 1 or idx >= len(accel):
+            continue
+        brake_start_idx = idx
+        while brake_start_idx > 0 and accel[brake_start_idx] < -0.5:
+            brake_start_idx -= 1
+        theo_bp = float(dist_arr[brake_start_idx])
+        d_theo = abs(s_start_f - theo_bp)
+
+        # Both must be meaningful braking events (> 1m)
+        if d_actual > 1.0 and d_theo > 1.0:
+            actual.append(d_actual)
+            theo.append(d_theo)
+
+    return actual, theo
+
+
+# Backwards-compatible wrappers (used only in _run_ocp_impl call site)
+def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
+    """Extract actual braking distances (legacy wrapper — prefer _extract_paired_braking_dists)."""
     import math
     corner_perfs = analysis_json.get("corner_performances", [])
     if not isinstance(corner_perfs, list):
@@ -520,51 +582,9 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
 
 
 def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[float]:
-    """Extract theoretical braking distances from OCP speed profile.
-
-    For each corner, finds where the OCP speed begins decelerating
-    before s_start (the braking point). Returns braking distance =
-    |s_start - braking_point|, paired with _extract_actual_braking_dists.
-    """
-    import numpy as np
-    corner_perfs = analysis_json.get("corner_performances", [])
-    if not isinstance(corner_perfs, list) or not corner_perfs:
-        return []
-
-    dist_arr = np.array(result.distance_profile, dtype=float)
-    speed_arr = np.array(result.speed_profile, dtype=float)
-    if len(dist_arr) < 10:
-        return []
-
-    # Compute acceleration profile from OCP speed
-    ds = np.diff(dist_arr)
-    dv = np.diff(speed_arr)
-    avg_v = (speed_arr[:-1] + speed_arr[1:]) / 2.0 + 1e-6
-    dt = np.where(ds > 0.01, ds / avg_v, 0.01)
-    accel = dv / dt
-    accel = np.where(np.isfinite(accel), accel, 0.0)
-
-    dists = []
-    for cp in corner_perfs:
-        s_start = cp.get("s_start")
-        bp_actual = cp.get("braking_point_actual_m")
-        if s_start is None or bp_actual is None:
-            continue
-        s_start = float(s_start)
-
-        # Find OCP braking point: walk backwards from s_start along
-        # the OCP profile until deceleration ends (accel >= 0)
-        idx = np.searchsorted(dist_arr, s_start) - 1
-        if idx < 1 or idx >= len(accel):
-            continue
-        brake_start_idx = idx
-        while brake_start_idx > 0 and accel[brake_start_idx] < -0.5:
-            brake_start_idx -= 1
-        theo_bp = float(dist_arr[brake_start_idx])
-        d = abs(s_start - theo_bp)
-        if d > 1.0:
-            dists.append(d)
-    return dists
+    """Extract theoretical braking distances (legacy wrapper — prefer _extract_paired_braking_dists)."""
+    _, theo = _extract_paired_braking_dists(result, analysis_json)
+    return theo
 
 
 def _compute_corner_times(result, analysis_json: dict) -> list[dict]:
@@ -903,11 +923,13 @@ def _update_corner_targets(analysis_json, result, corners):
     updated_coaching = []
     for cc in corner_coaching:
         cc = dict(cc)  # copy to avoid mutating original
-        # Corner coaching entries use s_start/s_end from pipeline.
-        # Apex can be s_apex (if from corner detection) or midpoint of s_start/s_end.
-        entry_m = cc.get("s_start")
-        exit_m = cc.get("s_end")
-        apex_m = cc.get("s_apex")
+        # Corner coaching entries may use either set of field names:
+        #   - Corner detection:  s_start, s_end, s_apex
+        #   - Coaching stage:    entry_distance_m, exit_distance_m, apex_distance_m
+        # Try both variants (same pattern as data_v2.py _first_not_none).
+        entry_m = cc.get("s_start") or cc.get("entry_distance_m")
+        exit_m = cc.get("s_end") or cc.get("exit_distance_m")
+        apex_m = cc.get("s_apex") or cc.get("apex_distance_m")
         if apex_m is None and entry_m is not None and exit_m is not None:
             apex_m = (float(entry_m) + float(exit_m)) / 2.0
 

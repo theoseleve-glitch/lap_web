@@ -371,7 +371,117 @@ class TestComputeCornerTimes:
         assert corner_times == []
 
 
-# ── Task 9: Curvature periodicity ──
+# ── Task 9: Corner target field-name aliasing ──
+
+
+class TestUpdateCornerTargets:
+    def test_uses_coaching_field_names(self):
+        """corner_coaching entries use entry_distance_m/exit_distance_m/apex_distance_m."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [],
+            "corner_coaching": [
+                {"corner_id": 0, "apex_distance_m": 75.0,
+                 "entry_distance_m": 50.0, "exit_distance_m": 100.0,
+                 "actual_apex_speed_mps": 12.0},
+            ],
+        }
+
+        _update_corner_targets(analysis_json, result, [])
+
+        cc = analysis_json["corner_coaching"][0]
+        # Speed targets must be populated (not None / missing)
+        assert "apex_speed_target_kmh" in cc
+        assert cc["apex_speed_target_kmh"] > 0
+        assert "entry_speed_target_kmh" in cc
+        assert "exit_speed_target_kmh" in cc
+        assert "theoretical_apex_mps" in cc
+
+    def test_uses_corner_detection_field_names(self):
+        """corner_coaching entries seeded from raw corners use s_start/s_end/s_apex."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 0, "s_start": 50.0, "s_apex": 75.0, "s_end": 100.0},
+            ],
+            "corner_coaching": [],  # empty → seeds from corners
+        }
+
+        _update_corner_targets(analysis_json, result, analysis_json["corners"])
+
+        cc = analysis_json["corner_coaching"][0]
+        assert "apex_speed_target_kmh" in cc
+        assert cc["apex_speed_target_kmh"] > 0
+
+
+# ── Task 10: Warm start monotonicity ──
+
+
+class TestWarmStartMonotonicity:
+    def test_non_monotonic_distances_handled(self):
+        """Non-monotonic QSS distances should not crash or give NaN."""
+        from tasks.ocp_tasks import _extract_warm_start
+
+        class FakeMesh:
+            s = np.linspace(0, 100, 50)
+
+        # Intentionally non-monotonic distances
+        analysis_json = {
+            "optimal_v2": {
+                "speed_profile": [
+                    {"distance_m": 0.0, "speed_mps": 10.0},
+                    {"distance_m": 50.0, "speed_mps": 20.0},
+                    {"distance_m": 30.0, "speed_mps": 15.0},  # out of order
+                    {"distance_m": 70.0, "speed_mps": 25.0},
+                    {"distance_m": 100.0, "speed_mps": 10.0},
+                ] + [{"distance_m": float(i), "speed_mps": 15.0} for i in range(5, 100, 10)]
+            }
+        }
+
+        warm = _extract_warm_start(analysis_json, FakeMesh())
+        assert warm is not None
+        assert len(warm) == 50
+        assert np.all(np.isfinite(warm))
+        # Should be monotonically sensible after sorting
+        assert np.all(warm >= 2.0)
+
+
+# ── Task 11: Paired braking distance extraction ──
+
+
+class TestPairedBrakingDists:
+    def test_paired_lists_same_length(self):
+        """actual and theoretical braking dists must always be the same length."""
+        from tasks.ocp_tasks import _extract_paired_braking_dists
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corner_performances": [
+                {"corner_id": 0, "s_start": 50.0, "braking_point_actual_m": 30.0},
+                {"corner_id": 1, "s_start": 200.0, "braking_point_actual_m": 180.0},
+                {"corner_id": 2, "s_start": 350.0, "braking_point_actual_m": 349.5},  # tiny actual (< 1m)
+            ],
+        }
+
+        actual, theo = _extract_paired_braking_dists(result, analysis_json)
+        assert len(actual) == len(theo)
+        # Corner 2 has actual dist < 1m, so both lists should exclude it
+        # (actual or theoretical might also be < 1m depending on OCP profile)
+
+    def test_returns_empty_for_no_corner_perfs(self):
+        from tasks.ocp_tasks import _extract_paired_braking_dists
+
+        result = _FakeResult(n=50)
+        actual, theo = _extract_paired_braking_dists(result, {})
+        assert actual == []
+        assert theo == []
+
+
+# ── Task 12: Curvature periodicity ──
 
 
 class TestCurvaturePeriodicity:
