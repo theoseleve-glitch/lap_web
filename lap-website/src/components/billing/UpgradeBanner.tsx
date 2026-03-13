@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useEntitlements } from '@/hooks/useEntitlements';
 import Link from 'next/link';
 
@@ -40,6 +41,16 @@ export function UpgradeBanner({
 }: UpgradeBannerProps) {
   const { requiresUpgrade, entitlements } = useEntitlements();
 
+  // Dismiss modal/toast on Escape
+  useEffect(() => {
+    if (!onDismiss || variant === 'inline') return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onDismiss();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [onDismiss, variant]);
+
   const upgrade = requiresUpgrade(feature);
   if (!upgrade) return null;
 
@@ -76,8 +87,14 @@ export function UpgradeBanner({
 
   if (variant === 'modal') {
     return (
-      <div className="fixed inset-0 z-overlay flex items-center justify-center bg-asphalt/80 backdrop-blur-sm">
-        <div className="mx-4 w-full max-w-md border border-chalk/15 bg-concrete p-6 shadow-xl">
+      <div
+        className="fixed inset-0 z-overlay flex items-center justify-center bg-asphalt/80 backdrop-blur-sm"
+        onClick={onDismiss}
+      >
+        <div
+          className="mx-4 w-full max-w-md border border-chalk/15 bg-concrete p-6 shadow-xl"
+          onClick={(e) => e.stopPropagation()}
+        >
           <h3 className="font-monument text-xl text-chalk">
             Upgrade to {tierLabel}
           </h3>

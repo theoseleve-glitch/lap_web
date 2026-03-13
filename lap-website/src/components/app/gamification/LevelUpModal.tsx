@@ -54,6 +54,14 @@ export default function LevelUpModal({
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  });
+
   // Guard: don't render if no actual level-up occurred
   if (oldLevel === newLevel || newLevel <= 0) return null;
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Plan } from '@/data/pricing';
 import { useCurrency } from '@/hooks/useCurrency';
 import { PitButton } from './PitButton';
@@ -50,6 +50,16 @@ export function PricingTable({
   const [expanded, setExpanded] = useState(false);
   const [confirmPlan, setConfirmPlan] = useState<Plan | null>(null);
   const { currency } = useCurrency();
+
+  // Dismiss checkout confirmation on Escape
+  useEffect(() => {
+    if (!confirmPlan) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmPlan(null);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [confirmPlan]);
 
   async function proceedToCheckout(plan: Plan) {
     setConfirmPlan(null);
@@ -192,6 +202,7 @@ export function PricingTable({
       {/* Expand/collapse toggle */}
       <div className="flex justify-center mt-4">
         <button
+          type="button"
           className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition-colors duration-300 border border-chalk/15 px-4 py-2"
           onClick={() => setExpanded(!expanded)}
         >
@@ -245,6 +256,7 @@ export function PricingTable({
             </p>
             <div className="flex gap-3">
               <button
+                type="button"
                 onClick={() => setConfirmPlan(null)}
                 className="flex-1 py-2.5 border border-chalk/15 text-steel font-telemetry text-xs tracking-[0.08em] uppercase hover:text-chalk transition-colors"
               >
