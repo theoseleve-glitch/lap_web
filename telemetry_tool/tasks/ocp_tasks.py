@@ -236,11 +236,23 @@ def _load_session_data(session_id, workspace_id):
             if dists and speeds and len(dists) == len(speeds) and len(dists) > 10:
                 # Normalize distances to start from 0
                 d0 = dists[0] if dists[0] != 0 else 0
-                best_lap_df = pd.DataFrame({
+                data = {
                     "Distance (m)": [d - d0 for d in dists],
                     "Speed (m/s)": speeds,
-                })
-                logger.info("OCP: loaded best lap %d (%d points)", best_lap_num, len(dists))
+                }
+                # Include acceleration data for param_extractor if available
+                accel_lat = trace.get("accel_lat")
+                accel_long = trace.get("accel_long")
+                if accel_lat and len(accel_lat) == len(dists):
+                    data["accel_lat_mps2"] = accel_lat
+                if accel_long and len(accel_long) == len(dists):
+                    data["accel_long_mps2"] = accel_long
+                best_lap_df = pd.DataFrame(data)
+                logger.info("OCP: loaded best lap %d (%d points, accel=%s)",
+                            best_lap_num, len(dists),
+                            "lat+long" if accel_lat and accel_long else
+                            "lat" if accel_lat else
+                            "long" if accel_long else "none")
 
     # ── Curvature from reference line ──
     curvature_profile = None
