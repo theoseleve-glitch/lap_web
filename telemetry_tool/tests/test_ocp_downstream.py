@@ -226,6 +226,79 @@ class TestRlsContext:
             mock_rls.assert_called_once_with(conn, 1)
 
 
+# ── Task 4: Connection leak prevention ──
+
+
+class TestConnectionLeakPrevention:
+    def test_load_session_data_closes_conn_on_db_error(self):
+        """Connection must be closed if _load_session_data raises internally."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        mock_conn.execute.side_effect = RuntimeError("DB gone")
+
+        with patch("tasks.ocp_tasks.get_db_connection" if False else
+                   "web.db.get_db_connection", return_value=mock_conn):
+            with pytest.raises(RuntimeError, match="DB gone"):
+                _load_session_data("sess-X", workspace_id=None)
+        mock_conn.close.assert_called_once()
+
+    def test_load_session_data_closes_conn_on_bad_json(self):
+        """Connection closed when analysis_json column contains bad JSON."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        mock_row = {"analysis_json": "{INVALID JSON"}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with pytest.raises(Exception):
+                _load_session_data("sess-X", workspace_id=None)
+        mock_conn.close.assert_called_once()
+
+    def test_run_ocp_impl_does_not_double_close(self):
+        """If _load_session_data succeeds, _run_ocp_impl manages the conn."""
+        from tasks.ocp_tasks import _run_ocp_impl
+
+        with patch("tasks.ocp_tasks._load_session_data") as mock_load:
+            mock_conn = MagicMock()
+            mock_load.return_value = (mock_conn, {}, None, None, None)
+
+            result = _run_ocp_impl("sess-1")
+            # Should return None (no best_lap_df) and close once
+            assert result is None
+            mock_conn.close.assert_called_once()
+
+
+# ── Task 5: VehicleClass fault tolerance ──
+
+
+class TestVehicleClassFaultTolerance:
+    def test_bad_vehicle_class_uses_fallback(self):
+        """Invalid vehicle_class in analysis_json should not crash loading."""
+        from tasks.ocp_tasks import _load_session_data
+
+        mock_conn = MagicMock()
+        analysis = {
+            "vehicle_params": {
+                "vehicle_class": "NONEXISTENT_CLASS_XYZ",
+                "peak_lateral_g": 1.0,
+                "rolling_resistance_est": 0.015,
+                "aero_drag_factor_est": 0.0,
+            }
+        }
+        import json as _json
+        mock_row = {"analysis_json": _json.dumps(analysis)}
+        mock_conn.execute.return_value.fetchone.return_value = mock_row
+
+        with patch("web.db.get_db_connection", return_value=mock_conn):
+            with patch("web.repos.lap_repo.get_laps_for_session", return_value=[]):
+                with patch("web.repos.theoretical_repo.get_reference_line", return_value=None):
+                    conn, aj, bldf, cp, vp = _load_session_data("sess-1", None)
+        # Should not crash; vehicle_params falls back gracefully
+        assert conn is mock_conn
+
+
 # ── Task 7: End-to-end smoke test ──
 
 

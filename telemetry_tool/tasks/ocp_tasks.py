@@ -199,6 +199,9 @@ def _load_session_data(session_id, workspace_id):
 
     Reads best-lap speed trace from gps_traces, curvature from
     reference_lines, and vehicle params from analysis_json.
+
+    Connection lifecycle: creates a connection and returns it on success.
+    On failure, closes the connection before re-raising to prevent leaks.
     """
     from web.db import get_db_connection
     from web.repos import gps_repo, theoretical_repo, lap_repo
@@ -206,93 +209,111 @@ def _load_session_data(session_id, workspace_id):
     import pandas as pd
 
     conn = get_db_connection()
+    try:
+        # Set RLS context if PG
+        if workspace_id is not None:
+            _set_rls_if_pg(conn, workspace_id)
 
-    # Set RLS context if PG
-    if workspace_id is not None:
-        _set_rls_if_pg(conn, workspace_id)
+        # Load analysis_json for corners, scoring, vehicle params
+        row = conn.execute(
+            "SELECT analysis_json FROM sessions WHERE session_id = :sid",
+            {"sid": session_id},
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"Session {session_id} not found")
+        raw = row["analysis_json"] if isinstance(row, dict) else row[0]
+        analysis_json = json.loads(raw) if raw else {}
 
-    # Load analysis_json for corners, scoring, vehicle params
-    row = conn.execute(
-        "SELECT analysis_json FROM sessions WHERE session_id = :sid",
-        {"sid": session_id},
-    ).fetchone()
-    if row is None:
-        raise ValueError(f"Session {session_id} not found")
-    raw = row["analysis_json"] if isinstance(row, dict) else row[0]
-    analysis_json = json.loads(raw) if raw else {}
+        # ── Best lap speed trace from GPS trace table ──
+        best_lap_df = None
+        laps = lap_repo.get_laps_for_session(conn, session_id)
+        best_lap_num = None
+        if laps:
+            for lap in laps:
+                if lap.get("is_best"):
+                    best_lap_num = lap["lap_number"]
+                    break
+            if best_lap_num is None:
+                best_lap_num = laps[0]["lap_number"]
 
-    # ── Best lap speed trace from GPS trace table ──
-    best_lap_df = None
-    laps = lap_repo.get_laps_for_session(conn, session_id)
-    best_lap_num = None
-    if laps:
-        for lap in laps:
-            if lap.get("is_best"):
-                best_lap_num = lap["lap_number"]
-                break
-        if best_lap_num is None:
-            best_lap_num = laps[0]["lap_number"]
+        if best_lap_num is not None:
+            trace = gps_repo.get_gps_trace(conn, session_id, best_lap_num)
+            if trace:
+                dists = trace.get("distances", [])
+                speeds = trace.get("speeds", [])
+                if dists and speeds and len(dists) == len(speeds) and len(dists) > 10:
+                    # Normalize distances to start from 0
+                    d0 = dists[0] if dists[0] != 0 else 0
+                    data = {
+                        "Distance (m)": [d - d0 for d in dists],
+                        "Speed (m/s)": speeds,
+                    }
+                    # Include acceleration data for param_extractor if available
+                    accel_lat = trace.get("accel_lat")
+                    accel_long = trace.get("accel_long")
+                    if accel_lat and len(accel_lat) == len(dists):
+                        data["accel_lat_mps2"] = accel_lat
+                    if accel_long and len(accel_long) == len(dists):
+                        data["accel_long_mps2"] = accel_long
+                    best_lap_df = pd.DataFrame(data)
+                    logger.info("OCP: loaded best lap %d (%d points, accel=%s)",
+                                best_lap_num, len(dists),
+                                "lat+long" if accel_lat and accel_long else
+                                "lat" if accel_lat else
+                                "long" if accel_long else "none")
 
-    if best_lap_num is not None:
-        trace = gps_repo.get_gps_trace(conn, session_id, best_lap_num)
-        if trace:
-            dists = trace.get("distances", [])
-            speeds = trace.get("speeds", [])
-            if dists and speeds and len(dists) == len(speeds) and len(dists) > 10:
-                # Normalize distances to start from 0
-                d0 = dists[0] if dists[0] != 0 else 0
-                data = {
-                    "Distance (m)": [d - d0 for d in dists],
-                    "Speed (m/s)": speeds,
-                }
-                # Include acceleration data for param_extractor if available
-                accel_lat = trace.get("accel_lat")
-                accel_long = trace.get("accel_long")
-                if accel_lat and len(accel_lat) == len(dists):
-                    data["accel_lat_mps2"] = accel_lat
-                if accel_long and len(accel_long) == len(dists):
-                    data["accel_long_mps2"] = accel_long
-                best_lap_df = pd.DataFrame(data)
-                logger.info("OCP: loaded best lap %d (%d points, accel=%s)",
-                            best_lap_num, len(dists),
-                            "lat+long" if accel_lat and accel_long else
-                            "lat" if accel_lat else
-                            "long" if accel_long else "none")
+        # ── Curvature from reference line ──
+        curvature_profile = None
+        ref_line = theoretical_repo.get_reference_line(conn, session_id)
+        if ref_line:
+            ref_dists = ref_line.get("distances", [])
+            ref_lats = ref_line.get("latitudes", [])
+            ref_lons = ref_line.get("longitudes", [])
+            if ref_dists and ref_lats and ref_lons and len(ref_dists) > 10:
+                curvature_profile = _curvature_from_reference_line(
+                    np.array(ref_dists, dtype=float),
+                    np.array(ref_lats, dtype=float),
+                    np.array(ref_lons, dtype=float),
+                )
+                if curvature_profile is not None:
+                    logger.info("OCP: computed curvature from reference line (%d points)", len(curvature_profile))
 
-    # ── Curvature from reference line ──
-    curvature_profile = None
-    ref_line = theoretical_repo.get_reference_line(conn, session_id)
-    if ref_line:
-        ref_dists = ref_line.get("distances", [])
-        ref_lats = ref_line.get("latitudes", [])
-        ref_lons = ref_line.get("longitudes", [])
-        if ref_dists and ref_lats and ref_lons and len(ref_dists) > 10:
-            curvature_profile = _curvature_from_reference_line(
-                np.array(ref_dists, dtype=float),
-                np.array(ref_lats, dtype=float),
-                np.array(ref_lons, dtype=float),
-            )
-            if curvature_profile is not None:
-                logger.info("OCP: computed curvature from reference line (%d points)", len(curvature_profile))
+        # ── Vehicle params from analysis_json ──
+        vehicle_params = None
+        vp_data = analysis_json.get("vehicle_params")
+        if vp_data:
+            try:
+                from vehicle_model import VehicleParameters, VehicleClass
+                vc_str = vp_data.get("vehicle_class", "unknown")
+                try:
+                    vc = VehicleClass(vc_str)
+                except ValueError:
+                    logger.warning("Unknown vehicle_class %r, falling back to UNKNOWN", vc_str)
+                    vc = VehicleClass.UNKNOWN
+                vehicle_params = VehicleParameters(
+                    vehicle_class=vc,
+                    estimated_mass_kg=vp_data.get("estimated_mass_kg"),
+                    peak_lateral_g=vp_data.get("peak_lateral_g", 1.0),
+                    peak_braking_g=vp_data.get("peak_braking_g", 1.0),
+                    peak_traction_g=vp_data.get("peak_traction_g", 0.5),
+                    has_downforce=vp_data.get("has_downforce", False),
+                    has_abs=vp_data.get("has_abs", False),
+                    rolling_resistance_est=vp_data.get("rolling_resistance_est", 0.015),
+                    aero_drag_factor_est=vp_data.get("aero_drag_factor_est", 0.0),
+                )
+            except Exception:
+                logger.warning("Failed to parse vehicle_params, using class defaults", exc_info=True)
 
-    # ── Vehicle params from analysis_json ──
-    vehicle_params = None
-    vp_data = analysis_json.get("vehicle_params")
-    if vp_data:
-        from vehicle_model import VehicleParameters, VehicleClass
-        vehicle_params = VehicleParameters(
-            vehicle_class=VehicleClass(vp_data.get("vehicle_class", "unknown")),
-            estimated_mass_kg=vp_data.get("estimated_mass_kg"),
-            peak_lateral_g=vp_data.get("peak_lateral_g", 1.0),
-            peak_braking_g=vp_data.get("peak_braking_g", 1.0),
-            peak_traction_g=vp_data.get("peak_traction_g", 0.5),
-            has_downforce=vp_data.get("has_downforce", False),
-            has_abs=vp_data.get("has_abs", False),
-            rolling_resistance_est=vp_data.get("rolling_resistance_est", 0.015),
-            aero_drag_factor_est=vp_data.get("aero_drag_factor_est", 0.0),
-        )
+        return conn, analysis_json, best_lap_df, curvature_profile, vehicle_params
 
-    return conn, analysis_json, best_lap_df, curvature_profile, vehicle_params
+    except Exception:
+        # Close connection on failure to prevent leak — caller never
+        # receives the conn reference, so it can't close it.
+        try:
+            conn.close()
+        except Exception:
+            pass
+        raise
 
 
 def _curvature_from_reference_line(distances, lats, lons):
