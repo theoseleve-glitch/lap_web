@@ -29,18 +29,18 @@ const navGroups: NavGroup[] = [
       { href: '/app/sessions', label: 'Sessions', icon: '◎' },
       { href: '/app/compare', label: 'Compare', icon: '⟺' },
       { href: '/app/visualize', label: 'Visualization', icon: '◆' },
-      { href: '/app/development', label: 'Dev Plans', icon: '◧' },
+      { href: '/app/development', label: 'Development Plans', icon: '◧' },
+      { href: '/app/leaderboard', label: 'Leaderboard', icon: '★' },
     ],
   },
   {
     label: 'STRATEGY',
     items: [
       { href: '/app/race-strategy', label: 'Race Strategy', icon: '⚑' },
-      { href: '/app/leaderboard', label: 'Leaderboard', icon: '★' },
     ],
   },
   {
-    label: 'COACHING',
+    label: 'ENGINEER',
     items: [
       { href: '/app/analytics', label: 'Analytics Hub', icon: '◇' },
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },

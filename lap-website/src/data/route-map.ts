@@ -277,7 +277,7 @@ export const routeMap: Record<string, RouteEntry> = {
   },
   '/app/development': {
     path: '/app/development',
-    title: 'Dev Plans',
+    title: 'Development Plans',
     parent: '/app/dashboard',
     noIndex: true,
   },
