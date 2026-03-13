@@ -627,7 +627,14 @@ def _compute_corner_times(result, analysis_json: dict) -> list[dict]:
         # Interpolate cumulative time at entry and exit
         t_entry = float(np.interp(s_start_f, dist, cum_time))
         t_exit = float(np.interp(s_end_f, dist, cum_time))
-        corner_time = t_exit - t_entry
+
+        if s_end_f >= s_start_f:
+            corner_time = t_exit - t_entry
+        else:
+            # Corner wraps around start/finish line (s_start > s_end).
+            # Time = (track_end - entry) + (exit - track_start).
+            total_time = cum_time[-1]
+            corner_time = (total_time - t_entry) + t_exit
 
         # Speed at apex
         apex_speed = None
@@ -635,7 +642,11 @@ def _compute_corner_times(result, analysis_json: dict) -> list[dict]:
             apex_speed = round(float(np.interp(float(s_apex), dist, speed)), 3)
 
         # Min speed in corner section
-        mask = (dist >= s_start_f) & (dist <= s_end_f)
+        if s_end_f >= s_start_f:
+            mask = (dist >= s_start_f) & (dist <= s_end_f)
+        else:
+            # Wrap-around: corner spans start/finish line
+            mask = (dist >= s_start_f) | (dist <= s_end_f)
         section_speeds = speed[mask]
         min_speed = round(float(section_speeds.min()), 3) if len(section_speeds) > 0 else apex_speed
 
@@ -948,7 +959,7 @@ def _update_corner_targets(analysis_json, result, corners):
 
         # Recompute time loss if actual and theoretical apex known
         actual_apex = cc.get("actual_apex_speed_mps")
-        if actual_apex and apex_m is not None:
+        if actual_apex is not None and apex_m is not None:
             v_theo = float(np.interp(float(apex_m), dist, speed))
             if v_theo > 0:
                 cc["speed_delta_pct"] = round(

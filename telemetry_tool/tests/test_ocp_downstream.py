@@ -546,3 +546,71 @@ class TestCurvaturePeriodicity:
         kappa = cp["curvature_1pm"].to_numpy()
         # Start and end curvature must be identical
         assert kappa[0] == kappa[-1]
+
+
+# ── Task 14: Corner time wrap-around ──
+
+
+class TestCornerTimeWrapAround:
+    def test_wraparound_corner_has_positive_time(self):
+        """A corner that spans the start/finish line (s_start > s_end)
+        must produce positive time, not negative."""
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        # Corner wraps: starts at 480m, ends at 20m (on a ~500m track)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 99, "s_start": 480.0, "s_end": 20.0, "s_apex": 490.0},
+            ],
+        }
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 1
+        assert corner_times[0]["corner_id"] == 99
+        assert corner_times[0]["time_s"] > 0, (
+            f"Wrap-around corner time should be positive, got {corner_times[0]['time_s']}"
+        )
+        # min_speed must come from the wrap-around section, not fallback to apex
+        assert corner_times[0]["min_speed_mps"] is not None
+        assert corner_times[0]["min_speed_mps"] > 0
+
+    def test_normal_corner_unaffected(self):
+        """Non-wrapping corners still work correctly."""
+        from tasks.ocp_tasks import _compute_corner_times
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [
+                {"corner_id": 0, "s_start": 50.0, "s_end": 100.0, "s_apex": 75.0},
+            ],
+        }
+
+        corner_times = _compute_corner_times(result, analysis_json)
+        assert len(corner_times) == 1
+        assert corner_times[0]["time_s"] > 0
+
+
+# ── Task 15: Truthy check on actual_apex speed ──
+
+
+class TestCornerTargetZeroSpeed:
+    def test_zero_actual_apex_still_computes_delta(self):
+        """actual_apex_speed_mps == 0.0 should not skip speed_delta_pct computation."""
+        from tasks.ocp_tasks import _update_corner_targets
+
+        result = _FakeResult(n=200, lap_time=70.0)
+        analysis_json = {
+            "corners": [],
+            "corner_coaching": [
+                {"corner_id": 0, "apex_distance_m": 75.0,
+                 "entry_distance_m": 50.0, "exit_distance_m": 100.0,
+                 "actual_apex_speed_mps": 0.0},  # zero speed (edge case)
+            ],
+        }
+
+        _update_corner_targets(analysis_json, result, [])
+
+        cc = analysis_json["corner_coaching"][0]
+        # speed_delta_pct should be present (not skipped due to falsy 0.0)
+        assert "speed_delta_pct" in cc
