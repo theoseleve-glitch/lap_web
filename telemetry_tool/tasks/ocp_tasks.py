@@ -116,8 +116,9 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         actual_braking = _extract_actual_braking_dists(analysis_json)
         theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
         theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
+        theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
 
-        logger.info("OCP calibration data: %d apex, %d straights, %d braking",
+        logger.info("OCP calibration data: %d apex, %d straights, %d braking (actual/theo)",
                      len(actual_apex), len(actual_straights), len(actual_braking))
 
         calibration_meta = {}
@@ -131,7 +132,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
                 actual_straight_end_speeds=actual_straights,
                 theoretical_straight_end_speeds=theo_straights,
                 actual_braking_dists=actual_braking,
-                theoretical_braking_dists=[],
+                theoretical_braking_dists=theo_braking,
             )
             calibration_meta = cal.to_dict()
 
@@ -153,6 +154,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             result = solve_ocp(mesh, params, tire, warm_start=result.speed_profile)
             theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
             theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
+            theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
 
         if not result.converged:
             logger.warning("OCP solver did not converge for session %s", session_id)
@@ -481,6 +483,52 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
     return dists
 
 
+def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[float]:
+    """Extract theoretical braking distances from OCP speed profile.
+
+    For each corner, finds where the OCP speed begins decelerating
+    before s_start (the braking point). Returns braking distance =
+    |s_start - braking_point|, paired with _extract_actual_braking_dists.
+    """
+    import numpy as np
+    corner_perfs = analysis_json.get("corner_performances", [])
+    if not isinstance(corner_perfs, list) or not corner_perfs:
+        return []
+
+    dist_arr = np.array(result.distance_profile, dtype=float)
+    speed_arr = np.array(result.speed_profile, dtype=float)
+    if len(dist_arr) < 10:
+        return []
+
+    # Compute acceleration profile from OCP speed
+    ds = np.diff(dist_arr)
+    dv = np.diff(speed_arr)
+    avg_v = (speed_arr[:-1] + speed_arr[1:]) / 2.0 + 1e-6
+    dt = ds / avg_v
+    accel = dv / dt
+
+    dists = []
+    for cp in corner_perfs:
+        s_start = cp.get("s_start")
+        bp_actual = cp.get("braking_point_actual_m")
+        if s_start is None or bp_actual is None:
+            continue
+        s_start = float(s_start)
+
+        # Find OCP braking point: walk backwards from s_start along
+        # the OCP profile until deceleration ends (accel >= 0)
+        idx = np.searchsorted(dist_arr, s_start) - 1
+        idx = min(max(idx, 0), len(accel) - 1)
+        brake_start_idx = idx
+        while brake_start_idx > 0 and accel[brake_start_idx] < -0.5:
+            brake_start_idx -= 1
+        theo_bp = float(dist_arr[brake_start_idx])
+        d = abs(s_start - theo_bp)
+        if d > 1.0:
+            dists.append(d)
+    return dists
+
+
 def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]:
     """Extract theoretical apex speeds from OCP result at each corner's s_apex.
 
@@ -544,6 +592,20 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
         theo_result_dict = _build_theoretical_result_dict(result)
 
         speeds = np.array(result.speed_profile)
+        # Compute theoretical accel/braking from speed profile + distance
+        dists = np.array(result.distance_profile)
+        if len(speeds) > 1 and len(dists) == len(speeds):
+            ds = np.diff(dists)
+            dv = np.diff(speeds)
+            dt_seg = np.where(ds > 0, ds / ((speeds[:-1] + speeds[1:]) / 2 + 1e-6), 0.1)
+            accel_arr = dv / dt_seg
+            accel_arr = accel_arr[np.isfinite(accel_arr)]
+            theo_accel_max = float(np.max(accel_arr)) if len(accel_arr) > 0 else 0.0
+            theo_brake_max = float(np.max(np.abs(accel_arr[accel_arr < 0]))) if np.any(accel_arr < 0) else 0.0
+        else:
+            theo_accel_max = 0.0
+            theo_brake_max = 0.0
+
         theo_metrics = {
             "best_s": float(result.lap_time_s),
             "simulation_method": "ocp",
@@ -551,6 +613,9 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
             "max_speed_mps": float(speeds.max()),
             "avg_speed_mps": float(speeds.mean()),
             "min_speed_mps": float(speeds.min()),
+            "speed_mean_mps": float(speeds.mean()),
+            "accel_max_mps2": theo_accel_max,
+            "braking_max_mps2": theo_brake_max,
             "confidence": 1.0 if result.converged else 0.7,
         }
 
@@ -561,7 +626,7 @@ def _update_downstream(conn, session_id, result, result_dict, analysis_json,
         available_columns = set(best_lap_df.columns) if best_lap_df is not None else set()
 
         # 3. Build observed metrics
-        observed_metrics = _extract_observed_metrics(analysis_json)
+        observed_metrics = _extract_observed_metrics(analysis_json, best_lap_df)
         if not observed_metrics.get("best_s"):
             logger.debug("OCP downstream: no observed best_s, skipping")
             return
@@ -704,8 +769,9 @@ def _set_rls_if_pg(conn, workspace_id):
         logger.debug("RLS context setup skipped", exc_info=True)
 
 
-def _extract_observed_metrics(analysis_json: dict) -> dict:
-    """Extract observed session metrics from analysis_json for scoring."""
+def _extract_observed_metrics(analysis_json: dict, best_lap_df=None) -> dict:
+    """Extract observed session metrics from analysis_json + best_lap_df for scoring."""
+    import numpy as _np
     metrics: dict = {}
 
     # Best lap time
@@ -715,30 +781,35 @@ def _extract_observed_metrics(analysis_json: dict) -> dict:
         if valid:
             metrics["best_s"] = min(valid)
             metrics["n_laps"] = len(valid)
-            import numpy as _np
             arr = _np.array(valid)
             metrics["cv_pct"] = float(_np.std(arr) / _np.mean(arr) * 100) if len(arr) > 1 else 0.0
             sorted_arr = _np.sort(arr)
             metrics["best_to_median_s"] = float(sorted_arr[0] - _np.median(arr))
 
-    # From existing score_result (preserve non-pace metrics)
-    existing = analysis_json.get("score_result", {})
-    details = existing.get("details", {}) if isinstance(existing, dict) else {}
+    # Speed/accel metrics — compute directly from best_lap_df (pipeline doesn't
+    # store speed_trace_best in analysis_json, so we must use the raw data)
+    if best_lap_df is not None:
+        if "Speed (m/s)" in best_lap_df.columns:
+            speed_arr = best_lap_df["Speed (m/s)"].to_numpy(dtype=float)
+            speed_valid = speed_arr[_np.isfinite(speed_arr) & (speed_arr > 0.5)]
+            if len(speed_valid) > 0:
+                metrics["speed_mean_mps"] = float(_np.mean(speed_valid))
+        if "accel_long_mps2" in best_lap_df.columns:
+            accel = best_lap_df["accel_long_mps2"].to_numpy(dtype=float)
+            accel_valid = accel[_np.isfinite(accel)]
+            if len(accel_valid) > 0:
+                metrics["accel_max_mps2"] = float(_np.max(accel_valid))
+                braking = _np.abs(accel_valid[accel_valid < 0])
+                if len(braking) > 0:
+                    metrics["braking_max_mps2"] = float(_np.max(braking))
 
-    # Speed/accel metrics from stored data
-    speed_trace = analysis_json.get("speed_trace_best", [])
-    if isinstance(speed_trace, list) and speed_trace:
-        import numpy as _np
-        speeds = [p.get("speed_mps", 0) for p in speed_trace if isinstance(p, dict)]
-        if speeds:
-            metrics["speed_mean_mps"] = float(_np.mean(speeds))
-
-    # Robustness metrics (pass through from existing)
+    # Robustness metrics (pass through from existing analysis_json or score_result)
     for key in ("early_mean_s", "late_mean_s", "early_yaw_var", "late_yaw_var",
                 "accel_max_mps2", "braking_max_mps2"):
-        val = analysis_json.get(key)
-        if val is not None:
-            metrics[key] = val
+        if key not in metrics:
+            val = analysis_json.get(key)
+            if val is not None:
+                metrics[key] = val
 
     return metrics
 
@@ -753,6 +824,11 @@ def _update_corner_targets(analysis_json, result, corners):
     corner_coaching = analysis_json.get("corner_coaching", [])
     if not isinstance(corner_coaching, list):
         corner_coaching = []
+
+    # If corner_coaching is empty but raw corners exist, seed from corners
+    # (happens when pipeline's theoretical stage produced method=none)
+    if not corner_coaching and corners:
+        corner_coaching = [dict(c) for c in corners if isinstance(c, dict)]
 
     updated_coaching = []
     for cc in corner_coaching:
