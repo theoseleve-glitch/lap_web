@@ -115,6 +115,10 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         actual_straights = _extract_actual_straight_speeds(analysis_json, best_lap_df)
         actual_braking = _extract_actual_braking_dists(analysis_json)
         theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
+        theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
+
+        logger.info("OCP calibration data: %d apex, %d straights, %d braking",
+                     len(actual_apex), len(actual_straights), len(actual_braking))
 
         calibration_meta = {}
         for cal_pass in range(_MAX_CALIBRATION_PASSES):
@@ -125,7 +129,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
                 actual_apex_speeds=actual_apex,
                 theoretical_apex_speeds=theo_apex,
                 actual_straight_end_speeds=actual_straights,
-                theoretical_straight_end_speeds=[],
+                theoretical_straight_end_speeds=theo_straights,
                 actual_braking_dists=actual_braking,
                 theoretical_braking_dists=[],
             )
@@ -148,6 +152,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             )
             result = solve_ocp(mesh, params, tire, warm_start=result.speed_profile)
             theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
+            theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
 
         if not result.converged:
             logger.warning("OCP solver did not converge for session %s", session_id)
@@ -448,6 +453,7 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
     Uses braking_point_actual_m and s_start from CornerPerformance dicts.
     Raw corners don't have braking data; corner_perfs does.
     """
+    import math
     corner_perfs = analysis_json.get("corner_performances", [])
     if not isinstance(corner_perfs, list):
         return []
@@ -456,7 +462,6 @@ def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
         bp = cp.get("braking_point_actual_m")
         s_start = cp.get("s_start")
         if bp is not None and s_start is not None:
-            import math
             if math.isfinite(float(bp)) and math.isfinite(float(s_start)):
                 d = abs(float(s_start) - float(bp))
                 if d > 1.0:
@@ -482,6 +487,25 @@ def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]
             if v > 0.5:
                 apex_speeds.append(v)
     return apex_speeds
+
+
+def _extract_theoretical_straight_speeds(result, analysis_json: dict) -> list[float]:
+    """Extract theoretical straight-end speeds from OCP result at each corner's s_start.
+
+    Mirrors _extract_actual_straight_speeds for paired calibration of P_max.
+    """
+    import numpy as np
+    corners = analysis_json.get("corners", [])
+    if not corners:
+        return []
+    speeds = []
+    for c in corners:
+        s_start = c.get("s_start")
+        if s_start is not None:
+            v = float(np.interp(float(s_start), result.distance_profile, result.speed_profile))
+            if v > 0.5:
+                speeds.append(v)
+    return speeds
 
 
 def _update_downstream(conn, session_id, result, result_dict, analysis_json,
