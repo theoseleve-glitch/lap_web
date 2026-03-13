@@ -38,15 +38,27 @@ def refine_mesh(mesh: TrackMesh, speed_profile: np.ndarray, gradient_threshold: 
 
 
 def build_mesh_from_curvature_profile(curvature_profile_df, n_nodes: int = 500) -> TrackMesh | None:
+    import logging
+    _log = logging.getLogger(__name__)
     if curvature_profile_df is None:
+        _log.warning("build_mesh: input is None")
         return None
+    cols = list(curvature_profile_df.columns)
+    _log.info("build_mesh: cols=%s, rows=%d, n_nodes=%d", cols, len(curvature_profile_df), n_nodes)
     if "distance_m" not in curvature_profile_df.columns:
+        _log.warning("build_mesh: missing distance_m column")
         return None
     if "curvature_1pm" not in curvature_profile_df.columns:
+        _log.warning("build_mesh: missing curvature_1pm column")
         return None
     distances = curvature_profile_df["distance_m"].to_numpy(dtype=float)
     curvatures = curvature_profile_df["curvature_1pm"].to_numpy(dtype=float)
     valid = np.isfinite(distances) & np.isfinite(curvatures)
-    if valid.sum() < 10:
+    n_valid = int(valid.sum())
+    n_dist_nan = int((~np.isfinite(distances)).sum()) if len(distances) > 0 else 0
+    n_curv_nan = int((~np.isfinite(curvatures)).sum()) if len(curvatures) > 0 else 0
+    _log.info("build_mesh: valid=%d/%d (dist_nan=%d, curv_nan=%d)", n_valid, len(distances), n_dist_nan, n_curv_nan)
+    if n_valid < 10:
+        _log.warning("build_mesh: too few valid points (%d < 10)", n_valid)
         return None
     return build_mesh(distances[valid], curvatures[valid], n_nodes=n_nodes)

@@ -277,12 +277,18 @@ def _curvature_from_reference_line(distances, lats, lons):
     import numpy as np
     import pandas as pd
 
+    # Filter out NaN in lat/lon (GPS dropouts)
+    valid = np.isfinite(distances) & np.isfinite(lats) & np.isfinite(lons)
+    distances = distances[valid]
+    lats = lats[valid]
+    lons = lons[valid]
+
     n = len(distances)
     if n < 20:
         return None
 
     # Convert lat/lon to local meters (simple equirectangular)
-    lat0 = np.mean(lats)
+    lat0 = np.mean(lats)  # safe: NaN filtered above
     m_per_deg_lat = 111_320.0
     m_per_deg_lon = 111_320.0 * np.cos(np.radians(lat0))
     x = (lons - lons[0]) * m_per_deg_lon
@@ -334,8 +340,6 @@ def _curvature_from_reference_line(distances, lats, lons):
         "distance_m": distances,
         "curvature_1pm": kappa_full,
     })
-
-    return None
 
 
 def _extract_warm_start(analysis_json: dict, mesh) -> Any:
