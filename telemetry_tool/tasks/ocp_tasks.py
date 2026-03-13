@@ -40,6 +40,8 @@ if _celery is not None:
         queue="pipeline",
         max_retries=1,
         retry_backoff=True,
+        soft_time_limit=120,   # 2 min — IPOPT should converge within 1000 iters
+        time_limit=180,        # 3 min hard kill
     )
     def run_ocp_for_session(self, session_id: int | str, workspace_id: int | None = None) -> dict | None:
         return _run_ocp_impl(session_id, workspace_id)
