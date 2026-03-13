@@ -490,9 +490,11 @@ export default function SessionsPage() {
       filterDateFrom, filterDateTo, filterMinScore, filterMaxScore, sortBy, sortDir,
       pathname, router]);
 
-  // Bulk action confirm
+  // Bulk action confirm — reset when selection changes so the
+  // confirmation isn't stale after clear → re-select.
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [bulkStatus, setBulkStatus] = useState<string | null>(null);
+  useEffect(() => { setConfirmDelete(false); }, [selectedKeys]);
 
   // View mode: list, calendar, or grouped by event
   const [viewMode, setViewMode] = useState<'list' | 'calendar' | 'grouped'>('list');

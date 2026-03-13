@@ -54,40 +54,40 @@ export function DeltaTimeChart({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fetchVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setLapA(bestLap);
   }, [controlledLap, bestLap]);
 
   // ── Fetch delta data ──────────────────────────────────────────
-  const fetchDelta = useCallback(async () => {
+  useEffect(() => {
     if (!lapA || !lapB || lapA === lapB) {
       dataRef.current = null;
       return;
     }
+    const ver = ++fetchVersionRef.current;
     setLoading(true);
     setError(null);
-    try {
-      const data = await apiFetch<DeltaData | { available: false }>(
-        `/sessions/${encodeURIComponent(sessionId)}/delta?lap_a=${lapA}&lap_b=${lapB}`,
-      );
-      if ('available' in data && !data.available) {
-        dataRef.current = null;
-        setError('No delta data available for these laps');
-      } else {
-        dataRef.current = data as DeltaData;
+    dataRef.current = null;
+    (async () => {
+      try {
+        const data = await apiFetch<DeltaData | { available: false }>(
+          `/sessions/${encodeURIComponent(sessionId)}/delta?lap_a=${lapA}&lap_b=${lapB}`,
+        );
+        if (ver !== fetchVersionRef.current) return;
+        if ('available' in data && !data.available) {
+          setError('No delta data available for these laps');
+        } else {
+          dataRef.current = data as DeltaData;
+        }
+      } catch (err) {
+        if (ver !== fetchVersionRef.current) return;
+        setError(err instanceof Error ? err.message : 'Failed to load delta');
       }
-    } catch (err) {
-      dataRef.current = null;
-      setError(err instanceof Error ? err.message : 'Failed to load delta');
-    } finally {
       setLoading(false);
-    }
+    })();
   }, [sessionId, lapA, lapB]);
-
-  useEffect(() => {
-    fetchDelta();
-  }, [fetchDelta]);
 
   // ── Draw chart ────────────────────────────────────────────────
   const draw = useCallback((hoverDist: number | null = null) => {

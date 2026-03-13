@@ -379,7 +379,8 @@ export default function SessionDetailPage() {
   // F-key shortcut to open Focus Mode, D-key for Driving Analyzer
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === 'f') setFocusOpen(true);
       if (e.key === 'd') setAnalyzerOpen(true);
     }
