@@ -136,10 +136,13 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
             if cal.residual_pct <= _CONVERGENCE_PCT:
                 break
 
-            # Update params and re-solve (clamp to prevent degenerate values)
+            # Update params and re-solve (clamp to prevent degenerate values).
+            # Upper clamp on mu_ref: no tire exceeds ~2.2 (same ceiling as
+            # param_extractor); calibration overshoot indicates GPS/curvature
+            # noise, not superhuman grip.
             params = dataclasses.replace(
                 params,
-                mu_ref=max(cal.mu_ref_final, 0.3),
+                mu_ref=min(max(cal.mu_ref_final, 0.3), 2.2),
                 P_max=max(cal.P_max_final, 1000.0),
                 F_brake_max=max(cal.F_brake_final, 500.0),
             )
