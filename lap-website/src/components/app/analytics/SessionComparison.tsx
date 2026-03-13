@@ -3,6 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 
+// Loop-based min/max — Math.min(...arr) overflows the call stack with large arrays
+function minOf(arr: number[]): number {
+  let v = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < v) v = arr[i];
+  return v;
+}
+function maxOf(arr: number[]): number {
+  let v = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > v) v = arr[i];
+  return v;
+}
+
 interface SessionSummary {
   session_id: string;
   csv_filename: string;
@@ -110,10 +122,10 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const { distances, speeds_a, speeds_b } = compareData;
     if (!distances?.length) return;
 
-    const xMax = Math.max(...distances);
+    const xMax = maxOf(distances);
     const allSpeeds = [...speeds_a, ...speeds_b].filter(isFinite);
-    const yMin = Math.min(...allSpeeds) * 0.95;
-    const yMax = Math.max(...allSpeeds) * 1.05;
+    const yMin = minOf(allSpeeds) * 0.95;
+    const yMax = maxOf(allSpeeds) * 1.05;
 
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
     const yScale = (v: number) => pad.top + ph - ((v - yMin) / (yMax - yMin)) * ph;
@@ -223,8 +235,12 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const { distances, delta_s } = compareData;
     if (!distances?.length || !delta_s?.length) return;
 
-    const xMax = Math.max(...distances);
-    const absMax = Math.max(...delta_s.map(Math.abs), 0.001);
+    const xMax = maxOf(distances);
+    let absMax = 0.001;
+    for (let i = 0; i < delta_s.length; i++) {
+      const a = Math.abs(delta_s[i]);
+      if (a > absMax) absMax = a;
+    }
 
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
     const yMid = h / 2;

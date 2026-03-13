@@ -162,8 +162,10 @@ export function LiveFrictionCircle({
       const cy = h / 2;
 
       // Compute data bounds (symmetric)
-      const maxLat = Math.max(...gg.accel_lat.map(Math.abs), 0.1);
-      const maxLong = Math.max(...gg.accel_long.map(Math.abs), 0.1);
+      let maxLat = 0.1;
+      for (let i = 0; i < gg.accel_lat.length; i++) { const a = Math.abs(gg.accel_lat[i]); if (a > maxLat) maxLat = a; }
+      let maxLong = 0.1;
+      for (let i = 0; i < gg.accel_long.length; i++) { const a = Math.abs(gg.accel_long[i]); if (a > maxLong) maxLong = a; }
       const maxG = Math.ceil(Math.max(maxLat, maxLong) * 2) / 2;
 
       const scale = plotSize / 2 / maxG;
@@ -318,8 +320,10 @@ export function LiveFrictionCircle({
       const cy = h / 2;
       const pad = 50;
       const plotSize = Math.min(w - pad * 2, h - pad * 2);
-      const maxLat = Math.max(...gg.accel_lat.map(Math.abs), 0.1);
-      const maxLong = Math.max(...gg.accel_long.map(Math.abs), 0.1);
+      let maxLat = 0.1;
+      for (let i = 0; i < gg.accel_lat.length; i++) { const a = Math.abs(gg.accel_lat[i]); if (a > maxLat) maxLat = a; }
+      let maxLong = 0.1;
+      for (let i = 0; i < gg.accel_long.length; i++) { const a = Math.abs(gg.accel_long[i]); if (a > maxLong) maxLong = a; }
       const maxG = Math.ceil(Math.max(maxLat, maxLong) * 2) / 2;
       const scale = plotSize / 2 / maxG;
 

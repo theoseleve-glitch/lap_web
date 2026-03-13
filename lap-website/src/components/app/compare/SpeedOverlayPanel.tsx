@@ -168,6 +168,18 @@ export default function SpeedOverlayPanel({
   );
 }
 
+// Loop-based min/max — Math.min(...arr) overflows the call stack with 5000+ GPS points
+function minOf(arr: number[]): number {
+  let v = Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] < v) v = arr[i];
+  return v;
+}
+function maxOf(arr: number[]): number {
+  let v = -Infinity;
+  for (let i = 0; i < arr.length; i++) if (arr[i] > v) v = arr[i];
+  return v;
+}
+
 /** Draw overlaid speed traces on canvas */
 function drawSpeedCanvas(
   canvas: HTMLCanvasElement,
@@ -196,8 +208,8 @@ function drawSpeedCanvas(
 
   const maxDist = distances[distances.length - 1];
   const allSpeeds = [...speedsA, ...speedsB];
-  const maxSpeed = Math.max(...allSpeeds) * 3.6;
-  const minSpeed = Math.max(0, Math.min(...allSpeeds) * 3.6 - 5);
+  const maxSpeed = maxOf(allSpeeds) * 3.6;
+  const minSpeed = Math.max(0, minOf(allSpeeds) * 3.6 - 5);
 
   const xScale = (d: number) => pad.left + (d / maxDist) * cW;
   const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / (maxSpeed - minSpeed)) * cH;
@@ -290,7 +302,11 @@ function drawDeltaCanvas(
   const cH = H - pad.top - pad.bottom;
 
   const maxDist = distances[distances.length - 1];
-  const absMax = Math.max(0.01, ...delta.map(Math.abs));
+  let absMax = 0.01;
+  for (let i = 0; i < delta.length; i++) {
+    const a = Math.abs(delta[i]);
+    if (a > absMax) absMax = a;
+  }
 
   const xScale = (d: number) => pad.left + (d / maxDist) * cW;
   const yScale = (d: number) => pad.top + cH / 2 - (d / absMax) * (cH / 2);

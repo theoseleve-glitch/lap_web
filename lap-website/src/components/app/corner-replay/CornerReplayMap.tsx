@@ -136,10 +136,13 @@ export function CornerReplayMap({
 
     if (allLats.length === 0) return;
 
-    const minLat = Math.min(...allLats);
-    const maxLat = Math.max(...allLats);
-    const minLon = Math.min(...allLons);
-    const maxLon = Math.max(...allLons);
+    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+    for (let i = 0; i < allLats.length; i++) {
+      if (allLats[i] < minLat) minLat = allLats[i];
+      if (allLats[i] > maxLat) maxLat = allLats[i];
+      if (allLons[i] < minLon) minLon = allLons[i];
+      if (allLons[i] > maxLon) maxLon = allLons[i];
+    }
     const latRange = maxLat - minLat || 0.0001;
     const lonRange = maxLon - minLon || 0.0001;
     const pad = 24;
