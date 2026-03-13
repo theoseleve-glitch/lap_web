@@ -723,7 +723,7 @@ export default function SessionsPage() {
         }
       },
     },
-  ], [router, deleteMutation, archiveView, queryClient]);
+  ], [router, deleteMutation, archiveView, queryClient, queryParams]);
 
   const columns = useMemo(() => [
     {

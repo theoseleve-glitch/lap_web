@@ -126,7 +126,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
   // Keyboard shortcuts
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
 
       switch (e.key) {
         case ' ':
@@ -134,6 +134,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           dispatch({ type: 'TOGGLE_PLAY' });
           break;
         case 'ArrowLeft':
+          if (e.altKey || e.metaKey) return; // browser back / OS nav
           e.preventDefault();
           dispatch({
             type: 'SET_DISTANCE',
@@ -141,6 +142,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           });
           break;
         case 'ArrowRight':
+          if (e.altKey || e.metaKey) return; // browser forward / OS nav
           e.preventDefault();
           dispatch({
             type: 'SET_DISTANCE',
@@ -162,7 +164,7 @@ export default function DrivingAnalyzer({ sessionId, cornerFilter, onClose }: Dr
           break;
         default:
           // Number keys 1-9 jump to sections
-          if (e.key >= '1' && e.key <= '9') {
+          if (e.key >= '1' && e.key <= '9' && !e.ctrlKey && !e.metaKey && !e.altKey) {
             const secIdx = Number(e.key) - 1;
             if (secIdx < filteredSections.length) {
               dispatch({ type: 'SET_SECTION', section: filteredSections[secIdx].id });

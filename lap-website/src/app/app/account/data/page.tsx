@@ -104,7 +104,11 @@ export default function DataPrivacyPage() {
   });
 
   const deleteAccountMutation = useMutation({
-    mutationFn: () => apiFetch<{ deleted: boolean }>('/account/', { method: 'DELETE' }),
+    mutationFn: (password: string) =>
+      apiFetch<{ deleted: boolean }>('/account/', {
+        method: 'DELETE',
+        body: JSON.stringify({ password }),
+      }),
   });
 
   return (
@@ -345,7 +349,7 @@ export default function DataPrivacyPage() {
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => deleteAccountMutation.mutate()}
+                onClick={() => deleteAccountMutation.mutate(deletePassword)}
                 disabled={!deletePassword || deleteAccountMutation.isPending}
                 className="bg-safety-red text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
               >
