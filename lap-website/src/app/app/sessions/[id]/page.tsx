@@ -783,6 +783,7 @@ function OverviewTab({
   // Editable session info state
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [editFields, setEditFields] = useState<Record<string, string | null>>({});
 
   // Entity suggestion lists for combobox autocomplete
@@ -845,10 +846,12 @@ function OverviewTab({
     setEditFields({});
     setKartDetails({});
     setTrackMismatch(null);
+    setSaveError(null);
   }, []);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const payload: Record<string, unknown> = { ...editFields };
       // Attach kart_details when creating a new kart
@@ -868,8 +871,8 @@ function OverviewTab({
         setKartDetails({});
         setTrackMismatch(null);
       }
-    } catch {
-      // API errors handled by api-client
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Failed to save session');
     } finally {
       setSaving(false);
     }
@@ -1049,6 +1052,9 @@ function OverviewTab({
           </div>
           {editing ? (
             <div className="space-y-3">
+              {saveError && (
+                <p className="text-safety-red text-xs font-telemetry">{saveError}</p>
+              )}
               <EditRow
                 label="Name"
                 value={editFields.display_name || ''}
