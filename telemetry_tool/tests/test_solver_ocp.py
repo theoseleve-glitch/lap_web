@@ -75,6 +75,46 @@ class TestConstantRadiusCircle:
         assert result.lap_time_s == pytest.approx(t_analytical, rel=0.01)
 
 
+class TestFrictionEllipseDragSeparation:
+    """Verify that aero drag is excluded from the friction ellipse.
+
+    On a constant-radius circle at constant speed, the tire must produce
+    drive force to overcome drag.  This drive force uses longitudinal
+    grip, reducing the lateral grip available for cornering.  With correct
+    physics, a high-drag car should be SLOWER on a circle than the
+    zero-drag analytical limit v = sqrt(mu * g * R).
+    """
+
+    def test_high_drag_reduces_circle_speed(self):
+        R = 200.0  # larger radius → higher speed → more drag effect
+        mu = 1.0
+        mesh = _make_circle_mesh(radius=R, n_nodes=200)
+
+        # High-drag vehicle (Formula-like aero with lots of drag)
+        params = OCPVehicleParams(
+            mass=800.0, h_cg=0.0, wheelbase=3.0, track_width=1.8,
+            A=1.5, Cd=1.0, Cl=0.0, rho=1.225, Cr=0.0,
+            mu_ref=mu, load_sensitivity=0.0,
+            P_max=500_000.0, F_brake_max=1e6, F_drive_max=1e6,
+        )
+        tire = LoadSensitiveTire(
+            mu_ref=mu, Fz_ref=params.Fz_static_per_axle, sensitivity=0.0,
+        )
+
+        result = solve_ocp(mesh, params, tire)
+        assert result.converged
+
+        v_no_drag = math.sqrt(mu * _G * R)  # ~44.3 m/s
+        mean_speed = float(np.mean(result.speed_profile))
+
+        # With significant drag, tire must use longitudinal grip to
+        # overcome drag → less lateral grip → lower cornering speed.
+        assert mean_speed < v_no_drag * 0.99, (
+            f"High-drag car should be slower: {mean_speed:.2f} vs "
+            f"no-drag limit {v_no_drag:.2f}"
+        )
+
+
 class TestSolverConvergence:
     """Test that the solver handles edge cases."""
 

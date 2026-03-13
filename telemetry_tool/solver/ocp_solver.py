@@ -92,7 +92,15 @@ def solve_ocp(
         a_rolling = params.Cr * _G
         F_downforce = 0.5 * params.rho * params.Cl * params.A * v[i] ** 2
 
-        a_long = a_drive - a_brake - a_drag - a_rolling
+        # Tire contact patch longitudinal acceleration (drive/brake only).
+        # Drag acts on the vehicle body, NOT through the tire contact patch,
+        # so it must NOT appear in the friction ellipse.  Rolling resistance
+        # is a tire-road interaction but is small and constant — excluded
+        # from the ellipse for simplicity (standard in lap-time simulation).
+        a_tire_long = a_drive - a_brake
+
+        # Net longitudinal acceleration (includes all external forces)
+        a_long = a_tire_long - a_drag - a_rolling
 
         # Dynamics: v[i+1]^2 = v[i]^2 + 2 * a_long * ds
         opti.subject_to(v[i + 1] ** 2 == v[i] ** 2 + 2 * a_long * ds[i])
@@ -100,8 +108,8 @@ def solve_ocp(
         # Lateral acceleration from curvature
         a_lat = v[i] ** 2 * abs(kappa_i)
 
-        # Load transfer (affects grip via load sensitivity)
-        dFz_long = params.mass * ca.fabs(a_long) * params.h_cg / params.wheelbase
+        # Load transfer (uses tire forces for longitudinal, not net)
+        dFz_long = params.mass * ca.fabs(a_tire_long) * params.h_cg / params.wheelbase
         dFz_lat = params.mass * a_lat * params.h_cg / params.track_width
 
         # Effective vertical load per axle including downforce and transfer
@@ -130,9 +138,9 @@ def solve_ocp(
             Fz_total = Fz_loaded + Fz_unloaded
             a_grip_max = params.mu_ref * Fz_total / params.mass
 
-        # Friction ellipse: (a_long/a_max)^2 + (a_lat/a_max)^2 <= 1
+        # Friction ellipse: tire forces only (no drag)
         opti.subject_to(
-            (a_long / a_grip_max) ** 2 + (a_lat / a_grip_max) ** 2 <= 1.0
+            (a_tire_long / a_grip_max) ** 2 + (a_lat / a_grip_max) ** 2 <= 1.0
         )
 
         # Complementarity: no simultaneous throttle + brake
