@@ -111,14 +111,12 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         logger.info("OCP solve: session %s, %d nodes", session_id, len(mesh.s))
         result = solve_ocp(mesh, params, tire, warm_start=warm_start, max_iter=1000, tol=1e-4)
 
-        actual_apex = _extract_actual_apex_speeds(analysis_json, best_lap_df)
-        actual_straights = _extract_actual_straight_speeds(analysis_json, best_lap_df)
+        actual_apex, theo_apex = _extract_paired_apex_speeds(analysis_json, result, best_lap_df)
+        actual_straights, theo_straights = _extract_paired_straight_speeds(analysis_json, result, best_lap_df)
         actual_braking = _extract_actual_braking_dists(analysis_json)
-        theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
-        theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
         theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
 
-        logger.info("OCP calibration data: %d apex, %d straights, %d braking (actual/theo)",
+        logger.info("OCP calibration data: %d apex pairs, %d straight pairs, %d braking",
                      len(actual_apex), len(actual_straights), len(actual_braking))
 
         calibration_meta = {}
@@ -152,8 +150,8 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
                 sensitivity=params.load_sensitivity,
             )
             result = solve_ocp(mesh, params, tire, warm_start=result.speed_profile)
-            theo_apex = _extract_theoretical_apex_speeds(result, analysis_json)
-            theo_straights = _extract_theoretical_straight_speeds(result, analysis_json)
+            actual_apex, theo_apex = _extract_paired_apex_speeds(analysis_json, result, best_lap_df)
+            actual_straights, theo_straights = _extract_paired_straight_speeds(analysis_json, result, best_lap_df)
             theo_braking = _extract_theoretical_braking_dists(result, analysis_json)
 
         if not result.converged:
@@ -405,60 +403,68 @@ def _extract_warm_start(analysis_json: dict, mesh) -> Any:
         return None
 
 
-def _extract_actual_apex_speeds(analysis_json: dict, best_lap_df=None) -> list[float]:
-    """Extract actual apex speeds by interpolating best_lap speed at each corner's s_apex.
+def _extract_paired_apex_speeds(analysis_json: dict, result, best_lap_df=None):
+    """Extract paired (actual, theoretical) apex speeds for calibration.
 
-    Raw corners from corner_detection only have geometric fields (s_apex, s_start, s_end).
-    Speed must be interpolated from the driver's best lap speed trace.
+    Returns two lists of the same length — one actual, one theoretical —
+    for the exact same corners.  This guarantees actual[i] and theoretical[i]
+    always refer to the same corner, preventing calibration drift from
+    misaligned independent filtering.
     """
     import numpy as np
     corners = analysis_json.get("corners", [])
     if not isinstance(corners, list) or not corners:
-        return []
+        return [], []
     if best_lap_df is None:
-        return []
+        return [], []
     dist_col = best_lap_df.get("Distance (m)")
     speed_col = best_lap_df.get("Speed (m/s)")
     if dist_col is None or speed_col is None:
-        return []
-    dist_arr = np.array(dist_col, dtype=float)
-    speed_arr = np.array(speed_col, dtype=float)
-    speeds = []
+        return [], []
+    drv_dist = np.array(dist_col, dtype=float)
+    drv_speed = np.array(speed_col, dtype=float)
+    actual, theo = [], []
     for c in corners:
         s_apex = c.get("s_apex")
-        if s_apex is not None:
-            v = float(np.interp(float(s_apex), dist_arr, speed_arr))
-            if v > 0.5:
-                speeds.append(v)
-    return speeds
+        if s_apex is None:
+            continue
+        v_actual = float(np.interp(float(s_apex), drv_dist, drv_speed))
+        v_theo = float(np.interp(float(s_apex), result.distance_profile, result.speed_profile))
+        if v_actual > 0.5 and v_theo > 0.5:
+            actual.append(v_actual)
+            theo.append(v_theo)
+    return actual, theo
 
 
-def _extract_actual_straight_speeds(analysis_json: dict, best_lap_df=None) -> list[float]:
-    """Extract straight-end speeds by interpolating best_lap speed at each corner's s_start.
+def _extract_paired_straight_speeds(analysis_json: dict, result, best_lap_df=None):
+    """Extract paired (actual, theoretical) straight-end speeds for calibration.
 
-    The speed at corner entry (s_start) approximates the peak speed
-    at the end of the preceding straight.
+    Speed at corner entry (s_start) approximates peak speed at the end of
+    the preceding straight.  Returns paired lists for P_max calibration.
     """
     import numpy as np
     corners = analysis_json.get("corners", [])
     if not isinstance(corners, list) or not corners:
-        return []
+        return [], []
     if best_lap_df is None:
-        return []
+        return [], []
     dist_col = best_lap_df.get("Distance (m)")
     speed_col = best_lap_df.get("Speed (m/s)")
     if dist_col is None or speed_col is None:
-        return []
-    dist_arr = np.array(dist_col, dtype=float)
-    speed_arr = np.array(speed_col, dtype=float)
-    speeds = []
+        return [], []
+    drv_dist = np.array(dist_col, dtype=float)
+    drv_speed = np.array(speed_col, dtype=float)
+    actual, theo = [], []
     for c in corners:
         s_start = c.get("s_start")
-        if s_start is not None:
-            v = float(np.interp(float(s_start), dist_arr, speed_arr))
-            if v > 0.5:
-                speeds.append(v)
-    return speeds
+        if s_start is None:
+            continue
+        v_actual = float(np.interp(float(s_start), drv_dist, drv_speed))
+        v_theo = float(np.interp(float(s_start), result.distance_profile, result.speed_profile))
+        if v_actual > 0.5 and v_theo > 0.5:
+            actual.append(v_actual)
+            theo.append(v_theo)
+    return actual, theo
 
 
 def _extract_actual_braking_dists(analysis_json: dict) -> list[float]:
@@ -530,44 +536,6 @@ def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[floa
             dists.append(d)
     return dists
 
-
-def _extract_theoretical_apex_speeds(result, analysis_json: dict) -> list[float]:
-    """Extract theoretical apex speeds from OCP result at each corner's s_apex.
-
-    Uses the same corner set as _extract_actual_apex_speeds to ensure
-    paired correspondence for calibration.
-    """
-    import numpy as np
-    corners = analysis_json.get("corners", [])
-    if not corners:
-        return []
-    apex_speeds = []
-    for c in corners:
-        s_apex = c.get("s_apex")
-        if s_apex is not None:
-            v = float(np.interp(float(s_apex), result.distance_profile, result.speed_profile))
-            if v > 0.5:
-                apex_speeds.append(v)
-    return apex_speeds
-
-
-def _extract_theoretical_straight_speeds(result, analysis_json: dict) -> list[float]:
-    """Extract theoretical straight-end speeds from OCP result at each corner's s_start.
-
-    Mirrors _extract_actual_straight_speeds for paired calibration of P_max.
-    """
-    import numpy as np
-    corners = analysis_json.get("corners", [])
-    if not corners:
-        return []
-    speeds = []
-    for c in corners:
-        s_start = c.get("s_start")
-        if s_start is not None:
-            v = float(np.interp(float(s_start), result.distance_profile, result.speed_profile))
-            if v > 0.5:
-                speeds.append(v)
-    return speeds
 
 
 def _update_downstream(conn, session_id, result, result_dict, analysis_json,
