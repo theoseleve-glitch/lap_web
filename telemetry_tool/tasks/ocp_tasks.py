@@ -109,7 +109,7 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
 
         # Single-stage solve (refinement skipped for speed — target <30s/lap)
         logger.info("OCP solve: session %s, %d nodes", session_id, len(mesh.s))
-        result = solve_ocp(mesh, params, tire, warm_start=warm_start, max_iter=500, tol=1e-4)
+        result = solve_ocp(mesh, params, tire, warm_start=warm_start, max_iter=1000, tol=1e-4)
 
         actual_apex = _extract_actual_apex_speeds(analysis_json)
         actual_straights = _extract_actual_straight_speeds(analysis_json)
@@ -668,17 +668,11 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
     """
     use_pg = os.environ.get("USE_PG", "0") not in ("0", "false", "no")
 
-    # 1. analysis_json blob
-    if use_pg:
-        conn.execute(
-            "UPDATE sessions SET analysis_json = :aj::jsonb WHERE session_id = :sid",
-            {"aj": json.dumps(analysis_json), "sid": session_id},
-        )
-    else:
-        conn.execute(
-            "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
-            {"aj": json.dumps(analysis_json), "sid": session_id},
-        )
+    # 1. analysis_json blob (column is text, not jsonb — no cast needed)
+    conn.execute(
+        "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
+        {"aj": json.dumps(analysis_json), "sid": session_id},
+    )
 
     # 2. sessions.total_score + grade
     conn.execute(
@@ -699,27 +693,18 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
 
 def _store_ocp_result(conn, session_id, result_dict: dict):
     """Store OCP result in analysis_json using atomic jsonb_set if PG, else read-modify-write."""
-    import os
-    if os.environ.get("USE_PG", "0") not in ("0", "false", "no"):
-        # PostgreSQL: atomic jsonb_set avoids race condition
-        conn.execute(
-            "UPDATE sessions SET analysis_json = jsonb_set("
-            "  COALESCE(analysis_json, '{}'), '{theoretical_ocp}', :rd::jsonb"
-            ") WHERE session_id = :sid",
-            {"rd": json.dumps(result_dict), "sid": session_id},
-        )
-    else:
-        # SQLite: read-modify-write (single-writer, no race)
-        row = conn.execute(
-            "SELECT analysis_json FROM sessions WHERE session_id = :sid",
-            {"sid": session_id},
-        ).fetchone()
-        if row is None:
-            return
-        analysis_json = json.loads(row[0]) if row[0] else {}
-        analysis_json["theoretical_ocp"] = result_dict
-        conn.execute(
-            "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
-            {"aj": json.dumps(analysis_json), "sid": session_id},
-        )
+    # Read-modify-write (analysis_json is text, not jsonb — jsonb_set won't work)
+    row = conn.execute(
+        "SELECT analysis_json FROM sessions WHERE session_id = :sid",
+        {"sid": session_id},
+    ).fetchone()
+    if row is None:
+        return
+    raw = row["analysis_json"] if isinstance(row, dict) else row[0]
+    analysis_json = json.loads(raw) if raw else {}
+    analysis_json["theoretical_ocp"] = result_dict
+    conn.execute(
+        "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
+        {"aj": json.dumps(analysis_json), "sid": session_id},
+    )
     conn.commit()
