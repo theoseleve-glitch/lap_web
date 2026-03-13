@@ -98,6 +98,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
     >
       {/* Close button */}
       <button
+        type="button"
         className="absolute top-4 right-4 font-telemetry text-2xl text-steel hover:text-chalk transition-colors"
         onClick={onClose}
         aria-label="Close navigation"
@@ -109,6 +110,7 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
       <div className="grid grid-cols-2 md:grid-cols-3 gap-6 md:gap-8 px-8 max-w-5xl w-full">
         {sectorTabs.map((tab) => (
           <button
+            type="button"
             key={tab.id}
             onClick={() => navigate(tab.id)}
             className="text-left p-4 bg-concrete/50 hover:bg-concrete transition-colors duration-[420ms] group border border-chalk/15"
@@ -155,12 +157,14 @@ export function IndexOverlay({ isOpen, onClose, fromSection = '' }: IndexOverlay
       {/* Bottom toggles */}
       <div className="absolute bottom-6 flex gap-8">
         <button
+          type="button"
           className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition-colors"
           onClick={toggleSound}
         >
           SOUND: {soundEnabled ? 'ON' : 'OFF'}
         </button>
         <button
+          type="button"
           className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk transition-colors"
           onClick={toggleMotion}
         >

@@ -96,6 +96,7 @@ export default function AchievementToast({
 
         {/* Dismiss button */}
         <button
+          type="button"
           onClick={() => {
             setVisible(false);
             setTimeout(onDismiss, 300);

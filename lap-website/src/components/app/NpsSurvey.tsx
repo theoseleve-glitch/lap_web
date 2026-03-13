@@ -67,7 +67,7 @@ export function NpsSurvey({ sessionCount }: NpsSurveyProps) {
         <>
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-monument text-xs text-chalk">Quick Feedback</h3>
-            <button onClick={dismiss} className="text-steel/30 hover:text-steel text-sm">&times;</button>
+            <button type="button" onClick={dismiss} className="text-steel/30 hover:text-steel text-sm">&times;</button>
           </div>
           <p className="text-steel text-xs font-body mb-3">
             How likely are you to recommend LAP to a fellow racer?
@@ -75,6 +75,7 @@ export function NpsSurvey({ sessionCount }: NpsSurveyProps) {
           <div className="grid grid-cols-11 gap-1 mb-2">
             {Array.from({ length: 11 }, (_, i) => (
               <button
+                type="button"
                 key={i}
                 onClick={() => setScore(i)}
                 className={`h-8 rounded text-[10px] font-telemetry transition-colors ${
@@ -100,6 +101,7 @@ export function NpsSurvey({ sessionCount }: NpsSurveyProps) {
                 className="w-full h-16 bg-asphalt/40 border border-steel/20 rounded p-2 text-xs text-chalk font-body placeholder:text-steel/30 resize-none mb-3"
               />
               <button
+                type="button"
                 onClick={submit}
                 className="w-full py-2 bg-pit-orange text-carbon font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
               >
