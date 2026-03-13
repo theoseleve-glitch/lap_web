@@ -56,10 +56,11 @@ def calibrate_params(
     F_initial = F_brake_max
     adjustments = []
 
-    # Grip calibration from apex speeds
-    if actual_apex_speeds and theoretical_apex_speeds:
-        actual_arr = np.array(actual_apex_speeds)
-        theo_arr = np.array(theoretical_apex_speeds)
+    # Grip calibration from apex speeds (truncate to equal length)
+    n_apex = min(len(actual_apex_speeds), len(theoretical_apex_speeds))
+    if n_apex > 0:
+        actual_arr = np.array(actual_apex_speeds[:n_apex])
+        theo_arr = np.array(theoretical_apex_speeds[:n_apex])
         valid = (theo_arr > 1.0) & (actual_arr > 1.0)
         if valid.sum() > 0:
             # v_apex ~ sqrt(mu), so mu_ratio = (v_actual / v_theo)^2
@@ -68,10 +69,11 @@ def calibrate_params(
             mu_ref *= mu_ratio
             adjustments.append(f"mu_ref *= {mu_ratio:.3f}")
 
-    # Power calibration from straight-end speeds
-    if actual_straight_end_speeds and theoretical_straight_end_speeds:
-        actual_arr = np.array(actual_straight_end_speeds)
-        theo_arr = np.array(theoretical_straight_end_speeds)
+    # Power calibration from straight-end speeds (truncate to equal length)
+    n_straight = min(len(actual_straight_end_speeds), len(theoretical_straight_end_speeds))
+    if n_straight > 0:
+        actual_arr = np.array(actual_straight_end_speeds[:n_straight])
+        theo_arr = np.array(theoretical_straight_end_speeds[:n_straight])
         valid = (theo_arr > 1.0) & (actual_arr > 1.0)
         if valid.sum() > 0:
             ratio = float(np.mean(actual_arr[valid] / theo_arr[valid]))
@@ -80,10 +82,11 @@ def calibrate_params(
             P_max *= P_ratio
             adjustments.append(f"P_max *= {P_ratio:.3f}")
 
-    # Braking calibration from braking distances
-    if actual_braking_dists and theoretical_braking_dists:
-        actual_arr = np.array(actual_braking_dists)
-        theo_arr = np.array(theoretical_braking_dists)
+    # Braking calibration from braking distances (truncate to equal length)
+    n_brake = min(len(actual_braking_dists), len(theoretical_braking_dists))
+    if n_brake > 0:
+        actual_arr = np.array(actual_braking_dists[:n_brake])
+        theo_arr = np.array(theoretical_braking_dists[:n_brake])
         valid = (theo_arr > 1.0) & (actual_arr > 1.0)
         if valid.sum() > 0:
             # Shorter actual braking = stronger brakes
@@ -93,10 +96,10 @@ def calibrate_params(
 
     # Compute residual (how far theoretical was from actual)
     residuals = []
-    if actual_apex_speeds and theoretical_apex_speeds:
+    if n_apex > 0:
         residuals.extend([
             abs(a - t) / max(a, 1.0) * 100
-            for a, t in zip(actual_apex_speeds, theoretical_apex_speeds)
+            for a, t in zip(actual_apex_speeds[:n_apex], theoretical_apex_speeds[:n_apex])
         ])
     residual_pct = float(np.mean(residuals)) if residuals else 0.0
 

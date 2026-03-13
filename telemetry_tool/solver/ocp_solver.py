@@ -34,8 +34,8 @@ def solve_ocp(
     params: OCPVehicleParams,
     tire: LoadSensitiveTire,
     warm_start: Optional[np.ndarray] = None,
-    max_iter: int = 2000,
-    tol: float = 1e-6,
+    max_iter: int = 500,
+    tol: float = 1e-4,
 ) -> TheoreticalResult:
     """Solve the minimum-time OCP using CasADi + IPOPT.
 
@@ -92,7 +92,15 @@ def solve_ocp(
         a_rolling = params.Cr * _G
         F_downforce = 0.5 * params.rho * params.Cl * params.A * v[i] ** 2
 
-        a_long = a_drive - a_brake - a_drag - a_rolling
+        # Tire contact patch longitudinal acceleration (drive/brake only).
+        # Drag acts on the vehicle body, NOT through the tire contact patch,
+        # so it must NOT appear in the friction ellipse.  Rolling resistance
+        # is a tire-road interaction but is small and constant — excluded
+        # from the ellipse for simplicity (standard in lap-time simulation).
+        a_tire_long = a_drive - a_brake
+
+        # Net longitudinal acceleration (includes all external forces)
+        a_long = a_tire_long - a_drag - a_rolling
 
         # Dynamics: v[i+1]^2 = v[i]^2 + 2 * a_long * ds
         opti.subject_to(v[i + 1] ** 2 == v[i] ** 2 + 2 * a_long * ds[i])
@@ -100,8 +108,8 @@ def solve_ocp(
         # Lateral acceleration from curvature
         a_lat = v[i] ** 2 * abs(kappa_i)
 
-        # Load transfer (affects grip via load sensitivity)
-        dFz_long = params.mass * ca.fabs(a_long) * params.h_cg / params.wheelbase
+        # Load transfer (uses tire forces for longitudinal, not net)
+        dFz_long = params.mass * ca.fabs(a_tire_long) * params.h_cg / params.wheelbase
         dFz_lat = params.mass * a_lat * params.h_cg / params.track_width
 
         # Effective vertical load per axle including downforce and transfer
@@ -130,9 +138,9 @@ def solve_ocp(
             Fz_total = Fz_loaded + Fz_unloaded
             a_grip_max = params.mu_ref * Fz_total / params.mass
 
-        # Friction ellipse: (a_long/a_max)^2 + (a_lat/a_max)^2 <= 1
+        # Friction ellipse: tire forces only (no drag)
         opti.subject_to(
-            (a_long / a_grip_max) ** 2 + (a_lat / a_grip_max) ** 2 <= 1.0
+            (a_tire_long / a_grip_max) ** 2 + (a_lat / a_grip_max) ** 2 <= 1.0
         )
 
         # Complementarity: no simultaneous throttle + brake
@@ -145,12 +153,25 @@ def solve_ocp(
     if warm_start is not None:
         opti.set_initial(v, warm_start)
     else:
-        v_guess = np.full(N, 20.0)
+        # Power-limited top speed: P = F*v, at top speed drag = drive
+        # 0.5 * rho * Cd * A * v^3 = P_max  =>  v_max = (2*P/(rho*Cd*A))^(1/3)
+        drag_coeff = 0.5 * params.rho * params.Cd * params.A
+        if drag_coeff > 1e-6:
+            v_top = (params.P_max / drag_coeff) ** (1.0 / 3.0)
+        else:
+            v_top = 50.0  # fallback for zero-drag (karts)
+        # Cap at 100 m/s (360 km/h) — covers all ground vehicles.
+        # 50 m/s was too conservative for cars (v_top≈70) and formula (v_top≈82),
+        # forcing IPOPT to spend extra iterations pushing up straight speeds.
+        v_straight = min(v_top, 100.0)
+
+        v_guess = np.full(N, v_straight)
         for i in range(N):
             k = abs(float(mesh.kappa[i]))
             if k > 1e-4:
                 v_corner = np.sqrt(params.mu_ref * _G / k)
                 v_guess[i] = min(v_guess[i], v_corner)
+        v_guess = np.maximum(v_guess, _V_MIN)
         opti.set_initial(v, v_guess)
 
     opti.set_initial(u_thr, 0.5)
@@ -160,7 +181,10 @@ def solve_ocp(
     opts = {
         "ipopt.max_iter": max_iter,
         "ipopt.tol": tol,
-        "ipopt.acceptable_tol": 1e-4,
+        "ipopt.acceptable_tol": 1e-3,
+        "ipopt.acceptable_iter": 15,      # accept if in acceptable region for 15 iters
+        "ipopt.acceptable_obj_change_tol": 1e-4,  # stop if objective barely moves
+        "ipopt.mu_strategy": "adaptive",  # adaptive barrier parameter
         "ipopt.print_level": 0,
         "ipopt.warm_start_init_point": "yes",
         "print_time": False,
@@ -185,6 +209,11 @@ def solve_ocp(
         iterations = max_iter
 
     v_arr = np.array(v_sol).flatten()
+    # Sanitize NaN from failed solver iterates (IPOPT can produce NaN on hard failure)
+    nan_mask = ~np.isfinite(v_arr)
+    if nan_mask.any():
+        logger.warning("IPOPT produced %d NaN speed values — replacing with V_MIN", int(nan_mask.sum()))
+        v_arr[nan_mask] = _V_MIN
     v_arr = np.maximum(v_arr, _V_MIN)
 
     # Compute derived quantities
@@ -193,6 +222,9 @@ def solve_ocp(
     for i in range(N - 1):
         a_long_arr[i] = (v_arr[i + 1] ** 2 - v_arr[i] ** 2) / (2.0 * ds[i])
     a_long_arr[-1] = a_long_arr[-2]
+    # Sanitize derived arrays
+    a_lat_arr = np.nan_to_num(a_lat_arr, nan=0.0, posinf=0.0, neginf=0.0)
+    a_long_arr = np.nan_to_num(a_long_arr, nan=0.0, posinf=0.0, neginf=0.0)
 
     # Lap time
     lap_time = 0.0
