@@ -206,13 +206,14 @@ function drawSpeedCanvas(
   const cW = W - pad.left - pad.right;
   const cH = H - pad.top - pad.bottom;
 
-  const maxDist = distances[distances.length - 1];
+  const maxDist = distances[distances.length - 1] || 1;
   const allSpeeds = [...speedsA, ...speedsB];
   const maxSpeed = maxOf(allSpeeds) * 3.6;
   const minSpeed = Math.max(0, minOf(allSpeeds) * 3.6 - 5);
+  const speedRange = maxSpeed - minSpeed || 1;
 
   const xScale = (d: number) => pad.left + (d / maxDist) * cW;
-  const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / (maxSpeed - minSpeed)) * cH;
+  const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / speedRange) * cH;
 
   // Grid
   ctx.strokeStyle = 'rgba(255,255,255,0.06)';
@@ -231,7 +232,7 @@ function drawSpeedCanvas(
   ctx.font = '10px monospace';
   ctx.textAlign = 'right';
   for (let i = 0; i <= nGridY; i++) {
-    const val = maxSpeed - (i / nGridY) * (maxSpeed - minSpeed);
+    const val = maxSpeed - (i / nGridY) * speedRange;
     const y = pad.top + (i / nGridY) * cH;
     ctx.fillText(`${val.toFixed(0)}`, pad.left - 5, y + 3);
   }

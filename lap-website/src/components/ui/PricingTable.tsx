@@ -176,6 +176,8 @@ export function PricingTable({
                 <PitButton
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
+                  loading={isLoading}
+                  disabled={loadingPlan !== null && !isLoading}
                 >
                   {isLoading ? 'Redirecting...' : ctaText}
                 </PitButton>
@@ -183,6 +185,8 @@ export function PricingTable({
                 <StampButton
                   onClick={() => handleCheckout(plan)}
                   className="w-full"
+                  loading={isLoading}
+                  disabled={loadingPlan !== null && !isLoading}
                 >
                   {isLoading ? 'Redirecting...' : ctaText}
                 </StampButton>
@@ -259,8 +263,9 @@ export function PricingTable({
               <PitButton
                 onClick={() => proceedToCheckout(confirmPlan)}
                 className="flex-1"
+                loading={loadingPlan !== null}
               >
-                Continue to payment
+                {loadingPlan ? 'Redirecting...' : 'Continue to payment'}
               </PitButton>
             </div>
           </div>
