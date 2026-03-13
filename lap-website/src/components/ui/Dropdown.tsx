@@ -87,7 +87,16 @@ export function Dropdown({ options, value, onChange, placeholder = 'Select...', 
   return (
     <div ref={containerRef} className={`relative ${className}`} onKeyDown={handleKeyDown}>
       {trigger ? (
-        <div onClick={() => setOpen(!open)}>{trigger}</div>
+        <div
+          onClick={() => setOpen(!open)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(!open); } }}
+          role="button"
+          tabIndex={0}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+        >
+          {trigger}
+        </div>
       ) : (
         <button
           type="button"
