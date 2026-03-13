@@ -54,7 +54,7 @@ class TestOcpResultToDataframe:
         df = _ocp_result_to_dataframe(result)
 
         assert isinstance(df, pd.DataFrame)
-        assert set(df.columns) == {"distance_m", "speed_mps", "time_s", "a_long", "a_lat"}
+        assert set(df.columns) == {"distance_m", "speed_mps", "time_s", "accel_long_mps2", "accel_lat_mps2"}
         assert len(df) == 50
 
     def test_cumulative_time_increases(self):

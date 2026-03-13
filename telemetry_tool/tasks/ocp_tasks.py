@@ -504,8 +504,9 @@ def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[floa
     ds = np.diff(dist_arr)
     dv = np.diff(speed_arr)
     avg_v = (speed_arr[:-1] + speed_arr[1:]) / 2.0 + 1e-6
-    dt = ds / avg_v
+    dt = np.where(ds > 0.01, ds / avg_v, 0.01)
     accel = dv / dt
+    accel = np.where(np.isfinite(accel), accel, 0.0)
 
     dists = []
     for cp in corner_perfs:
@@ -518,7 +519,8 @@ def _extract_theoretical_braking_dists(result, analysis_json: dict) -> list[floa
         # Find OCP braking point: walk backwards from s_start along
         # the OCP profile until deceleration ends (accel >= 0)
         idx = np.searchsorted(dist_arr, s_start) - 1
-        idx = min(max(idx, 0), len(accel) - 1)
+        if idx < 1 or idx >= len(accel):
+            continue
         brake_start_idx = idx
         while brake_start_idx > 0 and accel[brake_start_idx] < -0.5:
             brake_start_idx -= 1
@@ -734,8 +736,8 @@ def _ocp_result_to_dataframe(result):
         "distance_m": dist,
         "speed_mps": speed,
         "time_s": time_s,
-        "a_long": np.array(result.a_long_profile),
-        "a_lat": np.array(result.a_lat_profile),
+        "accel_long_mps2": np.array(result.a_long_profile),
+        "accel_lat_mps2": np.array(result.a_lat_profile),
     })
 
 
