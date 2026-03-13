@@ -155,14 +155,24 @@ def _run_ocp_impl(session_id: int | str, workspace_id: int | None = None) -> dic
         result_dict = result.to_dict()
         result_dict["calibration"] = calibration_meta
 
-        _store_ocp_result(conn, session_id, result_dict)
+        # Store OCP result in the in-memory analysis_json so that
+        # _update_downstream (which persists analysis_json) doesn't
+        # overwrite it with the stale pre-OCP version.
+        analysis_json["theoretical_ocp"] = result_dict
+
+        # Safety persist: write OCP result now, before downstream.
+        # If downstream crashes, OCP data is still in the DB.
+        _persist_ocp_only(conn, session_id, analysis_json)
+
         logger.info(
             "OCP result stored for session %s: %.2fs (converged=%s, %.1fs wall)",
             session_id, result.lap_time_s, result.converged,
             result.solver_meta["wall_time_s"],
         )
 
-        # Update downstream: scoring, coaching, corner targets
+        # Update downstream: scoring, coaching, corner targets.
+        # _persist_all inside _update_downstream writes the complete
+        # analysis_json (including theoretical_ocp + scores) in a single commit.
         _update_downstream(conn, session_id, result, result_dict, analysis_json,
                            workspace_id=workspace_id, best_lap_df=best_lap_df)
 
@@ -726,18 +736,13 @@ def _persist_all(conn, session_id, analysis_json, new_scores):
     conn.commit()
 
 
-def _store_ocp_result(conn, session_id, result_dict: dict):
-    """Store OCP result in analysis_json using atomic jsonb_set if PG, else read-modify-write."""
-    # Read-modify-write (analysis_json is text, not jsonb — jsonb_set won't work)
-    row = conn.execute(
-        "SELECT analysis_json FROM sessions WHERE session_id = :sid",
-        {"sid": session_id},
-    ).fetchone()
-    if row is None:
-        return
-    raw = row["analysis_json"] if isinstance(row, dict) else row[0]
-    analysis_json = json.loads(raw) if raw else {}
-    analysis_json["theoretical_ocp"] = result_dict
+def _persist_ocp_only(conn, session_id, analysis_json: dict):
+    """Safety persist: write the current analysis_json (with theoretical_ocp) to DB.
+
+    Called before downstream processing so the OCP result survives even
+    if scoring/coaching crashes.  _update_downstream will overwrite this
+    with the full analysis_json (scores + coaching + OCP) on success.
+    """
     conn.execute(
         "UPDATE sessions SET analysis_json = :aj WHERE session_id = :sid",
         {"aj": json.dumps(analysis_json), "sid": session_id},
