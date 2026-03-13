@@ -1327,7 +1327,7 @@ function LapConsistencyHistogram({
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
+  const drawHistogram = useCallback(() => {
     if (!canvasRef.current || times.length < 3) return;
 
     const canvas = canvasRef.current;
@@ -1446,6 +1446,16 @@ function LapConsistencyHistogram({
     }
   }, [times, bestTime, meanTime]);
 
+  useEffect(() => { drawHistogram(); }, [drawHistogram]);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawHistogram());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawHistogram]);
+
   return (
     <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
       <div className="flex items-center justify-between mb-1">
@@ -1508,7 +1518,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
   }, [conditionPhases]);
 
   // Lap times bar chart
-  useEffect(() => {
+  const drawLapTimes = useCallback(() => {
     if (!chartRef.current || validLaps.length === 0) return;
 
     const canvas = chartRef.current;
@@ -1654,6 +1664,16 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Incomplete', incLegX + 14, legendY + 2);
   }, [laps, validLaps, meanTime, bestTime]);
+
+  useEffect(() => { drawLapTimes(); }, [drawLapTimes]);
+
+  useEffect(() => {
+    const c = chartRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawLapTimes());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawLapTimes]);
 
   if (laps.length === 0) {
     return (
@@ -2003,7 +2023,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   // Draw lap progress chart
-  useEffect(() => {
+  const drawProgress = useCallback(() => {
     if (!progress || !canvasRef.current) return;
     const { lap_numbers, times, rolling_avg, is_improving, trend_slope } = progress;
     if (times.length === 0) return;
@@ -2144,6 +2164,16 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Best Lap', bestX + 16, legendY);
   }, [progress]);
+
+  useEffect(() => { drawProgress(); }, [drawProgress]);
+
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawProgress());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawProgress]);
 
   if (loading) {
     return (
