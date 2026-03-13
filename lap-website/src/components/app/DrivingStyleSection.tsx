@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 
 interface DrivingStyleFeature {
@@ -131,12 +131,21 @@ export function DrivingStyleSection({ sessionId }: { sessionId: string }) {
     return () => { cancelled = true; };
   }, [sessionId]);
 
-  // Draw radar when data arrives
-  useEffect(() => {
+  // Draw radar when data arrives or container resizes
+  const renderRadar = useCallback(() => {
     if (data?.features && canvasRef.current) {
       drawRadar(canvasRef.current, data.features);
     }
   }, [data]);
+
+  useEffect(() => { renderRadar(); }, [renderRadar]);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => renderRadar());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [renderRadar]);
 
   if (loading) {
     return (

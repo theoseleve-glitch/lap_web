@@ -83,7 +83,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
   }, [sessionId]);
 
   // Draw speed overlay canvas
-  useEffect(() => {
+  const drawSpeed = useCallback(() => {
     if (!compareData || !speedCanvasRef.current) return;
     const canvas = speedCanvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -186,8 +186,17 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
   }, [compareData]);
 
-  // Draw cumulative delta strip
+  useEffect(() => { drawSpeed(); }, [drawSpeed]);
   useEffect(() => {
+    const c = speedCanvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawSpeed());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawSpeed]);
+
+  // Draw cumulative delta strip
+  const drawDelta = useCallback(() => {
     if (!compareData || !deltaCanvasRef.current) return;
     const canvas = deltaCanvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -269,6 +278,15 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
   }, [compareData]);
+
+  useEffect(() => { drawDelta(); }, [drawDelta]);
+  useEffect(() => {
+    const c = deltaCanvasRef.current;
+    if (!c) return;
+    const ro = new ResizeObserver(() => drawDelta());
+    ro.observe(c);
+    return () => ro.disconnect();
+  }, [drawDelta]);
 
   return (
     <div className={className}>
