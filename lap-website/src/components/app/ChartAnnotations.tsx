@@ -140,8 +140,28 @@ export function ChartAnnotations({ sessionId, canvasId = 'speed-chart' }: Props)
     }
   }, [annotations, canvasId]);
 
+  // Close panel on outside click or Escape
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!showPanel) return;
+    const handleClick = (e: Event) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        setShowPanel(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowPanel(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [showPanel]);
+
   return (
-    <div className="relative">
+    <div ref={panelRef} className="relative">
       <button
         type="button"
         onClick={() => setShowPanel(!showPanel)}

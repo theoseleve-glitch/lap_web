@@ -81,10 +81,10 @@ class TestSoftDelete:
         assert soft_delete_session(db, "s1") is False
 
     def test_get_by_id_still_finds_soft_deleted(self, db):
-        """get_session_by_id should still find soft-deleted (for restore)."""
+        """get_session_by_id with include_deleted=True should find soft-deleted (for restore)."""
         soft_delete_session(db, "s1")
         db.commit()
-        session = get_session_by_id(db, "s1")
+        session = get_session_by_id(db, "s1", include_deleted=True)
         assert session is not None
         assert session["deleted_at"] is not None
 
@@ -137,8 +137,8 @@ class TestPurge:
         db.commit()
         purged = purge_deleted_sessions(db, retention_days=30)
         assert purged == 0
-        # Session still exists
-        assert get_session_by_id(db, "s1") is not None
+        # Session still exists (soft-deleted, not purged)
+        assert get_session_by_id(db, "s1", include_deleted=True) is not None
 
     def test_purge_skips_non_deleted(self, db):
         """Active sessions should never be purged."""

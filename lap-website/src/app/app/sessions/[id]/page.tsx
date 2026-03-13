@@ -264,6 +264,8 @@ export default function SessionDetailPage() {
   const [focusOpen, setFocusOpen] = useState(false);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [trackNamed, setTrackNamed] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   // Gamification state
   const [showLevelUp, setShowLevelUp] = useState(false);
@@ -354,6 +356,25 @@ export default function SessionDetailPage() {
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
   }, []);
+
+  // Close export dropdown on outside click or Escape
+  useEffect(() => {
+    if (!exportOpen) return;
+    const handleClick = (e: Event) => {
+      if (exportRef.current && !exportRef.current.contains(e.target as Node)) {
+        setExportOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setExportOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [exportOpen]);
 
   // F-key shortcut to open Focus Mode, D-key for Driving Analyzer
   useEffect(() => {
@@ -460,30 +481,35 @@ export default function SessionDetailPage() {
           </a>
 
           {/* Export to AiM/MoTeC */}
-          <div className="relative group/export">
+          <div ref={exportRef} className="relative">
             <button
               type="button"
+              onClick={() => setExportOpen((p) => !p)}
               className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
               data-print="hide"
             >
               Export Data
             </button>
-            <div className="hidden group-hover/export:flex absolute top-full mt-1 right-0 z-20 flex-col bg-concrete border border-steel/20 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
-              <a
-                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=aim`}
-                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
-                download
-              >
-                AiM RaceStudio CSV
-              </a>
-              <a
-                href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=motec`}
-                className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
-                download
-              >
-                MoTeC i2 CSV
-              </a>
-            </div>
+            {exportOpen && (
+              <div className="absolute top-full mt-1 right-0 z-20 flex flex-col bg-concrete border border-steel/20 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
+                <a
+                  href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=aim`}
+                  className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+                  download
+                  onClick={() => setExportOpen(false)}
+                >
+                  AiM RaceStudio CSV
+                </a>
+                <a
+                  href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/export?format=motec`}
+                  className="px-4 py-2 text-xs font-body text-chalk hover:bg-asphalt transition-colors"
+                  download
+                  onClick={() => setExportOpen(false)}
+                >
+                  MoTeC i2 CSV
+                </a>
+              </div>
+            )}
           </div>
 
           {/* Driving Analyzer */}
@@ -1326,8 +1352,9 @@ function LapConsistencyHistogram({
   meanTime: number | null;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const histContainerRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  const drawHistogram = useCallback(() => {
     if (!canvasRef.current || times.length < 3) return;
 
     const canvas = canvasRef.current;
@@ -1446,6 +1473,17 @@ function LapConsistencyHistogram({
     }
   }, [times, bestTime, meanTime]);
 
+  useEffect(() => { drawHistogram(); }, [drawHistogram]);
+
+  // ResizeObserver for the histogram canvas
+  useEffect(() => {
+    const el = histContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => drawHistogram());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [drawHistogram]);
+
   return (
     <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
       <div className="flex items-center justify-between mb-1">
@@ -1460,7 +1498,7 @@ function LapConsistencyHistogram({
         </button>
       </div>
       <p className="text-steel text-xs font-body mb-4">Distribution of valid lap times — tighter clustering means higher consistency</p>
-      <div className="rounded-lg overflow-hidden bg-asphalt">
+      <div ref={histContainerRef} className="rounded-lg overflow-hidden bg-asphalt">
         <canvas
           ref={canvasRef}
           role="img"
@@ -1474,6 +1512,7 @@ function LapConsistencyHistogram({
 
 function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhases: ConditionPhase[] }) {
   const chartRef = useRef<HTMLCanvasElement>(null);
+  const chartContainerRef2 = useRef<HTMLDivElement>(null);
 
   // Derived stats
   const validLaps = useMemo(() => laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0), [laps]);
@@ -1508,7 +1547,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
   }, [conditionPhases]);
 
   // Lap times bar chart
-  useEffect(() => {
+  const drawLapChart = useCallback(() => {
     if (!chartRef.current || validLaps.length === 0) return;
 
     const canvas = chartRef.current;
@@ -1655,6 +1694,17 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     ctx.fillText('Incomplete', incLegX + 14, legendY + 2);
   }, [laps, validLaps, meanTime, bestTime]);
 
+  useEffect(() => { drawLapChart(); }, [drawLapChart]);
+
+  // ResizeObserver for the lap times canvas
+  useEffect(() => {
+    const el = chartContainerRef2.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => drawLapChart());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [drawLapChart]);
+
   if (laps.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-8 text-center">
@@ -1694,7 +1744,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
               Export PNG
             </button>
           </div>
-          <div className="rounded-lg overflow-hidden bg-asphalt">
+          <div ref={chartContainerRef2} className="rounded-lg overflow-hidden bg-asphalt">
             <canvas
               ref={chartRef}
               style={{ width: '100%', height: '220px', display: 'block' }}
@@ -1978,6 +2028,7 @@ const DOT_COLORS: Record<string, string> = {
 
 function TimelineTab({ sessionId }: { sessionId: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const chartContainerRef = useRef<HTMLDivElement>(null);
   const [timeline, setTimeline] = useState<SessionTimelineData | null>(null);
   const [progress, setProgress] = useState<LapProgressData | null>(null);
   const [stints, setStints] = useState<StintData | null>(null);
@@ -2003,7 +2054,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
   }, [sessionId]);
 
   // Draw lap progress chart
-  useEffect(() => {
+  const drawProgressChart = useCallback(() => {
     if (!progress || !canvasRef.current) return;
     const { lap_numbers, times, rolling_avg, is_improving, trend_slope } = progress;
     if (times.length === 0) return;
@@ -2145,6 +2196,17 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.fillText('Best Lap', bestX + 16, legendY);
   }, [progress]);
 
+  useEffect(() => { drawProgressChart(); }, [drawProgressChart]);
+
+  // ResizeObserver for the lap progress canvas
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => drawProgressChart());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [drawProgressChart]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -2272,7 +2334,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
               </span>
             </div>
           </div>
-          <div className="rounded-lg overflow-hidden bg-asphalt">
+          <div ref={chartContainerRef} className="rounded-lg overflow-hidden bg-asphalt">
             <canvas
               ref={canvasRef}
               style={{ width: '100%', height: '250px', display: 'block' }}
