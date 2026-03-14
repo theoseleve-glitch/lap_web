@@ -142,7 +142,7 @@ class KartEnvelopeConfig:
     powertrain_enable_transmission: bool = True
     powertrain_transmission_efficiency: float = 0.93
     powertrain_enable_rolling_resistance: bool = True
-    powertrain_rr_c0: float = 0.012
+    powertrain_rr_c0: float = 0.010  # kart on smooth asphalt
     powertrain_rr_c1: float = 0.00008
     powertrain_auto_shift: bool = True
     powertrain_wheel_radius_m: float = 0.135
@@ -152,7 +152,7 @@ class KartEnvelopeConfig:
     aero_enable_drag: bool = True
     aero_enable_downforce: bool = False
     aero_air_density_kg_m3: float = 1.20
-    aero_default_cda: float = 0.80
+    aero_default_cda: float = 0.45  # kart (0.80 was car-like, too much drag)
     aero_default_cl: float = 0.0
 
     # -- Driver policy layers --
