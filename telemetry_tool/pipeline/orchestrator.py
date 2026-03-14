@@ -867,7 +867,7 @@ def run_full_analysis(
     # ══════════════════════════════════════════════════════════════
     # PHASE 4: Theoretical Lap + Corner Analysis (step 10)
     # ══════════════════════════════════════════════════════════════
-    from pipeline.stages import s10_theoretical, s10b_corners
+    from pipeline.stages import s10a_corner_ocp, s10_theoretical, s10b_corners
 
     # Gate: skip if distance quality is degraded
     _dq = summary.get("distance_quality")
@@ -886,6 +886,18 @@ def run_full_analysis(
         _session_scalars = None
         _laps_for_theo_ref = [None]
     else:
+        # ── S10a: Per-corner OCP (runs BEFORE full-lap theoretical) ──
+        _corner_ocp_results, _coc_err = _safe_step(
+            "10a_corner_ocp", s10a_corner_ocp.run_corner_ocp,
+            corners, best_lap_df, resampled_laps, curvature_profile,
+            corrected_friction or friction_circle,
+            excluded_laps=excluded_laps,
+        )
+        _record("10a_corner_ocp", _corner_ocp_results, _coc_err)
+        _fire_progress("10a_corner_ocp")
+        summary["corner_ocp_results"] = _corner_ocp_results
+
+        # ── S10: Full-lap theoretical (warm-started from per-corner) ──
         theo_result, err = _safe_step(
             "10_theoretical", s10_theoretical.run_theoretical,
             resampled_laps, curvature_profile, corrected_friction or friction_circle,
@@ -936,6 +948,18 @@ def run_full_analysis(
     _record("10b_theoretical_metrics", theo_metrics, err)
     theo_metrics = theo_metrics or {}
     summary["theoretical_metrics"] = theo_metrics
+
+    # Merge per-corner OCP actionables into corner_coaching
+    if _corner_ocp_results and _corner_coaching:
+        ocp_map = {r["corner_id"]: r for r in _corner_ocp_results}
+        for cc in _corner_coaching:
+            cid = cc.get("corner_id")
+            if cid in ocp_map:
+                cc["actionables"] = ocp_map[cid].get("actionables", [])
+                cc["optimal_speeds"] = ocp_map[cid].get("optimal_speeds", [])
+                cc["optimal_time_s"] = ocp_map[cid].get("optimal_time_s")
+    elif _corner_ocp_results and not _corner_coaching:
+        _corner_coaching = _corner_ocp_results
 
     summary["corner_coaching"] = _corner_coaching
     summary["delta_map"] = _delta_map

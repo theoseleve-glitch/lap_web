@@ -958,6 +958,13 @@ def get_corners(session_id: str) -> tuple[dict, int]:
             if cc:
                 corner["available"] = True
                 corner.update(_extract_coaching(cc))
+                # Per-corner OCP actionables (from s10a_corner_ocp)
+                if "actionables" in cc:
+                    corner["actionables"] = cc["actionables"]
+                if "optimal_speeds" in cc:
+                    corner["optimal_speeds"] = cc["optimal_speeds"]
+                if "optimal_time_s" in cc:
+                    corner["optimal_time_s"] = cc["optimal_time_s"]
             else:
                 corner["available"] = False
                 corner["reason_code"] = "no_theoretical"
