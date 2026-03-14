@@ -115,6 +115,11 @@ def compute_theoretical_lap_casadi(
         raise SolverError("Invalid speed bounds for CasADi backend.")
 
     p = float(max(env.p_combined, 1.05))
+    p_trac = float(max(env._effective_p(braking=False), 1.05))
+    p_brake = float(max(env._effective_p(braking=True), 1.05))
+    asymmetric = abs(p_trac - p_brake) >= 0.01
+    p_trac_ca = ca.DM(p_trac)
+    p_brake_ca = ca.DM(p_brake)
     p_ca = ca.DM(p)
 
     ay_fun = ca.interpolant("ay_lim", "linear", [v_grid], ay_grid)
@@ -181,8 +186,12 @@ def compute_theoretical_lap_casadi(
         lat_ratio = lat_req / ay_lim
         long_ratio = ca.fabs(ai) / ax_lim
 
-        # Combined-slip ellipse/p-norm.
-        g_terms.append(ca.power(long_ratio, p_ca) + ca.power(lat_ratio, p_ca))
+        # Combined-slip ellipse/p-norm (asymmetric when braking vs traction).
+        if asymmetric:
+            p_eff = ca.if_else(ai >= 0, p_trac_ca, p_brake_ca)
+            g_terms.append(ca.power(long_ratio, p_eff) + ca.power(lat_ratio, p_eff))
+        else:
+            g_terms.append(ca.power(long_ratio, p_ca) + ca.power(lat_ratio, p_ca))
         lbg.append(-ca.inf)
         ubg.append(1.0)
 
@@ -326,14 +335,21 @@ def compute_theoretical_lap_casadi(
                 "brake_scale_max": float(np.nanmax(brk_prof)),
             },
             "ipopt": stats,
+            "p_combined": round(p, 3),
+            "p_traction": round(p_trac, 3),
+            "p_braking": round(p_brake, 3),
+            "asymmetric_ellipse": asymmetric,
         },
     )
     logger.info(
-        "Theoretical lap (envelope_casadi_ocp): %.3f s (v_max=%.1f, v_min=%.1f m/s, mesh=%s).",
+        "Theoretical lap (envelope_casadi_ocp): %.3f s (v_max=%.1f, v_min=%.1f m/s, "
+        "mesh=%s, p_trac=%.2f, p_brake=%.2f).",
         result.lap_time_s,
         float(np.max(v_opt)),
         float(np.min(v_opt)),
         str(mesh_mode),
+        p_trac,
+        p_brake,
     )
     return result
 

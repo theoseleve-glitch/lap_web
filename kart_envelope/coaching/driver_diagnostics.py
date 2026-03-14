@@ -46,6 +46,154 @@ except Exception:  # pragma: no cover - optional dependency
     IsolationForest = None  # type: ignore[assignment]
 
 
+# ── Adaptive diagnostic thresholds by vehicle class ─────────────────────
+
+@dataclass
+class DiagnosticThresholds:
+    """Scaling factors for diagnostic findings by vehicle class.
+
+    All values are multiplicative adjustments to base thresholds.
+    A kart has tighter tolerances (lower thresholds) than a road car
+    because the vehicle is more direct and responsive.
+
+    Attributes
+    ----------
+    vehicle_class : str
+        Vehicle class label.
+    underbrake_threshold : float
+        Brake utilization p90 below which 'underbraking' triggers.
+    overbrake_lockup_frac : float
+        Lock-up fraction above which 'overbraking' triggers.
+    coast_frac_threshold : float
+        Coasting fraction above which 'excess coasting' triggers.
+    gg_under_threshold : float
+        G-G utilization below which driving is 'underdriving'.
+    gg_over_threshold : float
+        G-G over-limit fraction above which driving is 'overdriving'.
+    abrupt_ramp_threshold_mps3 : float
+        Brake ramp rate above which braking is 'abrupt'.
+    trail_ratio_threshold : float
+        Trail-brake ratio below which trail-braking is 'absent'.
+    trust_drop_threshold : float
+        G-G drop low-to-high above which trust deficit triggers.
+    lap_time_std_threshold : float
+        Lap time std [s] above which 'execution inconsistency' triggers.
+    """
+    vehicle_class: str = "kart"
+    underbrake_threshold: float = 0.88
+    overbrake_lockup_frac: float = 0.05
+    coast_frac_threshold: float = 0.08
+    gg_under_threshold: float = 0.90
+    gg_over_threshold: float = 0.03
+    abrupt_ramp_threshold_mps3: float = 50.0
+    trail_ratio_threshold: float = 0.30
+    trust_drop_threshold: float = 0.08
+    lap_time_std_threshold: float = 0.9
+
+
+# Vehicle class → threshold presets.
+# Karts are the tightest (small, direct, responsive).
+# Road cars are the loosest (heavy, compliant, forgiving).
+_THRESHOLD_PRESETS: dict[str, DiagnosticThresholds] = {
+    "kart": DiagnosticThresholds(
+        vehicle_class="kart",
+        underbrake_threshold=0.85,    # karts have less brake capacity — 0.85 is OK
+        overbrake_lockup_frac=0.06,   # karts lock easier — slightly more tolerant
+        coast_frac_threshold=0.06,    # very little coasting expected on a kart
+        gg_under_threshold=0.90,
+        gg_over_threshold=0.03,
+        abrupt_ramp_threshold_mps3=40.0,  # shorter braking zones → naturally sharper
+        trail_ratio_threshold=0.25,       # less trail-braking opportunity on karts
+        trust_drop_threshold=0.10,
+        lap_time_std_threshold=0.6,       # short laps → tighter consistency
+    ),
+    "formula": DiagnosticThresholds(
+        vehicle_class="formula",
+        underbrake_threshold=0.92,    # formula cars have ABS-free big brakes
+        overbrake_lockup_frac=0.03,   # lockup is costly with slick tires
+        coast_frac_threshold=0.05,    # should be on power or brake, rarely coasting
+        gg_under_threshold=0.92,      # high downforce → should use more grip
+        gg_over_threshold=0.02,
+        abrupt_ramp_threshold_mps3=60.0,  # longer braking zones → expect more control
+        trail_ratio_threshold=0.35,       # trail-braking is critical in formula
+        trust_drop_threshold=0.06,        # downforce gives MORE grip at speed
+        lap_time_std_threshold=0.5,
+    ),
+    "gt": DiagnosticThresholds(
+        vehicle_class="gt",
+        underbrake_threshold=0.90,
+        overbrake_lockup_frac=0.04,
+        coast_frac_threshold=0.08,
+        gg_under_threshold=0.88,
+        gg_over_threshold=0.03,
+        abrupt_ramp_threshold_mps3=55.0,
+        trail_ratio_threshold=0.30,
+        trust_drop_threshold=0.08,
+        lap_time_std_threshold=0.8,
+    ),
+    "touring": DiagnosticThresholds(
+        vehicle_class="touring",
+        underbrake_threshold=0.88,
+        overbrake_lockup_frac=0.05,
+        coast_frac_threshold=0.10,
+        gg_under_threshold=0.85,
+        gg_over_threshold=0.04,
+        abrupt_ramp_threshold_mps3=50.0,
+        trail_ratio_threshold=0.28,
+        trust_drop_threshold=0.10,
+        lap_time_std_threshold=0.9,
+    ),
+    "road_car": DiagnosticThresholds(
+        vehicle_class="road_car",
+        underbrake_threshold=0.82,    # road cars have ABS — less raw util expected
+        overbrake_lockup_frac=0.08,   # ABS prevents real lockup
+        coast_frac_threshold=0.15,    # more coasting is normal
+        gg_under_threshold=0.80,      # lower grip → lower expectations
+        gg_over_threshold=0.05,
+        abrupt_ramp_threshold_mps3=45.0,
+        trail_ratio_threshold=0.22,   # less trail-braking with ABS
+        trust_drop_threshold=0.12,
+        lap_time_std_threshold=1.2,
+    ),
+}
+
+
+def _infer_vehicle_class(
+    metadata: SessionMetadata,
+    scalars: SessionScalars,
+) -> str:
+    """Infer vehicle class from metadata or session characteristics.
+
+    Priority:
+    1. Explicit metadata field (kart_class → kart)
+    2. Peak lateral g from scalars (infers vehicle type from grip level)
+    """
+    # Check for explicit hints
+    kart_class = str(getattr(metadata, "kart_class", "") or "").strip().lower()
+    if kart_class in ("2t", "4t", "kz", "ok", "rotax", "x30"):
+        return "kart"
+
+    # Infer from peak grip (mu_session * peak lateral g of envelope)
+    peak_lat_g = float(scalars.mu_session) if scalars else 1.0
+    if peak_lat_g >= 1.6:
+        return "formula"
+    if peak_lat_g >= 1.25:
+        return "gt"
+    if peak_lat_g >= 1.05:
+        return "touring"
+    if peak_lat_g >= 0.85:
+        return "road_car"
+    return "kart"  # low grip could be a rental kart
+
+
+def get_thresholds(vehicle_class: str) -> DiagnosticThresholds:
+    """Return diagnostic thresholds for the given vehicle class."""
+    return _THRESHOLD_PRESETS.get(
+        vehicle_class.lower(),
+        _THRESHOLD_PRESETS["kart"],
+    )
+
+
 @dataclass
 class DiagnosticFinding:
     """Single driver-behavior finding."""
@@ -145,12 +293,18 @@ def analyze_driver_dynamics(
     if not lap_rows:
         return DriverDiagnostics(dominant_pattern="insufficient_data")
 
+    # Infer vehicle class and select adaptive thresholds
+    v_class = _infer_vehicle_class(metadata, scalars)
+    thresholds = get_thresholds(v_class)
+    logger.info("Driver diagnostics: vehicle_class=%s, thresholds=%s", v_class, thresholds.vehicle_class)
+
     lap_metrics_df = pd.DataFrame(lap_rows)
     ml_summary = _lap_outlier_model(lap_metrics_df)
     findings, metrics, yaw_summary = _classify_findings(
         lap_metrics_df=lap_metrics_df,
         corner_rows=corner_rows,
         ml_summary=ml_summary,
+        thresholds=thresholds,
     )
 
     findings.sort(key=lambda f: f.score, reverse=True)
@@ -218,6 +372,199 @@ def _build_reference(
         "distance": s,
         "speed": v,
         "corners": corner_ref,
+    }
+
+
+def _analyze_speed_dependent_gg(
+    v: np.ndarray,
+    gg_util: np.ndarray,
+    ay_util: np.ndarray,
+) -> dict[str, float]:
+    """Compute G-G utilization in low / mid / high speed bins.
+
+    A driver who uses 90% of grip at low speed but only 60% at high
+    speed has a *speed-dependent trust deficit* — a psychological
+    limitation, not a vehicle limitation.
+
+    Speed bins are determined by the session's speed range:
+      - Low:  bottom third of speed range
+      - Mid:  middle third
+      - High: top third
+
+    Returns per-bin G-G utilization and the drop from low to high.
+    """
+    if len(v) < 20:
+        return {
+            "gg_util_low_speed": float("nan"),
+            "gg_util_mid_speed": float("nan"),
+            "gg_util_high_speed": float("nan"),
+            "gg_drop_low_to_high": float("nan"),
+            "ay_util_low_speed": float("nan"),
+            "ay_util_high_speed": float("nan"),
+        }
+
+    # Determine speed terciles from the actual session data
+    v_p10 = float(np.percentile(v, 10))
+    v_p90 = float(np.percentile(v, 90))
+    v_range = v_p90 - v_p10
+    if v_range < 2.0:
+        # Very narrow speed range — can't do meaningful split
+        return {
+            "gg_util_low_speed": float("nan"),
+            "gg_util_mid_speed": float("nan"),
+            "gg_util_high_speed": float("nan"),
+            "gg_drop_low_to_high": float("nan"),
+            "ay_util_low_speed": float("nan"),
+            "ay_util_high_speed": float("nan"),
+        }
+
+    v_lo_cut = v_p10 + v_range / 3.0
+    v_hi_cut = v_p10 + 2.0 * v_range / 3.0
+
+    lo_mask = v <= v_lo_cut
+    mid_mask = (v > v_lo_cut) & (v <= v_hi_cut)
+    hi_mask = v > v_hi_cut
+
+    # Only consider samples where the driver is actually cornering
+    # (not cruising on a straight at low utilization)
+    cornering_threshold = 0.20
+    active = gg_util > cornering_threshold
+
+    def _bin_util(mask: np.ndarray) -> float:
+        sel = mask & active & np.isfinite(gg_util)
+        if sel.sum() < 10:
+            return float("nan")
+        return float(np.percentile(gg_util[sel], 90))
+
+    def _bin_ay(mask: np.ndarray) -> float:
+        sel = mask & active & np.isfinite(ay_util)
+        if sel.sum() < 10:
+            return float("nan")
+        return float(np.percentile(ay_util[sel], 90))
+
+    gg_lo = _bin_util(lo_mask)
+    gg_mid = _bin_util(mid_mask)
+    gg_hi = _bin_util(hi_mask)
+
+    drop = (gg_lo - gg_hi) if (np.isfinite(gg_lo) and np.isfinite(gg_hi)) else float("nan")
+
+    return {
+        "gg_util_low_speed": gg_lo,
+        "gg_util_mid_speed": gg_mid,
+        "gg_util_high_speed": gg_hi,
+        "gg_drop_low_to_high": drop,
+        "ay_util_low_speed": _bin_ay(lo_mask),
+        "ay_util_high_speed": _bin_ay(hi_mask),
+    }
+
+
+def _analyze_brake_modulation(
+    s: np.ndarray,
+    ax: np.ndarray,
+    dt: np.ndarray,
+    ax_brake_lim: np.ndarray,
+) -> dict[str, float]:
+    """Extract brake modulation metrics from longitudinal acceleration.
+
+    Identifies individual braking events (contiguous ax < -0.5 m/s²)
+    and measures three modulation characteristics:
+
+    1. **Ramp rate**: How quickly the driver reaches peak deceleration.
+       High ramp rate → abrupt brake application → lockup risk.
+    2. **Trail-brake ratio**: What fraction of the braking zone has
+       gradually decreasing deceleration (trail-braking).
+       Low ratio → driver releases brakes abruptly → misses trail-brake.
+    3. **Peak position**: Where in the braking zone peak decel occurs.
+       Late peak → driver is slow to build initial brake pressure.
+
+    Returns dict with median values across all braking events in the lap.
+    """
+    brake_threshold = -0.5  # m/s² — threshold for "braking"
+    min_event_samples = 5
+
+    # Find braking events (contiguous regions of ax < threshold)
+    braking = ax < brake_threshold
+    events: list[tuple[int, int]] = []
+    i = 0
+    n = len(ax)
+    while i < n:
+        if braking[i]:
+            start = i
+            while i < n and braking[i]:
+                i += 1
+            end = i  # exclusive
+            if (end - start) >= min_event_samples:
+                events.append((start, end))
+        else:
+            i += 1
+
+    if not events:
+        return {
+            "brake_ramp_rate_median_mps3": float("nan"),
+            "trail_brake_ratio_median": float("nan"),
+            "peak_brake_position_median": float("nan"),
+            "n_braking_events": 0,
+            "abrupt_event_frac": float("nan"),
+            "no_trail_event_frac": float("nan"),
+            "late_peak_event_frac": float("nan"),
+        }
+
+    ramp_rates: list[float] = []
+    trail_ratios: list[float] = []
+    peak_positions: list[float] = []
+
+    for ev_start, ev_end in events:
+        ax_event = ax[ev_start:ev_end]
+        dt_event = dt[ev_start:ev_end]
+        n_ev = len(ax_event)
+
+        # ── 1. Ramp rate: d(ax)/dt from event start to peak decel ──
+        peak_idx = int(np.argmin(ax_event))  # most negative = strongest braking
+        if peak_idx > 0:
+            # Time from event start to peak deceleration
+            time_to_peak = float(np.sum(dt_event[:peak_idx]))
+            if time_to_peak > 0.01:
+                # Rate of deceleration onset [m/s³]
+                ramp = abs(float(ax_event[peak_idx] - ax_event[0])) / time_to_peak
+                ramp_rates.append(ramp)
+
+        # ── 2. Trail-brake ratio: fraction of event after peak where
+        #        deceleration is decreasing gradually ──
+        if peak_idx < n_ev - 2:
+            release_phase = ax_event[peak_idx:]
+            # Trail-braking = deceleration magnitude decreasing (ax getting less negative)
+            dax_release = np.diff(release_phase)
+            n_release = len(dax_release)
+            if n_release > 0:
+                # Count samples where brake is being released (dax > 0 = less braking)
+                trailing = float(np.mean(dax_release > 0.0))
+                trail_ratios.append(trailing)
+
+        # ── 3. Peak position: where in the event peak decel occurs ──
+        peak_frac = float(peak_idx) / max(n_ev - 1, 1)
+        peak_positions.append(peak_frac)
+
+    ramp_arr = np.array(ramp_rates, dtype=float) if ramp_rates else np.array([float("nan")])
+    trail_arr = np.array(trail_ratios, dtype=float) if trail_ratios else np.array([float("nan")])
+    peak_arr = np.array(peak_positions, dtype=float) if peak_positions else np.array([float("nan")])
+
+    n_events = len(events)
+
+    # Fraction of events that are "abrupt" (ramp > 50 m/s³ ≈ 5g/s)
+    abrupt_frac = float(np.mean(ramp_arr > 50.0)) if len(ramp_rates) > 0 else float("nan")
+    # Fraction of events with no trail-braking (trail ratio < 0.3)
+    no_trail_frac = float(np.mean(trail_arr < 0.30)) if len(trail_ratios) > 0 else float("nan")
+    # Fraction of events with late peak (> 30% into braking zone)
+    late_peak_frac = float(np.mean(peak_arr > 0.30)) if len(peak_positions) > 0 else float("nan")
+
+    return {
+        "brake_ramp_rate_median_mps3": float(np.nanmedian(ramp_arr)),
+        "trail_brake_ratio_median": float(np.nanmedian(trail_arr)),
+        "peak_brake_position_median": float(np.nanmedian(peak_arr)),
+        "n_braking_events": n_events,
+        "abrupt_event_frac": abrupt_frac,
+        "no_trail_event_frac": no_trail_frac,
+        "late_peak_event_frac": late_peak_frac,
     }
 
 
@@ -290,6 +637,12 @@ def _analyze_lap(
             "apex_speed_loss_mps": round(apex_speed_loss, 4),
         })
 
+    # Speed-dependent G-G utilization (trust deficit analysis)
+    speed_gg = _analyze_speed_dependent_gg(v, gg_util, ay_util)
+
+    # Brake modulation analysis (uses ax + dt only)
+    brake_mod = _analyze_brake_modulation(s, ax, dt, ax_brake_lim)
+
     yaw_available = np.isfinite(yaw).sum() >= 20
     yaw_resid_std = float("nan")
     countersteer_rate = float("nan")
@@ -354,6 +707,21 @@ def _analyze_lap(
         "countersteer_events_per_km": countersteer_rate,
         "oversteer_frac": oversteer_frac,
         "understeer_frac": understeer_frac,
+        # Speed-dependent G-G metrics
+        "gg_util_low_speed": speed_gg["gg_util_low_speed"],
+        "gg_util_mid_speed": speed_gg["gg_util_mid_speed"],
+        "gg_util_high_speed": speed_gg["gg_util_high_speed"],
+        "gg_drop_low_to_high": speed_gg["gg_drop_low_to_high"],
+        "ay_util_low_speed": speed_gg["ay_util_low_speed"],
+        "ay_util_high_speed": speed_gg["ay_util_high_speed"],
+        # Brake modulation metrics
+        "brake_ramp_rate_median_mps3": brake_mod["brake_ramp_rate_median_mps3"],
+        "trail_brake_ratio_median": brake_mod["trail_brake_ratio_median"],
+        "peak_brake_position_median": brake_mod["peak_brake_position_median"],
+        "n_braking_events": brake_mod["n_braking_events"],
+        "abrupt_event_frac": brake_mod["abrupt_event_frac"],
+        "no_trail_event_frac": brake_mod["no_trail_event_frac"],
+        "late_peak_event_frac": brake_mod["late_peak_event_frac"],
     }
     return row, corner_rows
 
@@ -361,16 +729,18 @@ def _classify_findings(
     lap_metrics_df: pd.DataFrame,
     corner_rows: list[dict[str, Any]],
     ml_summary: dict[str, Any],
+    thresholds: DiagnosticThresholds | None = None,
 ) -> tuple[list[DiagnosticFinding], dict[str, Any], dict[str, Any]]:
     findings: list[DiagnosticFinding] = []
+    th = thresholds or DiagnosticThresholds()
 
     m = _aggregate_metrics(lap_metrics_df)
     outlier_frac = float(ml_summary.get("outlier_fraction", 0.0))
 
     under_score = np.clip(
-        0.45 * max(0.0, 0.90 - m["gg_util_p90"]) / 0.35 +
+        0.45 * max(0.0, th.gg_under_threshold - m["gg_util_p90"]) / 0.35 +
         0.25 * m["gg_under_frac"] / 0.70 +
-        0.30 * m["coast_frac"] / 0.25,
+        0.30 * m["coast_frac"] / max(th.coast_frac_threshold * 3, 0.10),
         0.0, 1.0,
     )
     if under_score >= 0.45 and m["gg_over_frac"] < 0.08:
@@ -393,7 +763,7 @@ def _classify_findings(
         0.20 * outlier_frac / 0.25,
         0.0, 1.0,
     )
-    if over_score >= 0.45 and m["gg_over_frac"] >= 0.03:
+    if over_score >= 0.45 and m["gg_over_frac"] >= th.gg_over_threshold:
         findings.append(_make_finding(
             code="overdriving",
             title="Overdriving / inconsistency",
@@ -407,7 +777,7 @@ def _classify_findings(
         ))
 
     if np.isfinite(m["brake_util_p90"]):
-        under_brake_score = float(np.clip((0.88 - m["brake_util_p90"]) / 0.28, 0.0, 1.0))
+        under_brake_score = float(np.clip((th.underbrake_threshold - m["brake_util_p90"]) / 0.28, 0.0, 1.0))
         if under_brake_score >= 0.40:
             findings.append(_make_finding(
                 code="underbraking",
@@ -419,7 +789,7 @@ def _classify_findings(
             ))
 
         over_brake_score = float(np.clip(
-            0.6 * m["lockup_frac"] / 0.05 +
+            0.6 * m["lockup_frac"] / th.overbrake_lockup_frac +
             0.4 * max(0.0, m["brake_util_p95"] - 1.0) / 0.20,
             0.0, 1.0,
         ))
@@ -436,7 +806,85 @@ def _classify_findings(
                 recommendation="Soften initial brake spike and bias release smoother into turn-in.",
             ))
 
-    coast_score = float(np.clip((m["coast_frac"] - 0.08) / 0.20, 0.0, 1.0))
+    # ── Brake modulation findings (from accelerometer data) ──
+    abrupt_frac = m.get("abrupt_event_frac", float("nan"))
+    trail_ratio = m.get("trail_brake_ratio_median", float("nan"))
+    no_trail_frac = m.get("no_trail_event_frac", float("nan"))
+    peak_pos = m.get("peak_brake_position_median", float("nan"))
+    late_peak_frac = m.get("late_peak_event_frac", float("nan"))
+    ramp_rate = m.get("brake_ramp_rate_median_mps3", float("nan"))
+
+    if np.isfinite(abrupt_frac) and np.isfinite(ramp_rate):
+        abrupt_score = float(np.clip(
+            0.55 * min(abrupt_frac / 0.40, 1.0) +
+            0.45 * min(max(ramp_rate - (th.abrupt_ramp_threshold_mps3 * 0.6), 0.0) /
+                       (th.abrupt_ramp_threshold_mps3 * 0.8), 1.0),
+            0.0, 1.0,
+        ))
+        if abrupt_score >= 0.40:
+            findings.append(_make_finding(
+                code="abrupt_braking",
+                title="Abrupt brake application",
+                score=abrupt_score,
+                confidence=_confidence(len(lap_metrics_df)),
+                evidence=(
+                    f"Brake ramp rate {ramp_rate:.1f} m/s³, "
+                    f"{abrupt_frac:.0%} of braking events are abrupt (>50 m/s³)."
+                ),
+                recommendation=(
+                    "Squeeze the brake progressively — ramp to peak over 0.1-0.15s "
+                    "instead of stomping. This prevents lockup and allows trail-braking."
+                ),
+            ))
+
+    if np.isfinite(no_trail_frac) and np.isfinite(trail_ratio):
+        trail_ref = th.trail_ratio_threshold + 0.10  # expect slightly above threshold
+        no_trail_score = float(np.clip(
+            0.55 * min(no_trail_frac / 0.50, 1.0) +
+            0.45 * max(0.0, (trail_ref - trail_ratio) / 0.30),
+            0.0, 1.0,
+        ))
+        if no_trail_score >= 0.40:
+            findings.append(_make_finding(
+                code="trailing_brake_absent",
+                title="Missing trail-braking",
+                score=no_trail_score,
+                confidence=_confidence(len(lap_metrics_df)),
+                evidence=(
+                    f"Trail-brake ratio {trail_ratio:.2f} (low), "
+                    f"{no_trail_frac:.0%} of events have no gradual release."
+                ),
+                recommendation=(
+                    "Release brake pressure gradually as you turn in — don't "
+                    "release all at once. Trail-braking rotates the car and "
+                    "carries more speed through the entry phase."
+                ),
+            ))
+
+    if np.isfinite(late_peak_frac) and np.isfinite(peak_pos):
+        late_peak_score = float(np.clip(
+            0.55 * min(late_peak_frac / 0.50, 1.0) +
+            0.45 * min(max(peak_pos - 0.20, 0.0) / 0.25, 1.0),
+            0.0, 1.0,
+        ))
+        if late_peak_score >= 0.40:
+            findings.append(_make_finding(
+                code="late_peak_brake",
+                title="Late peak braking",
+                score=late_peak_score,
+                confidence=_confidence(len(lap_metrics_df)),
+                evidence=(
+                    f"Peak deceleration at {peak_pos:.0%} into braking zone, "
+                    f"{late_peak_frac:.0%} of events have late peak (>30%)."
+                ),
+                recommendation=(
+                    "Hit peak brake pressure within the first 15-20% of the "
+                    "braking zone. Late peak means you're building pressure "
+                    "too slowly and extending the braking distance."
+                ),
+            ))
+
+    coast_score = float(np.clip((m["coast_frac"] - th.coast_frac_threshold) / 0.20, 0.0, 1.0))
     if coast_score >= 0.35:
         findings.append(_make_finding(
             code="coasting",
@@ -504,6 +952,38 @@ def _classify_findings(
             recommendation="Adapt line and release phase over grade/bank transitions to keep load stable.",
         ))
 
+    # ── Speed-dependent trust deficit ──
+    gg_drop = m.get("gg_drop_low_to_high", float("nan"))
+    gg_lo_spd = m.get("gg_util_low_speed", float("nan"))
+    gg_hi_spd = m.get("gg_util_high_speed", float("nan"))
+    if np.isfinite(gg_drop) and np.isfinite(gg_lo_spd) and np.isfinite(gg_hi_spd):
+        # Trust deficit = how much grip utilization drops from low to high speed
+        # A drop of 0.15+ (e.g., 0.92 → 0.77) is significant
+        trust_score = float(np.clip(
+            0.55 * min(max(gg_drop, 0.0) / 0.20, 1.0) +
+            0.45 * min(max(gg_lo_spd - gg_hi_spd, 0.0) / 0.25, 1.0),
+            0.0, 1.0,
+        ))
+        if trust_score >= 0.40 and gg_drop > th.trust_drop_threshold:
+            findings.append(_make_finding(
+                code="speed_dependent_trust_deficit",
+                title="Speed-dependent trust deficit",
+                score=trust_score,
+                confidence=_confidence(len(lap_metrics_df)),
+                evidence=(
+                    f"G-G utilization drops from {gg_lo_spd:.2f} (low speed) to "
+                    f"{gg_hi_spd:.2f} (high speed) — a {gg_drop:.2f} drop. "
+                    f"You use less of the car's grip as speed increases."
+                ),
+                recommendation=(
+                    "Your car has the same grip at high speed as low speed "
+                    "(potentially more with downforce). Build high-speed "
+                    "confidence gradually: carry 1-2 km/h more each session "
+                    "through fast corners. Focus on smooth inputs — the car "
+                    "can handle it."
+                ),
+            ))
+
     yaw_summary = {
         "yaw_available": bool(m["yaw_available"]),
         "yaw_resid_std": round(m["yaw_resid_std"], 4) if np.isfinite(m["yaw_resid_std"]) else None,
@@ -536,7 +1016,7 @@ def _classify_findings(
 
     consistency_score = float(np.clip(
         0.5 * outlier_frac / 0.25 +
-        0.5 * min(np.nanstd(lap_metrics_df["lap_time_s"].to_numpy()) / 0.9, 1.0),
+        0.5 * min(np.nanstd(lap_metrics_df["lap_time_s"].to_numpy()) / th.lap_time_std_threshold, 1.0),
         0.0, 1.0,
     ))
     if consistency_score >= 0.45:
@@ -637,6 +1117,7 @@ def _classify_findings(
     metrics["brake_util_variability_std"] = brake_var if np.isfinite(brake_var) else None
     metrics["coast_variability_std"] = coast_var if np.isfinite(coast_var) else None
     metrics["apex_speed_loss_p90_mps"] = apex_loss_p90 if np.isfinite(apex_loss_p90) else None
+    metrics["vehicle_class"] = th.vehicle_class
     return findings, metrics, yaw_summary
 
 

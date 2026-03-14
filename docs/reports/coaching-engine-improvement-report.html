@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Coaching & Theoretical Engine Improvement Report</title>
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 18mm;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: #1a1a2e;
+    background: #fff;
+    padding: 40px 50px;
+    max-width: 210mm;
+    margin: 0 auto;
+  }
+
+  /* Cover */
+  .cover {
+    page-break-after: always;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    min-height: 90vh;
+    text-align: center;
+  }
+  .cover-badge {
+    display: inline-block;
+    background: linear-gradient(135deg, #e63946, #d62828);
+    color: #fff;
+    font-size: 11pt;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 28px;
+    border-radius: 3px;
+    margin-bottom: 32px;
+  }
+  .cover h1 {
+    font-size: 28pt;
+    font-weight: 800;
+    line-height: 1.15;
+    color: #0d1b2a;
+    margin-bottom: 12px;
+  }
+  .cover h1 span { color: #e63946; }
+  .cover .subtitle {
+    font-size: 13pt;
+    color: #415a77;
+    margin-bottom: 48px;
+    max-width: 480px;
+  }
+  .cover-meta {
+    font-size: 9.5pt;
+    color: #778da9;
+    line-height: 1.8;
+  }
+  .cover-meta strong { color: #415a77; }
+  .cover-line {
+    width: 80px;
+    height: 3px;
+    background: #e63946;
+    margin: 28px auto;
+    border-radius: 2px;
+  }
+
+  /* TOC */
+  .toc { page-break-after: always; }
+  .toc h2 {
+    font-size: 16pt;
+    color: #0d1b2a;
+    margin-bottom: 20px;
+    border-bottom: 2px solid #e63946;
+    padding-bottom: 8px;
+  }
+  .toc-list { list-style: none; }
+  .toc-list li {
+    padding: 7px 0;
+    border-bottom: 1px dotted #d0d0d0;
+    display: flex;
+    justify-content: space-between;
+  }
+  .toc-list li a {
+    text-decoration: none;
+    color: #1a1a2e;
+    font-weight: 500;
+  }
+  .toc-list li span { color: #778da9; font-size: 9.5pt; }
+  .toc-list .toc-part { font-weight: 700; color: #0d1b2a; font-size: 11pt; padding-top: 12px; }
+
+  /* Section headers */
+  h2 {
+    font-size: 16pt;
+    font-weight: 800;
+    color: #0d1b2a;
+    margin-top: 36px;
+    margin-bottom: 14px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e63946;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #1b263b;
+    margin-top: 22px;
+    margin-bottom: 8px;
+    page-break-after: avoid;
+  }
+  h4 {
+    font-size: 10.5pt;
+    font-weight: 700;
+    color: #415a77;
+    margin-top: 14px;
+    margin-bottom: 4px;
+  }
+  .part-number {
+    display: inline-block;
+    background: #e63946;
+    color: #fff;
+    font-size: 9pt;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 3px;
+    margin-right: 8px;
+    vertical-align: middle;
+  }
+
+  /* Body text */
+  p { margin-bottom: 8px; }
+  ul, ol { margin: 6px 0 10px 24px; }
+  li { margin-bottom: 4px; }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 16px;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #0d1b2a;
+    color: #fff;
+    font-weight: 600;
+    padding: 7px 10px;
+    text-align: left;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid #e0e0e0;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f8f9fa; }
+  tr:hover td { background: #eef1f5; }
+
+  /* Insight boxes */
+  .insight {
+    background: linear-gradient(135deg, #f0f4ff, #e8eeff);
+    border-left: 4px solid #3a5bc7;
+    padding: 12px 16px;
+    margin: 14px 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 9.5pt;
+  }
+  .insight-title {
+    font-weight: 700;
+    color: #3a5bc7;
+    font-size: 9pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 4px;
+  }
+
+  /* Impact badges */
+  .badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .badge-p0 { background: #e63946; color: #fff; }
+  .badge-p1 { background: #f77f00; color: #fff; }
+  .badge-p2 { background: #3a86c7; color: #fff; }
+  .badge-p3 { background: #778da9; color: #fff; }
+  .badge-p4 { background: #adb5bd; color: #fff; }
+  .badge-high { background: #2a9d8f; color: #fff; }
+  .badge-medium { background: #e9c46a; color: #1a1a2e; }
+  .badge-low { background: #adb5bd; color: #fff; }
+
+  /* Code / formula blocks */
+  code {
+    background: #f1f3f5;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 9pt;
+    color: #c7254e;
+  }
+  .formula {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 10px 16px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-family: 'Cascadia Code', monospace;
+    font-size: 9pt;
+    line-height: 1.7;
+    overflow-x: auto;
+  }
+
+  /* Current state boxes */
+  .current-state {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 9.5pt;
+  }
+  .current-state strong { color: #856404; }
+
+  /* Improvement boxes */
+  .improvement {
+    background: #d4edda;
+    border-left: 4px solid #28a745;
+    padding: 10px 14px;
+    margin: 10px 0;
+    border-radius: 0 4px 4px 0;
+    font-size: 9.5pt;
+  }
+  .improvement strong { color: #155724; }
+
+  /* Data flow diagram */
+  .flow-diagram {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    padding: 16px;
+    margin: 14px 0;
+    border-radius: 6px;
+    font-family: 'Cascadia Code', monospace;
+    font-size: 8.5pt;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+  }
+
+  /* Architecture boxes */
+  .arch-stream {
+    border: 2px solid;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 12px 0;
+  }
+  .arch-stream h4 { margin-top: 0; }
+  .stream-a { border-color: #e63946; }
+  .stream-a h4 { color: #e63946; }
+  .stream-b { border-color: #3a86c7; }
+  .stream-b h4 { color: #3a86c7; }
+  .stream-c { border-color: #2a9d8f; }
+  .stream-c h4 { color: #2a9d8f; }
+
+  /* Page breaks */
+  .page-break { page-break-before: always; }
+
+  /* Footer */
+  .footer {
+    margin-top: 60px;
+    padding-top: 16px;
+    border-top: 1px solid #dee2e6;
+    text-align: center;
+    font-size: 8.5pt;
+    color: #adb5bd;
+  }
+
+  /* Print styles */
+  @media print {
+    body { padding: 0; }
+    .page-break { page-break-before: always; }
+    h2 { page-break-after: avoid; }
+    h3 { page-break-after: avoid; }
+    table { page-break-inside: avoid; }
+    .insight { page-break-inside: avoid; }
+    .arch-stream { page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== COVER ===== -->
+<div class="cover">
+  <div class="cover-badge">Technical Report</div>
+  <h1>Coaching &amp; Theoretical<br>Engine <span>Improvement Report</span></h1>
+  <p class="subtitle">Cross-referencing 257 FSAE vehicle dynamics resources against the Lap Coach telemetry analysis platform to identify high-impact upgrades</p>
+  <div class="cover-line"></div>
+  <div class="cover-meta">
+    <strong>Platform:</strong> Lap Coach Racing &mdash; Motorsport Telemetry SaaS<br>
+    <strong>Source Material:</strong> 81 MATLAB scripts, 51 PDFs, 10 Excel tools (FSAE library)<br>
+    <strong>Codebase Analyzed:</strong> kart_envelope/ coaching pipeline, telemetry_tool/ solver &amp; scoring<br>
+    <strong>Date:</strong> 13 March 2026<br>
+    <strong>Classification:</strong> Internal &mdash; Engineering
+  </div>
+</div>
+
+<!-- ===== TABLE OF CONTENTS ===== -->
+<div class="toc">
+  <h2>Table of Contents</h2>
+  <ul class="toc-list">
+    <li class="toc-part"><a href="#exec">Executive Summary</a></li>
+    <li><a href="#part1">Part 1: Tire Model Upgrades</a> <span>1a&ndash;1c</span></li>
+    <li><a href="#part2">Part 2: Vehicle Dynamics Model Upgrades</a> <span>2a&ndash;2d</span></li>
+    <li><a href="#part3">Part 3: Racing Line &amp; Curvature Improvements</a> <span>3a&ndash;3c</span></li>
+    <li><a href="#part4">Part 4: Coaching Engine Intelligence</a> <span>4a&ndash;4e</span></li>
+    <li><a href="#part5">Part 5: Theoretical Engine Accuracy</a> <span>5a&ndash;5e</span></li>
+    <li><a href="#part6">Part 6: New Capabilities</a> <span>6a&ndash;6e</span></li>
+    <li class="toc-part"><a href="#part7">Part 7: Priority Ranking</a></li>
+    <li class="toc-part"><a href="#part8">Part 8: Architecture Recommendation</a></li>
+  </ul>
+</div>
+
+<!-- ===== EXECUTIVE SUMMARY ===== -->
+<h2 id="exec"><span class="part-number">0</span> Executive Summary</h2>
+
+<p>This report cross-references a comprehensive FSAE vehicle dynamics library (257 files spanning tire modeling, ISO testing standards, lap time simulation, and suspension analysis) against the current Lap Coach coaching and theoretical engine codebase to identify every actionable improvement opportunity.</p>
+
+<p><strong>Key finding:</strong> The current engine optimizes <em>speed on a fixed path</em> but never optimizes <em>the path itself</em>. Racing line accounts for 60&ndash;70% of the lap time difference between amateur and professional drivers. This is the single highest-value gap.</p>
+
+<p><strong>23 improvements identified</strong>, organized into 5 priority tiers:</p>
+
+<table>
+  <tr><th>Priority</th><th>Count</th><th>Theme</th><th>Expected Impact</th></tr>
+  <tr><td><span class="badge badge-p0">P0</span></td><td>2</td><td>Racing line optimization, cross-session progression</td><td>Transformative &mdash; addresses primary skill gap</td></tr>
+  <tr><td><span class="badge badge-p1">P1</span></td><td>4</td><td>Multi-apex coaching, brake modulation, tire physics</td><td>High &mdash; 3&ndash;8% accuracy, new coaching dimensions</td></tr>
+  <tr><td><span class="badge badge-p2">P2</span></td><td>5</td><td>Adaptive thresholds, G-G analysis, tire degradation</td><td>Medium &mdash; eliminates false positives, endurance support</td></tr>
+  <tr><td><span class="badge badge-p3">P3</span></td><td>6</td><td>Elevation, reference drivers, steering analysis, roll</td><td>Moderate &mdash; circuit-specific and advanced coaching</td></tr>
+  <tr><td><span class="badge badge-p4">P4</span></td><td>6</td><td>Frequency response, setup sensitivity, predictive</td><td>Low/Niche &mdash; requires full vehicle model</td></tr>
+</table>
+
+<p>The improvements cluster into <strong>three parallel implementation streams</strong>: Physics Fidelity (tire models + OCP solver), Coaching Intelligence (pattern detection + progression), and Racing Line (path optimization as preprocessing).</p>
+
+<!-- ===== PART 1 ===== -->
+<div class="page-break"></div>
+<h2 id="part1"><span class="part-number">1</span> Tire Model Upgrades</h2>
+
+<h3>Current State</h3>
+<div class="current-state">
+  <strong>Quantile-based capability envelope</strong> &mdash; 99th percentile of observed ax/ay per 5 km/h speed bin, with a p-norm friction ellipse (p&asymp;1.6). This is data-driven but has no physics basis for tire behavior. The envelope conflates vehicle capability with driver capability.
+</div>
+
+<h3>FSAE Reference Material</h3>
+<table>
+  <tr><th>Model</th><th>Source File</th><th>Complexity</th><th>What It Adds</th></tr>
+  <tr><td>Pacejka 4-term</td><td><code>pacejka4.m</code></td><td>Low</td><td>FY(&alpha;) = D&middot;sin(C&middot;atan(B&middot;&alpha;)), cornering stiffness at small slip</td></tr>
+  <tr><td>Pacejka 5-term</td><td><code>Pacejka5/</code></td><td>Medium</td><td>Additional Fy2 term for extreme slip angles</td></tr>
+  <tr><td>MF-Tyre 5.2</td><td><code>MF52_FY.m</code>, <code>MF52_MX.m</code>, <code>MF52_MZ.m</code></td><td>High</td><td>Combined cornering+braking, temperature, pressure, load variation</td></tr>
+</table>
+
+<h3>1a. Replace fixed friction circle with load-sensitive Pacejka model</h3>
+<div class="improvement">
+  <strong>Current:</strong> <code>ay_max</code> is a flat number per speed bin.<br>
+  <strong>Better:</strong> <code>ay_max(Fz) = D1&middot;Fz + D2&middot;Fz&sup2;</code> where Fz changes with load transfer.<br>
+  <strong>Source:</strong> FSAE <code>nonlin.m</code> shows exactly how cornering compliance DF/DR change with lateral acceleration due to load transfer &mdash; the current engine ignores this entirely.
+</div>
+<p><strong>Impact:</strong> 3&ndash;8% improvement in theoretical lap accuracy on high-downforce cars; matters less for karts.</p>
+
+<h3>1b. Add combined-slip tire model</h3>
+<div class="improvement">
+  <strong>Current:</strong> p-norm ellipse <code>(ax/ax_max)^p + (ay/ay_max)^p &le; 1</code> with fixed p=1.6.<br>
+  <strong>Better:</strong> MF-Tyre 5.2 combined slip model (<code>wsu.m</code>) accounts for tire saturation differently under braking-while-turning vs acceleration-while-turning.<br>
+  <strong>Key finding:</strong> Lateral force FY drops <em>faster</em> under braking than under traction &mdash; the current symmetric p-norm misses this asymmetry.
+</div>
+<p><strong>Impact:</strong> More accurate trail-braking coaching. Currently the engine can't distinguish "at the grip limit" from "15% more lateral grip available because you're off the brakes."</p>
+
+<h3>1c. Add tire transient lag model</h3>
+<div class="improvement">
+  <strong>Source:</strong> PDF "Tire Transient Lateral Force Generation" documents that tires take 0.05&ndash;0.15s to build lateral force after slip angle change (relaxation length effect).<br>
+  <strong>Current:</strong> Assumes instantaneous grip &mdash; theoretical speeds through quick direction changes (chicanes, slaloms) are too optimistic.
+</div>
+<p><strong>Impact:</strong> 50&ndash;150ms more realistic theoretical time through chicanes; better coaching for quick transitions.</p>
+
+<div class="insight">
+  <div class="insight-title">&#9733; Engineering Insight</div>
+  The fundamental limitation isn't that you lack tire data &mdash; it's that the quantile envelope conflates vehicle limits with driver limits. A driver who never trail-brakes produces an envelope that <em>appears</em> to have lower combined-slip grip than the vehicle actually has. Pacejka separates vehicle capability from driver behavior.
+</div>
+
+<!-- ===== PART 2 ===== -->
+<div class="page-break"></div>
+<h2 id="part2"><span class="part-number">2</span> Vehicle Dynamics Model Upgrades</h2>
+
+<h3>Current OCP Solver Models</h3>
+<div class="current-state">
+  <strong>Implemented in <code>ocp_solver.py</code>:</strong> Energy balance (v&sup2; dynamics), friction ellipse constraint, basic front/rear Fz load transfer, aerodynamic drag + downforce (constant Cd/Cl), throttle-brake complementarity.
+</div>
+
+<h3>2a. Add understeer gradient K to theoretical model</h3>
+<p><strong>Source:</strong> <code>nonlin.m</code> and <code>marc1&ndash;5.m</code> compute K (deg/g) from ISO 4138 data.</p>
+<div class="improvement">
+  <strong>Current:</strong> Model assumes the vehicle can achieve any lateral g at any speed if grip allows.<br>
+  <strong>Better:</strong> Add steering constraint: <code>&delta;_required = (L/R) + K&middot;ay</code>. If <code>&delta;_required &gt; &delta;_max</code> (steering lock), corner speed is limited by steering, not grip.
+</div>
+<p><strong>Impact:</strong> Critical for cars with high understeer (most production cars, some FSAE cars). Less important for karts.</p>
+
+<h3>2b. Add roll dynamics</h3>
+<p><strong>Source:</strong> <code>roll_play.m</code> &mdash; roll gain <code>rg = m_sprung &middot; h_sprung / k_total</code> and roll stiffness distribution.</p>
+<div class="formula">Roll angle:     &phi; = ay &middot; rg
+Load transfer:  &Delta;Fz = m&middot;ay&middot;h/t + m&middot;ay&middot;&phi;&middot;d_roll</div>
+<p><strong>Impact:</strong> 1&ndash;3% theoretical accuracy improvement for cars with soft suspension; negligible for karts.</p>
+
+<h3>2c. Add frequency response characterization</h3>
+<p><strong>Source:</strong> <code>chirp_test.m</code> and <code>joao_proc.m</code> extract transfer functions (yaw rate/steer, sideslip/steer) and transient metrics (rise time, damping ratio, overshoot).</p>
+<div class="improvement">
+  <strong>New coaching dimension:</strong> Compare driver's steering input frequency spectrum to the vehicle's natural frequency. If dominant input frequency is near yaw natural frequency (1&ndash;3 Hz), vehicle amplifies oscillations &mdash; flag "your steering corrections are too frequent."
+</div>
+<p><strong>Impact:</strong> Opens a completely new coaching category: driver-vehicle frequency mismatch.</p>
+
+<h3>2d. Add Ackermann steering geometry effects</h3>
+<p><strong>Source:</strong> <code>ackermannError.xlsx</code> &mdash; difference between ideal Ackermann angle and actual outer wheel angle.</p>
+<p><strong>Impact:</strong> Small (1&ndash;2%) but noticeable on tight kart circuits with many hairpins.</p>
+
+<div class="insight">
+  <div class="insight-title">&#9733; Engineering Insight</div>
+  The FSAE toolkit follows a systematic validation workflow: ISO 4138 test &rarr; extract K &rarr; validate against chirp/step response &rarr; feed into lap sim. Your engine skips the first three steps. Adding K extraction from the driver's own telemetry (curvature + ay + steering angle) would create a vehicle characterization step that makes the theoretical lap physically grounded rather than purely statistical.
+</div>
+
+<!-- ===== PART 3 ===== -->
+<div class="page-break"></div>
+<h2 id="part3"><span class="part-number">3</span> Racing Line &amp; Curvature Improvements</h2>
+
+<h3>Current State</h3>
+<div class="current-state">
+  <strong>Track geometry derived from driver's GPS path.</strong> Curvature <code>&kappa; = d(heading)/ds</code> computed from driver data, so the "theoretical line" is actually "theoretical speed on the driver's actual line."
+</div>
+
+<h3>3a. Separate racing line optimization from speed optimization <span class="badge badge-p0">P0</span></h3>
+<p><strong>Source:</strong> <code>curvature.m</code> (circumcenter method) + Track_Attack + MaxLat_Sim.</p>
+<div class="improvement">
+  <strong>This is the single highest-value improvement.</strong> Racing line accounts for 60&ndash;70% of lap time delta between amateur and pro drivers; speed execution on a given line is only 30&ndash;40%.<br><br>
+  <strong>Two-stage optimization:</strong><br>
+  &nbsp;&nbsp;(1) Find optimal path through track boundaries (geometric optimization)<br>
+  &nbsp;&nbsp;(2) Find optimal speed on that path (dynamic optimization &mdash; current system)<br>
+  Currently only step 2 exists.
+</div>
+<p><strong>Implementation:</strong> Given track boundaries (derived from GPS cloud of all laps), compute the optimal racing line that minimizes curvature through corners while maximizing straight length.</p>
+
+<h3>3b. Multi-apex corner handling <span class="badge badge-p1">P1</span></h3>
+<div class="improvement">
+  <strong>Current:</strong> Curvature threshold + merge heuristic (&lt;50m apart). Chicanes appear as 2&ndash;3 separate corners.<br>
+  <strong>Better:</strong> Classify corner sequences as <code>single</code>, <code>chicane</code>, <code>esses</code>, <code>decreasing_radius</code>, <code>increasing_radius</code>.<br>
+  <strong>New coaching:</strong> "Sacrifice corner 3 entry to maximize corner 4 exit speed."
+</div>
+<p><strong>Impact:</strong> Addresses one of the biggest coaching blind spots. Pro drivers think in corner complexes, not individual corners.</p>
+
+<h3>3c. Elevation-aware curvature</h3>
+<div class="improvement">
+  <strong>Current:</strong> 2D GPS curvature. Hills create false curvature in heading signal.<br>
+  <strong>Better:</strong> <code>curvature.m</code> supports 3D path points &mdash; separate lateral curvature from vertical. Use vertical curvature for crest/compression grip effects.
+</div>
+<p><strong>Impact:</strong> Critical for hillclimb tracks and circuits with elevation (Spa, Bathurst, Road America).</p>
+
+<div class="insight">
+  <div class="insight-title">&#9733; Engineering Insight</div>
+  The FSAE <code>curvature.m</code> uses the circumcenter method (find circle through 3 consecutive points). This is more robust than the current <code>dheading/ds</code> approach because it's less sensitive to GPS noise &mdash; heading derivatives amplify noise, while circumcenter averages it across 3 points.
+</div>
+
+<!-- ===== PART 4 ===== -->
+<div class="page-break"></div>
+<h2 id="part4"><span class="part-number">4</span> Coaching Engine Intelligence</h2>
+
+<h3>Current Limitations</h3>
+<table>
+  <tr><th>Limitation</th><th>Current Behavior</th><th>Consequence</th></tr>
+  <tr><td>Fixed thresholds</td><td><code>brake_util_p90 &lt; 0.88</code> = underbraking (same for F2000 and 125cc kart)</td><td>False positives/negatives across vehicle types</td></tr>
+  <tr><td>No cross-session learning</td><td>Each session analyzed in isolation</td><td>Can't track improvement over sessions</td></tr>
+  <tr><td>Zone averaging</td><td>Entry/apex/exit speeds averaged across zone</td><td>Can't distinguish smooth vs abrupt braking</td></tr>
+  <tr><td>20 fixed segments</td><td>Same granularity for 400m and 6km tracks</td><td>Over-granular or under-granular</td></tr>
+  <tr><td>No line analysis</td><td>Only speed delta, not position delta</td><td>Misses primary skill difference</td></tr>
+  <tr><td>Single-lap diagnostics</td><td>Diagnostic runs on one lap</td><td>Misses session-level patterns</td></tr>
+</table>
+
+<h3>4a. Adaptive thresholds by vehicle class <span class="badge badge-p2">P2</span></h3>
+<p><strong>Source:</strong> <code>BILLCOBB_VD101.xlsm</code> contains Pacejka coefficients for 50+ tire sets and parameters for 20+ vehicles. Lateral g ranges from 0.6g (road car) to 2.5g (FSAE with downforce).</p>
+<div class="improvement">
+  <strong>Create vehicle class presets:</strong> <code>kart_125cc</code>, <code>kart_rotax</code>, <code>car_touring</code>, <code>car_formula</code>, <code>car_gt</code> with scaled thresholds.<br>
+  <code>braking_threshold = base_threshold &times; vehicle_class.brake_factor</code>
+</div>
+
+<h3>4b. Steering input analysis (new coaching dimension)</h3>
+<p><strong>Source:</strong> <code>joao_proc.m</code> extracts response times (tay, tbeta, tyawv) and damping ratio.</p>
+<div class="improvement">
+  <strong>If RaceChrono records steering angle, analyze:</strong>
+  <ul>
+    <li>Steering smoothness (frequency content of steering signal)</li>
+    <li>Correction frequency (how many mid-corner corrections per lap)</li>
+    <li>Steering lead vs lag (does driver anticipate or react?)</li>
+  </ul>
+  <strong>New pattern:</strong> <code>reactive_steering</code> vs <code>anticipatory_steering</code>
+</div>
+<p><strong>Impact:</strong> Steering technique is the #1 differentiator between intermediate and advanced drivers.</p>
+
+<h3>4c. Brake modulation analysis <span class="badge badge-p1">P1</span></h3>
+<p><strong>Source:</strong> FSAE frequency response tests show how vehicle response changes with input rate.</p>
+<div class="improvement">
+  <strong>New patterns:</strong>
+  <ul>
+    <li><code>abrupt_braking</code> &mdash; Pressure ramp &lt;0.1s from 0 to peak (lockup risk)</li>
+    <li><code>trailing_brake_absent</code> &mdash; No gradual release into corner entry (missing trail-brake)</li>
+    <li><code>late_peak_brake</code> &mdash; Peak decel &gt;20% into braking zone</li>
+  </ul>
+  <strong>Currently:</strong> Engine only knows "braked too early" or "braked too late" &mdash; not <em>how</em> the driver braked.
+</div>
+
+<h3>4d. Speed-dependent G-G utilization <span class="badge badge-p2">P2</span></h3>
+<p><strong>Source:</strong> <code>FSAE_MaxLat_Sim.m</code> maps maximum ay at each speed.</p>
+<div class="improvement">
+  <strong>Current:</strong> Compares driver's G-G scatter to a single envelope circle.<br>
+  <strong>Better:</strong> Speed-binned G-G analysis reveals:<br>
+  &nbsp;&nbsp;&bull; Low-speed corners: driver uses 90% of grip (good)<br>
+  &nbsp;&nbsp;&bull; High-speed corners: driver uses only 60% (trust issue)<br>
+  <strong>New pattern:</strong> <code>speed_dependent_trust_deficit</code>
+</div>
+<p><strong>Impact:</strong> Reveals psychological limits vs physical limits.</p>
+
+<h3>4e. Cross-session progression tracking <span class="badge badge-p0">P0</span></h3>
+<div class="improvement">
+  <strong>Store per-corner and per-pattern metrics with session timestamps. Compute:</strong>
+  <ul>
+    <li>Corner-specific improvement trend ("Turn 3 time loss: 320ms &rarr; 180ms over 4 sessions")</li>
+    <li>Pattern resolution ("early_braking pattern resolved after session 3")</li>
+    <li>Skill profile evolution (radar chart across sessions)</li>
+  </ul>
+</div>
+<p><strong>Impact:</strong> Transforms coaching from "what you did wrong today" to "how you're developing as a driver."</p>
+
+<div class="insight">
+  <div class="insight-title">&#9733; Engineering Insight</div>
+  The FSAE workflow follows a test-validate-simulate cycle. Your engine currently only does "simulate" (theoretical) and "report" (coaching text). Adding "validate" (compare the vehicle model against real session data to check model accuracy before using it for coaching) would dramatically improve coaching credibility. A theoretical lap that's 3% wrong produces actively misleading advice.
+</div>
+
+<!-- ===== PART 5 ===== -->
+<div class="page-break"></div>
+<h2 id="part5"><span class="part-number">5</span> Theoretical Engine Accuracy</h2>
+
+<h3>5a. Better warm-start from curvature</h3>
+<div class="improvement">
+  <strong>Current:</strong> <code>v_init = sqrt(&mu; &middot; g / &kappa;)</code> &mdash; pure lateral limit, ignores aero downforce at speed.<br>
+  <strong>Better:</strong> <code>v_init[i] = min(v_qss[i], sqrt((&mu;&middot;g + 0.5&middot;&rho;&middot;Cl&middot;A&middot;v&sup2;/m) / &kappa;[i]))</code>
+</div>
+
+<h3>5b. Variable friction coefficient</h3>
+<div class="improvement">
+  <strong>Current:</strong> Single <code>&mu;</code> for entire track.<br>
+  <strong>Better:</strong> Build distance-dependent <code>&mu;(s)</code> map from multi-session corpus. Grip at corner entry (clean asphalt) differs from apex (rubber-ed in) differs from kerbs (painted, low grip).
+</div>
+<p><strong>Impact:</strong> 2&ndash;5% more accurate theoretical through corners where grip varies significantly.</p>
+
+<h3>5c. Wind model</h3>
+<div class="formula">F_aero = 0.5 &middot; &rho; &middot; Cd &middot; A &middot; (v + v_wind)&sup2;</div>
+<p>Headwind/tailwind affects lap times by 0.5&ndash;2%. If weather data is available, adjust theoretical accordingly.</p>
+<p><strong>Impact:</strong> Explains session-to-session variation that currently appears as "driver inconsistency."</p>
+
+<h3>5d. Tire degradation model <span class="badge badge-p2">P2</span></h3>
+<div class="improvement">
+  <strong>Current:</strong> Single envelope snapshot per session.<br>
+  <strong>Better:</strong> Track envelope evolution across laps: train separate envelopes for lap 1&ndash;5, 6&ndash;15, 16&ndash;30, 30+.<br>
+  <strong>New coaching:</strong> "You're pushing too hard in the first 5 laps &mdash; you'll have 8% less grip by lap 20."
+</div>
+<p><strong>Impact:</strong> Critical for endurance sessions (20+ laps).</p>
+
+<h3>5e. Solver convergence improvements</h3>
+<div class="improvement">
+  <strong>Current:</strong> CasADi/IPOPT falls back to QSS on failure (~15% of laps).<br>
+  <strong>Better:</strong>
+  <ul>
+    <li>Multiple constraint relaxation levels: try tight first, relax progressively</li>
+    <li>Proper IPOPT warm-start: <code>warm_start_init_point: yes</code> with lambda/multiplier guesses from QSS</li>
+    <li>Set <code>mu_init = 0.1</code> for faster initial progress</li>
+  </ul>
+</div>
+<p><strong>Impact:</strong> Reduces fallback-to-QSS rate from ~15% to ~3%.</p>
+
+<!-- ===== PART 6 ===== -->
+<div class="page-break"></div>
+<h2 id="part6"><span class="part-number">6</span> New Capabilities (Not in Current Engine)</h2>
+
+<h3>6a. ISO 4138 Vehicle Characterization from Telemetry</h3>
+<p>Extract vehicle handling characteristics from the driver's own telemetry data:</p>
+<ul>
+  <li>From constant-speed cornering data, compute understeer gradient K</li>
+  <li>From rapid direction changes, estimate yaw natural frequency and damping</li>
+  <li>From braking events, estimate brake balance front/rear</li>
+</ul>
+<p><strong>Output example:</strong> "Your vehicle has K=2.1 deg/g (moderate understeer), yaw natural frequency 1.8 Hz, 58% front brake bias."</p>
+<p><strong>Value:</strong> Gives mechanics actionable setup feedback alongside driver coaching.</p>
+
+<h3>6b. Setup Change Sensitivity Analysis</h3>
+<p>Run theoretical lap with varied vehicle parameters: +10% front spring rate, -5% rear anti-roll bar, etc. Show predicted lap time delta for each change.</p>
+<p><strong>Requires:</strong> Vehicle model with Pacejka tire parameters (not just empirical envelope).</p>
+<p><strong>Value:</strong> Bridges gap between "what the driver should do" and "what the car setup should do."</p>
+
+<h3>6c. Sector-Level Strategy Coaching <span class="badge badge-p2">P2</span></h3>
+<p>Instead of corner-by-corner (tactical), provide sector-level strategy:</p>
+<ul>
+  <li>"Sector 1 (slow corners): you lose 320ms. This is a minimum-speed technique issue."</li>
+  <li>"Sector 2 (high-speed): you lose only 40ms. Your confidence at speed is strong."</li>
+  <li>"Sector 3 (mixed): you lose 200ms, mostly on exits. Get to full throttle earlier."</li>
+</ul>
+<p><strong>Value:</strong> Helps drivers prioritize where to focus practice time.</p>
+
+<h3>6d. Reference Driver Comparison</h3>
+<p>Store "gold standard" laps from fast drivers on the same track. Compare user telemetry against a reference driver &mdash; not just the theoretical.</p>
+<p><strong>Value:</strong> Theoretical = "perfect robot"; reference driver = "achievable human." Much more motivating.</p>
+
+<h3>6e. Predictive Lap Time Calculator</h3>
+<p>Given a new track layout (GPS trace), predict the user's likely lap time based on their performance envelope from previous tracks.</p>
+<p><strong>Example:</strong> "Based on your driving profile, expect 1:23.5 at Spa vs your current 1:26.2 &mdash; high-speed cornering confidence is costing ~2.7s."</p>
+
+<!-- ===== PART 7 ===== -->
+<div class="page-break"></div>
+<h2 id="part7"><span class="part-number">7</span> Priority Ranking</h2>
+
+<p>Ranked by <strong>(impact on coaching quality) &times; (feasibility with current architecture)</strong>:</p>
+
+<table>
+  <tr><th>Priority</th><th>Improvement</th><th>Impact</th><th>Effort</th><th>Key Files</th></tr>
+  <tr>
+    <td><span class="badge badge-p0">P0</span></td>
+    <td><strong>Racing line optimization</strong> (3a)</td>
+    <td>Massive &mdash; 60&ndash;70% of lap time gap</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>New: <code>line_optimizer.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p0">P0</span></td>
+    <td><strong>Cross-session progression</strong> (4e)</td>
+    <td>Transforms product value</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td>DB schema + new <code>progression.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1</span></td>
+    <td><strong>Multi-apex corner coaching</strong> (3b)</td>
+    <td>Fixes biggest coaching blind spot</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>corner_coaching.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1</span></td>
+    <td><strong>Brake modulation analysis</strong> (4c)</td>
+    <td>Most actionable coaching</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>driver_diagnostics.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1</span></td>
+    <td><strong>Load-sensitive tire model</strong> (1a)</td>
+    <td>3&ndash;8% theoretical accuracy</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>capability.py</code>, <code>ocp_solver.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p1">P1</span></td>
+    <td><strong>Combined-slip asymmetry</strong> (1b)</td>
+    <td>Better trail-braking coaching</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>capability.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2</span></td>
+    <td>Adaptive thresholds by class (4a)</td>
+    <td>Eliminates false positives</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>driver_diagnostics.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2</span></td>
+    <td>Speed-dependent G-G (4d)</td>
+    <td>Reveals trust issues</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>driver_diagnostics.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2</span></td>
+    <td>Tire degradation tracking (5d)</td>
+    <td>Critical for endurance</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>capability.py</code>, new <code>degradation.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2</span></td>
+    <td>Understeer gradient K (2a)</td>
+    <td>Physical grounding for cars</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>ocp_solver.py</code>, new <code>vehicle_char.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p2">P2</span></td>
+    <td>Sector strategy coaching (6c)</td>
+    <td>Better driver prioritization</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>cause_ranking.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Elevation-aware curvature (3c)</td>
+    <td>Important for hilly circuits</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>track_geometry.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Reference driver comparison (6d)</td>
+    <td>Motivational coaching</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td>DB + new <code>reference.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Steering input analysis (4b)</td>
+    <td>New coaching dimension</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>driver_diagnostics.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Roll dynamics (2b)</td>
+    <td>Small accuracy gain</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>ocp_solver.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Variable friction map (5b)</td>
+    <td>Track-specific accuracy</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>capability.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p3">P3</span></td>
+    <td>Wind model (5c)</td>
+    <td>Explains variation</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>ocp_solver.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Frequency response coaching (2c)</td>
+    <td>Advanced coaching</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>New module</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Vehicle characterization (6a)</td>
+    <td>Setup tool</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>New module</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Setup sensitivity (6b)</td>
+    <td>Requires full vehicle model</td>
+    <td><span class="badge badge-high">V. High</span></td>
+    <td>New module</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Tire transient lag (1c)</td>
+    <td>Small accuracy gain</td>
+    <td><span class="badge badge-medium">Med</span></td>
+    <td><code>capability.py</code></td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Predictive lap time (6e)</td>
+    <td>Nice-to-have</td>
+    <td><span class="badge badge-high">High</span></td>
+    <td>New module</td>
+  </tr>
+  <tr>
+    <td><span class="badge badge-p4">P4</span></td>
+    <td>Ackermann correction (2d)</td>
+    <td>Marginal</td>
+    <td><span class="badge badge-low">Low</span></td>
+    <td><code>ocp_solver.py</code></td>
+  </tr>
+</table>
+
+<!-- ===== PART 8 ===== -->
+<div class="page-break"></div>
+<h2 id="part8"><span class="part-number">8</span> Architecture Recommendation</h2>
+
+<p>The 23 improvements cluster into three streams that can proceed in parallel:</p>
+
+<div class="arch-stream stream-a">
+  <h4>Stream A: Physics Fidelity</h4>
+  <p><strong>Scope:</strong> Items 1a, 1b, 2a &rarr; <code>capability.py</code> + <code>ocp_solver.py</code></p>
+  <p>Add Pacejka-based tire model as an <em>alternative</em> to the quantile envelope. Keep quantile as fallback when no tire data is available. Wire Pacejka through the same <code>CapabilityEnvelope</code> interface so the solver doesn't need to know which model is active.</p>
+  <p><strong>Key principle:</strong> Two-tier fidelity &mdash; empirical envelope (always available) vs physics model (when vehicle parameters are known).</p>
+</div>
+
+<div class="arch-stream stream-b">
+  <h4>Stream B: Coaching Intelligence</h4>
+  <p><strong>Scope:</strong> Items 3b, 4a&ndash;4e &rarr; <code>coaching/</code> package</p>
+  <p>Extend the existing coaching pipeline with new pattern detectors and cross-session storage. No architectural changes needed &mdash; add new methods to <code>driver_diagnostics.py</code> and new DB tables for progression tracking.</p>
+  <p><strong>Key principle:</strong> Each new pattern detector is additive and non-breaking. Deploy incrementally.</p>
+</div>
+
+<div class="arch-stream stream-c">
+  <h4>Stream C: Racing Line Optimization</h4>
+  <p><strong>Scope:</strong> Item 3a &rarr; new <code>line_optimizer.py</code></p>
+  <p>The largest change. Requires: track boundary extraction from GPS cloud &rarr; convex optimization for minimum-curvature path &rarr; integration with existing speed optimizer. Implemented as a <strong>preprocessing step</strong> before the theoretical solver runs.</p>
+  <p><strong>Key principle:</strong> Racing line is computed once per track (not per session), cached, and reused. The speed optimizer takes the optimal line as input instead of the driver's GPS line.</p>
+</div>
+
+<h3 style="margin-top: 28px;">FSAE Source Material Summary</h3>
+<table>
+  <tr><th>Category</th><th>Files</th><th>Key Resources</th></tr>
+  <tr><td>Tire Models</td><td>Pacejka4/, Pacejka5/, MF5.2/</td><td><code>pacejka4.m</code>, <code>MF52_FY.m</code>, <code>wsu.m</code></td></tr>
+  <tr><td>Vehicle Dynamics</td><td>Matlab Sandbox/, nonlin_tr/</td><td><code>nonlin.m</code>, <code>chirp_test.m</code>, <code>roll_play.m</code></td></tr>
+  <tr><td>Racing Line</td><td>Curvature/, Track_Attack/</td><td><code>curvature.m</code>, <code>FSAE_MaxLat_Sim.m</code></td></tr>
+  <tr><td>Response Analysis</td><td>JOAO/</td><td><code>joao_proc.m</code></td></tr>
+  <tr><td>Test Data</td><td>Root + Matlab Sandbox</td><td><code>BILLCOBB_VD101.xlsm</code>, 4x test proc .xlsx</td></tr>
+  <tr><td>Theory &amp; Standards</td><td>Publications/, Testing/</td><td>51 PDFs: ISO 4138&ndash;9816, MF-Tyre 5.2 manual, F1 insights</td></tr>
+</table>
+
+<div class="footer">
+  <p>Coaching &amp; Theoretical Engine Improvement Report &mdash; Lap Coach Racing &mdash; March 2026</p>
+  <p>Generated from FSAE vehicle dynamics library cross-referenced against production codebase analysis</p>
+</div>
+
+</body>
+</html>

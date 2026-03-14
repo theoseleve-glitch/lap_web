@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 
 from kart_envelope.config import KartEnvelopeConfig, default_config
-from kart_envelope.envelope.combined_slip import fit_p_norm
+from kart_envelope.envelope.combined_slip import fit_asymmetric_p_norm, fit_p_norm
 from kart_envelope.ingest.columns import COL_ACCEL_LAT, COL_ACCEL_LONG, COL_SPEED
 
 logger = logging.getLogger(__name__)
@@ -64,6 +64,8 @@ class CapabilityEnvelope:
     ax_drive_max: np.ndarray
     ax_brake_max: np.ndarray
     p_combined: float = 1.6
+    p_traction: float = 0.0   # 0 means "use p_combined" (backward compat)
+    p_braking: float = 0.0    # 0 means "use p_combined" (backward compat)
 
     track_id: str = ""
     kart_id: str = ""
@@ -108,31 +110,47 @@ class CapabilityEnvelope:
         """Max braking deceleration [m/s²] (positive) at *speed*."""
         return self._brake_fn(speed)
 
+    def _effective_p(self, braking: bool) -> float:
+        """Return the p-norm exponent for the current loading phase."""
+        if braking:
+            return self.p_braking if self.p_braking > 0 else self.p_combined
+        return self.p_traction if self.p_traction > 0 else self.p_combined
+
     def max_lateral_accel(
         self, speed: float, longitudinal_accel: float = 0.0,
     ) -> float:
-        """Available lateral accel under combined loading."""
+        """Available lateral accel under combined loading.
+
+        Uses asymmetric p-norm: p_braking when decelerating, p_traction
+        when accelerating.  Falls back to p_combined if asymmetric values
+        are not set (== 0).
+        """
         ay_max_v = float(self.lateral_max(speed))
         if longitudinal_accel == 0.0:
             return ay_max_v
-        ax_max_v = (float(self.traction_max(speed)) if longitudinal_accel > 0
-                     else float(self.braking_max(speed)))
+        is_braking = longitudinal_accel < 0
+        ax_max_v = (float(self.braking_max(speed)) if is_braking
+                     else float(self.traction_max(speed)))
         if ax_max_v <= 0:
             return ay_max_v
-        p = self.p_combined
+        p = self._effective_p(braking=is_braking)
         ratio = min(abs(longitudinal_accel) / ax_max_v, 1.0)
         return ay_max_v * max(0.0, (1.0 - ratio ** p)) ** (1.0 / p)
 
     def max_longitudinal_accel(
         self, speed: float, lateral_accel: float = 0.0, *, braking: bool = False,
     ) -> float:
-        """Available longitudinal accel under combined loading."""
+        """Available longitudinal accel under combined loading.
+
+        Uses asymmetric p-norm: p_braking when braking, p_traction when
+        accelerating.
+        """
         ax_max_v = float(self.braking_max(speed) if braking
                           else self.traction_max(speed))
         ay_max_v = float(self.lateral_max(speed))
         if lateral_accel == 0.0 or ay_max_v <= 0:
             return ax_max_v
-        p = self.p_combined
+        p = self._effective_p(braking=braking)
         ratio = min(abs(lateral_accel) / ay_max_v, 1.0)
         return ax_max_v * max(0.0, (1.0 - ratio ** p)) ** (1.0 / p)
 
@@ -173,6 +191,8 @@ class CapabilityEnvelope:
             ax_drive_max=self.ax_drive_max * p_drive,
             ax_brake_max=self.ax_brake_max * b_brake,
             p_combined=self.p_combined,
+            p_traction=self.p_traction,
+            p_braking=self.p_braking,
             track_id=self.track_id,
             kart_id=self.kart_id,
             n_sessions=self.n_sessions,
@@ -183,8 +203,8 @@ class CapabilityEnvelope:
     # Serialisation
     # ------------------------------------------------------------------
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "version": "1.0",
+        d: dict[str, Any] = {
+            "version": "1.1",
             "track_id": self.track_id,
             "kart_id": self.kart_id,
             "n_sessions": self.n_sessions,
@@ -195,6 +215,11 @@ class CapabilityEnvelope:
             "ax_drive_max": np.round(self.ax_drive_max, 4).tolist(),
             "ax_brake_max": np.round(self.ax_brake_max, 4).tolist(),
         }
+        if self.p_traction > 0:
+            d["p_traction"] = round(self.p_traction, 4)
+        if self.p_braking > 0:
+            d["p_braking"] = round(self.p_braking, 4)
+        return d
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CapabilityEnvelope:
@@ -204,6 +229,8 @@ class CapabilityEnvelope:
             ax_drive_max=np.asarray(d["ax_drive_max"], dtype=float),
             ax_brake_max=np.asarray(d["ax_brake_max"], dtype=float),
             p_combined=float(d.get("p_combined", 1.6)),
+            p_traction=float(d.get("p_traction", 0.0)),
+            p_braking=float(d.get("p_braking", 0.0)),
             track_id=d.get("track_id", ""),
             kart_id=d.get("kart_id", ""),
             n_sessions=int(d.get("n_sessions", 0)),
@@ -397,7 +424,7 @@ def train_capability_envelope(
     ax_drive_arr = np.maximum(ax_drive_arr, config.envelope_traction_floor_mps2)
     ax_brake_arr = np.maximum(ax_brake_arr, config.envelope_traction_floor_mps2)
 
-    # --- 8. Fit p-norm ---
+    # --- 8. Fit p-norm (asymmetric: separate braking/traction) ---
     # Build temporary interpolators for the fit
     env_temp = CapabilityEnvelope(
         v_grid=v_grid,
@@ -407,7 +434,7 @@ def train_capability_envelope(
         p_combined=config.envelope_combined_p_init,
     )
 
-    p_fit = fit_p_norm(
+    p_result = fit_asymmetric_p_norm(
         v_all, ax_all, ay_all,
         ax_max_fn=env_temp.traction_max,
         ay_max_fn=env_temp.lateral_max,
@@ -421,7 +448,9 @@ def train_capability_envelope(
         ay_max=ay_arr,
         ax_drive_max=ax_drive_arr,
         ax_brake_max=ax_brake_arr,
-        p_combined=p_fit,
+        p_combined=p_result.p_combined,
+        p_traction=p_result.p_traction,
+        p_braking=p_result.p_braking,
         track_id=track_id,
         kart_id=kart_id,
         n_sessions=len(sessions),
@@ -429,9 +458,11 @@ def train_capability_envelope(
     )
 
     logger.info(
-        "Envelope trained: %d sessions, %d laps, %d bins, p=%.2f, "
+        "Envelope trained: %d sessions, %d laps, %d bins, "
+        "p=%.2f (trac=%.2f, brake=%.2f), "
         "ay_max=[%.1f..%.1f], ax_drive=[%.1f..%.1f], ax_brake=[%.1f..%.1f] m/s².",
-        len(sessions), total_laps, n_bins, p_fit,
+        len(sessions), total_laps, n_bins,
+        p_result.p_combined, p_result.p_traction, p_result.p_braking,
         float(np.nanmin(ay_arr)), float(np.nanmax(ay_arr)),
         float(np.nanmin(ax_drive_arr)), float(np.nanmax(ax_drive_arr)),
         float(np.nanmin(ax_brake_arr)), float(np.nanmax(ax_brake_arr)),
