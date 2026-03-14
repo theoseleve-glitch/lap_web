@@ -498,8 +498,16 @@ def compute_theoretical_via_envelope(
         envelope=envelope,
         config=cfg,
     )
+    # Clamp scalars to >= 1.0 for theoretical computation.
+    # The envelope represents the vehicle's capability; the theoretical
+    # solver must never be slower than what the car can physically do.
+    # Inferred scalars < 1.0 mean the driver didn't fully use the envelope,
+    # but the optimal SHOULD use it fully.
+    scalars.mu_session = max(scalars.mu_session, 1.0)
+    scalars.p_session = max(scalars.p_session, 1.0)
+    scalars.b_session = max(scalars.b_session, 1.0)
     logger.info(
-        "Session scalars (best-lap): mu=%.3f, p=%.3f, b=%.3f (confidence=%.2f).",
+        "Session scalars (clamped>=1.0): mu=%.3f, p=%.3f, b=%.3f (confidence=%.2f).",
         scalars.mu_session, scalars.p_session, scalars.b_session,
         scalars.confidence,
     )

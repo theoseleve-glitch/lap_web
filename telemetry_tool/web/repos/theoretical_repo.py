@@ -43,7 +43,11 @@ def insert_theoretical_data(
             if spd_col is None and ("v_env" in cl or "speed" in cl):
                 spd_col = c
         if dist_col:
-            distance_json = _np_to_json(theo_lap[dist_col].values)
+            raw_dists = theo_lap[dist_col].values
+            # Normalize to per-lap 0-based distances (solver uses cumulative)
+            if len(raw_dists) > 0 and raw_dists[0] != 0:
+                raw_dists = raw_dists - raw_dists[0]
+            distance_json = _np_to_json(raw_dists)
         if spd_col:
             speed_profile_json = _np_to_json(theo_lap[spd_col].values)
 
@@ -85,7 +89,22 @@ def insert_theoretical_data(
         gap_pct = round((actual_best - best_time) / best_time * 100, 2)
 
     # Serialize new kart_envelope fields
+    # Normalize corner_coaching distances to per-lap 0-based
     corner_coaching = summary.get("corner_coaching")
+    if corner_coaching and distance_json:
+        # Use the theoretical lap's distance offset for normalization
+        theo_d0 = 0.0
+        if theo_lap is not None and hasattr(theo_lap, "columns") and dist_col:
+            raw = theo_lap[dist_col].values
+            if len(raw) > 0:
+                theo_d0 = float(raw[0])
+        if theo_d0 != 0:
+            for cc in corner_coaching:
+                for key in ("s_start", "s_end", "s_apex", "distance_start",
+                            "distance_end", "distance_apex", "apex_distance_m"):
+                    v = cc.get(key)
+                    if v is not None and isinstance(v, (int, float)):
+                        cc[key] = round(v - theo_d0, 4)
     corner_coaching_json = _json_dumps(corner_coaching) if corner_coaching else None
     session_scalars = summary.get("session_scalars")
     session_scalars_json = _json_dumps(session_scalars) if session_scalars else None
