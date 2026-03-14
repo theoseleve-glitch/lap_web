@@ -459,14 +459,47 @@ def compute_theoretical_via_envelope(
         envelope.n_laps, envelope.p_combined,
     )
 
-    # -- 4. Infer SessionScalars --
+    # -- 4. Infer SessionScalars from BEST LAP only --
+    # Using best lap ensures the theoretical is at least as fast as
+    # the driver's peak performance (not de-rated by median laps).
+    best_lap_key = None
+    best_lap_time = float("inf")
+    _spd_col = "speed_mps"  # canonical column name after _map_columns_to_canonical
+    for k, df in mapped_laps.items():
+        # Try canonical name, then fallback to any speed column
+        sc = _spd_col if _spd_col in df.columns else next(
+            (c for c in df.columns if "speed" in c.lower()), None
+        )
+        if sc is not None:
+            dist_col = next(
+                (c for c in df.columns if "distance" in c.lower() or c == "Distance (m)"), None
+            )
+            if dist_col:
+                d = df[dist_col].values
+                s = df[sc].values
+                t = 0.0
+                for i in range(len(d) - 1):
+                    v_avg = (s[i] + s[i + 1]) / 2
+                    if v_avg > 0.5:
+                        t += abs(d[i + 1] - d[i]) / v_avg
+                if 0 < t < best_lap_time:
+                    best_lap_time = t
+                    best_lap_key = k
+
+    if best_lap_key is not None:
+        best_lap_for_scalars = {best_lap_key: mapped_laps[best_lap_key]}
+        logger.info("Using best lap %d (%.2fs) for scalar inference.", best_lap_key, best_lap_time)
+    else:
+        best_lap_for_scalars = mapped_laps
+        logger.info("Could not identify best lap; using all laps for scalar inference.")
+
     scalars = infer_session_scalars(
-        resampled_laps=mapped_laps,
+        resampled_laps=best_lap_for_scalars,
         envelope=envelope,
         config=cfg,
     )
     logger.info(
-        "Session scalars: mu=%.3f, p=%.3f, b=%.3f (confidence=%.2f).",
+        "Session scalars (best-lap): mu=%.3f, p=%.3f, b=%.3f (confidence=%.2f).",
         scalars.mu_session, scalars.p_session, scalars.b_session,
         scalars.confidence,
     )
