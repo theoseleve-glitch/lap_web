@@ -8,6 +8,11 @@ from typing import Any, Union
 
 logger = logging.getLogger(__name__)
 
+
+class CascadeDeleteError(RuntimeError):
+    """Raised when the parent row could not be deleted after cascading children."""
+    pass
+
 # ── Cascade Configuration ──────────────────────────────────────────
 #
 # Each entity defines:
@@ -21,6 +26,12 @@ logger = logging.getLogger(__name__)
 #   {"entity": "x", "fk": "col"}    — recursive: find IDs, call delete_entity_cascade for each
 #   {"table": "t", "fk": "c", "action": "unlink"} — SET fk = NULL instead of DELETE
 
+# CRITICAL: Every table that has a FK referencing a parent entity MUST be
+# listed here. If a child table is missing, PostgreSQL's default RESTRICT
+# will silently block the parent DELETE, _safe_delete will swallow the
+# error, and CascadeDeleteError will fire — but close_pg may commit the
+# orphaned child deletes, causing data corruption. When adding new FK
+# tables (Alembic migrations), ALWAYS update the matching cascade config.
 CASCADE_CONFIG: dict[str, dict[str, Any]] = {
     "session": {
         "parent_table": "sessions",
@@ -58,6 +69,7 @@ CASCADE_CONFIG: dict[str, dict[str, Any]] = {
             "development_plans",
             "driver_badges",
             "driver_profiles",
+            "driver_stats_rollup",   # PG-only (migration 028) — no ON DELETE, blocks parent
         ],
     },
     "track": {
@@ -71,10 +83,12 @@ CASCADE_CONFIG: dict[str, dict[str, Any]] = {
         ],
         "children": [
             {"entity": "session", "fk": "track_id"},
+            {"table": "weekends", "fk": "track_id", "action": "unlink"},
             "track_sectors",
             "track_records",
             "track_key_corners",
             "corner_best_practices",
+            "track_stats_rollup",    # PG-only (migration 028) — no ON DELETE, blocks parent
         ],
     },
     "kart": {
@@ -261,6 +275,11 @@ def delete_entity_cascade(
 
     Returns:
         {"deleted": True, "impact": {"sessions": 12, "laps": 47, ...}}
+
+    Raises:
+        CascadeDeleteError: if the parent row was not actually removed
+            (e.g. FK constraint from an unlisted child table, RLS policy
+            filtering, or any silent DB-level rejection).
     """
     if entity_type not in CASCADE_CONFIG:
         raise ValueError(f"Unknown entity type: {entity_type!r}")
@@ -271,11 +290,25 @@ def delete_entity_cascade(
     # Delete the parent itself
     parent_table = config["parent_table"]
     parent_pk = config["parent_pk"]
-    _safe_delete(
+    deleted_count = _safe_delete(
         conn,
         f"DELETE FROM {parent_table} WHERE {parent_pk} = :id",
         {"id": entity_id},
     )
+
+    # CRITICAL: Verify the parent row was actually removed. If rowcount is 0,
+    # a FK constraint from an unlisted child table blocked the DELETE (PG
+    # RESTRICT default). The caller MUST rollback to undo child deletes.
+    if deleted_count == 0:
+        logger.error(
+            "Cascade delete failed: %s %s was NOT removed from %s "
+            "(rowcount=0 — likely FK constraint or RLS policy)",
+            entity_type, entity_id, parent_table,
+        )
+        raise CascadeDeleteError(
+            f"Failed to delete {entity_type} {entity_id}: "
+            f"row still exists in {parent_table} after cascading children"
+        )
 
     return {"deleted": True, "impact": impact}
 

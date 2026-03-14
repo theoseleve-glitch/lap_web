@@ -773,7 +773,8 @@ def me():
     conn = _get_conn()
     cur = conn.execute(
         "SELECT id, email, display_name, avatar_url, email_verified, "
-        "created_at, plan_tier, subscription_status, preferences "
+        "created_at, plan_tier, subscription_status, preferences, "
+        "is_superadmin "
         "FROM users WHERE id = %(user_id)s",
         {"user_id": user_id},
     )

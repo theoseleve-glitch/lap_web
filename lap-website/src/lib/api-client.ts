@@ -106,10 +106,14 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 async function _apiFetchInner<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = buildHeaders();
 
+  // CRITICAL: cache: 'no-store' is required. Without it the browser HTTP
+  // cache can serve stale list data after a DELETE, causing deleted items to
+  // reappear instantly (the "ghost row" bug). Do NOT remove or weaken this.
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers: { ...headers, ...init?.headers },
     credentials: 'include',
+    cache: 'no-store',
   });
 
   // On 401 — try one silent refresh, then replay with the new token
@@ -117,10 +121,12 @@ async function _apiFetchInner<T>(path: string, init?: RequestInit): Promise<T> {
     const refreshed = await tryRefreshOnce();
     if (refreshed) {
       const retryHeaders = buildHeaders();
+      // CRITICAL: cache: 'no-store' — see comment above.
       const retryRes = await fetch(`${API_BASE}${path}`, {
         ...init,
         headers: { ...retryHeaders, ...init?.headers },
         credentials: 'include',
+        cache: 'no-store',
       });
       return parseEnvelopeOrThrow<T>(retryRes);
     }

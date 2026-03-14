@@ -11,9 +11,11 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 COMPUTE_BUDGETS: dict[str, dict] = {
+    "free": {"max_concurrent_jobs": 1, "max_job_duration_minutes": 10},
     "demo": {"max_concurrent_jobs": 1, "max_job_duration_minutes": 10},
     "racer": {"max_concurrent_jobs": 2, "max_job_duration_minutes": 30},
     "world-class": {"max_concurrent_jobs": 5, "max_job_duration_minutes": 60},
+    "world_class": {"max_concurrent_jobs": 5, "max_job_duration_minutes": 60},
     "b2b": {"max_concurrent_jobs": 10, "max_job_duration_minutes": 120},
 }
 

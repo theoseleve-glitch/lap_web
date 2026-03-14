@@ -935,11 +935,11 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
 
     _update_job_progress(job_id=job_id, status="running", stage_name="ingest", stage_index=0, stage_total=15)
 
-    # Acquire workspace lock
-    if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
-        raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job")
-
     try:
+        # Acquire workspace lock (inside try so failures update job status)
+        if not acquire_workspace_lock(redis_client, ctx.workspace_id, job_id):
+            raise TransientError(f"Workspace {ctx.workspace_id} is locked by another job")
+
         _run_ingest_stages(ctx)
         ctx.save()
         _update_job_progress(
@@ -947,7 +947,19 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
             stage_name="ingest_complete", stage_index=4, stage_total=15,
         )
         return job_id
-    except (TransientError, InteractionRequired):
+    except TransientError:
+        # On final retry (retries exhausted), mark job as failed so the
+        # SSE stream sees a terminal status instead of "stuck at 0%".
+        if self.request.retries >= self.max_retries:
+            _update_job_progress(
+                job_id=job_id, status="failed",
+                stage_name="ingest", stage_index=0, stage_total=15,
+                error_message="Pipeline busy — please retry in a few minutes",
+                error_class="transient",
+            )
+        ctx.save()
+        raise
+    except InteractionRequired:
         ctx.save()
         raise
     except FatalError as exc:

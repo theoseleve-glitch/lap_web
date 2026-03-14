@@ -1,9 +1,10 @@
 "use client";
 
-import { type ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { QueryProvider } from "@/providers/query-provider";
+import { getUserProfile } from "@/lib/auth-store";
 
 const adminNav = [
   { href: "/admin", label: "Dashboard", icon: "◉" },
@@ -13,6 +14,21 @@ const adminNav = [
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    const user = getUserProfile();
+    if (!user?.is_superadmin) {
+      router.replace('/app/sessions');
+      return;
+    }
+    setAllowed(true);
+  }, [router]);
+
+  if (!allowed) {
+    return <div className="flex items-center justify-center min-h-screen text-white/30 text-sm">Access denied</div>;
+  }
 
   return (
     <QueryProvider>

@@ -484,12 +484,22 @@ function UploadPage() {
           credentials: 'include',
           signal: sseController.signal,
         });
-        if (!res.ok || !res.body) return;
+        if (!res.ok || !res.body) {
+          setErrorMessage(`Pipeline tracking failed (HTTP ${res.status})`);
+          setPageState('error');
+          return;
+        }
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
 
+        const closeStream = () => {
+          reader.cancel().catch(() => {});
+          sseController.abort();
+        };
+
+        try {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -551,7 +561,8 @@ function UploadPage() {
                   setErrorMessage('Failed to load track layout');
                   setPageState('error');
                 }
-                return; // Stop reading SSE
+                closeStream();
+                return;
               }
 
               if (event.status === 'completed') {
@@ -565,6 +576,7 @@ function UploadPage() {
                 if (batchTotal > 1) {
                   setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: sid, error: null }]);
                 }
+                closeStream();
                 // If more files in queue, upload next
                 if (batchQueueRef.current.length > 0) {
                   uploadNextInBatch();
@@ -578,8 +590,18 @@ function UploadPage() {
                 return;
               }
 
-              if (event.status === 'failed') {
-                const errMsg = event.error_message || 'Pipeline failed';
+              if (event.status === 'failed' || event.status === 'stale'
+                  || event.status === 'timeout' || event.status === 'not_found'
+                  || event.status === 'error') {
+                const defaultMsgs: Record<string, string> = {
+                  failed: 'Pipeline failed',
+                  stale: 'Processing appears stuck — please retry',
+                  timeout: 'Processing timed out — please retry',
+                  not_found: 'Job not found',
+                  error: 'An error occurred during processing',
+                };
+                const errMsg = event.error_message || defaultMsgs[event.status] || 'Processing failed';
+                closeStream();
                 // In batch mode, record failure and continue
                 if (batchTotal > 1) {
                   setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: null, error: errMsg }]);
@@ -599,8 +621,12 @@ function UploadPage() {
             }
           }
         }
+        } finally {
+          closeStream();
+        }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
+        if (err instanceof TypeError && /network/i.test(err.message)) return;
         logger.error('SSE connection error:', err);
       }
     };

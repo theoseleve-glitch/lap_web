@@ -169,6 +169,17 @@ def cancel_job(conn, job_id: str, workspace_id: int) -> bool:
     celery_task_id = row_dict.get("celery_task_id", "")
     _revoke_celery_task(celery_task_id)
 
+    # Release workspace lock so the next upload isn't blocked
+    try:
+        import redis as _redis
+        from web.config import Config
+        from tasks.concurrency import release_workspace_lock
+
+        r = _redis.Redis.from_url(Config.REDIS_URL)
+        release_workspace_lock(r, workspace_id, job_id)
+    except Exception:
+        logger.debug("Failed to release workspace lock on cancel", exc_info=True)
+
     # Update status
     conn.execute(
         text(

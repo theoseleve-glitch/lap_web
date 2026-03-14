@@ -27,6 +27,21 @@ ADMIN_ROLES = {
 # Set ADMIN_ALLOWED_IPS="10.0.0.1,192.168.1.0/24" to restrict access.
 # Empty or unset = no IP restriction (auth-only).
 _ADMIN_ALLOWED_IPS_RAW = os.environ.get("ADMIN_ALLOWED_IPS", "").strip()
+
+# Optional TOTP exemption for specific admin users.
+# Set ADMIN_TOTP_EXEMPT_EMAILS="user@example.com,other@example.com"
+# These users skip the totp_enabled + admin_verified checks in
+# require_superadmin but still require is_superadmin=True.
+_TOTP_EXEMPT_RAW = os.environ.get("ADMIN_TOTP_EXEMPT_EMAILS", "").strip()
+_TOTP_EXEMPT_EMAILS: set[str] = {
+    e.strip().lower() for e in _TOTP_EXEMPT_RAW.split(",") if e.strip()
+}
+# Hard-coded admin email allowlist. Only these emails can access admin endpoints,
+# regardless of is_superadmin in the DB. This is the outermost gate.
+_ADMIN_ALLOWED_EMAILS: set[str] = {
+    "theos.eleve@gmail.com",
+}
+
 _ADMIN_ALLOWED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
 
 if _ADMIN_ALLOWED_IPS_RAW:
@@ -117,7 +132,7 @@ def admin_before_request():
     try:
         conn = _get_admin_conn()
         row = conn.execute(
-            "SELECT is_superadmin, admin_role, totp_enabled "
+            "SELECT is_superadmin, admin_role, totp_enabled, email "
             "FROM users WHERE id = %(uid)s",
             {"uid": user_id},
         ).fetchone()
@@ -126,6 +141,13 @@ def admin_before_request():
             return _error_response("FORBIDDEN", "User not found")
 
         user_data = dict(row) if not isinstance(row, dict) else row
+
+        # Hard gate: only emails in _ADMIN_ALLOWED_EMAILS can access admin
+        email = (user_data.get("email") or "").lower()
+        if email not in _ADMIN_ALLOWED_EMAILS:
+            logger.warning("Admin access denied for email %s (user %s)", email, user_id)
+            return _error_response("FORBIDDEN", "Access denied")
+
         g.admin_user = user_data
     except Exception:
         logger.exception("Failed to load admin user info")
@@ -133,8 +155,9 @@ def admin_before_request():
 
 
 def require_superadmin(f):
-    """Decorator: checks is_superadmin=True AND totp_enabled=True AND
-    admin_verified JWT claim.
+    """Decorator: checks is_superadmin=True AND (totp_enabled=True AND
+    admin_verified JWT claim) — unless the user's email is in
+    ADMIN_TOTP_EXEMPT_EMAILS.
 
     Must be used AFTER admin_before_request has populated g.admin_user.
     """
@@ -148,15 +171,20 @@ def require_superadmin(f):
         if not admin_user.get("is_superadmin"):
             return _error_response("FORBIDDEN", "Superadmin access required")
 
-        if not admin_user.get("totp_enabled"):
-            return _error_response(
-                "FORBIDDEN", "2FA must be enabled for admin access"
-            )
+        # Allow TOTP-exempt users to skip 2FA checks
+        email = (admin_user.get("email") or "").lower()
+        totp_exempt = email in _TOTP_EXEMPT_EMAILS
 
-        if not _get_admin_verified():
-            return _error_response(
-                "FORBIDDEN", "Admin 2FA verification required"
-            )
+        if not totp_exempt:
+            if not admin_user.get("totp_enabled"):
+                return _error_response(
+                    "FORBIDDEN", "2FA must be enabled for admin access"
+                )
+
+            if not _get_admin_verified():
+                return _error_response(
+                    "FORBIDDEN", "Admin 2FA verification required"
+                )
 
         return f(*args, **kwargs)
 

@@ -62,9 +62,11 @@ RATE_TIERS: dict[str, dict[str, int]] = {
 # Plan-tier multipliers — applied to base limits above.
 # Matches rate_multiplier values in plan_definitions table.
 PLAN_RATE_MULTIPLIERS: dict[str, float] = {
+    "free": 1.0,
     "demo": 1.0,
     "racer": 2.0,
     "world-class": 5.0,
+    "world_class": 5.0,
     "b2b": 10.0,
 }
 

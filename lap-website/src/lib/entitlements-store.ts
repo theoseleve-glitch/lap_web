@@ -66,7 +66,7 @@ const UPGRADE_TIERS: Record<string, { tier: string; url: string }> = {
  */
 export function canUseFeature(feature: string): boolean {
   const ent = useEntitlementsStore.getState().entitlements;
-  if (!ent) return true; // Fail open — don't block UI before data loads
+  if (!ent) return false; // Fail closed — block until entitlements are loaded
 
   // Boolean features
   const prop = FEATURE_MAP[feature];

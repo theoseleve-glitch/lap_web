@@ -620,8 +620,14 @@ def delete(race_id: int):
     row = conn.execute("SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
     if not row:
         return redirect(url_for("race_strategy_v2.index"))
-    delete_entity_cascade(conn, "race_strategy", race_id)
-    conn.commit()
+    # CRITICAL: rollback on failure prevents partial child commits.
+    # See api_v1_entities.py delete_track docstring for full rationale.
+    try:
+        delete_entity_cascade(conn, "race_strategy", race_id)
+        conn.commit()
+    except Exception:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("POST delete /race-strategy/%s — cascade failed", race_id)
     return redirect(url_for("race_strategy_v2.index"))
 
 
@@ -632,8 +638,15 @@ def api_delete(race_id: int):
     row = conn.execute("SELECT race_id FROM race_configs WHERE race_id = ?", (race_id,)).fetchone()
     if not row:
         return jsonify({"ok": False, "error": "Race not found"}), 404
-    result = delete_entity_cascade(conn, "race_strategy", race_id)
-    conn.commit()
+    # CRITICAL: rollback on failure prevents partial child commits.
+    # See api_v1_entities.py delete_track docstring for full rationale.
+    try:
+        result = delete_entity_cascade(conn, "race_strategy", race_id)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("DELETE /race-strategy/%s — cascade failed: %s", race_id, exc)
+        return jsonify({"ok": False, "error": "Delete failed"}), 500
     return jsonify({"ok": True, "data": result})
 
 

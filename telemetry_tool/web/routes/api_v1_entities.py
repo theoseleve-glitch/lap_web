@@ -217,11 +217,13 @@ def delete_driver(driver_id):
     conn = _get_conn()
     if not _verify_driver(conn, driver_id):
         return api_error(ErrorCode.NOT_FOUND, "Driver not found", status=404)
+    # CRITICAL: rollback on failure — see delete_track docstring for rationale.
     try:
         result = delete_entity_cascade(conn, "driver", driver_id)
         conn.commit()
         logger.info("DELETE /drivers/%s — success, impact=%s", driver_id, result["impact"])
     except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
         logger.exception("DELETE /drivers/%s — cascade failed: %s", driver_id, exc)
         return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
@@ -354,12 +356,25 @@ def _map_kart(row):
 
 @bp.route("/tracks/<track_id>", methods=["DELETE"])
 def delete_track(track_id):
+    """Delete a track and all child data via cascade.
+
+    CRITICAL: The try/except + conn.rollback() pattern is required. Without
+    the explicit rollback, close_pg() commits partial child deletes when the
+    parent DELETE fails (FK constraint from an unlisted table), causing data
+    corruption where sessions vanish but the track remains. Do NOT remove
+    the rollback or restructure without understanding delete_cascade.py.
+    """
     conn = _get_conn()
     row = conn.execute("SELECT * FROM tracks WHERE track_id = ?", (track_id,)).fetchone()
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Track not found", status=404)
-    result = delete_entity_cascade(conn, "track", track_id)
-    conn.commit()
+    try:
+        result = delete_entity_cascade(conn, "track", track_id)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("DELETE /tracks/%s — cascade failed: %s", track_id, exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
 
 
@@ -598,8 +613,14 @@ def delete_kart(kart_id):
     kart = models.get_kart_by_id(conn, kart_id)
     if not kart:
         return api_error(ErrorCode.NOT_FOUND, "Kart not found", status=404)
-    result = delete_entity_cascade(conn, "kart", kart_id)
-    conn.commit()
+    # CRITICAL: rollback on failure — see delete_track docstring for rationale.
+    try:
+        result = delete_entity_cascade(conn, "kart", kart_id)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("DELETE /karts/%s — cascade failed: %s", kart_id, exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
 
 
@@ -713,8 +734,14 @@ def delete_weekend(weekend_id):
     existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
     if not existing:
         return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
-    result = delete_entity_cascade(conn, "weekend", weekend_id)
-    conn.commit()
+    # CRITICAL: rollback on failure — see delete_track docstring for rationale.
+    try:
+        result = delete_entity_cascade(conn, "weekend", weekend_id)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("DELETE /weekends/%s — cascade failed: %s", weekend_id, exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
 
 
@@ -889,8 +916,14 @@ def delete_dev_plan(plan_id):
     row = conn.execute(Q.SELECT_PLAN_BY_ID, {"id": plan_id}).fetchone()
     if not row:
         return api_error(ErrorCode.NOT_FOUND, "Plan not found", status=404)
-    result = delete_entity_cascade(conn, "dev_plan", plan_id)
-    conn.commit()
+    # CRITICAL: rollback on failure — see delete_track docstring for rationale.
+    try:
+        result = delete_entity_cascade(conn, "dev_plan", plan_id)
+        conn.commit()
+    except Exception as exc:
+        conn.rollback()  # CRITICAL: undo child deletes if parent fails
+        logger.exception("DELETE /dev-plans/%s — cascade failed: %s", plan_id, exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, "Delete failed", status=500)
     return api_response(result)
 
 

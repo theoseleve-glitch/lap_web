@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { type ReactNode } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import { type ReactNode, useEffect, useState } from 'react';
+import { getUserProfile } from '@/lib/auth-store';
 
 const navGroups = [
   {
@@ -58,6 +59,21 @@ const navGroups = [
 
 export default function RaceControlLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [allowed, setAllowed] = useState(false);
+
+  useEffect(() => {
+    const user = getUserProfile();
+    if (!user?.is_superadmin) {
+      router.replace('/app/sessions');
+      return;
+    }
+    setAllowed(true);
+  }, [router]);
+
+  if (!allowed) {
+    return <div className="flex items-center justify-center min-h-[60vh] text-steel text-sm">Access denied</div>;
+  }
 
   return (
     <div className="-mx-6 -my-6 flex min-h-[calc(100vh-0px)]">

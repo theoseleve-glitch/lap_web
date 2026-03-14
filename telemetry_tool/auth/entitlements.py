@@ -78,10 +78,18 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
     },
 }
 
-# "demo" is an alias for "free"
+# Aliases: "demo" → "free", "world-class" → "world_class"
 PLAN_ENTITLEMENTS["demo"] = PLAN_ENTITLEMENTS["free"]
+PLAN_ENTITLEMENTS["world-class"] = PLAN_ENTITLEMENTS["world_class"]
 
 KNOWN_PLANS = set(PLAN_ENTITLEMENTS.keys())
+
+
+def normalize_tier(tier: str | None) -> str:
+    """Normalize plan tier to a canonical form. Handles None, hyphens, underscores."""
+    if not tier:
+        return "demo"
+    return tier.strip().lower()
 
 # Maps metric names to entitlement keys for usage limit checks
 METRIC_TO_ENTITLEMENT: dict[str, str] = {
@@ -92,7 +100,7 @@ METRIC_TO_ENTITLEMENT: dict[str, str] = {
 
 def get_plan_entitlements(plan: str) -> dict:
     """Return the entitlement dict for *plan*, falling back to free."""
-    return PLAN_ENTITLEMENTS.get(plan, PLAN_ENTITLEMENTS["free"])
+    return PLAN_ENTITLEMENTS.get(normalize_tier(plan), PLAN_ENTITLEMENTS["free"])
 
 
 def check_usage_limit(

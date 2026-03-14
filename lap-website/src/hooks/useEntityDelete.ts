@@ -41,10 +41,15 @@ export function useEntityDelete(config: EntityDeleteConfig): EntityDeleteResult 
   const [isLoadingImpact, setIsLoadingImpact] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // CRITICAL: This hook powers the delete button on driver, track, kart,
+  // weekend, and dev-plan detail pages. The api.delete() call relies on
+  // cache: 'no-store' in api-client.ts to bypass HTTP cache, and the
+  // backend relies on conn.rollback() in the except block to prevent
+  // partial child commits. Do NOT change without understanding both sides.
   const deleteMutation = useMutation({
     mutationFn: () => api.delete<{ deleted: boolean; impact: Record<string, number> }>(endpoint),
     onSuccess: () => {
-      // Invalidate all related query keys
+      // Invalidate all related query keys — forces fresh fetch from server
       for (const key of invalidate) {
         queryClient.invalidateQueries({ queryKey: key });
       }

@@ -2,6 +2,19 @@
 
 Motorsport telemetry analysis SaaS — Python Flask API + Next.js frontend. Ingests RaceChrono/RaceBox CSV from kart and car sessions. Multi-tenant with workspace isolation, Stripe billing, Celery async processing.
 
+## Scope Discipline (MANDATORY)
+
+- **Only touch the exact code the user asks about.** No drive-by refactors, no "improvements" to surrounding code, no adding comments or renaming variables in adjacent functions.
+- **One question at a time when uncertain.** If you're unsure about scope or intent, ask exactly ONE question, wait for the answer, then act. Never dump a list of clarifications.
+- If you spot something else that looks wrong, mention it briefly AFTER completing the requested change — never bundle it into the same edit.
+
+## Ship It Live (MANDATORY)
+
+- **Every code change must be verified stable and deployed live.** Do not consider a task done until the fix is running in production.
+- **Backend**: run relevant tests → `scp` changed files to VPS → `docker compose build api && up -d api` → verify `curl https://api.lap-coach.racing/healthz` returns OK.
+- **Frontend**: `npm run build` (catch errors) → `npm run cf:deploy` → confirm Cloudflare Workers deployment succeeds.
+- **Never stop at "code is written".** The full cycle is: fix → test → deploy backend → deploy frontend → verify live.
+
 ## Quick Reference
 
 ```bash

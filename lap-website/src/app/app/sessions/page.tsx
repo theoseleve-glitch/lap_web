@@ -587,10 +587,30 @@ export default function SessionsPage() {
     }
   }
 
-  // Bulk delete mutation with optimistic update
+  // Bulk delete mutation with optimistic update.
+  // CRITICAL: Uses Promise.allSettled (NOT Promise.all) so that a single
+  // failed delete does NOT roll back the optimistic removal of successfully
+  // deleted sessions. Promise.all short-circuits on first rejection and
+  // would roll back ALL optimistic updates — even the successful ones.
+  // Do NOT change to Promise.all.
   const deleteMutation = useMutation({
     mutationFn: async (ids: string[]) => {
-      await Promise.all(ids.map((id) => api.delete(`/sessions/${id}`)));
+      const results = await Promise.allSettled(
+        ids.map((id) => api.delete(`/sessions/${id}`)),
+      );
+      const failed = results
+        .map((r, i) => (r.status === 'rejected' ? ids[i] : null))
+        .filter((id): id is string => id !== null);
+      if (failed.length > 0) {
+        // Throw with the failed IDs so onError can do a partial rollback
+        const err = new Error(
+          failed.length === ids.length
+            ? 'All deletes failed'
+            : `${failed.length} of ${ids.length} deletes failed`,
+        );
+        (err as Error & { failedIds: string[] }).failedIds = failed;
+        throw err;
+      }
     },
     onMutate: async (ids) => {
       await queryClient.cancelQueries({ queryKey: ['sessions', 'list'] });
@@ -610,10 +630,21 @@ export default function SessionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
     },
-    onError: (err, _ids, context) => {
-      if (context?.previous) {
+    onError: (err, ids, context) => {
+      // Partial failure: only restore the sessions that failed to delete.
+      // The ones that succeeded stay removed — the invalidation refetch
+      // will reconcile with the server.
+      const failedIds: string[] =
+        (err as Error & { failedIds?: string[] }).failedIds ?? ids;
+
+      if (context?.previous && failedIds.length < ids.length) {
+        // Partial failure — don't roll back, just refetch from server
+        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      } else if (context?.previous) {
+        // Total failure — roll back optimistic update
         queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
       }
+
       const msg = err instanceof Error ? err.message : 'Delete failed';
       setBulkStatus(`Delete failed: ${msg}`);
       console.error('[session-delete]', err);

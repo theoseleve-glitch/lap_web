@@ -374,7 +374,7 @@ def upload_session() -> tuple[Response, int]:
         )
 
     # ── 2. Tier limit check ───────────────────────────────────────
-    plan_tier = getattr(g, "plan_tier", "free")
+    plan_tier = getattr(g, "plan_tier", "demo")
     conn = _get_conn()
     limit_err = _check_tier_limits(f, conn, str(g.workspace_id), plan_tier)
     if limit_err:

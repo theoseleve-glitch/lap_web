@@ -52,6 +52,11 @@ export default function TracksPage() {
 
   const tracks = data ?? [];
 
+  // CRITICAL: Optimistic delete with rollback on error. The onMutate
+  // removes the track from the cache immediately, onSuccess refetches
+  // from server, onError restores the previous list. Do NOT remove the
+  // cancelQueries or the optimistic setQueryData — they prevent the
+  // "ghost row" bug where deleted items reappear briefly.
   const deleteMutation = useMutation({
     mutationFn: (trackId: string) => api.delete(`/tracks/${trackId}`),
     onMutate: async (trackId) => {

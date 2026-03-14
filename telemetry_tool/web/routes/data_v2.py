@@ -2557,6 +2557,277 @@ def get_corner_positions(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# 16b. POST /api/v1/sessions/<id>/ocp-corner — Per-corner OCP solve
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/ocp-corner", methods=["POST"])
+@_safe_api
+def solve_ocp_corner(session_id: str) -> tuple[dict, int]:
+    """Run OCP segment solver for selected corners across all laps.
+
+    Body: {"corner_ids": [1, 3, 5]}
+
+    For each corner_id, builds a track mesh from s_start to s_end,
+    extracts actual entry/exit speeds from each lap's GPS trace,
+    and solves a boundary-value OCP to compute the optimal time
+    through that corner segment.
+
+    Also runs a full-lap OCP on the best lap to compute the optimal
+    lap time (reuses existing result if available).
+
+    Returns per-corner, per-lap optimal times + the full-lap optimal.
+    """
+    body = request.get_json(silent=True) or {}
+    corner_ids = body.get("corner_ids", [])
+    if not corner_ids or not isinstance(corner_ids, list):
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "corner_ids is required (list of ints)", status=400)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    try:
+        result = _run_corner_ocp(conn, session_id, corner_ids)
+    except ImportError as e:
+        logger.warning("OCP solver not available: %s", e)
+        return api_error(ErrorCode.INTERNAL_ERROR,
+                         "OCP solver dependencies not installed", status=503)
+    except Exception:
+        logger.exception("OCP corner solve failed for session %s", session_id)
+        return api_error(ErrorCode.INTERNAL_ERROR,
+                         "OCP corner solve failed", status=500)
+
+    return api_response(result)
+
+
+def _run_corner_ocp(conn, session_id: str, corner_ids: list[int]) -> dict:
+    """Core logic for per-corner OCP across all laps + full-lap OCP for best lap."""
+    import numpy as np
+    import pandas as pd
+    from web.repos import gps_repo, lap_repo, theoretical_repo
+
+    # ── 1. Load session data ────────────────────────────────
+    row = conn.execute(
+        "SELECT analysis_json FROM sessions WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    raw = row["analysis_json"] if isinstance(row, dict) else row[0]
+    analysis_json = json.loads(raw) if raw else {}
+
+    # ── 2. Load corners ─────────────────────────────────────
+    corners = analysis_json.get("corners", [])
+    corner_map = {}
+    for c in corners:
+        cid = c.get("corner_id")
+        if cid is not None and cid in corner_ids:
+            corner_map[cid] = c
+
+    if not corner_map:
+        # Try from theoretical_data coaching
+        theo = models.get_theoretical_data(conn, session_id)
+        if theo and theo.get("corner_coaching"):
+            for cc in theo["corner_coaching"]:
+                cid = cc.get("corner_id")
+                if cid is not None and cid in corner_ids:
+                    corner_map[cid] = cc
+
+    if not corner_map:
+        return {"corner_results": [], "full_lap_ocp": None, "error": "No matching corners found"}
+
+    # ── 3. Load curvature from reference line ───────────────
+    ref_line = theoretical_repo.get_reference_line(conn, session_id)
+    if not ref_line:
+        return {"corner_results": [], "full_lap_ocp": None, "error": "No reference line data"}
+
+    ref_dists = ref_line.get("distances", [])
+    ref_lats = ref_line.get("latitudes", [])
+    ref_lons = ref_line.get("longitudes", [])
+    if not ref_dists or len(ref_dists) < 20:
+        return {"corner_results": [], "full_lap_ocp": None, "error": "Insufficient reference line data"}
+
+    from tasks.ocp_tasks import _curvature_from_reference_line
+    curvature_profile = _curvature_from_reference_line(
+        np.array(ref_dists, dtype=float),
+        np.array(ref_lats, dtype=float),
+        np.array(ref_lons, dtype=float),
+    )
+    if curvature_profile is None:
+        return {"corner_results": [], "full_lap_ocp": None, "error": "Could not compute curvature"}
+
+    curv_dist = curvature_profile["distance_m"].to_numpy(dtype=float)
+    curv_vals = curvature_profile["curvature_1pm"].to_numpy(dtype=float)
+
+    # ── 4. Load vehicle params ──────────────────────────────
+    from solver.vehicle_params import OCPVehicleParams, params_for_class
+    from solver.tire_model import LoadSensitiveTire
+    from solver.param_extractor import extract_session_params
+    from solver.track_model import build_mesh
+    from solver.ocp_solver import solve_ocp_segment
+
+    vp_data = analysis_json.get("vehicle_params")
+    if vp_data:
+        try:
+            from vehicle_model import VehicleParameters, VehicleClass
+            vc = VehicleClass(vp_data.get("vehicle_class", "unknown"))
+            vehicle_params = VehicleParameters(
+                vehicle_class=vc,
+                estimated_mass_kg=vp_data.get("estimated_mass_kg"),
+                peak_lateral_g=vp_data.get("peak_lateral_g", 1.0),
+                peak_braking_g=vp_data.get("peak_braking_g", 1.0),
+            )
+            base_params = OCPVehicleParams.from_vehicle_params(vehicle_params)
+        except Exception:
+            base_params = params_for_class("car")
+    else:
+        base_params = params_for_class("car")
+
+    # ── 5. Load ALL laps ────────────────────────────────────
+    laps = lap_repo.get_laps_for_session(conn, session_id)
+    if not laps:
+        return {"corner_results": [], "full_lap_ocp": None, "error": "No laps found"}
+
+    best_lap_num = None
+    for lap in laps:
+        if lap.get("is_best"):
+            best_lap_num = lap["lap_number"]
+            break
+    if best_lap_num is None and laps:
+        best_lap_num = laps[0]["lap_number"]
+
+    # ── 6. Per-corner, per-lap OCP ──────────────────────────
+    corner_results = []
+    for cid, cdata in corner_map.items():
+        s_start = cdata.get("s_start") or cdata.get("distance_start") or cdata.get("entry_distance_m")
+        s_end = cdata.get("s_end") or cdata.get("distance_end") or cdata.get("exit_distance_m")
+        if s_start is None or s_end is None:
+            continue
+
+        s_start_f = float(s_start)
+        s_end_f = float(s_end)
+        segment_len = s_end_f - s_start_f
+        if segment_len < 5:
+            continue
+
+        # Build mesh for this corner segment
+        n_nodes = max(20, min(80, int(segment_len / 2)))
+        mask = (curv_dist >= s_start_f) & (curv_dist <= s_end_f)
+        seg_dists = curv_dist[mask]
+        seg_curvs = curv_vals[mask]
+        if len(seg_dists) < 5:
+            # Interpolate from full curvature
+            seg_dists = np.linspace(s_start_f, s_end_f, n_nodes)
+            seg_curvs = np.interp(seg_dists, curv_dist, curv_vals)
+
+        mesh = build_mesh(seg_dists, seg_curvs, n_nodes=n_nodes)
+
+        lap_results = []
+        for lap in laps:
+            lap_num = lap["lap_number"]
+            trace = gps_repo.get_gps_trace(conn, session_id, lap_num)
+            if not trace:
+                continue
+            dists = trace.get("distances", [])
+            speeds = trace.get("speeds", [])
+            if not dists or not speeds or len(dists) != len(speeds) or len(dists) < 10:
+                continue
+
+            d_arr = np.array(dists, dtype=float)
+            s_arr = np.array(speeds, dtype=float)
+
+            # Get actual entry/exit speeds from this lap
+            v_entry = float(np.interp(s_start_f, d_arr, s_arr))
+            v_exit = float(np.interp(s_end_f, d_arr, s_arr))
+
+            if v_entry < 1.0 or v_exit < 1.0:
+                continue
+
+            # Extract params from this lap's data
+            lap_df = pd.DataFrame({"Distance (m)": d_arr, "Speed (m/s)": s_arr})
+            try:
+                params = extract_session_params(lap_df, base_params)
+            except Exception:
+                params = base_params
+
+            tire = LoadSensitiveTire(
+                mu_ref=params.mu_ref,
+                Fz_ref=params.Fz_static_per_axle,
+                sensitivity=params.load_sensitivity,
+            )
+
+            try:
+                result = solve_ocp_segment(
+                    mesh, params, tire,
+                    v_entry=v_entry, v_exit=v_exit,
+                    max_iter=200, tol=1e-3,
+                )
+                # Actual time through corner (from telemetry)
+                seg_mask = (d_arr >= s_start_f) & (d_arr <= s_end_f)
+                seg_d = d_arr[seg_mask]
+                seg_s = s_arr[seg_mask]
+                actual_time = 0.0
+                if len(seg_d) > 1:
+                    for j in range(len(seg_d) - 1):
+                        v_avg = max((seg_s[j] + seg_s[j + 1]) / 2.0, 2.0)
+                        actual_time += (seg_d[j + 1] - seg_d[j]) / v_avg
+
+                # Apex speed (min speed in segment)
+                actual_apex_mps = float(seg_s.min()) if len(seg_s) > 0 else None
+                ocp_apex_mps = float(result.speed_profile.min())
+
+                lap_results.append({
+                    "lap_number": lap_num,
+                    "is_best": lap.get("is_best", False),
+                    "actual_time_s": round(actual_time, 4),
+                    "optimal_time_s": round(result.lap_time_s, 4),
+                    "delta_s": round(actual_time - result.lap_time_s, 4),
+                    "delta_ms": round((actual_time - result.lap_time_s) * 1000, 1),
+                    "actual_apex_mps": round(actual_apex_mps, 3) if actual_apex_mps else None,
+                    "ocp_apex_mps": round(ocp_apex_mps, 3),
+                    "converged": result.converged,
+                    "v_entry": round(v_entry, 3),
+                    "v_exit": round(v_exit, 3),
+                })
+            except Exception:
+                logger.debug("OCP segment failed for corner %d lap %d", cid, lap_num, exc_info=True)
+                continue
+
+        corner_results.append({
+            "corner_id": cid,
+            "s_start": s_start_f,
+            "s_end": s_end_f,
+            "direction": cdata.get("direction"),
+            "laps": lap_results,
+        })
+
+    # ── 7. Full-lap OCP for best lap (reuse if exists) ──────
+    full_lap_ocp = None
+    existing_ocp = analysis_json.get("theoretical_ocp")
+    if existing_ocp and existing_ocp.get("converged"):
+        full_lap_ocp = {
+            "lap_time_s": existing_ocp.get("lap_time_s"),
+            "converged": existing_ocp.get("converged"),
+            "source": "cached",
+        }
+    else:
+        # Queue or compute (don't block — return null and let Celery handle it)
+        full_lap_ocp = {
+            "lap_time_s": None,
+            "converged": False,
+            "source": "pending",
+            "message": "Full-lap OCP not yet computed. Upload triggers background computation.",
+        }
+
+    return {
+        "corner_results": corner_results,
+        "full_lap_ocp": full_lap_ocp,
+        "best_lap": best_lap_num,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════
 # 17. GET /api/v1/sessions/<id>/corner-metrics
 # ══════════════════════════════════════════════════════════════════
 

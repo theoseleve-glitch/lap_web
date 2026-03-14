@@ -40,6 +40,7 @@ interface StoredUserProfile {
   id: number;
   email: string;
   display_name: string;
+  is_superadmin?: boolean;
 }
 
 let _userProfile: StoredUserProfile | null = null;
