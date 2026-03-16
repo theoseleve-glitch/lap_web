@@ -103,12 +103,29 @@ export function StintProcessingProgress({
     }
   };
 
+  const completedCount = stintStatuses.filter((s) => s.status === 'complete').length;
+  const totalCount = stintStatuses.length;
+  const overallPct = totalCount > 0
+    ? Math.round(((completedCount + (phase === 'drivers' ? 0.2 : phase === 'team' ? 0.5 : phase === 'done' ? 1 : 0)) / (totalCount + 1)) * 100)
+    : 0;
+
   return (
     <div className="space-y-4">
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-        <h3 className="text-lg font-monument text-chalk mb-1">Processing Stints</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-lg font-monument text-chalk">Processing Stints</h3>
+          <span className="text-xs font-telemetry text-steel">{completedCount}/{totalCount} stints</span>
+        </div>
+
+        {/* Overall progress bar */}
+        <div className="w-full h-2 bg-asphalt rounded-full overflow-hidden mb-1">
+          <div
+            className="h-full bg-acid-green rounded-full transition-all duration-700 ease-out"
+            style={{ width: `${overallPct}%` }}
+          />
+        </div>
         <p className="text-steel text-xs font-body mb-4">
-          Each stint is analyzed individually. Click completed stints to view their report.
+          {phase === 'done' ? 'Analysis complete!' : phase === 'team' ? 'Computing team report...' : phase === 'drivers' ? 'Aggregating driver reports...' : 'Analyzing stints individually...'}
         </p>
 
         <div className="space-y-2">
