@@ -131,40 +131,60 @@ def compute_driver_report(
         }
 
     total_laps = sum(s["lap_count"] for s in valid_stints)
-    best_lap = min(s["best_lap_s"] for s in valid_stints)
 
-    # Weighted mean pace (by lap count)
+    # Group stints by condition for fair comparison
+    conditions = set(s.get("condition", "dry") for s in valid_stints)
+
+    # Best lap per condition (don't compare wet best vs dry best)
+    best_per_condition: dict[str, float] = {}
+    for cond in conditions:
+        cond_stints = [s for s in valid_stints if s.get("condition", "dry") == cond]
+        if cond_stints:
+            best_per_condition[cond] = min(s["best_lap_s"] for s in cond_stints)
+    best_lap = min(best_per_condition.values()) if best_per_condition else None
+
+    # Weighted mean pace per condition
+    mean_per_condition: dict[str, float] = {}
+    for cond in conditions:
+        cond_stints = [s for s in valid_stints if s.get("condition", "dry") == cond]
+        cond_laps = sum(s["lap_count"] for s in cond_stints)
+        if cond_laps > 0:
+            mean_per_condition[cond] = sum(s["mean_lap_s"] * s["lap_count"] for s in cond_stints) / cond_laps
     weighted_mean = sum(s["mean_lap_s"] * s["lap_count"] for s in valid_stints) / total_laps
 
     # Best lap per stint (for progression chart)
     best_per_stint = [
-        {"stint_number": s["stint_number"], "best_lap_s": s["best_lap_s"]}
+        {"stint_number": s["stint_number"], "best_lap_s": s["best_lap_s"], "condition": s.get("condition", "dry")}
         for s in valid_stints
     ]
 
-    # Aggregate scores (weighted by lap count)
-    agg_scores: dict[str, float] = {}
-    for key in ("pace", "consistency", "robustness"):
-        weighted = sum(
-            s["scores"].get(key, 0) * s["lap_count"] for s in valid_stints
-        )
-        agg_scores[key] = round(weighted / total_laps, 1)
+    # Consistency = mean of per-stint consistency scores (not inter-stint CV)
+    stint_consistency_scores = [s["scores"].get("consistency", 0) for s in valid_stints if s.get("scores")]
+    mean_consistency = statistics.mean(stint_consistency_scores) if stint_consistency_scores else 0
 
-    # Overall CV from all stints' means (inter-stint consistency)
-    stint_means = [s["mean_lap_s"] for s in valid_stints]
-    inter_cv = 0
-    if len(stint_means) > 1:
-        inter_cv = statistics.stdev(stint_means) / statistics.mean(stint_means) * 100
+    # Aggregate scores: consistency uses mean of stint scores, others weighted by laps
+    agg_scores: dict[str, float] = {}
+    for key in ("pace", "robustness"):
+        weighted = sum(s["scores"].get(key, 0) * s["lap_count"] for s in valid_stints)
+        agg_scores[key] = round(weighted / total_laps, 1)
+    agg_scores["consistency"] = round(mean_consistency, 1)
+
+    # CV for display: mean of per-stint CVs (not inter-stint)
+    stint_cvs = [s.get("consistency_cv_pct", 0) for s in valid_stints if s.get("consistency_cv_pct") is not None]
+    display_cv = statistics.mean(stint_cvs) if stint_cvs else 0
 
     return {
         "driver_name": driver_name,
         "total_laps": total_laps,
         "total_stints": len(valid_stints),
         "stints": stint_results,
-        "best_lap_s": round(best_lap, 3),
+        "best_lap_s": round(best_lap, 3) if best_lap else None,
         "mean_lap_s": round(weighted_mean, 3),
-        "consistency_cv_pct": round(inter_cv, 2),
+        "consistency_cv_pct": round(display_cv, 2),
         "best_per_stint": best_per_stint,
+        "best_per_condition": {k: round(v, 3) for k, v in best_per_condition.items()},
+        "mean_per_condition": {k: round(v, 3) for k, v in mean_per_condition.items()},
+        "conditions": sorted(conditions),
         "scores": agg_scores,
     }
 
