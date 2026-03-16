@@ -346,6 +346,11 @@ export default function SessionDetailPage() {
         if (cancelled) return;
         setSession(sessionData);
 
+        // Auto-switch to Endurance tab for endurance sessions
+        if (sessionData.session_type === 'endurance') {
+          setActiveTab('endurance');
+        }
+
         // Fetch supplementary data in parallel (non-critical)
         const [lapsRes, scoresRes, cornersRes, phasesRes] = await Promise.allSettled([
           api.get<{ laps: LapData[] }>(`/sessions/${sessionId}/laps`),
