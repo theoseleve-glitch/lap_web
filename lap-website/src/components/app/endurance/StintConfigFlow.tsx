@@ -135,7 +135,7 @@ export function StintConfigFlow({
       condition: stintConditions[s.stint_number] || 'dry',
     }));
     onProcess(configs);
-  }, [stints, stintDrivers, stintConditions, drivers, onProcess]);
+  }, [stints, stintDrivers, stintConditions, drivers, onProcess, effectiveLaps]);
 
   const statusColors: Record<string, string> = {
     valid: 'text-acid-green',
