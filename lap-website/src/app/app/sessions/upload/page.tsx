@@ -824,7 +824,7 @@ function UploadPage() {
         setErrorRequestId(null);
       }
     }
-  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartName, trackName, sessionDate, jokerEnabled, jokerLap, connectSSE]);
+  }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartName, trackName, sessionDate, jokerEnabled, jokerLap, connectSSE, enduranceDrivers, pitThreshold]);
 
   // Corner editor submit (custom geometry)
   const handleCornerSubmit = useCallback(async (
