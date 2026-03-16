@@ -150,6 +150,16 @@ def process_endurance_session(
     except Exception:
         logger.exception("Failed to persist master endurance session")
 
+    # ── Cleanup temp upload file ──────────────────────────────
+    try:
+        import shutil
+        upload_dir = Path(file_path).parent
+        if upload_dir.name.startswith("endurance_"):
+            shutil.rmtree(upload_dir, ignore_errors=True)
+            logger.info("Cleaned up endurance upload: %s", upload_dir)
+    except Exception:
+        pass
+
     _publish(_r, job_id, {
         "status": "completed",
         "job_id": job_id,
