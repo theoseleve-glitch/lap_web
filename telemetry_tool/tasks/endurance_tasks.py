@@ -165,10 +165,10 @@ def _process_single_stint(
     stint_number: int,
     driver_name: str,
     condition: str,
-    valid_laps: list[int] | None = None,
     session_meta: dict,
     workspace_id: str,
     job_id: str,
+    valid_laps: list[int] | None = None,
 ) -> dict[str, Any]:
     """Run the pipeline on a single stint's rows.
 
