@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -385,9 +386,9 @@ def _persist_master_session(
     conn.execute(
         "INSERT INTO sessions "
         "(session_id, display_name, driver_id, track_id, session_type, track_state, "
-        " best_lap_time_s, mean_lap_time_s, n_laps, total_score, grade, "
+        " session_date, best_lap_time_s, mean_lap_time_s, n_laps, total_score, grade, "
         " csv_filename, analysis_json) "
-        "VALUES (:sid, :dn, :did, :tid, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :fn, :aj)",
+        "VALUES (:sid, :dn, :did, :tid, :st, :ts, :sd, :blt, :mlt, :tl, :tscore, :grade, :fn, :aj)",
         {
             "sid": session_id,
             "dn": driver_label,
@@ -395,6 +396,7 @@ def _persist_master_session(
             "tid": track_id,
             "st": "endurance",
             "ts": session_meta.get("track_state", "dry"),
+            "sd": session_meta.get("session_date") or datetime.now().strftime("%Y-%m-%d"),
             "blt": best_lap,
             "mlt": mean_lap,
             "tl": total_laps,
