@@ -194,18 +194,24 @@ export function FocusMode({
   const [focusLap, setFocusLap] = useState<number | null>(null);
   const activeLap = focusLap ?? bestLap ?? gpsLaps[0] ?? null;
 
-  // Sync store tools into useToolDock if available
+  // Ensure store has defaults for this tab on first open
+  useEffect(() => {
+    if (!store.activeTools[activeTab] || store.activeTools[activeTab].length === 0) {
+      store.open(activeTab);
+    }
+  }, [activeTab, store]);
+
   const storeTools = store.activeTools[activeTab];
   const defaultSplit = store.splitSizes[activeTab] ?? 60;
 
   // Get the ordered array of active tool ids
   const activeToolIds = useMemo(() => {
-    // Prefer store state (persisted defaults) over useToolDock set
     if (storeTools && storeTools.length > 0) {
       return storeTools;
     }
-    return Array.from(toolState);
-  }, [storeTools, toolState]);
+    // Hardcoded fallback matching TAB_DEFAULTS
+    return ['track-map', 'gg-diagram', 'speed-trace'] as ToolId[];
+  }, [storeTools]);
 
   // Keyboard shortcuts
   const handleKeyDown = useCallback(
