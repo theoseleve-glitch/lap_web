@@ -1135,7 +1135,6 @@ function UploadPage() {
             <>
               <PipelineProgress pct={progressPct} stageName={stageName} status={sseStatus} />
               <StageInsights stageName={stageName} milestones={milestones} />
-              <TelemetryTips />
             </>
           )}
           <button
