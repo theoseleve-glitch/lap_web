@@ -54,7 +54,7 @@ export const useFocusModeStore = create<FocusModeState>()(
         })),
     }),
     {
-      name: 'focus-mode-layout',
+      name: 'focus-mode-layout-v2',
       partialize: (state) => ({
         activeTools: state.activeTools,
         splitSizes: state.splitSizes,
