@@ -384,6 +384,11 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.exports import bp as exports_bp
             app.register_blueprint(exports_bp)
             logger.debug("Registered exports blueprint")
+
+            # Endurance upload flow (detect + process endpoints)
+            from .routes.endurance_upload import bp as endurance_upload_bp
+            app.register_blueprint(endurance_upload_bp)
+            logger.debug("Registered endurance_upload blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 
