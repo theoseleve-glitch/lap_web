@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
@@ -10,6 +11,9 @@ import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
 import { StintConfigFlow } from '@/components/app/endurance/StintConfigFlow';
 import { StintProcessingProgress } from '@/components/app/endurance/StintProcessingProgress';
+import { TeamReport } from '@/components/app/endurance/TeamReport';
+import { DriverReport as DriverReportView } from '@/components/app/endurance/DriverReport';
+import type { EnduranceReportResponse } from '@/components/app/endurance/types';
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -28,7 +32,8 @@ type PageState =
   | 'error'
   | 'endurance_detecting'
   | 'endurance_config'
-  | 'endurance_processing';
+  | 'endurance_processing'
+  | 'endurance_report';
 
 interface SSEEvent {
   status: string;
@@ -106,6 +111,25 @@ const TELEMETRY_TIPS = [
 ];
 
 /** Rotating tips carousel shown during analysis. */
+function EnduranceReportLoader({ jobId, onLoaded }: { jobId: string; onLoaded: (r: EnduranceReportResponse) => void }) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['endurance-report-load', jobId],
+    queryFn: () => api.get<EnduranceReportResponse>(`/endurance/report/${jobId}`),
+    retry: 3,
+  });
+  useEffect(() => {
+    if (data) onLoaded(data);
+  }, [data, onLoaded]);
+  if (isLoading) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
+      <span className="ml-3 text-steel text-sm font-body">Loading endurance report...</span>
+    </div>
+  );
+  if (error) return <div className="text-safety-red text-sm font-body py-8 text-center">Failed to load report. Try refreshing.</div>;
+  return null;
+}
+
 function TelemetryTips() {
   const [index, setIndex] = useState(() => Math.floor(Math.random() * TELEMETRY_TIPS.length));
   const [fade, setFade] = useState(true);
@@ -404,6 +428,8 @@ function UploadPage() {
   const [enduranceAutoStints, setEnduranceAutoStints] = useState<any[]>([]);
   const [enduranceMedian, setEnduranceMedian] = useState(0);
   const [enduranceStintConfigs, setEnduranceStintConfigs] = useState<any[]>([]);
+  const [enduranceReport, setEnduranceReport] = useState<EnduranceReportResponse | null>(null);
+  const [enduranceSelectedDriver, setEnduranceSelectedDriver] = useState<string | null>(null);
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -1337,11 +1363,43 @@ function UploadPage() {
             stintConfigs={enduranceStintConfigs}
             drivers={enduranceDrivers}
             onComplete={(jobId) => {
-              setPageState('completed');
-              // Navigate to sessions list after brief delay
-              setTimeout(() => router.push('/app/sessions'), 2000);
+              setEnduranceJobId(jobId);
+              setPageState('endurance_report');
             }}
           />
+        </div>
+      )}
+
+      {/* ── Endurance: Report View ──────────────────── */}
+      {pageState === 'endurance_report' && enduranceJobId && (
+        <div className="max-w-4xl">
+          {!enduranceReport ? (
+            <EnduranceReportLoader
+              jobId={enduranceJobId}
+              onLoaded={setEnduranceReport}
+            />
+          ) : enduranceSelectedDriver ? (
+            <DriverReportView
+              report={enduranceReport.drivers[enduranceSelectedDriver]}
+              onSelectStint={() => {}}
+              onBack={() => setEnduranceSelectedDriver(null)}
+            />
+          ) : (
+            <TeamReport
+              report={enduranceReport.team}
+              stints={enduranceAutoStints}
+              onSelectDriver={setEnduranceSelectedDriver}
+            />
+          )}
+          <div className="mt-4 flex gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/app/sessions')}
+              className="px-4 py-2 text-sm font-body text-steel hover:text-chalk border border-steel/20 rounded-lg transition-colors"
+            >
+              Go to Sessions
+            </button>
+          </div>
         </div>
       )}
 
