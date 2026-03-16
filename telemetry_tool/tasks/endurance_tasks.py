@@ -125,14 +125,37 @@ def process_endurance_session(
     total_time = sum(r.get("total_time_s", 0) for r in stint_results if not r.get("error"))
     team_report = compute_team_report(driver_reports, total_laps, total_stints, total_time)
 
-    _r.set(f"endurance:report:{job_id}", json.dumps({
+    full_report = {
         "team": team_report,
         "drivers": driver_reports,
         "stint_results": stint_results,
-    }), ex=14400)
+    }
 
-    _publish(_r, job_id, {"status": "completed", "job_id": job_id})
-    return {"job_id": job_id, "stints_processed": len(stint_results)}
+    _r.set(f"endurance:report:{job_id}", json.dumps(full_report), ex=14400)
+
+    # ── Persist master endurance session to DB ──────────────────
+    # Creates a single session entry visible in the sessions list
+    master_session_id = None
+    try:
+        master_session_id = _persist_master_session(
+            job_id=job_id,
+            meta=meta,
+            team_report=team_report,
+            stint_results=stint_results,
+            total_laps=total_laps,
+            total_time=total_time,
+            workspace_id=workspace_id,
+        )
+        logger.info("Persisted master endurance session: %s", master_session_id)
+    except Exception:
+        logger.exception("Failed to persist master endurance session")
+
+    _publish(_r, job_id, {
+        "status": "completed",
+        "job_id": job_id,
+        "session_id": master_session_id,
+    })
+    return {"job_id": job_id, "stints_processed": len(stint_results), "session_id": master_session_id}
 
 
 def _process_single_stint(
@@ -265,6 +288,91 @@ def _process_single_stint(
             os.unlink(stint_csv_path)
         except OSError:
             pass
+
+
+def _persist_master_session(
+    job_id: str,
+    meta: dict,
+    team_report: dict,
+    stint_results: list[dict],
+    total_laps: int,
+    total_time: float,
+    workspace_id: str,
+) -> str | None:
+    """Create a master session entry in the DB for the endurance race.
+
+    This makes the endurance report visible in the sessions list.
+    """
+    import uuid
+    from web.db import get_db_connection
+
+    conn = get_db_connection()
+    session_id = uuid.uuid4().hex
+    session_meta = meta.get("session_meta", {})
+    drivers = team_report.get("drivers", [])
+    driver_label = " + ".join(drivers) if drivers else "Endurance"
+
+    # Find overall best lap across all stints
+    best_times = [r["best_lap_s"] for r in stint_results if r.get("best_lap_s")]
+    best_lap = min(best_times) if best_times else None
+    mean_times = [r["mean_lap_s"] for r in stint_results if r.get("mean_lap_s")]
+    mean_lap = sum(t * r.get("lap_count", 1) for t, r in zip(mean_times, stint_results) if r.get("mean_lap_s")) / total_laps if total_laps > 0 else None
+
+    # Team score
+    scores = team_report.get("scores", {})
+    total_score = sum(scores.values())
+    grade = "A+" if total_score >= 90 else "A" if total_score >= 80 else "B" if total_score >= 65 else "C" if total_score >= 50 else "D" if total_score >= 35 else "F"
+
+    conn.execute(
+        "INSERT INTO sessions "
+        "(session_id, driver_name, session_type, track_state, "
+        " best_lap_time_s, mean_lap_time_s, total_laps, total_score, grade, "
+        " track_id, file_name, analysis_json) "
+        "VALUES (:sid, :dn, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :tid, :fn, :aj)",
+        {
+            "sid": session_id,
+            "dn": driver_label,
+            "st": "endurance",
+            "ts": session_meta.get("track_state", "dry"),
+            "blt": best_lap,
+            "mlt": mean_lap,
+            "tl": total_laps,
+            "tscore": round(total_score, 1),
+            "grade": grade,
+            "tid": session_meta.get("track_name", ""),
+            "fn": meta.get("file_name", "endurance.csv"),
+            "aj": json.dumps({
+                "endurance_job_id": job_id,
+                "endurance_report": {
+                    "team": team_report,
+                    "stint_results": stint_results,
+                },
+            }),
+        },
+    )
+
+    # Insert score_details
+    conn.execute(
+        "INSERT INTO score_details "
+        "(session_id, pace_score, pace_max, consistency_score, consistency_max, "
+        " execution_score, execution_max, robustness_score, robustness_max, adaptation_score) "
+        "VALUES (:sid, :ps, :pm, :cs, :cm, :es, :em, :rs, :rm, :as_)",
+        {
+            "sid": session_id,
+            "ps": scores.get("pace", 0),
+            "pm": 25,
+            "cs": scores.get("consistency", 0),
+            "cm": 25,
+            "es": 0,
+            "em": 0,
+            "rs": scores.get("robustness", 0),
+            "rm": 25,
+            "as_": 0,
+        },
+    )
+
+    conn.commit()
+    return session_id
 
 
 def _publish(redis_client, job_id: str, data: dict) -> None:
