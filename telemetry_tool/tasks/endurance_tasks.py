@@ -63,6 +63,8 @@ def process_endurance_session(
         driver_name = stint_cfg.get("driver_name", f"Driver {stint_num}")
         condition = stint_cfg.get("condition", "dry")
         valid_laps = stint_cfg.get("valid_laps")
+        pit_lap_number = stint_cfg.get("pit_lap_number")
+        pit_lap_time_s = stint_cfg.get("pit_lap_time_s")
         logger.info("Stint %d: start=%d end=%d valid_laps=%s driver=%s",
                      stint_num, start_lap, end_lap,
                      f"{len(valid_laps)} laps" if valid_laps else "None (using range)",
@@ -85,6 +87,9 @@ def process_endurance_session(
                 workspace_id=meta.get("workspace_id", "1"),
                 job_id=job_id,
             )
+            # Add pit info from config (not from pipeline)
+            result["pit_lap_number"] = pit_lap_number
+            result["pit_lap_time_s"] = pit_lap_time_s
             stint_results.append(result)
 
             # Mark complete with stats

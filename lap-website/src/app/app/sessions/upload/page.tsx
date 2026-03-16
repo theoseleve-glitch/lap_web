@@ -1390,7 +1390,18 @@ function UploadPage() {
           ) : (
             <TeamReport
               report={enduranceReport.team}
-              stints={enduranceAutoStints}
+              stints={(enduranceReport as any).stint_results?.map((sr: any) => ({
+                stint_number: sr.stint_number,
+                start_lap: sr.start_lap,
+                end_lap: sr.end_lap,
+                lap_count: sr.lap_count,
+                driver_name: sr.driver_name,
+                condition: sr.condition,
+                pit_lap_number: sr.pit_lap_number ?? null,
+                pit_lap_time_s: sr.pit_lap_time_s ?? null,
+                best_lap_s: sr.best_lap_s,
+                mean_lap_s: sr.mean_lap_s,
+              })) || enduranceAutoStints}
               onSelectDriver={setEnduranceSelectedDriver}
             />
           )}
