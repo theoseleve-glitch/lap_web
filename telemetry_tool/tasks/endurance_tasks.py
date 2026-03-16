@@ -350,10 +350,10 @@ def _persist_master_session(
 
     conn.execute(
         "INSERT INTO sessions "
-        "(session_id, driver_name, session_type, track_state, "
-        " best_lap_time_s, mean_lap_time_s, total_laps, total_score, grade, "
-        " track_id, file_name, analysis_json) "
-        "VALUES (:sid, :dn, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :tid, :fn, :aj)",
+        "(session_id, display_name, session_type, track_state, "
+        " best_lap_time_s, mean_lap_time_s, n_laps, total_score, grade, "
+        " csv_filename, analysis_json) "
+        "VALUES (:sid, :dn, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :fn, :aj)",
         {
             "sid": session_id,
             "dn": driver_label,
@@ -364,7 +364,6 @@ def _persist_master_session(
             "tl": total_laps,
             "tscore": round(total_score, 1),
             "grade": grade,
-            "tid": session_meta.get("track_name", ""),
             "fn": meta.get("file_name", "endurance.csv"),
             "aj": json.dumps({
                 "endurance_job_id": job_id,
