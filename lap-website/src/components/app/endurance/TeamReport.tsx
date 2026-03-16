@@ -39,8 +39,12 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
     // Pit stops: only stints that have a pit_lap_number (not the last stint)
     const pitStints = stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0);
     const pitCount = pitStints.length;
-    // Pit duration = pit_duration_s if available (pit_time - prev_lap_time), else raw pit_lap_time_s
-    const totalPitTime = pitStints.reduce((sum, s) => sum + ((s as any).pit_duration_s || s.pit_lap_time_s || 0), 0);
+    // Pit duration = pit_lap_time - stint's mean_lap (the "extra" time beyond a normal lap)
+    const getPitDuration = (s: Stint) => {
+      const meanLap = s.mean_lap_s ?? (s.best_lap_s ?? 0);
+      return Math.ceil(Math.max(0, (s.pit_lap_time_s ?? 0) - meanLap));
+    };
+    const totalPitTime = pitStints.reduce((sum, s) => sum + getPitDuration(s), 0);
     const avgPitTime = pitCount > 0 ? totalPitTime / pitCount : 0;
 
     // Pace delta between drivers
@@ -52,9 +56,10 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
     return {
       overallBest,
       overallBestDriver: overallBestDriver?.driver_name ?? '--',
-      totalPitTime: totalPitTime,
+      totalPitTime,
       pitCount,
       avgPitTime,
+      getPitDuration,
       paceDelta,
       sortedByBest,
     };
@@ -240,7 +245,7 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
           </div>
           <div className="space-y-1">
             {stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0).map((s, i) => {
-              const pitTime = (s as any).pit_duration_s || s.pit_lap_time_s || 0;
+              const pitTime = raceMetrics.getPitDuration(s);
               return (
                 <div key={i} className="flex items-center gap-3 text-xs font-body">
                   <span className="text-steel w-16">Pit {i + 1}</span>
