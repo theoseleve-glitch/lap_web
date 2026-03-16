@@ -1,0 +1,1 @@
+export { EnduranceTab } from './EnduranceTab';

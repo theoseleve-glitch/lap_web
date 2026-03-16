@@ -19,6 +19,7 @@ const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSect
 const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
 const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
 const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
+const EnduranceTab = lazy(() => import('@/components/app/endurance').then(m => ({ default: m.EnduranceTab })));
 
 // Gamification components
 const AchievementToast = lazy(() => import('@/components/app/gamification/AchievementToast'));
@@ -110,7 +111,7 @@ interface ScoreData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'timeline' | 'analytics' | 'laps';
+type Tab = 'overview' | 'timeline' | 'analytics' | 'laps' | 'endurance';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
@@ -118,6 +119,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'analytics', label: 'Analytics' },
   { key: 'laps', label: 'Lap Data' },
 ];
+
+const ENDURANCE_TAB = { key: 'endurance' as Tab, label: 'Endurance' };
 
 
 const GRADE_COLORS: Record<string, string> = {
@@ -546,7 +549,7 @@ export default function SessionDetailPage() {
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-6 border-b border-steel/10">
-        {TABS.map((tab) => (
+        {[...TABS, ...(session.session_type?.includes('endurance') || (laps.length > 15) ? [ENDURANCE_TAB] : [])].map((tab) => (
           <button
             key={tab.key}
             type="button"
@@ -586,6 +589,11 @@ export default function SessionDetailPage() {
         </Suspense>
       )}
       {activeTab === 'laps' && <LapDataTab laps={laps} conditionPhases={conditionPhases} />}
+      {activeTab === 'endurance' && (
+        <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading endurance report&hellip;</div>}>
+          <EnduranceTab sessionId={sessionId} />
+        </Suspense>
+      )}
 
       <Suspense fallback={null}>
         <FocusMode
