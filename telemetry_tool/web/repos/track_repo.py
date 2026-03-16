@@ -7,6 +7,7 @@ import sqlite3
 from typing import Any, Optional
 
 from db import queries as Q
+from db.sql_compat import _is_pg
 from web.repos._helpers import _safe_float
 
 import logging
@@ -618,17 +619,29 @@ def save_session_corners_to_track(
     if not best:
         return 0
 
-    gps = conn.execute(
-        "SELECT latitude, longitude, distance_m FROM gps_traces "
-        "WHERE session_id = ? AND lap_number = ? ORDER BY elapsed_s",
-        (session_id, best["lap_number"]),
-    ).fetchall()
-    if not gps:
-        return 0
-
-    dists = [float(g["distance_m"] or 0) for g in gps]
-    lats = [float(g["latitude"] or 0) for g in gps]
-    lons = [float(g["longitude"] or 0) for g in gps]
+    if _is_pg():
+        row = conn.execute(
+            "SELECT latitudes_json, longitudes_json, distances_json "
+            "FROM gps_traces WHERE session_id = ? AND lap_number = ?",
+            (session_id, best["lap_number"]),
+        ).fetchone()
+        if not row:
+            return 0
+        import json
+        lats = [float(v or 0) for v in (row["latitudes_json"] if isinstance(row["latitudes_json"], list) else json.loads(row["latitudes_json"]))]
+        lons = [float(v or 0) for v in (row["longitudes_json"] if isinstance(row["longitudes_json"], list) else json.loads(row["longitudes_json"]))]
+        dists = [float(v or 0) for v in (row["distances_json"] if isinstance(row["distances_json"], list) else json.loads(row["distances_json"]))]
+    else:
+        gps = conn.execute(
+            "SELECT latitude, longitude, distance_m FROM gps_traces "
+            "WHERE session_id = ? AND lap_number = ? ORDER BY elapsed_s",
+            (session_id, best["lap_number"]),
+        ).fetchall()
+        if not gps:
+            return 0
+        dists = [float(g["distance_m"] or 0) for g in gps]
+        lats = [float(g["latitude"] or 0) for g in gps]
+        lons = [float(g["longitude"] or 0) for g in gps]
 
     if not dists:
         return 0
@@ -682,18 +695,45 @@ def populate_track_from_session_gps(
     ).fetchone()
     lap_length = _safe_float(best["line_length_m"]) if best else 0
 
-    gps_agg = conn.execute(
-        "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
-        "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
-        "FROM gps_traces WHERE session_id = ?",
-        (session_id,),
-    ).fetchone()
-
-    start_pt = conn.execute(
-        "SELECT latitude, longitude FROM gps_traces "
-        "WHERE session_id = ? ORDER BY elapsed_s LIMIT 1",
-        (session_id,),
-    ).fetchone()
+    if _is_pg():
+        # PG stores GPS as JSON arrays per lap
+        gps_agg = conn.execute(
+            "SELECT MIN(v::float) AS lat_min, MAX(v::float) AS lat_max "
+            "FROM gps_traces, LATERAL jsonb_array_elements(latitudes_json) AS v "
+            "WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        lon_agg = conn.execute(
+            "SELECT MIN(v::float) AS lon_min, MAX(v::float) AS lon_max "
+            "FROM gps_traces, LATERAL jsonb_array_elements(longitudes_json) AS v "
+            "WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        if gps_agg and lon_agg:
+            gps_agg = {
+                "lat_min": gps_agg["lat_min"],
+                "lat_max": gps_agg["lat_max"],
+                "lon_min": lon_agg["lon_min"],
+                "lon_max": lon_agg["lon_max"],
+            }
+        start_pt = conn.execute(
+            "SELECT latitudes_json->0 AS latitude, longitudes_json->0 AS longitude "
+            "FROM gps_traces WHERE session_id = ? ORDER BY lap_number LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    else:
+        # SQLite stores individual rows with latitude/longitude columns
+        gps_agg = conn.execute(
+            "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
+            "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
+            "FROM gps_traces WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+        start_pt = conn.execute(
+            "SELECT latitude, longitude FROM gps_traces "
+            "WHERE session_id = ? ORDER BY elapsed_s LIMIT 1",
+            (session_id,),
+        ).fetchone()
 
     sets: list[str] = []
     vals: list[Any] = []
@@ -766,12 +806,32 @@ def check_track_gps_match(
     }
 
     if all(v is not None for v in t_bb.values()):
-        gps_agg = conn.execute(
-            "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
-            "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
-            "FROM gps_traces WHERE session_id = ?",
-            (session_id,),
-        ).fetchone()
+        if _is_pg():
+            lat_r = conn.execute(
+                "SELECT MIN(v::float) AS lat_min, MAX(v::float) AS lat_max "
+                "FROM gps_traces, LATERAL jsonb_array_elements(latitudes_json) AS v "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            lon_r = conn.execute(
+                "SELECT MIN(v::float) AS lon_min, MAX(v::float) AS lon_max "
+                "FROM gps_traces, LATERAL jsonb_array_elements(longitudes_json) AS v "
+                "WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            gps_agg = {
+                "lat_min": lat_r["lat_min"] if lat_r else None,
+                "lat_max": lat_r["lat_max"] if lat_r else None,
+                "lon_min": lon_r["lon_min"] if lon_r else None,
+                "lon_max": lon_r["lon_max"] if lon_r else None,
+            } if lat_r and lon_r else None
+        else:
+            gps_agg = conn.execute(
+                "SELECT MIN(latitude) AS lat_min, MAX(latitude) AS lat_max, "
+                "MIN(longitude) AS lon_min, MAX(longitude) AS lon_max "
+                "FROM gps_traces WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
 
         if gps_agg and gps_agg["lat_min"] is not None:
             o_lat = max(0, min(t_bb["lat_max"], gps_agg["lat_max"])
