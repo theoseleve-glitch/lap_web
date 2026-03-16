@@ -36,16 +36,12 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
     const overallBest = drivers.length > 0 ? Math.min(...drivers.map((d) => d.best_lap_s ?? Infinity)) : null;
     const overallBestDriver = drivers.find((d) => d.best_lap_s === overallBest);
 
-    // Pit efficiency: total pit time vs total race time
-    const pitStints = stints.filter((s) => s.pit_lap_time_s != null && s.pit_lap_time_s > 0);
-    const totalPitTime = pitStints.reduce((sum, s) => sum + (s.pit_lap_time_s || 0), 0);
-    // Subtract median lap from pit laps (the "extra" time is the actual pit stop duration)
-    const medianLap = drivers.length > 0
-      ? drivers.reduce((sum, d) => sum + (d.mean_lap_s || 0), 0) / drivers.length
-      : 50;
-    const actualPitTime = pitStints.reduce((sum, s) => sum + Math.max(0, (s.pit_lap_time_s || 0) - medianLap), 0);
+    // Pit stops: only stints that have a pit_lap_number (not the last stint)
+    const pitStints = stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0);
     const pitCount = pitStints.length;
-    const avgPitTime = pitCount > 0 ? actualPitTime / pitCount : 0;
+    // Pit duration = raw pit lap time (includes the pit stop + in/out laps)
+    const totalPitTime = pitStints.reduce((sum, s) => sum + (s.pit_lap_time_s || 0), 0);
+    const avgPitTime = pitCount > 0 ? totalPitTime / pitCount : 0;
 
     // Pace delta between drivers
     const sortedByBest = [...drivers].sort((a, b) => (a.best_lap_s ?? Infinity) - (b.best_lap_s ?? Infinity));
@@ -243,22 +239,19 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
             </div>
           </div>
           <div className="space-y-1">
-            {stints.filter((s) => s.pit_lap_time_s != null && s.pit_lap_time_s > 0).map((s, i) => {
-              const medianLap = drivers.length > 0
-                ? drivers.reduce((sum, d) => sum + (d.mean_lap_s || 0), 0) / drivers.length
-                : 50;
-              const pitDuration = Math.max(0, (s.pit_lap_time_s || 0) - medianLap);
+            {stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0).map((s, i) => {
+              const pitTime = s.pit_lap_time_s || 0;
               return (
                 <div key={i} className="flex items-center gap-3 text-xs font-body">
                   <span className="text-steel w-16">Pit {i + 1}</span>
-                  <span className="text-chalk font-telemetry w-16">After S{s.stint_number}</span>
+                  <span className="text-chalk font-telemetry w-20">After S{s.stint_number} (L{s.pit_lap_number})</span>
                   <div className="flex-1 h-3 bg-asphalt rounded overflow-hidden">
                     <div
                       className="h-full bg-pit-orange/50 rounded"
-                      style={{ width: `${Math.min((pitDuration / 300) * 100, 100)}%` }}
+                      style={{ width: `${Math.min((pitTime / 300) * 100, 100)}%` }}
                     />
                   </div>
-                  <span className="text-pit-orange font-telemetry w-16 text-right">{pitDuration.toFixed(1)}s</span>
+                  <span className="text-pit-orange font-telemetry w-16 text-right">{pitTime.toFixed(1)}s</span>
                 </div>
               );
             })}
