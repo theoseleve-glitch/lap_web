@@ -95,6 +95,12 @@ def process_stints():
 
     meta = json.loads(raw)
 
+    # Write initial status BEFORE dispatching — so frontend poll never sees 404
+    _r.set(f"endurance:status:{job_id}", json.dumps({
+        "status": "queued",
+        "total_stints": len(stint_configs),
+    }), ex=7200)
+
     from tasks.endurance_tasks import process_endurance_session
     process_endurance_session.delay(job_id, meta, stint_configs)
 
