@@ -553,7 +553,7 @@ function UploadPage() {
               if (event.status === 'awaiting_corner_selection') {
                 // V1: skip corner editor — auto-accept detected corners
                 try {
-                  await api.patch(`/sessions/${jId}/corners`, { corners: [] });
+                  await api.post(`/jobs/${jId}/resume`, { selected_corner_ids: [] });
                 } catch { /* auto-detected corners will be used */ }
                 // Continue listening for completed status
                 continue;
