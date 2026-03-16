@@ -467,6 +467,30 @@ def insert_laps(
             "is_joker":         is_joker,
         })
         count += 1
+
+    # Safety guard: if best lap ended up invalid, reassign to fastest valid
+    conn.execute(
+        "UPDATE laps SET is_best = 0 "
+        "WHERE session_id = :sid AND is_best = 1 AND is_valid = 0",
+        {"sid": session_id},
+    )
+    if conn.execute(
+        "SELECT 1 FROM laps WHERE session_id = :sid AND is_best = 1",
+        {"sid": session_id},
+    ).fetchone() is None:
+        fastest_valid = conn.execute(
+            "SELECT lap_number FROM laps "
+            "WHERE session_id = :sid AND is_valid = 1 AND lap_time_s > 0 "
+            "ORDER BY lap_time_s LIMIT 1",
+            {"sid": session_id},
+        ).fetchone()
+        if fastest_valid:
+            conn.execute(
+                "UPDATE laps SET is_best = 1 "
+                "WHERE session_id = :sid AND lap_number = :ln",
+                {"sid": session_id, "ln": fastest_valid["lap_number"]},
+            )
+
     return count
 
 
