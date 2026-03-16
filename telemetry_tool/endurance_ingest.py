@@ -81,12 +81,21 @@ def detect_laps_quick(
                 }
 
     # Classify laps
+    # First pass: compute median from all laps (rough estimate)
     lap_list = sorted(laps.values(), key=lambda l: l["lap_number"])
-    valid_times = [l["lap_time_s"] for l in lap_list if l["lap_time_s"] < pit_threshold_s]
-    median_time = statistics.median(valid_times) if valid_times else 0
+    all_times = [l["lap_time_s"] for l in lap_list]
+    rough_median = statistics.median(all_times) if all_times else 0
+
+    # Pit threshold = median lap time + user-specified pit duration
+    # e.g. median=50s + pit_threshold=120s → laps >170s are pit stops
+    effective_pit = rough_median + pit_threshold_s
+
+    # Second pass: compute clean median excluding pit laps
+    valid_times = [t for t in all_times if t < effective_pit]
+    median_time = statistics.median(valid_times) if valid_times else rough_median
 
     for lap in lap_list:
-        if lap["lap_time_s"] > pit_threshold_s:
+        if lap["lap_time_s"] > median_time + pit_threshold_s:
             lap["status"] = "pit"
         elif median_time > 0 and lap["lap_time_s"] > median_time * 2:
             lap["status"] = "anomaly"

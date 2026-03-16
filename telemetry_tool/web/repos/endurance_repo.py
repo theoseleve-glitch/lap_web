@@ -26,8 +26,12 @@ def detect_and_store_stints(
     # Sort laps by number
     sorted_laps = sorted(lap_times.items())
 
-    # Classify pit laps
-    pit_laps = {ln for ln, t in sorted_laps if t > pit_threshold_s}
+    # Pit detection: median + threshold (not threshold alone)
+    import statistics as _stats
+    all_times = [t for _, t in sorted_laps if t > 0]
+    median_time = _stats.median(all_times) if all_times else 0
+    effective_pit = median_time + pit_threshold_s
+    pit_laps = {ln for ln, t in sorted_laps if t > effective_pit}
 
     # Group valid laps into stints
     stints: list[dict[str, Any]] = []
@@ -168,3 +172,32 @@ def get_endurance_config(
         "pit_threshold_s": (row["pit_threshold_s"] if row and row["pit_threshold_s"]
                             else DEFAULT_PIT_THRESHOLD_S),
     }
+
+
+def get_race_anchor(
+    conn: sqlite3.Connection,
+    session_id: str,
+) -> dict[str, Any] | None:
+    """Return the race anchor for a session, or None if not set."""
+    row = conn.execute(
+        "SELECT * FROM endurance_race_anchors WHERE session_id = :sid",
+        {"sid": session_id},
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_race_anchor(
+    conn: sqlite3.Connection,
+    session_id: str,
+    race_start_iso: str,
+    lap_duration_s: float | None = None,
+) -> None:
+    """Insert or update the race anchor for a session."""
+    conn.execute(
+        "INSERT INTO endurance_race_anchors (session_id, race_start_iso, lap_duration_s) "
+        "VALUES (:sid, :rsi, :ld) "
+        "ON CONFLICT(session_id) DO UPDATE SET "
+        "race_start_iso = :rsi, lap_duration_s = :ld",
+        {"sid": session_id, "rsi": race_start_iso, "ld": lap_duration_s},
+    )
+    conn.commit()
