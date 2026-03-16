@@ -55,6 +55,10 @@ def auth_middleware() -> Response | tuple | None:
     if request.path.startswith("/static/"):
         return None
 
+    # Skip for endurance status/report polling (job_id acts as access token)
+    if request.path.startswith("/api/v1/endurance/status/") or request.path.startswith("/api/v1/endurance/report/"):
+        return None
+
     # Skip for legacy HTML routes (backward compat)
     if not request.path.startswith("/api/v1/"):
         return None
