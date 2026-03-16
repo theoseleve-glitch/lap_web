@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from tasks.celery_app import celery_app
+from celery_app import celery as celery_app
 
 logger = logging.getLogger(__name__)
 
