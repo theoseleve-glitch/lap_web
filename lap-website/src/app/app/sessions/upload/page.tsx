@@ -384,6 +384,7 @@ function UploadPage() {
   const batchQueueRef = useRef<File[]>([]);
   const connectSSERef = useRef<(jId: string) => void>(() => {});
   const trackNameRef = useRef('');
+  const cornerResumedRef = useRef(false);
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -551,11 +552,11 @@ function UploadPage() {
               }
 
               if (event.status === 'awaiting_corner_selection') {
-                // V1: skip corner editor — auto-accept detected corners
-                try {
-                  await api.post(`/jobs/${jId}/resume`, { selected_corner_ids: [] });
-                } catch { /* auto-detected corners will be used */ }
-                // Continue listening for completed status
+                // V1: skip corner editor — auto-accept detected corners (once)
+                if (!cornerResumedRef.current) {
+                  cornerResumedRef.current = true;
+                  api.post(`/jobs/${jId}/resume`, { selected_corner_ids: [] }).catch(() => {});
+                }
                 continue;
               }
 
