@@ -509,46 +509,6 @@ export default function SessionDetailPage() {
             </div>
           )}
 
-          {/* Print */}
-          <button
-            type="button"
-            onClick={() => window.print()}
-            data-print="hide"
-            className="px-3 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-steel font-body hover:text-chalk hover:bg-steel/10 transition-colors"
-            title="Print session report"
-          >
-            Print
-          </button>
-
-          {/* Report download */}
-          <a
-            href={`${BACKEND_URL}/api/v1/sessions/${sessionId}/report?format=html`}
-            className="px-4 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
-            target="_blank"
-            rel="noopener noreferrer"
-            data-print="hide"
-          >
-            Download Report
-          </a>
-
-          {/* Export to AiM/MoTeC */}
-          <ExportDropdown sessionId={sessionId} />
-
-          {/* Driving Analyzer */}
-          <button
-            type="button"
-            onClick={() => setAnalyzerOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-concrete border border-acid-green/30 rounded-lg text-sm text-acid-green font-body hover:bg-gold/10 transition-colors"
-            aria-label="Open Driving Analyzer (D)"
-            title="Open Driving Analyzer (D)"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <circle cx="7" cy="7" r="5" /><path d="M7 4v3l2 1.5" />
-            </svg>
-            Driving Analyzer
-            <kbd className="text-[10px] px-1 py-0.5 rounded bg-asphalt border border-steel/20 text-steel/50 font-telemetry">D</kbd>
-          </button>
-
           {/* Delete */}
           <button
             type="button"
