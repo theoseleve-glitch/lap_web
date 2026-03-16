@@ -130,7 +130,8 @@ def _build_stints(laps: list[dict]) -> list[dict]:
                 prev_lap_num = current[-1]
                 prev_lap = lap_by_num.get(prev_lap_num)
                 prev_time = prev_lap["lap_time_s"] if prev_lap else 0
-                pit_duration = round(lap["lap_time_s"] - prev_time, 3) if prev_time > 0 else lap["lap_time_s"]
+                import math
+                pit_duration = math.ceil(lap["lap_time_s"] - prev_time) if prev_time > 0 else math.ceil(lap["lap_time_s"])
 
                 stints.append({
                     "stint_number": len(stints) + 1,

@@ -71,7 +71,7 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
           <StatCard label="Stints" value={String(report.total_stints)} />
           <StatCard label="Pit Stops" value={String(raceMetrics.pitCount)} />
           <StatCard label="Race Best" value={formatTime(raceMetrics.overallBest)} accent="text-acid-green" />
-          <StatCard label="Avg Pit Stop" value={raceMetrics.avgPitTime > 0 ? `${raceMetrics.avgPitTime.toFixed(1)}s` : '--'} />
+          <StatCard label="Avg Pit Stop" value={raceMetrics.avgPitTime > 0 ? `${Math.ceil(raceMetrics.avgPitTime)}s` : '--'} />
         </div>
       </div>
 
@@ -230,7 +230,7 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
               <p className="text-xs font-body text-steel">Pit Stops</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-monument text-pit-orange">{raceMetrics.avgPitTime.toFixed(1)}s</p>
+              <p className="text-2xl font-monument text-pit-orange">{Math.ceil(raceMetrics.avgPitTime)}s</p>
               <p className="text-xs font-body text-steel">Avg Pit Duration</p>
             </div>
             <div className="text-center">
@@ -251,7 +251,7 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
                       style={{ width: `${Math.min((pitTime / 300) * 100, 100)}%` }}
                     />
                   </div>
-                  <span className="text-pit-orange font-telemetry w-16 text-right">{pitTime.toFixed(1)}s</span>
+                  <span className="text-pit-orange font-telemetry w-16 text-right">{Math.ceil(pitTime)}s</span>
                 </div>
               );
             })}
