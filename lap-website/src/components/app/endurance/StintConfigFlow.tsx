@@ -105,25 +105,25 @@ export function StintConfigFlow({
   const allAssigned = stints.every((s) => stintDrivers[s.stint_number]);
 
   const handleProcess = useCallback(() => {
-    // Build explicit list of valid laps per stint (excludes pit/ignore/anomaly)
+    // Build explicit list of valid laps per stint
+    // Must match the same grouping logic used by the `stints` useMemo
     const stintValidLaps: Record<number, number[]> = {};
-    let stintIdx = 0;
-    let currentLaps: number[] = [];
+    let currentValid: number[] = [];
+    let stintCount = 0;
     for (const lap of effectiveLaps) {
       if (lap.status === 'pit' || lap.status === 'ignore') {
-        if (currentLaps.length > 0) {
-          stintIdx++;
-          stintValidLaps[stintIdx] = currentLaps;
-          currentLaps = [];
+        if (currentValid.length > 0) {
+          stintCount++;
+          stintValidLaps[stintCount] = [...currentValid];
+          currentValid = [];
         }
       } else if (lap.status === 'valid') {
-        currentLaps.push(lap.lap_number);
+        currentValid.push(lap.lap_number);
       }
-      // anomaly laps are excluded from valid_laps
     }
-    if (currentLaps.length > 0) {
-      stintIdx++;
-      stintValidLaps[stintIdx] = currentLaps;
+    if (currentValid.length > 0) {
+      stintCount++;
+      stintValidLaps[stintCount] = [...currentValid];
     }
 
     const configs: StintConfig[] = stints.map((s) => ({

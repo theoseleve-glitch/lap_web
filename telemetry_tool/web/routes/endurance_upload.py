@@ -62,7 +62,7 @@ def _detect_stints_inner():
         "file_name": safe_name,
         "drivers": drivers,
         "pit_threshold_s": pit_threshold,
-        "workspace_id": str(g.workspace_id),
+        "workspace_id": str(getattr(g, "workspace_id", 1)),
         "session_meta": {
             "session_type": "endurance",
             "track_state": request.form.get("track_state", "dry"),

@@ -325,7 +325,7 @@ def _persist_master_session(
 
     conn = get_db_connection()
     # Set RLS workspace context
-    conn.execute("SELECT set_config('app.current_workspace_id', :wid, true)", {"wid": str(workspace_id)})
+    conn.execute("SET LOCAL app.current_workspace_id = :wid", {"wid": str(workspace_id)})
     session_id = uuid.uuid4().hex
     session_meta = meta.get("session_meta", {})
     drivers = team_report.get("drivers", [])
@@ -391,6 +391,10 @@ def _persist_master_session(
     )
 
     conn.commit()
+    try:
+        conn.close()
+    except Exception:
+        pass
     return session_id
 
 
