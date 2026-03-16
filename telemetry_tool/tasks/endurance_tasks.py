@@ -62,6 +62,7 @@ def process_endurance_session(
         end_lap = stint_cfg["end_lap"]
         driver_name = stint_cfg.get("driver_name", f"Driver {stint_num}")
         condition = stint_cfg.get("condition", "dry")
+        valid_laps = stint_cfg.get("valid_laps")
 
         # Mark this stint as processing
         stint_statuses[i]["status"] = "processing"
@@ -75,6 +76,7 @@ def process_endurance_session(
                 stint_number=stint_num,
                 driver_name=driver_name,
                 condition=condition,
+                valid_laps=valid_laps,
                 session_meta=session_meta,
                 workspace_id=meta.get("workspace_id", "1"),
                 job_id=job_id,
@@ -140,6 +142,7 @@ def _process_single_stint(
     stint_number: int,
     driver_name: str,
     condition: str,
+    valid_laps: list[int] | None = None,
     session_meta: dict,
     workspace_id: str,
     job_id: str,
@@ -175,6 +178,8 @@ def _process_single_stint(
         if lap_col_idx is None:
             raise ValueError("Cannot find Lap # column in CSV header")
 
+        _valid_set = set(valid_laps) if valid_laps else set()
+
         for line in f:
             parts = line.split(",")
             if len(parts) <= lap_col_idx:
@@ -183,8 +188,13 @@ def _process_single_stint(
                 lap_num = int(float(parts[lap_col_idx].strip()))
             except (ValueError, TypeError):
                 continue
-            if start_lap <= lap_num <= end_lap:
-                stint_lines.append(line)
+            # Use explicit valid_laps list if provided, else fall back to range
+            if _valid_set:
+                if lap_num not in _valid_set:
+                    continue
+            elif not (start_lap <= lap_num <= end_lap):
+                continue
+            stint_lines.append(line)
 
     if not stint_lines:
         return {

@@ -22,6 +22,7 @@ interface StintConfig {
   stint_number: number;
   start_lap: number;
   end_lap: number;
+  valid_laps: number[];
   driver_name: string;
   condition: string;
 }
@@ -104,10 +105,32 @@ export function StintConfigFlow({
   const allAssigned = stints.every((s) => stintDrivers[s.stint_number]);
 
   const handleProcess = useCallback(() => {
+    // Build explicit list of valid laps per stint (excludes pit/ignore/anomaly)
+    const stintValidLaps: Record<number, number[]> = {};
+    let stintIdx = 0;
+    let currentLaps: number[] = [];
+    for (const lap of effectiveLaps) {
+      if (lap.status === 'pit' || lap.status === 'ignore') {
+        if (currentLaps.length > 0) {
+          stintIdx++;
+          stintValidLaps[stintIdx] = currentLaps;
+          currentLaps = [];
+        }
+      } else if (lap.status === 'valid') {
+        currentLaps.push(lap.lap_number);
+      }
+      // anomaly laps are excluded from valid_laps
+    }
+    if (currentLaps.length > 0) {
+      stintIdx++;
+      stintValidLaps[stintIdx] = currentLaps;
+    }
+
     const configs: StintConfig[] = stints.map((s) => ({
       stint_number: s.stint_number,
       start_lap: s.start_lap,
       end_lap: s.end_lap,
+      valid_laps: stintValidLaps[s.stint_number] || [],
       driver_name: stintDrivers[s.stint_number] || drivers[0] || 'Unknown',
       condition: stintConditions[s.stint_number] || 'dry',
     }));
