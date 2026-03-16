@@ -200,9 +200,9 @@ export function FocusMode({
 
   // Get the ordered array of active tool ids
   const activeToolIds = useMemo(() => {
-    // Prefer store state if it has tools for this tab, else fall back to useToolDock set
+    // Prefer store state (persisted defaults) over useToolDock set
     if (storeTools && storeTools.length > 0) {
-      return storeTools.filter((t) => toolState.has(t));
+      return storeTools;
     }
     return Array.from(toolState);
   }, [storeTools, toolState]);
