@@ -134,6 +134,7 @@ export function StintConfigFlow({
       valid_laps: stintValidLaps[s.stint_number] || [],
       pit_lap_number: s.pit_lap_number,
       pit_lap_time_s: s.pit_lap_time_s,
+      pit_duration_s: (s as any).pit_duration_s ?? null,
       driver_name: stintDrivers[s.stint_number] || drivers[0] || 'Unknown',
       condition: stintConditions[s.stint_number] || 'dry',
     }));

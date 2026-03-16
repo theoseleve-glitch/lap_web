@@ -90,6 +90,7 @@ def process_endurance_session(
             # Add pit info from config (not from pipeline)
             result["pit_lap_number"] = pit_lap_number
             result["pit_lap_time_s"] = pit_lap_time_s
+            result["pit_duration_s"] = stint_cfg.get("pit_duration_s")
             stint_results.append(result)
 
             # Mark complete with stats

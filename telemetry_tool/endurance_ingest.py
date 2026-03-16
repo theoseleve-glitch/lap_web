@@ -114,13 +114,24 @@ def detect_laps_quick(
 
 
 def _build_stints(laps: list[dict]) -> list[dict]:
-    """Group consecutive valid/anomaly laps into stints."""
+    """Group consecutive valid/anomaly laps into stints.
+
+    pit_duration_s = pit_lap_time - last_valid_lap_time (the "extra" time spent in pit)
+    """
+    # Build lookup for quick prev-lap access
+    lap_by_num = {l["lap_number"]: l for l in laps}
     stints: list[dict] = []
     current: list[int] = []
 
     for lap in laps:
         if lap["status"] == "pit":
             if current:
+                # Pit duration = pit lap time - previous valid lap time
+                prev_lap_num = current[-1]
+                prev_lap = lap_by_num.get(prev_lap_num)
+                prev_time = prev_lap["lap_time_s"] if prev_lap else 0
+                pit_duration = round(lap["lap_time_s"] - prev_time, 3) if prev_time > 0 else lap["lap_time_s"]
+
                 stints.append({
                     "stint_number": len(stints) + 1,
                     "start_lap": current[0],
@@ -128,6 +139,7 @@ def _build_stints(laps: list[dict]) -> list[dict]:
                     "lap_count": len(current),
                     "pit_lap_number": lap["lap_number"],
                     "pit_lap_time_s": lap["lap_time_s"],
+                    "pit_duration_s": pit_duration,
                 })
                 current = []
         else:
