@@ -14,7 +14,6 @@ import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
-const CornersTab = lazy(() => import('@/components/app/corners').then(m => ({ default: m.CornersTab })));
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
 const DrivingStyleSection = lazy(() => import('@/components/app/DrivingStyleSection').then(m => ({ default: m.DrivingStyleSection })));
 const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then(m => ({ default: m.SessionDebrief })));
@@ -111,11 +110,10 @@ interface ScoreData {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-type Tab = 'overview' | 'corners' | 'timeline' | 'analytics' | 'laps';
+type Tab = 'overview' | 'timeline' | 'analytics' | 'laps';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'overview', label: 'Overview' },
-  { key: 'corners', label: 'Corners & Coaching' },
   { key: 'timeline', label: 'Timeline' },
   { key: 'analytics', label: 'Analytics' },
   { key: 'laps', label: 'Lap Data' },
@@ -613,11 +611,6 @@ export default function SessionDetailPage() {
       {/* Tab content */}
       {activeTab === 'overview' && (
         <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} onSessionUpdate={setSession} />
-      )}
-      {activeTab === 'corners' && (
-        <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading corners&hellip;</div>}>
-          <CornersTab corners={corners} sessionId={sessionId} />
-        </Suspense>
       )}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'analytics' && (
