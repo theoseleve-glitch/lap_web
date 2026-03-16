@@ -551,18 +551,12 @@ function UploadPage() {
               }
 
               if (event.status === 'awaiting_corner_selection') {
-                setPageState('awaiting_corners');
-                // Fetch track layout
+                // V1: skip corner editor — auto-accept detected corners
                 try {
-                  const layout = await fetchTrackLayout(jId);
-                  setTrackLayout(layout);
-                } catch (err) {
-                  logger.error('Failed to fetch track layout:', err);
-                  setErrorMessage('Failed to load track layout');
-                  setPageState('error');
-                }
-                closeStream();
-                return;
+                  await api.patch(`/sessions/${jId}/corners`, { corners: [] });
+                } catch { /* auto-detected corners will be used */ }
+                // Continue listening for completed status
+                continue;
               }
 
               if (event.status === 'completed') {
