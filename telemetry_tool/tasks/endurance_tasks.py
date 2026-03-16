@@ -348,15 +348,51 @@ def _persist_master_session(
     total_score = sum(scores.values())
     grade = "A+" if total_score >= 90 else "A" if total_score >= 80 else "B" if total_score >= 65 else "C" if total_score >= 50 else "D" if total_score >= 35 else "F"
 
+    # Find or create driver for the team label
+    driver_row = conn.execute(
+        "SELECT driver_id FROM drivers WHERE driver_name = :dn",
+        {"dn": driver_label},
+    ).fetchone()
+    if driver_row:
+        driver_id = driver_row["driver_id"]
+    else:
+        conn.execute(
+            "INSERT INTO drivers (driver_name) VALUES (:dn)",
+            {"dn": driver_label},
+        )
+        driver_row = conn.execute(
+            "SELECT driver_id FROM drivers WHERE driver_name = :dn",
+            {"dn": driver_label},
+        ).fetchone()
+        driver_id = driver_row["driver_id"]
+
+    # Find or create track
+    track_name = session_meta.get("track_name", "Unknown Track")
+    track_row = conn.execute(
+        "SELECT track_id FROM tracks WHERE track_name = :tn",
+        {"tn": track_name},
+    ).fetchone()
+    if track_row:
+        track_id = track_row["track_id"]
+    else:
+        import hashlib
+        track_id = hashlib.md5(track_name.encode()).hexdigest()[:16]
+        conn.execute(
+            "INSERT INTO tracks (track_id, track_name) VALUES (:tid, :tn)",
+            {"tid": track_id, "tn": track_name},
+        )
+
     conn.execute(
         "INSERT INTO sessions "
-        "(session_id, display_name, session_type, track_state, "
+        "(session_id, display_name, driver_id, track_id, session_type, track_state, "
         " best_lap_time_s, mean_lap_time_s, n_laps, total_score, grade, "
         " csv_filename, analysis_json) "
-        "VALUES (:sid, :dn, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :fn, :aj)",
+        "VALUES (:sid, :dn, :did, :tid, :st, :ts, :blt, :mlt, :tl, :tscore, :grade, :fn, :aj)",
         {
             "sid": session_id,
             "dn": driver_label,
+            "did": driver_id,
+            "tid": track_id,
             "st": "endurance",
             "ts": session_meta.get("track_state", "dry"),
             "blt": best_lap,
