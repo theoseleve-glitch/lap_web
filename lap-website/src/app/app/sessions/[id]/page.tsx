@@ -554,7 +554,7 @@ export default function SessionDetailPage() {
 
       {/* Tab bar */}
       <div className="flex items-center gap-1 mb-6 border-b border-steel/10">
-        {[...TABS, ...(session.session_type?.includes('endurance') || (laps.length > 15) ? [ENDURANCE_TAB] : [])].map((tab) => (
+        {(session.session_type === 'endurance' ? [ENDURANCE_TAB] : [...TABS, ...(laps.length > 15 ? [ENDURANCE_TAB] : [])]).map((tab) => (
           <button
             key={tab.key}
             type="button"
