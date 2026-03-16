@@ -199,6 +199,7 @@ function uploadSession(
     session_date?: string;
     joker_enabled?: boolean;
     joker_lap?: string;
+    endurance_drivers?: string[];
   },
   onProgress?: (pct: number) => void,
   signal?: AbortSignal,
@@ -214,6 +215,9 @@ function uploadSession(
     if (metadata.kart_name) formData.append('kart_name', metadata.kart_name);
     if (metadata.track_name) formData.append('track_name', metadata.track_name);
     if (metadata.session_date) formData.append('session_date', metadata.session_date);
+    if (metadata.endurance_drivers && metadata.endurance_drivers.length > 0) {
+      formData.append('endurance_drivers', JSON.stringify(metadata.endurance_drivers));
+    }
     if (metadata.joker_enabled) {
       formData.append('joker_enabled', '1');
       if (metadata.joker_lap) formData.append('joker_lap', metadata.joker_lap);
@@ -351,6 +355,8 @@ function UploadPage() {
   const [fileQueue, setFileQueue] = useState<File[]>([]);
   const [driverName, setDriverName] = useState('');
   const [sessionType, setSessionType] = useState('practice');
+  const [enduranceDrivers, setEnduranceDrivers] = useState<string[]>([]);
+  const [newEnduranceDriver, setNewEnduranceDriver] = useState('');
   const [trackState, setTrackState] = useState('dry');
   const [lapRange, setLapRange] = useState('');
   const [excludeLaps, setExcludeLaps] = useState('');
@@ -440,6 +446,7 @@ function UploadPage() {
         session_date: sessionDate || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
+        endurance_drivers: sessionType === 'endurance' ? enduranceDrivers : undefined,
       }, setUploadPct, controller.signal);
 
       setJobId(result.job_id);
@@ -743,6 +750,7 @@ function UploadPage() {
         session_date: sessionDate || undefined,
         joker_enabled: jokerEnabled || undefined,
         joker_lap: jokerEnabled && jokerLap.trim() ? jokerLap.trim() : undefined,
+        endurance_drivers: sessionType === 'endurance' ? enduranceDrivers : undefined,
       }, setUploadPct, controller.signal);
 
       setJobId(result.job_id);
@@ -970,6 +978,70 @@ function UploadPage() {
                 {SESSION_TYPES.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}
               </select>
             </div>
+            {/* Endurance Drivers */}
+            {sessionType === 'endurance' && (
+              <div className="col-span-full bg-asphalt/30 rounded-lg border border-pit-orange/20 p-4">
+                <label className="block text-sm font-telemetry text-pit-orange mb-2 uppercase tracking-wider">
+                  Endurance Drivers
+                </label>
+                <p className="text-steel text-xs font-body mb-3">
+                  Add all drivers participating. You&apos;ll assign stints after processing.
+                </p>
+                <div className="flex items-center gap-2 mb-3">
+                  <input
+                    type="text"
+                    value={newEnduranceDriver}
+                    onChange={(e) => setNewEnduranceDriver(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const name = newEnduranceDriver.trim();
+                        if (name && !enduranceDrivers.includes(name)) {
+                          setEnduranceDrivers((prev) => [...prev, name]);
+                          setNewEnduranceDriver('');
+                        }
+                      }
+                    }}
+                    disabled={isFormDisabled}
+                    placeholder="Driver name"
+                    className="flex-1 max-w-xs bg-concrete border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
+                      placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <button
+                    type="button"
+                    disabled={isFormDisabled || !newEnduranceDriver.trim()}
+                    onClick={() => {
+                      const name = newEnduranceDriver.trim();
+                      if (name && !enduranceDrivers.includes(name)) {
+                        setEnduranceDrivers((prev) => [...prev, name]);
+                        setNewEnduranceDriver('');
+                      }
+                    }}
+                    className="px-3 py-2 bg-pit-orange/10 border border-pit-orange/30 rounded text-pit-orange text-sm font-body
+                      hover:bg-pit-orange/20 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    + Add
+                  </button>
+                </div>
+                {enduranceDrivers.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {enduranceDrivers.map((d) => (
+                      <span key={d} className="inline-flex items-center gap-1.5 px-3 py-1 bg-concrete border border-steel/20 rounded-full text-chalk text-xs font-body">
+                        {d}
+                        <button
+                          type="button"
+                          onClick={() => setEnduranceDrivers((prev) => prev.filter((n) => n !== d))}
+                          className="text-steel/40 hover:text-safety-red transition-colors"
+                        >
+                          &times;
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div>
               <label htmlFor="track-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
                 Track <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from GPS)</span>
