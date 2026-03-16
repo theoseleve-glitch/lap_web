@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import { QueryError, SkeletonCardGrid } from '@/components/app';
@@ -20,28 +20,44 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
   const [selectedStint, setSelectedStint] = useState<number | null>(null);
   const [reportReady, setReportReady] = useState(false);
 
-  // Fetch stints
-  const stintsQuery = useQuery({
-    queryKey: ['stints', sessionId],
-    queryFn: () => api.get<StintsResponse>(`/sessions/${sessionId}/stints`),
+  // Try loading stored report from session's analysis_json
+  const storedReportQuery = useQuery({
+    queryKey: ['session-detail-endurance', sessionId],
+    queryFn: async () => {
+      const session = await api.get<{ analysis_json?: string }>(`/sessions/${sessionId}`);
+      if (!session?.analysis_json) return null;
+      const aj = typeof session.analysis_json === 'string'
+        ? JSON.parse(session.analysis_json)
+        : session.analysis_json;
+      return aj?.endurance_report as EnduranceReportResponse | null;
+    },
+    retry: false,
   });
 
-  // Fetch endurance report (only when assignments exist)
+  // Fetch stints from DB
+  const stintsQuery = useQuery({
+    queryKey: ['stints', sessionId],
+    queryFn: () => api.get<StintsResponse>(`/sessions/${sessionId}/stints`).catch(() => null),
+    retry: false,
+  });
+
+  // Fetch live endurance report (from /endurance-report endpoint)
   const reportQuery = useQuery({
     queryKey: ['endurance-report', sessionId],
-    queryFn: () => api.get<EnduranceReportResponse>(`/sessions/${sessionId}/endurance-report`),
+    queryFn: () => api.get<EnduranceReportResponse>(`/sessions/${sessionId}/endurance-report`).catch(() => null),
     enabled: reportReady,
     retry: false,
   });
 
-  // Check if drivers are assigned
   const stints = stintsQuery.data?.stints || [];
   const hasAssignments = stints.some((s) => s.driver_name);
 
-  // Auto-enable report if assignments exist
-  if (hasAssignments && !reportReady) {
-    setReportReady(true);
-  }
+  useEffect(() => {
+    if (hasAssignments && !reportReady) setReportReady(true);
+  }, [hasAssignments, reportReady]);
+
+  // Use stored report (from analysis_json) OR live report
+  const report: EnduranceReportResponse | null = storedReportQuery.data || reportQuery.data || null;
 
   const handleSetupComplete = useCallback(() => {
     setReportReady(true);
@@ -68,78 +84,61 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
     }
   }, [tier]);
 
-  // Loading state
-  if (stintsQuery.isLoading) {
+  // Loading
+  if (storedReportQuery.isLoading) {
     return <SkeletonCardGrid count={4} />;
   }
 
-  if (stintsQuery.error) {
-    return <QueryError message="Failed to load stint data" />;
-  }
+  // If we have a stored report, show it directly (skip setup flow)
+  if (report) {
+    const reportStints: Stint[] = (report as any).stint_results?.map((sr: any) => ({
+      stint_number: sr.stint_number,
+      start_lap: sr.start_lap,
+      end_lap: sr.end_lap,
+      lap_count: sr.lap_count,
+      driver_name: sr.driver_name,
+      condition: sr.condition,
+      pit_lap_number: sr.pit_lap_number ?? null,
+      pit_lap_time_s: sr.pit_lap_time_s ?? null,
+      pit_duration_s: sr.pit_duration_s ?? null,
+      best_lap_s: sr.best_lap_s,
+      mean_lap_s: sr.mean_lap_s,
+    })) || stints;
 
-  // No stints or no assignments → setup flow
-  if (!hasAssignments || !reportReady) {
-    return (
-      <SetupFlow
-        sessionId={sessionId}
-        stints={stints}
-        pitThreshold={stintsQuery.data?.pit_threshold_s || 120}
-        onComplete={handleSetupComplete}
-      />
-    );
-  }
-
-  // Report loading
-  if (reportQuery.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-steel/30 border-t-acid-green rounded-full animate-spin" />
-        <span className="ml-3 text-steel text-sm font-body">Generating endurance report...</span>
-      </div>
-    );
-  }
-
-  if (reportQuery.error || !reportQuery.data) {
-    return <QueryError message="Failed to generate endurance report. Make sure all stints have drivers assigned." />;
-  }
-
-  const report = reportQuery.data;
-
-  // Tier 1: Stint Report
-  if (tier === 'stint' && selectedStint != null) {
-    const stintData = stints.find((s) => s.stint_number === selectedStint);
-    const stintScored = report.stints[selectedStint];
-    const merged: Stint = { ...(stintData || {} as Stint), ...(stintScored || {}) };
-    return (
-      <StintReport
-        sessionId={sessionId}
-        stint={merged}
-        onBack={handleBack}
-      />
-    );
-  }
-
-  // Tier 2: Driver Report
-  if (tier === 'driver' && selectedDriver) {
-    const driverData = report.drivers[selectedDriver];
-    if (!driverData) {
-      return <QueryError message={`No data for driver: ${selectedDriver}`} />;
+    // Tier 1: Stint
+    if (tier === 'stint' && selectedStint != null) {
+      const stintData = reportStints.find((s) => s.stint_number === selectedStint);
+      return <StintReport sessionId={sessionId} stint={stintData || {} as Stint} onBack={handleBack} />;
     }
+
+    // Tier 2: Driver
+    if (tier === 'driver' && selectedDriver) {
+      const driverData = report.drivers?.[selectedDriver];
+      if (!driverData) return <QueryError message={`No data for driver: ${selectedDriver}`} />;
+      return <DriverReport report={driverData} onSelectStint={handleSelectStint} onBack={handleBack} />;
+    }
+
+    // Tier 3: Team (default)
     return (
-      <DriverReport
-        report={driverData}
-        onSelectStint={handleSelectStint}
-        onBack={handleBack}
+      <TeamReport
+        report={report.team}
+        stints={reportStints}
+        onSelectDriver={handleSelectDriver}
       />
     );
   }
 
-  // Tier 3: Team Report (default)
+  // No stored report — show setup flow or loading
+  if (stintsQuery.isLoading) return <SkeletonCardGrid count={4} />;
+
+  const pitThreshold = stintsQuery.data?.pit_threshold_s || 120;
+
   return (
-    <TeamReport
-      report={report.team}
+    <SetupFlow
+      sessionId={sessionId}
       stints={stints}
-      onSelectDriver={handleSelectDriver}
+      pitThreshold={pitThreshold}
+      onComplete={handleSetupComplete}
     />
   );
 }
