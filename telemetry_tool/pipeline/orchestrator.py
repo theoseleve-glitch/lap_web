@@ -274,6 +274,7 @@ def run_full_analysis(
         ("10_theoretical", "Theoretical Lap"),
         ("11_build_features", "Feature Engineering"),
         ("13_score_session", "Scoring"),
+        ("14_endurance", "Endurance Detection"),
         ("15_persist_db", "Saving Results"),
     ]
     _STAGE_TOTAL = len(_STAGE_MAP)
@@ -1395,6 +1396,17 @@ def run_full_analysis(
     _record("15_persist_db", db_session_id, err)
     _fire_progress("15_persist_db")
     summary["db_session_id"] = db_session_id
+
+    # Step 14e — Endurance stint detection (after DB persist so session_id exists)
+    if db_session_id is not None:
+        from pipeline.stages import s14_endurance
+        endurance_r, err = _safe_step(
+            "14_endurance", s14_endurance.run_endurance_detection, summary,
+        )
+        _record("14_endurance", endurance_r, err)
+        _fire_progress("14_endurance")
+        if endurance_r:
+            summary["endurance_stints"] = endurance_r
 
     # ══════════════════════════════════════════════════════════════
     # QUEUE OCP THEORETICAL (background, non-blocking)
