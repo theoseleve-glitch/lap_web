@@ -1,9 +1,37 @@
 /* Driving Analyzer — TypeScript interfaces */
 
-import type { CornerReplayData, CornerReplayTrace, CornerReplayCorner, CornerReplayLap } from '@/types/corner-replay';
+/* ── Corner replay API types (self-contained) ──────────── */
 
-// Re-export for convenience
-export type { CornerReplayData, CornerReplayTrace, CornerReplayCorner, CornerReplayLap };
+export interface CornerReplayTrace {
+  lat: number[];
+  lon: number[];
+  speed_mps: number[];
+  dist_m?: number[];
+  accel_lat?: number[];
+  accel_lon?: number[];
+  brake?: number[];
+  throttle?: number[];
+  steering?: number[];
+}
+
+export interface CornerReplayLap {
+  lap_number: number;
+  lap_time_s: number | null;
+}
+
+export interface CornerReplayCorner {
+  corner_id: string;
+  label: string;
+  dist_m: number;
+}
+
+export interface CornerReplayData {
+  traces: Record<string, CornerReplayTrace>;
+  laps: CornerReplayLap[];
+  corners: CornerReplayCorner[];
+  has_pedal_data?: boolean;
+  has_steering_data?: boolean;
+}
 
 /* ── Playback speeds ─────────────────────────────────────── */
 

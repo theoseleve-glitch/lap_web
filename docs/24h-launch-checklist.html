@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>LAP Coach Racing — 24-Hour Launch Checklist</title>
+<style>
+  @page { margin: 1.5cm 2cm; size: A4; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    color: #1a1a1a;
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 22px;
+    font-weight: 700;
+    border-bottom: 3px solid #1a1a1a;
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 20px;
+  }
+  h2 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-top: 22px;
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    background: #1a1a1a;
+    color: #fff;
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    color: #333;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 3px;
+    page-break-after: avoid;
+  }
+  .block-header {
+    font-size: 13px;
+    font-weight: 700;
+    margin-top: 18px;
+    margin-bottom: 8px;
+    padding: 5px 10px;
+    background: #f0f0f0;
+    border-left: 4px solid #1a1a1a;
+    page-break-after: avoid;
+  }
+  ul { list-style: none; padding-left: 0; margin-bottom: 10px; }
+  li {
+    padding: 3px 0 3px 26px;
+    position: relative;
+    page-break-inside: avoid;
+  }
+  li::before {
+    content: '';
+    position: absolute;
+    left: 2px;
+    top: 5px;
+    width: 14px;
+    height: 14px;
+    border: 1.5px solid #555;
+    border-radius: 2px;
+    background: #fff;
+  }
+  li.no-check { padding-left: 14px; }
+  li.no-check::before { display: none; }
+  li.section-item { padding-left: 40px; }
+  li.section-item::before { left: 16px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 12px 0;
+    font-size: 10.5px;
+    page-break-inside: avoid;
+  }
+  th {
+    background: #f5f5f5;
+    font-weight: 700;
+    text-align: left;
+    padding: 4px 8px;
+    border: 1px solid #ddd;
+  }
+  td {
+    padding: 3px 8px;
+    border: 1px solid #ddd;
+    vertical-align: top;
+  }
+  tr:nth-child(even) { background: #fafafa; }
+  .tag {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .tag-ship { background: #d4edda; color: #155724; }
+  .tag-fix { background: #fff3cd; color: #856404; }
+  .tag-hide { background: #f8d7da; color: #721c24; }
+  .tag-high { background: #f8d7da; color: #721c24; }
+  .tag-medium { background: #fff3cd; color: #856404; }
+  .tag-v2 { background: #e2e3e5; color: #383d41; }
+
+  .summary-box {
+    border: 2px solid #1a1a1a;
+    padding: 10px 14px;
+    margin: 14px 0;
+    background: #f9f9f9;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .two-col { display: flex; gap: 16px; }
+  .two-col > div { flex: 1; }
+  .time-badge {
+    display: inline-block;
+    background: #1a1a1a;
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 4px;
+  }
+  .page-break { page-break-before: always; }
+  @media print {
+    body { padding: 0; }
+    .no-print { display: none; }
+  }
+  .verdict-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin: 8px 0; }
+  .verdict-item { display: flex; justify-content: space-between; padding: 2px 0; border-bottom: 1px dotted #ddd; }
+  .verdict-label { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>LAP Coach Racing — 24-Hour Launch Checklist</h1>
+<p class="subtitle">Generated 2026-03-16 &nbsp;|&nbsp; api.lap-coach.racing &nbsp;|&nbsp; lap-coach.racing</p>
+
+<div class="summary-box">
+  Ship the core product (upload &rarr; analyze &rarr; compare), hide 9 unfinished features from nav, verify Stripe/email/OAuth env vars are set, test the 8 critical user flows, deploy.
+</div>
+
+<div class="verdict-grid">
+  <div class="verdict-item"><span class="verdict-label">Marketing site (32 pages)</span> <span class="tag tag-ship">SHIP</span></div>
+  <div class="verdict-item"><span class="verdict-label">Auth flow (register/login/OAuth/2FA)</span> <span class="tag tag-ship">SHIP</span></div>
+  <div class="verdict-item"><span class="verdict-label">Core webapp (sessions/upload/compare)</span> <span class="tag tag-ship">SHIP</span></div>
+  <div class="verdict-item"><span class="verdict-label">Backend API (80+ endpoints)</span> <span class="tag tag-ship">SHIP</span></div>
+  <div class="verdict-item"><span class="verdict-label">Billing (Stripe)</span> <span class="tag tag-fix">FIX</span></div>
+  <div class="verdict-item"><span class="verdict-label">Admin / analytics / legacy pages</span> <span class="tag tag-hide">HIDE</span></div>
+</div>
+
+<!-- ============================================ -->
+<h2>BLOCK 1 &mdash; COMMIT &amp; DEPLOY <span style="float:right; font-weight:400; font-size:11px;">Hours 0&ndash;2</span></h2>
+<!-- ============================================ -->
+
+<ul>
+  <li>Commit unstaged changes &mdash; deleted coaching/corner-replay components, weekends null-sort fix, free-report CornerReplay placeholder</li>
+  <li>Hide nav items in <code>AppShell.tsx</code>: <strong>Analytics Hub</strong>, <strong>Development Plans</strong>, remove link to <code>/app/annotations</code></li>
+  <li>Run <code>npm run build</code> &mdash; verify zero errors</li>
+  <li>Deploy frontend: <code>npm run cf:deploy</code></li>
+  <li>Deploy backend (if changes pending): <code>scp</code> &rarr; <code>docker compose build api && up -d api</code></li>
+  <li>Verify health: <code>curl https://api.lap-coach.racing/healthz</code> &rarr; <code>{"status":"ok"}</code></li>
+</ul>
+
+<!-- ============================================ -->
+<h2>BLOCK 2 &mdash; CRITICAL FLOW TESTING <span style="float:right; font-weight:400; font-size:11px;">Hours 2&ndash;6</span></h2>
+<!-- ============================================ -->
+
+<p style="margin-bottom:6px;">Test the 8 flows that <strong>are</strong> your product. If any break, fix immediately.</p>
+
+<table>
+  <tr><th>#</th><th>Flow</th><th>What to Test</th><th>Risk</th></tr>
+  <tr><td>1</td><td>Register</td><td>Email + password &rarr; onboarding &rarr; dashboard</td><td><span class="tag tag-high">HIGH</span></td></tr>
+  <tr><td>2</td><td>Upload CSV</td><td>Drag & drop &rarr; SSE progress &rarr; session created</td><td><span class="tag tag-high">HIGH</span></td></tr>
+  <tr><td>3</td><td>Session detail</td><td>5 tabs: Overview, Corners, Timeline, Analytics, Laps</td><td><span class="tag tag-high">HIGH</span></td></tr>
+  <tr><td>4</td><td>Charts</td><td>Speed trace, GPS trace, GG plot via vanilla JS bridge</td><td><span class="tag tag-high">HIGH</span></td></tr>
+  <tr><td>5</td><td>Corners tab</td><td>Per-corner OCP data + actionables (recently refactored)</td><td><span class="tag tag-medium">MED</span></td></tr>
+  <tr><td>6</td><td>Compare</td><td>Select 2 sessions &rarr; delta chart renders</td><td><span class="tag tag-medium">MED</span></td></tr>
+  <tr><td>7</td><td>Free report</td><td><code>/free-report/analyze</code> &rarr; upload &rarr; report (no auth)</td><td><span class="tag tag-high">HIGH</span></td></tr>
+  <tr><td>8</td><td>Pricing &rarr; Stripe</td><td>Click plan &rarr; Stripe checkout session creates</td><td><span class="tag tag-high">HIGH</span></td></tr>
+</table>
+
+<h3>Flow Testing Checklist</h3>
+<ul>
+  <li><strong>Flow 1 &mdash; Register:</strong> Create account with email + password &rarr; verify email arrives &rarr; click verify link &rarr; onboarding page &rarr; redirects to dashboard</li>
+  <li><strong>Flow 2 &mdash; Upload:</strong> Go to Sessions &rarr; Upload &rarr; drop a RaceChrono CSV &rarr; watch SSE progress bar &rarr; session appears in list</li>
+  <li><strong>Flow 3 &mdash; Session detail:</strong> Click into session &rarr; Overview tab shows scores &rarr; click each tab (Corners, Timeline, Analytics, Laps) &rarr; no blank/error states</li>
+  <li><strong>Flow 4 &mdash; Charts:</strong> In session detail &rarr; speed trace renders with zoom &rarr; GPS trace renders track map &rarr; GG plot renders with data points</li>
+  <li><strong>Flow 5 &mdash; Corners:</strong> Corners tab &rarr; corner list renders &rarr; each corner shows actionables &rarr; trend data present</li>
+  <li><strong>Flow 6 &mdash; Compare:</strong> Go to Compare &rarr; select 2 sessions &rarr; delta chart + metrics load</li>
+  <li><strong>Flow 7 &mdash; Free report:</strong> Open incognito &rarr; <code>/free-report/analyze</code> &rarr; upload CSV &rarr; progress &rarr; report page loads with scores</li>
+  <li><strong>Flow 8 &mdash; Stripe:</strong> Go to Pricing &rarr; click Racer plan &rarr; Stripe checkout opens &rarr; use test card <code>4242 4242 4242 4242</code></li>
+</ul>
+
+<!-- ============================================ -->
+<h2>BLOCK 3 &mdash; QUICK FIXES <span style="float:right; font-weight:400; font-size:11px;">Hours 6&ndash;10</span></h2>
+<!-- ============================================ -->
+
+<ul>
+  <li><span class="time-badge">5 min</span> Hide corner detail stub (<code>/app/sessions/[id]/corners/[cornerId]</code>) &mdash; shows "Re-port in progress"</li>
+  <li><span class="time-badge">15 min</span> Verify support form (<code>/app/account/support</code>) &mdash; does <code>POST /api/v1/support</code> exist? If not, hide page</li>
+  <li><span class="time-badge">15 min</span> Verify setup-tracker &mdash; does it call any API? If not, make client-side-only or hide</li>
+  <li><span class="time-badge">30 min</span> Test email delivery &mdash; register &rarr; verify-email, forgot-password &rarr; reset-password (via Resend)</li>
+  <li><span class="time-badge">30 min</span> Test OAuth &mdash; Google + GitHub redirect &rarr; callback &rarr; logged in (only if client IDs set)</li>
+  <li><span class="time-badge">15 min</span> Test exports &mdash; click Export in session detail &rarr; generates CSV/PDF (Celery must be running)</li>
+  <li><span class="time-badge">15 min</span> Check <code>/demo</code> and <code>/contact</code> forms &mdash; do they POST to a real endpoint?</li>
+  <li><span class="time-badge">15 min</span> Verify race-strategy CRUD &mdash; create, edit, delete a strategy (entitlement-gated)</li>
+</ul>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2>BLOCK 4 &mdash; ENV &amp; PRODUCTION HARDENING <span style="float:right; font-weight:400; font-size:11px;">Hours 10&ndash;14</span></h2>
+<!-- ============================================ -->
+
+<h3>VPS Environment Variables (<code>.env.production</code>)</h3>
+<ul>
+  <li><code>USE_PG=1</code> &mdash; auth, billing, teams all require PostgreSQL</li>
+  <li><code>AUTH_REQUIRED=1</code> &mdash; JWT auth middleware must be ON</li>
+  <li><code>STRIPE_SECRET_KEY=sk_live_...</code> &mdash; Stripe API key</li>
+  <li><code>STRIPE_WEBHOOK_SECRET=whsec_...</code> &mdash; Stripe webhook signature</li>
+  <li>4 &times; <code>STRIPE_PRICE_*</code> IDs &mdash; Racer monthly/annual, World-Class monthly/annual</li>
+  <li><code>GOOGLE_CLIENT_ID</code> + <code>GOOGLE_CLIENT_SECRET</code> (skip if not offering OAuth at launch)</li>
+  <li><code>GITHUB_CLIENT_ID</code> + <code>GITHUB_CLIENT_SECRET</code> (skip if not offering OAuth at launch)</li>
+  <li>Resend API key &mdash; verify-email and forgot-password depend on it</li>
+</ul>
+
+<h3>Infrastructure Checks (VPS)</h3>
+<ul>
+  <li>Redis running &mdash; rate limits, Celery broker, idempotency cache</li>
+  <li>Celery workers running &mdash; exports, async jobs, pipeline queue</li>
+  <li>Alembic migrations current &mdash; <code>alembic current</code> should show migration 016+</li>
+  <li>PostgreSQL 16 accepting connections &mdash; <code>docker compose exec postgres pg_isready</code></li>
+  <li>Caddy TLS cert valid for <code>api.lap-coach.racing</code></li>
+  <li>Daily backup cron running &mdash; <code>pg_dump</code> at 3 AM UTC</li>
+  <li>DPO email <code>dpo@lap-coach.racing</code> receiving mail (Privacy page references it)</li>
+</ul>
+
+<h3>Frontend Environment</h3>
+<ul>
+  <li><code>NEXT_PUBLIC_API_URL=https://api.lap-coach.racing</code> set in build</li>
+  <li>Cloudflare Workers deployment succeeds</li>
+  <li>DNS: <code>www.lap-coach.racing</code> &rarr; Cloudflare Workers</li>
+  <li>DNS: <code>api.lap-coach.racing</code> &rarr; Hetzner VPS (46.225.227.24)</li>
+  <li>HTTPS working on both domains</li>
+</ul>
+
+<!-- ============================================ -->
+<h2>BLOCK 5 &mdash; VISUAL QA <span style="float:right; font-weight:400; font-size:11px;">Hours 14&ndash;18</span></h2>
+<!-- ============================================ -->
+
+<h3>Marketing Site (spot check on desktop + mobile)</h3>
+<ul>
+  <li>Homepage &mdash; hero, social proof, CTAs</li>
+  <li><code>/pricing</code> &mdash; plans render, monthly/annual toggle, CTA buttons work</li>
+  <li><code>/product</code> &mdash; screenshots load, workflow section</li>
+  <li><code>/help</code> &mdash; getting started steps, FAQ</li>
+  <li><code>/demo</code> &mdash; form renders, submission works</li>
+  <li><code>/changelog</code> &mdash; entries populated</li>
+  <li><code>/terms</code> &mdash; renders fully (legal requirement)</li>
+  <li><code>/privacy</code> &mdash; renders fully (legal requirement)</li>
+  <li><code>/security</code> &mdash; security posture page</li>
+  <li><code>/compare-tools</code> &mdash; competitive comparison table</li>
+</ul>
+
+<h3>Webapp (every visible nav item)</h3>
+<ul>
+  <li>Dashboard &mdash; stat cards render (or empty state hero if no data)</li>
+  <li>Sessions list &mdash; filtering, search, sorting, pagination</li>
+  <li>Session detail &mdash; all 5 tabs, score breakdown, chart exports</li>
+  <li>Compare &mdash; session selector, delta charts</li>
+  <li>Visualization &mdash; chart viewer loads</li>
+  <li>Leaderboard &mdash; renders (may be empty initially)</li>
+  <li>Race Strategy &mdash; create/edit/delete</li>
+  <li>Tracks / Drivers / Karts / Weekends &mdash; CRUD + delete confirmation</li>
+  <li>Account &rarr; Profile &mdash; edit display name, preferences</li>
+  <li>Account &rarr; Security &mdash; 2FA setup flow, active sessions</li>
+  <li>Account &rarr; Billing &mdash; subscription status, invoices</li>
+  <li>Account &rarr; Data &amp; Privacy &mdash; export request, deletion flow</li>
+</ul>
+
+<!-- ============================================ -->
+<h2>BLOCK 6 &mdash; FINAL DEPLOY &amp; SMOKE TEST <span style="float:right; font-weight:400; font-size:11px;">Hours 18&ndash;22</span></h2>
+<!-- ============================================ -->
+
+<ul>
+  <li>Final <code>npm run build && npm run cf:deploy</code></li>
+  <li>Final backend deploy if any changes made during fixes</li>
+  <li>Full signup &rarr; upload &rarr; view &rarr; compare flow one more time</li>
+  <li>Check on mobile browser (iOS Safari + Android Chrome)</li>
+  <li>Verify HTTPS + HSTS working on both domains</li>
+  <li>Check <code>/robots.txt</code> and <code>/sitemap.xml</code> are serving</li>
+  <li>Test 404 page &mdash; visit a non-existent URL</li>
+</ul>
+
+<!-- ============================================ -->
+<h2>BLOCK 7 &mdash; BUFFER <span style="float:right; font-weight:400; font-size:11px;">Hours 22&ndash;24</span></h2>
+<!-- ============================================ -->
+
+<ul>
+  <li>Reserved for whatever broke during testing &mdash; do NOT start new work here</li>
+  <li>Re-test any flows that were fixed in Block 3</li>
+  <li>Final health check: <code>curl https://api.lap-coach.racing/healthz</code></li>
+</ul>
+
+<!-- ============================================ -->
+<div class="page-break"></div>
+<h2>FEATURES TO HIDE &mdash; V2 BACKLOG</h2>
+<!-- ============================================ -->
+
+<p style="margin-bottom:8px;">Remove from nav or gate behind feature flag. Pages can still exist at their URLs.</p>
+
+<table>
+  <tr><th>Feature</th><th>Route</th><th>Why V2</th></tr>
+  <tr><td>Analytics Hub + 5 sub-pages</td><td><code>/app/analytics/*</code></td><td>All "Coming Soon" cards, zero backend</td></tr>
+  <tr><td>Development Plans</td><td><code>/app/development</code></td><td>Working but non-core for launch</td></tr>
+  <tr><td>Annotations</td><td><code>/app/annotations</code></td><td>No API wiring, stub</td></tr>
+  <tr><td>Corner Detail</td><td><code>/app/sessions/[id]/corners/[cornerId]</code></td><td>"Being rebuilt" stub page</td></tr>
+  <tr><td>Corner Replay</td><td>(deleted)</td><td>Components removed, placeholder in free report</td></tr>
+  <tr><td>Coaching Panel</td><td>(deleted)</td><td>Components removed, no entry point</td></tr>
+  <tr><td>Race Control admin (8 sub-pages)</td><td><code>/app/race-control/*</code></td><td>All stubs except health dashboard</td></tr>
+  <tr><td>Setup Tracker</td><td><code>/app/setup-tracker</code></td><td>Unclear API integration</td></tr>
+  <tr><td>Data Health</td><td><code>/app/data-health</code></td><td>Works but niche, not core for launch</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>FEATURES THAT SHIP &mdash; V1</h2>
+<!-- ============================================ -->
+
+<table>
+  <tr><th>Feature</th><th>Confidence</th><th>Notes</th></tr>
+  <tr><td>Session upload + 14-stage pipeline</td><td><span class="tag tag-ship">HIGH</span></td><td>Synchronous in request thread, tier limits enforced</td></tr>
+  <tr><td>Session detail (5 tabs, 2,444 lines)</td><td><span class="tag tag-ship">HIGH</span></td><td>Overview, Corners, Timeline, Analytics, Laps</td></tr>
+  <tr><td>Vanilla JS charts (speed, GPS, GG)</td><td><span class="tag tag-ship">HIGH</span></td><td>SpeedTraceZoom, GpsTrace, GGExplorer via useVanillaChart</td></tr>
+  <tr><td>Corners tab with per-corner OCP</td><td><span class="tag tag-medium">MED</span></td><td>Recently refactored &mdash; test thoroughly</td></tr>
+  <tr><td>Session comparison</td><td><span class="tag tag-ship">HIGH</span></td><td>Side-by-side charts, delta analysis</td></tr>
+  <tr><td>Driver comparison</td><td><span class="tag tag-ship">HIGH</span></td><td>Radar visualization, pace comparison</td></tr>
+  <tr><td>Tracks / Drivers / Karts / Weekends CRUD</td><td><span class="tag tag-ship">HIGH</span></td><td>Full CRUD with optimistic updates</td></tr>
+  <tr><td>Leaderboard</td><td><span class="tag tag-ship">HIGH</span></td><td>Session ranking by time &amp; score</td></tr>
+  <tr><td>Race Strategy</td><td><span class="tag tag-medium">MED</span></td><td>Complex, entitlement-gated, weather dependency</td></tr>
+  <tr><td>Exports (CSV/JSON/PDF)</td><td><span class="tag tag-ship">HIGH</span></td><td>Async via Celery, path traversal guarded</td></tr>
+  <tr><td>Auth (email + password + 2FA)</td><td><span class="tag tag-ship">HIGH</span></td><td>Argon2id, JWT, single-use refresh rotation</td></tr>
+  <tr><td>OAuth (Google + GitHub)</td><td><span class="tag tag-medium">MED</span></td><td>Needs env vars configured</td></tr>
+  <tr><td>Billing (Stripe checkout + portal)</td><td><span class="tag tag-medium">MED</span></td><td>Needs price IDs in .env.production</td></tr>
+  <tr><td>Account management</td><td><span class="tag tag-ship">HIGH</span></td><td>Profile, security, billing, data privacy, GDPR</td></tr>
+  <tr><td>Free report (public funnel)</td><td><span class="tag tag-ship">HIGH</span></td><td>Upload &rarr; analyze &rarr; report, no auth required</td></tr>
+  <tr><td>All 32 marketing pages</td><td><span class="tag tag-ship">HIGH</span></td><td>Real content, pricing, legal, help, changelog</td></tr>
+  <tr><td>Visualization hub</td><td><span class="tag tag-ship">HIGH</span></td><td>Full-screen chart viewer</td></tr>
+  <tr><td>Jobs monitor</td><td><span class="tag tag-ship">HIGH</span></td><td>Status badges, progress, SSE polling</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>KNOWN RISKS &amp; GOTCHAS</h2>
+<!-- ============================================ -->
+
+<ul>
+  <li><strong>stripe module</strong> is Docker-only (not in requirements.txt) &mdash; billing will fail outside Docker</li>
+  <li><strong>Docker deploy requires <code>build</code></strong>, not just <code>restart</code> &mdash; source is COPY'd into image</li>
+  <li><strong>SET LOCAL for RLS</strong> resets on mid-request <code>conn.commit()</code></li>
+  <li><strong>Auth token in-memory</strong> (not localStorage) &mdash; page refresh requires silent refresh via httpOnly cookie</li>
+  <li><strong>Free report 1-use limit</strong> is client-side only (localStorage) &mdash; no server-side enforcement</li>
+  <li><strong>Legacy HTML routes</strong> (weekends, drivers, karts, analytics, predictions) still registered &mdash; won't break anything but accessible via URL</li>
+  <li><strong><code>data_v2.py</code> is 57KB</strong> &mdash; functional but large, split in V2</li>
+</ul>
+
+<div class="summary-box" style="margin-top: 24px;">
+  <strong>PRINT THIS:</strong> Open in browser &rarr; Ctrl+P (or Cmd+P) &rarr; Save as PDF &rarr; Check boxes as you go.
+</div>
+
+</body>
+</html>

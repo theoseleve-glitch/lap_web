@@ -16,8 +16,13 @@ export function FullLapTrace({ theoretical, gpsTrace }: FullLapTraceProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
-  const hasTheo = theoretical && theoretical.speeds?.length > 1;
-  const hasGps = gpsTrace && gpsTrace.speeds?.length > 1 && gpsTrace.distances?.length > 1;
+  const hasTheo = !!(theoretical && theoretical.speeds?.length > 1 && theoretical.distances?.length > 1);
+  const hasGps = !!(gpsTrace && gpsTrace.speeds?.length > 1 && gpsTrace.distances?.length > 1);
+
+  // Debug — remove after confirming
+  if (typeof window !== 'undefined') {
+    console.log('[FullLapTrace]', { hasTheo, hasGps, theoSpeeds: theoretical?.speeds?.length, theoDists: theoretical?.distances?.length, gpsSpeeds: gpsTrace?.speeds?.length });
+  }
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -117,51 +122,21 @@ export function FullLapTrace({ theoretical, gpsTrace }: FullLapTraceProps) {
       ctx.stroke();
     }
 
-    // Draw theoretical trace (green dashed)
+    // Draw theoretical trace (green dashed) — distances are 0-based, same as GPS
     if (hasTheo) {
       const td = theoretical!.distances;
       const ts = theoretical!.speeds;
-      const tMin = td[0];
-      const tMax = td[td.length - 1];
-      const tLapLen = tMax - tMin;
 
-      if (tLapLen > 0) {
-        // Theoretical distances are cumulative (e.g., 5597-6797).
-        // GPS distances are per-lap (0-1202).
-        // Align by converting theoretical to per-lap position using modulo,
-        // then reorder so both start at the same track position.
-
-        // Compute per-lap offset: where does theoretical start on the lap?
-        const lapLen = xMax - xMin;
-        const theoStartOnLap = lapLen > 0 ? xMin + ((tMin - xMin) % lapLen) : xMin;
-
-        // Build aligned array: (gpsDistance, speed) pairs
-        const aligned: { d: number; s: number }[] = [];
-        for (let i = 0; i < td.length; i++) {
-          // Map cumulative → per-lap
-          let d = lapLen > 0 ? xMin + ((td[i] - xMin) % lapLen) : td[i];
-          aligned.push({ d, s: ts[i] * 3.6 });
-        }
-
-        // Sort by per-lap distance so the line doesn't jump back
-        aligned.sort((a, b) => a.d - b.d);
-
-        ctx.beginPath();
-        ctx.setLineDash([6, 4]);
-        ctx.moveTo(toX(aligned[0].d), toY(aligned[0].s));
-        for (let i = 1; i < aligned.length; i++) {
-          // Skip large jumps (wrap-around artifacts)
-          if (aligned[i].d - aligned[i - 1].d > lapLen * 0.5) {
-            ctx.moveTo(toX(aligned[i].d), toY(aligned[i].s));
-          } else {
-            ctx.lineTo(toX(aligned[i].d), toY(aligned[i].s));
-          }
-        }
-        ctx.strokeStyle = '#C6F135';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-        ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.setLineDash([6, 4]);
+      ctx.moveTo(toX(td[0]), toY(ts[0] * 3.6));
+      for (let i = 1; i < td.length; i++) {
+        ctx.lineTo(toX(td[i]), toY(ts[i] * 3.6));
       }
+      ctx.strokeStyle = '#C6F135';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
 
     // Legend

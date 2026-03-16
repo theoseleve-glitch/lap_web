@@ -2362,6 +2362,7 @@ def get_theoretical(session_id: str) -> tuple[dict, int]:
         })
 
     return api_response({
+        "available": True,
         "theoretical_time_s": theo.get("theoretical_time_s"),
         "actual_best_time_s": theo.get("actual_best_time_s"),
         "gap_pct": theo.get("gap_pct"),

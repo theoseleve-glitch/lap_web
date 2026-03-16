@@ -14,7 +14,6 @@ import { KeyboardShortcuts } from '@/components/app/KeyboardShortcuts';
 import { CommandPalette } from '@/components/app/CommandPalette';
 import { UndoToastContainer } from '@/components/ui/UndoToast';
 import { UnitToggle } from '@/components/app/UnitToggle';
-import { AnnouncementBar } from '@/components/marketing/AnnouncementBar';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -29,7 +28,6 @@ const navGroups: NavGroup[] = [
       { href: '/app/sessions', label: 'Sessions', icon: '◎' },
       { href: '/app/compare', label: 'Compare', icon: '⟺' },
       { href: '/app/visualize', label: 'Visualization', icon: '◆' },
-      { href: '/app/development', label: 'Development Plans', icon: '◧' },
       { href: '/app/leaderboard', label: 'Leaderboard', icon: '★' },
     ],
   },
@@ -42,7 +40,6 @@ const navGroups: NavGroup[] = [
   {
     label: 'ENGINEER',
     items: [
-      { href: '/app/analytics', label: 'Analytics Hub', icon: '◇' },
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },
       { href: '/app/drivers', label: 'Drivers', icon: '◈' },
       { href: '/app/karts', label: 'Karts', icon: '⊞' },
@@ -162,11 +159,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AuthGuard>
           <main id="main-content" className="flex-1 flex flex-col overflow-y-auto bg-asphalt">
             <OfflineBanner />
-            <AnnouncementBar
-              id="v1.7.0"
-              message="New: Use-case pricing selector, lazy-loaded charts, and URL-synced filters"
-              link={{ href: '/changelog', label: 'See what changed' }}
-            />
             {/* Top bar with quick upload */}
             <div className="sticky top-0 z-30 bg-asphalt/95 backdrop-blur-sm flex items-center justify-end gap-4 px-6 py-2 border-b border-steel/10">
               <button

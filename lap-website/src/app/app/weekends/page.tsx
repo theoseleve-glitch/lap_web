@@ -100,9 +100,9 @@ export default function WeekendsPage() {
       );
     }
     list = [...list].sort((a, b) => {
-      if (sort === 'name') return a.name.localeCompare(b.name);
+      if (sort === 'name') return (a.name ?? '').localeCompare(b.name ?? '');
       if (sort === 'sessions') return (b.sessions_count ?? 0) - (a.sessions_count ?? 0);
-      if (sort === 'date') return b.start_date.localeCompare(a.start_date);
+      if (sort === 'date') return (b.start_date ?? '').localeCompare(a.start_date ?? '');
       return 0;
     });
     return list;

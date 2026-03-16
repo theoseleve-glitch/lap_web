@@ -4,7 +4,6 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { StatCard, DataTable, LockedSection, UpgradeBanner } from '@/components/app';
-import { CornerReplay } from '@/components/app/corner-replay';
 
 interface SessionDetail {
   id: string;
@@ -170,8 +169,8 @@ export default function FreeReportPage() {
           <p className="text-steel font-body text-sm mb-3">
             Your biggest time loss: {worstCorner.corner_name} ({(worstCorner.time_loss ?? 0).toFixed(3)}s)
           </p>
-          <div className="h-[400px] bg-concrete rounded-lg border border-steel/20 overflow-hidden">
-            <CornerReplay sessionId={id} />
+          <div className="h-[400px] bg-concrete rounded-lg border border-steel/20 overflow-hidden flex items-center justify-center">
+            <span className="text-steel font-telemetry text-xs">Corner Replay — being rebuilt</span>
           </div>
         </div>
       )}
