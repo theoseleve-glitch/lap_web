@@ -5733,4 +5733,165 @@ def setup_status() -> tuple[dict, int]:
     return api_response({"steps": steps})
 
 
+# ══════════════════════════════════════════════════════════════════
+# ENDURANCE REPORT ENDPOINTS
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/stints", methods=["GET"])
+@_safe_api
+def get_session_stints(session_id: str) -> tuple[dict, int]:
+    """Return detected stints for a session with per-stint stats."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    from web.repos.endurance_repo import get_stints, get_endurance_config
+
+    stints = get_stints(conn, session_id)
+    config = get_endurance_config(conn, session_id)
+
+    # Enrich with per-stint stats from laps table
+    laps = models.get_laps_for_session(conn, session_id)
+    for stint in stints:
+        stint_laps = [
+            l for l in laps
+            if stint["start_lap"] <= l["lap_number"] <= stint["end_lap"]
+            and l.get("is_valid")
+            and l.get("lap_time_s") and l["lap_time_s"] > 0
+        ]
+        if stint_laps:
+            times = [l["lap_time_s"] for l in stint_laps]
+            stint["best_lap_s"] = round(min(times), 3)
+            stint["mean_lap_s"] = round(sum(times) / len(times), 3)
+
+    return api_response({
+        "stints": stints,
+        "pit_threshold_s": config["pit_threshold_s"],
+        "total_stints": len(stints),
+    })
+
+
+@bp.route("/sessions/<session_id>/stints/configure", methods=["POST"])
+@_safe_api
+def configure_stints(session_id: str) -> tuple[dict, int]:
+    """Re-detect stints with a new pit threshold."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+    threshold = body.get("pit_threshold_s")
+    if threshold is None or not isinstance(threshold, (int, float)) or threshold <= 0:
+        return api_error(ErrorCode.VALIDATION_ERROR, "pit_threshold_s must be a positive number", status=400)
+
+    # Get lap times from DB
+    laps = models.get_laps_for_session(conn, session_id)
+    lap_times = {
+        l["lap_number"]: l["lap_time_s"]
+        for l in laps
+        if l.get("lap_time_s") and l["lap_time_s"] > 0
+    }
+
+    from web.repos.endurance_repo import detect_and_store_stints
+    stints = detect_and_store_stints(conn, session_id, lap_times, float(threshold))
+
+    return api_response({
+        "stints": stints,
+        "pit_threshold_s": float(threshold),
+        "total_stints": len(stints),
+    })
+
+
+@bp.route("/sessions/<session_id>/stints/assign", methods=["POST"])
+@_safe_api
+def assign_stint_drivers(session_id: str) -> tuple[dict, int]:
+    """Assign drivers and conditions to stints."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    body = request.get_json(silent=True) or {}
+    assignments = body.get("assignments")
+    if not assignments or not isinstance(assignments, list):
+        return api_error(ErrorCode.VALIDATION_ERROR, "assignments must be a non-empty list", status=400)
+
+    from web.repos.endurance_repo import bulk_assign_drivers
+    count = bulk_assign_drivers(conn, session_id, assignments)
+
+    return api_response({"assigned": count})
+
+
+@bp.route("/sessions/<session_id>/endurance-report", methods=["GET"])
+@_safe_api
+def get_endurance_report(session_id: str) -> tuple[dict, int]:
+    """Return the 3-tier endurance report (team + per-driver + per-stint).
+
+    Requires driver assignments to be set first.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    from web.repos.endurance_repo import get_stints
+    from endurance_scoring import compute_stint_scores, compute_driver_report, compute_team_report
+
+    stints = get_stints(conn, session_id)
+    if not stints:
+        return api_error(ErrorCode.VALIDATION_ERROR, "No stints detected. Upload or configure first.", status=400)
+
+    # Check at least one driver assigned
+    assigned = [s for s in stints if s.get("driver_name")]
+    if not assigned:
+        return api_error(ErrorCode.VALIDATION_ERROR, "No drivers assigned to stints. Use /stints/assign first.", status=400)
+
+    # Get all laps
+    laps = models.get_laps_for_session(conn, session_id)
+    all_laps = [dict(l) for l in laps]
+
+    # Score each stint
+    stint_scores = {}
+    for stint in stints:
+        condition = stint.get("condition") or "dry"
+        stint_scores[stint["stint_number"]] = compute_stint_scores(all_laps, stint, condition)
+
+    # Group stints by driver
+    driver_stints: dict[str, list] = {}
+    for stint in stints:
+        driver = stint.get("driver_name")
+        if not driver:
+            continue
+        if driver not in driver_stints:
+            driver_stints[driver] = []
+        scored = stint_scores.get(stint["stint_number"], {})
+        scored["driver_name"] = driver
+        scored["condition"] = stint.get("condition")
+        scored["start_lap"] = stint["start_lap"]
+        scored["end_lap"] = stint["end_lap"]
+        scored["pit_lap_time_s"] = stint.get("pit_lap_time_s")
+        driver_stints[driver].append(scored)
+
+    # Build per-driver reports
+    driver_reports = {}
+    for driver, scored_stints in driver_stints.items():
+        driver_reports[driver] = compute_driver_report(driver, scored_stints)
+
+    # Total race stats
+    valid_laps = [l for l in all_laps if l.get("is_valid") and l.get("lap_time_s") and l["lap_time_s"] > 0]
+    total_laps = len(valid_laps)
+    total_time = sum(l["lap_time_s"] for l in valid_laps)
+
+    team = compute_team_report(driver_reports, total_laps, len(stints), total_time)
+
+    return api_response({
+        "team": team,
+        "drivers": driver_reports,
+        "stints": stint_scores,
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
