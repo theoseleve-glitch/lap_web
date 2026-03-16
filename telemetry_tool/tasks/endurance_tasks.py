@@ -144,7 +144,7 @@ def process_endurance_session(
             stint_results=stint_results,
             total_laps=total_laps,
             total_time=total_time,
-            workspace_id=workspace_id,
+            workspace_id=meta.get("workspace_id", "1"),
         )
         logger.info("Persisted master endurance session: %s", master_session_id)
     except Exception:
@@ -317,6 +317,8 @@ def _persist_master_session(
     from web.db import get_db_connection
 
     conn = get_db_connection()
+    # Set RLS workspace context
+    conn.execute("SELECT set_config('app.current_workspace_id', :wid, true)", {"wid": str(workspace_id)})
     session_id = uuid.uuid4().hex
     session_meta = meta.get("session_meta", {})
     drivers = team_report.get("drivers", [])
