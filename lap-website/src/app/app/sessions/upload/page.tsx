@@ -8,6 +8,8 @@ import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
+import { StintConfigFlow } from '@/components/app/endurance/StintConfigFlow';
+import { StintProcessingProgress } from '@/components/app/endurance/StintProcessingProgress';
 
 /* ── Types ──────────────────────────────────────────── */
 
@@ -23,7 +25,10 @@ type PageState =
   | 'awaiting_corners'
   | 'resuming'
   | 'completed'
-  | 'error';
+  | 'error'
+  | 'endurance_detecting'
+  | 'endurance_config'
+  | 'endurance_processing';
 
 interface SSEEvent {
   status: string;
@@ -357,6 +362,7 @@ function UploadPage() {
   const [sessionType, setSessionType] = useState('practice');
   const [enduranceDrivers, setEnduranceDrivers] = useState<string[]>([]);
   const [newEnduranceDriver, setNewEnduranceDriver] = useState('');
+  const [pitThreshold, setPitThreshold] = useState(120);
   const [trackState, setTrackState] = useState('dry');
   const [lapRange, setLapRange] = useState('');
   const [excludeLaps, setExcludeLaps] = useState('');
@@ -391,6 +397,13 @@ function UploadPage() {
   const connectSSERef = useRef<(jId: string) => void>(() => {});
   const trackNameRef = useRef('');
   const cornerResumedRef = useRef(false);
+
+  // Endurance flow state
+  const [enduranceJobId, setEnduranceJobId] = useState<string | null>(null);
+  const [enduranceLaps, setEnduranceLaps] = useState<any[]>([]);
+  const [enduranceAutoStints, setEnduranceAutoStints] = useState<any[]>([]);
+  const [enduranceMedian, setEnduranceMedian] = useState(0);
+  const [enduranceStintConfigs, setEnduranceStintConfigs] = useState<any[]>([]);
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -722,6 +735,46 @@ function UploadPage() {
     e.preventDefault();
 
     if (!file) { setErrorMessage('Please select a CSV file to upload.'); return; }
+
+    // ── Endurance flow: quick detect instead of full upload ──
+    if (sessionType === 'endurance') {
+      if (enduranceDrivers.length < 1) { setErrorMessage('Add at least one driver.'); return; }
+      setPageState('endurance_detecting');
+      setErrorMessage('');
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('pit_threshold_s', String(pitThreshold));
+        formData.append('drivers', JSON.stringify(enduranceDrivers));
+        formData.append('track_state', trackState);
+        if (kartName.trim()) formData.append('kart_name', kartName.trim());
+        if (trackName.trim()) formData.append('track_name', trackName.trim());
+        if (sessionDate) formData.append('session_date', sessionDate);
+
+        const token = getAccessToken();
+        const wsId = getWorkspaceId();
+        const resp = await fetch(`${BACKEND_URL}/api/v1/endurance/detect`, {
+          method: 'POST',
+          headers: {
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            ...(wsId ? { 'X-Workspace-Id': String(wsId) } : {}),
+          },
+          body: formData,
+        });
+        const json = await resp.json();
+        if (!json.ok) throw new Error(json.error?.message || 'Detection failed');
+        setEnduranceJobId(json.data.job_id);
+        setEnduranceLaps(json.data.laps || []);
+        setEnduranceAutoStints(json.data.auto_stints || []);
+        setEnduranceMedian(json.data.median_lap_time_s || 0);
+        setPageState('endurance_config');
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Endurance detection failed');
+        setPageState('error');
+      }
+      return;
+    }
+
     if (!driverName.trim()) { setErrorMessage('Driver name is required.'); return; }
 
     setPageState('uploading');
@@ -825,6 +878,9 @@ function UploadPage() {
   const showProgress = pageState === 'uploading' || pageState === 'tracking' || pageState === 'resuming';
   const showCornerPicker = pageState === 'awaiting_corners' && trackLayout;
   const showCompleted = pageState === 'completed';
+  const showEnduranceDetecting = pageState === 'endurance_detecting';
+  const showEnduranceConfig = pageState === 'endurance_config';
+  const showEnduranceProcessing = pageState === 'endurance_processing';
 
   return (
     <div>
@@ -957,6 +1013,7 @@ function UploadPage() {
 
           {/* ── Metadata Form ──────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            {sessionType !== 'endurance' && (
             <div>
               <label htmlFor="driver-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
                 Driver Name <span className="text-safety-red">*</span>
@@ -970,6 +1027,7 @@ function UploadPage() {
                 {driverNames.map((d) => (<option key={d} value={d} />))}
               </datalist>
             </div>
+            )}
             <div>
               <label htmlFor="session-type" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">Session Type</label>
               <select id="session-type" value={sessionType} onChange={(e) => setSessionType(e.target.value)} disabled={isFormDisabled}
@@ -1040,6 +1098,23 @@ function UploadPage() {
                     ))}
                   </div>
                 )}
+                <div className="mt-3">
+                  <label className="block text-xs font-telemetry text-steel mb-1 uppercase tracking-wider">
+                    Pit Stop Duration (seconds)
+                  </label>
+                  <input
+                    type="number"
+                    value={pitThreshold}
+                    onChange={(e) => setPitThreshold(Number(e.target.value))}
+                    disabled={isFormDisabled}
+                    min={20}
+                    max={600}
+                    className="w-32 bg-concrete border border-steel/30 rounded px-3 py-2 text-chalk font-body text-sm
+                      focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                      disabled:opacity-50 disabled:cursor-not-allowed"
+                  />
+                  <p className="text-steel/50 text-[10px] font-body mt-1">Laps longer than this will be detected as pit stops</p>
+                </div>
               </div>
             )}
             <div>
@@ -1161,11 +1236,11 @@ function UploadPage() {
 
           {/* ── Submit Button ──────────────────────────── */}
           <div className="flex items-center gap-4">
-            <button type="submit" disabled={isFormDisabled || !file || !driverName.trim()}
+            <button type="submit" disabled={isFormDisabled || !file || (sessionType !== 'endurance' && !driverName.trim()) || (sessionType === 'endurance' && enduranceDrivers.length < 1)}
               className="px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
                 hover:bg-gold/90 transition-colors
                 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold">
-              {fileQueue.length > 0 ? `Upload ${fileQueue.length + 1} Files` : 'Upload & Analyze'}
+              {sessionType === 'endurance' ? 'Upload & Detect Stints' : fileQueue.length > 0 ? `Upload ${fileQueue.length + 1} Files` : 'Upload & Analyze'}
             </button>
             <Link href="/app/sessions"
               className="px-4 py-2.5 text-steel hover:text-chalk transition-colors font-body text-sm">
@@ -1217,6 +1292,56 @@ function UploadPage() {
           >
             Cancel
           </button>
+        </div>
+      )}
+
+      {/* ── Endurance: Detecting ──────────────────────── */}
+      {showEnduranceDetecting && (
+        <div className="max-w-2xl flex items-center justify-center py-20">
+          <div className="w-8 h-8 border-2 border-steel/30 border-t-pit-orange rounded-full animate-spin" />
+          <span className="ml-3 text-steel text-sm font-body">Detecting laps and pit stops...</span>
+        </div>
+      )}
+
+      {/* ── Endurance: Stint Config ──────────────────── */}
+      {showEnduranceConfig && (
+        <div className="max-w-3xl">
+          <StintConfigFlow
+            laps={enduranceLaps}
+            autoStints={enduranceAutoStints}
+            drivers={enduranceDrivers}
+            medianLapTime={enduranceMedian}
+            pitThreshold={pitThreshold}
+            isProcessing={false}
+            onProcess={(configs) => {
+              setEnduranceStintConfigs(configs);
+              setPageState('endurance_processing');
+              // Dispatch processing
+              api.post('/endurance/process', {
+                job_id: enduranceJobId,
+                stints: configs,
+              }).catch((err: any) => {
+                setErrorMessage(err.message || 'Failed to start processing');
+                setPageState('error');
+              });
+            }}
+          />
+        </div>
+      )}
+
+      {/* ── Endurance: Processing Progress ───────────── */}
+      {showEnduranceProcessing && enduranceJobId && (
+        <div className="max-w-3xl">
+          <StintProcessingProgress
+            jobId={enduranceJobId}
+            stintConfigs={enduranceStintConfigs}
+            drivers={enduranceDrivers}
+            onComplete={(jobId) => {
+              setPageState('completed');
+              // Navigate to sessions list after brief delay
+              setTimeout(() => router.push('/app/sessions'), 2000);
+            }}
+          />
         </div>
       )}
 
