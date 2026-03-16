@@ -39,6 +39,22 @@ def process_endurance_session(
     _publish(_r, job_id, {"status": "processing", "total_stints": total_stints})
 
     stint_results = []
+    # Track per-stint statuses so frontend can always see the full picture
+    stint_statuses: list[dict] = [
+        {"stint_number": sc["stint_number"], "driver_name": sc.get("driver_name", ""), "status": "queued"}
+        for sc in stint_configs
+    ]
+
+    def _publish_full(phase: str, extra: dict | None = None):
+        """Publish full status including all stint statuses."""
+        payload = {
+            "status": phase,
+            "total_stints": total_stints,
+            "stints": stint_statuses,
+            "progress_pct": round(sum(1 for s in stint_statuses if s["status"] == "complete") / total_stints * 100),
+            **(extra or {}),
+        }
+        _publish(_r, job_id, payload)
 
     for i, stint_cfg in enumerate(stint_configs):
         stint_num = stint_cfg["stint_number"]
@@ -47,12 +63,9 @@ def process_endurance_session(
         driver_name = stint_cfg.get("driver_name", f"Driver {stint_num}")
         condition = stint_cfg.get("condition", "dry")
 
-        _publish(_r, job_id, {
-            "status": "processing_stint",
-            "stint_number": stint_num,
-            "driver_name": driver_name,
-            "progress_pct": round(i / total_stints * 100),
-        })
+        # Mark this stint as processing
+        stint_statuses[i]["status"] = "processing"
+        _publish_full("processing_stint")
 
         try:
             result = _process_single_stint(
@@ -68,21 +81,18 @@ def process_endurance_session(
             )
             stint_results.append(result)
 
-            _publish(_r, job_id, {
-                "status": "stint_complete",
-                "stint_number": stint_num,
-                "driver_name": driver_name,
+            # Mark complete with stats
+            stint_statuses[i] = {
+                **stint_statuses[i],
+                "status": "complete",
                 "best_lap_s": result.get("best_lap_s"),
                 "lap_count": result.get("lap_count"),
-                "progress_pct": round((i + 1) / total_stints * 100),
-            })
+            }
+            _publish_full("stint_complete")
         except Exception as exc:
             logger.exception("Failed to process stint %d", stint_num)
-            _publish(_r, job_id, {
-                "status": "stint_error",
-                "stint_number": stint_num,
-                "error": str(exc)[:200],
-            })
+            stint_statuses[i] = {**stint_statuses[i], "status": "error", "error": str(exc)[:200]}
+            _publish_full("stint_error")
             stint_results.append({
                 "stint_number": stint_num,
                 "driver_name": driver_name,
@@ -91,7 +101,7 @@ def process_endurance_session(
             })
 
     # Aggregate
-    _publish(_r, job_id, {"status": "processing_drivers"})
+    _publish_full("processing_drivers")
 
     from endurance_scoring import compute_driver_report, compute_team_report
 
@@ -105,9 +115,9 @@ def process_endurance_session(
     driver_reports = {}
     for driver, stints in driver_stints.items():
         driver_reports[driver] = compute_driver_report(driver, stints)
-        _publish(_r, job_id, {"status": "driver_complete", "driver_name": driver})
+        _publish_full("driver_complete", {"driver_name": driver})
 
-    _publish(_r, job_id, {"status": "processing_team"})
+    _publish_full("processing_team")
 
     total_laps = sum(r.get("lap_count", 0) for r in stint_results if not r.get("error"))
     total_time = sum(r.get("total_time_s", 0) for r in stint_results if not r.get("error"))

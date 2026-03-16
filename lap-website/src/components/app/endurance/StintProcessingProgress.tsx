@@ -57,29 +57,17 @@ export function StintProcessingProgress({
 
     const status = data.status;
 
-    if (status === 'stint_complete') {
-      setStintStatuses((prev) =>
-        prev.map((s) =>
-          s.stint_number === data.stint_number
-            ? { ...s, status: 'complete', best_lap_s: data.best_lap_s, lap_count: data.lap_count }
-            : s
-        )
-      );
-    }
-
-    if (status === 'processing_stint') {
-      setStintStatuses((prev) =>
-        prev.map((s) =>
-          s.stint_number === data.stint_number ? { ...s, status: 'processing' } : s
-        )
-      );
-    }
-
-    if (status === 'stint_error') {
-      setStintStatuses((prev) =>
-        prev.map((s) =>
-          s.stint_number === data.stint_number ? { ...s, status: 'error', error: data.error } : s
-        )
+    // Backend sends full stints array — use it directly
+    if (data.stints && Array.isArray(data.stints)) {
+      setStintStatuses(
+        data.stints.map((s: any) => ({
+          stint_number: s.stint_number,
+          driver_name: s.driver_name || '',
+          status: s.status === 'complete' ? 'complete' : s.status === 'processing' ? 'processing' : s.status === 'error' ? 'error' : 'queued',
+          best_lap_s: s.best_lap_s,
+          lap_count: s.lap_count,
+          error: s.error,
+        }))
       );
     }
 
