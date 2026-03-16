@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # Thresholds for median-vs-best scoring
 _MEDIAN_FULL_GAP_PCT = 0.3   # within 0.3% of best = full marks
-_MEDIAN_ZERO_GAP_PCT = 6.0   # 6% slower than best = zero
+_MEDIAN_ZERO_GAP_PCT = 10.0  # 10% slower than best = zero
 
 
 def _score_pace(
