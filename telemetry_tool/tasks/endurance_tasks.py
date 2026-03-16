@@ -202,9 +202,9 @@ def _process_single_stint(
         out.writelines(stint_lines)
 
     try:
-        from pipeline.orchestrator import run_pipeline
+        from pipeline.orchestrator import run_full_analysis
 
-        summary = run_pipeline(
+        summary = run_full_analysis(
             csv_path=stint_csv_path,
             session_meta={
                 **session_meta,
@@ -212,6 +212,7 @@ def _process_single_stint(
                 "session_type": "endurance_stint",
                 "track_state": condition,
             },
+            enable_report=False,
         )
 
         score = summary.get("score_result") or {}
