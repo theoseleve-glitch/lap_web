@@ -1047,20 +1047,6 @@ export default function SessionsPage() {
               {allSelected ? 'All' : selectedKeys.size} selected
             </span>
           </label>
-          <div className="h-4 w-px bg-steel/20" />
-          <button
-            type="button"
-            onClick={() => {
-              const ids = Array.from(selectedKeys);
-              if (window.confirm(`Re-analyze ${ids.length} session(s)? This will re-run the pipeline.`)) {
-                reanalyzeMutation.mutate(ids);
-              }
-            }}
-            disabled={reanalyzeMutation.isPending}
-            className="text-marshal-yellow text-xs font-body hover:text-marshal-yellow/80 transition-colors disabled:opacity-50"
-          >
-            Re-analyze {selectedKeys.size} Session{selectedKeys.size !== 1 ? 's' : ''}
-          </button>
           {selectedKeys.size === 2 && (
             <button
               type="button"
