@@ -52,7 +52,7 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
     return {
       overallBest,
       overallBestDriver: overallBestDriver?.driver_name ?? '--',
-      totalPitTime: actualPitTime,
+      totalPitTime: totalPitTime,
       pitCount,
       avgPitTime,
       paceDelta,
