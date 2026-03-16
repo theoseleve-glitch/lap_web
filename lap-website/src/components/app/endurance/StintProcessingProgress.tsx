@@ -44,11 +44,12 @@ export function StintProcessingProgress({
   );
   const [phase, setPhase] = useState<'stints' | 'drivers' | 'team' | 'done'>('stints');
 
-  // Poll for status updates
+  // Poll for status updates (retry=false to avoid spamming on 404)
   const { data } = useQuery({
     queryKey: ['endurance-status', jobId],
-    queryFn: () => api.get<Record<string, any>>(`/endurance/status/${jobId}`),
-    refetchInterval: phase !== 'done' ? 2000 : false,
+    queryFn: () => api.get<Record<string, any>>(`/endurance/status/${jobId}`).catch(() => null),
+    refetchInterval: phase !== 'done' ? 3000 : false,
+    retry: false,
   });
 
   useEffect(() => {

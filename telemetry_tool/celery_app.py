@@ -56,6 +56,7 @@ def make_celery(app=None) -> Celery:
             "tasks.rollup_tasks",
             "tasks.dead_letter_tasks",
             "tasks.ocp_tasks",
+            "tasks.endurance_tasks",
         ],
     )
     celery.conf.update(
