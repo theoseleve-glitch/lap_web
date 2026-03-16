@@ -18,11 +18,15 @@ bp = Blueprint("endurance_upload", __name__, url_prefix="/api/v1/endurance")
 @bp.route("/detect", methods=["POST"])
 @rate_limit(tier="write")
 def detect_stints():
-    """Upload CSV + quick detect lap times and pit stops.
+    """Upload CSV + quick detect lap times and pit stops."""
+    try:
+        return _detect_stints_inner()
+    except Exception as exc:
+        logger.exception("endurance/detect failed: %s", exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"Detection failed: {str(exc)[:200]}", status=500)
 
-    Form fields: file, pit_threshold_s, drivers (JSON array), session metadata.
-    Returns lap list + auto-detected stints. File is cached for later processing.
-    """
+
+def _detect_stints_inner():
     f = request.files.get("file")
     if not f or not f.filename:
         return api_error(ErrorCode.VALIDATION_ERROR, "No file provided", status=400)
@@ -75,36 +79,38 @@ def detect_stints():
 @bp.route("/process", methods=["POST"])
 @rate_limit(tier="write")
 def process_stints():
-    """Start per-stint processing with user-confirmed configuration.
+    """Start per-stint processing with user-confirmed configuration."""
+    try:
+        body = request.get_json(silent=True) or {}
+        job_id = body.get("job_id")
+        stint_configs = body.get("stints")
 
-    Body: { job_id, stints: [{ stint_number, start_lap, end_lap, driver_name, condition }] }
-    """
-    body = request.get_json(silent=True) or {}
-    job_id = body.get("job_id")
-    stint_configs = body.get("stints")
+        if not job_id or not stint_configs:
+            return api_error(ErrorCode.VALIDATION_ERROR, "job_id and stints required", status=400)
 
-    if not job_id or not stint_configs:
-        return api_error(ErrorCode.VALIDATION_ERROR, "job_id and stints required", status=400)
+        import redis as _redis
+        from web.config import Config
+        _r = _redis.Redis.from_url(Config.REDIS_URL)
+        raw = _r.get(f"endurance:meta:{job_id}")
+        if not raw:
+            return api_error(ErrorCode.NOT_FOUND, "Job expired or not found", status=404)
 
-    import redis as _redis
-    from web.config import Config
-    _r = _redis.Redis.from_url(Config.REDIS_URL)
-    raw = _r.get(f"endurance:meta:{job_id}")
-    if not raw:
-        return api_error(ErrorCode.NOT_FOUND, "Job expired or not found", status=404)
+        meta = json.loads(raw)
 
-    meta = json.loads(raw)
+        # Write initial status BEFORE dispatching
+        _r.set(f"endurance:status:{job_id}", json.dumps({
+            "status": "queued",
+            "total_stints": len(stint_configs),
+            "stints": [{"stint_number": s.get("stint_number"), "driver_name": s.get("driver_name", ""), "status": "queued"} for s in stint_configs],
+        }), ex=7200)
 
-    # Write initial status BEFORE dispatching — so frontend poll never sees 404
-    _r.set(f"endurance:status:{job_id}", json.dumps({
-        "status": "queued",
-        "total_stints": len(stint_configs),
-    }), ex=7200)
+        from tasks.endurance_tasks import process_endurance_session
+        process_endurance_session.delay(job_id, meta, stint_configs)
 
-    from tasks.endurance_tasks import process_endurance_session
-    process_endurance_session.delay(job_id, meta, stint_configs)
-
-    return api_response({"job_id": job_id, "stints_queued": len(stint_configs)})
+        return api_response({"job_id": job_id, "stints_queued": len(stint_configs)})
+    except Exception as exc:
+        logger.exception("endurance/process failed: %s", exc)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"Processing failed: {str(exc)[:200]}", status=500)
 
 
 @bp.route("/status/<job_id>", methods=["GET"])
