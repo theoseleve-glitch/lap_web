@@ -63,6 +63,10 @@ def process_endurance_session(
         driver_name = stint_cfg.get("driver_name", f"Driver {stint_num}")
         condition = stint_cfg.get("condition", "dry")
         valid_laps = stint_cfg.get("valid_laps")
+        logger.info("Stint %d: start=%d end=%d valid_laps=%s driver=%s",
+                     stint_num, start_lap, end_lap,
+                     f"{len(valid_laps)} laps" if valid_laps else "None (using range)",
+                     driver_name)
 
         # Mark this stint as processing
         stint_statuses[i]["status"] = "processing"
@@ -212,6 +216,9 @@ def _process_single_stint(
             raise ValueError("Cannot find Lap # column in CSV header")
 
         _valid_set = set(valid_laps) if valid_laps else set()
+        logger.info("Row filter: valid_set=%s (len=%d), range=%d-%d",
+                     _valid_set if len(_valid_set) < 20 else f"{len(_valid_set)} laps",
+                     len(_valid_set), start_lap, end_lap)
 
         for line in f:
             parts = line.split(",")

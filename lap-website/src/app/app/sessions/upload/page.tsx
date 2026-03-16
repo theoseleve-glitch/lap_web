@@ -1339,17 +1339,20 @@ function UploadPage() {
             medianLapTime={enduranceMedian}
             pitThreshold={pitThreshold}
             isProcessing={false}
-            onProcess={(configs) => {
+            onProcess={async (configs) => {
               setEnduranceStintConfigs(configs);
-              setPageState('endurance_processing');
-              // Dispatch processing
-              api.post('/endurance/process', {
-                job_id: enduranceJobId,
-                stints: configs,
-              }).catch((err: any) => {
+              try {
+                // Wait for /process to return (writes initial status to Redis)
+                await api.post('/endurance/process', {
+                  job_id: enduranceJobId,
+                  stints: configs,
+                });
+                // Only start polling AFTER status is written
+                setPageState('endurance_processing');
+              } catch (err: any) {
                 setErrorMessage(err.message || 'Failed to start processing');
                 setPageState('error');
-              });
+              }
             }}
           />
         </div>
