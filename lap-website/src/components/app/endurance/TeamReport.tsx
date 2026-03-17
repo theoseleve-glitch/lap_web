@@ -9,6 +9,7 @@ import { StrategyTimeline } from './StrategyTimeline';
 interface TeamReportProps {
   report: TeamReportType;
   stints: Stint[];
+  pitThreshold?: number;
   onSelectDriver: (name: string) => void;
 }
 
@@ -28,7 +29,7 @@ function formatDuration(s: number | null): string {
   return `${m}m ${sec}s`;
 }
 
-export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) {
+export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }: TeamReportProps) {
   const drivers = report.driver_comparison;
 
   // Compute derived race metrics
@@ -243,23 +244,56 @@ export function TeamReport({ report, stints, onSelectDriver }: TeamReportProps) 
               <p className="text-xs font-body text-steel">Total Pit Time</p>
             </div>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-2">
             {stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0).map((s, i) => {
               const pitTime = raceMetrics.getPitDuration(s);
+              // Grade: how close to threshold (gold = at threshold, red = 3x+ threshold)
+              const ratio = pitThreshold > 0 ? pitTime / pitThreshold : 1;
+              const grade = ratio <= 1.1 ? 'gold' : ratio <= 1.5 ? 'silver' : ratio <= 2.0 ? 'bronze' : 'over';
+              const gradeColor = {
+                gold: 'text-gold bg-gold/10 border-gold/30',
+                silver: 'text-steel bg-steel/10 border-steel/30',
+                bronze: 'text-pit-orange bg-pit-orange/10 border-pit-orange/30',
+                over: 'text-safety-red bg-safety-red/10 border-safety-red/30',
+              }[grade];
+              const gradeLabel = {
+                gold: 'Excellent',
+                silver: 'Good',
+                bronze: 'Slow',
+                over: 'Too slow',
+              }[grade];
+              const barColor = {
+                gold: '#FFD400',
+                silver: '#8B8B8B',
+                bronze: '#FF6A00',
+                over: '#FF3B6B',
+              }[grade];
               return (
                 <div key={i} className="flex items-center gap-3 text-xs font-body">
                   <span className="text-steel w-16">Pit {i + 1}</span>
-                  <span className="text-chalk font-telemetry w-20">After S{s.stint_number} (L{s.pit_lap_number})</span>
-                  <div className="flex-1 h-3 bg-asphalt rounded overflow-hidden">
+                  <span className="text-chalk font-telemetry w-20">After S{s.stint_number}</span>
+                  <div className="flex-1 h-4 bg-asphalt rounded overflow-hidden relative">
                     <div
-                      className="h-full bg-pit-orange/50 rounded"
-                      style={{ width: `${Math.min((pitTime / 300) * 100, 100)}%` }}
+                      className="h-full rounded"
+                      style={{ width: `${Math.min((pitTime / (pitThreshold * 3)) * 100, 100)}%`, backgroundColor: barColor, opacity: 0.6 }}
+                    />
+                    {/* Threshold marker */}
+                    <div
+                      className="absolute top-0 bottom-0 w-px bg-gold/60"
+                      style={{ left: `${Math.min((1 / 3) * 100, 100)}%` }}
+                      title={`Target: ${pitThreshold}s`}
                     />
                   </div>
-                  <span className="text-pit-orange font-telemetry w-16 text-right">{Math.ceil(pitTime)}s</span>
+                  <span className="font-telemetry w-12 text-right" style={{ color: barColor }}>{Math.ceil(pitTime)}s</span>
+                  <span className={`text-[9px] font-telemetry px-1.5 py-0.5 rounded border ${gradeColor}`}>
+                    {gradeLabel}
+                  </span>
                 </div>
               );
             })}
+            <p className="text-steel/40 text-[10px] font-body mt-1">
+              Target: {pitThreshold}s &middot; Gold line = pit threshold
+            </p>
           </div>
         </div>
       )}

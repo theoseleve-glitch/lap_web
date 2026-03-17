@@ -123,6 +123,7 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
       <TeamReport
         report={report.team}
         stints={reportStints}
+        pitThreshold={stintsQuery.data?.pit_threshold_s || 30}
         onSelectDriver={handleSelectDriver}
       />
     );

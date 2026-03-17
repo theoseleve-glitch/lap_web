@@ -1402,6 +1402,7 @@ function UploadPage() {
                 best_lap_s: sr.best_lap_s,
                 mean_lap_s: sr.mean_lap_s,
               })) || enduranceAutoStints}
+              pitThreshold={pitThreshold}
               onSelectDriver={setEnduranceSelectedDriver}
             />
           )}
