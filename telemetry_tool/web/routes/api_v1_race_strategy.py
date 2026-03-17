@@ -114,21 +114,28 @@ def create_race_endpoint():
     try:
         conn = get_pg_connection()
 
-        # Resolve duration limit from entitlements
+        # Resolve plan limits from entitlements
         max_dur = None
+        allowed_modes = None
         try:
             from flask import g
 
-            from auth.entitlements import get_user_entitlements
+            from auth.entitlements import get_plan_entitlements, normalize_tier
             user_id = getattr(g, "current_user_id", None)
             ws_id = getattr(g, "workspace_id", None)
             if user_id is not None:
+                from auth.entitlements import get_user_entitlements
                 ent = get_user_entitlements(conn, user_id, ws_id)
                 max_dur = ent.get("race_strategy_max_duration_s")
+                # Resolve optimizer mode restriction from plan
+                tier = normalize_tier(ent.get("plan_tier"))
+                plan_ent = get_plan_entitlements(tier)
+                allowed_modes = plan_ent.get("optimizer_modes")
         except Exception:
             pass  # Fail open — don't block on entitlement resolution errors
 
-        race_id = create_race(conn, data, max_duration_s=max_dur)
+        race_id = create_race(conn, data, max_duration_s=max_dur,
+                              allowed_optimizer_modes=allowed_modes)
         return api_response({"race_id": race_id}, status=201)
     except ValueError as ve:
         return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
@@ -188,21 +195,27 @@ def update_race_endpoint(race_id: int):
     try:
         conn = get_pg_connection()
 
-        # Resolve duration limit from entitlements
+        # Resolve plan limits from entitlements
         max_dur = None
+        allowed_modes = None
         try:
             from flask import g
 
-            from auth.entitlements import get_user_entitlements
+            from auth.entitlements import get_plan_entitlements, normalize_tier
             user_id = getattr(g, "current_user_id", None)
             ws_id = getattr(g, "workspace_id", None)
             if user_id is not None:
+                from auth.entitlements import get_user_entitlements
                 ent = get_user_entitlements(conn, user_id, ws_id)
                 max_dur = ent.get("race_strategy_max_duration_s")
+                tier = normalize_tier(ent.get("plan_tier"))
+                plan_ent = get_plan_entitlements(tier)
+                allowed_modes = plan_ent.get("optimizer_modes")
         except Exception:
             pass  # Fail open — don't block on entitlement resolution errors
 
-        success = update_race(conn, race_id, data, max_duration_s=max_dur)
+        success = update_race(conn, race_id, data, max_duration_s=max_dur,
+                              allowed_optimizer_modes=allowed_modes)
         if not success:
             # Could be not found or wrong status
             return api_error(
@@ -287,7 +300,10 @@ def optimize_endpoint(race_id: int):
     """
     try:
         conn = get_pg_connection()
+        logger.info("OPTIMIZE called for race_id=%s", race_id)
         result = run_optimization(conn, race_id)
+        logger.info("OPTIMIZE result for race_id=%s: stints=%s feasible=%s",
+                     race_id, len(result.get("stints", [])), result.get("feasible"))
         if result.get("error") == "not found":
             return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
         return api_response(result)
@@ -571,6 +587,29 @@ def reoptimize_endpoint(race_id: int):
     """
     try:
         conn = get_pg_connection()
+
+        # If body contains rain context, create a temporary weather window
+        data = request.get_json(silent=True) or {}
+        wet_lap_time = data.get("wet_lap_time_s")
+        rain_duration_min = data.get("rain_duration_min")
+        if wet_lap_time and rain_duration_min:
+            from services.race_strategy import get_race, _compute_elapsed_s
+            race = get_race(conn, race_id)
+            if race:
+                elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+                rain_end = elapsed + int(rain_duration_min) * 60
+                from services.race_strategy_weather import add_weather_window, get_weather_windows
+                # Remove old temporary windows and add the new one
+                existing = get_weather_windows(conn, race_id)
+                for w in existing:
+                    if w.get("start_s", 0) >= elapsed:
+                        conn.execute(
+                            "DELETE FROM race_weather_windows WHERE id = ?",
+                            (w["id"],),
+                        )
+                add_weather_window(conn, race_id, elapsed, rain_end,
+                                   race.get("current_condition") or "wet", 100)
+
         result = reoptimize(conn, race_id)
         if result.get("error") == "not found":
             return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
@@ -578,6 +617,128 @@ def reoptimize_endpoint(race_id: int):
     except Exception as exc:
         logger.exception("reoptimize failed for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, f"reoptimize: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/apply-strategy — apply a specific strategy plan
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/apply-strategy", methods=["POST"])
+@rate_limit(tier="write")
+def apply_strategy_endpoint(race_id: int):
+    """Apply a specific strategy's stints to the race.
+
+    Expects JSON body with ``stints`` list (from /strategies response)
+    and optional ``approach`` name for logging.
+
+    Replaces all planned stints with the strategy's stints.
+    Completed/active stints are kept.
+    """
+    data = request.get_json(silent=True) or {}
+    strategy_stints = data.get("stints")
+    if not strategy_stints or not isinstance(strategy_stints, list):
+        return api_error(ErrorCode.VALIDATION_ERROR, "stints list is required", status=400)
+
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy import (
+            get_race, _compute_elapsed_s, _rows_to_list, _get_sleep_windows,
+        )
+        from race_state_engine import RaceStateEngine
+
+        race = get_race(conn, race_id)
+        if not race:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+
+        drivers = _rows_to_list(conn.execute(
+            "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order",
+            (race_id,),
+        ).fetchall())
+
+        # Keep completed/active stints
+        fixed_stints = _rows_to_list(conn.execute(
+            "SELECT * FROM race_stints WHERE race_id = ? AND status IN ('completed', 'active') "
+            "ORDER BY stint_order",
+            (race_id,),
+        ).fetchall())
+        n_fixed = len(fixed_stints)
+
+        # Build new planned stints from the strategy
+        new_stints = []
+        for i, st in enumerate(strategy_stints):
+            order = n_fixed + i + 1
+            start_s = st.get("start_s", 0)
+            dur = st.get("duration_s", 0)
+            new_stints.append({
+                "stint_order": order,
+                "driver_id": st["driver_id"],
+                "driver_name": st.get("driver_name", ""),
+                "planned_start_s": start_s,
+                "planned_end_s": start_s + dur,
+                "planned_duration_s": dur,
+            })
+
+        # Build pit stops between stints
+        pit_time = race.get("min_pit_stop_s") or 120
+        pit_stops = []
+        for i in range(len(new_stints) - 1):
+            curr = new_stints[i]
+            nxt = new_stints[i + 1]
+            pit_stops.append({
+                "after_stint": curr["stint_order"],
+                "at_s": curr["planned_end_s"],
+                "duration_s": pit_time,
+                "refuel": True,
+                "driver_change": curr["driver_id"] != nxt["driver_id"],
+            })
+
+        # Clear planned stints
+        conn.execute(
+            "DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'",
+            (race_id,),
+        )
+        conn.execute(
+            "DELETE FROM race_pit_stops WHERE race_id = ? AND stint_id NOT IN "
+            "(SELECT stint_id FROM race_stints WHERE race_id = ?)",
+            (race_id, race_id),
+        )
+
+        # Wrap in engine for fuel/ballast cascade
+        all_stints = fixed_stints + new_stints
+        engine = RaceStateEngine(race, drivers, all_stints, pit_stops)
+
+        # Save new planned stints
+        for s in engine.stints:
+            if s.stint_order > n_fixed:
+                conn.execute(
+                    """INSERT INTO race_stints (race_id, stint_order, driver_id,
+                        planned_start_s, planned_end_s, planned_duration_s,
+                        fuel_at_start, fuel_at_end, ballast_kg,
+                        ballast_base_kg, ballast_fuel_offset_kg, fuel_burn_rate_kgs,
+                        status)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                    (
+                        race_id,
+                        s.stint_order,
+                        s.driver_id,
+                        s.planned_start_s,
+                        s.planned_end_s,
+                        s.planned_duration_s,
+                        round(s.fuel_at_start_kg, 4),
+                        round(s.fuel_at_end_kg, 4),
+                        s.ballast_kg,
+                        s.ballast_base_kg,
+                        s.ballast_fuel_offset_kg,
+                        engine.fuel_model.burn_rate_kgs,
+                    ),
+                )
+
+        conn.commit()
+        snapshot = engine.snapshot()
+        return api_response(snapshot)
+    except Exception as exc:
+        logger.exception("apply_strategy failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"apply_strategy: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -1051,6 +1212,158 @@ def set_condition_endpoint(race_id: int):
     except Exception as exc:
         logger.exception("set_condition failed for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, f"set_condition: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/strategies — generate ranked weather strategies
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/strategies", methods=["POST"])
+@rate_limit(tier="write")
+def generate_strategies_endpoint(race_id: int):
+    """Generate multiple optimizer strategies for weather conditions."""
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy import get_race, _compute_elapsed_s, _get_sleep_windows
+        race = get_race(conn, race_id)
+        if not race:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+
+        drivers_rows = conn.execute(
+            "SELECT * FROM race_drivers WHERE race_id = ? ORDER BY driver_order",
+            (race_id,),
+        ).fetchall()
+        drivers = [dict(r) for r in drivers_rows]
+
+        elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+
+        # Build weather windows in SOLVER-RELATIVE time (0 = now)
+        # The solver operates on [0, remaining_time], not absolute race clock.
+        wet_lap_time = data.get("wet_lap_time_s")
+        rain_duration_min = data.get("rain_duration_min")
+        weather_windows = []
+        if wet_lap_time and rain_duration_min:
+            # User says "rain for X minutes starting now" → relative [0, X*60]
+            weather_windows = [{
+                "start_s": 0,
+                "end_s": int(rain_duration_min) * 60,
+                "condition": race.get("current_condition") or "wet",
+                "confidence_pct": 100,
+            }]
+        else:
+            # Use stored weather windows — convert absolute → relative
+            try:
+                from services.race_strategy_weather import get_weather_windows
+                stored = get_weather_windows(conn, race_id)
+                for w in stored:
+                    ws = max(0, w.get("start_s", 0) - elapsed)
+                    we = max(0, w.get("end_s", 0) - elapsed)
+                    if we > ws:
+                        weather_windows.append({
+                            "start_s": ws,
+                            "end_s": we,
+                            "condition": w.get("condition", "dry"),
+                        })
+            except Exception:
+                pass
+
+        # Build solver config for remaining race
+        remaining_time = race["race_duration_s"] - elapsed
+        sleep_windows = _get_sleep_windows(conn, race_id)
+
+        from optimizer.csp_solver import SolverConfig, DriverConstraints
+        from optimizer.multi_strategy import generate_strategies
+
+        pit_time = race.get("min_pit_stop_s") or 120
+        fuel_autonomy = race.get("fuel_autonomy_s") or 0
+        empty_kart = race.get("empty_kart_kg") or 0.0
+        full_tank_cfg = race.get("full_tank_kg") or 0.0
+        fuel_capacity = full_tank_cfg if full_tank_cfg <= empty_kart or empty_kart == 0 else full_tank_cfg - empty_kart
+        burn_rate = fuel_capacity / fuel_autonomy if fuel_autonomy > 0 else 0.0
+
+        # Count remaining stints
+        completed = conn.execute(
+            "SELECT COUNT(*) as cnt FROM race_stints WHERE race_id = ? AND status IN ('completed', 'active')",
+            (race_id,),
+        ).fetchone()
+        completed_count = (completed["cnt"] if isinstance(completed, dict) else completed[0]) if completed else 0
+        remaining_stints = max(1, (race.get("desired_stints") or 20) - completed_count)
+
+        solver_config = SolverConfig(
+            race_duration_s=remaining_time,
+            n_stints=remaining_stints,
+            pit_time_s=pit_time,
+            fuel_capacity_kg=fuel_capacity,
+            fuel_burn_rate_kgs=burn_rate,
+            blackout_start_s=0,
+            blackout_end_s=(race.get("blackout_end_min") or 0) * 60,
+            quick_change=bool(race.get("quick_change_enabled")),
+            optimization_mode=race.get("optimization_mode", "equal"),
+            weather_windows=weather_windows,
+        )
+
+        solver_drivers = []
+        for d in sorted(drivers, key=lambda x: x.get("driver_order", 0)):
+            sw = []
+            if sleep_windows:
+                for s in sleep_windows:
+                    if s.get("driver_id") == d["id"]:
+                        sw.append((s.get("start_s", 0), s.get("end_s", 0)))
+            solver_drivers.append(DriverConstraints(
+                id=d["id"],
+                name=d.get("driver_name", ""),
+                avg_lap_time_s=d.get("avg_lap_time_s") or 65.0,
+                weight_kg=d.get("weight_kg") or 70.0,
+                wet_confidence=d.get("wet_confidence") or 0.5,
+                max_stint_s=d.get("max_stint_s"),
+                min_stint_s=d.get("min_stint_s"),
+                max_cumulative_s=d.get("max_cumulative_s"),
+                min_cumulative_s=d.get("min_cumulative_s"),
+                min_rest_s=d.get("min_rest_s") or 0,
+                allow_double_stint=bool(d.get("allow_double_stint")),
+                sleep_windows=sw,
+            ))
+
+        strategies = generate_strategies(solver_config, solver_drivers)
+
+        # Serialize for API response
+        response = []
+        for strat in strategies:
+            m = strat.metrics
+            stints_data = [{
+                "stint_order": s.stint_order,
+                "driver_id": s.driver_id,
+                "driver_name": s.driver_name,
+                "start_s": s.start_s + elapsed,
+                "duration_s": s.duration_s,
+            } for s in strat.result.stints]
+
+            response.append({
+                "name": strat.name,
+                "description": strat.description,
+                "approach": strat.approach,
+                "score": round(strat.score, 1),
+                "stints": stints_data,
+                "metrics": {
+                    "pits_in_rain": m.pits_in_rain,
+                    "pits_in_dry": m.pits_in_dry,
+                    "rain_drive_s": m.rain_drive_s,
+                    "dry_drive_s": m.dry_drive_s,
+                    "driver_transitions": m.driver_transitions,
+                    "min_stint_s": m.min_stint_s,
+                    "max_stint_s": m.max_stint_s,
+                    "flexibility_score": round(m.flexibility_score, 2),
+                    "risk_score": round(m.risk_score, 2),
+                    "total_pit_s": m.total_pit_s,
+                },
+            })
+
+        return api_response({"strategies": response})
+
+    except Exception as exc:
+        logger.exception("strategies failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"strategies: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------

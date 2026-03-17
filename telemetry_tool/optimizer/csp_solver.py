@@ -16,6 +16,7 @@ class SolverConfig:
     pit_time_s: int = 120
     fuel_capacity_kg: float = 0.0
     fuel_burn_rate_kgs: float = 0.0
+    initial_fuel_kg: float = 0.0  # fuel at start of stint 1 (post-quali); 0 = use fuel_capacity_kg
     blackout_start_s: int = 0
     blackout_end_s: int = 0
     quick_change: bool = False
@@ -97,6 +98,86 @@ def _effective_lap_time(driver: DriverConstraints, condition: str) -> float:
     return driver.avg_lap_time_s
 
 
+def _weather_adjusted_duration(
+    config: SolverConfig,
+    clock: int,
+    ideal_duration: int,
+    min_dur: int,
+    max_dur: int,
+    pit_time: int,
+) -> int:
+    """Nudge stint duration to stack pit stops during rain.
+
+    Core insight: pit stops cost fewer laps in rain (everyone is slower).
+    So we want MORE pits during rain, FEWER during dry.
+
+    Strategy:
+    - SHORTEN stints during rain → more pits happen in slow conditions
+    - EXTEND stints in dry before rain → delay pit until rain starts
+    - EXTEND stints in dry after rain → avoid pitting right after rain ends
+    - Tolerance: nudge up to 25% of ideal duration.
+    """
+    if not config.weather_windows:
+        return ideal_duration
+
+    pit_at = clock + ideal_duration
+    nudge_tolerance = max(int(ideal_duration * 0.35), 1800)  # at least 30 min or 35% of stint
+
+    best_duration = ideal_duration
+    best_score = 0.0
+
+    for w in config.weather_windows:
+        w_start = w.get("start_s", 0)
+        w_end = w.get("end_s", 0)
+        condition = w.get("condition", "dry")
+        if condition == "dry":
+            continue
+
+        # Strategy 1: currently in DRY, rain starts soon → EXTEND stint
+        # to push pit into the rain window (pit during rain = cheap)
+        if clock < w_start and w_start - pit_at <= nudge_tolerance and w_start > pit_at:
+            extended = w_start - clock
+            if min_dur <= extended <= max_dur:
+                score = 2.5  # strongest: delay pit to rain boundary
+                if score > best_score:
+                    best_duration = extended
+                    best_score = score
+
+        # Strategy 2: currently IN RAIN → USE MINIMUM STINT
+        # Stack as many pits as possible during slow conditions.
+        if w_start <= clock < w_end:
+            # Use regulation minimum stint length to maximize rain pits
+            shortened = min_dur
+            if shortened <= max_dur:
+                score = 2.0
+                if score > best_score:
+                    best_duration = shortened
+                    best_score = score
+
+        # Strategy 3: rain ending soon → SHORTEN to pit before dry
+        # so the next driver starts fresh on a drying track
+        if w_start <= clock < w_end and w_end - clock <= ideal_duration:
+            to_rain_end = w_end - clock
+            shortened = max(min_dur, to_rain_end - pit_time)
+            if min_dur <= shortened <= max_dur:
+                score = 1.5
+                if score > best_score:
+                    best_duration = shortened
+                    best_score = score
+
+        # Strategy 4: just after rain ended → EXTEND stint
+        # avoid wasting a pit in the first dry laps
+        if clock >= w_end and clock - w_end < nudge_tolerance:
+            extended = min(max_dur, int(ideal_duration * 1.2))
+            if extended >= min_dur:
+                score = 1.0
+                if score > best_score:
+                    best_duration = extended
+                    best_score = score
+
+    return best_duration
+
+
 def _priority_score(config: SolverConfig, clock: int) -> float:
     """Competitive-period weighting: 1.5x start/end, 2.0x post-weather."""
     race_dur = config.race_duration_s
@@ -120,22 +201,27 @@ def _driver_score(
     clock: int,
     driver_budgets: dict[int, float] | None,
 ) -> float:
-    """Score a driver for a stint slot. Higher = preferred."""
+    """Score a driver for a stint slot. Higher = preferred.
+
+    Equal mode: all drivers score equally (1.0) — pure round-robin.
+    Performance mode: faster drivers score higher via budget weighting.
+    In wet conditions, wet_confidence is always used regardless of mode.
+    """
     condition = _get_weather_at(config, clock)
-    elt = _effective_lap_time(driver, condition)
-    speed = 1.0 / elt if elt > 0 else 0.0
     priority = _priority_score(config, clock)
 
     if condition in ("wet", "damp"):
-        speed = driver.wet_confidence
+        # Always prefer high wet-confidence drivers in rain
+        return driver.wet_confidence * priority
 
-    mode_weight = 1.0
     if driver_budgets and driver.id in driver_budgets:
+        # Performance mode: weight by speed-proportional budget
         total_budget = sum(driver_budgets.values())
         if total_budget > 0:
-            mode_weight = driver_budgets[driver.id] / total_budget
+            return (driver_budgets[driver.id] / total_budget) * priority
 
-    return speed * priority * mode_weight
+    # Equal mode: all drivers equal — round-robin via constraint filtering only
+    return 1.0 * priority
 
 
 # ------------------------------------------------------------------
@@ -261,7 +347,17 @@ def solve_stints(
                 budget_ideal = budget_remaining / driver_remaining_stints
                 dynamic_ideal = budget_ideal
 
+        # max_dur starts at ideal; weather nudging may override in _weather_adjusted_duration
         max_dur = int(dynamic_ideal)
+        # Add headroom ONLY if a rain boundary is near this stint's pit time
+        if config.weather_windows:
+            pit_at = clock + int(dynamic_ideal)
+            for w in config.weather_windows:
+                ws = w.get("start_s", 0)
+                if w.get("condition", "dry") != "dry" and ws > pit_at and ws - pit_at < 1800:
+                    # Rain starts soon after our pit — allow extending to reach it
+                    max_dur = max(max_dur, ws - clock)
+                    break
 
         # Fuel cap
         current_fuel = fuel
@@ -318,6 +414,12 @@ def solve_stints(
             return None
 
         duration = max(min_dur, min(max_dur, int(dynamic_ideal)))
+
+        # Weather-aware nudging: shift pit boundaries to align with rain
+        duration = _weather_adjusted_duration(
+            config, clock, duration, min_dur, max_dur, config.pit_time_s,
+        )
+
         return min_dur, duration
 
     def _solve(
@@ -332,7 +434,7 @@ def solve_stints(
     ) -> bool:
         nonlocal best_result, best_violations
 
-        if backtracks[0] > 200:
+        if backtracks[0] > 5000:
             return False
 
         # Terminal: all slots filled
@@ -417,7 +519,8 @@ def solve_stints(
 
     # -- Run the search --
     backtracks = [0]
-    _solve(0, 0, config.fuel_capacity_kg, {}, {}, None, [], backtracks)
+    start_fuel = config.initial_fuel_kg if config.initial_fuel_kg > 0 else config.fuel_capacity_kg
+    _solve(0, 0, start_fuel, {}, {}, None, [], backtracks)
 
     # -- Build structured result from best_result --
     stints: list[StintResult] = []

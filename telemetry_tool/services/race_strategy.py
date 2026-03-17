@@ -318,7 +318,8 @@ def get_race_detail(conn, race_id: int) -> dict | None:
     }
 
 
-def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
+def create_race(conn, data: dict, *, max_duration_s: int | None = None,
+                allowed_optimizer_modes: list[str] | None = None) -> int:
     """Create a new race configuration with drivers and windows.
 
     Parameters
@@ -330,6 +331,9 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
     max_duration_s : int | None
         Optional plan-based maximum race duration in seconds.
         Raises ValueError if the race duration exceeds this limit.
+    allowed_optimizer_modes : list[str] | None
+        Plan-based restriction on optimizer modes (e.g. ["equal"]).
+        None means all modes allowed.
 
     Returns
     -------
@@ -344,7 +348,15 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
         limit_h = max_duration_s / 3600
         raise ValueError(
             f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
-            f"Upgrade to Racer for unlimited race duration."
+            f"Upgrade your plan for longer races."
+        )
+
+    # Enforce optimizer mode restriction
+    opt_mode = race.get("optimization_mode", "equal")
+    if allowed_optimizer_modes is not None and opt_mode not in allowed_optimizer_modes:
+        raise ValueError(
+            f"Optimizer mode '{opt_mode}' is not available on your plan. "
+            f"Upgrade to World-Class for all optimizer modes."
         )
 
     drivers = data.get("drivers", [])
@@ -363,8 +375,11 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             optimization_mode,
             tech_stop_enabled, tech_stop_duration_s,
             tech_stop_window_start_s, tech_stop_window_end_s,
+            default_min_stint_s, default_max_stint_s,
+            default_min_cumulative_s, default_max_cumulative_s,
+            default_min_rest_s, default_allow_double,
             status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
         RETURNING race_id""",
         (
             race.get("race_name", "Untitled Race"),
@@ -395,6 +410,12 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             race.get("tech_stop_duration_s", 360),
             race.get("tech_stop_window_start_s"),
             race.get("tech_stop_window_end_s"),
+            race.get("default_min_stint_s"),
+            race.get("default_max_stint_s"),
+            race.get("default_min_cumulative_s"),
+            race.get("default_max_cumulative_s"),
+            race.get("default_min_rest_s"),
+            _pg_bool(race.get("default_allow_double", 0)),
         ),
     )
     _row = cur.fetchone()
@@ -415,7 +436,8 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
     return race_id
 
 
-def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = None) -> bool:
+def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = None,
+                allowed_optimizer_modes: list[str] | None = None) -> bool:
     """Update an existing race configuration.
 
     Only allowed when status is ``'draft'`` or ``'ready'``.
@@ -431,6 +453,9 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
     max_duration_s : int | None
         Optional plan-based maximum race duration in seconds.
         Raises ValueError if the race duration exceeds this limit.
+    allowed_optimizer_modes : list[str] | None
+        Plan-based restriction on optimizer modes.
+        None means all modes allowed.
 
     Returns
     -------
@@ -451,7 +476,15 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
         limit_h = max_duration_s / 3600
         raise ValueError(
             f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
-            f"Upgrade to Racer for unlimited race duration."
+            f"Upgrade your plan for longer races."
+        )
+
+    # Enforce optimizer mode restriction
+    opt_mode = cfg.get("optimization_mode", race.get("optimization_mode", "equal"))
+    if allowed_optimizer_modes is not None and opt_mode not in allowed_optimizer_modes:
+        raise ValueError(
+            f"Optimizer mode '{opt_mode}' is not available on your plan. "
+            f"Upgrade to World-Class for all optimizer modes."
         )
 
     drivers = data.get("drivers", [])
@@ -471,6 +504,9 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
             optimization_mode=?,
             tech_stop_enabled=?, tech_stop_duration_s=?,
             tech_stop_window_start_s=?, tech_stop_window_end_s=?,
+            default_min_stint_s=?, default_max_stint_s=?,
+            default_min_cumulative_s=?, default_max_cumulative_s=?,
+            default_min_rest_s=?, default_allow_double=?,
             updated_at=CURRENT_TIMESTAMP, status='draft'
         WHERE race_id=?""",
         (
@@ -502,6 +538,12 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
             cfg.get("tech_stop_duration_s", race.get("tech_stop_duration_s", 360)),
             cfg.get("tech_stop_window_start_s", race.get("tech_stop_window_start_s")),
             cfg.get("tech_stop_window_end_s", race.get("tech_stop_window_end_s")),
+            cfg.get("default_min_stint_s", race.get("default_min_stint_s")),
+            cfg.get("default_max_stint_s", race.get("default_max_stint_s")),
+            cfg.get("default_min_cumulative_s", race.get("default_min_cumulative_s")),
+            cfg.get("default_max_cumulative_s", race.get("default_max_cumulative_s")),
+            cfg.get("default_min_rest_s", race.get("default_min_rest_s")),
+            _pg_bool(cfg.get("default_allow_double", race.get("default_allow_double", 0))),
             race_id,
         ),
     )
@@ -594,6 +636,9 @@ def run_optimization(conn, race_id: int) -> dict:
         except Exception:
             pass
         result = optimize_stints_v2(race, drivers, sleep_windows=sleep_windows, weather_windows=weather_windows)
+        if not result.get("stints"):
+            logger.warning("V2 optimizer returned 0 stints, falling back to v1")
+            result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
     except Exception as exc:
         logger.warning("V2 optimizer failed, falling back to v1: %s", exc)
         result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
@@ -903,11 +948,11 @@ def end_stint(
     stint_laps = actual_laps
     if actual_laps is not None:
         prev_laps = conn.execute(
-            "SELECT COALESCE(SUM(actual_laps), 0) FROM race_stints "
+            "SELECT COALESCE(SUM(actual_laps), 0) as total FROM race_stints "
             "WHERE race_id = ? AND status = 'completed'",
             (race_id,),
         ).fetchone()
-        prev_total = prev_laps[0] if prev_laps else 0
+        prev_total = (prev_laps["total"] if isinstance(prev_laps, dict) else prev_laps[0]) if prev_laps else 0
         stint_laps = max(0, actual_laps - prev_total)
 
     conn.execute(
@@ -1194,7 +1239,14 @@ def reoptimize(conn, race_id: int) -> dict:
 
     elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
     sleep_windows = _get_sleep_windows(conn, race_id)
-    result = reoptimize_remaining(race, drivers, fixed_stints, elapsed, sleep_windows=sleep_windows)
+    weather_windows = []
+    try:
+        from services.race_strategy_weather import get_weather_windows
+        weather_windows = get_weather_windows(conn, race_id)
+    except Exception:
+        pass
+    result = reoptimize_remaining(race, drivers, fixed_stints, elapsed,
+                                  sleep_windows=sleep_windows, weather_windows=weather_windows)
 
     # Clear planned stints only (active + completed stay)
     conn.execute(

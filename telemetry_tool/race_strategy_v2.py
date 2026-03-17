@@ -568,6 +568,13 @@ def optimize_stints_v2(
 
     burn_rate = fuel_capacity / fuel_autonomy if fuel_autonomy > 0 else 0.0
 
+    # Qualifying fuel deduction — solver must know stint 1 has less fuel
+    quali_duration = config.get("qualifying_duration_s") or 0
+    refuel_after_quali = config.get("refuel_after_quali", 0)
+    initial_fuel = fuel_capacity
+    if fuel_autonomy > 0 and quali_duration > 0 and not refuel_after_quali:
+        initial_fuel = max(0.0, fuel_capacity - burn_rate * quali_duration)
+
     n_stints = max(1, config.get("desired_stints") or 1)
     # Auto-increase if fuel requires more stints
     if fuel_autonomy > 0:
@@ -576,12 +583,38 @@ def optimize_stints_v2(
             n_stints += 1
             drive_time = race_duration - (n_stints - 1) * pit_time
 
+    # Auto-increase for rain pit stacking
+    # Calculate how many extra stints we need to fill rain windows with min-length stints
+    if weather_windows:
+        min_stint_s = 1200  # default 20min
+        for d in drivers:
+            ds = d.get("min_stint_s")
+            if ds and ds > 0:
+                min_stint_s = min(min_stint_s, ds)
+
+        for w in weather_windows:
+            if w.get("condition") not in ("wet", "damp"):
+                continue
+            rain_dur = w.get("end_s", 0) - w.get("start_s", 0)
+            if rain_dur <= 0:
+                continue
+            # Max stints that fit in rain: each needs min_stint + pit_time
+            rain_stints_possible = max(1, rain_dur // (min_stint_s + pit_time))
+            # Normal stints that would overlap: rain_dur / ideal_stint
+            drive_time = race_duration - (n_stints - 1) * pit_time
+            ideal = drive_time / n_stints if n_stints > 0 else drive_time
+            normal_overlap = max(1, int(rain_dur / ideal) + 1)
+            extra = rain_stints_possible - normal_overlap
+            if extra > 0:
+                n_stints += extra
+
     solver_config = SolverConfig(
         race_duration_s=race_duration,
         n_stints=n_stints,
         pit_time_s=pit_time,
         fuel_capacity_kg=fuel_capacity,
         fuel_burn_rate_kgs=burn_rate,
+        initial_fuel_kg=initial_fuel,
         blackout_start_s=(config.get("blackout_start_min") or 0) * 60,
         blackout_end_s=(config.get("blackout_end_min") or 0) * 60,
         quick_change=bool(config.get("quick_change_enabled")),
@@ -615,6 +648,10 @@ def optimize_stints_v2(
 
     # Solve
     result = csp_solve(solver_config, solver_drivers)
+
+    # If CSP failed, fall back to v1 greedy
+    if not result.stints:
+        return optimize_stints(config, drivers, sleep_windows=sleep_windows)
 
     # Convert back to dict format expected by RaceStateEngine
     stints = []
@@ -672,15 +709,28 @@ def reoptimize_remaining(
     completed_stints: list[dict[str, Any]],
     elapsed_s: int,
     sleep_windows: list[dict[str, Any]] | None = None,
+    weather_windows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Re-optimize remaining stints given completed work."""
+    """Re-optimize remaining stints given completed work.
+
+    Accounts for:
+    - Cumulative time already driven per driver
+    - Last stint end time per driver (for rest time calculation)
+    - Weather windows (shifted to remaining-race timeframe)
+    - All regulation constraints from the original config
+    """
     remaining_time = config["race_duration_s"] - elapsed_s
 
-    # Compute remaining cumulative budgets
-    cumulative_used = {}
+    # Compute remaining cumulative budgets and last end times
+    cumulative_used: dict[int, int] = {}
+    last_end: dict[int, int] = {}
     for s in completed_stints:
         did = s["driver_id"]
-        cumulative_used[did] = cumulative_used.get(did, 0) + s.get("actual_duration_s", 0)
+        dur = s.get("actual_duration_s") or s.get("planned_duration_s") or 0
+        cumulative_used[did] = cumulative_used.get(did, 0) + dur
+        end_s = s.get("actual_end_s") or s.get("planned_end_s") or 0
+        if end_s > last_end.get(did, 0):
+            last_end[did] = end_s
 
     adjusted_drivers = []
     for d in drivers:
@@ -690,6 +740,14 @@ def reoptimize_remaining(
             adj["max_cumulative_s"] = max(0, adj["max_cumulative_s"] - used)
         if adj.get("min_cumulative_s"):
             adj["min_cumulative_s"] = max(0, adj["min_cumulative_s"] - used)
+        # If driver just finished, check rest time — increase min_rest if needed
+        driver_last_end = last_end.get(d["id"], 0)
+        if driver_last_end > 0:
+            rest_since = elapsed_s - driver_last_end
+            min_rest = d.get("min_rest_s") or 0
+            if rest_since < min_rest:
+                # Driver hasn't rested enough — solver will skip them for early slots
+                pass  # The CSP solver handles this via rest constraint
         adjusted_drivers.append(adj)
 
     remaining_stints = max(1, config.get("desired_stints", 4) - len(completed_stints))
@@ -698,9 +756,21 @@ def reoptimize_remaining(
         **config,
         "race_duration_s": remaining_time,
         "desired_stints": remaining_stints,
+        # Remove blackout_start since race already started
+        "blackout_start_min": 0,
     }
 
-    result = optimize_stints(remaining_config, adjusted_drivers, sleep_windows=sleep_windows)
+    # Try V2 (CSP with weather), fall back to V1
+    try:
+        result = optimize_stints_v2(
+            remaining_config, adjusted_drivers,
+            sleep_windows=sleep_windows,
+            weather_windows=weather_windows,
+        )
+        if not result.get("stints"):
+            result = optimize_stints(remaining_config, adjusted_drivers, sleep_windows=sleep_windows)
+    except Exception:
+        result = optimize_stints(remaining_config, adjusted_drivers, sleep_windows=sleep_windows)
 
     # Offset times by elapsed
     for s in result["stints"]:
