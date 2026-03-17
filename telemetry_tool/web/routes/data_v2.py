@@ -5894,4 +5894,193 @@ def get_endurance_report(session_id: str) -> tuple[dict, int]:
     })
 
 
+# ══════════════════════════════════════════════════════════════════
+# POST /api/v1/sessions/<id>/endurance-race — create race from session
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/endurance-race", methods=["POST"])
+@_safe_api
+def create_endurance_race(session_id: str) -> tuple[dict, int]:
+    """Create a retrospective race config from endurance session stints."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    data = request.get_json(silent=True)
+    if not data:
+        return api_error(ErrorCode.VALIDATION_ERROR, "JSON body is required", status=400)
+
+    race_meta = data.get("race", {})
+    raw_driver_map = data.get("driver_map")
+    if not raw_driver_map or not isinstance(raw_driver_map, dict):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "driver_map is required: {stint_number: driver_name}",
+            status=400,
+        )
+
+    # Convert string keys to int (JSON keys are always strings)
+    try:
+        driver_map = {int(k): v for k, v in raw_driver_map.items()}
+    except (ValueError, TypeError):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "driver_map keys must be stint numbers (integers)",
+            status=400,
+        )
+
+    try:
+        from services.race_strategy_bridge import create_race_from_session
+
+        race_id = create_race_from_session(
+            conn, session_id, race_meta, driver_map,
+            max_duration_s=data.get("max_duration_s"),
+        )
+        return api_response({"race_id": race_id}, status=201)
+    except ValueError as ve:
+        return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/endurance-live — live endurance state
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/endurance-live", methods=["GET"])
+@_safe_api
+def get_endurance_live(session_id: str) -> tuple[dict, int]:
+    """Compute live endurance state from stints + anchor."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    from datetime import datetime, timezone
+    from web.repos.endurance_repo import get_race_anchor, get_stints
+
+    stints = get_stints(conn, session_id)
+    anchor = get_race_anchor(conn, session_id)
+
+    # No anchor → 404 so frontend shows setup form
+    if not anchor or not anchor.get("race_start_iso"):
+        return api_error(ErrorCode.NOT_FOUND, "No race anchor set for this session", status=404)
+
+    # Compute elapsed time from anchor
+    elapsed_s = 0
+    try:
+        iso = anchor["race_start_iso"]
+        start = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=timezone.utc)
+        elapsed_s = max(0, int((datetime.now(timezone.utc) - start).total_seconds()))
+    except Exception:
+        elapsed_s = 0
+
+    # Compute per-stint lap stats
+    all_laps = models.get_laps_for_session(conn, session_id)
+    completed_stints = []
+    current_stint = None
+    total_laps = 0
+    for stint in stints:
+        stint_laps = [
+            lap for lap in all_laps
+            if stint["start_lap"] <= lap["lap_number"] <= stint["end_lap"]
+            and lap.get("is_valid", True)
+            and lap.get("lap_time_s") and lap["lap_time_s"] > 0
+        ]
+        times = [lap["lap_time_s"] for lap in stint_laps]
+        total_laps += len(times)
+
+        # Compute stint elapsed time from lap times
+        stint_elapsed_s = int(sum(times)) if times else 0
+
+        stint_info = {
+            "stint_number": stint["stint_number"],
+            "driver_name": stint.get("driver_name"),
+            "start_lap": stint["start_lap"],
+            "lap_count": len(times),
+            "laps_completed": len(times),
+            "best_lap_s": round(min(times), 3) if times else None,
+            "stint_elapsed_s": stint_elapsed_s,
+        }
+
+        # Last stint without pit_lap is "current", others are "completed"
+        if stint.get("pit_lap_number") is None and stint == stints[-1]:
+            current_stint = stint_info
+        else:
+            completed_stints.append(stint_info)
+
+    # Estimate next pit lap from pit threshold and current stint
+    next_pit_lap = None
+    if current_stint and stints:
+        avg_lap = None
+        if times:
+            avg_lap = sum(times) / len(times)
+        # No reliable prediction without average lap time
+
+    return api_response({
+        "race_start_iso": anchor["race_start_iso"],
+        "elapsed_s": elapsed_s,
+        "current_stint": current_stint,
+        "completed_stints": completed_stints,
+        "next_pit_lap": next_pit_lap,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# POST /api/v1/sessions/<id>/endurance-anchor — store race start
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/endurance-anchor", methods=["POST"])
+@_safe_api
+def set_endurance_anchor(session_id: str) -> tuple[dict, int]:
+    """Store or update the race start time anchor for live tracking."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    data = request.get_json(silent=True)
+    if not data:
+        return api_error(ErrorCode.VALIDATION_ERROR, "JSON body is required", status=400)
+
+    race_start_iso = data.get("race_start_iso")
+    if not race_start_iso:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "race_start_iso is required",
+            status=400,
+        )
+
+    # Validate ISO-8601
+    from datetime import datetime
+    try:
+        datetime.fromisoformat(race_start_iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "race_start_iso must be a valid ISO-8601 datetime",
+            status=400,
+        )
+
+    lap_duration_s = data.get("lap_duration_s")
+    if lap_duration_s is not None:
+        try:
+            lap_duration_s = float(lap_duration_s)
+        except (ValueError, TypeError):
+            return api_error(
+                ErrorCode.VALIDATION_ERROR,
+                "lap_duration_s must be a number",
+                status=400,
+            )
+
+    from web.repos.endurance_repo import upsert_race_anchor
+    upsert_race_anchor(conn, session_id, race_start_iso, lap_duration_s)
+
+    return api_response({"ok": True}, status=201)
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

@@ -62,10 +62,20 @@ class FuelModel:
 
     @classmethod
     def from_config(cls, config: dict) -> FuelModel:
-        """Build from a race_configs dict row."""
+        """Build from a race_configs dict row.
+
+        ``full_tank_kg`` is treated as fuel mass directly (fuel capacity).
+        Legacy: if full_tank_kg > empty_kart_kg it may be total kart weight,
+        so subtract empty weight.
+        """
         empty = config.get("empty_kart_kg") or 0.0
         full_tank = config.get("full_tank_kg") or 0.0
-        fuel_capacity = max(0.0, full_tank - empty)
+        if full_tank > empty and empty > 0:
+            # Legacy: full_tank_kg is total kart weight with fuel
+            fuel_capacity = max(0.0, full_tank - empty)
+        else:
+            # full_tank_kg is fuel mass directly (the intended usage)
+            fuel_capacity = max(0.0, full_tank)
         autonomy = config.get("fuel_autonomy_s") or 0
         quali_used = 0.0
         if autonomy > 0 and not config.get("refuel_after_quali", 0):
@@ -110,6 +120,8 @@ class StintState:
     actual_duration_s: int | None = None
     status: str = "planned"
     notes: str = ""
+    estimated_laps: int | None = None
+    pit_at_lap: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -277,13 +289,20 @@ class RaceStateEngine:
         Iterates stints in order, calling ``_calc_fuel_state``,
         ``_calc_ballast``, and ``_validate_constraints`` on each.
         """
+        cumulative_laps = 0
         for s in self.stints:
             if s.stint_order < from_order:
+                # Still need cumulative laps from earlier stints
+                if s.estimated_laps:
+                    cumulative_laps += s.estimated_laps
                 continue
             s.refueled_before = self._refuel_map.get(s.stint_order, True)
             self._calc_fuel_state(s)
             self._calc_ballast(s)
+            self._calc_laps(s, cumulative_laps)
             self._validate_constraints(s)
+            if s.estimated_laps:
+                cumulative_laps += s.estimated_laps
 
         self._validate_tech_stops()
 
@@ -294,6 +313,14 @@ class RaceStateEngine:
         validation can detect fuel exhaustion (negative values).
         """
         fm = self.fuel_model
+
+        # Quick change: every stint starts with full fuel (new kart)
+        if self.config.get("quick_change_enabled") and stint.stint_order > 1:
+            stint.fuel_at_start_kg = fm.full_tank_kg
+            sc_overlap = self._neutralized_overlap(stint.planned_start_s, stint.planned_end_s)
+            effective_burn_s = max(0.0, stint.planned_duration_s - sc_overlap)
+            stint.fuel_at_end_kg = stint.fuel_at_start_kg - fm.burn_rate_kgs * effective_burn_s
+            return
 
         if stint.stint_order == 1:
             # First stint: starts with fuel_after_quali
@@ -317,21 +344,35 @@ class RaceStateEngine:
         stint.fuel_at_end_kg = stint.fuel_at_start_kg - consumed
 
     def _calc_ballast(self, stint: StintState) -> None:
-        """Calculate ballast decomposition for a stint.
+        """Calculate ballast needed to meet minimum kart weight.
 
-        ballast_base = max(0, min_kart - empty - fuel_capacity - driver_weight)
-        ballast_fuel_offset = max(0, fuel_capacity - fuel_at_start)
-        ballast_kg = base + offset (rounded to 2 decimals)
+        ballast = max(0, min_total - empty_kart - fuel_at_start - driver_weight)
+        Rounded up to nearest 2.5 kg.
         """
+        import math
         min_kart = self.config.get("min_total_kart_kg") or 0.0
         empty = self.config.get("empty_kart_kg") or 0.0
-        fuel_capacity = self.fuel_model.full_tank_kg
         driver = self._get_driver(stint.driver_id)
         driver_weight = driver.get("weight_kg") or 0.0
+        fuel_at_start = stint.fuel_at_start_kg
 
-        stint.ballast_base_kg = max(0.0, min_kart - empty - fuel_capacity - driver_weight)
-        stint.ballast_fuel_offset_kg = max(0.0, fuel_capacity - stint.fuel_at_start_kg)
-        stint.ballast_kg = round(stint.ballast_base_kg + stint.ballast_fuel_offset_kg, 2)
+        actual_weight = empty + fuel_at_start + driver_weight
+        raw = max(0.0, min_kart - actual_weight)
+
+        stint.ballast_base_kg = raw
+        stint.ballast_fuel_offset_kg = 0.0
+        stint.ballast_kg = math.ceil(raw / 2.5) * 2.5 if raw > 0 else 0.0
+
+    def _calc_laps(self, stint: StintState, cumulative_laps: int) -> None:
+        """Estimate lap count and pit lap number from driver avg_lap_time_s."""
+        driver = self._get_driver(stint.driver_id)
+        avg = driver.get("avg_lap_time_s") if driver else None
+        if avg and avg > 0:
+            stint.estimated_laps = int(stint.planned_duration_s / avg)
+            stint.pit_at_lap = cumulative_laps + stint.estimated_laps
+        else:
+            stint.estimated_laps = None
+            stint.pit_at_lap = None
 
     def _validate_constraints(self, stint: StintState) -> None:
         """Validate constraints for a stint and populate violations/warnings.
@@ -449,13 +490,28 @@ class RaceStateEngine:
         self._cascade_from(stint_order)
 
     def set_duration(self, stint_order: int, duration_s: int) -> None:
-        """Change the planned duration for a stint and rebuild the timeline."""
+        """Change the planned duration for a stint, compensate the last stint
+        to keep total race time constant, then rebuild the timeline."""
         stint = self._get_stint(stint_order)
         if not stint:
             return
+
+        old_dur = stint.planned_duration_s
+        delta = duration_s - old_dur
         stint.planned_duration_s = duration_s
         stint.planned_end_s = stint.planned_start_s + duration_s
-        # Rebuild timeline for subsequent stints
+
+        # Compensate: absorb the delta to keep total drive time constant.
+        # If editing a non-last stint, adjust the last stint.
+        # If editing the last stint, adjust the second-to-last.
+        if len(self.stints) > 1:
+            if stint_order == self.stints[-1].stint_order:
+                target = self.stints[-2]
+            else:
+                target = self.stints[-1]
+            target.planned_duration_s = max(0, target.planned_duration_s - delta)
+
+        # Rebuild timeline for all stints after the changed one
         pit_time = self.config.get("min_pit_stop_s") or 60
         for s in self.stints:
             if s.stint_order <= stint_order:

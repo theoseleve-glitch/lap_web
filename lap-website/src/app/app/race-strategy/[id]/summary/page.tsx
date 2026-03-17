@@ -7,6 +7,7 @@ import { api, BACKEND_URL } from '@/lib/api-client';
 import { StatCard } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
+import { PlannedVsActualView } from '@/components/app/endurance/PlannedVsActualView';
 
 /* ── shared types ─────────────────────────────────────────────────── */
 
@@ -24,6 +25,7 @@ interface RaceConfig {
   min_total_kart_kg: number | null;
   reference_weight_kg: number | null;
   status: 'draft' | 'ready' | 'live' | 'finished';
+  is_retrospective?: boolean;
   race_start_ts: string | null;
   created_at: string;
 }
@@ -372,6 +374,11 @@ export default function SummaryPage() {
         </div>
       )}
 
+      {/* Planned vs Actual (retrospective races) */}
+      {race.is_retrospective && (
+        <PlannedVsActualView raceId={race.race_id} />
+      )}
+
       {/* Actions */}
       {duplicateMut.error && (
         <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2">
@@ -382,13 +389,6 @@ export default function SummaryPage() {
         </div>
       )}
       <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
-        <a
-          href={`${BACKEND_URL}/api/v1/race-strategy/${raceId}/export`}
-          className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors"
-          download
-        >
-          Export
-        </a>
         <button
           type="button"
           onClick={() => duplicateMut.mutate()}

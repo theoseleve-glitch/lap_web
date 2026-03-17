@@ -6,7 +6,7 @@ All CREATE TABLE statements live here as constants so that
 """
 
 # Current schema version -- bump when adding/altering tables.
-SCHEMA_VERSION = 35
+SCHEMA_VERSION = 36
 
 # ------------------------------------------------------------------
 # Phase 1 tables
@@ -802,7 +802,16 @@ CREATE TABLE IF NOT EXISTS race_configs (
     refuel_after_quali  INTEGER NOT NULL DEFAULT 0,
     mandatory_driver_change INTEGER NOT NULL DEFAULT 1,
     refueling_allowed   INTEGER NOT NULL DEFAULT 1,
+    blackout_start_min  INTEGER,
+    blackout_end_min    INTEGER,
     quick_pit_stop_s    INTEGER,
+    optimization_mode   TEXT    NOT NULL DEFAULT 'equal',
+    quick_change_enabled    INTEGER NOT NULL DEFAULT 0,
+    tech_stop_enabled       INTEGER NOT NULL DEFAULT 0,
+    tech_stop_duration_s    INTEGER DEFAULT 360,
+    tech_stop_window_start_s INTEGER,
+    tech_stop_window_end_s  INTEGER,
+    pit_in_at_s         INTEGER,
     race_start_ts       TEXT,
     status              TEXT    NOT NULL DEFAULT 'draft',
     created_at          TEXT    NOT NULL DEFAULT (datetime('now')),
@@ -823,7 +832,9 @@ CREATE TABLE IF NOT EXISTS race_drivers (
     min_rest_s          INTEGER NOT NULL DEFAULT 0,
     weight_kg           REAL,
     com_channel         TEXT,
-    color_hex           TEXT
+    color_hex           TEXT,
+    allow_double_stint  INTEGER NOT NULL DEFAULT 0,
+    avg_lap_time_s      REAL
 );
 """
 
@@ -839,12 +850,14 @@ CREATE TABLE IF NOT EXISTS race_stints (
     actual_start_s      INTEGER,
     actual_end_s        INTEGER,
     actual_duration_s   INTEGER,
+    actual_laps         INTEGER,
     fuel_at_start       REAL,
     fuel_at_end         REAL,
     ballast_kg          REAL,
     ballast_base_kg         REAL,
     ballast_fuel_offset_kg  REAL,
     fuel_burn_rate_kgs      REAL,
+    kart_number             TEXT,
     notes               TEXT,
     status              TEXT NOT NULL DEFAULT 'planned'
 );
@@ -1067,5 +1080,29 @@ PHASE_22_TABLES: list[tuple[str, str]] = [
     ("race_sleep_windows", _RACE_SLEEP_WINDOWS_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 23 tables — Race penalties (passage, time, laps)
+# ------------------------------------------------------------------
+
+_RACE_PENALTIES_TABLE = """
+CREATE TABLE IF NOT EXISTS race_penalties (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id         INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    stint_order     INTEGER,
+    elapsed_s       INTEGER NOT NULL,
+    penalty_type    TEXT NOT NULL,
+    laps_deducted   INTEGER NOT NULL DEFAULT 0,
+    passage_duration_s INTEGER,
+    reason          TEXT,
+    cleared         INTEGER NOT NULL DEFAULT 0,
+    cleared_at_s    INTEGER,
+    workspace_id    INTEGER
+);
+"""
+
+PHASE_23_TABLES: list[tuple[str, str]] = [
+    ("race_penalties", _RACE_PENALTIES_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES + PHASE_23_TABLES

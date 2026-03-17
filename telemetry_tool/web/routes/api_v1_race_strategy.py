@@ -24,6 +24,8 @@ from services.race_strategy import (
     create_race,
     duplicate_race,
     end_stint,
+    pit_in,
+    pit_out,
     export_race,
     finish_race,
     get_live_state,
@@ -35,6 +37,8 @@ from services.race_strategy import (
     reoptimize,
     run_optimization,
     set_pit_type,
+    set_stint_driver,
+    set_stint_duration,
     toggle_fuel,
     update_race,
     wake_driver,
@@ -81,7 +85,7 @@ def list_races_endpoint():
         return api_response({"races": races})
     except Exception as exc:
         logger.exception("Failed to list races")
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"list_races: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -120,8 +124,7 @@ def create_race_endpoint():
             ws_id = getattr(g, "workspace_id", None)
             if user_id is not None:
                 ent = get_user_entitlements(conn, user_id, ws_id)
-                if ent.get("race_strategy_limit") == "limited_3h":
-                    max_dur = 10800
+                max_dur = ent.get("race_strategy_max_duration_s")
         except Exception:
             pass  # Fail open — don't block on entitlement resolution errors
 
@@ -131,7 +134,7 @@ def create_race_endpoint():
         return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to create race")
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"create_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +158,7 @@ def get_race_detail_endpoint(race_id: int):
         return api_response(detail)
     except Exception as exc:
         logger.exception("Failed to get race detail for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"get_race_detail: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -195,8 +198,7 @@ def update_race_endpoint(race_id: int):
             ws_id = getattr(g, "workspace_id", None)
             if user_id is not None:
                 ent = get_user_entitlements(conn, user_id, ws_id)
-                if ent.get("race_strategy_limit") == "limited_3h":
-                    max_dur = 10800
+                max_dur = ent.get("race_strategy_max_duration_s")
         except Exception:
             pass  # Fail open — don't block on entitlement resolution errors
 
@@ -213,7 +215,7 @@ def update_race_endpoint(race_id: int):
         return api_error(ErrorCode.VALIDATION_ERROR, str(ve), status=400)
     except Exception as exc:
         logger.exception("Failed to update race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"update_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -243,7 +245,7 @@ def delete_race_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("Failed to delete race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"delete_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +268,7 @@ def delete_impact_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("Failed to get delete impact for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"delete_impact: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -291,7 +293,7 @@ def optimize_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("Optimization failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"optimize: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +321,7 @@ def go_live_endpoint(race_id: int):
         return api_response({"ok": True})
     except Exception as exc:
         logger.exception("go_live failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"go_live: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -347,7 +349,7 @@ def finish_race_endpoint(race_id: int):
         return api_response({"ok": True})
     except Exception as exc:
         logger.exception("finish_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"finish_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -371,7 +373,7 @@ def get_live_state_endpoint(race_id: int):
         return api_response(state)
     except Exception as exc:
         logger.exception("get_live_state failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"get_live_state: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -393,12 +395,16 @@ def end_stint_endpoint(race_id: int):
 
     try:
         conn = get_pg_connection()
+        actual_laps = data.get("actual_laps")
+        if actual_laps is not None:
+            actual_laps = int(actual_laps)
         result = end_stint(
             conn,
             race_id,
             driver_change=data.get("driver_change", True),
             refueled=data.get("refueled", False),
             notes=data.get("notes"),
+            actual_laps=actual_laps,
         )
         if result is None:
             return api_error(
@@ -409,7 +415,56 @@ def end_stint_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("end_stint failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"end_stint: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/pit-in — car enters pit
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/pit-in", methods=["POST"])
+@rate_limit(tier="write")
+def pit_in_endpoint(race_id: int):
+    """Car enters pit — end current stint, start pit timer."""
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_pg_connection()
+        actual_laps = data.get("actual_laps")
+        if actual_laps is not None:
+            actual_laps = int(actual_laps)
+        result = pit_in(conn, race_id, actual_laps=actual_laps, notes=data.get("notes"))
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Race not found or no active stint", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("pit_in failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"pit_in: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/pit-out — car exits pit
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/pit-out", methods=["POST"])
+@rate_limit(tier="write")
+def pit_out_endpoint(race_id: int):
+    """Car exits pit — record pit duration, start next stint."""
+    data = request.get_json(silent=True) or {}
+    try:
+        conn = get_pg_connection()
+        result = pit_out(
+            conn, race_id,
+            driver_change=data.get("driver_change", True),
+            refueled=data.get("refueled", False),
+            notes=data.get("notes"),
+            kart_number=data.get("kart_number"),
+        )
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Race not found or not in pit", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("pit_out failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"pit_out: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -448,7 +503,7 @@ def toggle_fuel_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("toggle_fuel failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"toggle_fuel: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -495,7 +550,7 @@ def set_pit_type_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("set_pit_type failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"set_pit_type: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +577,7 @@ def reoptimize_endpoint(race_id: int):
         return api_response(result)
     except Exception as exc:
         logger.exception("reoptimize failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"reoptimize: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -546,7 +601,7 @@ def export_race_endpoint(race_id: int):
         return api_response(data)
     except Exception as exc:
         logger.exception("export_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"export_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -599,7 +654,7 @@ def import_race_endpoint():
         return api_error(ErrorCode.VALIDATION_ERROR, str(exc), status=400)
     except Exception as exc:
         logger.exception("import_race failed")
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"import_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -623,7 +678,7 @@ def duplicate_race_endpoint(race_id: int):
         return api_response({"race_id": new_race_id}, status=201)
     except Exception as exc:
         logger.exception("duplicate_race failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"duplicate_race: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -647,7 +702,7 @@ def get_summary_endpoint(race_id: int):
         return api_response(summary)
     except Exception as exc:
         logger.exception("get_summary failed for race_id=%s", race_id)
-        return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"get_summary: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------
@@ -693,4 +748,255 @@ def wake_driver_endpoint(race_id: int):
         )
     except Exception as exc:
         logger.exception("wake_driver failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"wake_driver: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/set-driver — change stint driver
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/set-driver", methods=["POST"])
+@rate_limit(tier="write")
+def set_driver_endpoint(race_id: int):
+    """Change the driver for a stint and re-cascade."""
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    driver_id = data.get("driver_id")
+    if stint_order is None or driver_id is None:
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and driver_id are required", status=400)
+    try:
+        conn = get_pg_connection()
+        result = set_stint_driver(conn, race_id, int(stint_order), int(driver_id))
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Failed — race or stint not found", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("set_driver failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"set_driver: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/set-duration — change stint duration
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/set-duration", methods=["POST"])
+@rate_limit(tier="write")
+def set_duration_endpoint(race_id: int):
+    """Change the planned duration for a stint and rebuild timeline."""
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    duration_s = data.get("duration_s")
+    if stint_order is None or duration_s is None:
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and duration_s are required", status=400)
+    if int(duration_s) < 0:
+        return api_error(ErrorCode.VALIDATION_ERROR, "duration_s must be non-negative", status=400)
+    try:
+        conn = get_pg_connection()
+        result = set_stint_duration(conn, race_id, int(stint_order), int(duration_s))
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Failed — race or stint not found", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("set_duration failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"set_duration: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/pause — start neutralization (pause race)
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/pause", methods=["POST"])
+@rate_limit(tier="write")
+def pause_race_endpoint(race_id: int):
+    """Pause the race — freezes the clock entirely."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy import get_race
+        from datetime import datetime, timezone
+        race = get_race(conn, race_id)
+        if not race:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        if race.get("paused_at_ts"):
+            return api_response({"ok": True, "paused": True})  # already paused
+        now_iso = datetime.now(timezone.utc).isoformat()
+        conn.execute(
+            "UPDATE race_configs SET paused_at_ts = ? WHERE race_id = ?",
+            (now_iso, race_id),
+        )
+        conn.commit()
+        return api_response({"ok": True, "paused": True})
+    except Exception as exc:
+        logger.exception("pause failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"pause: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/resume — end neutralization (resume race)
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/resume", methods=["POST"])
+@rate_limit(tier="write")
+def resume_race_endpoint(race_id: int):
+    """Resume the race — unfreezes the clock and accumulates paused time."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy import get_race
+        from datetime import datetime, timezone
+        race = get_race(conn, race_id)
+        if not race:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        paused_at = race.get("paused_at_ts")
+        if not paused_at:
+            return api_response({"ok": True, "paused": False})
+        try:
+            pause_start = datetime.fromisoformat(paused_at.replace("Z", "+00:00"))
+            if pause_start.tzinfo is None:
+                pause_start = pause_start.replace(tzinfo=timezone.utc)
+            pause_duration = max(0, int((datetime.now(timezone.utc) - pause_start).total_seconds()))
+        except Exception:
+            pause_duration = 0
+        total_paused = (race.get("total_paused_s") or 0) + pause_duration
+        conn.execute(
+            "UPDATE race_configs SET paused_at_ts = NULL, total_paused_s = ? WHERE race_id = ?",
+            (total_paused, race_id),
+        )
+        conn.commit()
+        return api_response({"ok": True, "paused": False, "total_paused_s": total_paused})
+    except Exception as exc:
+        logger.exception("resume failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"resume: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/tech-stop-in — car enters tech stop
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/tech-stop-in", methods=["POST"])
+@rate_limit(tier="write")
+def tech_stop_in_endpoint(race_id: int):
+    """Car enters tech stop — does NOT end the active stint."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_tech import tech_stop_in
+        result = tech_stop_in(conn, race_id)
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Race not found or already in pit", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("tech_stop_in failed")
+        return api_error(ErrorCode.INTERNAL_ERROR, f"tech_stop_in: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/tech-stop-out — car exits tech stop
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/tech-stop-out", methods=["POST"])
+@rate_limit(tier="write")
+def tech_stop_out_endpoint(race_id: int):
+    """Car exits tech stop — validates minimum duration, records pit stop."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_tech import tech_stop_out
+        result = tech_stop_out(conn, race_id)
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Race not found or not in tech stop", status=400)
+        if result.get("error") == "too_early":
+            return api_error(ErrorCode.VALIDATION_ERROR, f"Tech stop minimum not reached, {result['remaining_s']}s remaining", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("tech_stop_out failed")
+        return api_error(ErrorCode.INTERNAL_ERROR, f"tech_stop_out: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# GET /<race_id>/planned-vs-actual — planned vs actual comparison
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/planned-vs-actual", methods=["GET"])
+@rate_limit(tier="read")
+def planned_vs_actual_endpoint(race_id: int):
+    """Return planned-vs-actual stint comparison for a retrospective race.
+
+    Returns:
+        200 with comparison dict.
+        404 if race not found.
+    """
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_bridge import get_planned_vs_actual
+        result = get_planned_vs_actual(conn, race_id)
+        if result is None:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("planned_vs_actual failed for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, "Internal server error", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/penalty — add a penalty
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/penalty", methods=["POST"])
+@rate_limit(tier="write")
+def add_penalty_endpoint(race_id: int):
+    """Add a penalty to a race (passage, time, laps deducted)."""
+    data = request.get_json(silent=True) or {}
+    penalty_type = data.get("penalty_type")
+    if not penalty_type:
+        return api_error(ErrorCode.VALIDATION_ERROR, "penalty_type is required", status=400)
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_penalty import add_penalty
+        result = add_penalty(
+            conn, race_id,
+            penalty_type=penalty_type,
+            laps_deducted=data.get("laps_deducted", 0),
+            reason=data.get("reason"),
+            passage_duration_s=data.get("passage_duration_s"),
+        )
+        if result is None:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("add_penalty failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"add_penalty: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/penalty/<penalty_id>/clear — clear a penalty
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/penalty/<int:penalty_id>/clear", methods=["POST"])
+@rate_limit(tier="write")
+def clear_penalty_endpoint(race_id: int, penalty_id: int):
+    """Mark a penalty as cleared (e.g. passage served)."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_penalty import clear_penalty
+        result = clear_penalty(conn, race_id, penalty_id)
+        if result is None:
+            return api_error(ErrorCode.NOT_FOUND, "Penalty not found", status=404)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("clear_penalty failed for race_id=%s penalty_id=%s", race_id, penalty_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"clear_penalty: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# GET /<race_id>/penalties — list all penalties for a race
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/penalties", methods=["GET"])
+@rate_limit(tier="read")
+def get_penalties_endpoint(race_id: int):
+    """Return all penalties for a race."""
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_penalty import get_penalties
+        penalties = get_penalties(conn, race_id)
+        return api_response({"penalties": penalties})
+    except Exception as exc:
+        logger.exception("get_penalties failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"get_penalties: {type(exc).__name__}: {exc}", status=500)

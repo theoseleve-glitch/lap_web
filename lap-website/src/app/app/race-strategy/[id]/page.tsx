@@ -1,9 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { api, BACKEND_URL } from '@/lib/api-client';
+import { api } from '@/lib/api-client';
 import { SkeletonBox, SkeletonTableRows } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { StintTimeline } from '@/components/app/race-strategy/StintTimeline';
@@ -56,6 +57,8 @@ interface Stint {
   fuel_at_start: number | null;
   fuel_at_end: number | null;
   ballast_kg: number | null;
+  estimated_laps: number | null;
+  pit_at_lap: number | null;
   status: 'planned' | 'active' | 'completed' | 'skipped';
 }
 
@@ -140,13 +143,31 @@ export default function RaceDetailPage() {
     },
   });
 
-  const duplicateMut = useMutation({
-    mutationFn: () => api.post<{ race_id: number }>(`/race-strategy/${raceId}/duplicate`),
-    onSuccess: (res) => {
-      qc.invalidateQueries({ queryKey: ['race-strategy'] });
-      router.push(`/app/race-strategy/${res.race_id}`);
-    },
+  const setDriverMut = useMutation({
+    mutationFn: (vars: { stint_order: number; driver_id: number }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/set-driver`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
   });
+
+  const setDurationMut = useMutation({
+    mutationFn: (vars: { stint_order: number; duration_s: number }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/set-duration`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
+  });
+
+  const toggleFuelMut = useMutation({
+    mutationFn: (vars: { stint_order: number }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/toggle-fuel`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
+  });
+
+  const setPitTypeMut = useMutation({
+    mutationFn: (vars: { stint_order: number; pit_type: string }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/set-pit-type`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
+  });
+
+  const [showGoLiveConfirm, setShowGoLiveConfirm] = useState(false);
 
   const del = useEntityDelete({
     entity: 'race-strategy',
@@ -235,31 +256,26 @@ export default function RaceDetailPage() {
             {optimizeMut.isPending ? 'Optimizing...' : 'Optimize'}
           </button>
         )}
-        {race.status === 'ready' && (
-          canUseFeature('race_strategy_full') ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (window.confirm('Start the race? This will set the timer running.')) {
-                  goLiveMut.mutate();
-                }
-              }}
-              disabled={goLiveMut.isPending}
-              className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
-            >
-              {goLiveMut.isPending ? 'Going Live...' : 'Go Live'}
+        {race.status === 'ready' && !showGoLiveConfirm && (
+          <button
+            type="button"
+            onClick={() => setShowGoLiveConfirm(true)}
+            disabled={goLiveMut.isPending}
+            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+          >
+            Go Live
+          </button>
+        )}
+        {showGoLiveConfirm && (
+          <div className="flex items-center gap-2 bg-pit-orange/10 border border-pit-orange/30 rounded-lg px-4 py-2">
+            <span className="text-chalk font-body text-sm">Start the race? Timer will begin.</span>
+            <button type="button" onClick={() => { goLiveMut.mutate(); setShowGoLiveConfirm(false); }} disabled={goLiveMut.isPending} className="px-3 py-1 bg-pit-orange text-asphalt font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50">
+              {goLiveMut.isPending ? 'Starting...' : 'Confirm'}
             </button>
-          ) : (
-            <div className="relative group inline-block">
-              <button type="button" disabled className="px-4 py-2 bg-steel/30 text-steel font-telemetry text-sm rounded cursor-not-allowed">
-                Go Live
-              </button>
-              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block
-                bg-concrete border border-steel/30 rounded px-3 py-1.5 text-xs text-steel whitespace-nowrap z-10">
-                Upgrade to Racer for Live Dashboard
-              </div>
-            </div>
-          )
+            <button type="button" onClick={() => setShowGoLiveConfirm(false)} className="px-3 py-1 border border-steel/30 text-steel font-telemetry text-xs uppercase hover:text-chalk transition-colors">
+              Cancel
+            </button>
+          </div>
         )}
         {editable && (
           <Link
@@ -269,21 +285,8 @@ export default function RaceDetailPage() {
             Edit
           </Link>
         )}
-        <a
-          href={`${BACKEND_URL}/api/v1/race-strategy/${raceId}/export`}
-          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors"
-          download
-        >
-          Export
-        </a>
-        <button
-          type="button"
-          onClick={() => duplicateMut.mutate()}
-          disabled={duplicateMut.isPending}
-          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors disabled:opacity-50"
-        >
-          {duplicateMut.isPending ? 'Duplicating...' : 'Duplicate'}
-        </button>
+
+
         <button
           type="button"
           onClick={del.requestDelete}
@@ -295,12 +298,12 @@ export default function RaceDetailPage() {
       </div>
 
       {/* Mutation errors */}
-      {(optimizeMut.error || goLiveMut.error || duplicateMut.error) && (
+      {(optimizeMut.error || goLiveMut.error) && (
         <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mt-4">
           <p className="text-safety-red font-telemetry text-xs">
-            {((optimizeMut.error || goLiveMut.error || duplicateMut.error) as Error).message || 'Action failed'}
+            {((optimizeMut.error || goLiveMut.error) as Error).message || 'Action failed'}
           </p>
-          <button type="button" onClick={() => { optimizeMut.reset(); goLiveMut.reset(); duplicateMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+          <button type="button" onClick={() => { optimizeMut.reset(); goLiveMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
         </div>
       )}
 
@@ -343,10 +346,7 @@ export default function RaceDetailPage() {
               <span className="text-steel">Min Total</span>
               <span className="text-chalk">{race.min_total_kart_kg != null ? `${race.min_total_kart_kg} kg` : '\u2014'}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-steel">Reference</span>
-              <span className="text-chalk">{race.reference_weight_kg != null ? `${race.reference_weight_kg} kg` : '\u2014'}</span>
-            </div>
+
           </div>
         </div>
         {/* Fuel */}
@@ -421,6 +421,61 @@ export default function RaceDetailPage() {
         <StintTimeline stints={stints} totalDuration={race.race_duration_s} driverColors={driverColors} />
       </div>
 
+      {/* Driver Summary */}
+      {stints.length > 0 && (
+        <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+          <div className="px-4 py-3 border-b border-steel/20">
+            <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Driver Summary</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-steel/20">
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Stints</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Time</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Share</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Est. Laps</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Avg Stint</th>
+                </tr>
+              </thead>
+              <tbody>
+                {drivers.map((d) => {
+                  const dStints = stints.filter((s) => s.driver_id === d.id);
+                  const totalDrive = dStints.reduce((sum, s) => sum + (s.actual_duration_s ?? s.planned_duration_s ?? 0), 0);
+                  const totalAllDrivers = stints.reduce((sum, s) => sum + (s.actual_duration_s ?? s.planned_duration_s ?? 0), 0);
+                  const share = totalAllDrivers > 0 ? (totalDrive / totalAllDrivers) * 100 : 0;
+                  const estLaps = dStints.reduce((sum, s) => sum + (s.estimated_laps ?? 0), 0);
+                  const avgStint = dStints.length > 0 ? totalDrive / dStints.length : 0;
+                  return (
+                    <tr key={d.id} className="border-b border-steel/10">
+                      <td className="px-4 py-3 text-chalk font-body text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: driverColors[d.id] }} />
+                          {d.driver_name}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{dStints.length}</td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{formatTime(totalDrive)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 bg-asphalt rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${share}%`, backgroundColor: driverColors[d.id] }} />
+                          </div>
+                          <span className="text-chalk font-telemetry text-sm w-10 text-right">{share.toFixed(0)}%</span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{estLaps || '\u2014'}</td>
+                      <td className="px-4 py-3 text-steel font-telemetry text-sm text-right">{formatTime(Math.round(avgStint))}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Stint Table */}
       <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
         <div className="px-4 py-3 border-b border-steel/20">
@@ -438,23 +493,37 @@ export default function RaceDetailPage() {
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel Start</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Fuel End</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Ballast</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Laps</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Pit Lap</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
               </tr>
             </thead>
             <tbody>
               {stints.map((s) => {
                 const sCfg = stintStatusConfig[s.status] || stintStatusConfig.planned;
+                const dur = s.actual_duration_s ?? s.planned_duration_s ?? 0;
+                const durMm = Math.floor(dur / 60);
+                const durSs = dur % 60;
                 return (
                   <tr key={s.stint_id} className="border-b border-steel/10">
                     <td className="px-4 py-3 text-chalk font-body text-sm">{s.stint_order}</td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className="w-3 h-3 rounded-full shrink-0"
-                          style={{ backgroundColor: driverColors[s.driver_id] }}
-                        />
-                        {s.driver_name}
-                      </div>
+                      {editable ? (
+                        <select
+                          value={s.driver_id}
+                          onChange={(e) => setDriverMut.mutate({ stint_order: s.stint_order, driver_id: Number(e.target.value) })}
+                          className="bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-sm font-body"
+                        >
+                          {drivers.map((d) => (
+                            <option key={d.id} value={d.id}>{d.driver_name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: driverColors[s.driver_id] }} />
+                          {s.driver_name}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       {formatTime(s.actual_start_s ?? s.planned_start_s)}
@@ -463,7 +532,23 @@ export default function RaceDetailPage() {
                       {formatTime(s.actual_end_s ?? s.planned_end_s)}
                     </td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
-                      {formatTime(s.actual_duration_s ?? s.planned_duration_s)}
+                      {editable ? (
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            defaultValue={durMm}
+                            min={0}
+                            onBlur={(e) => {
+                              const newDur = Number(e.target.value) * 60 + durSs;
+                              if (newDur !== dur) setDurationMut.mutate({ stint_order: s.stint_order, duration_s: newDur });
+                            }}
+                            className="w-14 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-sm font-telemetry text-right"
+                          />
+                          <span className="text-steel text-xs">min</span>
+                        </div>
+                      ) : (
+                        formatTime(dur)
+                      )}
                     </td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       {s.fuel_at_start != null ? `${s.fuel_at_start.toFixed(1)} kg` : '\u2014'}
@@ -473,6 +558,12 @@ export default function RaceDetailPage() {
                     </td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       {s.ballast_kg != null ? `${s.ballast_kg} kg` : '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-telemetry text-sm">
+                      {s.estimated_laps ?? '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 font-telemetry text-sm text-pit-orange">
+                      {s.pit_at_lap ?? '\u2014'}
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -486,7 +577,7 @@ export default function RaceDetailPage() {
               })}
               {stints.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-4 py-6 text-center text-steel font-body text-sm">
+                  <td colSpan={11} className="px-4 py-6 text-center text-steel font-body text-sm">
                     No stints planned yet. Run Optimize to generate a plan.
                   </td>
                 </tr>
@@ -524,11 +615,40 @@ export default function RaceDetailPage() {
                     <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(p.actual_at_s)}</td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">{formatTime(p.duration_s)}</td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">{p.driver_change ? 'Yes' : 'No'}</td>
-                    <td className="px-4 py-3 text-chalk font-body text-sm">{p.refueled ? 'Yes' : 'No'}</td>
+                    <td className="px-4 py-3">
+                      {editable ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleFuelMut.mutate({ stint_order: i + 2 })}
+                          className={`px-2 py-0.5 text-[10px] font-telemetry tracking-wider uppercase border rounded transition-colors ${
+                            p.refueled
+                              ? 'text-acid-green bg-acid-green/10 border-acid-green/30 hover:bg-acid-green/20'
+                              : 'text-steel bg-steel/10 border-steel/30 hover:bg-steel/20'
+                          }`}
+                        >
+                          {p.refueled ? 'Yes' : 'No'}
+                        </button>
+                      ) : (
+                        <span className="text-chalk font-body text-sm">{p.refueled ? 'Yes' : 'No'}</span>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       {p.fuel_added_kg != null ? `${p.fuel_added_kg.toFixed(1)} kg` : '\u2014'}
                     </td>
-                    <td className="px-4 py-3 text-chalk font-body text-sm">{p.pit_type || '\u2014'}</td>
+                    <td className="px-4 py-3">
+                      {editable ? (
+                        <select
+                          value={p.pit_type || 'full'}
+                          onChange={(e) => setPitTypeMut.mutate({ stint_order: i + 2, pit_type: e.target.value })}
+                          className="bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-xs font-telemetry"
+                        >
+                          <option value="full">Full</option>
+                          <option value="quick">Quick</option>
+                        </select>
+                      ) : (
+                        <span className="text-chalk font-body text-sm">{p.pit_type || '\u2014'}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

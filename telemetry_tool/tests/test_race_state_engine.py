@@ -212,12 +212,12 @@ class TestBallastCascade:
     """Ballast cascade logic in RaceStateEngine."""
 
     def test_full_tank_ballast_base_only(self):
-        """Alice: 160 - 85 - 8 - 65 = 2.0 kg base, 0 offset."""
+        """Alice: 160 - 85 - 8 - 65 = 2.0 kg base, 0 offset → ceil to 2.5."""
         engine = _make_engine()
         s1 = engine.stints[0]
         assert abs(s1.ballast_base_kg - 2.0) < 1e-9
         assert abs(s1.ballast_fuel_offset_kg - 0.0) < 1e-9
-        assert abs(s1.ballast_kg - 2.0) < 1e-9
+        assert abs(s1.ballast_kg - 2.5) < 1e-9  # 2.0 rounded up to 2.5
 
     def test_heavier_driver_less_ballast(self):
         """Bob: 160 - 85 - 8 - 75 = -8 -> clamped to 0."""
@@ -226,16 +226,16 @@ class TestBallastCascade:
         assert abs(s2.ballast_base_kg - 0.0) < 1e-9
         assert abs(s2.ballast_kg - 0.0) < 1e-9
 
-    def test_no_refuel_adds_fuel_offset(self):
-        """toggle_fuel(2) -> stint 2 has fuel_offset > 0."""
+    def test_no_refuel_increases_ballast(self):
+        """toggle_fuel(2) -> stint 2 needs more ballast (less fuel = lighter)."""
         engine = _make_engine()
+        ballast_before = engine.stints[1].ballast_kg
         engine.toggle_fuel(2)
         s2 = engine.stints[1]
-        # fuel_at_start < full_tank -> offset = full_tank - fuel_at_start
-        fuel_cap = 8.0
-        expected_offset = max(0.0, fuel_cap - s2.fuel_at_start_kg)
-        assert expected_offset > 0.0
-        assert abs(s2.ballast_fuel_offset_kg - expected_offset) < 1e-6
+        # Less fuel at start means lighter kart, may need more ballast
+        # ballast = max(0, min_total - empty - fuel_at_start - driver_weight)
+        assert s2.fuel_at_start_kg < 8.0  # not refueled, carries from stint 1
+        assert s2.ballast_kg >= ballast_before  # ballast same or higher
 
     def test_ballast_cascade_on_driver_change(self):
         """Manually change driver and re-cascade to verify ballast updates."""

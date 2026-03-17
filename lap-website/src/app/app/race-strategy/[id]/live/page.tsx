@@ -26,6 +26,8 @@ interface RaceConfig {
   reference_weight_kg: number | null;
   status: 'draft' | 'ready' | 'live' | 'finished';
   race_start_ts: string | null;
+  paused_at_ts: string | null;
+  total_paused_s: number;
   created_at: string;
 }
 
@@ -38,6 +40,9 @@ interface Driver {
   color_hex: string | null;
   min_stint_s: number | null;
   max_stint_s: number | null;
+  min_cumulative_s: number | null;
+  max_cumulative_s: number | null;
+  avg_lap_time_s: number | null;
 }
 
 interface Stint {
@@ -54,7 +59,20 @@ interface Stint {
   fuel_at_start: number | null;
   fuel_at_end: number | null;
   ballast_kg: number | null;
+  actual_laps: number | null;
   status: 'planned' | 'active' | 'completed' | 'skipped';
+}
+
+interface Penalty {
+  id: number;
+  stint_order: number | null;
+  elapsed_s: number;
+  penalty_type: string;
+  laps_deducted: number;
+  passage_duration_s: number | null;
+  reason: string | null;
+  cleared: boolean;
+  cleared_at_s: number | null;
 }
 
 interface LiveState {
@@ -66,6 +84,8 @@ interface LiveState {
   messages: Array<Record<string, unknown>>;
   active_stint: Stint | null;
   next_stint: Stint | null;
+  in_pit: boolean;
+  pit_elapsed_s: number;
   driver_cumulative: Record<number, number>;
   current_fuel_kg?: number;
   current_ballast?: Record<string, unknown>;
@@ -97,6 +117,9 @@ interface LiveState {
     label?: string;
     next_sleep_s?: number;
   }>;
+  penalties?: Penalty[];
+  active_passage?: { id: number; passage_duration_s: number } | null;
+  total_penalty_laps?: number;
 }
 
 /* ── helpers ──────────────────────────────────────────────────────── */
@@ -141,13 +164,6 @@ export default function LiveDashboardPage() {
   const qc = useQueryClient();
   const raceId = params.id as string;
 
-  /* client-side clock for elapsed/remaining */
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const interval = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
   /* poll live state every 2s */
   const { data: state, isLoading, error } = useQuery({
     queryKey: ['race-strategy', raceId, 'state'],
@@ -157,8 +173,13 @@ export default function LiveDashboardPage() {
 
   /* ── mutations ──────────────────────────────────────────────────── */
 
-  const endStintMut = useMutation({
-    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/end-stint`),
+  const pitInMut = useMutation({
+    mutationFn: (vars?: { actual_laps?: number }) => api.post<unknown>(`/race-strategy/${raceId}/pit-in`, vars ?? {}),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  const pitOutMut = useMutation({
+    mutationFn: (vars?: { kart_number?: string }) => api.post<unknown>(`/race-strategy/${raceId}/pit-out`, vars ?? {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
   });
 
@@ -181,7 +202,72 @@ export default function LiveDashboardPage() {
     },
   });
 
+  const pauseMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/pause`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  const resumeMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/resume`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  /* ── tech stop mutations ─────────────────────────────────────────── */
+
+  const techStopInMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/tech-stop-in`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  const techStopOutMut = useMutation({
+    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/tech-stop-out`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  /* ── penalty mutations ───────────────────────────────────────────── */
+
+  const addPenaltyMut = useMutation({
+    mutationFn: (vars: { penalty_type: string; laps_deducted: number; reason: string; passage_duration_s?: number }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/penalty`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  const clearPenaltyMut = useMutation({
+    mutationFn: (penaltyId: number) =>
+      api.post<unknown>(`/race-strategy/${raceId}/penalty/${penaltyId}/clear`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
+  /* client-side clock — stops ticking when paused */
+  const [now, setNow] = useState(Date.now());
+  const paused = !!(state?.race?.paused_at_ts);
+  useEffect(() => {
+    if (paused) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [paused]);
+
   const [showSleepWarning, setShowSleepWarning] = useState(false);
+  const [showPitInForm, setShowPitInForm] = useState(false);
+  const [pitInLaps, setPitInLaps] = useState('');
+  const [showFinishConfirm, setShowFinishConfirm] = useState(false);
+
+  // Tech stop local tracking
+  const [isTechStop, setIsTechStop] = useState(false);
+
+  // Quick change kart number
+  const [kartNumber, setKartNumber] = useState('');
+
+  // Penalty form
+  const [showPenaltyForm, setShowPenaltyForm] = useState(false);
+  const [penaltyType, setPenaltyType] = useState('lap_deduction');
+  const [penaltyReason, setPenaltyReason] = useState('');
+  const [penaltyLaps, setPenaltyLaps] = useState('1');
+  const [penaltyPassageDuration, setPenaltyPassageDuration] = useState('150');
+
+  // Collapsible sections
+  const [showKartHistory, setShowKartHistory] = useState(false);
+  const [showPenaltyLog, setShowPenaltyLog] = useState(false);
 
   /* ── loading / error ────────────────────────────────────────────── */
 
@@ -215,9 +301,45 @@ export default function LiveDashboardPage() {
 
   /* timer computations */
   const raceStartMs = race.race_start_ts ? new Date(race.race_start_ts).getTime() : 0;
-  const elapsed = raceStartMs ? Math.max(0, Math.floor((now - raceStartMs) / 1000)) : 0;
+  const totalPausedS = race.total_paused_s || 0;
+  const isPaused = !!race.paused_at_ts;
+  const elapsed = (() => {
+    if (!raceStartMs) return 0;
+    if (isPaused && race.paused_at_ts) {
+      const pausedAtMs = new Date(race.paused_at_ts).getTime();
+      return Math.max(0, Math.floor((pausedAtMs - raceStartMs) / 1000) - totalPausedS);
+    }
+    return Math.max(0, Math.floor((now - raceStartMs) / 1000) - totalPausedS);
+  })();
   const remaining = Math.max(0, race.race_duration_s - elapsed);
+
+  // Helper: estimate laps for a stint based on driver avg lap time
+  function estLaps(s: Stint): number | null {
+    if (s.actual_laps != null) return s.actual_laps;
+    const d = drivers.find((dr) => dr.id === s.driver_id);
+    const avg = d?.avg_lap_time_s;
+    if (!avg || avg <= 0) return null;
+    const dur = s.actual_duration_s ?? s.planned_duration_s ?? 0;
+    return Math.floor(dur / avg);
+  }
+
+  // Cumulative actual laps up to (and including) a stint order
+  function cumulativeLaps(upTo: number): number {
+    return stints
+      .filter((s) => s.stint_order <= upTo)
+      .reduce((sum, s) => sum + (estLaps(s) ?? 0), 0);
+  }
   const progress = race.race_duration_s ? Math.min(1, elapsed / race.race_duration_s) : 0;
+
+  /* blackout window detection */
+  const blackoutStartS = (race as Record<string, unknown>).blackout_start_min ? Number((race as Record<string, unknown>).blackout_start_min) * 60 : 0;
+  const blackoutEndS = (race as Record<string, unknown>).blackout_end_min ? Number((race as Record<string, unknown>).blackout_end_min) * 60 : 0;
+  const inBlackoutStart = blackoutStartS > 0 && elapsed < blackoutStartS;
+  const inBlackoutEnd = blackoutEndS > 0 && elapsed > (race.race_duration_s - blackoutEndS);
+  const inBlackout = inBlackoutStart || inBlackoutEnd;
+
+  /* quick change enabled */
+  const quickChangeEnabled = !!(race as Record<string, unknown>).quick_change_enabled;
 
   /* progress bar color */
   const progressColor =
@@ -225,11 +347,11 @@ export default function LiveDashboardPage() {
 
   /* fuel info */
   const fuelModel = state.fuel_model as
-    | { burn_rate_kg_s?: number; estimated_autonomy_s?: number }
+    | { burn_rate_kgs?: number; fuel_autonomy_s?: number; full_tank_kg?: number }
     | undefined;
   const fuelKg = state.current_fuel_kg;
-  const burnRate = fuelModel?.burn_rate_kg_s;
-  const fuelAutonomy = fuelModel?.estimated_autonomy_s;
+  const burnRate = fuelModel?.burn_rate_kgs;
+  const fuelAutonomy = fuelModel?.fuel_autonomy_s;
 
   /* active / next stint info */
   const activeStint = state.active_stint;
@@ -248,14 +370,266 @@ export default function LiveDashboardPage() {
             <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border text-acid-green bg-acid-green/10 border-acid-green/30 animate-pulse">
               LIVE
             </span>
-            {state.is_neutralized && (
+            {race.paused_at_ts && (
               <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30 animate-pulse">
-                NEUTRALIZED
+                PAUSED
               </span>
             )}
           </div>
         }
       />
+
+      {/* Blackout Warning */}
+      {inBlackout && (
+        <div className="bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 text-safety-red font-telemetry text-xs uppercase tracking-wider animate-pulse">
+          Blackout period — 20-lap penalty if you pit now
+          {inBlackoutStart && ` (${formatTime(blackoutStartS - elapsed)} until open)`}
+          {inBlackoutEnd && ` (race ends in ${formatTime(race.race_duration_s - elapsed)})`}
+        </div>
+      )}
+
+      {/* Active Penalty Passage Banner */}
+      {state.active_passage && (
+        <div className="bg-safety-red/10 border-2 border-safety-red/30 rounded-lg px-4 py-3 animate-pulse">
+          <div className="flex items-center justify-between">
+            <span className="text-safety-red font-telemetry text-sm uppercase">
+              PENALTY: {state.active_passage.passage_duration_s}s passage required
+            </span>
+            <button
+              type="button"
+              onClick={() => clearPenaltyMut.mutate(state.active_passage!.id)}
+              disabled={clearPenaltyMut.isPending}
+              className="px-3 py-1 bg-safety-red/20 text-safety-red border border-safety-red/30 text-xs font-telemetry uppercase hover:bg-safety-red/30 transition-colors disabled:opacity-50"
+            >
+              Mark Served
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Action Buttons */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Link
+          href={`/app/race-strategy/${raceId}`}
+          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors"
+        >
+          View Config
+        </Link>
+        {state.in_pit ? (
+          isTechStop ? (
+            <div className="flex items-center gap-3 bg-marshal-yellow/10 border border-marshal-yellow/30 rounded-lg px-4 py-3">
+              <div className="flex-1">
+                <p className="text-marshal-yellow font-telemetry text-sm uppercase tracking-wider">Tech Stop</p>
+                <p className="text-steel font-body text-xs mt-0.5">No driver change. No refueling.</p>
+                <p className="text-chalk font-monument text-2xl tabular-nums mt-1">{formatTimeLarge(state.pit_elapsed_s)}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { techStopOutMut.mutate(); setIsTechStop(false); }}
+                disabled={techStopOutMut.isPending}
+                className="px-5 py-2.5 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+              >
+                {techStopOutMut.isPending ? 'Resuming...' : 'Resume'}
+              </button>
+            </div>
+          ) : quickChangeEnabled ? (
+            <div className="flex items-center gap-2 bg-acid-green/10 border border-acid-green/30 rounded-lg px-4 py-2">
+              <span className="text-chalk font-body text-sm">Kart #:</span>
+              <input
+                type="text"
+                value={kartNumber}
+                onChange={(e) => setKartNumber(e.target.value)}
+                placeholder="e.g. 42"
+                className="w-20 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-sm font-telemetry"
+              />
+              <button
+                type="button"
+                onClick={() => { pitOutMut.mutate(kartNumber ? { kart_number: kartNumber } : undefined); setKartNumber(''); }}
+                disabled={pitOutMut.isPending}
+                className="px-5 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50 animate-pulse"
+              >
+                {pitOutMut.isPending ? 'Sending Out...' : 'Pit Out'}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => pitOutMut.mutate()}
+              disabled={pitOutMut.isPending}
+              className="px-5 py-2.5 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50 animate-pulse"
+            >
+              {pitOutMut.isPending ? 'Sending Out...' : 'Pit Out'}
+            </button>
+          )
+        ) : showPitInForm ? (
+          <div className="flex items-center gap-2 bg-pit-orange/10 border border-pit-orange/30 rounded-lg px-4 py-2">
+            <span className="text-chalk font-body text-sm">Total laps:</span>
+            <input
+              type="number"
+              value={pitInLaps}
+              onChange={(e) => setPitInLaps(e.target.value)}
+              placeholder="e.g. 32"
+              className="w-20 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-sm font-telemetry"
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const laps = pitInLaps.trim() ? parseInt(pitInLaps.trim(), 10) : undefined;
+                pitInMut.mutate(laps != null && !isNaN(laps) ? { actual_laps: laps } : undefined);
+                setShowPitInForm(false);
+                setPitInLaps('');
+              }}
+              disabled={pitInMut.isPending}
+              className="px-3 py-1 bg-pit-orange text-asphalt font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            >
+              {pitInMut.isPending ? 'Pitting...' : 'Confirm Pit In'}
+            </button>
+            <button type="button" onClick={() => { setShowPitInForm(false); setPitInLaps(''); }} className="px-3 py-1 border border-steel/30 text-steel font-telemetry text-xs uppercase hover:text-chalk transition-colors">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowPitInForm(true)}
+            disabled={pitInMut.isPending || !activeStint}
+            className="px-5 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+          >
+            Pit In
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => reoptimizeMut.mutate()}
+          disabled={reoptimizeMut.isPending}
+          className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
+        >
+          {reoptimizeMut.isPending ? 'Re-Optimizing...' : 'Re-Optimize'}
+        </button>
+        {race.paused_at_ts ? (
+          <button
+            type="button"
+            onClick={() => resumeMut.mutate()}
+            disabled={resumeMut.isPending}
+            className="px-4 py-2 bg-acid-green text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-acid-green/80 transition-colors disabled:opacity-50 animate-pulse"
+          >
+            {resumeMut.isPending ? 'Resuming...' : 'Resume'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => pauseMut.mutate()}
+            disabled={pauseMut.isPending}
+            className="px-4 py-2 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+          >
+            {pauseMut.isPending ? 'Pausing...' : 'Pause'}
+          </button>
+        )}
+        {/* Tech Stop Button */}
+        {!state.in_pit && (race as Record<string, unknown>).tech_stop_enabled && (
+          <button
+            type="button"
+            onClick={() => { techStopInMut.mutate(); setIsTechStop(true); }}
+            disabled={techStopInMut.isPending}
+            className="px-4 py-2 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+          >
+            {techStopInMut.isPending ? 'Stopping...' : 'Tech Stop'}
+          </button>
+        )}
+        {/* Penalty Button / Form */}
+        {showPenaltyForm ? (
+          <div className="flex items-center gap-2 bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 flex-wrap">
+            <select
+              value={penaltyType}
+              onChange={(e) => setPenaltyType(e.target.value)}
+              className="bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-xs font-telemetry"
+            >
+              <option value="lap_deduction">Lap deduction</option>
+              <option value="pit_passage">Pit passage</option>
+              <option value="driver_exclusion">Driver exclusion</option>
+            </select>
+            <input
+              type="text"
+              value={penaltyReason}
+              onChange={(e) => setPenaltyReason(e.target.value)}
+              placeholder="Reason"
+              className="w-32 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-xs font-telemetry"
+            />
+            <input
+              type="number"
+              value={penaltyLaps}
+              onChange={(e) => setPenaltyLaps(e.target.value)}
+              placeholder="Laps"
+              className="w-16 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-xs font-telemetry"
+              min="0"
+            />
+            {penaltyType === 'pit_passage' && (
+              <input
+                type="number"
+                value={penaltyPassageDuration}
+                onChange={(e) => setPenaltyPassageDuration(e.target.value)}
+                placeholder="Duration (s)"
+                className="w-24 bg-asphalt border border-steel/20 rounded px-2 py-1 text-chalk text-xs font-telemetry"
+                min="0"
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                addPenaltyMut.mutate({
+                  penalty_type: penaltyType,
+                  laps_deducted: parseInt(penaltyLaps) || 0,
+                  reason: penaltyReason,
+                  ...(penaltyType === 'pit_passage' ? { passage_duration_s: parseInt(penaltyPassageDuration) || 150 } : {}),
+                });
+                setShowPenaltyForm(false);
+                setPenaltyReason('');
+                setPenaltyLaps('1');
+              }}
+              disabled={addPenaltyMut.isPending}
+              className="px-3 py-1 bg-safety-red text-white font-telemetry text-xs uppercase hover:bg-safety-red/80 transition-colors disabled:opacity-50"
+            >
+              {addPenaltyMut.isPending ? 'Adding...' : 'Confirm'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPenaltyForm(false)}
+              className="px-3 py-1 border border-steel/30 text-steel font-telemetry text-xs uppercase hover:text-chalk transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowPenaltyForm(true)}
+            className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors"
+          >
+            Penalty
+          </button>
+        )}
+        {showFinishConfirm ? (
+          <div className="flex items-center gap-2 bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2">
+            <span className="text-chalk font-body text-sm">End the race?</span>
+            <button type="button" onClick={() => { finishMut.mutate(); setShowFinishConfirm(false); }} disabled={finishMut.isPending} className="px-3 py-1 bg-safety-red text-white font-telemetry text-xs uppercase hover:bg-safety-red/80 transition-colors disabled:opacity-50">
+              {finishMut.isPending ? 'Finishing...' : 'Confirm'}
+            </button>
+            <button type="button" onClick={() => setShowFinishConfirm(false)} className="px-3 py-1 border border-steel/30 text-steel font-telemetry text-xs uppercase hover:text-chalk transition-colors">
+              Cancel
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowFinishConfirm(true)}
+            disabled={finishMut.isPending}
+            className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors disabled:opacity-50"
+          >
+            Finish Race
+          </button>
+        )}
+      </div>
 
       {/* Race Timer */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6">
@@ -310,74 +684,108 @@ export default function LiveDashboardPage() {
           </div>
         </div>
 
+        {/* In Pit Panel */}
+        {state.in_pit && nextStint && (
+          <div className="bg-concrete rounded-lg border-2 border-pit-orange p-4 space-y-4 col-span-full">
+            <div className="flex items-center gap-3">
+              <h3 className="font-telemetry text-xs text-pit-orange uppercase tracking-wider animate-pulse">In Pit</h3>
+              <span className="font-monument text-3xl text-pit-orange tabular-nums">{formatTimeLarge(state.pit_elapsed_s)}</span>
+            </div>
+            {(() => {
+              const nextDriver = drivers.find((d) => d.id === nextStint.driver_id);
+              return (
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm font-body">
+                  <div className="text-steel">Next Driver</div>
+                  <div className="text-chalk font-telemetry font-medium">{nextStint.driver_name}</div>
+                  <div className="text-steel">Weight</div>
+                  <div className="text-chalk font-telemetry">{nextDriver?.weight_kg ?? '\u2014'} kg</div>
+                  <div className="text-steel">Ballast</div>
+                  <div className="text-marshal-yellow font-telemetry">{nextStint.ballast_kg ?? 0} kg</div>
+                  <div className="text-steel">Planned Stint</div>
+                  <div className="text-chalk font-telemetry">{formatTime(nextStint.planned_duration_s)}</div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* Current Driver */}
         <div
-          className={`bg-concrete rounded-lg border-2 p-4 space-y-3${activeStint && state?.driver_sleep_status?.[activeStint.driver_id]?.sleeping ? ' opacity-50' : ''}`}
+          className={`bg-concrete rounded-lg border-2 p-4 space-y-4${activeStint && state?.driver_sleep_status?.[activeStint.driver_id]?.sleeping ? ' opacity-50' : ''}`}
           style={{ borderColor: activeStint ? (driverColors[activeStint.driver_id] || '#888') : 'rgba(128,128,128,0.2)' }}
         >
           <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Current Driver</h3>
           {activeStint ? (
-            <>
-              <div className="flex items-center gap-3">
-                <span
-                  className="w-5 h-5 rounded-full shrink-0"
-                  style={{ backgroundColor: driverColors[activeStint.driver_id] }}
-                />
-                <span className="font-monument text-2xl text-chalk">{activeStint.driver_name}</span>
-              </div>
-              {(() => {
-                const driverObj = drivers.find((d) => d.id === activeStint.driver_id);
-                return driverObj?.com_channel ? (
-                  <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-wider uppercase border border-steel/30 text-steel">
-                    COM {driverObj.com_channel}
-                  </span>
-                ) : null;
-              })()}
-              {(() => {
-                const sleepStatus = state?.driver_sleep_status?.[activeStint.driver_id];
-                if (!sleepStatus?.sleeping) return null;
-                return (
-                  <div className="flex items-center gap-2 mt-2 bg-asphalt/40 rounded-lg px-3 py-2">
-                    <span className="text-lg">&#x1F319;</span>
-                    <div className="flex-1">
-                      <span className="text-sm text-steel">
-                        Sleeping until {formatTime(sleepStatus.until_s)}
+            (() => {
+              const driverObj = drivers.find((d) => d.id === activeStint.driver_id);
+              const stintElapsed = activeStint.actual_start_s != null ? Math.max(0, elapsed - activeStint.actual_start_s) : 0;
+              const stintRemaining = Math.max(0, (activeStint.planned_duration_s ?? 0) - stintElapsed);
+              const stintEndEst = new Date(Date.now() + stintRemaining * 1000);
+              const driverTotalDrive = stints
+                .filter((s) => s.driver_id === activeStint.driver_id)
+                .reduce((sum, s) => {
+                  if (s.status === 'completed') return sum + (s.actual_duration_s ?? 0);
+                  if (s.status === 'active' && s.actual_start_s != null) return sum + Math.max(0, elapsed - s.actual_start_s);
+                  return sum;
+                }, 0);
+              const avg = driverObj?.avg_lap_time_s;
+              let pitLap: number | null = null;
+              if (avg && avg > 0 && activeStint.planned_duration_s) {
+                const prevLaps = stints
+                  .filter((s) => s.stint_order < activeStint.stint_order)
+                  .reduce((sum, s) => {
+                    const dr = drivers.find((dd) => dd.id === s.driver_id);
+                    return sum + (dr?.avg_lap_time_s ? Math.floor((s.actual_duration_s ?? s.planned_duration_s ?? 0) / dr.avg_lap_time_s) : 0);
+                  }, 0);
+                pitLap = prevLaps + Math.floor(activeStint.planned_duration_s / avg);
+              }
+              return (
+                <>
+                  <div className="flex items-center gap-3">
+                    <span className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: driverColors[activeStint.driver_id] }} />
+                    <span className="font-monument text-2xl text-chalk">{activeStint.driver_name}</span>
+                    {driverObj?.com_channel && (
+                      <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-wider uppercase border border-steel/30 text-steel">
+                        COM {driverObj.com_channel}
                       </span>
-                      {sleepStatus.remaining_s != null && (
-                        <span className="text-chalk text-sm ml-1">
-                          ({formatTime(sleepStatus.remaining_s)} left)
-                        </span>
-                      )}
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm font-body">
+                    <div className="text-steel">Weight</div>
+                    <div className="text-chalk font-telemetry">{driverObj?.weight_kg ?? '\u2014'} kg</div>
+                    <div className="text-steel">Ballast</div>
+                    <div className="text-marshal-yellow font-telemetry">{activeStint.ballast_kg ?? 0} kg</div>
+                    <div className="text-steel">Stint Elapsed</div>
+                    <div className="text-chalk font-telemetry">{formatTime(stintElapsed)}</div>
+                    <div className="text-steel">Stint Remaining</div>
+                    <div className="text-chalk font-telemetry">{formatTime(stintRemaining)}</div>
+                    <div className="text-steel">Est. Stint End</div>
+                    <div className="text-chalk font-telemetry">{stintEndEst.toLocaleTimeString()}</div>
+                    <div className="text-steel">Driver Total</div>
+                    <div className="text-chalk font-telemetry">{formatTime(Math.round(driverTotalDrive))}</div>
+                    {pitLap != null && (<>
+                      <div className="text-steel">Expected Pit Lap</div>
+                      <div className="text-pit-orange font-telemetry">{pitLap}</div>
+                    </>)}
+                  </div>
+                  {/* stint progress bar */}
+                  {activeStint.planned_duration_s && activeStint.actual_start_s != null && (
+                    <div>
+                      <div className="w-full h-2 bg-asphalt rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-acid-green transition-all duration-1000"
+                          style={{ width: `${Math.min(100, (stintElapsed / activeStint.planned_duration_s) * 100).toFixed(1)}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between mt-1 text-steel font-telemetry text-[10px]">
+                        <span>{formatTime(stintElapsed)}</span>
+                        <span>{formatTime(activeStint.planned_duration_s)}</span>
+                      </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => wakeDriverMut.mutate(activeStint.driver_id)}
-                      disabled={wakeDriverMut.isPending}
-                      className="text-xs bg-acid-green/20 text-acid-green border border-acid-green/30 rounded px-2 py-1 hover:bg-acid-green/30 disabled:opacity-50"
-                    >
-                      Wake
-                    </button>
-                  </div>
-                );
-              })()}
-              {/* stint progress */}
-              {activeStint.planned_duration_s && activeStint.actual_start_s != null && (
-                <div>
-                  <div className="w-full h-2 bg-asphalt rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-acid-green transition-all duration-1000"
-                      style={{
-                        width: `${Math.min(100, ((elapsed - activeStint.actual_start_s) / activeStint.planned_duration_s) * 100).toFixed(1)}%`,
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between mt-1 text-steel font-telemetry text-[10px]">
-                    <span>{formatTime(Math.max(0, elapsed - activeStint.actual_start_s))}</span>
-                    <span>{formatTime(activeStint.planned_duration_s)}</span>
-                  </div>
-                </div>
-              )}
-            </>
+                  )}
+                </>
+              );
+            })()
           ) : (
             <p className="text-steel font-body text-sm">No active stint</p>
           )}
@@ -395,9 +803,24 @@ export default function LiveDashboardPage() {
                 />
                 <span className="font-monument text-lg text-chalk">{nextStint.driver_name}</span>
               </div>
-              <div className="text-sm font-body text-steel">
-                Planned: {formatTime(nextStint.planned_duration_s)}
-              </div>
+              {(() => {
+                const driverObj = drivers.find((d) => d.id === nextStint.driver_id);
+                const pitIdx = stints.findIndex((s) => s.stint_id === nextStint.stint_id);
+                const ps = pitIdx > 0 ? (state.pit_stops as Array<Record<string, unknown>>)?.[pitIdx - 1] : null;
+                const refueled = ps?.refueled;
+                return (
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm font-body">
+                    <div className="text-steel">Planned</div>
+                    <div className="text-chalk font-telemetry">{formatTime(nextStint.planned_duration_s)}</div>
+                    <div className="text-steel">Weight</div>
+                    <div className="text-chalk font-telemetry">{driverObj?.weight_kg ?? '\u2014'} kg</div>
+                    <div className="text-steel">Ballast</div>
+                    <div className="text-marshal-yellow font-telemetry">{nextStint.ballast_kg ?? 0} kg</div>
+                    <div className="text-steel">Refuel</div>
+                    <div className={`font-telemetry ${refueled ? 'text-acid-green' : 'text-steel'}`}>{refueled ? 'Yes' : 'No'}</div>
+                  </div>
+                );
+              })()}
               {(() => {
                 const sleepStatus = state?.driver_sleep_status?.[nextStint.driver_id];
                 if (!sleepStatus?.sleeping) return null;
@@ -443,6 +866,111 @@ export default function LiveDashboardPage() {
         />
       </div>
 
+      {/* Driver Summary */}
+      {stints.length > 0 && (
+        <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+          <div className="px-4 py-3 border-b border-steel/20">
+            <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Driver Summary</h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-steel/20">
+                  <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Stints</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Completed</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Laps</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Time</th>
+                  <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Share</th>
+                  {(state.total_penalty_laps ?? 0) > 0 && (
+                    <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Penalties</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {drivers.map((d) => {
+                  const dStints = stints.filter((s) => s.driver_id === d.id);
+                  const completed = dStints.filter((s) => s.status === 'completed').length;
+                  const active = dStints.find((s) => s.status === 'active');
+                  // Actual driven time only (completed + active elapsed), starts from 0
+                  const actualDrive = dStints.reduce((sum, s) => {
+                    if (s.status === 'completed') return sum + (s.actual_duration_s ?? 0);
+                    if (s.status === 'active' && s.actual_start_s != null) {
+                      return sum + Math.max(0, elapsed - s.actual_start_s);
+                    }
+                    return sum;
+                  }, 0);
+                  // Total actual driven across all drivers (for share calc)
+                  const totalActual = stints.reduce((sum, s) => {
+                    if (s.status === 'completed') return sum + (s.actual_duration_s ?? 0);
+                    if (s.status === 'active' && s.actual_start_s != null) {
+                      return sum + Math.max(0, elapsed - s.actual_start_s);
+                    }
+                    return sum;
+                  }, 0);
+                  const share = totalActual > 0 ? (actualDrive / totalActual) * 100 : 0;
+                  // Red if outside min/max cumulative window
+                  const minCum = d.min_cumulative_s;
+                  const maxCum = d.max_cumulative_s;
+                  const underMin = minCum != null && actualDrive < minCum;
+                  const overMax = maxCum != null && actualDrive > maxCum;
+                  const timeColor = overMax ? 'text-safety-red' : underMin ? 'text-marshal-yellow' : 'text-chalk';
+                  return (
+                    <tr key={d.id} className="border-b border-steel/10">
+                      <td className="px-4 py-3 text-chalk font-body text-sm">
+                        <div className="flex items-center gap-2">
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: driverColors[d.id] }} />
+                          {d.driver_name}
+                          {active && <span className="text-[10px] font-telemetry text-acid-green animate-pulse ml-1">LIVE</span>}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{dStints.length}</td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{completed}{active ? '+1' : ''}</td>
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">
+                        {dStints.reduce((sum, s) => sum + (estLaps(s) ?? 0), 0) || '\u2014'}
+                      </td>
+                      <td className={`px-4 py-3 font-telemetry text-sm text-right ${timeColor}`}>
+                        {formatTime(Math.round(actualDrive))}
+                        {(minCum || maxCum) && (
+                          <span className="text-steel/40 text-[10px] ml-1">
+                            ({minCum ? formatTime(minCum) : '0'}-{maxCum ? formatTime(maxCum) : '\u221E'})
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <div className="w-16 h-1.5 bg-asphalt rounded-full overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${Math.min(100, share)}%`, backgroundColor: driverColors[d.id] }} />
+                          </div>
+                          <span className="text-chalk font-telemetry text-sm w-10 text-right">{totalActual > 0 ? `${share.toFixed(0)}%` : '0%'}</span>
+                        </div>
+                      </td>
+                      {(state.total_penalty_laps ?? 0) > 0 && (() => {
+                        const driverPenalties = (state.penalties ?? [])
+                          .filter((p) => {
+                            const pStint = p.stint_order != null ? stints.find((s) => s.stint_order === p.stint_order) : null;
+                            return pStint ? pStint.driver_id === d.id : false;
+                          })
+                          .reduce((sum, p) => sum + p.laps_deducted, 0);
+                        return (
+                          <td className="px-4 py-3 text-right">
+                            {driverPenalties > 0 ? (
+                              <span className="text-safety-red font-telemetry text-sm">-{driverPenalties}</span>
+                            ) : (
+                              <span className="text-steel font-telemetry text-sm">{'\u2014'}</span>
+                            )}
+                          </td>
+                        );
+                      })()}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Stint Log */}
       <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
         <div className="px-4 py-3 border-b border-steel/20">
@@ -457,6 +985,11 @@ export default function LiveDashboardPage() {
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Planned</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Actual</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Delta</th>
+                <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Laps</th>
+                <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Laps</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Est. End</th>
+                <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Ballast</th>
+                {quickChangeEnabled && <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Kart</th>}
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
               </tr>
             </thead>
@@ -466,8 +999,21 @@ export default function LiveDashboardPage() {
                 const actual = s.actual_duration_s;
                 const delta = planned != null && actual != null ? actual - planned : null;
                 const sCfg = stintStatusConfig[s.status] || stintStatusConfig.planned;
+                // Estimate clock time when this stint ends
+                const plannedEndS = s.planned_end_s;
+                const raceStartTs = race.race_start_ts;
+                let estEndStr: string | null = null;
+                if (plannedEndS != null && raceStartTs) {
+                  try {
+                    const start = new Date(raceStartTs.replace('Z', '+00:00')).getTime();
+                    // Add pit stop time between stints (pit_time * (stint_order - 1))
+                    const pitTime = race.min_pit_stop_s || 60;
+                    const estEnd = new Date(start + (plannedEndS + (s.stint_order - 1) * pitTime) * 1000);
+                    estEndStr = estEnd.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                  } catch { /* ignore */ }
+                }
                 return (
-                  <tr key={s.stint_id} className="border-b border-steel/10">
+                  <tr key={s.stint_id} className={`border-b border-steel/10 ${s.status === 'active' ? 'bg-acid-green/5' : ''}`}>
                     <td className="px-4 py-3 text-chalk font-body text-sm">{s.stint_order}</td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       <div className="flex items-center gap-2">
@@ -489,6 +1035,23 @@ export default function LiveDashboardPage() {
                         <span className="text-steel">{'\u2014'}</span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">
+                      {s.actual_laps != null ? s.actual_laps : (estLaps(s) ?? '\u2014')}
+                    </td>
+                    <td className="px-4 py-3 text-pit-orange font-telemetry text-sm text-right">
+                      {cumulativeLaps(s.stint_order) || '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-chalk font-telemetry text-sm">
+                      {estEndStr ?? '\u2014'}
+                    </td>
+                    <td className="px-4 py-3 text-marshal-yellow font-telemetry text-sm">
+                      {s.ballast_kg != null && s.ballast_kg > 0 ? `${s.ballast_kg} kg` : '\u2014'}
+                    </td>
+                    {quickChangeEnabled && (
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm">
+                        {(s as Record<string, unknown>).kart_number ? String((s as Record<string, unknown>).kart_number) : '\u2014'}
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${sCfg.className}`}
@@ -503,6 +1066,123 @@ export default function LiveDashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Kart History (quick change only) */}
+      {quickChangeEnabled && stints.some((s) => (s as Record<string, unknown>).kart_number) && (
+        <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowKartHistory(!showKartHistory)}
+            className="w-full px-4 py-3 border-b border-steel/20 flex items-center justify-between"
+          >
+            <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Kart History</h3>
+            <span className="text-steel text-xs font-telemetry">{showKartHistory ? '\u25BC' : '\u25B6'}</span>
+          </button>
+          {showKartHistory && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-steel/20">
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Stint #</th>
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Kart #</th>
+                    <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Avg Lap Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {stints
+                    .filter((s) => (s as Record<string, unknown>).kart_number)
+                    .map((s) => {
+                      const d = drivers.find((dr) => dr.id === s.driver_id);
+                      return (
+                        <tr key={s.stint_id} className="border-b border-steel/10">
+                          <td className="px-4 py-3 text-chalk font-body text-sm">{s.stint_order}</td>
+                          <td className="px-4 py-3 text-chalk font-body text-sm">
+                            <div className="flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: driverColors[s.driver_id] }} />
+                              {s.driver_name}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-chalk font-telemetry text-sm">{String((s as Record<string, unknown>).kart_number)}</td>
+                          <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">{d?.avg_lap_time_s ? `${d.avg_lap_time_s.toFixed(1)}s` : '\u2014'}</td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Penalty Log */}
+      {state.penalties && state.penalties.length > 0 && (
+        <div className="bg-concrete rounded-lg border border-steel/20 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowPenaltyLog(!showPenaltyLog)}
+            className="w-full px-4 py-3 border-b border-steel/20 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3">
+              <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Penalty Log</h3>
+              {(state.total_penalty_laps ?? 0) > 0 && (
+                <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border text-safety-red bg-safety-red/10 border-safety-red/30">
+                  -{state.total_penalty_laps} laps
+                </span>
+              )}
+            </div>
+            <span className="text-steel text-xs font-telemetry">{showPenaltyLog ? '\u25BC' : '\u25B6'}</span>
+          </button>
+          {showPenaltyLog && (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-steel/20">
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Time</th>
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Type</th>
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Reason</th>
+                    <th scope="col" className="text-right px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Laps</th>
+                    <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {state.penalties.map((p) => (
+                    <tr key={p.id} className="border-b border-steel/10">
+                      <td className="px-4 py-3 text-chalk font-telemetry text-sm">{formatTime(p.elapsed_s)}</td>
+                      <td className="px-4 py-3 text-chalk font-body text-sm capitalize">{p.penalty_type.replace('_', ' ')}</td>
+                      <td className="px-4 py-3 text-steel font-body text-sm">{p.reason || '\u2014'}</td>
+                      <td className="px-4 py-3 text-safety-red font-telemetry text-sm text-right">-{p.laps_deducted}</td>
+                      <td className="px-4 py-3">
+                        {p.cleared ? (
+                          <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border text-acid-green bg-acid-green/10 border-acid-green/30">
+                            CLEARED
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => clearPenaltyMut.mutate(p.id)}
+                            disabled={clearPenaltyMut.isPending}
+                            className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border text-safety-red bg-safety-red/10 border-safety-red/30 hover:bg-safety-red/20 transition-colors disabled:opacity-50 cursor-pointer"
+                          >
+                            ACTIVE
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-steel/20">
+                    <td colSpan={3} className="px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Total Penalty Laps</td>
+                    <td className="px-4 py-3 text-safety-red font-telemetry text-sm text-right font-bold">-{state.total_penalty_laps ?? 0}</td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Pit Window Status */}
       {state.window_status && state.window_status.length > 0 && (
@@ -545,61 +1225,13 @@ export default function LiveDashboardPage() {
         </div>
       )}
 
-      {/* Action Buttons */}
-      <div className="flex items-center gap-3 flex-wrap pt-2 border-t border-steel/20">
-        <button
-          type="button"
-          onClick={() => {
-            if (state?.next_stint && state?.driver_sleep_status) {
-              const nextDriverId = state.next_stint.driver_id;
-              const sleepStatus = state.driver_sleep_status[nextDriverId];
-              if (sleepStatus?.sleeping) {
-                setShowSleepWarning(true);
-                return;
-              }
-            }
-            endStintMut.mutate();
-          }}
-          disabled={endStintMut.isPending || !activeStint}
-          className="px-5 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
-        >
-          {endStintMut.isPending ? 'Ending Stint...' : 'End Stint'}
-        </button>
-        <button
-          type="button"
-          onClick={() => reoptimizeMut.mutate()}
-          disabled={reoptimizeMut.isPending}
-          className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
-        >
-          {reoptimizeMut.isPending ? 'Re-Optimizing...' : 'Re-Optimize'}
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm('Finish the race? This will end the live session.')) {
-              finishMut.mutate();
-            }
-          }}
-          disabled={finishMut.isPending}
-          className="px-4 py-2 border border-safety-red/40 text-safety-red font-telemetry text-sm tracking-wider uppercase hover:bg-safety-red/10 transition-colors disabled:opacity-50"
-        >
-          {finishMut.isPending ? 'Finishing...' : 'Finish Race'}
-        </button>
-        <Link
-          href={`/app/race-strategy/${raceId}`}
-          className="px-4 py-2 border border-steel/30 text-chalk font-telemetry text-sm tracking-wider uppercase hover:bg-concrete transition-colors ml-auto"
-        >
-          View Config
-        </Link>
-      </div>
-
       {/* Mutation errors */}
-      {(endStintMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error) && (
+      {(pitInMut.error || pitOutMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error || techStopInMut.error || techStopOutMut.error || addPenaltyMut.error || clearPenaltyMut.error) && (
         <div className="flex items-center justify-between bg-safety-red/10 border border-safety-red/30 rounded-lg px-4 py-2 mt-4">
           <p className="text-safety-red font-telemetry text-xs">
-            {((endStintMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error) as Error).message || 'Action failed'}
+            {((pitInMut.error || pitOutMut.error || reoptimizeMut.error || wakeDriverMut.error || finishMut.error || techStopInMut.error || techStopOutMut.error || addPenaltyMut.error || clearPenaltyMut.error) as Error).message || 'Action failed'}
           </p>
-          <button type="button" onClick={() => { endStintMut.reset(); reoptimizeMut.reset(); wakeDriverMut.reset(); finishMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
+          <button type="button" onClick={() => { pitInMut.reset(); pitOutMut.reset(); reoptimizeMut.reset(); wakeDriverMut.reset(); finishMut.reset(); techStopInMut.reset(); techStopOutMut.reset(); addPenaltyMut.reset(); clearPenaltyMut.reset(); }} className="text-safety-red/60 hover:text-safety-red text-xs ml-3">dismiss</button>
         </div>
       )}
 
@@ -618,7 +1250,7 @@ export default function LiveDashboardPage() {
                 className="px-4 py-2 text-sm text-steel border border-steel/30 rounded-lg hover:bg-steel/10">
                 Cancel
               </button>
-              <button type="button" onClick={() => { setShowSleepWarning(false); endStintMut.mutate(); }}
+              <button type="button" onClick={() => { setShowSleepWarning(false); pitInMut.mutate(); }}
                 className="px-4 py-2 text-sm bg-safety-red/20 text-safety-red border border-safety-red/30 rounded-lg hover:bg-safety-red/30">
                 Assign Anyway
               </button>

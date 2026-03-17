@@ -17,6 +17,8 @@ export interface DriverForm {
   min_cumulative_s: string;
   max_cumulative_s: string;
   min_rest_s: string;
+  allow_double_stint: boolean;
+  avg_lap_time_s: string;
   showConstraints: boolean;
 }
 
@@ -61,6 +63,14 @@ export interface RaceFormData {
     weigh_on_pit_exit: number;
     qualifying_duration_s: number | null;
     refuel_after_quali: number;
+    optimization_mode: 'equal' | 'performance';
+    blackout_start_min: number | null;
+    blackout_end_min: number | null;
+    quick_change_enabled: number;
+    tech_stop_enabled: number;
+    tech_stop_duration_s: number;
+    tech_stop_window_start_s: number | null;
+    tech_stop_window_end_s: number | null;
   };
   drivers: Array<{
     driver_name: string;
@@ -73,6 +83,8 @@ export interface RaceFormData {
     min_cumulative_s: number | null;
     max_cumulative_s: number | null;
     min_rest_s: number;
+    allow_double_stint: boolean;
+    avg_lap_time_s: number | null;
   }>;
   windows: Array<{
     window_type: string;
@@ -135,6 +147,8 @@ const DEFAULT_DRIVER: DriverForm = {
   min_cumulative_s: '',
   max_cumulative_s: '',
   min_rest_s: '',
+  allow_double_stint: false,
+  avg_lap_time_s: '',
   showConstraints: false,
 };
 
@@ -215,7 +229,7 @@ export interface RaceConfigFormProps {
     windows: Array<Record<string, unknown>>;
     sleep_windows?: Array<Record<string, unknown>>;
   };
-  /** Entitlement value, e.g. 'limited_3h' for demo plans. */
+  /** Entitlement value, e.g. '4h_simple', '12h_complex', 'unlimited'. */
   raceStrategyLimit?: string | null;
   onSubmit: (data: RaceFormData) => void;
   onCancel?: () => void;
@@ -236,6 +250,9 @@ export function RaceConfigForm({
 }: RaceConfigFormProps) {
   const fieldId = useId();
   const [error, setError] = useState('');
+
+  const isSimple = raceStrategyLimit === '4h_simple';
+  const isComplex = !raceStrategyLimit || raceStrategyLimit !== '4h_simple';
 
   /* ---- form state ---- */
   const [raceName, setRaceName] = useState('');
@@ -277,6 +294,27 @@ export function RaceConfigForm({
   const [qualiDuration, setQualiDuration] = useState('');
   const [refuelAfterQuali, setRefuelAfterQuali] = useState(false);
 
+  /* ---- default driver rules ---- */
+  const [defaultMinStint, setDefaultMinStint] = useState('');
+  const [defaultMaxStint, setDefaultMaxStint] = useState('');
+  const [defaultMinTotal, setDefaultMinTotal] = useState('');
+  const [defaultMaxTotal, setDefaultMaxTotal] = useState('');
+  const [defaultMinRest, setDefaultMinRest] = useState('');
+  const [defaultAllowDouble, setDefaultAllowDouble] = useState(false);
+  const [showDefaultRules, setShowDefaultRules] = useState(false);
+
+  /* ---- optimization & advanced pit ---- */
+  const [optimizationMode, setOptimizationMode] = useState<'equal' | 'performance'>('equal');
+  const [blackoutStart, setBlackoutStart] = useState('');
+  const [blackoutEnd, setBlackoutEnd] = useState('');
+  const [quickChange, setQuickChange] = useState(false);
+
+  /* ---- tech stop ---- */
+  const [techStopEnabled, setTechStopEnabled] = useState(false);
+  const [techStopDuration, setTechStopDuration] = useState('300');
+  const [techStopWindowStart, setTechStopWindowStart] = useState('');
+  const [techStopWindowEnd, setTechStopWindowEnd] = useState('');
+
   /* ---- populate from initialData (edit mode) ---- */
   const [loaded, setLoaded] = useState(false);
 
@@ -313,6 +351,16 @@ export function RaceConfigForm({
     }
     setRefuelAfterQuali(!!r.refuel_after_quali);
 
+    /* new fields */
+    setOptimizationMode(((r as any).optimization_mode === 'performance' ? 'performance' : 'equal'));
+    setBlackoutStart(str((r as any).blackout_start_min));
+    setBlackoutEnd(str((r as any).blackout_end_min));
+    setQuickChange(!!(r as any).quick_change_enabled);
+    setTechStopEnabled(!!(r as any).tech_stop_enabled);
+    setTechStopDuration(str((r as any).tech_stop_duration_s) || '300');
+    setTechStopWindowStart(str((r as any).tech_stop_window_start_s));
+    setTechStopWindowEnd(str((r as any).tech_stop_window_end_s));
+
     setDrivers(
       initialData.drivers.map((d, i) => ({
         driver_name: str(d.driver_name),
@@ -324,6 +372,8 @@ export function RaceConfigForm({
         min_cumulative_s: str(d.min_cumulative_s),
         max_cumulative_s: str(d.max_cumulative_s),
         min_rest_s: str(d.min_rest_s),
+        allow_double_stint: !!(d as any).allow_double_stint,
+        avg_lap_time_s: str((d as any).avg_lap_time_s),
         showConstraints: false,
       })),
     );
@@ -425,6 +475,14 @@ export function RaceConfigForm({
         weigh_on_pit_exit: weighOnExit ? 1 : 0,
         qualifying_duration_s: parseNum(qualiDuration),
         refuel_after_quali: refuelAfterQuali ? 1 : 0,
+        optimization_mode: optimizationMode,
+        blackout_start_min: parseNum(blackoutStart),
+        blackout_end_min: parseNum(blackoutEnd),
+        quick_change_enabled: quickChange ? 1 : 0,
+        tech_stop_enabled: techStopEnabled ? 1 : 0,
+        tech_stop_duration_s: parseInt(techStopDuration) || 300,
+        tech_stop_window_start_s: parseNum(techStopWindowStart),
+        tech_stop_window_end_s: parseNum(techStopWindowEnd),
       },
       drivers: drivers
         .filter((d) => d.driver_name.trim())
@@ -434,11 +492,13 @@ export function RaceConfigForm({
           weight_kg: parseNum(d.weight_kg),
           com_channel: d.com_channel.trim() || null,
           color_hex: d.color_hex,
-          min_stint_s: parseNum(d.min_stint_s),
-          max_stint_s: parseNum(d.max_stint_s),
-          min_cumulative_s: parseNum(d.min_cumulative_s),
-          max_cumulative_s: parseNum(d.max_cumulative_s),
-          min_rest_s: parseNum(d.min_rest_s) ?? 0,
+          min_stint_s: parseNum(d.min_stint_s) ?? parseNum(defaultMinStint),
+          max_stint_s: parseNum(d.max_stint_s) ?? parseNum(defaultMaxStint),
+          min_cumulative_s: parseNum(d.min_cumulative_s) ?? parseNum(defaultMinTotal),
+          max_cumulative_s: parseNum(d.max_cumulative_s) ?? parseNum(defaultMaxTotal),
+          min_rest_s: parseNum(d.min_rest_s) ?? parseNum(defaultMinRest) ?? 0,
+          allow_double_stint: d.showConstraints ? d.allow_double_stint : defaultAllowDouble,
+          avg_lap_time_s: parseNum(d.avg_lap_time_s),
         })),
       windows: windows.map((w, i) => ({
         window_type: w.window_type,
@@ -472,6 +532,24 @@ export function RaceConfigForm({
       )}
 
       <form onSubmit={handleSubmit}>
+        {/* Upgrade banners */}
+        {isSimple && (
+          <div className="mb-4">
+            <UpgradeBanner
+              feature="race_strategy_full"
+              context="Simple plan: races limited to 4 hours, basic features only. Upgrade for advanced optimization, tech stops, and endurance support."
+            />
+          </div>
+        )}
+        {raceStrategyLimit === '12h_complex' && (
+          <div className="mb-4">
+            <UpgradeBanner
+              feature="race_strategy_unlimited"
+              context="Complex plan: races up to 12 hours. Upgrade for unlimited duration."
+            />
+          </div>
+        )}
+
         {/* Race Details */}
         <div className={sectionCls}>
           <h2 className="font-monument text-lg text-chalk mb-4">Race Details</h2>
@@ -489,14 +567,6 @@ export function RaceConfigForm({
               <input id={`${fieldId}-track`} className={inputCls} value={trackName} onChange={(e) => setTrackName(e.target.value)} placeholder="Circuit de Pau-Arnos" />
             </div>
             <div>
-              {raceStrategyLimit === 'limited_3h' && (
-                <div className="mb-3">
-                  <UpgradeBanner
-                    feature="race_strategy_full"
-                    context="Demo plan: races limited to 3 hours. Upgrade for unlimited duration."
-                  />
-                </div>
-              )}
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label htmlFor={`${fieldId}-dur-h`} className={labelCls}>Duration (h)</label>
@@ -524,6 +594,55 @@ export function RaceConfigForm({
             </button>
           </div>
           <p className="text-steel font-body text-sm mb-3">Enter at least one driver name to build the strategy.</p>
+
+          {/* Default Driver Rules (complex tier only) */}
+          {isComplex && (
+            <div className="mb-4 bg-asphalt/30 border border-steel/10 p-3">
+              <button
+                type="button"
+                onClick={() => setShowDefaultRules(!showDefaultRules)}
+                className="flex items-center gap-2 text-steel font-telemetry text-xs tracking-wider uppercase hover:text-chalk transition-colors"
+              >
+                {showDefaultRules ? '\u25BC' : '\u25B6'} Default Driver Rules
+              </button>
+              {showDefaultRules && (
+                <div className="mt-3">
+                  <p className="text-steel/60 font-body text-xs mb-3">
+                    These defaults apply to drivers without individual overrides.
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                    <div>
+                      <label className={labelCls}>Min Stint</label>
+                      <DurationMmSs id={`${fieldId}-def-min-stint`} value={defaultMinStint} onChange={setDefaultMinStint} label="Default min stint" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Max Stint</label>
+                      <DurationMmSs id={`${fieldId}-def-max-stint`} value={defaultMaxStint} onChange={setDefaultMaxStint} label="Default max stint" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Min Total</label>
+                      <DurationMmSs id={`${fieldId}-def-min-total`} value={defaultMinTotal} onChange={setDefaultMinTotal} label="Default min total" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Max Total</label>
+                      <DurationMmSs id={`${fieldId}-def-max-total`} value={defaultMaxTotal} onChange={setDefaultMaxTotal} label="Default max total" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Min Rest</label>
+                      <DurationMmSs id={`${fieldId}-def-min-rest`} value={defaultMinRest} onChange={setDefaultMinRest} label="Default min rest" />
+                    </div>
+                    <div className="flex items-end pb-2">
+                      <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
+                        <input type="checkbox" checked={defaultAllowDouble} onChange={(e) => setDefaultAllowDouble(e.target.checked)} className="accent-pit-orange" />
+                        Allow double stint
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="space-y-3">
             {drivers.map((d, i) => (
               <div key={i} className="bg-asphalt/40 border border-steel/10 p-3">
@@ -532,6 +651,7 @@ export function RaceConfigForm({
                   <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={(e) => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
                   <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={(e) => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
                   <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={(e) => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
+                  <input aria-label={`Driver ${i + 1} avg lap time (s)`} className={`${inputCls} w-24`} value={d.avg_lap_time_s} onChange={(e) => updateDriver(i, 'avg_lap_time_s', e.target.value)} placeholder="Avg lap (s)" type="number" step="0.1" />
                   <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors">
                     {d.showConstraints ? '\u25BC' : '\u25B6'} Rules
                   </button>
@@ -540,13 +660,21 @@ export function RaceConfigForm({
                   )}
                 </div>
                 {d.showConstraints && (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-2 pl-11">
-                    <div><label htmlFor={`${fieldId}-d${i}-min-stint`} className={labelCls}>Min Stint</label><DurationMmSs id={`${fieldId}-d${i}-min-stint`} value={d.min_stint_s} onChange={(v) => updateDriver(i, 'min_stint_s', v)} label="Min stint" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-max-stint`} className={labelCls}>Max Stint</label><DurationMmSs id={`${fieldId}-d${i}-max-stint`} value={d.max_stint_s} onChange={(v) => updateDriver(i, 'max_stint_s', v)} label="Max stint" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-min-total`} className={labelCls}>Min Total</label><DurationMmSs id={`${fieldId}-d${i}-min-total`} value={d.min_cumulative_s} onChange={(v) => updateDriver(i, 'min_cumulative_s', v)} label="Min total" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-max-total`} className={labelCls}>Max Total</label><DurationMmSs id={`${fieldId}-d${i}-max-total`} value={d.max_cumulative_s} onChange={(v) => updateDriver(i, 'max_cumulative_s', v)} label="Max total" /></div>
-                    <div><label htmlFor={`${fieldId}-d${i}-min-rest`} className={labelCls}>Min Rest</label><DurationMmSs id={`${fieldId}-d${i}-min-rest`} value={d.min_rest_s} onChange={(v) => updateDriver(i, 'min_rest_s', v)} label="Min rest" /></div>
-                  </div>
+                  <>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-2 pl-11">
+                      <div><label htmlFor={`${fieldId}-d${i}-min-stint`} className={labelCls}>Min Stint</label><DurationMmSs id={`${fieldId}-d${i}-min-stint`} value={d.min_stint_s} onChange={(v) => updateDriver(i, 'min_stint_s', v)} label="Min stint" /></div>
+                      <div><label htmlFor={`${fieldId}-d${i}-max-stint`} className={labelCls}>Max Stint</label><DurationMmSs id={`${fieldId}-d${i}-max-stint`} value={d.max_stint_s} onChange={(v) => updateDriver(i, 'max_stint_s', v)} label="Max stint" /></div>
+                      <div><label htmlFor={`${fieldId}-d${i}-min-total`} className={labelCls}>Min Total</label><DurationMmSs id={`${fieldId}-d${i}-min-total`} value={d.min_cumulative_s} onChange={(v) => updateDriver(i, 'min_cumulative_s', v)} label="Min total" /></div>
+                      <div><label htmlFor={`${fieldId}-d${i}-max-total`} className={labelCls}>Max Total</label><DurationMmSs id={`${fieldId}-d${i}-max-total`} value={d.max_cumulative_s} onChange={(v) => updateDriver(i, 'max_cumulative_s', v)} label="Max total" /></div>
+                      <div><label htmlFor={`${fieldId}-d${i}-min-rest`} className={labelCls}>Min Rest</label><DurationMmSs id={`${fieldId}-d${i}-min-rest`} value={d.min_rest_s} onChange={(v) => updateDriver(i, 'min_rest_s', v)} label="Min rest" /></div>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-2 pl-11">
+                      <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer col-span-1">
+                        <input type="checkbox" checked={d.allow_double_stint} onChange={(e) => updateDriver(i, 'allow_double_stint', e.target.checked)} className="accent-pit-orange" />
+                        Allow double stint
+                      </label>
+                    </div>
+                  </>
                 )}
               </div>
             ))}
@@ -558,61 +686,151 @@ export function RaceConfigForm({
           <h2 className="font-monument text-lg text-chalk mb-4">Pit Strategy</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div><label htmlFor={`${fieldId}-min-pit`} className={labelCls}>Min Pit Stop (s)</label><input id={`${fieldId}-min-pit`} type="number" className={inputCls} value={minPitStop} onChange={(e) => setMinPitStop(e.target.value)} /></div>
-            <div><label htmlFor={`${fieldId}-pit-speed`} className={labelCls}>Pit Speed (km/h)</label><input id={`${fieldId}-pit-speed`} type="number" className={inputCls} value={pitSpeed} onChange={(e) => setPitSpeed(e.target.value)} step="0.1" /></div>
-            <div><label htmlFor={`${fieldId}-quick-pit`} className={labelCls}>Quick Pit Stop (s)</label><input id={`${fieldId}-quick-pit`} type="number" className={inputCls} value={quickPitStop} onChange={(e) => setQuickPitStop(e.target.value)} /></div>
           </div>
-          <div className="flex gap-6 mt-4">
+          <div className="flex flex-wrap gap-6 mt-4">
             <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
               <input type="checkbox" checked={mandatoryChange} onChange={(e) => setMandatoryChange(e.target.checked)} className="accent-pit-orange" />
               Mandatory driver change
             </label>
+            {!quickChange && (
+              <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
+                <input type="checkbox" checked={refuelingAllowed} onChange={(e) => setRefuelingAllowed(e.target.checked)} className="accent-pit-orange" />
+                Refueling allowed
+              </label>
+            )}
             <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
-              <input type="checkbox" checked={refuelingAllowed} onChange={(e) => setRefuelingAllowed(e.target.checked)} className="accent-pit-orange" />
-              Refueling allowed
+              <input type="checkbox" checked={quickChange} onChange={(e) => setQuickChange(e.target.checked)} className="accent-pit-orange" />
+              Quick change (Sport category)
             </label>
           </div>
-        </div>
 
-        {/* Pit Windows */}
-        <div className={sectionCls}>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-monument text-lg text-chalk">Pit Windows</h2>
-            <button type="button" onClick={addWindow} className="px-3 py-1 text-sm font-telemetry text-pit-orange border border-pit-orange/40 hover:bg-pit-orange/10 transition-colors">
-              + Add Window
-            </button>
-          </div>
-          {windows.length === 0 ? (
-            <p className="text-steel font-body text-sm">No pit windows configured. The pit lane is open for the entire race.</p>
-          ) : (
-            <div className="space-y-3">
-              {windows.map((w, i) => (
-                <div key={i} className="flex items-center gap-3 bg-asphalt/40 border border-steel/10 p-3">
-                  <select aria-label={`Window ${i + 1} type`} className={`${inputCls} w-32`} value={w.window_type} onChange={(e) => updateWindow(i, 'window_type', e.target.value)}>
-                    <option value="pitlane">Pit Lane</option>
-                    <option value="refuel">Refuel</option>
-                    <option value="tech_stop">Tech Stop</option>
-                  </select>
-                  <input aria-label={`Window ${i + 1} label`} className={`${inputCls} w-32`} value={w.label} onChange={(e) => updateWindow(i, 'label', e.target.value)} placeholder="Label" />
-                  <div className="flex items-center gap-1">
-                    <input aria-label={`Window ${i + 1} start minutes`} type="number" className={`${inputCls} w-16`} value={w.start_mm} onChange={(e) => updateWindow(i, 'start_mm', e.target.value)} min="0" />
-                    <span className="text-steel">:</span>
-                    <input aria-label={`Window ${i + 1} start seconds`} type="number" className={`${inputCls} w-16`} value={w.start_ss} onChange={(e) => updateWindow(i, 'start_ss', e.target.value)} min="0" max="59" />
-                  </div>
-                  <span className="text-steel">{'\u2192'}</span>
-                  <div className="flex items-center gap-1">
-                    <input aria-label={`Window ${i + 1} end minutes`} type="number" className={`${inputCls} w-16`} value={w.end_mm} onChange={(e) => updateWindow(i, 'end_mm', e.target.value)} min="0" />
-                    <span className="text-steel">:</span>
-                    <input aria-label={`Window ${i + 1} end seconds`} type="number" className={`${inputCls} w-16`} value={w.end_ss} onChange={(e) => updateWindow(i, 'end_ss', e.target.value)} min="0" max="59" />
-                  </div>
-                  <button type="button" onClick={() => removeWindow(i)} aria-label={`Remove window ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">{'\u2715'}</button>
-                </div>
-              ))}
+          {/* Optimization Mode (complex tier only) */}
+          {isComplex && (
+            <div className="mt-4">
+              <label className={labelCls}>Optimization Mode</label>
+              <div className="flex gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setOptimizationMode('equal')}
+                  className={`px-4 py-2 text-sm font-telemetry tracking-wider uppercase border transition-colors ${
+                    optimizationMode === 'equal'
+                      ? 'bg-pit-orange text-asphalt border-pit-orange'
+                      : 'border-steel/30 text-steel hover:text-chalk hover:border-chalk/30'
+                  }`}
+                >
+                  Equal Time
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOptimizationMode('performance')}
+                  className={`px-4 py-2 text-sm font-telemetry tracking-wider uppercase border transition-colors ${
+                    optimizationMode === 'performance'
+                      ? 'bg-pit-orange text-asphalt border-pit-orange'
+                      : 'border-steel/30 text-steel hover:text-chalk hover:border-chalk/30'
+                  }`}
+                >
+                  Performance
+                </button>
+              </div>
             </div>
           )}
+
+          {/* Blackout Windows */}
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label htmlFor={`${fieldId}-blackout-start`} className={labelCls}>No pit first (min)</label>
+              <input id={`${fieldId}-blackout-start`} type="number" className={inputCls} value={blackoutStart} onChange={(e) => setBlackoutStart(e.target.value)} min="0" placeholder="e.g. 10" />
+            </div>
+            <div>
+              <label htmlFor={`${fieldId}-blackout-end`} className={labelCls}>No pit last (min)</label>
+              <input id={`${fieldId}-blackout-end`} type="number" className={inputCls} value={blackoutEnd} onChange={(e) => setBlackoutEnd(e.target.value)} min="0" placeholder="e.g. 5" />
+            </div>
+          </div>
         </div>
 
-        {/* Sleep Windows (endurance races only) */}
-        {isEndurance && (
+        {/* Tech Stop (complex tier only) */}
+        {isComplex && (
+          <div className={sectionCls}>
+            <h2 className="font-monument text-lg text-chalk mb-4">Tech Stop</h2>
+            <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer mb-4">
+              <input type="checkbox" checked={techStopEnabled} onChange={(e) => setTechStopEnabled(e.target.checked)} className="accent-pit-orange" />
+              Enable mandatory tech stop
+            </label>
+            {techStopEnabled && (
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label htmlFor={`${fieldId}-tech-dur`} className={labelCls}>Duration (mm:ss)</label>
+                  <DurationMmSs id={`${fieldId}-tech-dur`} value={techStopDuration} onChange={setTechStopDuration} label="Tech stop duration" />
+                </div>
+                <div>
+                  <label className={labelCls}>Window Start (hh:mm)</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      id={`${fieldId}-tech-win-start`}
+                      type="number"
+                      aria-label="Window start hours"
+                      className={`${inputCls} w-14 text-center`}
+                      value={techStopWindowStart ? String(Math.floor(parseInt(techStopWindowStart) / 3600)) : ''}
+                      onChange={(e) => {
+                        const hh = parseInt(e.target.value) || 0;
+                        const oldMm = techStopWindowStart ? Math.floor((parseInt(techStopWindowStart) % 3600) / 60) : 0;
+                        setTechStopWindowStart(String(hh * 3600 + oldMm * 60));
+                      }}
+                      min="0" placeholder="h"
+                    />
+                    <span className="text-steel">:</span>
+                    <input
+                      type="number"
+                      aria-label="Window start minutes"
+                      className={`${inputCls} w-14 text-center`}
+                      value={techStopWindowStart ? String(Math.floor((parseInt(techStopWindowStart) % 3600) / 60)) : ''}
+                      onChange={(e) => {
+                        const mm = parseInt(e.target.value) || 0;
+                        const oldHh = techStopWindowStart ? Math.floor(parseInt(techStopWindowStart) / 3600) : 0;
+                        setTechStopWindowStart(String(oldHh * 3600 + mm * 60));
+                      }}
+                      min="0" max="59" placeholder="m"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelCls}>Window End (hh:mm)</label>
+                  <div className="flex items-center gap-1">
+                    <input
+                      id={`${fieldId}-tech-win-end`}
+                      type="number"
+                      aria-label="Window end hours"
+                      className={`${inputCls} w-14 text-center`}
+                      value={techStopWindowEnd ? String(Math.floor(parseInt(techStopWindowEnd) / 3600)) : ''}
+                      onChange={(e) => {
+                        const hh = parseInt(e.target.value) || 0;
+                        const oldMm = techStopWindowEnd ? Math.floor((parseInt(techStopWindowEnd) % 3600) / 60) : 0;
+                        setTechStopWindowEnd(String(hh * 3600 + oldMm * 60));
+                      }}
+                      min="0" placeholder="h"
+                    />
+                    <span className="text-steel">:</span>
+                    <input
+                      type="number"
+                      aria-label="Window end minutes"
+                      className={`${inputCls} w-14 text-center`}
+                      value={techStopWindowEnd ? String(Math.floor((parseInt(techStopWindowEnd) % 3600) / 60)) : ''}
+                      onChange={(e) => {
+                        const mm = parseInt(e.target.value) || 0;
+                        const oldHh = techStopWindowEnd ? Math.floor(parseInt(techStopWindowEnd) / 3600) : 0;
+                        setTechStopWindowEnd(String(oldHh * 3600 + mm * 60));
+                      }}
+                      min="0" max="59" placeholder="m"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Sleep Windows (endurance races + complex tier) */}
+        {isEndurance && isComplex && (
           <div className={sectionCls}>
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -715,51 +933,55 @@ export function RaceConfigForm({
           </div>
         )}
 
-        {/* Fuel & Weight */}
-        <div className={sectionCls}>
-          <h2 className="font-monument text-lg text-chalk mb-4">Fuel & Weight</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            <div>
-              <label className={labelCls}>Fuel Autonomy</label>
-              <div className="flex items-center gap-1">
-                <input aria-label="Fuel autonomy minutes" type="number" className={`${inputCls} w-20`} value={fuelAutonomyM} onChange={(e) => setFuelAutonomyM(e.target.value)} placeholder="mm" min="0" />
-                <span className="text-steel">:</span>
-                <input aria-label="Fuel autonomy seconds" type="number" className={`${inputCls} w-20`} value={fuelAutonomyS} onChange={(e) => setFuelAutonomyS(e.target.value)} placeholder="ss" min="0" max="59" />
+        {/* Fuel & Weight (complex tier only) */}
+        {isComplex && (
+          <div className={sectionCls}>
+            <h2 className="font-monument text-lg text-chalk mb-4">Fuel & Weight</h2>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <label className={labelCls}>Fuel Autonomy</label>
+                <div className="flex items-center gap-1">
+                  <input aria-label="Fuel autonomy minutes" type="number" className={`${inputCls} w-20`} value={fuelAutonomyM} onChange={(e) => setFuelAutonomyM(e.target.value)} placeholder="mm" min="0" />
+                  <span className="text-steel">:</span>
+                  <input aria-label="Fuel autonomy seconds" type="number" className={`${inputCls} w-20`} value={fuelAutonomyS} onChange={(e) => setFuelAutonomyS(e.target.value)} placeholder="ss" min="0" max="59" />
+                </div>
               </div>
-            </div>
-            <div><label htmlFor={`${fieldId}-empty-kart`} className={labelCls}>Empty Kart (kg)</label><input id={`${fieldId}-empty-kart`} type="number" className={inputCls} value={emptyKart} onChange={(e) => setEmptyKart(e.target.value)} step="0.1" /></div>
-            <div><label htmlFor={`${fieldId}-full-tank`} className={labelCls}>Full Tank (kg)</label><input id={`${fieldId}-full-tank`} type="number" className={inputCls} value={fullTank} onChange={(e) => setFullTank(e.target.value)} step="0.1" /></div>
-            <div>
-              <label htmlFor={`${fieldId}-min-total-kg`} className={labelCls}>Min Kart+Driver (kg)</label>
-              <input id={`${fieldId}-min-total-kg`} type="number" className={inputCls} value={minTotal} onChange={(e) => setMinTotal(e.target.value)} step="0.1" placeholder="e.g. 170" />
-              <span className="text-steel/40 font-body text-[10px] mt-0.5 block">Regulation minimum on the scales</span>
-            </div>
-            <div className="flex items-end pb-2">
-              <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
-                <input type="checkbox" checked={weighOnExit} onChange={(e) => setWeighOnExit(e.target.checked)} className="accent-pit-orange" />
-                Weigh on pit exit
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Qualifying */}
-        <div className={sectionCls}>
-          <button type="button" aria-label="Toggle qualifying section" onClick={() => setShowQuali(!showQuali)} className="flex items-center gap-2 font-monument text-lg text-chalk">
-            {showQuali ? '\u25BC' : '\u25B6'} Qualifying
-          </button>
-          {showQuali && (
-            <div className="grid grid-cols-2 gap-4 mt-4">
-              <div><label htmlFor={`${fieldId}-quali-dur`} className={labelCls}>Duration</label><DurationMmSs id={`${fieldId}-quali-dur`} value={qualiDuration} onChange={setQualiDuration} label="Qualifying duration" /></div>
+              <div><label htmlFor={`${fieldId}-empty-kart`} className={labelCls}>Empty Kart (kg)</label><input id={`${fieldId}-empty-kart`} type="number" className={inputCls} value={emptyKart} onChange={(e) => setEmptyKart(e.target.value)} step="0.1" /></div>
+              <div><label htmlFor={`${fieldId}-full-tank`} className={labelCls}>Full Tank (kg)</label><input id={`${fieldId}-full-tank`} type="number" className={inputCls} value={fullTank} onChange={(e) => setFullTank(e.target.value)} step="0.1" /></div>
+              <div>
+                <label htmlFor={`${fieldId}-min-total-kg`} className={labelCls}>Min Kart+Driver (kg)</label>
+                <input id={`${fieldId}-min-total-kg`} type="number" className={inputCls} value={minTotal} onChange={(e) => setMinTotal(e.target.value)} step="0.1" placeholder="e.g. 170" />
+                <span className="text-steel/40 font-body text-[10px] mt-0.5 block">Regulation minimum on the scales</span>
+              </div>
               <div className="flex items-end pb-2">
                 <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
-                  <input type="checkbox" checked={refuelAfterQuali} onChange={(e) => setRefuelAfterQuali(e.target.checked)} className="accent-pit-orange" />
-                  Refuel after qualifying
+                  <input type="checkbox" checked={weighOnExit} onChange={(e) => setWeighOnExit(e.target.checked)} className="accent-pit-orange" />
+                  Weigh on pit exit
                 </label>
               </div>
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {/* Qualifying (complex tier only) */}
+        {isComplex && (
+          <div className={sectionCls}>
+            <button type="button" aria-label="Toggle qualifying section" onClick={() => setShowQuali(!showQuali)} className="flex items-center gap-2 font-monument text-lg text-chalk">
+              {showQuali ? '\u25BC' : '\u25B6'} Qualifying
+            </button>
+            {showQuali && (
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                <div><label htmlFor={`${fieldId}-quali-dur`} className={labelCls}>Duration</label><DurationMmSs id={`${fieldId}-quali-dur`} value={qualiDuration} onChange={setQualiDuration} label="Qualifying duration" /></div>
+                <div className="flex items-end pb-2">
+                  <label className="flex items-center gap-2 text-steel font-body text-sm cursor-pointer">
+                    <input type="checkbox" checked={refuelAfterQuali} onChange={(e) => setRefuelAfterQuali(e.target.checked)} className="accent-pit-orange" />
+                    Refuel after qualifying
+                  </label>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Submit */}
         <div className="flex items-center gap-4 mt-6">

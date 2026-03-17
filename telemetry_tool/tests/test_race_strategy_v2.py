@@ -284,7 +284,7 @@ class TestBallastCalculator:
             fuel_kg=12.0,
             driver_weight_kg=70.0,
         )
-        assert result == pytest.approx(3.0)
+        assert result == pytest.approx(5.0)  # 3.0kg needed → ceil to 2.5kg increment = 5.0
 
     def test_no_ballast_needed(self):
         from race_strategy_v2 import compute_ballast

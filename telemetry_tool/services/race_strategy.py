@@ -54,11 +54,11 @@ def _rows_to_list(rows) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def _compute_elapsed_s(race_start_ts: str | None) -> int:
-    """Compute seconds elapsed since race start.
+def _compute_elapsed_s(race_start_ts: str | None, race: dict | None = None) -> int:
+    """Compute seconds elapsed since race start, accounting for pauses.
 
-    Handles ISO-8601 timestamps with or without timezone info.
-    Returns 0 when *race_start_ts* is falsy or unparseable.
+    Subtracts ``total_paused_s`` from wall-clock elapsed.
+    If race is currently paused (``paused_at_ts`` set), freezes at the pause point.
     """
     if not race_start_ts:
         return 0
@@ -66,7 +66,25 @@ def _compute_elapsed_s(race_start_ts: str | None) -> int:
         start = datetime.fromisoformat(race_start_ts.replace("Z", "+00:00"))
         if start.tzinfo is None:
             start = start.replace(tzinfo=timezone.utc)
-        return max(0, int((datetime.now(timezone.utc) - start).total_seconds()))
+        wall_elapsed = max(0, int((datetime.now(timezone.utc) - start).total_seconds()))
+
+        total_paused = 0
+        paused_at = None
+        if race:
+            total_paused = race.get("total_paused_s") or 0
+            paused_at = race.get("paused_at_ts")
+
+        if paused_at:
+            # Currently paused: freeze at the moment we paused
+            try:
+                pause_start = datetime.fromisoformat(paused_at.replace("Z", "+00:00"))
+                if pause_start.tzinfo is None:
+                    pause_start = pause_start.replace(tzinfo=timezone.utc)
+                wall_elapsed = max(0, int((pause_start - start).total_seconds()))
+            except Exception:
+                pass
+
+        return max(0, wall_elapsed - total_paused)
     except Exception:
         return 0
 
@@ -85,8 +103,8 @@ def _save_drivers(conn, race_id: int, drivers: list[dict]) -> None:
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
                 min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg,
-                com_channel, color_hex
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                com_channel, color_hex, allow_double_stint, avg_lap_time_s
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 race_id,
                 name,
@@ -99,6 +117,8 @@ def _save_drivers(conn, race_id: int, drivers: list[dict]) -> None:
                 d.get("weight_kg"),
                 d.get("com_channel"),
                 d.get("color_hex"),
+                _pg_bool(d.get("allow_double_stint", 0)),
+                d.get("avg_lap_time_s"),
             ),
         )
 
@@ -134,7 +154,12 @@ def _save_windows(conn, race_id: int, windows: list[dict]) -> None:
 def _save_sleep_windows(conn, race_id: int, driver_id_map: dict[int, int],
                         sleep_windows: list[dict]) -> None:
     """Persist sleep windows for a race. Deletes existing first."""
-    conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    try:
+        conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    except Exception:
+        # Table may not exist if migration 038 hasn't been applied
+        logger.warning("race_sleep_windows table not found — skipping sleep windows")
+        return
     for sw in sleep_windows:
         start = sw.get("start_s")
         end = sw.get("end_s")
@@ -153,14 +178,31 @@ def _save_sleep_windows(conn, race_id: int, driver_id_map: dict[int, int],
         )
 
 
+def _build_driver_id_map(conn, race_id: int) -> dict[int, int]:
+    """Build a map from 0-based driver index to DB driver id.
+
+    The frontend sends ``driver_id`` as the 0-based index into the drivers
+    array.  This function queries the saved drivers (ordered by driver_order)
+    and returns ``{0: db_id_1, 1: db_id_2, ...}``.
+    """
+    rows = conn.execute(
+        "SELECT id FROM race_drivers WHERE race_id = ? ORDER BY driver_order",
+        (race_id,),
+    ).fetchall()
+    return {i: (r["id"] if isinstance(r, dict) else r[0]) for i, r in enumerate(rows)}
+
+
 def _get_sleep_windows(conn, race_id: int) -> list[dict]:
     """Fetch all sleep windows for a race, ordered by start time."""
-    return _rows_to_list(conn.execute(
-        "SELECT sw.*, d.driver_name FROM race_sleep_windows sw "
-        "JOIN race_drivers d ON sw.driver_id = d.id "
-        "WHERE sw.race_id = ? ORDER BY sw.start_s",
-        (race_id,),
-    ).fetchall())
+    try:
+        return _rows_to_list(conn.execute(
+            "SELECT sw.*, d.driver_name FROM race_sleep_windows sw "
+            "JOIN race_drivers d ON sw.driver_id = d.id "
+            "WHERE sw.race_id = ? ORDER BY sw.start_s",
+            (race_id,),
+        ).fetchall())
+    except Exception:
+        return []  # Table may not exist if migration 038 not applied
 
 
 def _compute_driver_sleep_status(
@@ -249,6 +291,21 @@ def get_race_detail(conn, race_id: int) -> dict | None:
 
     sleep_windows = _get_sleep_windows(conn, race_id)
 
+    # Compute estimated laps and pit lap from driver avg_lap_time_s
+    driver_avg = {d["id"]: d.get("avg_lap_time_s") for d in drivers}
+    cumulative_laps = 0
+    for s in stints:
+        avg = driver_avg.get(s["driver_id"])
+        dur = s.get("planned_duration_s") or 0
+        if avg and avg > 0:
+            est = int(dur / avg)
+            s["estimated_laps"] = est
+            s["pit_at_lap"] = cumulative_laps + est
+            cumulative_laps += est
+        else:
+            s["estimated_laps"] = None
+            s["pit_at_lap"] = None
+
     return {
         "race": race,
         "drivers": drivers,
@@ -297,10 +354,15 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             race_name, track_name, team_name, race_duration_s,
             reference_weight_kg, desired_stints, fuel_autonomy_s,
             min_pit_stop_s, pit_speed_kmh, quick_pit_stop_s, pit_open_s, pit_close_s,
+            blackout_start_min, blackout_end_min,
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
-            mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+            mandatory_driver_change, refueling_allowed, quick_change_enabled,
+            optimization_mode,
+            tech_stop_enabled, tech_stop_duration_s,
+            tech_stop_window_start_s, tech_stop_window_end_s,
+            status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
         RETURNING race_id""",
         (
             race.get("race_name", "Untitled Race"),
@@ -315,6 +377,8 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             race.get("quick_pit_stop_s"),
             race.get("pit_open_s"),
             race.get("pit_close_s"),
+            race.get("blackout_start_min"),
+            race.get("blackout_end_min"),
             race.get("empty_kart_kg"),
             race.get("full_tank_kg"),
             race.get("min_total_kart_kg"),
@@ -323,6 +387,12 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
             _pg_bool(race.get("refuel_after_quali", 0)),
             _pg_bool(race.get("mandatory_driver_change", 1), default=True),
             _pg_bool(race.get("refueling_allowed", 1), default=True),
+            _pg_bool(race.get("quick_change_enabled", 0)),
+            race.get("optimization_mode", "equal"),
+            _pg_bool(race.get("tech_stop_enabled", 0)),
+            race.get("tech_stop_duration_s", 360),
+            race.get("tech_stop_window_start_s"),
+            race.get("tech_stop_window_end_s"),
         ),
     )
     _row = cur.fetchone()
@@ -335,7 +405,9 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None) -> int:
     if windows:
         _save_windows(conn, race_id, windows)
     if sleep_windows:
-        _save_sleep_windows(conn, race_id, {}, sleep_windows)
+        # Build index→DB id map: frontend sends 0-based driver_index as driver_id
+        driver_id_map = _build_driver_id_map(conn, race_id)
+        _save_sleep_windows(conn, race_id, driver_id_map, sleep_windows)
 
     conn.commit()
     return race_id
@@ -390,9 +462,13 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
             reference_weight_kg=?, desired_stints=?, fuel_autonomy_s=?,
             min_pit_stop_s=?, pit_speed_kmh=?, quick_pit_stop_s=?,
             pit_open_s=?, pit_close_s=?,
+            blackout_start_min=?, blackout_end_min=?,
             empty_kart_kg=?, full_tank_kg=?, min_total_kart_kg=?,
             weigh_on_pit_exit=?, qualifying_duration_s=?, refuel_after_quali=?,
-            mandatory_driver_change=?, refueling_allowed=?,
+            mandatory_driver_change=?, refueling_allowed=?, quick_change_enabled=?,
+            optimization_mode=?,
+            tech_stop_enabled=?, tech_stop_duration_s=?,
+            tech_stop_window_start_s=?, tech_stop_window_end_s=?,
             updated_at=CURRENT_TIMESTAMP, status='draft'
         WHERE race_id=?""",
         (
@@ -408,6 +484,8 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
             cfg.get("quick_pit_stop_s", race.get("quick_pit_stop_s")),
             cfg.get("pit_open_s", race.get("pit_open_s")),
             cfg.get("pit_close_s", race.get("pit_close_s")),
+            cfg.get("blackout_start_min", race.get("blackout_start_min")),
+            cfg.get("blackout_end_min", race.get("blackout_end_min")),
             cfg.get("empty_kart_kg", race.get("empty_kart_kg")),
             cfg.get("full_tank_kg", race.get("full_tank_kg")),
             cfg.get("min_total_kart_kg", race.get("min_total_kart_kg")),
@@ -416,6 +494,12 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
             _pg_bool(cfg.get("refuel_after_quali", race.get("refuel_after_quali", 0))),
             _pg_bool(cfg.get("mandatory_driver_change", race.get("mandatory_driver_change", 1)), default=True),
             _pg_bool(cfg.get("refueling_allowed", race.get("refueling_allowed", 1)), default=True),
+            _pg_bool(cfg.get("quick_change_enabled", race.get("quick_change_enabled", 0))),
+            cfg.get("optimization_mode", race.get("optimization_mode", "equal")),
+            _pg_bool(cfg.get("tech_stop_enabled", race.get("tech_stop_enabled", 0))),
+            cfg.get("tech_stop_duration_s", race.get("tech_stop_duration_s", 360)),
+            cfg.get("tech_stop_window_start_s", race.get("tech_stop_window_start_s")),
+            cfg.get("tech_stop_window_end_s", race.get("tech_stop_window_end_s")),
             race_id,
         ),
     )
@@ -427,9 +511,13 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
     if windows:
         _save_windows(conn, race_id, windows)
 
-    conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    try:
+        conn.execute("DELETE FROM race_sleep_windows WHERE race_id = ?", (race_id,))
+    except Exception:
+        logger.warning("race_sleep_windows table not found — skipping")
     if sleep_windows:
-        _save_sleep_windows(conn, race_id, {}, sleep_windows)
+        driver_id_map = _build_driver_id_map(conn, race_id)
+        _save_sleep_windows(conn, race_id, driver_id_map, sleep_windows)
 
     # Clear planned stints (will need re-optimize)
     conn.execute(
@@ -495,10 +583,7 @@ def run_optimization(conn, race_id: int) -> dict:
         (race_id,),
     ).fetchall())
 
-    sleep_windows = _rows_to_list(conn.execute(
-        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
-        (race_id,),
-    ).fetchall())
+    sleep_windows = _get_sleep_windows(conn, race_id)
     result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
 
     # Wrap in engine for fuel/ballast cascade
@@ -570,7 +655,7 @@ def finish_race(conn, race_id: int) -> bool:
     if not race:
         return False
 
-    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
 
     # Complete any active stint with actual times
     active = conn.execute(
@@ -631,6 +716,32 @@ def get_live_state(conn, race_id: int) -> dict | None:
     ).fetchall())
 
     active_stint = next((s for s in stints if s["status"] == "active"), None)
+
+    # Auto-activate first planned stint if race is live (not paused) but no active stint
+    if not active_stint and race["status"] == "live" and not race.get("paused_at_ts"):
+        first_planned = conn.execute(
+            "SELECT stint_id FROM race_stints "
+            "WHERE race_id = ? AND status = 'planned' ORDER BY stint_order LIMIT 1",
+            (race_id,),
+        ).fetchone()
+        if first_planned:
+            elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+            conn.execute(
+                "UPDATE race_stints SET status = 'active', actual_start_s = ? "
+                "WHERE stint_id = ?",
+                (elapsed, first_planned["stint_id"] if isinstance(first_planned, dict) else first_planned[0]),
+            )
+            conn.commit()
+            # Re-read stints
+            stints = _rows_to_list(conn.execute(
+                "SELECT s.*, d.driver_name, d.weight_kg as driver_weight_kg "
+                "FROM race_stints s "
+                "JOIN race_drivers d ON s.driver_id = d.id "
+                "WHERE s.race_id = ? ORDER BY s.stint_order",
+                (race_id,),
+            ).fetchall())
+            active_stint = next((s for s in stints if s["status"] == "active"), None)
+
     next_stint = next((s for s in stints if s["status"] == "planned"), None)
 
     # Driver cumulative times
@@ -645,7 +756,7 @@ def get_live_state(conn, race_id: int) -> dict | None:
     engine_data: dict[str, Any] = {}
     try:
         engine = RaceStateEngine.load(conn, race_id)
-        elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+        elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
         snapshot = engine.snapshot()
         engine_data = {
             "current_fuel_kg": round(engine.current_fuel_kg(elapsed), 4),
@@ -675,7 +786,7 @@ def get_live_state(conn, race_id: int) -> dict | None:
     intelligence: dict = {}
     try:
         from race_intelligence import analyze_race
-        elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+        elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
         intelligence = analyze_race(conn, race_id, elapsed) or {}
     except ImportError:
         pass
@@ -684,7 +795,7 @@ def get_live_state(conn, race_id: int) -> dict | None:
 
     # Sleep windows + live status
     sleep_windows = _get_sleep_windows(conn, race_id)
-    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
     driver_sleep_status = _compute_driver_sleep_status(sleep_windows, elapsed)
 
     # Auto-update sleep window statuses in DB
@@ -704,6 +815,20 @@ def get_live_state(conn, race_id: int) -> dict | None:
             sw["status"] = "completed"
     conn.commit()
 
+    # Pit state
+    pit_in_at = race.get("pit_in_at_s")
+    in_pit = pit_in_at is not None
+    pit_elapsed = (elapsed - pit_in_at) if in_pit else 0
+
+    # Penalties
+    try:
+        from services.race_strategy_penalty import get_penalties, get_active_passage
+        penalties = get_penalties(conn, race_id)
+        active_passage = get_active_passage(conn, race_id)
+    except Exception:
+        penalties = []
+        active_passage = None
+
     return {
         "race": race,
         "drivers": drivers,
@@ -712,11 +837,16 @@ def get_live_state(conn, race_id: int) -> dict | None:
         "messages": messages,
         "active_stint": active_stint,
         "next_stint": next_stint,
+        "in_pit": in_pit,
+        "pit_elapsed_s": pit_elapsed,
         "driver_cumulative": driver_cumulative,
         "weather_alerts": weather_alerts,
         "intelligence": intelligence,
         "sleep_windows": sleep_windows,
         "driver_sleep_status": driver_sleep_status,
+        "penalties": penalties,
+        "active_passage": active_passage,
+        "total_penalty_laps": sum(p.get("laps_deducted", 0) for p in penalties),
         **engine_data,
     }
 
@@ -728,6 +858,7 @@ def end_stint(
     driver_change: bool = True,
     refueled: bool = False,
     notes: str | None = None,
+    actual_laps: int | None = None,
 ) -> dict | None:
     """End the current active stint, log a pit stop, and start the next stint.
 
@@ -745,13 +876,24 @@ def end_stint(
     if not active:
         return None
 
-    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
     actual_duration = elapsed - (active["actual_start_s"] or 0)
+
+    # Convert total race laps to stint laps by subtracting completed stints
+    stint_laps = actual_laps
+    if actual_laps is not None:
+        prev_laps = conn.execute(
+            "SELECT COALESCE(SUM(actual_laps), 0) FROM race_stints "
+            "WHERE race_id = ? AND status = 'completed'",
+            (race_id,),
+        ).fetchone()
+        prev_total = prev_laps[0] if prev_laps else 0
+        stint_laps = max(0, actual_laps - prev_total)
 
     conn.execute(
         "UPDATE race_stints SET status = 'completed', actual_end_s = ?, "
-        "actual_duration_s = ? WHERE stint_id = ?",
-        (elapsed, actual_duration, active["stint_id"]),
+        "actual_duration_s = ?, actual_laps = ? WHERE stint_id = ?",
+        (elapsed, actual_duration, stint_laps, active["stint_id"]),
     )
 
     # Log pit stop
@@ -786,6 +928,131 @@ def end_stint(
     return {"ok": True, "elapsed_s": elapsed}
 
 
+def pit_in(
+    conn,
+    race_id: int,
+    *,
+    actual_laps: int | None = None,
+    notes: str | None = None,
+) -> dict | None:
+    """Car enters pit — end current stint, record pit entry time.
+
+    Does NOT start the next stint. The race enters 'in pit' state
+    until ``pit_out`` is called.
+    """
+    race = get_race(conn, race_id)
+    if not race:
+        return None
+
+    active = conn.execute(
+        "SELECT * FROM race_stints WHERE race_id = ? AND status = 'active'",
+        (race_id,),
+    ).fetchone()
+    if not active:
+        return None
+
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+    actual_duration = elapsed - (active["actual_start_s"] or 0)
+
+    # Convert total race laps to stint laps
+    stint_laps = actual_laps
+    if actual_laps is not None:
+        prev_laps = conn.execute(
+            "SELECT COALESCE(SUM(actual_laps), 0) FROM race_stints "
+            "WHERE race_id = ? AND status = 'completed'",
+            (race_id,),
+        ).fetchone()
+        prev_total = prev_laps[0] if prev_laps else 0
+        stint_laps = max(0, actual_laps - prev_total)
+
+    # Complete the stint
+    conn.execute(
+        "UPDATE race_stints SET status = 'completed', actual_end_s = ?, "
+        "actual_duration_s = ?, actual_laps = ? WHERE stint_id = ?",
+        (elapsed, actual_duration, stint_laps, active["stint_id"]),
+    )
+
+    # Record pit entry time on race config
+    conn.execute(
+        "UPDATE race_configs SET pit_in_at_s = ? WHERE race_id = ?",
+        (elapsed, race_id),
+    )
+
+    conn.commit()
+    return {"ok": True, "elapsed_s": elapsed, "in_pit": True}
+
+
+def pit_out(
+    conn,
+    race_id: int,
+    *,
+    driver_change: bool = True,
+    refueled: bool = False,
+    notes: str | None = None,
+    kart_number: str | None = None,
+) -> dict | None:
+    """Car exits pit — record pit stop duration, start next stint.
+
+    Pit duration = elapsed_now - pit_in_at_s. This time is NOT counted
+    toward any driver's total.
+    """
+    race = get_race(conn, race_id)
+    if not race:
+        return None
+
+    pit_in_at = race.get("pit_in_at_s")
+    if pit_in_at is None:
+        return None  # not in pit
+
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+    pit_duration = max(0, elapsed - pit_in_at)
+
+    # Find the last completed stint to link the pit stop
+    last_completed = conn.execute(
+        "SELECT stint_id FROM race_stints "
+        "WHERE race_id = ? AND status = 'completed' ORDER BY stint_order DESC LIMIT 1",
+        (race_id,),
+    ).fetchone()
+    stint_id = (last_completed["stint_id"] if isinstance(last_completed, dict) else last_completed[0]) if last_completed else None
+
+    # Log pit stop with actual duration
+    conn.execute(
+        """INSERT INTO race_pit_stops
+           (race_id, stint_id, actual_at_s, duration_s, driver_change, refueled, notes)
+        VALUES (?,?,?,?,?,?,?)""",
+        (race_id, stint_id, pit_in_at, pit_duration,
+         bool(driver_change), bool(refueled), notes),
+    )
+
+    # Start next stint
+    next_stint = conn.execute(
+        "SELECT stint_id FROM race_stints "
+        "WHERE race_id = ? AND status = 'planned' ORDER BY stint_order LIMIT 1",
+        (race_id,),
+    ).fetchone()
+    if next_stint:
+        next_stint_id = next_stint["stint_id"] if isinstance(next_stint, dict) else next_stint[0]
+        conn.execute(
+            "UPDATE race_stints SET status = 'active', actual_start_s = ? "
+            "WHERE stint_id = ?",
+            (elapsed, next_stint_id),
+        )
+        if kart_number:
+            conn.execute(
+                "UPDATE race_stints SET kart_number = ? WHERE stint_id = ?",
+                (kart_number, next_stint_id),
+            )
+
+    # Clear pit state
+    conn.execute(
+        "UPDATE race_configs SET pit_in_at_s = NULL WHERE race_id = ?",
+        (race_id,),
+    )
+
+    conn.commit()
+    return {"ok": True, "elapsed_s": elapsed, "pit_duration_s": pit_duration, "in_pit": False}
+
+
 def toggle_fuel(conn, race_id: int, stint_order: int) -> dict | None:
     """Toggle refuel on a pit stop and re-cascade via RaceStateEngine.
 
@@ -797,6 +1064,7 @@ def toggle_fuel(conn, race_id: int, stint_order: int) -> dict | None:
         return None
     engine.toggle_fuel(stint_order)
     engine.save(conn, race_id)
+    conn.commit()
     return engine.snapshot()
 
 
@@ -815,6 +1083,37 @@ def set_pit_type(
         return None
     engine.set_pit_type(stint_order, pit_type)
     engine.save(conn, race_id)
+    conn.commit()
+    return engine.snapshot()
+
+
+def set_stint_driver(conn, race_id: int, stint_order: int, driver_id: int) -> dict | None:
+    """Change the driver for a stint and re-cascade.
+
+    Returns the engine snapshot, or None on failure.
+    """
+    try:
+        engine = RaceStateEngine.load(conn, race_id)
+    except Exception:
+        return None
+    engine.set_driver(stint_order, driver_id)
+    engine.save(conn, race_id)
+    conn.commit()
+    return engine.snapshot()
+
+
+def set_stint_duration(conn, race_id: int, stint_order: int, duration_s: int) -> dict | None:
+    """Change the planned duration for a stint and rebuild timeline.
+
+    Returns the engine snapshot, or None on failure.
+    """
+    try:
+        engine = RaceStateEngine.load(conn, race_id)
+    except Exception:
+        return None
+    engine.set_duration(stint_order, duration_s)
+    engine.save(conn, race_id)
+    conn.commit()
     return engine.snapshot()
 
 
@@ -828,7 +1127,7 @@ def wake_driver(conn, race_id: int, driver_id: int) -> dict | None:
     if not race:
         return None
 
-    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
 
     active_window = conn.execute(
         "SELECT id FROM race_sleep_windows "
@@ -866,32 +1165,36 @@ def reoptimize(conn, race_id: int) -> dict:
         (race_id,),
     ).fetchall())
 
-    completed = _rows_to_list(conn.execute(
-        "SELECT * FROM race_stints WHERE race_id = ? AND status = 'completed' "
+    # Include both completed AND active stints as "fixed" — don't re-plan them
+    fixed_stints = _rows_to_list(conn.execute(
+        "SELECT * FROM race_stints WHERE race_id = ? AND status IN ('completed', 'active') "
         "ORDER BY stint_order",
         (race_id,),
     ).fetchall())
 
-    elapsed = _compute_elapsed_s(race.get("race_start_ts"))
-    sleep_windows = _rows_to_list(conn.execute(
-        "SELECT * FROM race_sleep_windows WHERE race_id = ? ORDER BY start_s",
-        (race_id,),
-    ).fetchall())
-    result = reoptimize_remaining(race, drivers, completed, elapsed, sleep_windows=sleep_windows)
+    elapsed = _compute_elapsed_s(race.get("race_start_ts"), race)
+    sleep_windows = _get_sleep_windows(conn, race_id)
+    result = reoptimize_remaining(race, drivers, fixed_stints, elapsed, sleep_windows=sleep_windows)
 
-    # Clear planned stints only
+    # Clear planned stints only (active + completed stay)
     conn.execute(
         "DELETE FROM race_stints WHERE race_id = ? AND status = 'planned'",
         (race_id,),
     )
+    # Also clean up orphan pit stops for deleted planned stints
+    conn.execute(
+        "DELETE FROM race_pit_stops WHERE race_id = ? AND stint_id NOT IN "
+        "(SELECT stint_id FROM race_stints WHERE race_id = ?)",
+        (race_id, race_id),
+    )
 
     # Wrap in engine for fuel/ballast cascade on new stints
-    all_stints = completed + result["stints"]
+    all_stints = fixed_stints + result["stints"]
     engine = RaceStateEngine(race, drivers, all_stints, result["pit_stops"])
 
-    # Save only the NEW planned stints (completed already in DB)
+    # Save only the NEW planned stints (fixed stints already in DB)
     for s in engine.stints:
-        if s.stint_order > len(completed):
+        if s.stint_order > len(fixed_stints):
             conn.execute(
                 """INSERT INTO race_stints (race_id, stint_order, driver_id,
                     planned_start_s, planned_end_s, planned_duration_s,
@@ -990,10 +1293,14 @@ def import_race(conn, data: dict) -> int:
             race_name, track_name, team_name, race_duration_s,
             reference_weight_kg, desired_stints, fuel_autonomy_s,
             min_pit_stop_s, pit_speed_kmh, quick_pit_stop_s, pit_open_s, pit_close_s,
+            blackout_start_min, blackout_end_min,
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
-            mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+            mandatory_driver_change, refueling_allowed, optimization_mode,
+            tech_stop_enabled, tech_stop_duration_s,
+            tech_stop_window_start_s, tech_stop_window_end_s,
+            status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
         RETURNING race_id""",
         (
             race.get("race_name"),
@@ -1008,6 +1315,8 @@ def import_race(conn, data: dict) -> int:
             race.get("quick_pit_stop_s"),
             race.get("pit_open_s"),
             race.get("pit_close_s"),
+            race.get("blackout_start_min"),
+            race.get("blackout_end_min"),
             race.get("empty_kart_kg"),
             race.get("full_tank_kg"),
             race.get("min_total_kart_kg"),
@@ -1016,6 +1325,11 @@ def import_race(conn, data: dict) -> int:
             _pg_bool(race.get("refuel_after_quali", 0)),
             _pg_bool(race.get("mandatory_driver_change", 1), default=True),
             _pg_bool(race.get("refueling_allowed", 1), default=True),
+            race.get("optimization_mode", "equal"),
+            _pg_bool(race.get("tech_stop_enabled", 0)),
+            race.get("tech_stop_duration_s", 360),
+            race.get("tech_stop_window_start_s"),
+            race.get("tech_stop_window_end_s"),
         ),
     )
     _row = cur.fetchone()
@@ -1168,10 +1482,11 @@ def duplicate_race(conn, race_id: int) -> int | None:
             race_name, track_name, team_name, race_duration_s,
             reference_weight_kg, desired_stints, fuel_autonomy_s,
             min_pit_stop_s, pit_speed_kmh, quick_pit_stop_s, pit_open_s, pit_close_s,
+            blackout_start_min, blackout_end_min,
             empty_kart_kg, full_tank_kg, min_total_kart_kg,
             weigh_on_pit_exit, qualifying_duration_s, refuel_after_quali,
-            mandatory_driver_change, refueling_allowed, status
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
+            mandatory_driver_change, refueling_allowed, optimization_mode, status
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'draft')
         RETURNING race_id""",
         (
             r["race_name"] + " (copy)",
@@ -1186,6 +1501,8 @@ def duplicate_race(conn, race_id: int) -> int | None:
             r.get("quick_pit_stop_s"),
             r["pit_open_s"],
             r["pit_close_s"],
+            r.get("blackout_start_min"),
+            r.get("blackout_end_min"),
             r["empty_kart_kg"],
             r["full_tank_kg"],
             r["min_total_kart_kg"],
@@ -1194,6 +1511,7 @@ def duplicate_race(conn, race_id: int) -> int | None:
             _pg_bool(r["refuel_after_quali"]),
             _pg_bool(r["mandatory_driver_change"], default=True),
             _pg_bool(r["refueling_allowed"], default=True),
+            r.get("optimization_mode", "equal"),
         ),
     )
     _row = cur.fetchone()

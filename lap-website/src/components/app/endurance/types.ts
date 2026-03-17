@@ -64,3 +64,60 @@ export const DRIVER_COLORS = [
   '#B6FF2E', '#00d4ff', '#D946EF', '#FF6A00', '#FFD400',
   '#FF3B6B', '#00E5A0', '#8B5CF6',
 ] as const;
+
+export interface RaceAnchor {
+  session_id: string;
+  race_start_iso: string;
+  lap_duration_s: number | null;
+}
+
+export interface EnduranceLiveState {
+  race_start_iso: string;
+  elapsed_s: number;
+  current_stint: {
+    stint_number: number;
+    driver_name: string | null;
+    start_lap: number;
+    laps_completed: number;
+    stint_elapsed_s: number;
+  } | null;
+  completed_stints: Array<{
+    stint_number: number;
+    driver_name: string | null;
+    lap_count: number;
+    best_lap_s: number | null;
+  }>;
+  next_pit_lap: number | null;
+}
+
+export interface PlannedVsActualStint {
+  stint_order: number;
+  driver_name: string;
+  planned: {
+    start_s: number | null;
+    end_s: number | null;
+    duration_s: number;
+  };
+  actual: {
+    start_s: number | null;
+    end_s: number | null;
+    duration_s: number | null;
+    lap_count: number | null;
+    best_lap_s: number | null;
+    mean_lap_s: number | null;
+    consistency_cv_pct: number | null;
+    pace_fade_pct: number | null;
+  };
+  delta_duration_s: number | null;
+}
+
+export interface PlannedVsActualReport {
+  race: { race_name: string; is_retrospective: boolean };
+  stints: PlannedVsActualStint[];
+  summary: {
+    total_planned_s: number;
+    total_actual_s: number;
+    delta_s: number;
+    driver_deltas: Record<string, { planned_s: number; actual_s: number; delta_s: number }>;
+  };
+}

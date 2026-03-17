@@ -28,10 +28,67 @@ def compute_ballast(
     fuel_kg: float,
     driver_weight_kg: float,
 ) -> float:
-    """Calculate required ballast to meet minimum kart weight."""
+    """Calculate required ballast to meet minimum kart weight.
+
+    Rounds up to the nearest 2.5 kg (standard ballast plate increment).
+    """
+    import math
     current = empty_kart_kg + fuel_kg + driver_weight_kg
     needed = min_total_kart_kg - current
-    return max(0.0, round(needed, 2))
+    if needed <= 0:
+        return 0.0
+    return math.ceil(needed / 2.5) * 2.5
+
+
+def _driver_is_sleeping(driver_id: int, start_s: int, end_s: int,
+                       sleep_windows: list[dict[str, Any]]) -> bool:
+    """Return True if driver's sleep window overlaps [start_s, end_s)."""
+    for sw in sleep_windows:
+        if sw.get("driver_id") != driver_id:
+            continue
+        sw_start = sw.get("start_s", 0)
+        sw_end = sw.get("end_s", 0)
+        if max(start_s, sw_start) < min(end_s, sw_end):
+            return True
+    return False
+
+
+def _pick_awake_driver(
+    drivers: list[dict[str, Any]],
+    stint_index: int,
+    clock: int,
+    stint_end_est: int,
+    sleep_windows: list[dict[str, Any]],
+    cumulative: dict[int, int],
+    last_end: dict[int, int],
+    prev_driver_id: int | None = None,
+) -> dict[str, Any] | None:
+    """Pick the first eligible driver starting from round-robin position.
+
+    Skips drivers who are sleeping or would double-stint without permission.
+    Returns None if no driver is eligible.
+    """
+    n = len(drivers)
+    for offset in range(n):
+        candidate = drivers[(stint_index + offset) % n]
+        cid = candidate["id"]
+        # Skip if sleeping
+        if _driver_is_sleeping(cid, clock, int(stint_end_est), sleep_windows):
+            continue
+        # Skip consecutive stint if not allowed
+        if (prev_driver_id is not None
+                and cid == prev_driver_id
+                and not candidate.get("allow_double_stint")
+                and n > 1):
+            continue
+        return candidate
+    # Fallback: relax double-stint constraint (still respect sleep)
+    for offset in range(n):
+        candidate = drivers[(stint_index + offset) % n]
+        cid = candidate["id"]
+        if not _driver_is_sleeping(cid, clock, int(stint_end_est), sleep_windows):
+            return candidate
+    return None
 
 
 def optimize_stints(
@@ -104,24 +161,91 @@ def optimize_stints(
                 "driver_summary": {}, "violations": ["Pit stops exceed race duration"],
                 "warnings": [], "total_pit_time_s": total_pit_time, "total_drive_time_s": 0}
 
-    # Ideal equal stint length
+    # Optimization mode
+    opt_mode = config.get("optimization_mode", "equal")
     ideal_stint = drive_time / n_stints
 
-    # Assign drivers round-robin
+    # Performance mode: compute per-driver total drive time allocation
+    # and build a stint sequence that gives faster drivers more time + more stints
+    driver_budget: dict[int, float] = {}  # driver_id → total seconds to allocate
+    perf_sequence: list[dict] | None = None  # ordered driver list for performance mode
+
+    if opt_mode == "performance":
+        avg_times = {}
+        for d in drivers:
+            avg = d.get("avg_lap_time_s")
+            if avg and avg > 0:
+                avg_times[d["id"]] = avg
+        if len(avg_times) >= 2:
+            # Inverse weighting: faster (lower avg lap) gets more total time
+            inv_sum = sum(1.0 / v for v in avg_times.values())
+            for d in drivers:
+                did = d["id"]
+                avg = avg_times.get(did)
+                if avg:
+                    driver_budget[did] = ((1.0 / avg) / inv_sum) * drive_time
+                else:
+                    # No avg time: equal share
+                    driver_budget[did] = drive_time / len(drivers)
+
+            # Build stint sequence: assign stints to drivers based on budget
+            # Each stint targets ideal_stint length; drivers with more budget
+            # get more stints
+            perf_sequence = []
+            remaining_budget = dict(driver_budget)
+            for _ in range(n_stints):
+                # Pick the driver with the most remaining budget
+                best = max(remaining_budget, key=remaining_budget.get)  # type: ignore[arg-type]
+                best_driver = next(d for d in drivers if d["id"] == best)
+                perf_sequence.append(best_driver)
+                stint_dur = min(ideal_stint, remaining_budget[best])
+                remaining_budget[best] -= stint_dur
+
+    # Assign drivers
     stints = []
-    cumulative = {}  # driver_id -> total seconds assigned
-    last_end = {}    # driver_id -> end time of their last stint
+    cumulative: dict[int, int] = {}
+    last_end: dict[int, int] = {}
 
-    violations = []
-    warnings = []
-    clock = 0  # seconds from race start
+    violations: list[str] = []
+    warnings: list[str] = []
+    clock = 0
 
+    prev_driver_id = None
     for i in range(n_stints):
-        driver = drivers[i % len(drivers)]
+        # Pick driver based on mode
+        if perf_sequence:
+            default_driver = perf_sequence[i]
+        else:
+            default_driver = drivers[i % len(drivers)]
+
+        driver = default_driver
+        stint_end_est = clock + ideal_stint
+        chosen = _pick_awake_driver(
+            drivers, i, clock, stint_end_est,
+            sleep_windows or [], cumulative, last_end,
+            prev_driver_id=prev_driver_id,
+        )
+        if chosen is not None:
+            driver = chosen
+        else:
+            warnings.append(
+                f"No eligible driver at {clock // 3600}h"
+                f"{(clock % 3600) // 60:02d} — assigning "
+                f"{default_driver['driver_name']} anyway"
+            )
         did = driver["id"]
 
         # Calculate stint duration
-        duration = ideal_stint
+        if driver_budget and did in driver_budget:
+            # Performance: use remaining budget, capped at ideal stint
+            spent = cumulative.get(did, 0)
+            remaining = driver_budget[did] - spent
+            duration = min(ideal_stint, max(0, remaining))
+            if duration < ideal_stint * 0.3:
+                # Budget nearly exhausted; give minimum viable stint
+                duration = ideal_stint
+        else:
+            duration = ideal_stint
 
         # Apply driver max stint
         d_max = driver.get("max_stint_s")
@@ -137,6 +261,16 @@ def optimize_stints(
         effective_autonomy = first_stint_autonomy if i == 0 else fuel_autonomy
         if effective_autonomy and duration > effective_autonomy:
             duration = effective_autonomy
+
+        # Clamp duration so stint ends before driver's next sleep window
+        if sleep_windows:
+            for sw in sleep_windows:
+                if sw.get("driver_id") != did:
+                    continue
+                sw_start = sw.get("start_s", 0)
+                # If sleep starts during this stint, end the stint at sleep start
+                if clock < sw_start < clock + duration:
+                    duration = sw_start - clock
 
         # Check driver cumulative max
         d_cum_max = driver.get("max_cumulative_s")
@@ -168,6 +302,7 @@ def optimize_stints(
 
         cumulative[did] = cumulative.get(did, 0) + duration
         last_end[did] = clock + duration
+        prev_driver_id = did
         clock += duration
 
         # Add pit stop time (except after last stint)
@@ -241,6 +376,36 @@ def optimize_stints(
             stints[-1]["planned_start_s"] -= overshoot
             stints[-1]["planned_duration_s"] += overshoot
 
+    # Blackout window enforcement
+    blackout_start_s = (config.get("blackout_start_min") or 0) * 60
+    blackout_end_s = (config.get("blackout_end_min") or 0) * 60
+
+    if blackout_start_s > 0 and len(stints) > 1:
+        first = stints[0]
+        if first["planned_duration_s"] < blackout_start_s:
+            deficit = blackout_start_s - first["planned_duration_s"]
+            first["planned_duration_s"] = blackout_start_s
+            first["planned_end_s"] = first["planned_start_s"] + blackout_start_s
+            stints[-1]["planned_duration_s"] = max(0, stints[-1]["planned_duration_s"] - deficit)
+            clock = first["planned_end_s"] + pit_time
+            for j in range(1, len(stints)):
+                stints[j]["planned_start_s"] = round(clock)
+                stints[j]["planned_end_s"] = round(clock + stints[j]["planned_duration_s"])
+                clock += stints[j]["planned_duration_s"]
+                if j < len(stints) - 1:
+                    clock += pit_time
+
+    if blackout_end_s > 0 and len(stints) > 1:
+        cutoff = race_duration - blackout_end_s
+        last_pit_idx = len(stints) - 2
+        last_pit_at = stints[last_pit_idx]["planned_end_s"]
+        if last_pit_at > cutoff:
+            overshoot = last_pit_at - cutoff
+            stints[last_pit_idx]["planned_duration_s"] -= overshoot
+            stints[last_pit_idx]["planned_end_s"] -= overshoot
+            stints[-1]["planned_start_s"] -= overshoot
+            stints[-1]["planned_duration_s"] += overshoot
+
     # Sleep window overlap warnings (soft constraint)
     if sleep_windows:
         for s in stints:
@@ -281,16 +446,46 @@ def optimize_stints(
                 f"{driver['driver_name']} cumulative {actual}s < minimum {d_cum_min}s"
             )
 
-    # Build pit stops
+    # Build pit stops with linear fuel consumption model
+    refueling_allowed = bool(config.get("refueling_allowed", 1))
+    empty_kart = config.get("empty_kart_kg") or 0.0
+    full_tank_cfg = config.get("full_tank_kg") or 0.0
+    if full_tank_cfg > empty_kart and empty_kart > 0:
+        fuel_capacity = max(0.0, full_tank_cfg - empty_kart)
+    else:
+        fuel_capacity = max(0.0, full_tank_cfg)
+
+    if fuel_autonomy and fuel_capacity > 0:
+        burn_rate = fuel_capacity / fuel_autonomy  # kg/s
+    else:
+        burn_rate = 0.0
+
+    # Simulate fuel level across stints
+    fuel_level = fuel_capacity
+    if first_stint_autonomy and fuel_autonomy and first_stint_autonomy < fuel_autonomy:
+        # Deduct qualifying fuel from initial level
+        fuel_level = fuel_capacity * (first_stint_autonomy / fuel_autonomy)
+
     pit_stops = []
     for i in range(len(stints) - 1):
+        # Consume fuel for current stint
+        consumed = burn_rate * stints[i]["planned_duration_s"]
+        fuel_level -= consumed
+
+        # Determine if refuel is needed: can the remaining fuel cover the next stint?
+        next_stint_need = burn_rate * stints[i + 1]["planned_duration_s"]
+        needs_refuel = refueling_allowed and burn_rate > 0 and fuel_level < next_stint_need
+
         pit_stops.append({
             "after_stint": i + 1,
             "at_s": stints[i]["planned_end_s"],
             "duration_s": pit_time,
             "driver_change": stints[i]["driver_id"] != stints[i + 1]["driver_id"],
-            "refuel": True,
+            "refuel": needs_refuel,
         })
+
+        if needs_refuel:
+            fuel_level = fuel_capacity  # refilled to full
 
     # Check pit window violations
     if pit_open:
@@ -397,7 +592,12 @@ def _compute_stint_ballast(
     if not all([min_kart, empty, driver_weight]):
         return 0.0
 
-    fuel_kg = (full_tank or 0) - (empty or 0) if full_tank else 0
+    ft = full_tank or 0
+    ek = empty or 0
+    if ft > ek and ek > 0:
+        fuel_kg = ft - ek
+    else:
+        fuel_kg = ft
     fuel_kg = max(0, fuel_kg)
 
     return compute_ballast(min_kart, empty, fuel_kg, driver_weight)

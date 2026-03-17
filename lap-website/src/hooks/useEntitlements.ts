@@ -26,6 +26,7 @@ interface MeResponse {
     coaching_plans_enabled: boolean;
     visualization_enabled: boolean;
     race_strategy_limit: string | null;
+    race_strategy_max_duration_s: number | null;
     live_monitoring: boolean;
     export_formats: string[];
     telemetry_retention_days: number;
@@ -48,6 +49,7 @@ function mapEntitlements(raw: NonNullable<MeResponse['entitlements']>): Entitlem
     coachingPlansEnabled: raw.coaching_plans_enabled,
     visualizationEnabled: raw.visualization_enabled,
     raceStrategyLimit: raw.race_strategy_limit as Entitlements['raceStrategyLimit'],
+    raceStrategyMaxDurationS: raw.race_strategy_max_duration_s,
     liveMonitoring: raw.live_monitoring,
     exportFormats: raw.export_formats ?? ['csv'],
     telemetryRetentionDays: raw.telemetry_retention_days ?? 30,

@@ -17,7 +17,8 @@ export interface Entitlements {
   comparisonEnabled: boolean;
   coachingPlansEnabled: boolean;
   visualizationEnabled: boolean;
-  raceStrategyLimit: 'limited_3h' | 'full' | null;
+  raceStrategyLimit: '4h_simple' | '12h_complex' | 'unlimited' | null;
+  raceStrategyMaxDurationS: number | null;
   liveMonitoring: boolean;
   exportFormats: string[];
   telemetryRetentionDays: number;
@@ -57,7 +58,8 @@ const UPGRADE_TIERS: Record<string, { tier: string; url: string }> = {
   visualization: { tier: 'racer', url: '/pricing?plan=RACER' },
   live_monitoring: { tier: 'racer', url: '/pricing?plan=RACER' },
   export_pdf: { tier: 'racer', url: '/pricing?plan=RACER' },
-  race_strategy_full: { tier: 'racer', url: '/pricing?plan=RACER' },
+  race_strategy_complex: { tier: 'racer', url: '/pricing?plan=RACER' },
+  race_strategy_full: { tier: 'world-class', url: '/pricing?plan=WORLD-CLASS' },
 };
 
 /**
@@ -77,9 +79,12 @@ export function canUseFeature(feature: string): boolean {
     return ent.exportFormats.includes('pdf');
   }
 
-  // Full race strategy
+  // Race strategy tiers
   if (feature === 'race_strategy_full') {
-    return ent.raceStrategyLimit !== 'limited_3h';
+    return ent.raceStrategyLimit === 'unlimited';
+  }
+  if (feature === 'race_strategy_complex') {
+    return ent.raceStrategyLimit === '12h_complex' || ent.raceStrategyLimit === 'unlimited';
   }
 
   return true; // Unknown features are allowed
