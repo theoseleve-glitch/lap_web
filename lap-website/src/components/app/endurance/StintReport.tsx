@@ -87,6 +87,17 @@ export function StintReport({ sessionId, stint, onBack }: StintReportProps) {
         <StatCard label="Pace Fade" value={stint.pace_fade_pct != null ? `${stint.pace_fade_pct.toFixed(1)}%` : '--'} />
       </div>
 
+      {/* Traffic Time Loss */}
+      {((stint as any).traffic_count > 0) && (
+        <div className="bg-concrete rounded-xl border border-safety-red/20 p-4">
+          <div className="flex items-center gap-3">
+            <span className="text-safety-red font-monument text-lg">{(stint as any).traffic_count}</span>
+            <span className="text-steel text-xs font-body">traffic incidents</span>
+            <span className="text-safety-red font-telemetry text-sm ml-auto">{((stint as any).traffic_total_s || 0).toFixed(1)}s lost</span>
+          </div>
+        </div>
+      )}
+
       {/* Score bars */}
       {stint.scores && (
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">

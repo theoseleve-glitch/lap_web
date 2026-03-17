@@ -290,6 +290,24 @@ def _process_single_stint(
             if lm.get("lap_time_s") and lm["lap_time_s"] > 0
         ]
 
+        # Traffic time loss: triplet analysis on valid lap times
+        traffic_losses = []
+        traffic_total_s = 0.0
+        for j in range(1, len(valid_times) - 1):
+            prev_t = valid_times[j - 1]
+            curr_t = valid_times[j]
+            next_t = valid_times[j + 1]
+            neighbor_mean = (prev_t + next_t) / 2
+            delta = curr_t - neighbor_mean
+            if delta >= 2.0 and curr_t > prev_t + 2.0 and curr_t > next_t + 2.0:
+                traffic_losses.append({
+                    "lap_index": j,
+                    "lap_time_s": round(curr_t, 3),
+                    "neighbor_mean_s": round(neighbor_mean, 3),
+                    "time_lost_s": round(delta, 3),
+                })
+                traffic_total_s += delta
+
         return {
             "stint_number": stint_number,
             "driver_name": driver_name,
@@ -300,6 +318,9 @@ def _process_single_stint(
             "best_lap_s": round(min(valid_times), 3) if valid_times else None,
             "mean_lap_s": round(sum(valid_times) / len(valid_times), 3) if valid_times else None,
             "total_time_s": round(sum(valid_times), 3) if valid_times else 0,
+            "traffic_losses": traffic_losses,
+            "traffic_total_s": round(traffic_total_s, 3),
+            "traffic_count": len(traffic_losses),
             "scores": {
                 "pace": round(subs.get("pace", {}).get("score", 0), 1),
                 "consistency": round(subs.get("consistency", {}).get("score", 0), 1),
