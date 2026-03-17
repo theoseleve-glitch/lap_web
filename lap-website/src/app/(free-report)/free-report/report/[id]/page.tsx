@@ -253,7 +253,7 @@ export default function FreeReportPage() {
         </p>
         <a
           href="/pricing"
-          className="inline-block px-8 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider rounded hover:brightness-110 transition-all"
+          className="inline-block px-8 py-3 bg-pit-orange text-white font-monument text-lg tracking-wider rounded hover:brightness-110 transition-all"
         >
           Upgrade to Racer — from €6/mo
         </a>

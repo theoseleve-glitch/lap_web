@@ -38,7 +38,7 @@ export default function ForgotPasswordPage() {
         </p>
         <Link
           href="/login"
-          className="inline-block py-2 px-6 bg-pit-orange text-asphalt font-monument text-lg rounded
+          className="inline-block py-2 px-6 bg-pit-orange text-white font-monument text-lg rounded
             hover:brightness-110 transition-all"
         >
           {t('auth.forgotPassword.backToLogin')}
@@ -74,7 +74,7 @@ export default function ForgotPasswordPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full mt-2 py-3 bg-pit-orange text-asphalt font-monument text-lg tracking-wider
+          className="w-full mt-2 py-3 bg-pit-orange text-white font-monument text-lg tracking-wider
             rounded hover:brightness-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {loading ? t('auth.forgotPassword.submitting') : t('auth.forgotPassword.submit')}

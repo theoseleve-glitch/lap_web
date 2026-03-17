@@ -184,7 +184,8 @@ export default function LiveDashboardPage() {
   });
 
   const reoptimizeMut = useMutation({
-    mutationFn: () => api.post<unknown>(`/race-strategy/${raceId}/reoptimize`),
+    mutationFn: (vars?: { wet_lap_time_s?: number; rain_duration_min?: number }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/reoptimize`, vars ?? {}),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
   });
 
@@ -243,6 +244,8 @@ export default function LiveDashboardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
   });
 
+  const [applyingStrategy, setApplyingStrategy] = useState<string | null>(null);
+
   /* client-side clock — stops ticking when paused */
   const [now, setNow] = useState(Date.now());
   const paused = !!(state?.race?.paused_at_ts);
@@ -253,6 +256,19 @@ export default function LiveDashboardPage() {
   }, [paused]);
 
   const [showConditionMenu, setShowConditionMenu] = useState(false);
+  // Rain scenario input
+  const [rainInput, setRainInput] = useState<{ wetLapTime: string; durationMin: string } | null>(null);
+  const [rainScenarios, setRainScenarios] = useState<Array<{
+    name: string; description: string; approach: string; score: number;
+    stints: Array<{ stint_order: number; driver_id: number; driver_name: string; start_s: number; duration_s: number }>;
+    metrics: {
+      pits_in_rain: number; pits_in_dry: number; rain_drive_s: number; dry_drive_s: number;
+      driver_transitions: number; min_stint_s: number; max_stint_s: number;
+      flexibility_score: number; risk_score: number; total_pit_s: number;
+    };
+  }> | null>(null);
+  const [loadingStrategies, setLoadingStrategies] = useState(false);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
   const [showSleepWarning, setShowSleepWarning] = useState(false);
   const [showPitInForm, setShowPitInForm] = useState(false);
   const [pitInLaps, setPitInLaps] = useState('');
@@ -285,7 +301,7 @@ export default function LiveDashboardPage() {
     return (
       <div className="text-safety-red font-body p-8 text-center">
         Failed to load live state.{' '}
-        <Link href={`/app/race-strategy/${raceId}`} className="underline text-pit-orange">
+        <Link href={`/app/race-strategy/${raceId}`} className="underline text-gold">
           Back to race
         </Link>
       </div>
@@ -381,15 +397,7 @@ export default function LiveDashboardPage() {
                 PAUSED
               </span>
             )}
-            {(race as any).current_condition && (race as any).current_condition !== 'dry' && (
-              <span className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${
-                (race as any).current_condition === 'wet'
-                  ? 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30'
-                  : 'text-steel bg-steel/10 border-steel/30'
-              }`}>
-                {(race as any).current_condition}
-              </span>
-            )}
+            {/* Weather badge — hidden for V2 redesign */}
           </div>
         }
       />
@@ -442,7 +450,7 @@ export default function LiveDashboardPage() {
                 type="button"
                 onClick={() => { techStopOutMut.mutate(); setIsTechStop(false); }}
                 disabled={techStopOutMut.isPending}
-                className="px-5 py-2.5 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+                className="px-5 py-2.5 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
               >
                 {techStopOutMut.isPending ? 'Resuming...' : 'Resume'}
               </button>
@@ -477,7 +485,7 @@ export default function LiveDashboardPage() {
             </button>
           )
         ) : showPitInForm ? (
-          <div className="flex items-center gap-2 bg-pit-orange/10 border border-pit-orange/30 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2 bg-gold/10 border border-gold/30 rounded-lg px-4 py-2">
             <span className="text-chalk font-body text-sm">Total laps:</span>
             <input
               type="number"
@@ -496,7 +504,7 @@ export default function LiveDashboardPage() {
                 setPitInLaps('');
               }}
               disabled={pitInMut.isPending}
-              className="px-3 py-1 bg-pit-orange text-white font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+              className="px-3 py-1 bg-gold text-white font-telemetry text-xs uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
             >
               {pitInMut.isPending ? 'Pitting...' : 'Confirm Pit In'}
             </button>
@@ -509,7 +517,7 @@ export default function LiveDashboardPage() {
             type="button"
             onClick={() => setShowPitInForm(true)}
             disabled={pitInMut.isPending || !activeStint}
-            className="px-5 py-2.5 bg-pit-orange text-white font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            className="px-5 py-2.5 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             Pit In
           </button>
@@ -536,41 +544,19 @@ export default function LiveDashboardPage() {
             type="button"
             onClick={() => pauseMut.mutate()}
             disabled={pauseMut.isPending}
-            className="px-4 py-2 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             {pauseMut.isPending ? 'Pausing...' : 'Pause'}
           </button>
         )}
-        {/* Track Condition */}
-        {showConditionMenu ? (
-          <div className="flex items-center gap-1 bg-concrete border border-steel/20 rounded-lg px-2 py-1">
-            {['dry', 'damp', 'wet'].map((c) => (
-              <button key={c} type="button" onClick={() => { setConditionMut.mutate(c); setShowConditionMenu(false); }}
-                className={`px-3 py-1 rounded text-xs font-telemetry uppercase transition-colors ${
-                  (race as any).current_condition === c ? 'bg-marshal-yellow text-white' : 'text-steel hover:text-chalk'
-                }`}
-              >{c}</button>
-            ))}
-            <button type="button" onClick={() => setShowConditionMenu(false)} className="text-steel text-xs ml-1">{'\u2715'}</button>
-          </div>
-        ) : (
-          <button type="button" onClick={() => setShowConditionMenu(true)}
-            className={`px-4 py-2 border font-telemetry text-sm tracking-wider uppercase transition-colors ${
-              (race as any).current_condition === 'wet' ? 'border-marshal-yellow/40 text-marshal-yellow bg-marshal-yellow/10' :
-              (race as any).current_condition === 'damp' ? 'border-marshal-yellow/30 text-marshal-yellow' :
-              'border-steel/30 text-steel hover:text-chalk'
-            }`}
-          >
-            {(race as any).current_condition || 'Dry'}
-          </button>
-        )}
+        {/* Track Condition — moved to weather panel below */}
         {/* Tech Stop Button */}
         {!state.in_pit && (race as Record<string, unknown>).tech_stop_enabled && (
           <button
             type="button"
             onClick={() => { techStopInMut.mutate(); setIsTechStop(true); }}
             disabled={techStopInMut.isPending}
-            className="px-4 py-2 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             {techStopInMut.isPending ? 'Stopping...' : 'Tech Stop'}
           </button>
@@ -724,10 +710,10 @@ export default function LiveDashboardPage() {
 
         {/* In Pit Panel */}
         {state.in_pit && nextStint && (
-          <div className="bg-concrete rounded-lg border-2 border-pit-orange p-4 space-y-4 col-span-full">
+          <div className="bg-concrete rounded-lg border-2 border-gold p-4 space-y-4 col-span-full">
             <div className="flex items-center gap-3">
-              <h3 className="font-telemetry text-xs text-pit-orange uppercase tracking-wider animate-pulse">In Pit</h3>
-              <span className="font-monument text-3xl text-pit-orange tabular-nums">{formatTimeLarge(state.pit_elapsed_s)}</span>
+              <h3 className="font-telemetry text-xs text-gold uppercase tracking-wider animate-pulse">In Pit</h3>
+              <span className="font-monument text-3xl text-gold tabular-nums">{formatTimeLarge(state.pit_elapsed_s)}</span>
             </div>
             {(() => {
               const nextDriver = drivers.find((d) => d.id === nextStint.driver_id);
@@ -803,7 +789,7 @@ export default function LiveDashboardPage() {
                     <div className="text-chalk font-telemetry">{formatTime(Math.round(driverTotalDrive))}</div>
                     {pitLap != null && (<>
                       <div className="text-steel">Expected Pit Lap</div>
-                      <div className="text-pit-orange font-telemetry">{pitLap}</div>
+                      <div className="text-gold font-telemetry">{pitLap}</div>
                     </>)}
                   </div>
                   {/* stint progress bar */}
@@ -903,6 +889,312 @@ export default function LiveDashboardPage() {
           activeStintId={activeStint?.stint_id}
         />
       </div>
+
+      {/* Weather Panel — hidden for V2 redesign */}
+      {false && (() => {
+        const weatherWindows = (state.weather_windows ?? []) as Array<{
+          start_s: number; end_s: number; condition: string; confidence_pct: number;
+        }>;
+        const currentCondition = (race as any).current_condition || 'dry';
+        const hasWeather = weatherWindows.length > 0 || currentCondition !== 'dry';
+
+        // Always show weather panel
+
+        // Find next weather transition
+        const nextTransition = weatherWindows.find(w => w.start_s > elapsed);
+        const currentForecast = weatherWindows.find(w => w.start_s <= elapsed && w.end_s > elapsed);
+        const forecastCondition = currentForecast?.condition || 'dry';
+        const conditionMismatch = currentCondition !== forecastCondition && currentForecast;
+
+        // Best driver for wet conditions (by wet_confidence)
+        const bestForNext = [...drivers].sort((a, b) => (b.wet_confidence || 0) - (a.wet_confidence || 0))[0];
+
+        const conditionColors: Record<string, string> = {
+          dry: 'bg-steel/30',
+          damp: 'bg-marshal-yellow/40',
+          wet: 'bg-marshal-yellow/70',
+        };
+
+        return (
+          <div className="bg-concrete rounded-lg border border-steel/20 p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider">Weather</h3>
+              <div className="flex items-center gap-2">
+                {['dry', 'damp', 'wet'].map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => setConditionMut.mutate(c)}
+                    className={`px-3 py-1 rounded text-xs font-telemetry uppercase transition-colors ${
+                      currentCondition === c
+                        ? 'bg-gold text-white'
+                        : 'text-steel border border-steel/20 hover:text-chalk'
+                    }`}
+                  >{c}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Weather Timeline */}
+            {weatherWindows.length > 0 && (
+              <div className="relative">
+                <div className="w-full h-6 bg-asphalt rounded-full overflow-hidden flex">
+                  {/* Dry segments fill gaps */}
+                  {(() => {
+                    const segments: Array<{ start: number; end: number; condition: string; confidence: number }> = [];
+                    let cursor = 0;
+                    for (const w of weatherWindows.sort((a, b) => a.start_s - b.start_s)) {
+                      if (w.start_s > cursor) {
+                        segments.push({ start: cursor, end: w.start_s, condition: 'dry', confidence: 100 });
+                      }
+                      segments.push({ start: w.start_s, end: w.end_s, condition: w.condition, confidence: w.confidence_pct });
+                      cursor = w.end_s;
+                    }
+                    if (cursor < race.race_duration_s) {
+                      segments.push({ start: cursor, end: race.race_duration_s, condition: 'dry', confidence: 100 });
+                    }
+                    return segments.map((seg, idx) => {
+                      const pct = ((seg.end - seg.start) / race.race_duration_s) * 100;
+                      return (
+                        <div
+                          key={idx}
+                          className={`h-full ${conditionColors[seg.condition] || 'bg-steel/30'} border-r border-asphalt/50`}
+                          style={{ width: `${pct}%`, opacity: seg.confidence / 100 }}
+                          title={`${seg.condition} (${seg.confidence}%) — ${formatTime(seg.start)}→${formatTime(seg.end)}`}
+                        />
+                      );
+                    });
+                  })()}
+                </div>
+                {/* Current position marker */}
+                <div
+                  className="absolute top-0 w-0.5 h-6 bg-acid-green"
+                  style={{ left: `${Math.min(100, (elapsed / race.race_duration_s) * 100)}%` }}
+                />
+              </div>
+            )}
+
+            {/* Condition mismatch warning */}
+            {conditionMismatch && (
+              <div className="flex items-center gap-3 bg-marshal-yellow/10 border border-marshal-yellow/30 rounded-lg px-4 py-2">
+                <span className="text-marshal-yellow font-telemetry text-xs uppercase">
+                  Forecast: {forecastCondition} — Actual: {currentCondition}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => reoptimizeMut.mutate()}
+                  disabled={reoptimizeMut.isPending}
+                  className="px-3 py-1 bg-gold text-white font-telemetry text-xs uppercase rounded hover:bg-gold/80 transition-colors disabled:opacity-50 ml-auto"
+                >
+                  Re-optimize
+                </button>
+              </div>
+            )}
+
+            {/* Info row: next change + recommended driver */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Next Forecast Change</p>
+                {nextTransition ? (
+                  <>
+                    <p className="text-chalk font-telemetry text-sm">
+                      {nextTransition.condition.toUpperCase()} in {formatTime(nextTransition.start_s - elapsed)}
+                    </p>
+                    <p className="text-steel font-body text-xs">{nextTransition.confidence_pct}% confidence</p>
+                  </>
+                ) : (
+                  <p className="text-steel font-body text-xs">No change expected</p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Best Wet Driver</p>
+                {bestForNext && (
+                  <div className="flex items-center gap-2">
+                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: driverColors[bestForNext.id] }} />
+                    <span className="text-chalk font-telemetry text-sm">{bestForNext.driver_name}</span>
+                    <span className="text-marshal-yellow font-telemetry text-xs">
+                      {Math.round((bestForNext.wet_confidence || 0.5) * 100)}% confidence
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Rain scenario input — shown when condition is wet or damp */}
+            {currentCondition !== 'dry' && !rainScenarios && (
+              <div className="bg-marshal-yellow/5 border border-marshal-yellow/20 rounded-lg p-4 space-y-3">
+                <p className="text-marshal-yellow font-telemetry text-xs uppercase tracking-wider">
+                  Rain detected — enter conditions for strategy scenarios
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-steel font-telemetry text-[10px] uppercase tracking-wider block mb-1">Current wet lap time (s)</label>
+                    <input
+                      type="number"
+                      value={rainInput?.wetLapTime || ''}
+                      onChange={(e) => setRainInput(prev => ({ wetLapTime: e.target.value, durationMin: prev?.durationMin || '' }))}
+                      placeholder="e.g. 85"
+                      className="bg-asphalt border border-steel/20 rounded px-3 py-2 text-chalk font-telemetry text-sm w-full"
+                      step="0.1"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-steel font-telemetry text-[10px] uppercase tracking-wider block mb-1">Expected rain duration (min)</label>
+                    <input
+                      type="number"
+                      value={rainInput?.durationMin || ''}
+                      onChange={(e) => setRainInput(prev => ({ wetLapTime: prev?.wetLapTime || '', durationMin: e.target.value }))}
+                      placeholder="e.g. 45"
+                      className="bg-asphalt border border-steel/20 rounded px-3 py-2 text-chalk font-telemetry text-sm w-full"
+                      min="1"
+                    />
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const wetLap = parseFloat(rainInput?.wetLapTime || '0');
+                    const durMin = parseInt(rainInput?.durationMin || '0');
+                    if (!wetLap || !durMin) return;
+                    setLoadingStrategies(true);
+                    setStrategyError(null);
+                    try {
+                      const data = await api.post<{ strategies: typeof rainScenarios }>(`/race-strategy/${raceId}/strategies`, {
+                        wet_lap_time_s: wetLap,
+                        rain_duration_min: durMin,
+                      });
+                      const strategies = (data as any).strategies ?? data;
+                      if (!strategies || (Array.isArray(strategies) && strategies.length === 0)) {
+                        setStrategyError('No viable strategies found — all 7 approaches were infeasible for current race state.');
+                        setRainScenarios(null);
+                      } else {
+                        setRainScenarios(strategies);
+                      }
+                    } catch (err) {
+                      console.error('Strategy generation failed:', err);
+                      setStrategyError(`Strategy generation failed: ${err instanceof Error ? err.message : String(err)}`);
+                    } finally {
+                      setLoadingStrategies(false);
+                    }
+                  }}
+                  disabled={!rainInput?.wetLapTime || !rainInput?.durationMin || loadingStrategies}
+                  className="px-4 py-2 bg-gold text-white font-telemetry text-xs uppercase tracking-wider rounded hover:bg-gold/80 transition-colors disabled:opacity-30"
+                >
+                  {loadingStrategies ? 'Computing 7 strategies...' : 'Generate strategies'}
+                </button>
+              </div>
+            )}
+
+            {/* Strategy error/empty feedback */}
+            {strategyError && (
+              <div className="p-3 border border-safety-red/30 bg-safety-red/5 rounded-lg">
+                <p className="text-safety-red font-telemetry text-xs">{strategyError}</p>
+              </div>
+            )}
+
+            {/* Scenario results */}
+            {rainScenarios && rainScenarios.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-marshal-yellow font-telemetry text-xs uppercase tracking-wider">
+                    {rainScenarios.length} Strategies Generated — Ranked by Score
+                  </p>
+                  <button type="button" onClick={() => { setRainScenarios(null); setRainInput(null); }} className="text-steel text-xs hover:text-chalk transition-colors">Clear</button>
+                </div>
+                {rainScenarios.map((sc, idx) => {
+                  const risk = sc.metrics.risk_score;
+                  const riskLevel = risk < 0.3 ? 'low' : risk < 0.6 ? 'medium' : 'high';
+                  const borderColor = riskLevel === 'low' ? 'border-acid-green/30 bg-acid-green/5' : riskLevel === 'medium' ? 'border-marshal-yellow/30 bg-marshal-yellow/5' : 'border-safety-red/30 bg-safety-red/5';
+                  const badgeColor = riskLevel === 'low' ? 'text-acid-green bg-acid-green/10 border-acid-green/30' : riskLevel === 'medium' ? 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30' : 'text-safety-red bg-safety-red/10 border-safety-red/30';
+
+                  return (
+                    <div key={idx} className={`border rounded-lg p-4 ${borderColor}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-chalk font-telemetry text-sm">{sc.name}</span>
+                          <span className="text-steel font-telemetry text-xs">Score: {sc.score}</span>
+                        </div>
+                        <span className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${badgeColor}`}>
+                          {riskLevel} risk ({Math.round(risk * 100)}%)
+                        </span>
+                      </div>
+
+                      <p className="text-steel font-body text-xs mb-3">{sc.description}</p>
+
+                      {/* Metrics grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                        <div>
+                          <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Rain pits</p>
+                          <p className="text-marshal-yellow font-telemetry text-sm">{sc.metrics.pits_in_rain}</p>
+                        </div>
+                        <div>
+                          <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Dry pits</p>
+                          <p className="text-chalk font-telemetry text-sm">{sc.metrics.pits_in_dry}</p>
+                        </div>
+                        <div>
+                          <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Transitions</p>
+                          <p className="text-chalk font-telemetry text-sm">{sc.metrics.driver_transitions}</p>
+                        </div>
+                        <div>
+                          <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider">Flexibility</p>
+                          <p className="text-chalk font-telemetry text-sm">{Math.round(sc.metrics.flexibility_score * 100)}%</p>
+                        </div>
+                      </div>
+
+                      {/* Stint preview */}
+                      <div className="mb-3">
+                        <p className="text-steel font-telemetry text-[10px] uppercase tracking-wider mb-1">Stint preview (first 6)</p>
+                        <div className="flex gap-1 flex-wrap">
+                          {sc.stints.slice(0, 6).map((st, si) => {
+                            const inRain = rainInput ? st.start_s < elapsed + parseInt(rainInput.durationMin || '0') * 60 && st.start_s + st.duration_s > elapsed : false;
+                            return (
+                              <div key={si} className={`px-2 py-1 rounded text-[10px] font-telemetry ${inRain ? 'bg-marshal-yellow/20 text-marshal-yellow' : 'bg-asphalt text-steel'}`}>
+                                {st.driver_name.slice(0, 3)} {Math.round(st.duration_s / 60)}m
+                              </div>
+                            );
+                          })}
+                          {sc.stints.length > 6 && <span className="text-steel text-[10px] self-center">+{sc.stints.length - 6} more</span>}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setApplyingStrategy(sc.approach);
+                          try {
+                            await api.post(`/race-strategy/${raceId}/apply-strategy`, {
+                              approach: sc.approach,
+                              stints: sc.stints,
+                            });
+                            qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] });
+                            setRainScenarios(null);
+                            setRainInput(null);
+                          } catch (err) {
+                            console.error('Apply strategy failed:', err);
+                          } finally {
+                            setApplyingStrategy(null);
+                          }
+                        }}
+                        disabled={applyingStrategy === sc.approach}
+                        className="px-3 py-1.5 border border-gold/30 text-gold font-telemetry text-[10px] uppercase tracking-wider rounded hover:bg-gold/10 transition-colors disabled:opacity-50"
+                      >
+                        {applyingStrategy === sc.approach ? 'Applying...' : 'Adopt this strategy'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Dry state info */}
+            {currentCondition === 'dry' && !rainScenarios && (
+              <p className="text-steel font-body text-xs">
+                Track is dry. When conditions change, set the condition above and enter wet lap times to generate strategy scenarios.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Driver Summary */}
       {stints.length > 0 && (
@@ -1076,7 +1368,7 @@ export default function LiveDashboardPage() {
                     <td className="px-4 py-3 text-chalk font-telemetry text-sm text-right">
                       {s.actual_laps != null ? s.actual_laps : (estLaps(s) ?? '\u2014')}
                     </td>
-                    <td className="px-4 py-3 text-pit-orange font-telemetry text-sm text-right">
+                    <td className="px-4 py-3 text-gold font-telemetry text-sm text-right">
                       {cumulativeLaps(s.stint_order) || '\u2014'}
                     </td>
                     <td className="px-4 py-3 text-chalk font-telemetry text-sm">

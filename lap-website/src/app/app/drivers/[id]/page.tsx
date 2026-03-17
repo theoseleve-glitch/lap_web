@@ -16,7 +16,7 @@ import { ProgressionChart } from '@/components/app/drivers/ProgressionChart';
 import { StyleRadar } from '@/components/app/drivers/StyleRadar';
 import { BadgeGrid } from '@/components/app/drivers/BadgeGrid';
 import { DriverSessionsTable } from '@/components/app/drivers/DriverSessionsTable';
-import { XPProgressBar, StreakCounter, AchievementGrid } from '@/components/app/gamification';
+import { XPProgressBar, StreakCounter, AchievementGrid, LicenceCard } from '@/components/app/gamification';
 import type { DriverProgress, Achievement } from '@/components/app/gamification';
 
 /* ── Helpers ───────────────────────────────────────────── */
@@ -183,6 +183,11 @@ export default function DriverDetailPage() {
             longestStreak={gamification.longest_streak}
           />
         </div>
+      )}
+
+      {/* ── Licence Card ─────────────────────────────────── */}
+      {gamificationQ.data?.licence && (
+        <LicenceCard {...gamificationQ.data.licence} />
       )}
 
       {/* ── Stats Bar ──────────────────────────────────── */}

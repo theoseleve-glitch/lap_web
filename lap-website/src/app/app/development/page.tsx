@@ -150,7 +150,7 @@ export default function DevelopmentPlansPage() {
           <button
             type="button"
             onClick={() => setShowForm((v) => !v)}
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="px-4 py-2 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
           >
             {showForm ? 'Cancel' : '+ New Plan'}
           </button>
@@ -191,7 +191,7 @@ export default function DevelopmentPlansPage() {
             <button
               type="submit"
               disabled={createMutation.isPending}
-              className="px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded
+              className="px-6 py-2.5 bg-gold text-white font-telemetry text-sm rounded
                 hover:bg-gold/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {createMutation.isPending ? 'Creating...' : 'Create'}
@@ -263,7 +263,7 @@ export default function DevelopmentPlansPage() {
           <button
             type="button"
             onClick={() => setShowForm(true)}
-            className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
           >
             Create First Plan
           </button>

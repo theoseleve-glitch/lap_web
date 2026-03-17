@@ -186,7 +186,7 @@ export default function FreeReportAnalyzePage() {
           )}
           <Link
             href="/pricing"
-            className="px-5 py-2.5 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
+            className="px-5 py-2.5 bg-pit-orange text-white font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
           >
             {t('freeReport.upgradeNow')}
           </Link>
@@ -219,7 +219,7 @@ export default function FreeReportAnalyzePage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="px-5 py-2.5 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
+              className="px-5 py-2.5 bg-pit-orange text-white font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
             >
               {t('freeReport.chooseFile')}
             </button>
@@ -246,7 +246,7 @@ export default function FreeReportAnalyzePage() {
               type="button"
               disabled={!file}
               onClick={() => setStep(2)}
-              className="px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gold/80 transition-colors"
+              className="px-6 py-2.5 bg-gold text-white font-telemetry text-sm rounded disabled:opacity-30 disabled:cursor-not-allowed hover:bg-gold/80 transition-colors"
             >
               {t('freeReport.nextConfigure')}
             </button>
@@ -309,7 +309,7 @@ export default function FreeReportAnalyzePage() {
               type="button"
               onClick={handleSubmit}
               disabled={uploading}
-              className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 bg-gold text-white font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {uploading ? t('freeReport.uploading', 'Uploading...') : t('freeReport.startAnalysis')}
             </button>
@@ -337,7 +337,7 @@ export default function FreeReportAnalyzePage() {
                         : '/free-report/analyze',
                     )
                   }
-                  className="px-6 py-2.5 bg-gold text-asphalt font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors"
+                  className="px-6 py-2.5 bg-gold text-white font-monument text-sm tracking-wider rounded hover:bg-gold/80 transition-colors"
                 >
                   {t('freeReport.viewReport')}
                 </button>

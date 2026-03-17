@@ -134,7 +134,7 @@ export default function ExportsPage() {
             type="button"
             onClick={handleGenerate}
             disabled={generating}
-            className="px-6 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded disabled:opacity-50 hover:bg-pit-orange/80 transition-colors"
+            className="px-6 py-2 bg-pit-orange text-white font-telemetry text-sm rounded disabled:opacity-50 hover:bg-pit-orange/80 transition-colors"
           >
             {generating ? 'Generating...' : 'Generate'}
           </button>

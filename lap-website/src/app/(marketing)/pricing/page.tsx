@@ -456,7 +456,7 @@ export default function PricingPage() {
         </div>
         <a
           href="/register?source=pricing-sticky"
-          className="shrink-0 px-5 py-2.5 bg-pit-orange text-carbon font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
+          className="shrink-0 px-5 py-2.5 bg-pit-orange text-white font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
         >
           Get Started
         </a>

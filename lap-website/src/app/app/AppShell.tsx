@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Skip to content — visible on focus for keyboard users */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-gold focus:text-carbon focus:font-telemetry focus:text-sm focus:rounded"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-4 focus:py-2 focus:bg-gold focus:text-white focus:font-telemetry focus:text-sm focus:rounded"
       >
         Skip to content
       </a>
@@ -172,12 +172,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <UnitToggle />
               <Link
                 href="/app/analyze"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gold text-carbon font-telemetry text-xs font-semibold rounded hover:bg-gold/90 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gold text-white font-telemetry text-xs font-semibold rounded hover:bg-gold/90 transition-colors"
               >
                 + Upload
               </Link>
             </div>
-            <div className="max-w-7xl mx-auto px-6 py-6">
+            <div className="max-w-[1600px] mx-auto px-6 lg:px-12 xl:px-16 py-8">
               <Breadcrumb />
               <BillingStateBanner />
               {children}

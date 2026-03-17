@@ -155,7 +155,7 @@ export default function RaceStrategyListPage() {
         actions={
           <Link
             href="/app/race-strategy/new"
-            className="inline-flex items-center gap-1 px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="inline-flex items-center gap-1 px-4 py-2 bg-gold text-white font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
           >
             + New Race
             {!canUseFeature('race_strategy_full') && (
@@ -221,13 +221,13 @@ export default function RaceStrategyListPage() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 min-w-0 bg-concrete border border-steel/30 rounded px-4 py-2.5 text-chalk font-body text-sm
-            placeholder:text-steel/50 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
+            placeholder:text-steel/50 focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/50"
         />
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           className="sm:w-44 bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-            focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50"
+            focus:outline-none focus:border-gold focus:ring-1 focus:ring-gold/50"
         >
           <option value="all">All Status</option>
           <option value="draft">Draft</option>
@@ -252,7 +252,7 @@ export default function RaceStrategyListPage() {
               <button
                 type="button"
                 onClick={() => { setSearch(''); setStatusFilter('all'); }}
-                className="mt-3 text-pit-orange font-telemetry text-xs hover:underline"
+                className="mt-3 text-gold font-telemetry text-xs hover:underline"
               >
                 Clear filters
               </button>
@@ -267,7 +267,7 @@ export default function RaceStrategyListPage() {
               </p>
               <Link
                 href="/app/race-strategy/new"
-                className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+                className="inline-block mt-4 px-6 py-2.5 bg-gold text-white font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
               >
                 Create First Race
               </Link>

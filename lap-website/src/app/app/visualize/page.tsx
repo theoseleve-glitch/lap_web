@@ -145,7 +145,7 @@ export default function VisualizeLandingPage() {
               </p>
               <Link
                 href="/app/analyze"
-                className="inline-block px-6 py-2.5 bg-gold text-asphalt font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
+                className="inline-block px-6 py-2.5 bg-gold text-white font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
               >
                 Analyze a Session
               </Link>

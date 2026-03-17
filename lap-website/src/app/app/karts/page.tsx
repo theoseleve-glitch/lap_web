@@ -128,7 +128,7 @@ export default function KartsPage() {
         actions={
           <Link
             href="/app/karts/new"
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="px-4 py-2 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
           >
             + New Kart
           </Link>
@@ -197,7 +197,7 @@ export default function KartsPage() {
               </p>
               <Link
                 href="/app/karts/new"
-                className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+                className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
               >
                 Add First Kart
               </Link>

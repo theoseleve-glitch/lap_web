@@ -45,7 +45,7 @@ export default function FreeReportLayout({ children }: { children: ReactNode }) 
                       <div
                         className={`w-6 h-6 rounded-full flex items-center justify-center font-telemetry text-xs ${
                           isActive
-                            ? 'bg-gold text-asphalt'
+                            ? 'bg-gold text-white'
                             : isComplete
                               ? 'bg-acid-green/20 text-acid-green'
                               : 'bg-concrete text-steel border border-steel/30'

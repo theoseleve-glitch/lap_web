@@ -12,6 +12,7 @@ interface RaceDetail {
   race: Record<string, unknown>;
   drivers: Array<Record<string, unknown>>;
   windows: Array<Record<string, unknown>>;
+  sleep_windows: Array<Record<string, unknown>>;
   stints: unknown[];
   pit_stops: unknown[];
 }
@@ -62,6 +63,7 @@ export default function EditRacePage() {
           race: data.race,
           drivers: data.drivers,
           windows: data.windows,
+          sleep_windows: data.sleep_windows,
         }}
         raceStrategyLimit={raceStrategyLimit}
         onSubmit={handleSubmit}

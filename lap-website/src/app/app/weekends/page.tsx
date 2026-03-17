@@ -122,7 +122,7 @@ export default function WeekendsPage() {
         actions={
           <Link
             href="/app/weekends/new"
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+            className="px-4 py-2 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
           >
             + New Weekend
           </Link>
@@ -192,7 +192,7 @@ export default function WeekendsPage() {
               </p>
               <Link
                 href="/app/weekends/new"
-                className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
+                className="inline-block mt-4 px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors"
               >
                 Create First Weekend
               </Link>

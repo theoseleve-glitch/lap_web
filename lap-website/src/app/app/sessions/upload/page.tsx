@@ -1041,6 +1041,10 @@ function UploadPage() {
 
           {/* ── Metadata Form ──────────────────────────── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            {/* Shared datalist for driver autocomplete (used by both normal + endurance) */}
+            <datalist id="dl-drivers">
+              {driverNames.map((d) => (<option key={d} value={d} />))}
+            </datalist>
             {sessionType !== 'endurance' && (
             <div>
               <label htmlFor="driver-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
@@ -1051,9 +1055,6 @@ function UploadPage() {
                 className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
                   placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
                   disabled:opacity-50 disabled:cursor-not-allowed" />
-              <datalist id="dl-drivers">
-                {driverNames.map((d) => (<option key={d} value={d} />))}
-              </datalist>
             </div>
             )}
             <div>
@@ -1076,6 +1077,7 @@ function UploadPage() {
                 <div className="flex items-center gap-2 mb-3">
                   <input
                     type="text"
+                    list="dl-drivers"
                     value={newEnduranceDriver}
                     onChange={(e) => setNewEnduranceDriver(e.target.value)}
                     onKeyDown={(e) => {
@@ -1265,7 +1267,7 @@ function UploadPage() {
           {/* ── Submit Button ──────────────────────────── */}
           <div className="flex items-center gap-4">
             <button type="submit" disabled={isFormDisabled || !file || (sessionType !== 'endurance' && !driverName.trim()) || (sessionType === 'endurance' && enduranceDrivers.length < 1)}
-              className="px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+              className="px-6 py-3 bg-gold text-white font-monument text-sm rounded-lg
                 hover:bg-gold/90 transition-colors
                 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold">
               {sessionType === 'endurance' ? 'Upload & Detect Stints' : fileQueue.length > 0 ? `Upload ${fileQueue.length + 1} Files` : 'Upload & Analyze'}

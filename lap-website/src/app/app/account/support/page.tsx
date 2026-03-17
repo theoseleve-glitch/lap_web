@@ -193,7 +193,7 @@ export default function SupportPage() {
               <button
                 type="submit"
                 disabled={!description.trim() || submitTicket.isPending}
-                className="w-full bg-gold text-asphalt font-telemetry text-sm py-2.5 rounded-md hover:brightness-110 transition disabled:opacity-50"
+                className="w-full bg-gold text-white font-telemetry text-sm py-2.5 rounded-md hover:brightness-110 transition disabled:opacity-50"
               >
                 {submitTicket.isPending ? 'Submitting...' : 'Submit Ticket'}
               </button>

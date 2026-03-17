@@ -20,10 +20,14 @@ const SessionDebrief = lazy(() => import('@/components/app/SessionDebrief').then
 const AchievementsBadges = lazy(() => import('@/components/app/AchievementsBadges').then(m => ({ default: m.AchievementsBadges })));
 const FocusMode = lazy(() => import('@/components/app/focus-mode/FocusMode').then(m => ({ default: m.FocusMode })));
 const EnduranceTab = lazy(() => import('@/components/app/endurance').then(m => ({ default: m.EnduranceTab })));
+const ShareCardCanvas = lazy(() => import('@/components/app/gamification/ShareCardCanvas').then(m => ({ default: m.ShareCardCanvas })));
 
 // Gamification components
 const AchievementToast = lazy(() => import('@/components/app/gamification/AchievementToast'));
 const LevelUpModal = lazy(() => import('@/components/app/gamification/LevelUpModal'));
+const AchievementUnlockOverlay = lazy(() =>
+  import('@/components/app/gamification/AchievementUnlockOverlay').then(m => ({ default: m.AchievementUnlockOverlay }))
+);
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 
@@ -186,7 +190,7 @@ function TrackNamePrompt({
           type="button"
           onClick={handleSave}
           disabled={saving || !name.trim()}
-          className="px-5 py-2 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80
+          className="px-5 py-2 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80
             transition-colors disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save'}
@@ -281,7 +285,7 @@ function ScoreBar({
           )}
         </span>
         <span className="text-steel font-telemetry">
-          {score != null ? Math.round(score) : '\u2014'} / {Math.round(max)}
+          {score != null ? Math.round(score) : '\u2014'} / {Math.round(max / 5) * 5 || Math.round(max)}
         </span>
       </div>
       <div className="w-full h-2.5 bg-asphalt rounded-full overflow-hidden">
@@ -314,6 +318,7 @@ export default function SessionDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [analyzerOpen, setAnalyzerOpen] = useState(false);
   const [trackNamed, setTrackNamed] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -322,6 +327,7 @@ export default function SessionDetailPage() {
   // Gamification state
   const [showLevelUp, setShowLevelUp] = useState(false);
   const [toastAchievement, setToastAchievement] = useState<GamificationResult['new_achievements'][0] | null>(null);
+  const [achievementToShow, setAchievementToShow] = useState<{ key: string; label: string; description: string; icon: string; tier: string } | null>(null);
   const [gamShown, setGamShown] = useState(false);
 
   const del = useEntityDelete({
@@ -399,6 +405,20 @@ export default function SessionDetailPage() {
     }
     if (gam.new_achievements?.length > 0) {
       setToastAchievement(gam.new_achievements[0] ?? null);
+      const a = gam.new_achievements[0];
+      if (a) {
+        const iconMap: Record<string, string> = {
+          flag: 'trophy', medal: 'trophy', fire: 'helmet', zap: 'helmet',
+          star: 'trophy', target: 'stopwatch', clock: 'stopwatch',
+        };
+        setAchievementToShow({
+          key: a.key,
+          label: a.label,
+          description: a.description,
+          icon: iconMap[a.icon] ?? 'trophy',
+          tier: 'gold',
+        });
+      }
     }
   }, [scores, gamShown]);
 
@@ -486,7 +506,7 @@ export default function SessionDetailPage() {
       )}
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Link
@@ -508,14 +528,33 @@ export default function SessionDetailPage() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Grade badge */}
-          {session.grade && (
-            <div
-              className={`w-14 h-14 flex items-center justify-center rounded-lg border-2 font-monument text-2xl ${gradeColorClass(session.grade)}`}
-            >
-              {session.grade}
-            </div>
-          )}
+          {/* Grade badge — computed from live scores when available */}
+          {(() => {
+            let g = session.grade;
+            if (scores) {
+              const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
+              const total = dims.reduce<number>((s, v) => s + (v ?? 0), 0);
+              g = total >= 90 ? 'A+' : total >= 80 ? 'A' : total >= 65 ? 'B' : total >= 50 ? 'C' : total >= 35 ? 'D' : 'F';
+            }
+            return g ? (
+              <div className={`w-14 h-14 flex items-center justify-center rounded-lg border-2 font-monument text-2xl ${gradeColorClass(g)}`}>
+                {g}
+              </div>
+            ) : null;
+          })()}
+
+          {/* Share */}
+          <button
+            type="button"
+            onClick={() => setShareOpen(true)}
+            className="flex items-center gap-2 px-3 py-2 bg-concrete border border-steel/20 rounded-lg text-sm text-chalk font-body hover:bg-steel/10 transition-colors"
+            data-print="hide"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M4 8.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM10 3.5a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM10 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4ZM6.3 5.2l1.4-.9M6.3 8.8l1.4.9" />
+            </svg>
+            Share
+          </button>
 
           {/* Delete */}
           <button
@@ -527,7 +566,8 @@ export default function SessionDetailPage() {
             Delete
           </button>
 
-          {/* Focus Mode */}
+          {/* Focus Mode — hidden for endurance master reports (no per-lap chart data) */}
+          {session.session_type !== 'endurance' && (
           <button
             type="button"
             onClick={() => setFocusOpen(true)}
@@ -542,6 +582,7 @@ export default function SessionDetailPage() {
             Focus Mode
             <kbd className="text-[10px] px-1 py-0.5 rounded bg-asphalt border border-steel/20 text-steel/50 font-telemetry">F</kbd>
           </button>
+          )}
         </div>
       </div>
 
@@ -553,7 +594,7 @@ export default function SessionDetailPage() {
       />
 
       {/* Tab bar */}
-      <div className="flex items-center gap-1 mb-6 border-b border-steel/10">
+      <div className="flex items-center gap-1 mb-8 border-b border-steel/10">
         {(session.session_type === 'endurance' ? [ENDURANCE_TAB] : TABS).map((tab) => (
           <button
             key={tab.key}
@@ -596,7 +637,7 @@ export default function SessionDetailPage() {
       {activeTab === 'laps' && <LapDataTab laps={laps} conditionPhases={conditionPhases} />}
       {activeTab === 'endurance' && (
         <Suspense fallback={<div className="py-12 text-center text-steel text-sm">Loading endurance report&hellip;</div>}>
-          <EnduranceTab sessionId={sessionId} />
+          <EnduranceTab sessionId={sessionId} trackName={session.track_name} kartName={session.kart_name} />
         </Suspense>
       )}
 
@@ -610,6 +651,38 @@ export default function SessionDetailPage() {
         activeTab={activeTab}
       />
       </Suspense>
+
+      {/* Share card modal */}
+      {shareOpen && session && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8" onClick={() => setShareOpen(false)}>
+          <div className="bg-concrete rounded-2xl border border-steel/20 p-6 max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-monument text-chalk">Share Session</h3>
+              <button type="button" onClick={() => setShareOpen(false)} className="text-steel hover:text-chalk text-sm">Close</button>
+            </div>
+            <Suspense fallback={<div className="h-40 flex items-center justify-center text-steel text-sm">Loading...</div>}>
+              <ShareCardCanvas sessionData={{
+                trackName: session.track_name || undefined,
+                driverName: session.driver_name || undefined,
+                sessionDate: session.session_date || undefined,
+                sessionType: session.session_type || undefined,
+                bestLapTime: session.best_lap_time_s,
+                totalScore: session.total_score,
+                grade: scores ? (() => {
+                  const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
+                  const t = dims.reduce((s, v) => s + (v ?? 0), 0);
+                  return t >= 90 ? 'A+' : t >= 80 ? 'A' : t >= 65 ? 'B' : t >= 50 ? 'C' : t >= 35 ? 'D' : 'F';
+                })() : session.grade,
+                nLaps: session.n_laps,
+                cvPct: scores?.consistency_score != null && scores?.consistency_max
+                  ? Math.round((scores.consistency_score / scores.consistency_max) * 100) / 10
+                  : undefined,
+                badges: scores?.badges,
+              }} />
+            </Suspense>
+          </div>
+        </div>
+      )}
 
       {analyzerOpen && (
         <Suspense fallback={
@@ -664,6 +737,14 @@ export default function SessionDetailPage() {
           </span>
         </div>
       )}
+
+      {/* Achievement unlock overlay */}
+      <Suspense fallback={null}>
+        <AchievementUnlockOverlay
+          achievement={achievementToShow}
+          onDismiss={() => setAchievementToShow(null)}
+        />
+      </Suspense>
     </div>
   );
 }
@@ -852,13 +933,15 @@ function OverviewTab({
         if (kartDetails.kart_weight_kg?.trim()) d.kart_weight_kg = parseFloat(kartDetails.kart_weight_kg);
         payload.kart_details = d;
       }
-      const resp = await api.patch(`/sessions/${session.session_id}`, payload);
-      if (resp) {
-        onSessionUpdate({ ...session, ...resp } as SessionData);
-        setEditing(false);
-        setKartDetails({});
-        setTrackMismatch(null);
+      await api.patch(`/sessions/${session.session_id}`, payload);
+      // Re-fetch full session to get JOINed fields (driver_name, track_name, kart_name)
+      const fresh = await api.get<SessionData>(`/sessions/${session.session_id}`);
+      if (fresh) {
+        onSessionUpdate(fresh);
       }
+      setEditing(false);
+      setKartDetails({});
+      setTrackMismatch(null);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Failed to save session');
     } finally {
@@ -867,10 +950,10 @@ function OverviewTab({
   }, [session, editFields, isNewKart, kartDetails, onSessionUpdate]);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       {/* Left column: Score breakdown */}
       <div className="lg:col-span-2">
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8">
           <h2 className="text-lg font-monument text-chalk mb-1">Score Breakdown</h2>
           <p className="text-steel text-xs font-body mb-4">How your score is built</p>
           {scores ? (() => {
@@ -896,6 +979,7 @@ function OverviewTab({
             const computedTotal = activeDims.reduce<number>(
               (sum, d) => sum + (d.score ?? 0), 0,
             );
+            const computedGrade = computedTotal >= 90 ? 'A+' : computedTotal >= 80 ? 'A' : computedTotal >= 65 ? 'B' : computedTotal >= 50 ? 'C' : computedTotal >= 35 ? 'D' : 'F';
 
             return (
             <div>
@@ -907,11 +991,11 @@ function OverviewTab({
                     : '\u2014'}
                 </div>
                 <div className="text-steel font-body text-sm">/ 100</div>
-                {session.grade && (
+                {computedGrade && (
                   <div
-                    className={`ml-auto w-12 h-12 flex items-center justify-center rounded-lg border-2 font-monument text-xl ${gradeColorClass(session.grade)}`}
+                    className={`ml-auto w-12 h-12 flex items-center justify-center rounded-lg border-2 font-monument text-xl ${gradeColorClass(computedGrade)}`}
                   >
-                    {session.grade}
+                    {computedGrade}
                   </div>
                 )}
               </div>
@@ -967,32 +1051,7 @@ function OverviewTab({
                 </div>
               )}
 
-              {/* Performance Metrics Grid */}
-              <div className="mt-6 pt-4 border-t border-steel/10">
-                <h3 className="text-sm font-monument text-chalk mb-3">Performance Metrics</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Total', value: computedTotal, max: 100, color: 'text-chalk' },
-                    ...activeDims.map((d) => ({
-                      label: d.label, value: d.score, max: d.max, color: d.metricColor,
-                    })),
-                  ].map((m) => (
-                    <div key={m.label} className="bg-asphalt rounded-lg p-3">
-                      <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">{m.label}</p>
-                      <span className={`text-xl font-monument ${m.color}`}>
-                        {m.value != null ? <AnimatedCounter value={Math.round(m.value)} duration={1000} /> : '\u2014'}
-                      </span>
-                      <span className="text-steel text-xs font-body ml-1">/ {Math.round(m.max)}</span>
-                    </div>
-                  ))}
-                  <div className="bg-asphalt rounded-lg p-3">
-                    <p className="text-steel text-[10px] font-body uppercase tracking-wider mb-1">Grade</p>
-                    <span className={`text-xl font-monument ${gradeColorClass(session.grade).split(' ')[0]}`}>
-                      {session.grade || '\u2014'}
-                    </span>
-                  </div>
-                </div>
-              </div>
+              {/* Performance Metrics Grid — removed: score bars above show the same data */}
             </div>
             );
           })() : (
@@ -1004,9 +1063,9 @@ function OverviewTab({
       </div>
 
       {/* Right column: Session metadata + best lap */}
-      <div className="space-y-6">
+      <div className="space-y-8">
         {/* Metadata card */}
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-monument text-chalk">Session Info</h2>
             {!editing ? (
@@ -1206,7 +1265,7 @@ function OverviewTab({
       </div>
 
       {/* Full-width sections below the 2-column layout */}
-      <div className="lg:col-span-3 space-y-6">
+      <div className="lg:col-span-3 space-y-8">
         <Suspense fallback={<div className="py-8 text-center text-steel text-sm">Loading analysis&hellip;</div>}>
           <DrivingStyleSection sessionId={sessionId} />
           <SessionDebrief
@@ -1488,7 +1547,7 @@ function LapConsistencyHistogram({
   }, [drawHistogram]);
 
   return (
-    <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
+    <div className="bg-concrete rounded-xl border border-steel/10 p-8 group relative">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-lg font-monument text-chalk">Lap Consistency</h2>
         <button
@@ -1717,7 +1776,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Performance Summary — 8 stat cards */}
       <div>
         <h2 className="text-lg font-monument text-chalk mb-4">Performance Summary</h2>
@@ -1735,7 +1794,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
 
       {/* Lap Times Chart */}
       {validLaps.length > 0 && (
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6 group relative">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8 group relative">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-monument text-chalk">Lap Times</h2>
             <button
@@ -1902,11 +1961,11 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       {conditionPhases.length > 0 && (
         <div>
           <h2 className="text-lg font-monument text-chalk mb-4">Track Condition Phases</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {conditionPhases.map((phase) => (
               <div
                 key={phase.phase_id}
-                className="bg-concrete rounded-xl border border-steel/10 p-5"
+                className="bg-concrete rounded-xl border border-steel/10 p-6"
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-monument text-chalk">
@@ -2220,10 +2279,10 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* ── Session Timeline Event Feed ── */}
       {timeline && timeline.total_laps > 0 ? (
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8">
           <h2 className="text-lg font-monument text-chalk mb-4">Session Timeline</h2>
 
           {/* Summary cards */}
@@ -2313,7 +2372,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
 
       {/* ── Lap Progress Chart ── */}
       {progress ? (
-        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-8">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-monument text-chalk">Lap Progress</h2>
             <div className="flex items-center gap-2 text-xs font-body">
@@ -2354,11 +2413,11 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
       {stints && stints.stints.length > 0 && (
         <div>
           <h2 className="text-lg font-monument text-chalk mb-4">Stint Analysis</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {stints.stints.map((stint) => (
               <div
                 key={stint.stint_number}
-                className="bg-concrete rounded-xl border border-steel/10 p-5"
+                className="bg-concrete rounded-xl border border-steel/10 p-6"
               >
                 <div className="flex items-center justify-between mb-3">
                   <h3 className="text-sm font-monument text-chalk">

@@ -243,22 +243,7 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            {/* Avatar URL */}
-            <div>
-              <label htmlFor={`${fieldId}-avatar`} className="block text-steel text-xs font-telemetry mb-1">Avatar URL</label>
-              <input
-                id={`${fieldId}-avatar`}
-                type="url"
-                value={avatarUrl}
-                onChange={(e) => setAvatarUrl(e.target.value)}
-                placeholder="https://example.com/avatar.jpg"
-                disabled={profileMutation.isPending}
-                className="w-full bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-              <p className="text-steel text-[10px] font-body mt-1">
-                Paste a URL to an image. No file upload supported.
-              </p>
-            </div>
+            {/* Avatar URL — hidden for V2 */}
 
             {profileMutation.isError && (
               <p className="text-safety-red text-xs font-telemetry">
@@ -272,7 +257,7 @@ export default function ProfilePage() {
             <button
               type="submit"
               disabled={profileMutation.isPending}
-              className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+              className="bg-gold text-white font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
             >
               {profileMutation.isPending ? 'Saving...' : 'Save Changes'}
             </button>
@@ -342,18 +327,7 @@ export default function ProfilePage() {
                   />
                   <span className="text-chalk text-sm font-body">Metric (km/h, kg)</span>
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="units"
-                    value="imperial"
-                    checked={units === 'imperial'}
-                    onChange={() => setUnits('imperial')}
-                    disabled={prefsMutation.isPending}
-                    className="w-4 h-4 accent-acid-green disabled:opacity-60"
-                  />
-                  <span className="text-chalk text-sm font-body">Imperial (mph, lbs)</span>
-                </label>
+                {/* Imperial — hidden, kart racing is metric only */}
               </div>
             </div>
 
@@ -375,7 +349,7 @@ export default function ProfilePage() {
                 })
               }
               disabled={prefsMutation.isPending}
-              className="bg-gold text-asphalt font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
+              className="bg-gold text-white font-telemetry text-sm px-6 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
             >
               {prefsMutation.isPending ? 'Saving...' : 'Save Preferences'}
             </button>
@@ -386,73 +360,7 @@ export default function ProfilePage() {
         )}
       </div>
 
-      {/* ── Notifications ─────────────────────────────── */}
-      <div className="bg-concrete rounded-lg border border-steel/20 p-6">
-        <h2 className="font-monument text-sm text-chalk mb-4">Notifications</h2>
-        {isLoading ? (
-          <div className="animate-pulse space-y-3">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-8 bg-steel/10 rounded" />
-            ))}
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-chalk text-sm font-body">Report Ready</p>
-                <p className="text-steel text-xs font-body">Notified when your analysis report is complete</p>
-              </div>
-              <ToggleSwitch
-                checked={notifications.report_ready ?? true}
-                onChange={(val) => handleNotificationToggle('report_ready', val)}
-                disabled={prefsMutation.isPending}
-              />
-            </div>
-
-            <div className="border-t border-steel/10" />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-chalk text-sm font-body">Billing Alerts</p>
-                <p className="text-steel text-xs font-body">Payment confirmations and subscription changes</p>
-              </div>
-              <ToggleSwitch
-                checked={notifications.billing_alerts ?? true}
-                onChange={(val) => handleNotificationToggle('billing_alerts', val)}
-                disabled={prefsMutation.isPending}
-              />
-            </div>
-
-            <div className="border-t border-steel/10" />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-chalk text-sm font-body">Product Updates</p>
-                <p className="text-steel text-xs font-body">New features, improvements, and announcements</p>
-              </div>
-              <ToggleSwitch
-                checked={notifications.product_updates ?? false}
-                onChange={(val) => handleNotificationToggle('product_updates', val)}
-                disabled={prefsMutation.isPending}
-              />
-            </div>
-
-            <div className="border-t border-steel/10" />
-
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-chalk text-sm font-body">Weekly Digest</p>
-                <p className="text-steel text-xs font-body">Weekly summary of your performance and sessions</p>
-              </div>
-              <ToggleSwitch
-                checked={notifications.weekly_digest ?? false}
-                onChange={(val) => handleNotificationToggle('weekly_digest', val)}
-                disabled={prefsMutation.isPending}
-              />
-            </div>
-          </div>
-        )}
-      </div>
+      {/* Notifications — hidden for V2, no email infra yet */}
 
       {/* ── Privacy ──────────────────────────────────── */}
       <div className="bg-concrete rounded-lg border border-steel/20 p-6 mt-6">

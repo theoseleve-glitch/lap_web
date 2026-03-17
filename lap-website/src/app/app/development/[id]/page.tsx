@@ -265,7 +265,7 @@ export default function DevelopmentPlanDetailPage() {
                   disabled={patchMutation.isPending}
                   className={`shrink-0 w-5 h-5 rounded border transition-colors flex items-center justify-center ${
                     item.done
-                      ? 'bg-gold border-acid-green text-asphalt'
+                      ? 'bg-gold border-acid-green text-white'
                       : 'border-steel/40 hover:border-acid-green/60'
                   }`}
                   aria-label={item.done ? `Mark "${item.text}" as incomplete` : `Mark "${item.text}" as complete`}

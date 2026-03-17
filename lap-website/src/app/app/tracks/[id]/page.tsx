@@ -179,7 +179,7 @@ export default function TrackDetailPage() {
               type="button"
               onClick={handleSave}
               disabled={updateMutation.isPending || !form.name.trim()}
-              className="px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+              className="px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
             >
               {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
             </button>

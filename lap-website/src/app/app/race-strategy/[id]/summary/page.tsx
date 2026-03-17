@@ -153,7 +153,7 @@ export default function SummaryPage() {
     return (
       <div className="text-safety-red font-body p-8 text-center">
         Failed to load summary.{' '}
-        <button type="button" onClick={() => router.push('/app/race-strategy')} className="underline text-pit-orange">
+        <button type="button" onClick={() => router.push('/app/race-strategy')} className="underline text-gold">
           Back to list
         </button>
       </div>

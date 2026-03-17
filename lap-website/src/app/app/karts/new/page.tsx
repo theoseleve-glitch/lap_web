@@ -142,7 +142,7 @@ export default function NewKartPage() {
           onClick={() => setPresetMode(true)}
           className={`px-4 py-2 font-telemetry text-sm rounded transition-colors ${
             presetMode
-              ? 'bg-gold text-asphalt'
+              ? 'bg-gold text-white'
               : 'bg-concrete border border-steel/30 text-steel hover:text-chalk'
           }`}
         >
@@ -153,7 +153,7 @@ export default function NewKartPage() {
           onClick={() => setPresetMode(false)}
           className={`px-4 py-2 font-telemetry text-sm rounded transition-colors ${
             !presetMode
-              ? 'bg-gold text-asphalt'
+              ? 'bg-gold text-white'
               : 'bg-concrete border border-steel/30 text-steel hover:text-chalk'
           }`}
         >
@@ -174,7 +174,7 @@ export default function NewKartPage() {
                 onClick={() => setSelectedSegment(seg)}
                 className={`px-3 py-1.5 font-telemetry text-xs rounded transition-colors ${
                   activeSegment === seg
-                    ? 'bg-pit-orange text-asphalt'
+                    ? 'bg-pit-orange text-white'
                     : 'bg-asphalt border border-steel/30 text-steel hover:text-chalk'
                 }`}
               >
@@ -295,7 +295,7 @@ export default function NewKartPage() {
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {mutation.isPending ? 'Saving...' : 'Save Kart'}
             </button>

@@ -167,7 +167,7 @@ export default function NewWeekendPage() {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="px-6 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-6 py-2.5 bg-pit-orange text-white font-telemetry text-sm rounded hover:bg-pit-orange/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {mutation.isPending ? 'Saving...' : 'Save Weekend'}
           </button>

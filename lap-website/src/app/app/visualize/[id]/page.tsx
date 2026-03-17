@@ -224,6 +224,7 @@ export default function VisualizeSessionPage() {
                 apiBase={apiBase}
                 gpsLaps={[]}
                 bestLap={primaryLap}
+                compareLap={compareLap}
                 className="w-full h-full"
               />
             </ChartErrorBoundary>

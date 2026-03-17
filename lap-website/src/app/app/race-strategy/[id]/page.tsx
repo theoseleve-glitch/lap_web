@@ -207,7 +207,7 @@ export default function RaceDetailPage() {
         <div className="text-safety-red font-telemetry text-3xl mb-3" aria-hidden="true">!</div>
         <p className="text-chalk font-body text-sm mb-1">Failed to load race</p>
         <p className="text-steel font-body text-xs mb-4">The race may have been deleted or there was a network error.</p>
-        <Link href="/app/race-strategy" className="text-pit-orange font-telemetry text-xs hover:underline">
+        <Link href="/app/race-strategy" className="text-gold font-telemetry text-xs hover:underline">
           ← Back to all races
         </Link>
       </div>
@@ -251,25 +251,30 @@ export default function RaceDetailPage() {
             type="button"
             onClick={() => optimizeMut.mutate()}
             disabled={optimizeMut.isPending}
-            className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             {optimizeMut.isPending ? 'Optimizing...' : 'Optimize'}
           </button>
+        )}
+        {optimizeMut.error && (
+          <div className="px-3 py-1.5 bg-safety-red/10 border border-safety-red/30 rounded text-safety-red font-body text-xs">
+            {(optimizeMut.error as Error).message || 'Optimization failed'}
+          </div>
         )}
         {race.status === 'ready' && !showGoLiveConfirm && (
           <button
             type="button"
             onClick={() => setShowGoLiveConfirm(true)}
             disabled={goLiveMut.isPending}
-            className="px-4 py-2 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            className="px-4 py-2 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
           >
             Go Live
           </button>
         )}
         {showGoLiveConfirm && (
-          <div className="flex items-center gap-2 bg-pit-orange/10 border border-pit-orange/30 rounded-lg px-4 py-2">
+          <div className="flex items-center gap-2 bg-gold/10 border border-gold/30 rounded-lg px-4 py-2">
             <span className="text-chalk font-body text-sm">Start the race? Timer will begin.</span>
-            <button type="button" onClick={() => { goLiveMut.mutate(); setShowGoLiveConfirm(false); }} disabled={goLiveMut.isPending} className="px-3 py-1 bg-pit-orange text-asphalt font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50">
+            <button type="button" onClick={() => { goLiveMut.mutate(); setShowGoLiveConfirm(false); }} disabled={goLiveMut.isPending} className="px-3 py-1 bg-gold text-white font-telemetry text-xs uppercase hover:bg-gold/80 transition-colors disabled:opacity-50">
               {goLiveMut.isPending ? 'Starting...' : 'Confirm'}
             </button>
             <button type="button" onClick={() => setShowGoLiveConfirm(false)} className="px-3 py-1 border border-steel/30 text-steel font-telemetry text-xs uppercase hover:text-chalk transition-colors">
@@ -356,10 +361,6 @@ export default function RaceDetailPage() {
             <div className="flex justify-between">
               <span className="text-steel">Autonomy</span>
               <span className="text-chalk">{formatTime(race.fuel_autonomy_s)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-steel">Min Pit Stop</span>
-              <span className="text-chalk">{formatTime(race.min_pit_stop_s)}</span>
             </div>
           </div>
         </div>
@@ -562,7 +563,7 @@ export default function RaceDetailPage() {
                     <td className="px-4 py-3 text-chalk font-telemetry text-sm">
                       {s.estimated_laps ?? '\u2014'}
                     </td>
-                    <td className="px-4 py-3 font-telemetry text-sm text-pit-orange">
+                    <td className="px-4 py-3 font-telemetry text-sm text-gold">
                       {s.pit_at_lap ?? '\u2014'}
                     </td>
                     <td className="px-4 py-3">

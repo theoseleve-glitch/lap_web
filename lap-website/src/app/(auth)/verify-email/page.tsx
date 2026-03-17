@@ -42,7 +42,7 @@ function VerifyEmailContent() {
           <p className="text-acid-green font-body mb-4">{t('auth.verifyEmail.success')}</p>
           <Link
             href="/login"
-            className="inline-block py-2 px-6 bg-pit-orange text-asphalt font-monument text-lg rounded hover:brightness-110 transition-all"
+            className="inline-block py-2 px-6 bg-pit-orange text-white font-monument text-lg rounded hover:brightness-110 transition-all"
           >
             {t('auth.verifyEmail.signIn')}
           </Link>

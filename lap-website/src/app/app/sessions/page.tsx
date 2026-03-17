@@ -913,7 +913,7 @@ export default function SessionsPage() {
             </button>
             <Link
               href="/app/sessions/upload"
-              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gold text-carbon font-monument text-xs rounded-lg hover:bg-gold/90 transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-gold text-white font-monument text-xs rounded-lg hover:bg-gold/90 transition-colors"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
                 <line x1="7" y1="2" x2="7" y2="12" />
@@ -1124,7 +1124,7 @@ export default function SessionsPage() {
           </p>
           <Link
             href="/app/sessions/upload"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg hover:bg-gold/90 transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-gold text-white font-monument text-sm rounded-lg hover:bg-gold/90 transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
               <line x1="8" y1="2" x2="8" y2="14" />
