@@ -113,6 +113,12 @@ export function DriverReport({ report, onSelectStint, onBack }: DriverReportProp
                     <span className="text-chalk font-telemetry">{stint.consistency_cv_pct.toFixed(1)}%</span>
                   </div>
                 )}
+                {(stint as any).traffic_count > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-safety-red">Time Lost</span>
+                    <span className="text-safety-red font-telemetry">{((stint as any).traffic_total_s || 0).toFixed(1)}s ({(stint as any).traffic_count} inc.)</span>
+                  </div>
+                )}
               </div>
             </button>
           ))}
