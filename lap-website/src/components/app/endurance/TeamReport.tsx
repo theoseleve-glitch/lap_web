@@ -187,6 +187,7 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
                 <th className="py-2 text-right">CV%</th>
                 <th className="py-2 text-right">Pace</th>
                 <th className="py-2 text-right">Consistency</th>
+                <th className="py-2 text-right">Execution</th>
                 <th className="py-2 text-right">Robustness</th>
               </tr>
             </thead>
@@ -216,6 +217,7 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
                     <td className="py-3 text-right font-telemetry">{driver.consistency_cv_pct?.toFixed(1) ?? '--'}%</td>
                     <td className="py-3 text-right font-telemetry">{driver.scores.pace.toFixed(1)}</td>
                     <td className="py-3 text-right font-telemetry">{driver.scores.consistency.toFixed(1)}</td>
+                    <td className="py-3 text-right font-telemetry">{((driver.scores as any).execution ?? 0).toFixed(1)}</td>
                     <td className="py-3 text-right font-telemetry">{driver.scores.robustness.toFixed(1)}</td>
                   </tr>
                 );
@@ -298,16 +300,47 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
         </div>
       )}
 
+      {/* Traffic Time Loss */}
+      {((report as any).traffic_count > 0 || (report as any).traffic_total_s > 0) && (
+        <div className="bg-concrete rounded-xl border border-steel/10 p-6">
+          <h3 className="text-lg font-monument text-chalk mb-2">Traffic Time Loss</h3>
+          <p className="text-steel text-xs font-body mb-4">
+            Laps where pace dropped 2s+ vs neighbors (likely traffic or incidents)
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="text-center">
+              <p className="text-2xl font-monument text-safety-red">{(report as any).traffic_count || 0}</p>
+              <p className="text-xs font-body text-steel">Incidents</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-monument text-safety-red">{((report as any).traffic_total_s || 0).toFixed(1)}s</p>
+              <p className="text-xs font-body text-steel">Total Time Lost</p>
+            </div>
+          </div>
+          {/* Per-driver breakdown */}
+          <div className="mt-3 space-y-1">
+            {drivers.map((d: DriverReport) => (
+              <div key={d.driver_name} className="flex items-center gap-2 text-xs font-body">
+                <span className="text-steel w-24 truncate">{d.driver_name}</span>
+                <span className="text-safety-red font-telemetry">{(d as any).traffic_count || 0} incidents</span>
+                <span className="text-steel/50">•</span>
+                <span className="text-safety-red font-telemetry">{((d as any).traffic_total_s || 0).toFixed(1)}s lost</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Team Scores */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
         <h3 className="text-lg font-monument text-chalk mb-4">Team Score</h3>
         <div className="space-y-3">
-          {(['pace', 'consistency', 'robustness'] as const).map((key) => {
-            const score = report.scores[key];
+          {(['pace', 'consistency', 'execution', 'robustness'] as const).map((key) => {
+            const score = (report.scores as any)[key] ?? 0;
             const max = 25;
             const pct = (score / max) * 100;
-            const colors = { pace: '#B6FF2E', consistency: '#00d4ff', robustness: '#FF6A00' };
-            const labels = { pace: 'Pace', consistency: 'Consistency', robustness: 'Robustness' };
+            const colors: Record<string, string> = { pace: '#B6FF2E', consistency: '#00d4ff', execution: '#D946EF', robustness: '#FF6A00' };
+            const labels: Record<string, string> = { pace: 'Pace', consistency: 'Consistency', execution: 'Execution', robustness: 'Robustness' };
             return (
               <div key={key} className="flex items-center gap-3">
                 <span className="text-xs font-body text-steel w-24">{labels[key]}</span>

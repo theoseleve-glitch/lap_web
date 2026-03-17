@@ -91,6 +91,25 @@ def compute_stint_scores(
     except Exception:
         scores = {"pace": 0, "consistency": 0, "robustness": 0}
 
+    # Traffic time loss detection: triplet analysis
+    # If lap N is 2s+ slower than both N-1 and N+1, it's a traffic loss
+    traffic_losses: list[dict] = []
+    traffic_total_s = 0.0
+    for j in range(1, len(times) - 1):
+        prev_t = times[j - 1]
+        curr_t = times[j]
+        next_t = times[j + 1]
+        neighbor_mean = (prev_t + next_t) / 2
+        delta = curr_t - neighbor_mean
+        if delta >= 2.0 and curr_t > prev_t + 2.0 and curr_t > next_t + 2.0:
+            traffic_losses.append({
+                "lap_index": j,
+                "lap_time_s": round(curr_t, 3),
+                "neighbor_mean_s": round(neighbor_mean, 3),
+                "time_lost_s": round(delta, 3),
+            })
+            traffic_total_s += delta
+
     return {
         "stint_number": stint.get("stint_number"),
         "best_lap_s": round(best, 3),
@@ -98,6 +117,9 @@ def compute_stint_scores(
         "lap_count": len(times),
         "consistency_cv_pct": round(cv, 2),
         "pace_fade_pct": round(fade_pct, 2),
+        "traffic_losses": traffic_losses,
+        "traffic_total_s": round(traffic_total_s, 3),
+        "traffic_count": len(traffic_losses),
         "scores": scores,
     }
 
@@ -169,6 +191,15 @@ def compute_driver_report(
         agg_scores[key] = round(weighted / total_laps, 1)
     agg_scores["consistency"] = round(mean_consistency, 1)
 
+    # Traffic time loss across all stints
+    driver_traffic_total = sum(s.get("traffic_total_s", 0) for s in valid_stints)
+    driver_traffic_count = sum(s.get("traffic_count", 0) for s in valid_stints)
+
+    # Execution score = 25 - penalty from traffic losses
+    # Every 1s of traffic loss = -0.5 points (max 25, min 0)
+    execution_raw = max(0, 25 - driver_traffic_total * 0.5)
+    agg_scores["execution"] = round(execution_raw, 1)
+
     # CV for display: mean of per-stint CVs (not inter-stint)
     stint_cvs = [s.get("consistency_cv_pct", 0) for s in valid_stints if s.get("consistency_cv_pct") is not None]
     display_cv = statistics.mean(stint_cvs) if stint_cvs else 0
@@ -185,6 +216,8 @@ def compute_driver_report(
         "best_per_condition": {k: round(v, 3) for k, v in best_per_condition.items()},
         "mean_per_condition": {k: round(v, 3) for k, v in mean_per_condition.items()},
         "conditions": sorted(conditions),
+        "traffic_total_s": round(driver_traffic_total, 3),
+        "traffic_count": driver_traffic_count,
         "scores": agg_scores,
     }
 
@@ -211,7 +244,7 @@ def compute_team_report(
 
     # Aggregate team scores (weighted by lap count across all drivers)
     team_scores: dict[str, float] = {}
-    for key in ("pace", "consistency", "robustness"):
+    for key in ("pace", "consistency", "robustness", "execution"):
         total_weighted = sum(
             dr["scores"].get(key, 0) * dr["total_laps"]
             for dr in comparison if dr["total_laps"] > 0
@@ -219,11 +252,17 @@ def compute_team_report(
         total_driver_laps = sum(dr["total_laps"] for dr in comparison)
         team_scores[key] = round(total_weighted / total_driver_laps, 1) if total_driver_laps > 0 else 0
 
+    # Total traffic stats
+    team_traffic_total = sum(dr.get("traffic_total_s", 0) for dr in comparison)
+    team_traffic_count = sum(dr.get("traffic_count", 0) for dr in comparison)
+
     return {
         "total_laps": total_laps,
         "total_time_s": total_time_s,
         "total_stints": total_stints,
         "drivers": drivers,
         "driver_comparison": comparison,
+        "traffic_total_s": round(team_traffic_total, 3),
+        "traffic_count": team_traffic_count,
         "scores": team_scores,
     }
