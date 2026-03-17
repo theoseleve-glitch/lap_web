@@ -569,7 +569,7 @@ export function CornerPicker({
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting || selectedCount === 0}
-            className="w-full px-6 py-3 bg-gold text-carbon font-monument text-sm rounded-lg
+            className="w-full px-6 py-3 bg-gold text-white font-monument text-sm rounded-lg
               hover:bg-gold/90 transition-colors
               disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-gold"
           >

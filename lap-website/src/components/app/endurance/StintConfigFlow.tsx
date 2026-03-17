@@ -246,7 +246,7 @@ export function StintConfigFlow({
         type="button"
         onClick={handleProcess}
         disabled={!allAssigned || isProcessing || stints.length === 0}
-        className="w-full py-3 bg-gold text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        className="w-full py-3 bg-gold text-white font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
         {isProcessing ? 'Processing...' : `Process ${stints.length} Stints`}
       </button>

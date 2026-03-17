@@ -103,7 +103,7 @@ export function NpsSurvey({ sessionCount }: NpsSurveyProps) {
               <button
                 type="button"
                 onClick={submit}
-                className="w-full py-2 bg-pit-orange text-carbon font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
+                className="w-full py-2 bg-pit-orange text-white font-telemetry text-xs uppercase tracking-wider rounded hover:brightness-110 transition-all"
               >
                 Submit
               </button>

@@ -11,7 +11,7 @@ export function UpgradeBanner() {
       </div>
       <Link
         href="/pricing"
-        className="shrink-0 px-5 py-2.5 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
+        className="shrink-0 px-5 py-2.5 bg-pit-orange text-white font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
       >
         Upgrade Now
       </Link>

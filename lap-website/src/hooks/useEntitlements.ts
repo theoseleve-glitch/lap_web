@@ -25,12 +25,17 @@ interface MeResponse {
     comparison_enabled: boolean;
     coaching_plans_enabled: boolean;
     visualization_enabled: boolean;
+    badge_share_card: boolean;
+    gamification: boolean;
     race_strategy_limit: string | null;
     race_strategy_max_duration_s: number | null;
+    race_strategy_params: string;
+    optimizer_modes: string[];
     live_monitoring: boolean;
     export_formats: string[];
     telemetry_retention_days: number;
     max_upload_size_mb: number;
+    max_session_data_mb: number;
     max_concurrent_jobs: number;
     rate_multiplier: number;
   };
@@ -48,12 +53,17 @@ function mapEntitlements(raw: NonNullable<MeResponse['entitlements']>): Entitlem
     comparisonEnabled: raw.comparison_enabled,
     coachingPlansEnabled: raw.coaching_plans_enabled,
     visualizationEnabled: raw.visualization_enabled,
+    badgeShareCard: raw.badge_share_card ?? true,
+    gamification: raw.gamification ?? false,
     raceStrategyLimit: raw.race_strategy_limit as Entitlements['raceStrategyLimit'],
     raceStrategyMaxDurationS: raw.race_strategy_max_duration_s,
+    raceStrategyParams: (raw.race_strategy_params ?? 'basic') as Entitlements['raceStrategyParams'],
+    optimizerModes: raw.optimizer_modes ?? ['equal'],
     liveMonitoring: raw.live_monitoring,
     exportFormats: raw.export_formats ?? ['csv'],
     telemetryRetentionDays: raw.telemetry_retention_days ?? 30,
-    maxUploadSizeMb: raw.max_upload_size_mb ?? 500,
+    maxUploadSizeMb: raw.max_upload_size_mb ?? 150,
+    maxSessionDataMb: raw.max_session_data_mb ?? 150,
     maxConcurrentJobs: raw.max_concurrent_jobs ?? 1,
     rateMultiplier: raw.rate_multiplier ?? 1.0,
   };

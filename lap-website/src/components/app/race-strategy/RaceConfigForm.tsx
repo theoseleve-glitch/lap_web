@@ -374,6 +374,15 @@ export function RaceConfigForm({
     setTechStopWindowStart(str((r as any).tech_stop_window_start_s));
     setTechStopWindowEnd(str((r as any).tech_stop_window_end_s));
 
+    // Default driver rules
+    if ((r as any).default_min_stint_s) setDefaultMinStint(str((r as any).default_min_stint_s));
+    if ((r as any).default_max_stint_s) setDefaultMaxStint(str((r as any).default_max_stint_s));
+    if ((r as any).default_min_cumulative_s) setDefaultMinTotal(str((r as any).default_min_cumulative_s));
+    if ((r as any).default_max_cumulative_s) setDefaultMaxTotal(str((r as any).default_max_cumulative_s));
+    if ((r as any).default_min_rest_s) setDefaultMinRest(str((r as any).default_min_rest_s));
+    setDefaultAllowDouble(!!(r as any).default_allow_double);
+    if ((r as any).default_min_stint_s || (r as any).default_max_stint_s) setShowDefaultRules(true);
+
     setDrivers(
       initialData.drivers.map((d, i) => ({
         driver_name: str(d.driver_name),
@@ -406,12 +415,20 @@ export function RaceConfigForm({
     );
 
     if (initialData.sleep_windows) {
+      // Map DB driver_id back to 0-based index in the drivers array
+      const driverIdToIndex: Record<number, number> = {};
+      initialData.drivers.forEach((d, idx) => {
+        const did = (d as Record<string, unknown>).id ?? (d as Record<string, unknown>).driver_id;
+        if (did != null) driverIdToIndex[Number(did)] = idx;
+      });
       setSleepWindows(
         initialData.sleep_windows.map((sw) => {
           const startS = Number(sw.start_s) || 0;
           const endS = Number(sw.end_s) || 0;
+          const dbDriverId = Number(sw.driver_id) || 0;
+          const idx = driverIdToIndex[dbDriverId] ?? '';
           return {
-            driver_index: str(sw.driver_id),
+            driver_index: String(idx),
             start_hh: String(Math.floor(startS / 3600)),
             start_mm: String(Math.floor((startS % 3600) / 60)),
             end_hh: String(Math.floor(endS / 3600)),
@@ -510,6 +527,12 @@ export function RaceConfigForm({
         tech_stop_duration_s: parseInt(techStopDuration) || 300,
         tech_stop_window_start_s: parseNum(techStopWindowStart),
         tech_stop_window_end_s: parseNum(techStopWindowEnd),
+        default_min_stint_s: parseNum(defaultMinStint),
+        default_max_stint_s: parseNum(defaultMaxStint),
+        default_min_cumulative_s: parseNum(defaultMinTotal),
+        default_max_cumulative_s: parseNum(defaultMaxTotal),
+        default_min_rest_s: parseNum(defaultMinRest),
+        default_allow_double: defaultAllowDouble ? 1 : 0,
       },
       drivers: drivers
         .filter((d) => d.driver_name.trim())
@@ -641,7 +664,7 @@ export function RaceConfigForm({
               >
                 {showDefaultRules ? '\u25BC' : '\u25B6'} Default Driver Rules
               </button>
-              {showDefaultRules && (
+              {showDefaultRules && (<>
                 <div className="mt-3">
                   <p className="text-steel/60 font-body text-xs mb-3">
                     These defaults apply to drivers without individual overrides.
@@ -675,26 +698,56 @@ export function RaceConfigForm({
                     </div>
                   </div>
                 </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDrivers(drivers.map(d => ({
+                      ...d,
+                      min_stint_s: defaultMinStint || d.min_stint_s,
+                      max_stint_s: defaultMaxStint || d.max_stint_s,
+                      min_cumulative_s: defaultMinTotal || d.min_cumulative_s,
+                      max_cumulative_s: defaultMaxTotal || d.max_cumulative_s,
+                      min_rest_s: defaultMinRest || d.min_rest_s,
+                      allow_double_stint: defaultAllowDouble,
+                    })));
+                  }}
+                  className="mt-3 px-3 py-1.5 text-xs font-telemetry text-gold border border-gold/40 rounded hover:bg-gold/10 transition-colors"
+                >
+                  Apply to all drivers
+                </button>
+              </>)}
             </div>
           )}
 
           <div className="space-y-3">
             {drivers.map((d, i) => (
               <div key={i} className="bg-asphalt/40 border border-steel/10 p-3">
+                {/* Row 1: identity */}
                 <div className="flex items-center gap-3 mb-2">
-                  <input type="color" aria-label={`Driver ${i + 1} color`} value={d.color_hex} onChange={(e) => updateDriver(i, 'color_hex', e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0" />
-                  <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[12rem]`} value={d.driver_name} onChange={(e) => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
-                  <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={(e) => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
-                  <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={(e) => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
-                  <input aria-label={`Driver ${i + 1} avg lap time (s)`} className={`${inputCls} w-24`} value={d.avg_lap_time_s} onChange={(e) => updateDriver(i, 'avg_lap_time_s', e.target.value)} placeholder="Avg lap (s)" type="number" step="0.1" />
-                  <input aria-label={`Driver ${i + 1} wet confidence (%)`} className={`${inputCls} w-20`} value={d.wet_confidence} onChange={(e) => updateDriver(i, 'wet_confidence', e.target.value)} placeholder="Wet %" type="number" min="0" max="100" step="5" />
-                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors">
+                  <input type="color" aria-label={`Driver ${i + 1} color`} value={d.color_hex} onChange={(e) => updateDriver(i, 'color_hex', e.target.value)} className="w-8 h-8 rounded cursor-pointer bg-transparent border-0 shrink-0" />
+                  <input aria-label={`Driver ${i + 1} name`} className={`${inputCls} flex-1 min-w-[10rem]`} value={d.driver_name} onChange={(e) => updateDriver(i, 'driver_name', e.target.value)} placeholder="Driver name" />
+                  <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-20`} value={d.weight_kg} onChange={(e) => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
+                  <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors shrink-0">
                     {d.showConstraints ? '\u25BC' : '\u25B6'} Rules
                   </button>
                   {drivers.length > 1 && (
                     <button type="button" onClick={() => removeDriver(i)} aria-label={`Remove driver ${i + 1}`} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">{'\u2715'}</button>
                   )}
+                </div>
+                {/* Row 2: performance fields */}
+                <div className="grid grid-cols-3 gap-3 pl-11 mb-2">
+                  <div>
+                    <label className={labelCls}>COM Channel</label>
+                    <input aria-label={`Driver ${i + 1} COM channel`} className={inputCls} value={d.com_channel} onChange={(e) => updateDriver(i, 'com_channel', e.target.value)} placeholder="e.g. CH3" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Avg Lap Time (s)</label>
+                    <input aria-label={`Driver ${i + 1} avg lap time`} className={inputCls} value={d.avg_lap_time_s} onChange={(e) => updateDriver(i, 'avg_lap_time_s', e.target.value)} placeholder="e.g. 62.5" type="number" step="0.1" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Rain Pace (%)</label>
+                    <input aria-label={`Driver ${i + 1} rain pace`} className={inputCls} value={d.wet_confidence} onChange={(e) => updateDriver(i, 'wet_confidence', e.target.value)} placeholder="100 = same as dry" type="number" min="0" max="100" step="5" title="100% = same speed in wet, 50% = half speed" />
+                  </div>
                 </div>
                 {d.showConstraints && (
                   <>
@@ -869,41 +922,60 @@ export function RaceConfigForm({
         {/* Weather Forecast (complex tier only) */}
         {isComplex && (
           <div className={sectionCls}>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-monument text-lg text-chalk">Weather Forecast</h2>
-              <button type="button" onClick={() => setWeatherWindows([...weatherWindows, { startH: '', startM: '0', endH: '', endM: '0', condition: 'wet', confidence: '70' }])} className="px-3 py-1 text-sm font-telemetry text-marshal-yellow border border-marshal-yellow/40 hover:bg-marshal-yellow/10 transition-colors">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <h2 className="font-monument text-lg text-chalk">Weather Forecast</h2>
+                <p className="text-steel font-body text-xs mt-1">
+                  Add expected rain or damp windows. The optimizer will cluster pit stops during rain (cheaper in laps) and assign rain-specialist drivers to wet stints.
+                </p>
+              </div>
+              <button type="button" onClick={() => setWeatherWindows([...weatherWindows, { startH: '', startM: '0', endH: '', endM: '0', condition: 'wet', confidence: '70' }])} className="px-3 py-1 text-sm font-telemetry text-marshal-yellow border border-marshal-yellow/40 hover:bg-marshal-yellow/10 transition-colors shrink-0">
                 + Add Window
               </button>
             </div>
             {weatherWindows.length === 0 ? (
-              <p className="text-steel font-body text-sm">No weather windows — optimizer assumes dry conditions throughout.</p>
-            ) : (
-              <div className="space-y-3">
+              <p className="text-steel font-body text-sm mt-3">No weather windows added. The optimizer assumes dry conditions for the entire race.</p>
+            ) : (<>
+              <div className="space-y-3 mt-3">
                 {weatherWindows.map((w, i) => (
-                  <div key={i} className="flex items-center gap-3 bg-asphalt/40 border border-steel/10 p-3">
-                    <div className="flex items-center gap-1">
-                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.startH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
-                      <span className="text-steel">:</span>
-                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.startM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                  <div key={i} className="grid grid-cols-[1fr_auto_1fr_1fr_1fr_auto] items-center gap-3 bg-asphalt/40 border border-steel/10 p-3">
+                    <div>
+                      {i === 0 && <label className={`${labelCls} mb-1`}>Start (h:m)</label>}
+                      <div className="flex items-center gap-1">
+                        <input type="number" className={`${inputCls} flex-1 text-center`} value={w.startH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
+                        <span className="text-steel">:</span>
+                        <input type="number" className={`${inputCls} flex-1 text-center`} value={w.startM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                      </div>
                     </div>
-                    <span className="text-steel">{'\u2192'}</span>
-                    <div className="flex items-center gap-1">
-                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.endH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
-                      <span className="text-steel">:</span>
-                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.endM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                    <span className="text-steel pt-4">{'\u2192'}</span>
+                    <div>
+                      {i === 0 && <label className={`${labelCls} mb-1`}>End (h:m)</label>}
+                      <div className="flex items-center gap-1">
+                        <input type="number" className={`${inputCls} flex-1 text-center`} value={w.endH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
+                        <span className="text-steel">:</span>
+                        <input type="number" className={`${inputCls} flex-1 text-center`} value={w.endM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                      </div>
                     </div>
-                    <select className={`${inputCls} w-24`} value={w.condition} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], condition: e.target.value}; setWeatherWindows(nw); }}>
-                      <option value="dry">Dry</option>
-                      <option value="damp">Damp</option>
-                      <option value="wet">Wet</option>
-                    </select>
-                    <input type="number" className={`${inputCls} w-16 text-center`} value={w.confidence} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], confidence: e.target.value}; setWeatherWindows(nw); }} min="0" max="100" step="5" placeholder="%" />
-                    <span className="text-steel text-xs">%</span>
-                    <button type="button" onClick={() => setWeatherWindows(weatherWindows.filter((_, j) => j !== i))} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">{'\u2715'}</button>
+                    <div>
+                      {i === 0 && <label className={`${labelCls} mb-1`}>Condition</label>}
+                      <select className={`${inputCls} w-full`} value={w.condition} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], condition: e.target.value}; setWeatherWindows(nw); }}>
+                        <option value="dry">Dry</option>
+                        <option value="damp">Damp</option>
+                        <option value="wet">Wet</option>
+                      </select>
+                    </div>
+                    <div>
+                      {i === 0 && <label className={`${labelCls} mb-1`}>Likelihood</label>}
+                      <div className="flex items-center gap-1">
+                        <input type="number" className={`${inputCls} flex-1 text-center`} value={w.confidence} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], confidence: e.target.value}; setWeatherWindows(nw); }} min="0" max="100" step="5" placeholder="%" />
+                        <span className="text-steel text-xs">%</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => setWeatherWindows(weatherWindows.filter((_, j) => j !== i))} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors pt-4">{'\u2715'}</button>
                   </div>
                 ))}
               </div>
-            )}
+            </>)}
           </div>
         )}
 

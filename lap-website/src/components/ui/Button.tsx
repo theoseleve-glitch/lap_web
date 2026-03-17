@@ -16,7 +16,7 @@ interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'chi
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: [
-    'border-2 border-pit-orange bg-pit-orange text-asphalt font-bold',
+    'border-2 border-pit-orange bg-pit-orange text-white font-bold',
     'hover:brightness-110 hover:shadow-e2',
   ].join(' '),
   secondary: [

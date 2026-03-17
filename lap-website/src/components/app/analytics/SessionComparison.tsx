@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import { apiFetch } from '@/lib/api-client';
+
+const MPS_TO_KMH = 3.6;
 
 // Loop-based min/max — Math.min(...arr) overflows the call stack with large arrays
 function minOf(arr: number[]): number {
@@ -57,6 +59,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
   const [error, setError] = useState<string | null>(null);
   const speedCanvasRef = useRef<HTMLCanvasElement>(null);
   const deltaCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [hoverX, setHoverX] = useState<number | null>(null);
 
   // Fetch available sessions for the same track
   useEffect(() => {
@@ -123,7 +126,10 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     if (!distances?.length) return;
 
     const xMax = maxOf(distances) || 1;
-    const allSpeeds = [...speeds_a, ...speeds_b].filter(isFinite);
+    // Convert m/s → km/h for display
+    const kmhA = speeds_a.map((v) => v * MPS_TO_KMH);
+    const kmhB = speeds_b.map((v) => v * MPS_TO_KMH);
+    const allSpeeds = [...kmhA, ...kmhB].filter(isFinite);
     const yMin = minOf(allSpeeds) * 0.95;
     const yMax = maxOf(allSpeeds) * 1.05 || 1;
     const yRange = yMax - yMin || 1;
@@ -131,7 +137,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const xScale = (v: number) => pad.left + (v / xMax) * pw;
     const yScale = (v: number) => pad.top + ph - ((v - yMin) / yRange) * ph;
 
-    // Grid lines — matches SpeedTraceChart
+    // Grid lines
     ctx.strokeStyle = '#30363d';
     ctx.lineWidth = 0.5;
     const ySteps = 5;
@@ -145,7 +151,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.beginPath(); ctx.moveTo(x, pad.top); ctx.lineTo(x, pad.top + ph); ctx.stroke();
     }
 
-    // Draw lines — acid-green (#3ddc84) for current, pit-orange (#ff8c00) for comparison
+    // Draw lines — acid-green for current, pit-orange for comparison
     const drawLine = (speeds: number[], color: string) => {
       ctx.beginPath();
       ctx.strokeStyle = color;
@@ -158,10 +164,10 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.stroke();
     };
 
-    drawLine(speeds_a, '#3ddc84'); // acid-green = current session
-    drawLine(speeds_b, '#ff8c00'); // pit-orange = comparison
+    drawLine(kmhA, '#3ddc84');
+    drawLine(kmhB, '#ff8c00');
 
-    // Y-axis labels
+    // Y-axis labels (km/h)
     ctx.fillStyle = '#888888';
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
@@ -188,17 +194,60 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.save();
     ctx.translate(12, h / 2);
     ctx.rotate(-Math.PI / 2);
-    ctx.fillText('Speed (m/s)', 0, 0);
+    ctx.fillText('Speed (km/h)', 0, 0);
     ctx.restore();
 
-    // Legend — matches SpeedTraceChart style
+    // Legend
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillStyle = '#3ddc84';
     ctx.fillText('\u2500\u2500 This session', pad.left + 8, pad.top + 8);
     ctx.fillStyle = '#ff8c00';
     ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
-  }, [compareData]);
+
+    // Crosshair hover
+    if (hoverX !== null && hoverX >= pad.left && hoverX <= pad.left + pw) {
+      const pct = (hoverX - pad.left) / pw;
+      const idx = Math.min(Math.round(pct * (distances.length - 1)), distances.length - 1);
+      const dist = distances[idx];
+      const sA = kmhA[idx];
+      const sB = kmhB[idx];
+
+      // Vertical line
+      ctx.strokeStyle = '#F0EDE5';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(hoverX, pad.top);
+      ctx.lineTo(hoverX, pad.top + ph);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Dots
+      const yA = yScale(sA);
+      const yB = yScale(sB);
+      ctx.fillStyle = '#3ddc84';
+      ctx.beginPath(); ctx.arc(hoverX, yA, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ff8c00';
+      ctx.beginPath(); ctx.arc(hoverX, yB, 3, 0, Math.PI * 2); ctx.fill();
+
+      // Tooltip
+      const tipX = hoverX + 10 > w - 120 ? hoverX - 120 : hoverX + 10;
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+      ctx.fillRect(tipX, pad.top + 2, 110, 42);
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(tipX, pad.top + 2, 110, 42);
+      ctx.font = '10px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#888888';
+      ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, pad.top + 14);
+      ctx.fillStyle = '#3ddc84';
+      ctx.fillText(`A: ${sA.toFixed(1)} km/h`, tipX + 5, pad.top + 26);
+      ctx.fillStyle = '#ff8c00';
+      ctx.fillText(`B: ${sB.toFixed(1)} km/h`, tipX + 5, pad.top + 38);
+    }
+  }, [compareData, hoverX]);
 
   useEffect(() => { drawSpeed(); }, [drawSpeed]);
   useEffect(() => {
@@ -296,7 +345,40 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
-  }, [compareData]);
+
+    // Crosshair hover
+    if (hoverX !== null && hoverX >= pad.left && hoverX <= pad.left + pw) {
+      const pct = (hoverX - pad.left) / pw;
+      const idx = Math.min(Math.round(pct * (distances.length - 1)), distances.length - 1);
+      const dist = distances[idx];
+      const d = delta_s[idx];
+
+      ctx.strokeStyle = '#F0EDE5';
+      ctx.lineWidth = 0.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(hoverX, 0);
+      ctx.lineTo(hoverX, h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#F0EDE5';
+      ctx.beginPath(); ctx.arc(hoverX, yScale(d), 3, 0, Math.PI * 2); ctx.fill();
+
+      const tipX = hoverX + 10 > w - 100 ? hoverX - 100 : hoverX + 10;
+      ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+      ctx.fillRect(tipX, 2, 90, 28);
+      ctx.strokeStyle = '#30363d';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(tipX, 2, 90, 28);
+      ctx.font = '10px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#888888';
+      ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, 14);
+      ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
+      ctx.fillText(`${d >= 0 ? '+' : ''}${d.toFixed(3)}s`, tipX + 5, 26);
+    }
+  }, [compareData, hoverX]);
 
   useEffect(() => { drawDelta(); }, [drawDelta]);
   useEffect(() => {
@@ -373,13 +455,29 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
           {/* Speed overlay */}
           <div>
             <div className="text-xs text-steel font-body uppercase tracking-wider mb-1">Speed Overlay</div>
-            <canvas ref={speedCanvasRef} style={{ width: '100%', display: 'block' }} />
+            <canvas
+              ref={speedCanvasRef}
+              style={{ width: '100%', display: 'block', cursor: 'crosshair' }}
+              onMouseMove={(e: ReactMouseEvent<HTMLCanvasElement>) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHoverX(e.clientX - rect.left);
+              }}
+              onMouseLeave={() => setHoverX(null)}
+            />
           </div>
 
           {/* Cumulative delta */}
           <div>
             <div className="text-xs text-steel font-body uppercase tracking-wider mb-1">Cumulative Time Delta</div>
-            <canvas ref={deltaCanvasRef} style={{ width: '100%', display: 'block' }} />
+            <canvas
+              ref={deltaCanvasRef}
+              style={{ width: '100%', display: 'block', cursor: 'crosshair' }}
+              onMouseMove={(e: ReactMouseEvent<HTMLCanvasElement>) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHoverX(e.clientX - rect.left);
+              }}
+              onMouseLeave={() => setHoverX(null)}
+            />
           </div>
         </div>
       )}

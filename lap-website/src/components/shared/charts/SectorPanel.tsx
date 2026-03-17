@@ -64,11 +64,11 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
     if (sortedByStd.length > 0) {
       const best = sortedByStd[0];
       const cv = best.mean_s > 0 ? ((best.std_s / best.mean_s) * 100).toFixed(1) : '0';
-      result.push(`Sector ${best.sector} lowest variance (${cv}%)`);
+      result.push(`Sector ${best.sector ?? (sortedByStd.indexOf(best) + 1)} lowest variance (${cv}%)`);
     }
 
     // Find sector with highest time loss (gap)
-    const gaps = stats.map((s) => ({ sector: s.sector, gap: s.mean_s - s.best_s }));
+    const gaps = stats.map((s, i) => ({ sector: s.sector ?? (i + 1), gap: s.mean_s - s.best_s }));
     const sortedByGap = [...gaps].sort((a, b) => b.gap - a.gap);
     if (sortedByGap.length > 0 && sortedByGap[0].gap > 0) {
       const worst = sortedByGap[0];
@@ -114,9 +114,9 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
           <thead>
             <tr className="text-gray-500 text-xs">
               <th className="text-left pr-4 pb-2" />
-              {data.sector_stats.map((s) => (
-                <th key={s.sector} className="text-center px-3 pb-2 font-normal">
-                  S{s.sector}
+              {data.sector_stats.map((s, i) => (
+                <th key={s.sector ?? i} className="text-center px-3 pb-2 font-normal">
+                  S{s.sector ?? (i + 1)}
                 </th>
               ))}
             </tr>
@@ -167,7 +167,7 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
               key={s.sector}
               className="flex-1 h-3 rounded"
               style={{ backgroundColor: `hsl(${hue}, 70%, 40%)` }}
-              title={`S${s.sector}: ${gap.toFixed(3)}s gap`}
+              title={`S${s.sector ?? (data.sector_stats.indexOf(s) + 1)}: ${gap.toFixed(3)}s gap`}
             />
           );
         })}

@@ -233,7 +233,7 @@ export function SetupFlow({ sessionId, stints, pitThreshold, onComplete }: Setup
         type="button"
         onClick={handleGenerateReport}
         disabled={!allStintsAssigned || drivers.length < 1 || assignMutation.isPending}
-        className="w-full py-3 bg-gold text-carbon font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        className="w-full py-3 bg-gold text-white font-telemetry text-sm font-semibold rounded-lg hover:bg-gold/90 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
       >
         {assignMutation.isPending ? 'Generating Report...' : `Generate Endurance Report (${Object.keys(assignments).length}/${stints.length} stints assigned)`}
       </button>

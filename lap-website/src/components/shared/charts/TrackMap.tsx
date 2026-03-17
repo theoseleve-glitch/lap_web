@@ -45,6 +45,10 @@ interface TrackMapProps {
   bestLap?: number | null;
   apiBase?: string;
   controlledLap?: boolean;
+  /** Distance zoom range [startM, endM] — segments outside are dimmed. */
+  distRange?: [number, number] | null;
+  /** When set, fetches and draws a second lap trace for comparison. */
+  compareLap?: number | null;
 }
 
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
@@ -230,6 +234,8 @@ function drawTrack(
   trace: TrackMapData,
   corners?: Corner[],
   hoverIndex?: number,
+  distRange?: [number, number] | null,
+  compareTrace?: TrackMapData | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -296,11 +302,50 @@ function drawTrack(
     ctx.stroke();
   }
 
+  // ── Compare trace (dashed, drawn underneath primary) ──
+  if (compareTrace && compareTrace.latitudes && compareTrace.latitudes.length > 1) {
+    const cLats = compareTrace.latitudes;
+    const cLons = compareTrace.longitudes;
+    const cProj = buildProjection(cLats, cLons, w, h, 12);
+    const cSpeeds = compareTrace.speeds;
+
+    // Speed normalization for compare trace
+    let cMinSpd = Infinity, cMaxSpd = -Infinity;
+    if (cSpeeds && cSpeeds.length === cLats.length) {
+      for (let i = 0; i < cSpeeds.length; i++) {
+        if (cSpeeds[i] < cMinSpd) cMinSpd = cSpeeds[i];
+        if (cSpeeds[i] > cMaxSpd) cMaxSpd = cSpeeds[i];
+      }
+    }
+    const cSpdRange = cMaxSpd - cMinSpd || 1;
+
+    // Draw compare trace — speed-colored but semi-transparent
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.35;
+    ctx.setLineDash([6, 4]);
+    for (let i = 0; i < cLats.length - 1; i++) {
+      ctx.lineWidth = 1.5;
+      if (cSpeeds && cSpeeds.length === cLats.length) {
+        const t = (cSpeeds[i] - cMinSpd) / cSpdRange;
+        ctx.strokeStyle = speedToColor(t);
+      } else {
+        ctx.strokeStyle = '#F0EDE5';
+      }
+      ctx.beginPath();
+      ctx.moveTo(cProj.pxs[i], cProj.pys[i]);
+      ctx.lineTo(cProj.pxs[i + 1], cProj.pys[i + 1]);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+  }
+
   // ── Shadow pass (dark, blurred, offset below track) ──
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 5;
-  ctx.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.25)';
   ctx.beginPath();
   for (let i = 0; i < lats.length; i++) {
     const x = proj.pxs[i];
@@ -314,6 +359,7 @@ function drawTrack(
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
 
+  const dists = trace.distances;
   for (let i = 0; i < lats.length - 1; i++) {
     const x0 = proj.pxs[i];
     const y0 = proj.pys[i];
@@ -322,13 +368,17 @@ function drawTrack(
 
     // Depth-varying line width: thicker when "closer" (higher Y)
     const depthT = (y0 - gy0) / (gy1 - gy0 || 1);
-    ctx.lineWidth = 2 + depthT * 1.5;
+
+    // Dim segments outside zoom range
+    const inRange = !distRange || !dists || (dists[i] >= distRange[0] && dists[i] <= distRange[1]);
+    ctx.lineWidth = inRange ? 1.5 : 0.5;
+    ctx.globalAlpha = inRange ? 1.0 : 0.15;
 
     if (speeds && speeds.length === lats.length) {
       const t = (speeds[i] - minSpd) / spdRange;
-      ctx.strokeStyle = speedToColor(t);
+      ctx.strokeStyle = inRange ? speedToColor(t) : '#444';
     } else {
-      ctx.strokeStyle = '#F0EDE5';
+      ctx.strokeStyle = inRange ? '#F0EDE5' : '#333';
     }
 
     ctx.beginPath();
@@ -336,6 +386,7 @@ function drawTrack(
     ctx.lineTo(x1, y1);
     ctx.stroke();
   }
+  ctx.globalAlpha = 1.0;
 
   // ── Start/finish marker ──
   const sx = proj.pxs[0];
@@ -475,10 +526,13 @@ export function TrackMap(props: TrackMapProps) {
     gpsLaps = [],
     bestLap = null,
     controlledLap = false,
+    distRange,
+    compareLap = null,
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [trace, setTrace] = useState<TrackMapData | null>(preFetchedData ?? null);
+  const [compareTrace, setCompareTrace] = useState<TrackMapData | null>(null);
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -528,11 +582,30 @@ export function TrackMap(props: TrackMapProps) {
     return () => { cancelled = true; };
   }, [sessionId, preFetchedData, activeLap]);
 
+  // ── Fetch compare lap GPS data ─────────────────────────
+  useEffect(() => {
+    if (!sessionId || compareLap == null) { setCompareTrace(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await apiFetch<TrackMapData & { available?: boolean }>(
+          `/sessions/${sessionId}/gps-trace?lap=${compareLap}`,
+        );
+        if (cancelled) return;
+        if (result.available === false) setCompareTrace(null);
+        else setCompareTrace(result);
+      } catch {
+        if (!cancelled) setCompareTrace(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionId, compareLap]);
+
   // ── Draw on canvas ──────────────────────────────────────
   const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
-    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined);
-  }, [trace, corners, hoverIdx]);
+    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace);
+  }, [trace, compareTrace, corners, hoverIdx, distRange]);
 
   useEffect(() => { draw(); }, [draw]);
 

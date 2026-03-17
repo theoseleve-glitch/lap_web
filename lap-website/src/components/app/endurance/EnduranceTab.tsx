@@ -12,9 +12,11 @@ import type { StintsResponse, EnduranceReportResponse, EnduranceTier, Stint } fr
 
 interface EnduranceTabProps {
   sessionId: string;
+  trackName?: string | null;
+  kartName?: string | null;
 }
 
-export function EnduranceTab({ sessionId }: EnduranceTabProps) {
+export function EnduranceTab({ sessionId, trackName, kartName }: EnduranceTabProps) {
   const [tier, setTier] = useState<EnduranceTier>('team');
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null);
   const [selectedStint, setSelectedStint] = useState<number | null>(null);
@@ -110,7 +112,7 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
       const stintFromList = reportStints.find((s) => s.stint_number === selectedStint);
       const stintResult = (report as any).stint_results?.find((sr: any) => sr.stint_number === selectedStint);
       const merged = { ...(stintFromList || {}), ...(stintResult || {}) } as Stint;
-      return <StintReport sessionId={sessionId} stint={merged} onBack={handleBack} />;
+      return <StintReport sessionId={sessionId} stint={merged} onBack={handleBack} trackName={trackName} kartName={kartName} />;
     }
 
     // Tier 2: Driver
@@ -125,7 +127,7 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
       <TeamReport
         report={report.team}
         stints={reportStints}
-        pitThreshold={stintsQuery.data?.pit_threshold_s || 30}
+        pitThreshold={(report.team as any).pit_threshold_s || stintsQuery.data?.pit_threshold_s || 30}
         onSelectDriver={handleSelectDriver}
       />
     );

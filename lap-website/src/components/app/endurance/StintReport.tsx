@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { StatCard } from '@/components/app';
 import type { Stint } from './types';
 
@@ -7,6 +8,8 @@ interface StintReportProps {
   sessionId: string;
   stint: Stint;
   onBack: () => void;
+  trackName?: string | null;
+  kartName?: string | null;
 }
 
 function formatTime(s: number | null | undefined): string {
@@ -23,7 +26,7 @@ const conditionBadge: Record<string, string> = {
   mixed: 'bg-marshal-yellow/10 text-marshal-yellow border-marshal-yellow/20',
 };
 
-export function StintReport({ stint, onBack }: StintReportProps) {
+export function StintReport({ stint, onBack, trackName, kartName }: StintReportProps) {
   const trafficLosses = (stint as any).traffic_losses || [];
   const trafficTotal = (stint as any).traffic_total_s || 0;
   const trafficCount = (stint as any).traffic_count || 0;
@@ -50,9 +53,21 @@ export function StintReport({ stint, onBack }: StintReportProps) {
             <span className="text-steel text-xs font-body">{stint.driver_name}</span>
           )}
         </div>
-        <p className="text-steel text-xs font-body">
-          Laps {stint.start_lap}–{stint.end_lap} ({stint.lap_count} laps)
-        </p>
+        <div className="flex items-center gap-3 flex-wrap">
+          <p className="text-steel text-xs font-body">
+            Laps {stint.start_lap}–{stint.end_lap} ({stint.lap_count} laps)
+          </p>
+          {trackName && <span className="text-steel/60 text-xs font-body">{trackName}</span>}
+          {kartName && <span className="text-steel/60 text-xs font-body">{kartName}</span>}
+          {(stint as any).session_id && (
+            <Link
+              href={`/app/sessions/${(stint as any).session_id}`}
+              className="text-[10px] font-telemetry text-acid-green/70 hover:text-acid-green border border-acid-green/20 px-2 py-0.5 rounded transition-colors"
+            >
+              View Charts &rarr;
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Stats */}

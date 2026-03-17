@@ -49,7 +49,7 @@ export function PitButton({
     inline-flex items-center justify-center
     min-h-[48px] px-8 py-3.5
     border-2 border-pit-orange
-    bg-pit-orange text-asphalt
+    bg-pit-orange text-white
     font-telemetry text-[12px] tracking-[0.12em] uppercase font-bold
     shadow-[0_0_20px_rgba(201,168,76,0.15),2px_2px_0_rgba(240,237,229,0.12)]
     transition-all duration-[420ms] ease-[cubic-bezier(0.16,1,0.3,1)]

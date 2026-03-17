@@ -34,12 +34,16 @@ function ToolRenderer({
   apiBase,
   gpsLaps,
   bestLap,
+  distRange,
+  onDistRangeChange,
 }: {
   toolId: ToolId;
   sessionId: string;
   apiBase: string;
   gpsLaps: number[];
   bestLap: number | null;
+  distRange?: [number, number] | null;
+  onDistRangeChange?: (range: [number, number] | null) => void;
 }) {
   switch (toolId) {
     case 'speed-trace':
@@ -52,6 +56,8 @@ function ToolRenderer({
             bestLap={bestLap}
             controlledLap
             className="w-full h-full"
+            distRange={distRange}
+            onDistRangeChange={onDistRangeChange}
           />
         </ChartErrorBoundary>
       );
@@ -65,6 +71,7 @@ function ToolRenderer({
             bestLap={bestLap}
             controlledLap
             className="w-full h-full"
+            distRange={distRange}
           />
         </ChartErrorBoundary>
       );
@@ -90,6 +97,7 @@ function ToolRenderer({
             bestLap={bestLap}
             controlledLap
             className="w-full h-full"
+            distRange={distRange}
           />
         </ChartErrorBoundary>
       );
@@ -193,6 +201,7 @@ export function FocusMode({
   const apiBase = BACKEND_URL;
   const [focusLap, setFocusLap] = useState<number | null>(null);
   const activeLap = focusLap ?? bestLap ?? gpsLaps[0] ?? null;
+  const [distRange, setDistRange] = useState<[number, number] | null>(null);
 
   // Ensure store has defaults for this tab on first open
   useEffect(() => {
@@ -242,6 +251,12 @@ export function FocusMode({
             store.toggleDock();
           }
           break;
+        case 'z':
+        case 'Z':
+          if (!e.ctrlKey && !e.metaKey) {
+            setDistRange(null);
+          }
+          break;
         default: {
           // Number keys 0-9 toggle tools
           const num = parseInt(e.key, 10);
@@ -283,7 +298,7 @@ export function FocusMode({
 
   // Minimal panel: no border/padding chrome — chart fills edge-to-edge
   const renderToolPanel = (toolId: ToolId) => (
-    <div key={toolId} className="h-full w-full relative">
+    <div key={toolId} className="h-full w-full relative overflow-hidden">
       <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
         {toolId.replace(/-/g, ' ')}
       </span>
@@ -293,6 +308,8 @@ export function FocusMode({
         apiBase={apiBase}
         gpsLaps={gpsLaps}
         bestLap={activeLap}
+        distRange={distRange}
+        onDistRangeChange={setDistRange}
       />
     </div>
   );
@@ -359,30 +376,36 @@ export function FocusMode({
             <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15">Esc</kbd>
             <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">S</kbd>
             <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">R</kbd>
+            <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">Z</kbd>
             <kbd className="px-1 py-0.5 rounded bg-asphalt/60 border border-steel/15 ml-1">1-9</kbd>
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {distRange && (
+            <button
+              type="button"
+              onClick={() => setDistRange(null)}
+              className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-telemetry text-acid-green border border-acid-green/30 rounded hover:bg-acid-green/10 transition-colors"
+            >
+              <span>{Math.round(distRange[0])}m–{Math.round(distRange[1])}m</span>
+              <span className="text-steel/50">×</span>
+            </button>
+          )}
           {gpsLaps.length > 1 && (
             <div className="flex items-center gap-1.5">
               <span className="text-[9px] font-telemetry text-steel/40 uppercase">Lap</span>
-              <div className="flex gap-0.5">
+              <select
+                value={activeLap ?? ''}
+                onChange={(e) => setFocusLap(Number(e.target.value))}
+                className="bg-concrete border border-steel/20 rounded px-2 py-0.5 text-[11px] font-telemetry text-chalk focus:border-acid-green/50 focus:outline-none appearance-none cursor-pointer"
+                style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'10\' height=\'6\'%3E%3Cpath d=\'M0 0l5 6 5-6z\' fill=\'%23666\'/%3E%3C/svg%3E")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 6px center', paddingRight: '20px' }}
+              >
                 {gpsLaps.map((lap) => (
-                  <button
-                    key={lap}
-                    type="button"
-                    onClick={() => setFocusLap(lap)}
-                    className={`px-1.5 py-0.5 text-[10px] font-telemetry rounded transition-colors ${
-                      lap === activeLap
-                        ? 'bg-acid-green/20 text-acid-green border border-acid-green/40'
-                        : 'text-steel/50 hover:text-chalk'
-                    }`}
-                  >
-                    {lap}
-                    {lap === bestLap && <span className="ml-0.5 text-[8px] text-acid-green">B</span>}
-                  </button>
+                  <option key={lap} value={lap}>
+                    Lap {lap}{lap === bestLap ? ' (Best)' : ''}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
           )}
           <button

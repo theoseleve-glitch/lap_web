@@ -1,5 +1,8 @@
 'use client';
 
+import { useState } from 'react';
+import { BadgeHex, AchievementUnlockOverlay, type BadgeIcon, type BadgeTier } from './gamification';
+
 interface BadgeData {
   id: string;
   label: string;
@@ -8,13 +11,24 @@ interface BadgeData {
   criteria: string;
 }
 
-const TIER_CONFIG = {
-  gold:   { icon: 'AU', bg: 'bg-yellow-500/10', border: 'border-yellow-500/30', text: 'text-yellow-400', label: 'Gold' },
-  silver: { icon: 'AG', bg: 'bg-zinc-400/10',   border: 'border-zinc-400/30',   text: 'text-zinc-300',   label: 'Silver' },
-  bronze: { icon: 'CU', bg: 'bg-orange-600/10', border: 'border-orange-600/30', text: 'text-orange-400', label: 'Bronze' },
-} as const;
+const CATEGORY_TO_ICON: Record<string, BadgeIcon> = {
+  pace: 'helmet',
+  consistency: 'stopwatch',
+  execution: 'wheel',
+  robustness: 'shield',
+  adaptation: 'shield',
+  total: 'trophy',
+};
+
+const TIER_COLORS: Record<string, string> = {
+  gold: '#FFD400',
+  silver: '#C0C0C0',
+  bronze: '#CD7F32',
+};
 
 export function AchievementsBadges({ badges }: { badges?: BadgeData[] }) {
+  const [selected, setSelected] = useState<{ key: string; label: string; description: string; icon: string; tier: string } | null>(null);
+
   if (!badges || badges.length === 0) {
     return (
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
@@ -29,26 +43,38 @@ export function AchievementsBadges({ badges }: { badges?: BadgeData[] }) {
   return (
     <div className="bg-concrete rounded-xl border border-steel/10 p-6">
       <h2 className="text-lg font-monument text-chalk mb-4">Achievements</h2>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="flex flex-wrap gap-4">
         {badges.map((badge) => {
-          const tier = TIER_CONFIG[badge.tier] || TIER_CONFIG.bronze;
+          const icon = CATEGORY_TO_ICON[badge.category] || 'trophy';
+          const tier = badge.tier as BadgeTier;
+          const color = TIER_COLORS[tier] || '#888';
           return (
-            <div
+            <button
+              type="button"
               key={badge.id}
-              className={`rounded-lg border p-4 ${tier.bg} ${tier.border}`}
+              className="flex flex-col items-center gap-1.5 group cursor-pointer"
+              onClick={() => setSelected({
+                key: badge.id,
+                label: badge.label,
+                description: badge.criteria,
+                icon: icon,
+                tier: tier,
+              })}
             >
-              <div className="flex items-center gap-2 mb-1">
-                <span className={`text-xs font-monument ${tier.text}`}>{tier.icon}</span>
-                <span className={`text-xs font-body ${tier.text} uppercase tracking-wider`}>
-                  {tier.label}
-                </span>
+              <div className="transition-transform group-hover:scale-110">
+                <BadgeHex icon={icon} tier={tier} size={56} glow={tier === 'gold'} />
               </div>
-              <p className="text-sm font-body text-chalk">{badge.label}</p>
-              <p className="text-[10px] text-steel font-body mt-1">{badge.criteria}</p>
-            </div>
+              <span className="text-[10px] font-body text-chalk font-medium text-center w-[70px] leading-tight truncate">
+                {badge.label}
+              </span>
+              <span className="text-[9px] font-telemetry uppercase" style={{ color }}>
+                {tier}
+              </span>
+            </button>
           );
         })}
       </div>
+      <AchievementUnlockOverlay achievement={selected} onDismiss={() => setSelected(null)} />
     </div>
   );
 }

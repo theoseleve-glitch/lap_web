@@ -176,7 +176,7 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
         <div className="px-6 py-4 border-t border-chalk/10 space-y-2">
           <Link
             href="/register?source=mobile-nav"
-            className="flex items-center justify-center min-h-[44px] w-full font-telemetry text-xs tracking-[0.12em] uppercase bg-pit-orange border border-pit-orange text-asphalt hover:bg-[#D4B35A] transition-colors cursor-pointer"
+            className="flex items-center justify-center min-h-[44px] w-full font-telemetry text-xs tracking-[0.12em] uppercase bg-pit-orange border border-pit-orange text-white hover:bg-[#D4B35A] transition-colors cursor-pointer"
             onClick={() => trackNavRouteClick('/register', 'mobile-drawer')}
           >
             {t('cta.startFreeReport')}

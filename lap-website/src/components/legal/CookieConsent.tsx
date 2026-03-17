@@ -156,7 +156,7 @@ export function CookieConsent() {
             <button
               type="button"
               onClick={handleSaveCustom}
-              className="w-full bg-gold text-asphalt font-telemetry text-sm py-2 rounded-md hover:brightness-110 transition"
+              className="w-full bg-gold text-white font-telemetry text-sm py-2 rounded-md hover:brightness-110 transition"
             >
               Save Preferences
             </button>
@@ -166,7 +166,7 @@ export function CookieConsent() {
             <button
               type="button"
               onClick={handleAcceptAll}
-              className="bg-gold text-asphalt font-telemetry text-xs px-4 py-2 rounded-md hover:brightness-110 transition"
+              className="bg-gold text-white font-telemetry text-xs px-4 py-2 rounded-md hover:brightness-110 transition"
             >
               Accept All
             </button>

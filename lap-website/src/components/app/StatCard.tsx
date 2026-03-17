@@ -16,8 +16,8 @@ export function StatCard({ label, value, unit, trend }: StatCardProps) {
       <p className="text-steel font-telemetry text-xs uppercase tracking-wider mb-1">
         {label}
       </p>
-      <div className="flex items-baseline gap-1">
-        <span className={`font-monument text-3xl ${trendColor}`}>
+      <div className="flex items-baseline gap-1 min-w-0">
+        <span className={`font-monument text-2xl truncate ${trendColor}`}>
           {value}
         </span>
         {unit && (

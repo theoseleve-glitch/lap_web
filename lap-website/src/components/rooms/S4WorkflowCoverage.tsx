@@ -138,7 +138,7 @@ export function S4WorkflowCoverage() {
         <div className="col-span-full mt-6">
           <Link
             href="/product"
-            className="inline-flex items-center border border-gold px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-gold hover:bg-gold hover:text-asphalt transition-colors duration-[420ms]"
+            className="inline-flex items-center border border-gold px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase text-gold hover:bg-gold hover:text-white transition-colors duration-[420ms]"
           >
             {t('cta.openFullProduct')}
           </Link>

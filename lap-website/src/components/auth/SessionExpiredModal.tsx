@@ -74,7 +74,7 @@ export function SessionExpiredModal({ onRetry, retrying }: SessionExpiredModalPr
             <button
               type="button"
               onClick={handleLogin}
-              className="px-4 py-2.5 bg-gold text-carbon font-monument text-sm rounded
+              className="px-4 py-2.5 bg-gold text-white font-monument text-sm rounded
                 hover:bg-gold/90 transition-colors"
             >
               Log in

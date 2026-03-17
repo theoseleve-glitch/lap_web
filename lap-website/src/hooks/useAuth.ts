@@ -10,6 +10,12 @@ import {
   logout as apiLogout,
   silentRefresh,
 } from '@/lib/auth';
+import { queryClient } from '@/providers/query-provider';
+
+/** Clear React Query cache — safe to call even outside QueryClientProvider. */
+function clearQueryCache(): void {
+  queryClient?.clear();
+}
 
 export function useAuth() {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -36,9 +42,9 @@ export function useAuth() {
       try {
         const result = await apiLogin(email, password);
         if (!('access_token' in result)) {
-          // 2FA required — return the challenge so the login page can show the code input
           return result;
         }
+        clearQueryCache();
         setUser(result.user);
         router.push(redirectTo ?? '/app/dashboard');
         return result;
@@ -58,6 +64,7 @@ export function useAuth() {
       setError(null);
       try {
         const result = await apiVerify2fa(tempToken, code, isBackup);
+        clearQueryCache();
         setUser(result.user);
         router.push(redirectTo ?? '/app/dashboard');
       } catch (err) {
@@ -75,6 +82,7 @@ export function useAuth() {
       setError(null);
       try {
         const result = await apiRegister(email, password, displayName);
+        clearQueryCache();
         setUser(result.user);
         router.push(redirectTo ?? '/app/dashboard');
       } catch (err) {
@@ -91,6 +99,7 @@ export function useAuth() {
       await apiLogout();
     } finally {
       setUser(null);
+      clearQueryCache();
       router.push('/login');
     }
   }, [router]);

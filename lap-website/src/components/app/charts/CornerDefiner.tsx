@@ -405,7 +405,7 @@ export function CornerDefiner({
             type="button"
             onClick={handleSave}
             disabled={saving || completedCount === 0}
-            className="flex-1 px-4 py-2 bg-gold text-carbon text-xs font-monument rounded
+            className="flex-1 px-4 py-2 bg-gold text-white text-xs font-monument rounded
               hover:bg-gold/90 transition-colors
               disabled:opacity-40 disabled:cursor-not-allowed"
           >

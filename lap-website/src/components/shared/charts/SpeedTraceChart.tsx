@@ -51,6 +51,10 @@ interface SpeedTraceChartProps {
   compareLapTime?: number | null;
   /** When true, lap selection is controlled by parent (hides per-chart selector) */
   controlledLap?: boolean;
+  /** Distance zoom range [startM, endM]. When set, x-axis crops to this window. */
+  distRange?: [number, number] | null;
+  /** Callback when user drag-selects a distance range on the chart. */
+  onDistRangeChange?: (range: [number, number] | null) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -116,6 +120,10 @@ interface DrawOptions {
   refLapLabel?: string | null;
   /** Primary lap label shown in legend */
   primaryLapLabel?: string | null;
+  /** Distance zoom override [startM, endM] */
+  distRange?: [number, number] | null;
+  /** Pixel range of active drag selection [startPx, endPx] */
+  dragSelection?: [number, number] | null;
 }
 
 function drawSpeedTrace(
@@ -154,10 +162,21 @@ function drawSpeedTrace(
     return m === Infinity ? 0 : m;
   };
   const validSpeeds = speeds.filter((s): s is number => s != null && isFinite(s));
-  const xMin = 0;
-  const xMax = safeMax(distances) || 1;
+  const xMin = opts.distRange ? opts.distRange[0] : 0;
+  const xMax = opts.distRange ? opts.distRange[1] : (safeMax(distances) || 1);
+
+  // When zoomed, compute yMin/yMax from visible speeds only
+  let visibleSpeeds = validSpeeds;
+  if (opts.distRange) {
+    visibleSpeeds = [];
+    for (let i = 0; i < distances.length; i++) {
+      if (distances[i] >= xMin && distances[i] <= xMax && speeds[i] != null && isFinite(speeds[i])) {
+        visibleSpeeds.push(speeds[i]);
+      }
+    }
+  }
   const yMin = 0;
-  let yMax = (validSpeeds.length > 0 ? safeMax(validSpeeds) : 1) * 3.6 * 1.1;
+  let yMax = (visibleSpeeds.length > 0 ? safeMax(visibleSpeeds) : 1) * 3.6 * 1.1;
 
   // Extend yMax for reference/avg overlays
   if (refSpeeds && refSpeeds.length > 0) {
@@ -215,15 +234,22 @@ function drawSpeedTrace(
   ctx.fillStyle = COLORS.text;
   ctx.font = '12px "Space Mono", monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Distance (m)', pad.left + pW / 2, pad.top + pH + 30);
-  ctx.save();
-  ctx.translate(14, pad.top + pH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillText('Speed (km/h)', 0, 0);
-  ctx.restore();
+  // Compact unit labels — no full axis titles (tick labels are self-explanatory)
+  ctx.font = '10px "Space Mono", monospace';
+  ctx.fillStyle = COLORS.text;
+  ctx.textAlign = 'left';
+  ctx.fillText('km/h', pad.left + 2, pad.top - 4);
+  ctx.textAlign = 'right';
+  ctx.fillText('m', pad.left + pW, pad.top + pH + 26);
 
   // Legend y-offset tracker
   let legendY = pad.top + 4;
+
+  // Clip all trace lines to the plot area (inside axes)
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(pad.left, pad.top, pW, pH);
+  ctx.clip();
 
   // Reference line (dashed gold)
   if (refSpeeds && refSpeeds.length > 0) {
@@ -300,6 +326,9 @@ function drawSpeedTrace(
     ctx.stroke();
   }
 
+  // End plot-area clip
+  ctx.restore();
+
   // Hover crosshair
   if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
     const hx = xToPixel(hoverDistanceM);
@@ -338,6 +367,20 @@ function drawSpeedTrace(
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx + 6, ty + 10);
+    }
+  }
+
+  // ── Drag selection overlay ────────────────────────────────
+  if (opts.dragSelection) {
+    const [sx, ex] = opts.dragSelection;
+    const left = Math.max(pad.left, Math.min(sx, ex));
+    const right = Math.min(pad.left + pW, Math.max(sx, ex));
+    if (right > left) {
+      ctx.fillStyle = 'rgba(182, 255, 46, 0.08)';
+      ctx.fillRect(left, pad.top, right - left, pH);
+      ctx.strokeStyle = 'rgba(182, 255, 46, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(left, pad.top, right - left, pH);
     }
   }
 
@@ -545,6 +588,8 @@ export function SpeedTraceChart({
   primaryLapTime = null,
   compareLapTime = null,
   controlledLap = false,
+  distRange = null,
+  onDistRangeChange,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -556,6 +601,8 @@ export function SpeedTraceChart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
+  const dragRef = useRef<{ startX: number; currentX: number } | null>(null);
+  const [dragSelection, setDragSelection] = useState<[number, number] | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
@@ -675,6 +722,8 @@ export function SpeedTraceChart({
       hoverDistanceM: hoverDistance,
       refLapLabel: activeCompareLap != null ? `Lap ${activeCompareLap}` : null,
       primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
+      distRange,
+      dragSelection,
     });
 
     if (hasDelta && deltaSeconds) {
@@ -684,7 +733,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, deltaSeconds, activeCompareLap, hoverDistance]);
+  }, [chartData, avgSpeeds, refSpeeds, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
 
   useEffect(() => {
     render();
@@ -725,7 +774,69 @@ export function SpeedTraceChart({
 
   const handleMouseLeave = useCallback(() => {
     clearHover();
+    if (dragRef.current) {
+      dragRef.current = null;
+      setDragSelection(null);
+    }
   }, [clearHover]);
+
+  // ── Drag-to-zoom ─────────────────────────────────────────
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!onDistRangeChange) return; // zoom only when wired up
+      const bounds = boundsRef.current;
+      if (!bounds) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      if (mx < bounds.plotX || mx > bounds.plotX + bounds.plotW) return;
+      dragRef.current = { startX: mx, currentX: mx };
+    },
+    [onDistRangeChange],
+  );
+
+  const handleMouseMoveWithDrag = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      // Regular hover
+      handleMouseMove(e);
+      // Drag selection
+      if (dragRef.current) {
+        const rect = e.currentTarget.getBoundingClientRect();
+        dragRef.current.currentX = e.clientX - rect.left;
+        setDragSelection([dragRef.current.startX, dragRef.current.currentX]);
+      }
+    },
+    [handleMouseMove],
+  );
+
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent<HTMLCanvasElement>) => {
+      if (!dragRef.current || !onDistRangeChange) return;
+      const bounds = boundsRef.current;
+      if (!bounds) { dragRef.current = null; setDragSelection(null); return; }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const endX = e.clientX - rect.left;
+      const { startX } = dragRef.current;
+      dragRef.current = null;
+      setDragSelection(null);
+
+      const pxRange = Math.abs(endX - startX);
+      if (pxRange < 10) {
+        // Click (not drag) — reset zoom
+        onDistRangeChange(null);
+        return;
+      }
+      const x1 = Math.max(bounds.plotX, Math.min(startX, endX));
+      const x2 = Math.min(bounds.plotX + bounds.plotW, Math.max(startX, endX));
+      const d1 = bounds.xMin + (x1 - bounds.plotX) / bounds.plotW * (bounds.xMax - bounds.xMin);
+      const d2 = bounds.xMin + (x2 - bounds.plotX) / bounds.plotW * (bounds.xMax - bounds.xMin);
+      onDistRangeChange([Math.max(0, d1), d2]);
+    },
+    [onDistRangeChange],
+  );
+
+  const handleDblClick = useCallback(() => {
+    onDistRangeChange?.(null);
+  }, [onDistRangeChange]);
 
   // ── Hover from ANY chart → redraw crosshair ────────────────
   // Handled by hoverDistance in the render callback — any chart
@@ -747,7 +858,7 @@ export function SpeedTraceChart({
   }
 
   return (
-    <div className={`relative flex flex-col ${className}`}>
+    <div className={`relative flex flex-col min-h-0 overflow-hidden ${className}`}>
       {/* Lap selector */}
       {showLapSelector && (
         <div className="flex items-center gap-2 mb-2">
@@ -765,7 +876,7 @@ export function SpeedTraceChart({
                 }`}
               >
                 {lap}
-                {lap === bestLap && <span className="ml-1 text-[9px] text-acid-green">best</span>}
+                {lap === bestLap && <span className="ml-0.5 text-[9px] text-acid-green">(B)</span>}
               </button>
             ))}
           </div>
@@ -781,17 +892,20 @@ export function SpeedTraceChart({
 
       {/* Canvas */}
       <div
-        className="relative w-full flex-1 min-h-0 rounded-lg bg-concrete border border-steel/10"
+        className="relative w-full flex-1 min-h-0 rounded-lg bg-concrete border border-steel/10 overflow-hidden"
         style={!className.includes('h-full') ? { minHeight: '280px' } : undefined}
       >
         <canvas
           ref={canvasRef}
           className="w-full h-full cursor-crosshair"
           style={{ display: 'block' }}
-          onMouseMove={handleMouseMove}
+          onMouseMove={onDistRangeChange ? handleMouseMoveWithDrag : handleMouseMove}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
           onMouseLeave={handleMouseLeave}
+          onDoubleClick={handleDblClick}
           role="img"
-          aria-label="Speed versus distance chart"
+          aria-label="Speed versus distance chart — drag to zoom, double-click to reset"
         />
         {!chartData && !loading && (
           <div className="absolute inset-0 flex items-center justify-center">

@@ -69,7 +69,7 @@ export function UpgradeBanner({
           </div>
           <Link
             href={upgrade.url}
-            className="shrink-0 rounded-md bg-gold px-4 py-2 text-xs font-semibold text-asphalt transition-colors hover:bg-gold/90"
+            className="shrink-0 rounded-md bg-gold px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-gold/90"
           >
             Upgrade
           </Link>
@@ -103,7 +103,7 @@ export function UpgradeBanner({
           <div className="mt-6 flex gap-3">
             <Link
               href={upgrade.url}
-              className="flex-1 bg-gold px-4 py-2.5 text-center text-sm font-semibold text-asphalt transition-colors hover:bg-gold/90"
+              className="flex-1 bg-gold px-4 py-2.5 text-center text-sm font-semibold text-white transition-colors hover:bg-gold/90"
             >
               View Plans
             </Link>
@@ -137,7 +137,7 @@ export function UpgradeBanner({
         <div className="flex shrink-0 gap-2">
           <Link
             href={upgrade.url}
-            className="bg-gold px-3 py-1.5 text-xs font-semibold text-asphalt"
+            className="bg-gold px-3 py-1.5 text-xs font-semibold text-white"
           >
             Upgrade
           </Link>

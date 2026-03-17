@@ -56,7 +56,7 @@ export function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={() => accept({ analytics: true, marketing: true })}
-                className="border border-pit-orange bg-pit-orange text-asphalt px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
+                className="border border-pit-orange bg-pit-orange text-white px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
               >
                 Accept All
               </button>
@@ -154,7 +154,7 @@ export function CookieConsentBanner() {
               <button
                 type="button"
                 onClick={() => accept({ analytics, marketing })}
-                className="border border-pit-orange bg-pit-orange text-asphalt px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
+                className="border border-pit-orange bg-pit-orange text-white px-4 py-2 font-telemetry text-[11px] tracking-[0.12em] uppercase hover:brightness-110 transition"
               >
                 Save Preferences
               </button>

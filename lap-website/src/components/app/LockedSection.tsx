@@ -26,7 +26,7 @@ export function LockedSection({ title, description, children }: LockedSectionPro
         <p className="text-steel font-body text-sm mb-4 text-center max-w-xs">{description}</p>
         <Link
           href="/pricing"
-          className="px-5 py-2 bg-pit-orange text-asphalt font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
+          className="px-5 py-2 bg-pit-orange text-white font-monument text-sm tracking-wider rounded hover:brightness-110 transition-all"
         >
           Unlock with Performance
         </Link>

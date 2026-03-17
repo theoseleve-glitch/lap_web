@@ -68,6 +68,44 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
 
   return (
     <div className="space-y-6">
+      {/* Total Time Loss — hero metric */}
+      {((report as any).total_time_loss_s > 0) && (
+        <div className="bg-concrete rounded-xl border border-safety-red/30 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-monument text-chalk">Time Lost</h2>
+            <span className="text-3xl font-monument text-safety-red">{((report as any).total_time_loss_s).toFixed(1)}s</span>
+          </div>
+          <div className="flex gap-6 text-sm font-telemetry mb-4">
+            {(report as any).traffic_total_s > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-safety-red" />
+                <span className="text-steel">Traffic</span>
+                <span className="text-chalk">{((report as any).traffic_total_s).toFixed(1)}s</span>
+                <span className="text-steel/50">({(report as any).traffic_count} inc.)</span>
+              </div>
+            )}
+            {(report as any).pit_time_loss_s > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-pit-orange" />
+                <span className="text-steel">Slow Pits</span>
+                <span className="text-chalk">{((report as any).pit_time_loss_s).toFixed(1)}s</span>
+                <span className="text-steel/50">({(report as any).n_pits} × {Math.ceil(((report as any).avg_pit_s || 0) - ((report as any).pit_threshold_s || 0))}s excess)</span>
+              </div>
+            )}
+          </div>
+          {/* Coaching tips */}
+          {((report as any).coaching as any[])?.map((tip: any, i: number) => (
+            <div key={i} className={`text-xs font-body p-2.5 rounded-lg mb-1.5 border ${
+              tip.priority === 'high' ? 'bg-safety-red/5 border-safety-red/20 text-chalk' :
+              tip.priority === 'medium' ? 'bg-marshal-yellow/5 border-marshal-yellow/20 text-chalk' :
+              'bg-asphalt/50 border-steel/10 text-steel'
+            }`}>
+              {tip.message}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Race Overview Header */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
         <h2 className="text-xl font-monument text-chalk mb-4">Race Report</h2>
@@ -75,9 +113,9 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
           <StatCard label="Total Laps" value={String(report.total_laps)} />
           <StatCard label="Race Time" value={formatDuration(report.total_time_s)} />
           <StatCard label="Stints" value={String(report.total_stints)} />
-          <StatCard label="Pit Stops" value={String(raceMetrics.pitCount)} />
+          <StatCard label="Pit Stops" value={String((report as any).n_pits ?? raceMetrics.pitCount)} />
           <StatCard label="Race Best" value={formatTime(raceMetrics.overallBest)} accent="text-acid-green" />
-          <StatCard label="Avg Pit Stop" value={raceMetrics.avgPitTime > 0 ? `${Math.ceil(raceMetrics.avgPitTime)}s` : '--'} />
+          <StatCard label="Avg Pit Stop" value={(report as any).avg_pit_s > 0 ? `${Math.ceil((report as any).avg_pit_s)}s` : raceMetrics.avgPitTime > 0 ? `${Math.ceil(raceMetrics.avgPitTime)}s` : '--'} />
         </div>
       </div>
 
@@ -87,92 +125,6 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
       {/* Driver Head-to-Head Comparison */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
         <h3 className="text-lg font-monument text-chalk mb-4">Driver Comparison</h3>
-
-        {/* Visual bar comparison for key metrics */}
-        {drivers.length >= 2 && (
-          <div className="space-y-4 mb-6">
-            {/* Best Lap Comparison */}
-            <div>
-              <span className="text-xs font-telemetry text-steel uppercase tracking-wider">Best Lap</span>
-              <div className="mt-1 space-y-1">
-                {raceMetrics.sortedByBest.map((d, idx) => {
-                  const fastest = raceMetrics.sortedByBest[0].best_lap_s ?? 1;
-                  const pct = fastest && d.best_lap_s ? (fastest / d.best_lap_s) * 100 : 0;
-                  const delta = d.best_lap_s && fastest ? d.best_lap_s - fastest : 0;
-                  return (
-                    <div key={d.driver_name} className="flex items-center gap-2">
-                      <span className="text-xs font-body text-steel w-24 truncate">{d.driver_name}</span>
-                      <div className="flex-1 h-4 bg-asphalt rounded overflow-hidden relative">
-                        <div
-                          className="h-full rounded"
-                          style={{ width: `${pct}%`, backgroundColor: DRIVER_COLORS[drivers.indexOf(d) % DRIVER_COLORS.length], opacity: 0.6 }}
-                        />
-                        <span className="absolute inset-0 flex items-center px-2 text-[10px] font-telemetry text-chalk">
-                          {formatTime(d.best_lap_s)} {delta > 0 ? `(+${delta.toFixed(3)})` : ''}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Mean Pace Comparison */}
-            <div>
-              <span className="text-xs font-telemetry text-steel uppercase tracking-wider">Mean Pace</span>
-              <div className="mt-1 space-y-1">
-                {[...drivers].sort((a, b) => (a.mean_lap_s ?? Infinity) - (b.mean_lap_s ?? Infinity)).map((d, idx) => {
-                  const fastest = Math.min(...drivers.map((dr) => dr.mean_lap_s ?? Infinity));
-                  const pct = fastest && d.mean_lap_s ? (fastest / d.mean_lap_s) * 100 : 0;
-                  const delta = d.mean_lap_s && fastest ? d.mean_lap_s - fastest : 0;
-                  return (
-                    <div key={d.driver_name} className="flex items-center gap-2">
-                      <span className="text-xs font-body text-steel w-24 truncate">{d.driver_name}</span>
-                      <div className="flex-1 h-4 bg-asphalt rounded overflow-hidden relative">
-                        <div
-                          className="h-full rounded"
-                          style={{ width: `${pct}%`, backgroundColor: DRIVER_COLORS[drivers.indexOf(d) % DRIVER_COLORS.length], opacity: 0.6 }}
-                        />
-                        <span className="absolute inset-0 flex items-center px-2 text-[10px] font-telemetry text-chalk">
-                          {formatTime(d.mean_lap_s)} {delta > 0 ? `(+${delta.toFixed(3)})` : ''}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Consistency (CV%) — lower is better */}
-            <div>
-              <span className="text-xs font-telemetry text-steel uppercase tracking-wider">Consistency (lower = better)</span>
-              <div className="mt-1 space-y-1">
-                {[...drivers].sort((a, b) => (a.consistency_cv_pct ?? Infinity) - (b.consistency_cv_pct ?? Infinity)).map((d) => {
-                  const cv = d.consistency_cv_pct ?? 0;
-                  const barPct = Math.min(cv * 10, 100); // 10% CV fills bar
-                  return (
-                    <div key={d.driver_name} className="flex items-center gap-2">
-                      <span className="text-xs font-body text-steel w-24 truncate">{d.driver_name}</span>
-                      <div className="flex-1 h-4 bg-asphalt rounded overflow-hidden relative">
-                        <div
-                          className="h-full rounded"
-                          style={{
-                            width: `${barPct}%`,
-                            backgroundColor: cv < 2 ? '#B6FF2E' : cv < 4 ? '#FFD400' : '#FF6A00',
-                            opacity: 0.6,
-                          }}
-                        />
-                        <span className="absolute inset-0 flex items-center px-2 text-[10px] font-telemetry text-chalk">
-                          {cv.toFixed(2)}%
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* Full comparison table */}
         <div className="overflow-x-auto">
@@ -228,28 +180,43 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
         <p className="text-steel/40 text-xs font-body mt-2">Click a driver to see their detailed report</p>
       </div>
 
-      {/* Pit Stop Analysis */}
-      {raceMetrics.pitCount > 0 && (
+      {/* Pit Stop Analysis — uses backend pit_stops when available, else falls back to frontend calc */}
+      {((report as any).pit_stops?.length > 0 || raceMetrics.pitCount > 0) && (() => {
+        const backendPits: { stint_number: number; driver_name: string; pit_duration_s: number }[] = (report as any).pit_stops || [];
+        const pits = backendPits.length > 0
+          ? backendPits
+          : stints
+              .filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0)
+              .map((s) => ({
+                stint_number: s.stint_number,
+                driver_name: s.driver_name ?? '',
+                pit_duration_s: raceMetrics.getPitDuration(s),
+              }));
+        const nPits = pits.length;
+        const avgPit = nPits > 0 ? pits.reduce((sum, p) => sum + p.pit_duration_s, 0) / nPits : 0;
+        const totalPit = pits.reduce((sum, p) => sum + p.pit_duration_s, 0);
+
+        return (
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
           <h3 className="text-lg font-monument text-chalk mb-4">Pit Stops</h3>
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div className="text-center">
-              <p className="text-2xl font-monument text-chalk">{raceMetrics.pitCount}</p>
+              <p className="text-2xl font-monument text-chalk">{nPits}</p>
               <p className="text-xs font-body text-steel">Pit Stops</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-monument text-pit-orange">{Math.ceil(raceMetrics.avgPitTime)}s</p>
+              <p className="text-2xl font-monument text-pit-orange">{Math.ceil(avgPit)}s</p>
               <p className="text-xs font-body text-steel">Avg Pit Duration</p>
             </div>
             <div className="text-center">
-              <p className="text-2xl font-monument text-chalk">{formatDuration(raceMetrics.totalPitTime)}</p>
+              <p className="text-2xl font-monument text-chalk">{formatDuration(totalPit)}</p>
               <p className="text-xs font-body text-steel">Total Pit Time</p>
             </div>
           </div>
           <div className="space-y-2">
-            {stints.filter((s) => s.pit_lap_number != null && s.pit_lap_time_s != null && s.pit_lap_time_s > 0).map((s, i) => {
-              const pitTime = raceMetrics.getPitDuration(s);
-              // Grade: how close to threshold (gold = at threshold, red = 3x+ threshold)
+            {pits.map((p, i) => {
+              const pitTime = p.pit_duration_s;
+              // Grade: compare actual pit duration vs threshold
               const ratio = pitThreshold > 0 ? pitTime / pitThreshold : 1;
               const grade = ratio <= 1.1 ? 'gold' : ratio <= 1.5 ? 'silver' : ratio <= 2.0 ? 'bronze' : 'over';
               const gradeColor = {
@@ -273,7 +240,7 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
               return (
                 <div key={i} className="flex items-center gap-3 text-xs font-body">
                   <span className="text-steel w-16">Pit {i + 1}</span>
-                  <span className="text-chalk font-telemetry w-20">After S{s.stint_number}</span>
+                  <span className="text-chalk font-telemetry w-20">After S{p.stint_number}</span>
                   <div className="flex-1 h-4 bg-asphalt rounded overflow-hidden relative">
                     <div
                       className="h-full rounded"
@@ -298,7 +265,8 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
             </p>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* Traffic Time Loss */}
       {((report as any).traffic_count > 0 || (report as any).traffic_total_s > 0) && (

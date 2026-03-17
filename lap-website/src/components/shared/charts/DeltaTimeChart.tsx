@@ -27,6 +27,7 @@ interface DeltaTimeChartProps {
   bestLap: number | null;
   className?: string;
   controlledLap?: boolean;
+  distRange?: [number, number] | null;
 }
 
 export function DeltaTimeChart({
@@ -35,6 +36,7 @@ export function DeltaTimeChart({
   bestLap,
   className = '',
   controlledLap = false,
+  distRange,
 }: DeltaTimeChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -133,8 +135,8 @@ export function DeltaTimeChart({
     const deltas = data.delta_s;
 
     // Compute ranges
-    const xMin = 0;
-    const xMax = dists[dists.length - 1] || 1;
+    const xMin = distRange ? distRange[0] : 0;
+    const xMax = distRange ? distRange[1] : (dists[dists.length - 1] || 1);
     let maxAbs = 0;
     for (let i = 0; i < deltas.length; i++) {
       const a = Math.abs(deltas[i]);
@@ -329,7 +331,7 @@ export function DeltaTimeChart({
     ctx.fillText(`▲ Lap ${lapA} faster`, rightCol, legendY);
     ctx.fillStyle = '#ef4444';
     ctx.fillText(`▼ Lap ${lapA} slower`, rightCol, legendY + 14);
-  }, [lapA, lapB]);
+  }, [lapA, lapB, distRange]);
 
   // ── Redraw when data changes ──────────────────────────────
   useEffect(() => {
@@ -404,10 +406,13 @@ export function DeltaTimeChart({
   }
 
   return (
-    <div ref={containerRef} className={className} role="img" aria-label="Delta time chart showing time difference between laps">
-      {/* Lap selectors */}
-      {!controlledLap && (
-        <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
+    <div ref={containerRef} className={`relative ${className}`} role="img" aria-label="Delta time chart showing time difference between laps">
+      {/* Lap selectors — absolute overlay in controlled mode to avoid eating vertical space */}
+      <div className={controlledLap
+        ? 'absolute top-1 right-2 z-10 flex items-center gap-2 text-xs'
+        : 'flex items-center gap-3 mb-3 flex-wrap text-sm'
+      }>
+        {!controlledLap && (
           <label className="flex items-center gap-1.5 text-steel font-body">
             Primary:
             <select
@@ -422,29 +427,33 @@ export function DeltaTimeChart({
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 text-steel font-body">
-            Reference:
-            <select
-              value={lapB}
-              onChange={(e) => setLapB(Number(e.target.value))}
-              className="bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry"
-            >
-              {safeLaps.map((l) => (
-                <option key={l} value={l}>
-                  Lap {l}{l === bestLap ? ' (Best)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
-          {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-          {error && <span className="text-xs text-red-400">{error}</span>}
-        </div>
-      )}
-
-      {/* Chart canvas */}
-      <div className="relative" style={{ width: '100%' }}>
-        <canvas ref={canvasRef} style={{ width: '100%', height: '220px', display: 'block' }} />
+        )}
+        <label className="flex items-center gap-1.5 text-steel font-body">
+          <span className={controlledLap ? 'text-[9px] text-steel/50 uppercase' : ''}>Ref:</span>
+          <select
+            value={lapB}
+            onChange={(e) => setLapB(Number(e.target.value))}
+            className={controlledLap
+              ? 'bg-concrete text-chalk text-[10px] rounded px-1.5 py-0.5 border border-steel/20 font-telemetry'
+              : 'bg-asphalt text-chalk text-sm rounded px-2 py-1 border border-steel/20 font-telemetry'
+            }
+          >
+            {safeLaps.map((l) => (
+              <option key={l} value={l}>
+                Lap {l}{l === bestLap ? ' (Best)' : ''}
+              </option>
+            ))}
+          </select>
+        </label>
+        {loading && <span className="text-xs text-steel animate-pulse">...</span>}
       </div>
+
+      {/* Chart canvas — fills available space in focus mode */}
+      <canvas
+        ref={canvasRef}
+        className="w-full"
+        style={{ height: controlledLap ? '100%' : '220px', display: 'block' }}
+      />
     </div>
   );
 }

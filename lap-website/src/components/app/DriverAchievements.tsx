@@ -5,8 +5,10 @@
  */
 'use client';
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
+import { BadgeHex, AchievementUnlockOverlay, type BadgeIcon } from './gamification';
 
 interface Achievement {
   id: string;
@@ -25,23 +27,23 @@ interface AchievementsResponse {
   in_progress: Achievement[];
 }
 
-const TIER_ICONS: Record<string, string> = {
-  laps: 'L',
-  sessions: 'S',
-  score: 'P',
-  consistency: 'C',
-  tracks: 'T',
-  pb: 'R',
+const CATEGORY_ICON: Record<string, BadgeIcon> = {
+  laps: 'helmet',
+  sessions: 'stopwatch',
+  score: 'trophy',
+  consistency: 'stopwatch',
+  tracks: 'shield',
+  pb: 'trophy',
 };
 
-function getBadgeCategory(id: string): string {
-  if (id.startsWith('laps_')) return 'laps';
-  if (id.startsWith('sessions_')) return 'sessions';
-  if (id.startsWith('score_')) return 'score';
-  if (id.startsWith('consistency_')) return 'consistency';
-  if (id.startsWith('tracks_')) return 'tracks';
-  if (id.startsWith('pb_')) return 'pb';
-  return 'laps';
+function getBadgeIcon(id: string): BadgeIcon {
+  if (id.startsWith('laps_')) return 'helmet';
+  if (id.startsWith('sessions_')) return 'stopwatch';
+  if (id.startsWith('score_')) return 'trophy';
+  if (id.startsWith('consistency_')) return 'stopwatch';
+  if (id.startsWith('tracks_')) return 'shield';
+  if (id.startsWith('pb_')) return 'trophy';
+  return 'trophy';
 }
 
 export function DriverAchievements() {
@@ -50,6 +52,7 @@ export function DriverAchievements() {
     queryFn: () => api.get('/driver/achievements'),
     staleTime: 60_000,
   });
+  const [selected, setSelected] = useState<{ key: string; label: string; description: string; icon: string; tier: string } | null>(null);
 
   if (isLoading) {
     return (
@@ -75,26 +78,27 @@ export function DriverAchievements() {
   return (
     <div className="space-y-3">
       {/* Earned badges */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-3 flex-wrap">
         {earned.map((a) => {
-          const cat = getBadgeCategory(a.id);
+          const icon = getBadgeIcon(a.id);
           return (
-            <div
+            <button
+              type="button"
               key={a.id}
               title={`${a.label}: ${a.description}`}
-              className="group relative w-12 h-12 rounded-lg bg-acid-green/10 border border-acid-green/30
-                flex items-center justify-center cursor-default hover:bg-acid-green/20 transition-colors"
+              className="group relative flex flex-col items-center cursor-pointer"
+              onClick={() => setSelected({ key: a.id, label: a.label, description: a.description, icon, tier: 'gold' })}
             >
-              <span className="font-telemetry text-acid-green text-lg font-bold">
-                {TIER_ICONS[cat] || '?'}
-              </span>
+              <div className="transition-transform group-hover:scale-110">
+                <BadgeHex icon={icon} tier="gold" size={48} glow />
+              </div>
               {/* Tooltip */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1
-                bg-zinc-900 border border-zinc-700 rounded text-xs text-chalk font-body
+                bg-zinc-900 border border-zinc-700 rounded text-[10px] text-chalk font-body
                 whitespace-nowrap hidden group-hover:block z-10">
                 {a.label}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -121,6 +125,7 @@ export function DriverAchievements() {
           ))}
         </div>
       )}
+      <AchievementUnlockOverlay achievement={selected} onDismiss={() => setSelected(null)} />
     </div>
   );
 }
