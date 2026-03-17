@@ -19,7 +19,7 @@ export const currencyPrices: Record<Currency, PriceSet> = {
     symbol: '€',
     racer_monthly: '€9',
     racer_annual: '€72',
-    racer_annual_per_month: '€6',
+    racer_annual_per_month: '€6.00',
     racer_annual_total: '€72/yr',
     racer_savings: '33',
     worldClass_monthly: '€14',

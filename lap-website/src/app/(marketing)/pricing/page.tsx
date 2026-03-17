@@ -57,8 +57,6 @@ const featureMatrix: MatrixRow[] = [
   { featureKey: 'pricing.matrix.incidentAlert', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
   // DATA & OPS
   { featureKey: 'pricing.matrix.trackManagement', group: 'data', demoKey: 'pricing.matrix.basic', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.pdfReports', group: 'data', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.apiAccess', group: 'data', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
   { featureKey: 'pricing.matrix.rawRetention', group: 'data', demoKey: 'pricing.value.1month', racerKey: 'pricing.value.3months', worldClassKey: 'pricing.value.12months' },
   { featureKey: 'pricing.matrix.reportRetention', group: 'data', demoKey: 'pricing.value.indefinite', racerKey: 'pricing.value.indefinite', worldClassKey: 'pricing.value.indefinite' },
 ];
@@ -279,7 +277,7 @@ export default function PricingPage() {
             </thead>
             <tbody>
               {[
-                { feature: 'Upload & Analyze', demo: true, racer: true, worldClass: true },
+                { feature: 'Upload & Analyze', demo: 'partial', racer: true, worldClass: true },
                 { feature: '4-Pillar Scoring', demo: true, racer: true, worldClass: true },
                 { feature: 'Corner Coaching', demo: true, racer: true, worldClass: true },
                 { feature: 'Speed Trace & G-G Diagram', demo: true, racer: true, worldClass: true },
@@ -288,8 +286,7 @@ export default function PricingPage() {
                 { feature: 'Session Comparison', demo: false, racer: false, worldClass: true },
                 { feature: 'Race Strategy Dashboard', demo: 'partial', racer: true, worldClass: true },
                 { feature: 'Live Monitoring', demo: false, racer: true, worldClass: true },
-                { feature: 'PDF Reports', demo: false, racer: true, worldClass: true },
-                { feature: 'API Access', demo: false, racer: false, worldClass: true },
+                { feature: 'Gamification', demo: false, racer: true, worldClass: true },
                 { feature: 'Priority Support', demo: false, racer: false, worldClass: true },
               ].map((row) => (
                 <tr key={row.feature} className="hover:bg-concrete/40 transition-colors">
