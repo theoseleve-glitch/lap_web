@@ -45,14 +45,14 @@ class TestRaceStrategyFeatureGate:
                 assert ctx["current_tier"] == "racer"
 
     def test_race_strategy_allowed_for_demo_limited(self):
-        """Demo user with race_strategy_limit='limited_3h' should be allowed.
+        """Demo user with race_strategy_limit='limited_4h' should be allowed.
 
-        The 3-hour limit is enforced at strategy-create time, not at the
+        The 4-hour limit is enforced at strategy-create time, not at the
         feature gate level.
         """
         from auth.entitlements import authorize_feature
 
-        ents = _make_entitlements(tier="demo", race_strategy_limit="limited_3h")
+        ents = _make_entitlements(tier="demo", race_strategy_limit="limited_4h")
         app = Flask(__name__)
         with app.test_request_context():
             g.workspace_id = 1
@@ -82,7 +82,7 @@ class TestRaceStrategyFeatureGate:
 
 
 class TestDurationLimit:
-    """Test 3-hour duration enforcement in create/update."""
+    """Test 4-hour duration enforcement in create/update."""
 
     def test_create_race_rejects_over_limit(self):
         """create_race should raise ValueError when duration exceeds max."""
@@ -92,11 +92,11 @@ class TestDurationLimit:
 
         conn = MagicMock()
         data = {
-            "race": {"race_name": "Test", "race_duration_s": 14400},  # 4h
+            "race": {"race_name": "Test", "race_duration_s": 18000},  # 5h
             "drivers": [],
         }
-        with pytest.raises(ValueError, match="3-hour"):
-            create_race(conn, data, max_duration_s=10800)
+        with pytest.raises(ValueError, match="4-hour"):
+            create_race(conn, data, max_duration_s=14400)
 
     def test_create_race_allows_within_limit(self):
         """create_race should succeed when duration is within max."""
@@ -113,7 +113,7 @@ class TestDurationLimit:
             "race": {"race_name": "Test", "race_duration_s": 7200},  # 2h
             "drivers": [],
         }
-        result = create_race(conn, data, max_duration_s=10800)
+        result = create_race(conn, data, max_duration_s=14400)
         assert result == 42
 
     def test_create_race_no_limit(self):

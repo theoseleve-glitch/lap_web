@@ -201,7 +201,7 @@
   "pricing.feature.exports": "Exports",
 
   "pricing.value.full": "Full",
-  "pricing.value.limited3h": "Limited (3h races)",
+  "pricing.value.limited3h": "Limited (4h races)",
   "pricing.value.indefinite": "Indefinite",
   "pricing.value.unlimited": "Unlimited",
   "pricing.value.1report": "1 full report",
@@ -240,7 +240,7 @@
   "pricing.matrix.rawRetention": "Raw Telemetry Retention",
   "pricing.matrix.reportRetention": "Report Retention",
   "pricing.matrix.basic": "Basic",
-  "pricing.matrix.3hLimit": "3h limit",
+  "pricing.matrix.3hLimit": "4h limit",
   "pricing.matrix.1report": "1 report",
   "pricing.matrix.10mo": "10/mo",
 

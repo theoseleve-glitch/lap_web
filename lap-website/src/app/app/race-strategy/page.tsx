@@ -159,7 +159,7 @@ export default function RaceStrategyListPage() {
           >
             + New Race
             {!canUseFeature('race_strategy_full') && (
-              <span className="text-[10px] opacity-60 ml-1" title="3h limit on Demo">3h max</span>
+              <span className="text-[10px] opacity-60 ml-1" title="4h limit on Demo">4h max</span>
             )}
           </Link>
         }
@@ -194,7 +194,7 @@ export default function RaceStrategyListPage() {
       <div className="mb-4">
         <UpgradeBanner
           feature="race_strategy_full"
-          context="Demo plan limited to 3-hour races. Upgrade for unlimited duration."
+          context="Demo plan limited to 4-hour races. Upgrade for unlimited duration."
         />
       </div>
 

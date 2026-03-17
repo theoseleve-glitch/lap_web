@@ -690,7 +690,7 @@ class TestCheckAndRecordQuota:
                 "max_upload_size_mb": 500, "telemetry_retention_days": 30,
                 "api_access": False, "comparison_enabled": False,
                 "coaching_plans_enabled": False, "visualization_enabled": False,
-                "race_strategy_limit": "limited_3h", "live_monitoring": False,
+                "race_strategy_limit": "limited_4h", "live_monitoring": False,
                 "export_formats": '["csv"]', "max_concurrent_jobs": 1,
                 "rate_multiplier": 1.0,
             }]),

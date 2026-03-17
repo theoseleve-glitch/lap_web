@@ -201,7 +201,7 @@
   "pricing.feature.exports": "Exports",
 
   "pricing.value.full": "Complet",
-  "pricing.value.limited3h": "Limité (courses 3h)",
+  "pricing.value.limited3h": "Limité (courses 4h)",
   "pricing.value.indefinite": "Indéfini",
   "pricing.value.unlimited": "Illimité",
   "pricing.value.1report": "1 rapport complet",
@@ -240,7 +240,7 @@
   "pricing.matrix.rawRetention": "Rétention télémétrie brute",
   "pricing.matrix.reportRetention": "Rétention des rapports",
   "pricing.matrix.basic": "Basique",
-  "pricing.matrix.3hLimit": "Limite 3h",
+  "pricing.matrix.3hLimit": "Limite 4h",
   "pricing.matrix.1report": "1 rapport",
   "pricing.matrix.10mo": "10/mois",
 
