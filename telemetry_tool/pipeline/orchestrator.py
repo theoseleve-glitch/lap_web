@@ -718,6 +718,19 @@ def run_full_analysis(
         | joker_lap_set
     )
 
+    # Rolling-avg anomaly detection (catches time/distance outliers
+    # that pipeline analysis dicts miss — e.g. aborted half-laps).
+    # Skip for endurance stints: their slow laps are traffic, not anomalies.
+    if meta.get("session_type") != "endurance_stint":
+        try:
+            from web.repos.lap_repo import _rolling_avg_validity
+            _rolling = _rolling_avg_validity(lap_metrics, exclude_laps=excluded_laps)
+            for _ln, (_valid, _reason) in _rolling.items():
+                if not _valid:
+                    excluded_laps.add(_ln)
+        except Exception:
+            pass  # Non-fatal — persist-layer will catch them
+
     # Best-lap selection
     best_lap_key, best_lap_df, valid_times = s08_metrics.select_best_lap(
         resampled_laps, lap_times, excluded_laps, invalid_lap_set,
@@ -887,16 +900,11 @@ def run_full_analysis(
         _session_scalars = None
         _laps_for_theo_ref = [None]
     else:
-        # ── S10a: Per-corner OCP (runs BEFORE full-lap theoretical) ──
-        _corner_ocp_results, _coc_err = _safe_step(
-            "10a_corner_ocp", s10a_corner_ocp.run_corner_ocp,
-            corners, best_lap_df, resampled_laps, curvature_profile,
-            corrected_friction or friction_circle,
-            excluded_laps=excluded_laps,
-        )
-        _record("10a_corner_ocp", _corner_ocp_results, _coc_err)
+        # ── S10a: Per-corner OCP — disabled for v1 (expensive, not surfaced yet) ──
+        # TODO(v2): re-enable when OCP results are displayed
+        _corner_ocp_results = None
+        _record("10a_corner_ocp", None, None)
         _fire_progress("10a_corner_ocp")
-        summary["corner_ocp_results"] = _corner_ocp_results
 
         # ── S10: Full-lap theoretical (warm-started from per-corner) ──
         theo_result, err = _safe_step(
@@ -1409,24 +1417,8 @@ def run_full_analysis(
             summary["endurance_stints"] = endurance_r
 
     # ══════════════════════════════════════════════════════════════
-    # QUEUE OCP THEORETICAL (background, non-blocking)
-    # ══════════════════════════════════════════════════════════════
-    if db_session_id is not None:
-        try:
-            _wid = workspace_id
-            if _wid is None:
-                try:
-                    from flask import g as _ocp_g
-                    _wid = getattr(_ocp_g, "workspace_id", None)
-                except (ImportError, RuntimeError):
-                    pass
-            _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
-                db_session_id, _wid,
-            )
-            if _ocp_task_id:
-                summary["ocp_task_id"] = _ocp_task_id
-        except Exception as _ocp_err:
-            logger.debug("OCP queue skipped: %s", _ocp_err)
+    # OCP THEORETICAL — disabled for v1 (expensive, not surfaced in UI yet)
+    # TODO(v2): re-enable queue_ocp_theoretical when OCP results are displayed
 
     # ══════════════════════════════════════════════════════════════
     # FINALIZE

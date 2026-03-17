@@ -66,20 +66,33 @@ def run_persist_to_db(
         logger.debug("Web layer not available; skipping DB persistence.")
         return None
 
-    try:
-        from path_manager import get_db_path
-        db_path = get_db_path()
-    except (ImportError, AttributeError):
-        db_path = Path(__file__).resolve().parent.parent.parent / "telemetry.db"
+    use_pg = os.environ.get("USE_PG", "0") == "1"
 
-    set_default_db_path(db_path)
-    init_db(db_path)
-    conn = get_db_connection()
+    if use_pg:
+        # PG mode with force_persist: schema managed by Alembic, skip SQLite init.
+        conn = get_db_connection()
+        wid = meta.get("workspace_id")
+        if wid:
+            conn.execute(
+                "SET LOCAL app.current_workspace_id = :wid",
+                {"wid": str(wid)},
+            )
+    else:
+        try:
+            from path_manager import get_db_path
+            db_path = get_db_path()
+        except (ImportError, AttributeError):
+            db_path = Path(__file__).resolve().parent.parent.parent / "telemetry.db"
+
+        set_default_db_path(db_path)
+        init_db(db_path)
+        conn = get_db_connection()
 
     theo_metrics = summary.get("theoretical_metrics", {})
 
-    # Use ``with conn:`` for atomic commit/rollback
-    with conn:
+    # Atomic persist — explicit try/commit/rollback (works for both
+    # sqlite3.Connection and PgConnectionWrapper).
+    try:
         driver_name = meta.get("driver_name", "Driver_1")
         driver_id = upsert_driver(conn, driver_name)
 
@@ -129,8 +142,24 @@ def run_persist_to_db(
         # Weather timeline
         _persist_weather(conn, session_id, weather_timeline)
 
-    # with conn: auto-commits on success, rolls back on exception
-    logger.info("Persisted session %s to SQLite.", session_id)
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    finally:
+        if use_pg:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    logger.info(
+        "Persisted session %s to %s.", session_id,
+        "PostgreSQL" if use_pg else "SQLite",
+    )
     return session_id
 
 

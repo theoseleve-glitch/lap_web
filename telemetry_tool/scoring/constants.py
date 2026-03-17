@@ -255,7 +255,7 @@ _SESSION_CATEGORY_CONFIG: dict[str, dict] = {
     },
     "practice": {
         "suppressed": {"robustness"},
-        "emphasis":   {"adaptation": 1.4, "execution": 1.2},
+        "emphasis":   {"pace": 1.4, "adaptation": 1.2, "execution": 1.1},
     },
     "warmup": {
         "suppressed": {"pace", "robustness"},

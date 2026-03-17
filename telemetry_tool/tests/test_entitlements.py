@@ -31,7 +31,7 @@ def _make_plan_row(tier="demo", **overrides):
         "comparison_enabled": tier in ("world-class", "b2b"),
         "coaching_plans_enabled": tier in ("racer", "world-class", "b2b"),
         "visualization_enabled": tier in ("racer", "world-class", "b2b"),
-        "race_strategy_limit": "limited_3h" if tier == "demo" else "full",
+        "race_strategy_limit": "4h_basic" if tier == "demo" else ("24h_complex" if tier == "racer" else "unlimited"),
         "live_monitoring": tier in ("racer", "world-class", "b2b"),
         "export_formats": '["csv"]' if tier == "demo" else '["pdf","csv"]',
         "max_concurrent_jobs": {"demo": 1, "racer": 2, "world-class": 5, "b2b": 10}.get(tier, 1),
@@ -128,7 +128,7 @@ class TestGetUserEntitlements:
         assert ents["api_access"] is False
         assert ents["comparison_enabled"] is False
         assert ents["visualization_enabled"] is False
-        assert ents["race_strategy_limit"] == "limited_3h"
+        assert ents["race_strategy_limit"] == "4h_basic"
         assert ents["max_concurrent_jobs"] == 1
 
     def test_worldclass_has_all_features(self):
@@ -149,7 +149,7 @@ class TestGetUserEntitlements:
         assert ents["api_access"] is True
         assert ents["comparison_enabled"] is True
         assert ents["visualization_enabled"] is True
-        assert ents["race_strategy_limit"] == "full"
+        assert ents["race_strategy_limit"] == "unlimited"
         assert ents["max_concurrent_jobs"] == 5
 
     def test_override_increases_quota(self):
@@ -276,14 +276,25 @@ class TestAuthorizeFeature:
             conn = self._setup_conn("demo")
             allowed, ctx = authorize_feature(conn, 1, "race_strategy_full")
             assert allowed is False
-            assert ctx["upgrade_tier"] == "racer"
+            assert ctx["upgrade_tier"] == "world-class"
 
-    def test_racer_has_full_race_strategy(self):
+    def test_racer_has_limited_race_strategy_full(self):
+        """Racer has 24h complex but NOT unlimited — race_strategy_full requires world-class."""
         from auth.entitlements import authorize_feature
         app = Flask(__name__)
         with app.test_request_context():
             g.workspace_id = 1
             conn = self._setup_conn("racer")
+            allowed, ctx = authorize_feature(conn, 1, "race_strategy_full")
+            assert allowed is False
+            assert ctx["upgrade_tier"] == "world-class"
+
+    def test_worldclass_has_full_race_strategy(self):
+        from auth.entitlements import authorize_feature
+        app = Flask(__name__)
+        with app.test_request_context():
+            g.workspace_id = 1
+            conn = self._setup_conn("world-class")
             allowed, ctx = authorize_feature(conn, 1, "race_strategy_full")
             assert allowed is True
 
@@ -608,6 +619,7 @@ class TestFeatureGatingMatrix:
             "live_monitoring": False,
             "export_pdf": False,
             "race_strategy_full": False,
+            "gamification": False,
         },
         "racer": {
             "api_access": False,
@@ -616,7 +628,8 @@ class TestFeatureGatingMatrix:
             "visualization": True,
             "live_monitoring": True,
             "export_pdf": True,
-            "race_strategy_full": True,
+            "race_strategy_full": False,  # racer has 24h_complex, not unlimited
+            "gamification": True,
         },
         "world-class": {
             "api_access": True,
@@ -626,13 +639,14 @@ class TestFeatureGatingMatrix:
             "live_monitoring": True,
             "export_pdf": True,
             "race_strategy_full": True,
+            "gamification": True,
         },
     }
 
     @pytest.mark.parametrize("tier", ["demo", "racer", "world-class"])
     @pytest.mark.parametrize("feature", [
         "api_access", "comparison", "coaching_plans", "visualization",
-        "live_monitoring", "export_pdf", "race_strategy_full",
+        "live_monitoring", "export_pdf", "race_strategy_full", "gamification",
     ])
     def test_feature_gating(self, tier, feature):
         from auth.entitlements import authorize_feature
@@ -713,7 +727,7 @@ class TestPlanEntitlements:
         assert ent["live_pace"] is True
         assert ent["api_access"] is False
         assert ent["comparison_progress"] is False
-        assert ent["strategy_dashboard"] == "full"
+        assert ent["strategy_dashboard"] == "24h_complex"
 
     def test_world_class_all_features_enabled(self):
         from auth.entitlements import get_plan_entitlements

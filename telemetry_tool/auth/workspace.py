@@ -73,8 +73,12 @@ def set_workspace_context(conn, workspace_id: int) -> None:
     """Set the PostgreSQL session variable for RLS.
     Must be called at the start of each request.
     Uses SET LOCAL so setting is scoped to current transaction.
+
+    Also SET LOCAL ROLE to a non-superuser role so RLS is enforced
+    (the telemetry superuser bypasses RLS otherwise).
     """
     conn.execute(
         "SET LOCAL app.current_workspace_id = %(ws)s",
         {"ws": str(workspace_id)},
     )
+    conn.execute("SET LOCAL ROLE telemetry_app")

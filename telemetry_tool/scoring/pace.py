@@ -35,9 +35,17 @@ _MEDIAN_ZERO_GAP_PCT = 10.0   # 10% slower than best = zero
 _PROG_FULL_PCT = 5.0   # 5%+ improvement from early to best = full marks
 _PROG_ZERO_PCT = 0.0   # no improvement = zero progression marks
 
-# Blend weights
+# Blend weights — default (race/qualifying: gap matters most)
 _W_GAP  = 0.60
 _W_PROG = 0.40
+
+# Practice blend — progression matters more (the whole point is to improve)
+_W_GAP_PRACTICE  = 0.30
+_W_PROG_PRACTICE = 0.70
+
+# Practice uses a softer gap threshold (more spread is expected)
+_MEDIAN_FULL_GAP_PCT_PRACTICE = 1.5    # within 1.5% = full marks
+_MEDIAN_ZERO_GAP_PCT_PRACTICE = 15.0   # 15% slower = zero
 
 
 def _score_pace(
@@ -45,6 +53,7 @@ def _score_pace(
     th: dict[str, Any],
     *,
     simulation_method: str = "percentile_envelope",
+    session_type: str = "practice",
 ) -> tuple[float, dict[str, Any]]:
     """
     Score pace: raw speed capability + session progression.
@@ -96,11 +105,17 @@ def _score_pace(
             median_gap = 0.0
         gap_s   = median_gap
         gap_pct = 100.0 * gap_s / driver_best
+
+        # Practice uses softer gap thresholds (more spread expected)
+        is_practice = session_type in ("practice", "test")
+        _full = _MEDIAN_FULL_GAP_PCT_PRACTICE if is_practice else _MEDIAN_FULL_GAP_PCT
+        _zero = _MEDIAN_ZERO_GAP_PCT_PRACTICE if is_practice else _MEDIAN_ZERO_GAP_PCT
+
         gap_ratio = _ratio_score(
-            gap_pct, _MEDIAN_FULL_GAP_PCT, _MEDIAN_ZERO_GAP_PCT,
+            gap_pct, _full, _zero,
             higher_is_better=False, exp=PACE_DECAY_EXP,
         )
-        gap_method = "median_gap"
+        gap_method = "median_gap_practice" if is_practice else "median_gap"
 
     # ── Progression component ─────────────────────────────────────
     prog_ratio = 0.0
@@ -112,8 +127,12 @@ def _score_pace(
             higher_is_better=True, exp=1.0,
         )
 
-    # ── Blend ─────────────────────────────────────────────────────
-    blended = _W_GAP * gap_ratio + _W_PROG * prog_ratio
+    # ── Blend — practice weights progression more ─────────────────
+    is_practice = session_type in ("practice", "test")
+    w_gap = _W_GAP_PRACTICE if is_practice else _W_GAP
+    w_prog = _W_PROG_PRACTICE if is_practice else _W_PROG
+
+    blended = w_gap * gap_ratio + w_prog * prog_ratio
     score = round(blended * MAX_PACE, 4)
 
     return score, {
@@ -122,5 +141,6 @@ def _score_pace(
         "gap_ratio":      round(gap_ratio, 4),
         "prog_pct":       round(prog_pct, 4),
         "prog_ratio":     round(prog_ratio, 4),
+        "session_type":   session_type,
         "method":         gap_method,
     }

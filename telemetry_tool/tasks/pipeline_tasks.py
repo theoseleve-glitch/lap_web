@@ -659,20 +659,8 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
     # ── Persist all session data to the database ──────────────────
     _persist_session_data(ctx, result)
 
-    # ── Run OCP theoretical solver (after all data is in PG) ──
-    _update_job_progress(
-        job_id=job_id or ctx.job_id, status="running",
-        stage_name="ocp_solver", stage_index=14, stage_total=16,
-    )
-    try:
-        from pipeline.stages import s10_theoretical
-        _ocp_task_id = s10_theoretical.queue_ocp_theoretical(
-            ctx.session_id, ctx.workspace_id,
-        )
-        if _ocp_task_id:
-            logger.info("OCP solver completed for session %s: task_id=%s", ctx.session_id, _ocp_task_id)
-    except Exception:
-        logger.debug("OCP solver skipped in finalize", exc_info=True)
+    # ── OCP theoretical solver — disabled for v1 (expensive, not surfaced in UI yet) ──
+    # TODO(v2): re-enable when OCP results are displayed in session reports
     _update_job_progress(
         job_id=job_id or ctx.job_id, status="running",
         stage_name="finalize_complete", stage_index=15, stage_total=16,
@@ -887,6 +875,76 @@ def _persist_session_data(ctx: PipelineContext, result: dict) -> None:
         except Exception:
             logger.warning("Failed to persist channel metadata for session %s", session_id, exc_info=True)
             conn.rollback()
+
+        # 12. Gamification — award XP, check achievements, update streak
+        try:
+            from gamification.xp import award_session_xp
+            from gamification.achievements import check_achievements
+            from gamification.streaks import update_streak
+            from gamification.queries import count_driver_sessions, get_driver_best_lap
+
+            meta = result.get("session_meta") or {}
+            score_result = result.get("score_result") or {}
+            badges = score_result.get("badges", [])
+
+            session_date = meta.get("session_date") or meta.get("date", "")
+            streak_result = update_streak(conn, driver_id, ctx.workspace_id, session_date)
+            conn.commit()
+
+            prev_best = get_driver_best_lap(conn, driver_id, ctx.workspace_id)
+            lap_times = result.get("lap_times") or []
+            valid_times = [t for t in lap_times if t and isinstance(t, (int, float)) and t > 0]
+            current_best = min(valid_times) if valid_times else None
+
+            xp_result = award_session_xp(
+                conn, driver_id, ctx.workspace_id, session_id,
+                badges=badges,
+                previous_best_lap=prev_best,
+                current_best_lap=current_best,
+            )
+            conn.commit()
+
+            session_count = count_driver_sessions(conn, driver_id, ctx.workspace_id)
+            achievement_context = {
+                "session_count": session_count,
+                "badges": badges,
+                "streak": streak_result.get("current_streak", 0),
+                "is_personal_best": (
+                    current_best is not None and prev_best is not None
+                    and current_best < prev_best
+                ),
+                "score_improvement": 0,
+                "plan_just_completed": False,
+                "week_just_completed": False,
+            }
+            new_achievements = check_achievements(
+                conn, driver_id, ctx.workspace_id, session_id, achievement_context,
+            )
+            conn.commit()
+
+            result["gamification"] = {
+                "xp_gained": xp_result.get("xp_gained", 0),
+                "old_level": xp_result.get("old_level", 0),
+                "new_level": xp_result.get("new_level", 0),
+                "leveled_up": xp_result.get("leveled_up", False),
+                "current_streak": streak_result.get("current_streak", 0),
+                "new_achievements": [
+                    {"key": a["key"], "label": a["label"], "description": a["description"], "icon": a["icon"]}
+                    for a in new_achievements
+                ],
+            }
+            logger.info(
+                "Gamification: +%d XP, level %d->%d, streak %d, %d achievements for %s",
+                xp_result.get("xp_gained", 0), xp_result.get("old_level", 0),
+                xp_result.get("new_level", 0), streak_result.get("current_streak", 0),
+                len(new_achievements), session_id,
+            )
+        except Exception:
+            logger.warning("Gamification failed (non-fatal) for session %s", session_id, exc_info=True)
+            try:
+                conn.rollback()
+            except Exception:
+                pass
 
     except Exception:
         logger.exception("Failed to persist session data for job %s", ctx.job_id)

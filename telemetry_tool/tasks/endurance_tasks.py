@@ -134,7 +134,11 @@ def process_endurance_session(
 
     total_laps = sum(r.get("lap_count", 0) for r in stint_results if not r.get("error"))
     total_time = sum(r.get("total_time_s", 0) for r in stint_results if not r.get("error"))
-    team_report = compute_team_report(driver_reports, total_laps, total_stints, total_time)
+    team_report = compute_team_report(
+        driver_reports, total_laps, total_stints, total_time,
+        stint_results=stint_results,
+        pit_threshold_s=meta.get("pit_threshold_s", 30),
+    )
 
     full_report = {
         "team": team_report,
@@ -152,6 +156,7 @@ def process_endurance_session(
             job_id=job_id,
             meta=meta,
             team_report=team_report,
+            driver_reports=driver_reports,
             stint_results=stint_results,
             total_laps=total_laps,
             total_time=total_time,
@@ -177,6 +182,163 @@ def process_endurance_session(
         "session_id": master_session_id,
     })
     return {"job_id": job_id, "stints_processed": len(stint_results), "session_id": master_session_id}
+
+
+def _persist_stint_session(
+    summary: dict[str, Any],
+    driver_name: str,
+    workspace_id: str,
+    stint_number: int,
+    job_id: str,
+) -> str | None:
+    """Persist a stint's pipeline results to PG using the same path as normal uploads.
+
+    Mirrors ``pipeline_tasks._persist_session_data`` — connection-scoped SET,
+    independent commits per step, graceful degradation on non-critical failures.
+    Falls back to s15_persist for SQLite mode.
+    """
+    if os.environ.get("USE_PG", "0") != "1":
+        # SQLite mode: delegate to s15_persist
+        from pipeline.stages.s15_persist import run_persist_to_db
+        meta = summary.get("session_meta") or {}
+        return run_persist_to_db(
+            summary, meta,
+            summary.get("track_id", ""),
+            score_result=summary.get("score_result"),
+            driving_style_result=summary.get("driving_style_result"),
+            driver_tag=driver_name,
+            force_persist=True,
+        )
+
+    from web.db_pg import get_pg_connection
+    from web.models import (
+        insert_corner_metrics,
+        insert_gps_traces,
+        insert_laps,
+        insert_reference_line,
+        insert_score_details,
+        upsert_driver,
+        upsert_session,
+        upsert_track,
+    )
+
+    conn = get_pg_connection()
+    try:
+        # Connection-scoped SET survives COMMIT (same as _persist_session_data)
+        conn.execute(
+            "SET app.current_workspace_id = %(ws)s",
+            {"ws": str(workspace_id)},
+        )
+
+        # 1. Upsert driver
+        driver_id = upsert_driver(conn, driver_name)
+        conn.commit()
+
+        # 2. Ensure track exists (FK constraint)
+        meta = summary.get("session_meta") or {}
+        user_track_name = meta.get("track_name") or meta.get("user_track_name")
+        track_match = summary.get("track_match")
+
+        if track_match and isinstance(track_match, dict):
+            try:
+                upsert_track(conn, track_match)
+                conn.commit()
+            except Exception:
+                conn.rollback()
+
+        # Use user-provided track name when pipeline detection falls back to unknown
+        track_id = summary.get("track_id", "unknown_track")
+        if user_track_name and track_id == "unknown_track":
+            import hashlib
+            track_id = hashlib.md5(user_track_name.encode()).hexdigest()[:16]
+            summary["track_id"] = track_id
+
+        display_name = user_track_name or (
+            track_match.get("track_name") if track_match else track_id
+        )
+        try:
+            conn.execute(
+                "INSERT INTO tracks (track_id, track_name, lap_length_m) "
+                "VALUES (%(track_id)s, %(track_name)s, %(lap_length_m)s) "
+                "ON CONFLICT (track_id) DO NOTHING",
+                {"track_id": track_id, "track_name": display_name, "lap_length_m": 0.0},
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # Set kart from session meta (if provided in endurance upload form)
+        kart_name = meta.get("kart_name")
+        if kart_name and kart_name.strip():
+            try:
+                from web.models import upsert_kart_by_name
+                kart_id = upsert_kart_by_name(conn, kart_name.strip())
+                conn.commit()
+                meta["kart_id"] = kart_id
+            except Exception:
+                conn.rollback()
+
+        # 3. Upsert session
+        session_id = upsert_session(conn, summary, driver_id)
+        conn.commit()
+        logger.info("Stint %d: persisted session %s (driver_id=%d)", stint_number, session_id, driver_id)
+
+        # 4. Insert laps
+        try:
+            n_laps = insert_laps(conn, session_id, summary)
+            conn.commit()
+            logger.info("Stint %d: inserted %s laps", stint_number, n_laps)
+        except Exception:
+            logger.warning("Stint %d: laps insert failed", stint_number, exc_info=True)
+            conn.rollback()
+
+        # 5. Insert GPS traces
+        try:
+            n_gps = insert_gps_traces(conn, session_id, summary)
+            conn.commit()
+            logger.info("Stint %d: inserted %s GPS rows", stint_number, n_gps)
+        except Exception:
+            logger.warning("Stint %d: GPS insert failed", stint_number, exc_info=True)
+            conn.rollback()
+
+        # 6. Insert corner metrics
+        try:
+            if summary.get("corners"):
+                insert_corner_metrics(conn, session_id, summary)
+                conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # 7. Insert score details
+        try:
+            if summary.get("score_result"):
+                insert_score_details(conn, session_id, summary)
+                conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # 8. Insert reference line
+        try:
+            if summary.get("reference_line") is not None:
+                insert_reference_line(conn, session_id, summary)
+                conn.commit()
+        except Exception:
+            conn.rollback()
+
+        return session_id
+
+    except Exception:
+        logger.exception("Stint %d PG persist failed (job %s)", stint_number, job_id)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 def _process_single_stint(
@@ -276,7 +438,7 @@ def _process_single_stint(
             session_meta={
                 **session_meta,
                 "driver_name": driver_name,
-                "session_type": "race",
+                "session_type": "endurance_stint",
                 "track_state": condition,
             },
             enable_report=False,
@@ -290,19 +452,32 @@ def _process_single_stint(
             if lm.get("lap_time_s") and lm["lap_time_s"] > 0
         ]
 
-        # Force persist stint session to DB (with all laps, GPS, scores)
+        # Track-evolution-aware pace: if lap times show a clear improvement
+        # trend, compare each lap against the running PB instead of the
+        # final PB.  Use whichever score is higher (rewards the driver).
+        rpb_details = {}
+        try:
+            from endurance_scoring import running_pb_pace
+            rpb_score, rpb_details = running_pb_pace(valid_times, condition=condition)
+            if rpb_score is not None:
+                scorer_pace = subs.get("pace", {}).get("score", 0)
+                if rpb_score > scorer_pace:
+                    logger.info(
+                        "Stint %d: track evolution detected (slope=%.3f s/lap, R²=%.2f) — "
+                        "running-PB pace %.1f > scorer pace %.1f",
+                        stint_number, rpb_details.get("slope_s_per_lap", 0),
+                        rpb_details.get("r_squared", 0), rpb_score, scorer_pace,
+                    )
+                    subs.setdefault("pace", {})["score"] = rpb_score
+        except Exception:
+            pass  # non-fatal — fall back to standard pace
+
+        # Persist stint session to DB (same path as normal uploads)
         stint_session_id = summary.get("db_session_id")
         if not stint_session_id:
             try:
-                from pipeline.stages.s15_persist import run_persist_to_db
-                stint_session_id = run_persist_to_db(
-                    summary,
-                    {**session_meta, "driver_name": driver_name, "session_type": "race", "track_state": condition},
-                    session_meta.get("track_name", ""),
-                    score_result=score,
-                    driving_style_result=summary.get("driving_style_result"),
-                    driver_tag=driver_name,
-                    force_persist=True,
+                stint_session_id = _persist_stint_session(
+                    summary, driver_name, workspace_id, stint_number, job_id,
                 )
                 summary["db_session_id"] = stint_session_id
                 if stint_session_id:
@@ -310,23 +485,9 @@ def _process_single_stint(
             except Exception as persist_err:
                 logger.warning("Stint %d persist failed (non-fatal): %s", stint_number, persist_err)
 
-        # Traffic time loss: triplet analysis on valid lap times
-        traffic_losses = []
-        traffic_total_s = 0.0
-        for j in range(1, len(valid_times) - 1):
-            prev_t = valid_times[j - 1]
-            curr_t = valid_times[j]
-            next_t = valid_times[j + 1]
-            neighbor_mean = (prev_t + next_t) / 2
-            delta = curr_t - neighbor_mean
-            if delta >= 2.0 and curr_t > prev_t + 2.0 and curr_t > next_t + 2.0:
-                traffic_losses.append({
-                    "lap_index": j,
-                    "lap_time_s": round(curr_t, 3),
-                    "neighbor_mean_s": round(neighbor_mean, 3),
-                    "time_lost_s": round(delta, 3),
-                })
-                traffic_total_s += delta
+        # Traffic time loss: running-PB + degradation cancellation
+        from endurance_scoring import compute_traffic_losses
+        traffic_losses, traffic_total_s, traffic_count, track_degradation = compute_traffic_losses(valid_times)
 
         return {
             "stint_number": stint_number,
@@ -346,6 +507,8 @@ def _process_single_stint(
                 "consistency": round(subs.get("consistency", {}).get("score", 0), 1),
                 "robustness": round(subs.get("robustness", {}).get("score", 0), 1),
             },
+            "track_evolution": rpb_details if rpb_details.get("trend") else None,
+            "track_degradation": track_degradation,
             "session_id": summary.get("db_session_id"),
         }
     finally:
@@ -359,6 +522,7 @@ def _persist_master_session(
     job_id: str,
     meta: dict,
     team_report: dict,
+    driver_reports: dict,
     stint_results: list[dict],
     total_laps: int,
     total_time: float,
@@ -448,6 +612,7 @@ def _persist_master_session(
                 "endurance_job_id": job_id,
                 "endurance_report": {
                     "team": team_report,
+                    "drivers": driver_reports,
                     "stint_results": stint_results,
                 },
             }),

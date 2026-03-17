@@ -210,14 +210,14 @@ def upgrade():
              coaching_plans_enabled, visualization_enabled, race_strategy_limit,
              live_monitoring, export_formats, max_concurrent_jobs, rate_multiplier)
         VALUES
-            ('demo', 'Demo', 1, 500, 30, false, false, false, false,
-             'limited_3h', false, '["csv"]', 1, 1.0),
-            ('racer', 'Racer', 10, 2000, 90, false, false, true, true,
-             'full', true, '["pdf","csv"]', 2, 2.0),
-            ('world-class', 'World-Class', NULL, 5000, 365, true, true, true, true,
-             'full', true, '["pdf","csv","api"]', 5, 5.0),
-            ('b2b', 'B2B', NULL, 10000, NULL, true, true, true, true,
-             'full', true, '["pdf","csv","api","branded"]', 10, 10.0)
+            ('demo', 'Demo', 1, 150, 30, false, false, false, false,
+             '4h_basic', false, '["csv"]', 1, 1.0),
+            ('racer', 'Racer', 10, 2500, 90, false, false, true, true,
+             '24h_complex', true, '["pdf","csv"]', 2, 2.0),
+            ('world-class', 'World-Class', NULL, NULL, 365, true, true, true, true,
+             'unlimited', true, '["pdf","csv","api"]', 5, 5.0),
+            ('b2b', 'B2B', NULL, NULL, NULL, true, true, true, true,
+             'unlimited', true, '["pdf","csv","api","branded"]', 10, 10.0)
     """))
 
     # ── 11. Backfill plan_tier from existing subscription data ────────────

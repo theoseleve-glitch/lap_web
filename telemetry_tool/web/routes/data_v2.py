@@ -144,7 +144,9 @@ def dashboard_stats() -> tuple[dict, int]:
     stats = models.get_dashboard_stats(conn)
 
     # Fetch recent sessions for sparklines and table (last 20).
-    recent = models.get_sessions(conn, limit=20, offset=0)
+    # Exclude endurance stint child sessions (same filter as sessions list).
+    recent = models.get_sessions(conn, limit=20, offset=0,
+                                 filters={"exclude_endurance_stints": True, "archived": False})
 
     recent_scores = [
         s["total_score"] for s in recent
@@ -275,6 +277,10 @@ def list_sessions() -> tuple[dict, int]:
         pass  # show all — don't filter on archived
     else:
         filters["archived"] = False  # default: hide archived
+
+    # Hide endurance stint child sessions (accessible only from master report)
+    if filters.get("session_type") != "endurance_stint":
+        filters["exclude_endurance_stints"] = True
 
     sort_by = request.args.get("sort_by")
     sort_dir = request.args.get("sort_dir", "desc")
@@ -778,11 +784,13 @@ def get_scores(session_id: str) -> tuple[dict, int]:
     # ── badges: earned achievement badges ──
     try:
         from scoring import evaluate_badges
+        from scoring.constants import MAX_ADAPTATION
         sub_scores = {}
+        _default_max = {"adaptation": MAX_ADAPTATION}  # no adaptation_max column in DB
         for cat in ("pace", "consistency", "execution", "robustness", "adaptation"):
             sub_scores[cat] = {
                 "score": scores.get(f"{cat}_score", 0) or 0,
-                "max": scores.get(f"{cat}_max", 1) or 1,
+                "max": scores.get(f"{cat}_max") or _default_max.get(cat, 25),
             }
         total = sum(s["score"] for s in sub_scores.values())
         badges_input = {"total_score": total, "sub_scores": sub_scores}

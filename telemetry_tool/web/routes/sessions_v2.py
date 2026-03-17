@@ -56,12 +56,12 @@ _ALLOWED_EXTENSIONS = {".csv", ".txt", ".ibt", ".ld", ".ldx", ".vbo", ".xrk", ".
 # ── Tier limits ────────────────────────────────────────────────────────────
 
 _TIER_LIMITS = {
-    "free":        {"max_bytes": 50 * 1024 * 1024,   "max_sessions": 10},
-    "demo":        {"max_bytes": 50 * 1024 * 1024,   "max_sessions": 10},
-    "racer":       {"max_bytes": 500 * 1024 * 1024,  "max_sessions": None},
-    "world-class": {"max_bytes": 2 * 1024**3,        "max_sessions": None},
-    "world_class": {"max_bytes": 2 * 1024**3,        "max_sessions": None},
-    "b2b":         {"max_bytes": 12 * 1024**3,        "max_sessions": None},
+    "free":        {"max_bytes": 150 * 1024 * 1024,  "max_sessions": 1},
+    "demo":        {"max_bytes": 150 * 1024 * 1024,  "max_sessions": 1},
+    "racer":       {"max_bytes": 2500 * 1024 * 1024, "max_sessions": None},
+    "world-class": {"max_bytes": -1,                  "max_sessions": None},
+    "world_class": {"max_bytes": -1,                  "max_sessions": None},
+    "b2b":         {"max_bytes": -1,                  "max_sessions": None},
 }
 _TIER_TIMEOUTS = {
     "free": 120, "demo": 120,
@@ -84,7 +84,7 @@ def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str,
     file_size = f.tell()
     f.seek(0)
     max_bytes = limits["max_bytes"]
-    if file_size > max_bytes:
+    if max_bytes != -1 and file_size > max_bytes:
         max_mb = max_bytes // (1024 * 1024)
         return (
             f"File size ({file_size // (1024 * 1024)} MB) exceeds your plan limit "

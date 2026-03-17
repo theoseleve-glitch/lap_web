@@ -2,11 +2,174 @@
 
 Reuses the existing scoring.scorer.score_session() by computing metrics
 from lap subsets, then aggregates across stints and drivers.
+
+Track-evolution-aware pace: when lap times show a clear improvement trend
+(e.g. track rubbering in), the pace score uses running-PB deltas instead
+of static median-vs-best.  This rewards drivers who consistently stay near
+their evolving capability rather than penalising early laps.
 """
 from __future__ import annotations
 
 import statistics
 from typing import Any
+
+
+# ── Track-evolution-aware pace ─────────────────────────────────────────
+
+# Minimum laps to attempt trend detection
+_TREND_MIN_LAPS = 6
+# Slope threshold: at least 0.03 s/lap improvement (negative slope)
+_TREND_SLOPE_THRESHOLD = -0.03
+# R² threshold: trend must explain at least 25% of variance
+_TREND_R2_THRESHOLD = 0.25
+# Scoring: mean running-PB delta → score (/25)
+_RPB_FULL_DELTA_S = 0.2   # ≤0.2 s mean delta = full marks
+_RPB_ZERO_DELTA_S = 3.0   # ≥3.0 s mean delta = zero
+
+
+def running_pb_pace(
+    times: list[float],
+    condition: str = "dry",
+) -> tuple[float | None, dict]:
+    """Compute pace score using running-PB deltas.
+
+    When track evolution is detected (negative slope + decent R²), each
+    lap is compared against the best lap *up to that point* — not the
+    session-end PB.  The mean of those deltas drives the score.
+
+    For ``condition="mixed"``, trend detection is bypassed — conditions
+    changing mid-stint inherently cause track evolution, so running-PB
+    is always applied (minimum lap count still required).
+
+    Returns (score, details_dict) or (None, details_dict) if no clear
+    trend is found.
+    """
+    n = len(times)
+    if n < _TREND_MIN_LAPS:
+        return None, {"trend": False, "reason": "too_few_laps"}
+
+    # ── Linear regression: time vs lap index ───────────────────
+    x_mean = (n - 1) / 2.0
+    y_mean = sum(times) / n
+    ss_xy = sum((i - x_mean) * (t - y_mean) for i, t in enumerate(times))
+    ss_xx = sum((i - x_mean) ** 2 for i in range(n))
+    slope = ss_xy / ss_xx if ss_xx > 0 else 0.0
+
+    # R² — how well does the linear model fit?
+    ss_yy = sum((t - y_mean) ** 2 for t in times)
+    r_squared = (ss_xy ** 2) / (ss_xx * ss_yy) if ss_xx > 0 and ss_yy > 0 else 0.0
+
+    # "mixed" condition = conditions changed mid-stint → always apply running-PB
+    force = condition.lower() == "mixed"
+
+    if not force and (slope > _TREND_SLOPE_THRESHOLD or r_squared < _TREND_R2_THRESHOLD):
+        return None, {
+            "trend": False,
+            "slope_s_per_lap": round(slope, 4),
+            "r_squared": round(r_squared, 4),
+        }
+
+    # ── Compute running-PB deltas ──────────────────────────────
+    running_pb = float("inf")
+    deltas: list[float] = []
+    for t in times:
+        running_pb = min(running_pb, t)
+        deltas.append(t - running_pb)
+
+    mean_delta = statistics.mean(deltas) if deltas else 0.0
+
+    # ── Score: lower mean_delta = better ───────────────────────
+    # Linear interpolation within [_RPB_FULL_DELTA_S, _RPB_ZERO_DELTA_S]
+    clamped = max(_RPB_FULL_DELTA_S, min(mean_delta, _RPB_ZERO_DELTA_S))
+    ratio = 1.0 - (clamped - _RPB_FULL_DELTA_S) / (_RPB_ZERO_DELTA_S - _RPB_FULL_DELTA_S)
+    score = round(ratio * 25.0, 1)
+
+    return score, {
+        "trend": True,
+        "method": "running_pb_mixed" if force else "running_pb",
+        "slope_s_per_lap": round(slope, 4),
+        "r_squared": round(r_squared, 4),
+        "mean_running_pb_delta_s": round(mean_delta, 3),
+        "n_new_pbs": sum(1 for d in deltas if d == 0.0),
+        "score": score,
+    }
+
+
+# ── Traffic time loss (running-PB method) ──────────────────────────────
+
+_TRAFFIC_THRESHOLD_S = 0.5
+_DEGRADE_MIN_FLAGGED = 5
+_DEGRADE_SLOPE_THRESHOLD = 0.02   # positive slope = track getting slower
+_DEGRADE_R2_THRESHOLD = 0.20
+
+
+def compute_traffic_losses(
+    times: list[float],
+) -> tuple[list[dict], float, int, dict | None]:
+    """Compute traffic time losses using running-PB + 0.5 s threshold.
+
+    If 5+ laps are flagged, checks for track degradation (positive slope
+    in lap times with decent R²).  When degradation is detected the
+    reference shifts to a trend line so genuine slowdown isn't penalised.
+
+    Returns (losses_list, total_s, count, degradation_info_or_None).
+    """
+    n = len(times)
+    if n < 2:
+        return [], 0.0, 0, None
+
+    # ── Pass 1: raw running-PB losses ──────────────────────────
+    raw_losses: list[tuple[int, float, float, float]] = []  # (idx, time, rb, excess)
+    running_best = float("inf")
+    for j, t in enumerate(times):
+        running_best = min(running_best, t)
+        excess = t - running_best - _TRAFFIC_THRESHOLD_S
+        if excess > 0:
+            raw_losses.append((j, t, running_best, excess))
+
+    # ── Pass 2: degradation check ──────────────────────────────
+    degradation = None
+    if len(raw_losses) >= _DEGRADE_MIN_FLAGGED and n >= _TREND_MIN_LAPS:
+        x_mean = (n - 1) / 2.0
+        y_mean = sum(times) / n
+        ss_xy = sum((i - x_mean) * (t - y_mean) for i, t in enumerate(times))
+        ss_xx = sum((i - x_mean) ** 2 for i in range(n))
+        slope = ss_xy / ss_xx if ss_xx > 0 else 0.0
+        ss_yy = sum((t - y_mean) ** 2 for t in times)
+        r_sq = (ss_xy ** 2) / (ss_xx * ss_yy) if ss_xx > 0 and ss_yy > 0 else 0.0
+
+        if slope >= _DEGRADE_SLOPE_THRESHOLD and r_sq >= _DEGRADE_R2_THRESHOLD:
+            # Track is getting slower — recalculate using trend-adjusted reference.
+            # predicted(j) = y_mean + slope * (j - x_mean)
+            # time_lost = lap_time - predicted(j) - threshold  (only if > 0)
+            degradation = {
+                "detected": True,
+                "slope_s_per_lap": round(slope, 4),
+                "r_squared": round(r_sq, 4),
+                "raw_flagged": len(raw_losses),
+            }
+            adjusted_losses: list[tuple[int, float, float, float]] = []
+            for j, t in enumerate(times):
+                predicted = y_mean + slope * (j - x_mean)
+                excess = t - predicted - _TRAFFIC_THRESHOLD_S
+                if excess > 0:
+                    adjusted_losses.append((j, t, round(predicted, 3), excess))
+            raw_losses = adjusted_losses
+            degradation["adjusted_flagged"] = len(adjusted_losses)
+
+    # ── Build output ───────────────────────────────────────────
+    losses = []
+    total_s = 0.0
+    for idx, lap_t, ref, excess in raw_losses:
+        losses.append({
+            "lap_index": idx,
+            "lap_time_s": round(lap_t, 3),
+            "running_best_s": round(ref, 3),
+            "time_lost_s": round(excess, 3),
+        })
+        total_s += excess
+
+    return losses, round(total_s, 3), len(losses), degradation
 
 
 def compute_stint_scores(
@@ -91,24 +254,7 @@ def compute_stint_scores(
     except Exception:
         scores = {"pace": 0, "consistency": 0, "robustness": 0}
 
-    # Traffic time loss detection: triplet analysis
-    # If lap N is 2s+ slower than both N-1 and N+1, it's a traffic loss
-    traffic_losses: list[dict] = []
-    traffic_total_s = 0.0
-    for j in range(1, len(times) - 1):
-        prev_t = times[j - 1]
-        curr_t = times[j]
-        next_t = times[j + 1]
-        neighbor_mean = (prev_t + next_t) / 2
-        delta = curr_t - neighbor_mean
-        if delta >= 2.0 and curr_t > prev_t + 2.0 and curr_t > next_t + 2.0:
-            traffic_losses.append({
-                "lap_index": j,
-                "lap_time_s": round(curr_t, 3),
-                "neighbor_mean_s": round(neighbor_mean, 3),
-                "time_lost_s": round(delta, 3),
-            })
-            traffic_total_s += delta
+    traffic_losses, traffic_total_s, traffic_count, track_degradation = compute_traffic_losses(times)
 
     return {
         "stint_number": stint.get("stint_number"),
@@ -227,6 +373,8 @@ def compute_team_report(
     total_laps: int,
     total_stints: int,
     total_time_s: float | None = None,
+    stint_results: list[dict[str, Any]] | None = None,
+    pit_threshold_s: float = 30.0,
 ) -> dict[str, Any]:
     """Build the team-level report from driver reports.
 
@@ -235,9 +383,11 @@ def compute_team_report(
         total_laps: Total laps in the race.
         total_stints: Total stints detected.
         total_time_s: Total race time in seconds (optional).
+        stint_results: Raw stint result dicts (for pit analysis).
+        pit_threshold_s: Target pit stop duration (from user config).
 
     Returns:
-        Team report with driver comparison and aggregated scores.
+        Team report with driver comparison, time loss breakdown, and coaching.
     """
     drivers = list(driver_reports.keys())
     comparison = list(driver_reports.values())
@@ -252,9 +402,45 @@ def compute_team_report(
         total_driver_laps = sum(dr["total_laps"] for dr in comparison)
         team_scores[key] = round(total_weighted / total_driver_laps, 1) if total_driver_laps > 0 else 0
 
-    # Total traffic stats
+    # ── Traffic time loss ──────────────────────────────────────
     team_traffic_total = sum(dr.get("traffic_total_s", 0) for dr in comparison)
     team_traffic_count = sum(dr.get("traffic_count", 0) for dr in comparison)
+
+    # ── Pit time loss ──────────────────────────────────────────
+    # pit_loss = n_pits * (avg_pit_duration - threshold)
+    pit_stints = []
+    if stint_results:
+        for s in stint_results:
+            pt = s.get("pit_lap_time_s")
+            if pt and pt > 0:
+                mean_lap = s.get("mean_lap_s") or s.get("best_lap_s") or 0
+                pit_dur = max(0, pt - mean_lap)
+                pit_stints.append({
+                    "stint_number": s.get("stint_number"),
+                    "driver_name": s.get("driver_name"),
+                    "pit_duration_s": round(pit_dur, 1),
+                })
+
+    n_pits = len(pit_stints)
+    avg_pit_s = statistics.mean(p["pit_duration_s"] for p in pit_stints) if pit_stints else 0
+    pit_excess_s = max(0, avg_pit_s - pit_threshold_s) if pit_stints else 0
+    pit_time_loss_s = round(n_pits * pit_excess_s, 1)
+
+    # ── Total time loss ────────────────────────────────────────
+    total_time_loss_s = round(team_traffic_total + pit_time_loss_s, 1)
+
+    # ── Coaching ───────────────────────────────────────────────
+    coaching = _build_coaching(
+        traffic_total_s=team_traffic_total,
+        traffic_count=team_traffic_count,
+        pit_time_loss_s=pit_time_loss_s,
+        n_pits=n_pits,
+        avg_pit_s=avg_pit_s,
+        pit_threshold_s=pit_threshold_s,
+        total_time_loss_s=total_time_loss_s,
+        comparison=comparison,
+        total_time_s=total_time_s,
+    )
 
     return {
         "total_laps": total_laps,
@@ -264,5 +450,108 @@ def compute_team_report(
         "driver_comparison": comparison,
         "traffic_total_s": round(team_traffic_total, 3),
         "traffic_count": team_traffic_count,
+        "pit_stops": pit_stints,
+        "n_pits": n_pits,
+        "avg_pit_s": round(avg_pit_s, 1),
+        "pit_threshold_s": pit_threshold_s,
+        "pit_time_loss_s": pit_time_loss_s,
+        "total_time_loss_s": total_time_loss_s,
+        "coaching": coaching,
         "scores": team_scores,
     }
+
+
+def _build_coaching(
+    *,
+    traffic_total_s: float,
+    traffic_count: int,
+    pit_time_loss_s: float,
+    n_pits: int,
+    avg_pit_s: float,
+    pit_threshold_s: float,
+    total_time_loss_s: float,
+    comparison: list[dict[str, Any]],
+    total_time_s: float | None,
+) -> list[dict[str, str]]:
+    """Generate coaching insights from time loss analysis."""
+    tips: list[dict[str, str]] = []
+
+    # Headline
+    if total_time_loss_s > 0:
+        parts = []
+        if traffic_total_s > 0:
+            parts.append(f"{traffic_total_s:.1f}s in traffic")
+        if pit_time_loss_s > 0:
+            parts.append(f"{pit_time_loss_s:.1f}s in slow pits")
+        breakdown = " + ".join(parts) if parts else ""
+        tips.append({
+            "priority": "high",
+            "area": "time_loss",
+            "message": f"Total time loss: {total_time_loss_s:.1f}s ({breakdown}). "
+                       "This is recoverable time — focus areas below.",
+        })
+
+    # Pit coaching
+    if pit_time_loss_s > 0:
+        tips.append({
+            "priority": "high" if pit_time_loss_s > 10 else "medium",
+            "area": "pits",
+            "message": f"Pit stops averaged {avg_pit_s:.0f}s vs {pit_threshold_s:.0f}s target "
+                       f"({n_pits} stops × {avg_pit_s - pit_threshold_s:.0f}s excess = "
+                       f"{pit_time_loss_s:.1f}s lost). Drill pit entry/exit timing and driver changes.",
+        })
+
+    # Traffic coaching
+    if traffic_total_s > 5:
+        # Find worst-affected driver
+        worst_driver = max(comparison, key=lambda d: d.get("traffic_total_s", 0))
+        wd_name = worst_driver.get("driver_name", "?")
+        wd_loss = worst_driver.get("traffic_total_s", 0)
+        tips.append({
+            "priority": "high" if traffic_total_s > 15 else "medium",
+            "area": "traffic",
+            "message": f"{traffic_count} traffic incidents cost {traffic_total_s:.1f}s. "
+                       f"Worst affected: {wd_name} ({wd_loss:.1f}s). "
+                       "Work on race-craft — earlier overtaking, better positioning into corners.",
+        })
+    elif traffic_count > 0:
+        tips.append({
+            "priority": "low",
+            "area": "traffic",
+            "message": f"Minor traffic: {traffic_count} incidents, {traffic_total_s:.1f}s — good race-craft.",
+        })
+
+    # Pace balance
+    if len(comparison) >= 2:
+        sorted_pace = sorted(comparison, key=lambda d: d.get("best_lap_s") or 999)
+        fastest = sorted_pace[0]
+        slowest = sorted_pace[-1]
+        gap = (slowest.get("best_lap_s") or 0) - (fastest.get("best_lap_s") or 0)
+        if gap > 1.0:
+            tips.append({
+                "priority": "medium",
+                "area": "driver_balance",
+                "message": f"Pace gap between {fastest['driver_name']} and {slowest['driver_name']}: "
+                           f"{gap:.1f}s. "
+                           f"Equalise with coaching for {slowest['driver_name']} on braking points and corner entry.",
+            })
+
+    # Time loss as % of race
+    if total_time_s and total_time_s > 0 and total_time_loss_s > 0:
+        pct = total_time_loss_s / total_time_s * 100
+        if pct > 1:
+            tips.append({
+                "priority": "low",
+                "area": "efficiency",
+                "message": f"Time loss represents {pct:.1f}% of total race time — "
+                           f"eliminating it could gain {total_time_loss_s / (comparison[0].get('mean_lap_s') or 85):.1f} equivalent laps.",
+            })
+
+    if not tips:
+        tips.append({
+            "priority": "low",
+            "area": "general",
+            "message": "Clean race — no significant time loss from traffic or pits.",
+        })
+
+    return tips

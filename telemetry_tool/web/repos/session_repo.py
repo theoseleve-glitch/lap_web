@@ -38,31 +38,31 @@ def upsert_session(
         csv_name = str(summary.get("csv_path", "unknown"))
         session_id = f"{datetime.datetime.now():%Y-%m-%d_%H%M%S}"
 
-    # Compute basic lap stats — EXCLUDING flagged laps (incomplete,
-    # invalid, anomalous, deviated) so best/mean reflect valid data only.
+    # Compute basic lap stats — EXCLUDING flagged laps so best/mean
+    # reflect valid data only.  Uses the SAME validity logic as insert_laps
+    # (pipeline flags + rolling-avg anomaly detection) to ensure the session
+    # stats match what the lap table stores.
+    from web.repos.lap_repo import _pipeline_validity, _rolling_avg_validity
+
     lap_times = summary.get("lap_times") or []
     resampled = summary.get("resampled_laps") or {}
     sorted_lap_keys = sorted(resampled.keys()) if resampled else list(range(len(lap_times)))
+    lap_metrics = summary.get("lap_metrics") or []
 
-    # Gather all exclusion sets from pipeline analysis.
+    # Layer 1: pipeline analysis flags (track cuts, incomplete, anomalous, etc.)
+    _pipeline_flags = _pipeline_validity(summary)
+    _pipeline_excluded = {ln for ln, (valid, _) in _pipeline_flags.items() if not valid}
+
+    # Layer 2: rolling-avg anomaly detection (time + distance outliers)
+    _rolling_flags = _rolling_avg_validity(lap_metrics, exclude_laps=_pipeline_excluded)
+
+    # Merge: any lap invalid in either layer is excluded
     _excluded: set = set()
-    for _key in ("incomplete_lap_analysis", "invalid_lap_analysis",
-                 "anomalous_lap_analysis", "line_deviation_analysis"):
-        _analysis = summary.get(_key) or {}
-        for _sub in ("incomplete_laps", "invalid_laps", "flagged_laps",
-                     "dist_flagged", "time_flagged", "deviated_laps"):
-            _s = _analysis.get(_sub)
-            if _s:
-                _excluded.update(_s)
-    # Also check trim_report for outlaps/inlaps.
-    _trim = summary.get("trim_report") or {}
-    _outlap_a = _trim.get("outlap_analysis") or {}
-    for _sub in ("outlap_numbers", "inlap_numbers", "flagged_only"):
-        _s = _outlap_a.get(_sub)
-        if _s:
-            _excluded.update(_s)
+    for ln, (valid, _reason) in {**_rolling_flags, **_pipeline_flags}.items():
+        if not valid:
+            _excluded.add(ln)
 
-    # Exclude the confirmed joker lap from stats.
+    # Also exclude joker lap
     _joker_lap = summary.get("joker_lap_number")
     if _joker_lap is not None:
         _excluded.add(_joker_lap)
@@ -201,6 +201,8 @@ def get_sessions(
         )
         _s = filters["search"].replace("%", "\\%").replace("_", "\\_")
         params["f_search"] = f"%{_s}%"
+    if filters.get("exclude_endurance_stints"):
+        clauses.append("COALESCE(s.session_type, '') != 'endurance_stint'")
     if filters.get("favorite"):
         clauses.append("s.is_favorite = 1")
     if "archived" in (filters or {}):
@@ -287,6 +289,8 @@ def count_sessions_filtered(
         )
         _s = filters["search"].replace("%", "\\%").replace("_", "\\_")
         params["f_search"] = f"%{_s}%"
+    if filters.get("exclude_endurance_stints"):
+        clauses.append("COALESCE(s.session_type, '') != 'endurance_stint'")
     if "archived" in (filters or {}):
         if filters["archived"]:
             clauses.append("COALESCE(s.archived, 0) = 1")

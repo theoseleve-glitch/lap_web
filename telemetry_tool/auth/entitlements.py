@@ -31,13 +31,19 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
     "free": {
         "reports_per_month": 1,
         "uploads_per_month": 1,
+        "max_upload_size_mb": 150,
+        "max_session_data_mb": 150,
         "raw_retention_days": 30,
         "report_retention": "indefinite",
         "comparison_progress": False,
         "coaching_drills": False,
         "viz_workspace": False,
-        "strategy_dashboard": "4h_simple",
+        "badge_share_card": True,       # badge + shareable card for engagement
+        "gamification": False,          # full gamification (XP, streaks, drills)
+        "strategy_dashboard": "4h_basic",
         "race_strategy_max_duration_s": 14400,  # 4 hours
+        "race_strategy_params": "basic",        # basic parameters only
+        "optimizer_modes": ["equal"],            # equal-time only
         "live_pace": False,
         "pit_planning": False,
         "pdf_reports": False,
@@ -48,13 +54,19 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
     "racer": {
         "reports_per_month": 10,
         "uploads_per_month": 10,
+        "max_upload_size_mb": 2500,
+        "max_session_data_mb": 2500,
         "raw_retention_days": 90,
         "report_retention": "indefinite",
         "comparison_progress": False,
         "coaching_drills": True,
         "viz_workspace": True,
-        "strategy_dashboard": "12h_complex",
-        "race_strategy_max_duration_s": 43200,  # 12 hours
+        "badge_share_card": True,
+        "gamification": True,
+        "strategy_dashboard": "24h_complex",
+        "race_strategy_max_duration_s": 86400,  # 24 hours
+        "race_strategy_params": "complex",      # all parameters
+        "optimizer_modes": ["equal"],            # equal-time only
         "live_pace": True,
         "pit_planning": True,
         "pdf_reports": True,
@@ -65,13 +77,19 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
     "world_class": {
         "reports_per_month": -1,  # unlimited
         "uploads_per_month": -1,
+        "max_upload_size_mb": -1,  # unlimited
+        "max_session_data_mb": -1,
         "raw_retention_days": 365,
         "report_retention": "indefinite",
         "comparison_progress": True,
         "coaching_drills": True,
         "viz_workspace": True,
+        "badge_share_card": True,
+        "gamification": True,
         "strategy_dashboard": "unlimited",
         "race_strategy_max_duration_s": None,  # no limit
+        "race_strategy_params": "complex",
+        "optimizer_modes": ["equal", "performance"],  # all modes
         "live_pace": True,
         "pit_planning": True,
         "pdf_reports": True,
@@ -137,6 +155,8 @@ _BOOLEAN_FEATURES = {
     "coaching_plans": "coaching_plans_enabled",
     "visualization": "visualization_enabled",
     "live_monitoring": "live_monitoring",
+    "gamification": "gamification",
+    "badge_share_card": "badge_share_card",
 }
 
 # ── Feature keys that map to non-boolean plan columns ──────────────────
@@ -154,10 +174,12 @@ _UPGRADE_TIERS = {
     "comparison": "world-class",
     "coaching_plans": "racer",
     "visualization": "racer",
+    "gamification": "racer",
     "live_monitoring": "racer",
     "export_pdf": "racer",
     "race_strategy": "racer",
-    "race_strategy_full": "racer",
+    "race_strategy_full": "world-class",
+    "optimizer_performance": "world-class",
 }
 
 # ── Meter keys that map to quota columns ───────────────────────────────
@@ -289,19 +311,27 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
         # Fallback to demo if tier not found
         plan = get_plan_definitions(conn, "demo") or {}
 
+    # Merge DB plan with pure-Python defaults (for fields not in DB)
+    py_defaults = get_plan_entitlements(plan_tier)
+
     # Start with plan defaults
     entitlements = {
         "plan_tier": plan_tier,
         "subscription_status": sub_status,
         "reports_per_month": plan.get("reports_per_month"),
-        "max_upload_size_mb": plan.get("max_upload_size_mb", 500),
+        "max_upload_size_mb": plan.get("max_upload_size_mb") or py_defaults.get("max_upload_size_mb", 500),
+        "max_session_data_mb": py_defaults.get("max_session_data_mb", 150),
         "telemetry_retention_days": plan.get("telemetry_retention_days"),
         "api_access": plan.get("api_access", False),
         "comparison_enabled": plan.get("comparison_enabled", False),
         "coaching_plans_enabled": plan.get("coaching_plans_enabled", False),
         "visualization_enabled": plan.get("visualization_enabled", False),
-        "race_strategy_limit": plan.get("race_strategy_limit") or plan.get("strategy_dashboard"),
-        "race_strategy_max_duration_s": plan.get("race_strategy_max_duration_s"),
+        "race_strategy_limit": plan.get("race_strategy_limit") or py_defaults.get("strategy_dashboard"),
+        "race_strategy_max_duration_s": py_defaults.get("race_strategy_max_duration_s"),
+        "race_strategy_params": py_defaults.get("race_strategy_params", "basic"),
+        "optimizer_modes": py_defaults.get("optimizer_modes", ["equal"]),
+        "badge_share_card": py_defaults.get("badge_share_card", True),
+        "gamification": py_defaults.get("gamification", False),
         "live_monitoring": plan.get("live_monitoring", False),
         "export_formats": _parse_json_or_default(plan.get("export_formats"), ["csv"]),
         "max_concurrent_jobs": plan.get("max_concurrent_jobs", 1),
@@ -405,14 +435,26 @@ def authorize_feature(conn, user_id: int, feature: str) -> tuple[bool, dict]:
             }
         return True, {"current_tier": tier}
 
-    # Check race_strategy_full (demo has 3h limit)
+    # Check race_strategy_full (unlimited duration)
     if feature == "race_strategy_full":
         limit = entitlements.get("race_strategy_limit")
-        if limit == "limited_3h":
+        if limit != "unlimited":
             return False, {
-                "reason": "Full race strategy requires Racer plan or higher",
-                "upgrade_tier": "racer",
-                "upgrade_url": "/billing?plan=RACER",
+                "reason": "Unlimited race strategy requires World-Class plan",
+                "upgrade_tier": "world-class",
+                "upgrade_url": "/billing?plan=WORLD-CLASS",
+                "current_tier": tier,
+            }
+        return True, {"current_tier": tier}
+
+    # Check optimizer_performance mode
+    if feature == "optimizer_performance":
+        modes = entitlements.get("optimizer_modes", ["equal"])
+        if "performance" not in modes:
+            return False, {
+                "reason": "Performance optimizer requires World-Class plan",
+                "upgrade_tier": "world-class",
+                "upgrade_url": "/billing?plan=WORLD-CLASS",
                 "current_tier": tier,
             }
         return True, {"current_tier": tier}

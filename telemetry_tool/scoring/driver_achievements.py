@@ -15,6 +15,8 @@ from typing import Any
 
 # Achievement definitions: (id, label, description, evaluator_key)
 _MILESTONES = [
+    # Session milestones (early engagement)
+    ("first_session","First Laps",         "Upload your first session",         "session_count", 1),
     # Lap count milestones
     ("laps_10",     "First Steps",        "Complete 10 laps",                  "lap_count", 10),
     ("laps_50",     "Getting Serious",    "Complete 50 laps",                  "lap_count", 50),

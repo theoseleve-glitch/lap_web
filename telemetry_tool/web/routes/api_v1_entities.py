@@ -958,6 +958,26 @@ def get_driver_progress_api(driver_id):
         wid = _workspace_id()
         progress = _get_progress(conn, driver_id, wid)
         progress["achievements"] = get_achievement_status(conn, driver_id, wid)
+
+        # Licence tier
+        try:
+            from gamification.licence import compute_licence_tier
+            total_laps = progress.get("total_xp", 0) // 5
+            # Query best score and track count for licence computation
+            best_row = conn.execute(
+                "SELECT MAX(total_score) AS best_score FROM sessions WHERE driver_id = %(did)s AND deleted_at IS NULL",
+                {"did": driver_id},
+            ).fetchone()
+            best_score = float((best_row["best_score"] if isinstance(best_row, dict) else best_row[0]) or 0) if best_row else 0
+            track_row = conn.execute(
+                "SELECT COUNT(DISTINCT track_id) AS cnt FROM sessions WHERE driver_id = %(did)s AND deleted_at IS NULL",
+                {"did": driver_id},
+            ).fetchone()
+            track_count = int((track_row["cnt"] if isinstance(track_row, dict) else track_row[0]) or 0) if track_row else 0
+            progress["licence"] = compute_licence_tier(total_laps, best_score, track_count=track_count)
+        except Exception:
+            logger.debug("Licence computation skipped", exc_info=True)
+
         return api_response(progress)
     except Exception:
         logger.warning("Gamification progress failed for driver %s", driver_id, exc_info=True)

@@ -266,6 +266,7 @@ def score_session(
 
     pace_score,        pace_detail  = _score_pace(
         metrics_dict, theoretical_metrics, simulation_method=str(sim_method or "percentile_envelope"),
+        session_type=session_type,
     )
     cons_score,        cons_detail  = _score_consistency(
         metrics_dict, theoretical_metrics, is_wet=is_wet,
