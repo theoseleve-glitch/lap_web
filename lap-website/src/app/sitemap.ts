@@ -4,7 +4,7 @@ import { insightEntries } from '@/data/insights-cms';
 import { routeMap } from '@/data/route-map';
 import { collectMarketingSitemapRoutes } from '@/lib/sitemap-routes.mjs';
 
-const extraRoutes = ['/free-report/analyze'];
+const extraRoutes: string[] = [];
 
 function getRoutePriority(route: string): number {
   if (route === '') return 1;

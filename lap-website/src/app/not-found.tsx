@@ -11,7 +11,7 @@ const recoveryLinks = [
   { href: '/product', label: 'Product overview' },
   { href: '/pricing', label: 'Plans & pricing' },
   { href: '/insights', label: 'Insights & guides' },
-  { href: '/free-report/analyze', label: 'Free telemetry report' },
+  { href: '/register?source=free-report', label: 'Try free analysis' },
   { href: '/contact', label: 'Contact support' },
   { href: '/sitemap', label: 'Full sitemap' },
 ];

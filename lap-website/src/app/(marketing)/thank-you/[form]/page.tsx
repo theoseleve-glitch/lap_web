@@ -40,7 +40,7 @@ const FORM_CONFIG: Record<string, SuccessConfig> = {
       'Prepare a sample CSV if you\'d like a live walkthrough',
     ],
     actions: [
-      { label: 'Try Free Report', href: '/free-report/analyze', primary: true },
+      { label: 'Start Free', href: '/register?source=thank-you', primary: true },
       { label: 'View Pricing', href: '/pricing' },
       { label: 'Return Home', href: '/' },
     ],

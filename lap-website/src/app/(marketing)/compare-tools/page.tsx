@@ -102,7 +102,7 @@ export default function CompareToolsPage() {
 
         <div className="text-center">
           <Link
-            href="/free-report/analyze"
+            href="/register?source=compare-tools"
             className="inline-block border border-pit-orange text-pit-orange px-6 py-3 text-sm font-telemetry uppercase tracking-wider hover:bg-pit-orange/10 transition-colors"
           >
             Try a Free Analysis

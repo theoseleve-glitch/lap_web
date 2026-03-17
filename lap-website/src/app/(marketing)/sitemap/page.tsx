@@ -18,7 +18,7 @@ const sections: SitemapSection[] = [
       { href: '/pricing', label: 'Plans & pricing' },
       { href: '/billing', label: 'Billing' },
       { href: '/demo', label: 'Request a demo' },
-      { href: '/free-report/analyze', label: 'Free telemetry report' },
+      { href: '/register?source=sitemap', label: 'Try free analysis' },
       { href: '/compare-tools', label: 'LAP vs Spreadsheets' },
     ],
   },

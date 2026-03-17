@@ -119,7 +119,7 @@ export function PitStop() {
         {/* CTAs */}
         <div className="col-span-full flex flex-col md:flex-row items-center justify-center gap-4 mb-12">
           <PitButton
-            href="/register?source=free-report&redirect=/free-report/analyze"
+            href="/register?source=pit-stop"
             onClick={() => trackCtaClick('try_demo', 'pit-stop', 'b2c')}
           >
             {t('cta.startFreeReport')}

@@ -30,7 +30,7 @@ describe('SuccessPage template', () => {
         summary="We will reach out within 24 hours."
         nextSteps={['Check email', 'Prepare CSV', 'Join call']}
         actions={[
-          { label: 'Try Free Report', href: '/free-report/analyze', primary: true },
+          { label: 'Start Free', href: '/register?source=thank-you', primary: true },
           { label: 'Pricing', href: '/pricing' },
         ]}
       />,
@@ -41,7 +41,7 @@ describe('SuccessPage template', () => {
     expect(screen.getByText('Check email')).toBeInTheDocument();
     expect(screen.getByText('Prepare CSV')).toBeInTheDocument();
     expect(screen.getByText('Join call')).toBeInTheDocument();
-    expect(screen.getByText('Try Free Report')).toHaveAttribute('href', '/free-report/analyze');
+    expect(screen.getByText('Start Free')).toHaveAttribute('href', '/register?source=thank-you');
     expect(screen.getByText('Pricing')).toHaveAttribute('href', '/pricing');
   });
 
