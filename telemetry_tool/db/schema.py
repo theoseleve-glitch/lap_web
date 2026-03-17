@@ -806,6 +806,7 @@ CREATE TABLE IF NOT EXISTS race_configs (
     blackout_end_min    INTEGER,
     quick_pit_stop_s    INTEGER,
     optimization_mode   TEXT    NOT NULL DEFAULT 'equal',
+    current_condition       TEXT    NOT NULL DEFAULT 'dry',
     quick_change_enabled    INTEGER NOT NULL DEFAULT 0,
     tech_stop_enabled       INTEGER NOT NULL DEFAULT 0,
     tech_stop_duration_s    INTEGER DEFAULT 360,
@@ -834,6 +835,7 @@ CREATE TABLE IF NOT EXISTS race_drivers (
     com_channel         TEXT,
     color_hex           TEXT,
     allow_double_stint  INTEGER NOT NULL DEFAULT 0,
+    wet_confidence      REAL    DEFAULT 0.5,
     avg_lap_time_s      REAL
 );
 """
@@ -1104,5 +1106,25 @@ PHASE_23_TABLES: list[tuple[str, str]] = [
     ("race_penalties", _RACE_PENALTIES_TABLE),
 ]
 
+# ------------------------------------------------------------------
+# Phase 24 tables — Race weather windows (endurance weather forecast)
+# ------------------------------------------------------------------
+
+_RACE_WEATHER_WINDOWS_TABLE = """
+CREATE TABLE IF NOT EXISTS race_weather_windows (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    race_id         INTEGER NOT NULL REFERENCES race_configs(race_id) ON DELETE CASCADE,
+    start_s         INTEGER NOT NULL,
+    end_s           INTEGER NOT NULL,
+    condition       TEXT NOT NULL DEFAULT 'dry',
+    confidence_pct  INTEGER NOT NULL DEFAULT 100,
+    workspace_id    INTEGER
+);
+"""
+
+PHASE_24_TABLES: list[tuple[str, str]] = [
+    ("race_weather_windows", _RACE_WEATHER_WINDOWS_TABLE),
+]
+
 # Convenience: all tables across all phases (updated as phases ship).
-ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES + PHASE_23_TABLES
+ALL_TABLES = PHASE_1_TABLES + PHASE_2_TABLES + PHASE_3_TABLES + PHASE_4_TABLES + PHASE_5_TABLES + PHASE_6_TABLES + PHASE_7_TABLES + PHASE_8_TABLES + PHASE_9_TABLES + PHASE_10_TABLES + PHASE_11_TABLES + PHASE_12_TABLES + PHASE_13_TABLES + PHASE_14_TABLES + PHASE_15_TABLES + PHASE_16_TABLES + PHASE_17_TABLES + PHASE_18_TABLES + PHASE_19_TABLES + PHASE_20_TABLES + PHASE_21_TABLES + PHASE_22_TABLES + PHASE_23_TABLES + PHASE_24_TABLES

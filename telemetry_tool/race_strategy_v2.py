@@ -236,16 +236,35 @@ def optimize_stints(
         did = driver["id"]
 
         # Calculate stint duration
+        # When drivers are sleeping, fewer drivers share the time → longer stints
+        awake_count = len(drivers)
+        if sleep_windows:
+            stint_end_est_s = clock + ideal_stint
+            awake_count = sum(
+                1 for d in drivers
+                if not _driver_is_sleeping(d["id"], clock, int(stint_end_est_s), sleep_windows)
+            )
+            awake_count = max(1, awake_count)
+
+        # Dynamic ideal: remaining drive time / remaining stints, but also
+        # account for fewer awake drivers → each gets proportionally more
+        remaining_stints = n_stints - i
+        remaining_drive = drive_time - sum(s["planned_duration_s"] for s in stints)
+        dynamic_ideal = remaining_drive / max(1, remaining_stints)
+
+        # Scale up if fewer drivers awake than total
+        if awake_count < len(drivers):
+            scale = len(drivers) / awake_count
+            dynamic_ideal = min(dynamic_ideal * scale, remaining_drive / max(1, awake_count))
+
         if driver_budget and did in driver_budget:
-            # Performance: use remaining budget, capped at ideal stint
             spent = cumulative.get(did, 0)
             remaining = driver_budget[did] - spent
-            duration = min(ideal_stint, max(0, remaining))
-            if duration < ideal_stint * 0.3:
-                # Budget nearly exhausted; give minimum viable stint
-                duration = ideal_stint
+            duration = min(dynamic_ideal, max(0, remaining))
+            if duration < dynamic_ideal * 0.3:
+                duration = dynamic_ideal
         else:
-            duration = ideal_stint
+            duration = dynamic_ideal
 
         # Apply driver max stint
         d_max = driver.get("max_stint_s")
@@ -516,6 +535,134 @@ def optimize_stints(
         "warnings": warnings,
         "total_pit_time_s": total_pit_time,
         "total_drive_time_s": total_assigned,
+    }
+
+
+def optimize_stints_v2(
+    config: dict[str, Any],
+    drivers: list[dict[str, Any]],
+    sleep_windows: list[dict[str, Any]] | None = None,
+    weather_windows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """V2 optimizer using CSP backtracking solver.
+
+    Falls back to v1 greedy optimizer on import error.
+    Returns same dict shape as optimize_stints() for compatibility.
+    """
+    try:
+        from optimizer.csp_solver import SolverConfig, DriverConstraints, solve_stints as csp_solve
+    except ImportError:
+        return optimize_stints(config, drivers, sleep_windows=sleep_windows)
+
+    # Build SolverConfig from dict
+    race_duration = config["race_duration_s"]
+    pit_time = config.get("min_pit_stop_s") or 60
+    fuel_autonomy = config.get("fuel_autonomy_s") or 0
+
+    empty_kart = config.get("empty_kart_kg") or 0.0
+    full_tank_cfg = config.get("full_tank_kg") or 0.0
+    if full_tank_cfg > empty_kart and empty_kart > 0:
+        fuel_capacity = full_tank_cfg - empty_kart
+    else:
+        fuel_capacity = full_tank_cfg
+
+    burn_rate = fuel_capacity / fuel_autonomy if fuel_autonomy > 0 else 0.0
+
+    n_stints = max(1, config.get("desired_stints") or 1)
+    # Auto-increase if fuel requires more stints
+    if fuel_autonomy > 0:
+        drive_time = race_duration - (n_stints - 1) * pit_time
+        while drive_time > 0 and drive_time / n_stints > fuel_autonomy:
+            n_stints += 1
+            drive_time = race_duration - (n_stints - 1) * pit_time
+
+    solver_config = SolverConfig(
+        race_duration_s=race_duration,
+        n_stints=n_stints,
+        pit_time_s=pit_time,
+        fuel_capacity_kg=fuel_capacity,
+        fuel_burn_rate_kgs=burn_rate,
+        blackout_start_s=(config.get("blackout_start_min") or 0) * 60,
+        blackout_end_s=(config.get("blackout_end_min") or 0) * 60,
+        quick_change=bool(config.get("quick_change_enabled")),
+        optimization_mode=config.get("optimization_mode", "equal"),
+        weather_windows=weather_windows or [],
+    )
+
+    # Build DriverConstraints from dicts
+    solver_drivers = []
+    for d in sorted(drivers, key=lambda x: x.get("driver_order", 0)):
+        sw = []
+        if sleep_windows:
+            for s in sleep_windows:
+                if s.get("driver_id") == d["id"]:
+                    sw.append((s.get("start_s", 0), s.get("end_s", 0)))
+
+        solver_drivers.append(DriverConstraints(
+            id=d["id"],
+            name=d.get("driver_name", f"Driver {d['id']}"),
+            avg_lap_time_s=d.get("avg_lap_time_s") or 62.0,
+            weight_kg=d.get("weight_kg") or 70.0,
+            wet_confidence=d.get("wet_confidence") or 0.5,
+            max_stint_s=d.get("max_stint_s"),
+            min_stint_s=d.get("min_stint_s"),
+            max_cumulative_s=d.get("max_cumulative_s"),
+            min_cumulative_s=d.get("min_cumulative_s"),
+            min_rest_s=d.get("min_rest_s") or 0,
+            allow_double_stint=bool(d.get("allow_double_stint")),
+            sleep_windows=sw,
+        ))
+
+    # Solve
+    result = csp_solve(solver_config, solver_drivers)
+
+    # Convert back to dict format expected by RaceStateEngine
+    stints = []
+    for s in result.stints:
+        stints.append({
+            "stint_order": s.stint_order,
+            "driver_id": s.driver_id,
+            "driver_name": s.driver_name,
+            "planned_start_s": s.start_s,
+            "planned_end_s": s.start_s + s.duration_s,
+            "planned_duration_s": s.duration_s,
+            "ballast_kg": compute_ballast(
+                config.get("min_total_kart_kg") or 0,
+                empty_kart,
+                fuel_capacity if s.fuel_at_start > 0 else 0,
+                next((dd.get("weight_kg") or 0 for dd in drivers if dd["id"] == s.driver_id), 0),
+            ),
+        })
+
+    pit_stops = []
+    for ps in result.pit_stops:
+        pit_stops.append({
+            "after_stint": ps.after_stint,
+            "at_s": ps.at_s,
+            "duration_s": ps.duration_s,
+            "refuel": ps.refuel,
+            "driver_change": ps.driver_change,
+        })
+
+    # Driver summary
+    driver_summary = {}
+    for d in drivers:
+        did = d["id"]
+        d_stints = [s for s in stints if s["driver_id"] == did]
+        driver_summary[d.get("driver_name", f"Driver {did}")] = {
+            "total_drive_s": sum(s["planned_duration_s"] for s in d_stints),
+            "stints": len(d_stints),
+        }
+
+    return {
+        "feasible": result.feasible,
+        "stints": stints,
+        "pit_stops": pit_stops,
+        "driver_summary": driver_summary,
+        "violations": result.violations,
+        "warnings": result.warnings,
+        "total_pit_time_s": (n_stints - 1) * pit_time,
+        "total_drive_time_s": sum(s["planned_duration_s"] for s in stints),
     }
 
 

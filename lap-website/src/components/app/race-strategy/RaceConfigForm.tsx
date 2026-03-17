@@ -19,6 +19,7 @@ export interface DriverForm {
   min_rest_s: string;
   allow_double_stint: boolean;
   avg_lap_time_s: string;
+  wet_confidence: string;
   showConstraints: boolean;
 }
 
@@ -85,6 +86,7 @@ export interface RaceFormData {
     min_rest_s: number;
     allow_double_stint: boolean;
     avg_lap_time_s: number | null;
+    wet_confidence: number;
   }>;
   windows: Array<{
     window_type: string;
@@ -100,6 +102,12 @@ export interface RaceFormData {
     start_s: number;
     end_s: number;
     label: string | null;
+  }>;
+  weather_windows?: Array<{
+    start_s: number;
+    end_s: number;
+    condition: string;
+    confidence_pct: number;
   }>;
 }
 
@@ -149,6 +157,7 @@ const DEFAULT_DRIVER: DriverForm = {
   min_rest_s: '',
   allow_double_stint: false,
   avg_lap_time_s: '',
+  wet_confidence: '50',
   showConstraints: false,
 };
 
@@ -279,6 +288,10 @@ export function RaceConfigForm({
 
   const [windows, setWindows] = useState<WindowForm[]>([]);
   const [sleepWindows, setSleepWindows] = useState<SleepWindowForm[]>([]);
+  const [weatherWindows, setWeatherWindows] = useState<Array<{
+    startH: string; startM: string; endH: string; endM: string;
+    condition: string; confidence: string;
+  }>>([]);
 
   const raceDurationS = (parseInt(durationH) || 0) * 3600 + (parseInt(durationM) || 0) * 60;
   const isEndurance = raceDurationS >= 43200;
@@ -374,6 +387,7 @@ export function RaceConfigForm({
         min_rest_s: str(d.min_rest_s),
         allow_double_stint: !!(d as any).allow_double_stint,
         avg_lap_time_s: str((d as any).avg_lap_time_s),
+        wet_confidence: str((d as any).wet_confidence ? String(Math.round((d as any).wet_confidence * 100)) : '50'),
         showConstraints: false,
       })),
     );
@@ -405,6 +419,19 @@ export function RaceConfigForm({
             label: str(sw.label),
           };
         }),
+      );
+    }
+
+    if ((initialData as any).weather_windows) {
+      setWeatherWindows(
+        ((initialData as any).weather_windows || []).map((w: any) => ({
+          startH: String(Math.floor((w.start_s || 0) / 3600)),
+          startM: String(Math.floor(((w.start_s || 0) % 3600) / 60)),
+          endH: String(Math.floor((w.end_s || 0) / 3600)),
+          endM: String(Math.floor(((w.end_s || 0) % 3600) / 60)),
+          condition: w.condition || 'wet',
+          confidence: String(w.confidence_pct || 100),
+        }))
       );
     }
 
@@ -499,6 +526,7 @@ export function RaceConfigForm({
           min_rest_s: parseNum(d.min_rest_s) ?? parseNum(defaultMinRest) ?? 0,
           allow_double_stint: d.showConstraints ? d.allow_double_stint : defaultAllowDouble,
           avg_lap_time_s: parseNum(d.avg_lap_time_s),
+          wet_confidence: (parseNum(d.wet_confidence) ?? 50) / 100,
         })),
       windows: windows.map((w, i) => ({
         window_type: w.window_type,
@@ -516,6 +544,14 @@ export function RaceConfigForm({
           start_s: parseInt(sw.start_hh) * 3600 + parseInt(sw.start_mm || '0') * 60,
           end_s: parseInt(sw.end_hh) * 3600 + parseInt(sw.end_mm || '0') * 60,
           label: sw.label || null,
+        })),
+      weather_windows: weatherWindows
+        .filter(w => w.startH !== '' && w.endH !== '')
+        .map(w => ({
+          start_s: parseInt(w.startH || '0') * 3600 + parseInt(w.startM || '0') * 60,
+          end_s: parseInt(w.endH || '0') * 3600 + parseInt(w.endM || '0') * 60,
+          condition: w.condition,
+          confidence_pct: parseInt(w.confidence || '100'),
         })),
     };
 
@@ -652,6 +688,7 @@ export function RaceConfigForm({
                   <input aria-label={`Driver ${i + 1} weight (kg)`} className={`${inputCls} w-24`} value={d.weight_kg} onChange={(e) => updateDriver(i, 'weight_kg', e.target.value)} placeholder="kg" type="number" step="0.1" />
                   <input aria-label={`Driver ${i + 1} COM channel`} className={`${inputCls} w-24`} value={d.com_channel} onChange={(e) => updateDriver(i, 'com_channel', e.target.value)} placeholder="COM" />
                   <input aria-label={`Driver ${i + 1} avg lap time (s)`} className={`${inputCls} w-24`} value={d.avg_lap_time_s} onChange={(e) => updateDriver(i, 'avg_lap_time_s', e.target.value)} placeholder="Avg lap (s)" type="number" step="0.1" />
+                  <input aria-label={`Driver ${i + 1} wet confidence (%)`} className={`${inputCls} w-20`} value={d.wet_confidence} onChange={(e) => updateDriver(i, 'wet_confidence', e.target.value)} placeholder="Wet %" type="number" min="0" max="100" step="5" />
                   <button type="button" aria-label={`Toggle driver ${i + 1} constraints`} onClick={() => updateDriver(i, 'showConstraints', !d.showConstraints)} className="text-steel hover:text-chalk text-xs font-telemetry transition-colors">
                     {d.showConstraints ? '\u25BC' : '\u25B6'} Rules
                   </button>
@@ -714,7 +751,7 @@ export function RaceConfigForm({
                   onClick={() => setOptimizationMode('equal')}
                   className={`px-4 py-2 text-sm font-telemetry tracking-wider uppercase border transition-colors ${
                     optimizationMode === 'equal'
-                      ? 'bg-pit-orange text-asphalt border-pit-orange'
+                      ? 'bg-pit-orange text-white border-pit-orange'
                       : 'border-steel/30 text-steel hover:text-chalk hover:border-chalk/30'
                   }`}
                 >
@@ -725,7 +762,7 @@ export function RaceConfigForm({
                   onClick={() => setOptimizationMode('performance')}
                   className={`px-4 py-2 text-sm font-telemetry tracking-wider uppercase border transition-colors ${
                     optimizationMode === 'performance'
-                      ? 'bg-pit-orange text-asphalt border-pit-orange'
+                      ? 'bg-pit-orange text-white border-pit-orange'
                       : 'border-steel/30 text-steel hover:text-chalk hover:border-chalk/30'
                   }`}
                 >
@@ -824,6 +861,47 @@ export function RaceConfigForm({
                     />
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Weather Forecast (complex tier only) */}
+        {isComplex && (
+          <div className={sectionCls}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-monument text-lg text-chalk">Weather Forecast</h2>
+              <button type="button" onClick={() => setWeatherWindows([...weatherWindows, { startH: '', startM: '0', endH: '', endM: '0', condition: 'wet', confidence: '70' }])} className="px-3 py-1 text-sm font-telemetry text-marshal-yellow border border-marshal-yellow/40 hover:bg-marshal-yellow/10 transition-colors">
+                + Add Window
+              </button>
+            </div>
+            {weatherWindows.length === 0 ? (
+              <p className="text-steel font-body text-sm">No weather windows — optimizer assumes dry conditions throughout.</p>
+            ) : (
+              <div className="space-y-3">
+                {weatherWindows.map((w, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-asphalt/40 border border-steel/10 p-3">
+                    <div className="flex items-center gap-1">
+                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.startH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
+                      <span className="text-steel">:</span>
+                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.startM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], startM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                    </div>
+                    <span className="text-steel">{'\u2192'}</span>
+                    <div className="flex items-center gap-1">
+                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.endH} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endH: e.target.value}; setWeatherWindows(nw); }} min="0" placeholder="h" />
+                      <span className="text-steel">:</span>
+                      <input type="number" className={`${inputCls} w-14 text-center`} value={w.endM} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], endM: e.target.value}; setWeatherWindows(nw); }} min="0" max="59" placeholder="m" />
+                    </div>
+                    <select className={`${inputCls} w-24`} value={w.condition} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], condition: e.target.value}; setWeatherWindows(nw); }}>
+                      <option value="dry">Dry</option>
+                      <option value="damp">Damp</option>
+                      <option value="wet">Wet</option>
+                    </select>
+                    <input type="number" className={`${inputCls} w-16 text-center`} value={w.confidence} onChange={(e) => { const nw = [...weatherWindows]; nw[i] = {...nw[i], confidence: e.target.value}; setWeatherWindows(nw); }} min="0" max="100" step="5" placeholder="%" />
+                    <span className="text-steel text-xs">%</span>
+                    <button type="button" onClick={() => setWeatherWindows(weatherWindows.filter((_, j) => j !== i))} className="text-safety-red hover:text-safety-red/80 text-sm transition-colors">{'\u2715'}</button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -988,7 +1066,7 @@ export function RaceConfigForm({
           <button
             type="submit"
             disabled={isSubmitting}
-            className="px-6 py-3 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            className="px-6 py-3 bg-pit-orange text-white font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
           >
             {isSubmitting
               ? mode === 'create' ? 'Creating...' : 'Saving...'

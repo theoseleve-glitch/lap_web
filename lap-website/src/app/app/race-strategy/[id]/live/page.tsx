@@ -212,6 +212,11 @@ export default function LiveDashboardPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
   });
 
+  const setConditionMut = useMutation({
+    mutationFn: (condition: string) => api.post<unknown>(`/race-strategy/${raceId}/condition`, { condition }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId, 'state'] }),
+  });
+
   /* ── tech stop mutations ─────────────────────────────────────────── */
 
   const techStopInMut = useMutation({
@@ -247,6 +252,7 @@ export default function LiveDashboardPage() {
     return () => clearInterval(interval);
   }, [paused]);
 
+  const [showConditionMenu, setShowConditionMenu] = useState(false);
   const [showSleepWarning, setShowSleepWarning] = useState(false);
   const [showPitInForm, setShowPitInForm] = useState(false);
   const [pitInLaps, setPitInLaps] = useState('');
@@ -375,6 +381,15 @@ export default function LiveDashboardPage() {
                 PAUSED
               </span>
             )}
+            {(race as any).current_condition && (race as any).current_condition !== 'dry' && (
+              <span className={`inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border ${
+                (race as any).current_condition === 'wet'
+                  ? 'text-marshal-yellow bg-marshal-yellow/10 border-marshal-yellow/30'
+                  : 'text-steel bg-steel/10 border-steel/30'
+              }`}>
+                {(race as any).current_condition}
+              </span>
+            )}
           </div>
         }
       />
@@ -481,7 +496,7 @@ export default function LiveDashboardPage() {
                 setPitInLaps('');
               }}
               disabled={pitInMut.isPending}
-              className="px-3 py-1 bg-pit-orange text-asphalt font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+              className="px-3 py-1 bg-pit-orange text-white font-telemetry text-xs uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
             >
               {pitInMut.isPending ? 'Pitting...' : 'Confirm Pit In'}
             </button>
@@ -494,7 +509,7 @@ export default function LiveDashboardPage() {
             type="button"
             onClick={() => setShowPitInForm(true)}
             disabled={pitInMut.isPending || !activeStint}
-            className="px-5 py-2.5 bg-pit-orange text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
+            className="px-5 py-2.5 bg-pit-orange text-white font-telemetry text-sm tracking-wider uppercase hover:bg-pit-orange/80 transition-colors disabled:opacity-50"
           >
             Pit In
           </button>
@@ -503,7 +518,7 @@ export default function LiveDashboardPage() {
           type="button"
           onClick={() => reoptimizeMut.mutate()}
           disabled={reoptimizeMut.isPending}
-          className="px-4 py-2 bg-gold text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
+          className="px-4 py-2 bg-gold text-white font-telemetry text-sm tracking-wider uppercase hover:bg-gold/80 transition-colors disabled:opacity-50"
         >
           {reoptimizeMut.isPending ? 'Re-Optimizing...' : 'Re-Optimize'}
         </button>
@@ -524,6 +539,29 @@ export default function LiveDashboardPage() {
             className="px-4 py-2 bg-marshal-yellow text-asphalt font-telemetry text-sm tracking-wider uppercase hover:bg-marshal-yellow/80 transition-colors disabled:opacity-50"
           >
             {pauseMut.isPending ? 'Pausing...' : 'Pause'}
+          </button>
+        )}
+        {/* Track Condition */}
+        {showConditionMenu ? (
+          <div className="flex items-center gap-1 bg-concrete border border-steel/20 rounded-lg px-2 py-1">
+            {['dry', 'damp', 'wet'].map((c) => (
+              <button key={c} type="button" onClick={() => { setConditionMut.mutate(c); setShowConditionMenu(false); }}
+                className={`px-3 py-1 rounded text-xs font-telemetry uppercase transition-colors ${
+                  (race as any).current_condition === c ? 'bg-marshal-yellow text-white' : 'text-steel hover:text-chalk'
+                }`}
+              >{c}</button>
+            ))}
+            <button type="button" onClick={() => setShowConditionMenu(false)} className="text-steel text-xs ml-1">{'\u2715'}</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setShowConditionMenu(true)}
+            className={`px-4 py-2 border font-telemetry text-sm tracking-wider uppercase transition-colors ${
+              (race as any).current_condition === 'wet' ? 'border-marshal-yellow/40 text-marshal-yellow bg-marshal-yellow/10' :
+              (race as any).current_condition === 'damp' ? 'border-marshal-yellow/30 text-marshal-yellow' :
+              'border-steel/30 text-steel hover:text-chalk'
+            }`}
+          >
+            {(race as any).current_condition || 'Dry'}
           </button>
         )}
         {/* Tech Stop Button */}
@@ -745,7 +783,7 @@ export default function LiveDashboardPage() {
                     <span className="w-5 h-5 rounded-full shrink-0" style={{ backgroundColor: driverColors[activeStint.driver_id] }} />
                     <span className="font-monument text-2xl text-chalk">{activeStint.driver_name}</span>
                     {driverObj?.com_channel && (
-                      <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-wider uppercase border border-steel/30 text-steel">
+                      <span className="inline-flex px-2 py-0.5 text-[10px] font-telemetry tracking-[0.12em] uppercase border border-steel/30 text-steel">
                         COM {driverObj.com_channel}
                       </span>
                     )}
@@ -1220,7 +1258,7 @@ export default function LiveDashboardPage() {
       {/* ── Team Messages ──────────────────────────────── */}
       {state.messages && state.messages.length > 0 && (
         <div className="bg-concrete/50 border border-steel/20 rounded-lg p-4">
-          <h3 className="text-sm font-telemetry text-steel mb-3">TEAM MESSAGES</h3>
+          <h3 className="font-telemetry text-xs text-steel uppercase tracking-wider mb-3">Team Messages</h3>
           <MessageLog messages={state.messages as Array<{ msg_id: number; author: string; message: string; category: string; created_at: string }>} />
         </div>
       )}

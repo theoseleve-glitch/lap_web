@@ -26,7 +26,7 @@ if _root not in sys.path:
     sys.path.insert(0, _root)
 
 from race_state_engine import RaceStateEngine  # noqa: E402
-from race_strategy_v2 import optimize_stints, reoptimize_remaining  # noqa: E402
+from race_strategy_v2 import optimize_stints, optimize_stints_v2, reoptimize_remaining  # noqa: E402
 
 
 def _pg_bool(val, default=False) -> bool:
@@ -103,8 +103,9 @@ def _save_drivers(conn, race_id: int, drivers: list[dict]) -> None:
             """INSERT INTO race_drivers (
                 race_id, driver_name, driver_order, min_stint_s, max_stint_s,
                 min_cumulative_s, max_cumulative_s, min_rest_s, weight_kg,
-                com_channel, color_hex, allow_double_stint, avg_lap_time_s
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                com_channel, color_hex, allow_double_stint, wet_confidence,
+                avg_lap_time_s
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 race_id,
                 name,
@@ -118,6 +119,7 @@ def _save_drivers(conn, race_id: int, drivers: list[dict]) -> None:
                 d.get("com_channel"),
                 d.get("color_hex"),
                 _pg_bool(d.get("allow_double_stint", 0)),
+                d.get("wet_confidence", 0.5),
                 d.get("avg_lap_time_s"),
             ),
         )
@@ -584,7 +586,17 @@ def run_optimization(conn, race_id: int) -> dict:
     ).fetchall())
 
     sleep_windows = _get_sleep_windows(conn, race_id)
-    result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
+    try:
+        weather_windows = []
+        try:
+            from services.race_strategy_weather import get_weather_windows
+            weather_windows = get_weather_windows(conn, race_id)
+        except Exception:
+            pass
+        result = optimize_stints_v2(race, drivers, sleep_windows=sleep_windows, weather_windows=weather_windows)
+    except Exception as exc:
+        logger.warning("V2 optimizer failed, falling back to v1: %s", exc)
+        result = optimize_stints(race, drivers, sleep_windows=sleep_windows)
 
     # Wrap in engine for fuel/ballast cascade
     engine = RaceStateEngine(race, drivers, result["stints"], result["pit_stops"])
@@ -829,6 +841,13 @@ def get_live_state(conn, race_id: int) -> dict | None:
         penalties = []
         active_passage = None
 
+    # Weather windows
+    try:
+        from services.race_strategy_weather import get_weather_windows
+        weather_windows = get_weather_windows(conn, race_id)
+    except Exception:
+        weather_windows = []
+
     return {
         "race": race,
         "drivers": drivers,
@@ -847,6 +866,7 @@ def get_live_state(conn, race_id: int) -> dict | None:
         "penalties": penalties,
         "active_passage": active_passage,
         "total_penalty_laps": sum(p.get("laps_deducted", 0) for p in penalties),
+        "weather_windows": weather_windows,
         **engine_data,
     }
 

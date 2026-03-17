@@ -910,6 +910,150 @@ def tech_stop_out_endpoint(race_id: int):
 
 
 # ---------------------------------------------------------------------------
+# POST /<race_id>/weather-window — add a weather forecast window
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/weather-window", methods=["POST"])
+@rate_limit(tier="write")
+def add_weather_window_endpoint(race_id: int):
+    """Add a weather forecast window to a race.
+
+    Expects JSON body with ``start_s``, ``end_s``, ``condition``, optional ``confidence_pct``.
+
+    Returns:
+        200 with ``{"ok": true}``
+        400 if JSON body is missing or required fields absent.
+        404 if race not found.
+    """
+    data = request.get_json(silent=True) or {}
+    start_s = data.get("start_s")
+    end_s = data.get("end_s")
+    condition = data.get("condition")
+    if start_s is None or end_s is None or not condition:
+        return api_error(ErrorCode.VALIDATION_ERROR, "start_s, end_s, and condition are required", status=400)
+
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_weather import add_weather_window
+        result = add_weather_window(conn, race_id, int(start_s), int(end_s), condition, int(data.get("confidence_pct", 100)))
+        if result is None:
+            return api_error(ErrorCode.NOT_FOUND, "Race not found", status=404)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("add_weather_window failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"add_weather_window: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# PUT /<race_id>/weather-window/<window_id> — update a weather window
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/weather-window/<int:window_id>", methods=["PUT"])
+@rate_limit(tier="write")
+def update_weather_window_endpoint(race_id: int, window_id: int):
+    """Update fields on an existing weather forecast window.
+
+    Accepts any subset of ``start_s``, ``end_s``, ``condition``, ``confidence_pct``.
+
+    Returns:
+        200 with ``{"ok": true}``
+        400 if no updatable fields provided.
+    """
+    data = request.get_json(silent=True) or {}
+    fields = {}
+    for k in ("start_s", "end_s", "condition", "confidence_pct"):
+        if k in data:
+            fields[k] = data[k]
+
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_weather import update_weather_window
+        result = update_weather_window(conn, race_id, window_id, **fields)
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "No updatable fields provided", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("update_weather_window failed for race_id=%s window_id=%s", race_id, window_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"update_weather_window: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# DELETE /<race_id>/weather-window/<window_id> — delete a weather window
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/weather-window/<int:window_id>", methods=["DELETE"])
+@rate_limit(tier="write")
+def delete_weather_window_endpoint(race_id: int, window_id: int):
+    """Delete a weather forecast window.
+
+    Returns:
+        200 with ``{"ok": true}``
+    """
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_weather import delete_weather_window
+        result = delete_weather_window(conn, race_id, window_id)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("delete_weather_window failed for race_id=%s window_id=%s", race_id, window_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"delete_weather_window: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# GET /<race_id>/weather-windows — list weather windows
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/weather-windows", methods=["GET"])
+@rate_limit(tier="read")
+def get_weather_windows_endpoint(race_id: int):
+    """Return all weather forecast windows for a race.
+
+    Returns:
+        200 with ``{"windows": [...]}``
+    """
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_weather import get_weather_windows
+        windows = get_weather_windows(conn, race_id)
+        return api_response({"windows": windows})
+    except Exception as exc:
+        logger.exception("get_weather_windows failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"get_weather_windows: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/condition — set current weather condition
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/condition", methods=["POST"])
+@rate_limit(tier="write")
+def set_condition_endpoint(race_id: int):
+    """Set the current weather condition on the race.
+
+    Expects JSON body with ``condition`` (one of ``dry``, ``damp``, ``wet``).
+
+    Returns:
+        200 with ``{"ok": true, "condition": "..."}``
+        400 if condition is invalid.
+    """
+    data = request.get_json(silent=True) or {}
+    condition = data.get("condition")
+    if condition not in ("dry", "damp", "wet"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "condition must be 'dry', 'damp', or 'wet'", status=400)
+
+    try:
+        conn = get_pg_connection()
+        from services.race_strategy_weather import set_current_condition
+        result = set_current_condition(conn, race_id, condition)
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Invalid condition value", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("set_condition failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"set_condition: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
 # GET /<race_id>/planned-vs-actual — planned vs actual comparison
 # ---------------------------------------------------------------------------
 
