@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { StatCard } from '@/components/app';
 import type { DriverReport as DriverReportType, Stint } from './types';
 
@@ -79,12 +80,15 @@ export function DriverReport({ report, onSelectStint, onBack }: DriverReportProp
       <div className="bg-concrete rounded-xl border border-steel/10 p-6">
         <h3 className="text-lg font-monument text-chalk mb-4">Stints</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {report.stints.map((stint: Stint) => (
-            <button
+          {report.stints.map((stint: Stint) => {
+            const stintSessionId = (stint as any).session_id;
+            const Wrapper = stintSessionId
+              ? ({ children, ...props }: any) => <Link href={`/app/sessions/${stintSessionId}`} {...props}>{children}</Link>
+              : ({ children, ...props }: any) => <button type="button" onClick={() => onSelectStint(stint.stint_number)} {...props}>{children}</button>;
+            return (
+            <Wrapper
               key={stint.stint_number}
-              type="button"
-              onClick={() => onSelectStint(stint.stint_number)}
-              className="text-left bg-asphalt/50 rounded-lg border border-steel/10 p-4 hover:border-steel/30 transition-colors"
+              className="text-left bg-asphalt/50 rounded-lg border border-steel/10 p-4 hover:border-steel/30 transition-colors block"
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="font-telemetry text-chalk text-sm">Stint {stint.stint_number}</span>
@@ -120,8 +124,9 @@ export function DriverReport({ report, onSelectStint, onBack }: DriverReportProp
                   </div>
                 )}
               </div>
-            </button>
-          ))}
+            </Wrapper>
+            );
+          })}
         </div>
         <p className="text-steel/40 text-xs font-body mt-2">Click a stint for detailed lap-by-lap analysis</p>
       </div>

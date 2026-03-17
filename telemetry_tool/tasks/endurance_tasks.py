@@ -290,6 +290,24 @@ def _process_single_stint(
             if lm.get("lap_time_s") and lm["lap_time_s"] > 0
         ]
 
+        # Force persist stint session to DB (run_full_analysis skips in PG+Celery mode)
+        stint_session_id = summary.get("db_session_id")
+        if not stint_session_id:
+            try:
+                from pipeline.stages import s15_persist
+                stint_session_id, _ = s15_persist.run_persist_to_db(
+                    summary,
+                    {"driver_name": driver_name, "session_type": "race", "track_state": condition,
+                     **session_meta},
+                    session_meta.get("track_name", ""),
+                    score_result=score,
+                    driving_style_result=summary.get("driving_style_result"),
+                    driver_tag=driver_name,
+                )
+                summary["db_session_id"] = stint_session_id
+            except Exception as persist_err:
+                logger.warning("Stint %d persist failed (non-fatal): %s", stint_number, persist_err)
+
         # Traffic time loss: triplet analysis on valid lap times
         traffic_losses = []
         traffic_total_s = 0.0
