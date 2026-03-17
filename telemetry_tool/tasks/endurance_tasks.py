@@ -290,21 +290,23 @@ def _process_single_stint(
             if lm.get("lap_time_s") and lm["lap_time_s"] > 0
         ]
 
-        # Force persist stint session to DB (run_full_analysis skips in PG+Celery mode)
+        # Force persist stint session to DB (with all laps, GPS, scores)
         stint_session_id = summary.get("db_session_id")
         if not stint_session_id:
             try:
-                from pipeline.stages import s15_persist
-                stint_session_id, _ = s15_persist.run_persist_to_db(
+                from pipeline.stages.s15_persist import run_persist_to_db
+                stint_session_id = run_persist_to_db(
                     summary,
-                    {"driver_name": driver_name, "session_type": "race", "track_state": condition,
-                     **session_meta},
+                    {**session_meta, "driver_name": driver_name, "session_type": "race", "track_state": condition},
                     session_meta.get("track_name", ""),
                     score_result=score,
                     driving_style_result=summary.get("driving_style_result"),
                     driver_tag=driver_name,
+                    force_persist=True,
                 )
                 summary["db_session_id"] = stint_session_id
+                if stint_session_id:
+                    logger.info("Persisted stint %d session: %s", stint_number, stint_session_id)
             except Exception as persist_err:
                 logger.warning("Stint %d persist failed (non-fatal): %s", stint_number, persist_err)
 

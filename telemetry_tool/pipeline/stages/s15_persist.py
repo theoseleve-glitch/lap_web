@@ -29,6 +29,7 @@ def run_persist_to_db(
     driving_style_result: Optional[dict[str, Any]] = None,
     weather_timeline: Optional[pd.DataFrame] = None,
     driver_tag: str = "",
+    force_persist: bool = False,
 ) -> Optional[str]:
     """Persist results to SQLite DB.
 
@@ -37,9 +38,10 @@ def run_persist_to_db(
 
     When ``USE_PG=1`` this function returns immediately — PostgreSQL
     persistence is handled by the Celery finalize task.
+    Pass ``force_persist=True`` to override this skip (e.g. for endurance stints).
     """
-    # Skip when running under PostgreSQL
-    if os.environ.get("USE_PG", "0") == "1":
+    # Skip when running under PostgreSQL (unless forced)
+    if os.environ.get("USE_PG", "0") == "1" and not force_persist:
         logger.info("Skipping SQLite persist (USE_PG=1; Celery handles DB persistence).")
         return None
 
