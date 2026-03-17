@@ -13,6 +13,7 @@ import { StintConfigFlow } from '@/components/app/endurance/StintConfigFlow';
 import { StintProcessingProgress } from '@/components/app/endurance/StintProcessingProgress';
 import { TeamReport } from '@/components/app/endurance/TeamReport';
 import { DriverReport as DriverReportView } from '@/components/app/endurance/DriverReport';
+import { StintReport } from '@/components/app/endurance/StintReport';
 import type { EnduranceReportResponse } from '@/components/app/endurance/types';
 
 /* ── Types ──────────────────────────────────────────── */
@@ -430,6 +431,7 @@ function UploadPage() {
   const [enduranceStintConfigs, setEnduranceStintConfigs] = useState<any[]>([]);
   const [enduranceReport, setEnduranceReport] = useState<EnduranceReportResponse | null>(null);
   const [enduranceSelectedDriver, setEnduranceSelectedDriver] = useState<string | null>(null);
+  const [enduranceSelectedStint, setEnduranceSelectedStint] = useState<number | null>(null);
 
   // Pre-fill driver name from user profile
   useEffect(() => {
@@ -1381,11 +1383,22 @@ function UploadPage() {
               jobId={enduranceJobId}
               onLoaded={setEnduranceReport}
             />
+          ) : enduranceSelectedStint != null && enduranceSelectedDriver ? (
+            (() => {
+              const sr = (enduranceReport as any).stint_results?.find((s: any) => s.stint_number === enduranceSelectedStint);
+              return (
+                <StintReport
+                  sessionId=""
+                  stint={sr || {}}
+                  onBack={() => setEnduranceSelectedStint(null)}
+                />
+              );
+            })()
           ) : enduranceSelectedDriver ? (
             <DriverReportView
               report={enduranceReport.drivers[enduranceSelectedDriver]}
-              onSelectStint={() => {}}
-              onBack={() => setEnduranceSelectedDriver(null)}
+              onSelectStint={(sn) => setEnduranceSelectedStint(sn)}
+              onBack={() => { setEnduranceSelectedDriver(null); setEnduranceSelectedStint(null); }}
             />
           ) : (
             <TeamReport
