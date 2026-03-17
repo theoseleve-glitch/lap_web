@@ -1,0 +1,129 @@
+<h2>Corner Detail View — Layout</h2>
+<p class="subtitle">When a driver clicks a corner on the track map, this full-screen view appears. Back button returns to map.</p>
+
+<div class="mockup">
+  <div class="mockup-header">Corner 3 — Right Hairpin</div>
+  <div class="mockup-body" style="background:#1a1a1a; color:#e8e4dc; font-family:system-ui; padding:0;">
+
+    <!-- Top bar -->
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-bottom:1px solid #333;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <span style="color:#888; cursor:pointer; font-size:14px;">← Back to track</span>
+        <span style="font-size:18px; font-weight:700; letter-spacing:1px;">CORNER 3</span>
+        <span style="background:#333; color:#888; font-size:11px; padding:2px 8px; border-radius:4px;">RIGHT HAIRPIN</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <span style="background:#222; border:1px solid #444; color:#888; font-size:11px; padding:4px 10px; border-radius:4px; cursor:pointer;">← Prev</span>
+        <span style="background:#222; border:1px solid #444; color:#888; font-size:11px; padding:4px 10px; border-radius:4px; cursor:pointer;">Next →</span>
+      </div>
+    </div>
+
+    <!-- SECTION 1: The Verdict (headline) -->
+    <div style="padding:20px; border-bottom:1px solid #333;">
+      <div style="display:flex; gap:24px; align-items:flex-start;">
+        <!-- Time loss badge -->
+        <div style="text-align:center; min-width:100px;">
+          <div style="font-size:36px; font-weight:700; color:#FF2A2A; font-family:monospace;">-0.34s</div>
+          <div style="font-size:10px; color:#888; text-transform:uppercase; letter-spacing:1px; margin-top:4px;">Time Lost</div>
+        </div>
+        <!-- Cause + tip -->
+        <div style="flex:1;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+            <span style="background:#FF2A2A22; color:#FF6B6B; font-size:11px; padding:3px 10px; border-radius:4px; font-weight:600;">LATE BRAKING</span>
+            <span style="color:#666; font-size:11px;">Entry phase</span>
+          </div>
+          <p style="color:#ccc; font-size:14px; line-height:1.5; margin:0;">
+            You're braking 8m too late into this corner, forcing a tighter line and scrubbing 4 km/h at the apex.
+            <strong style="color:#C6F135;">Try braking at the 50m board instead of the 42m mark.</strong>
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: Speed Comparison Bars -->
+    <div style="padding:20px; border-bottom:1px solid #333;">
+      <div style="font-size:11px; color:#888; text-transform:uppercase; letter-spacing:1px; margin-bottom:16px;">Speed Comparison — Actual vs Theoretical</div>
+
+      <!-- Entry -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+          <span style="color:#888;">Entry</span>
+          <span style="color:#FF6B6B; font-family:monospace;">-6.2 km/h</span>
+        </div>
+        <div style="position:relative; height:20px; background:#222; border-radius:3px; overflow:hidden;">
+          <div style="position:absolute; top:0; left:0; height:100%; width:78%; background:linear-gradient(90deg, #C6F13544, #C6F13588); border-radius:3px;"></div>
+          <div style="position:absolute; top:0; left:0; height:100%; width:85%; border-right:2px dashed #C6F135; box-sizing:border-box;"></div>
+          <span style="position:absolute; left:8px; top:2px; font-size:11px; color:#e8e4dc; font-family:monospace;">82.3 km/h</span>
+          <span style="position:absolute; right:8px; top:2px; font-size:11px; color:#C6F135; font-family:monospace;">88.5</span>
+        </div>
+      </div>
+
+      <!-- Apex -->
+      <div style="margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+          <span style="color:#888;">Apex</span>
+          <span style="color:#FF6B6B; font-family:monospace;">-4.1 km/h</span>
+        </div>
+        <div style="position:relative; height:20px; background:#222; border-radius:3px; overflow:hidden;">
+          <div style="position:absolute; top:0; left:0; height:100%; width:62%; background:linear-gradient(90deg, #C6F13544, #C6F13588); border-radius:3px;"></div>
+          <div style="position:absolute; top:0; left:0; height:100%; width:68%; border-right:2px dashed #C6F135; box-sizing:border-box;"></div>
+          <span style="position:absolute; left:8px; top:2px; font-size:11px; color:#e8e4dc; font-family:monospace;">54.8 km/h</span>
+          <span style="position:absolute; right:8px; top:2px; font-size:11px; color:#C6F135; font-family:monospace;">58.9</span>
+        </div>
+      </div>
+
+      <!-- Exit -->
+      <div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-bottom:4px;">
+          <span style="color:#888;">Exit</span>
+          <span style="color:#C6F135; font-family:monospace;">+0.8 km/h</span>
+        </div>
+        <div style="position:relative; height:20px; background:#222; border-radius:3px; overflow:hidden;">
+          <div style="position:absolute; top:0; left:0; height:100%; width:73%; background:linear-gradient(90deg, #C6F13544, #C6F13588); border-radius:3px;"></div>
+          <div style="position:absolute; top:0; left:0; height:100%; width:71%; border-right:2px dashed #C6F135; box-sizing:border-box;"></div>
+          <span style="position:absolute; left:8px; top:2px; font-size:11px; color:#e8e4dc; font-family:monospace;">67.1 km/h</span>
+          <span style="position:absolute; right:8px; top:2px; font-size:11px; color:#C6F135; font-family:monospace;">66.3</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: Below the fold — collapsible sections (shown as headers) -->
+    <div style="padding:16px 20px; border-bottom:1px solid #292929;">
+      <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+        <span style="font-size:13px; color:#e8e4dc; font-weight:600;">Lap-by-Lap Breakdown</span>
+        <span style="color:#888; font-size:18px;">▸</span>
+      </div>
+      <p style="font-size:11px; color:#666; margin:4px 0 0;">Apex speed, brake point, exit speed across all laps — see your consistency</p>
+    </div>
+
+    <div style="padding:16px 20px; border-bottom:1px solid #292929;">
+      <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+        <span style="font-size:13px; color:#e8e4dc; font-weight:600;">Physics Deep-Dive</span>
+        <span style="color:#888; font-size:18px;">▸</span>
+      </div>
+      <p style="font-size:11px; color:#666; margin:4px 0 0;">Trail braking zones, traction budget, exit speed cascade, grip utilization</p>
+    </div>
+
+    <div style="padding:16px 20px; border-bottom:1px solid #292929;">
+      <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+        <span style="font-size:13px; color:#e8e4dc; font-weight:600;">Handling Events</span>
+        <span style="color:#888; font-size:18px;">▸</span>
+      </div>
+      <p style="font-size:11px; color:#666; margin:4px 0 0;">Understeer / oversteer events detected at this corner, with severity and phase</p>
+    </div>
+
+    <div style="padding:16px 20px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+        <span style="font-size:13px; color:#e8e4dc; font-weight:600;">Progressive Steps</span>
+        <span style="color:#888; font-size:18px;">▸</span>
+      </div>
+      <p style="font-size:11px; color:#666; margin:4px 0 0;">Step-by-step improvement plan: what to try next session</p>
+    </div>
+
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:24px;">
+  <strong>Above the fold:</strong> Verdict (time loss + cause + tip) and speed bars (actual vs theoretical).<br>
+  <strong>Below the fold:</strong> 4 expandable sections for deeper analysis. Does this hierarchy feel right?
+</p>

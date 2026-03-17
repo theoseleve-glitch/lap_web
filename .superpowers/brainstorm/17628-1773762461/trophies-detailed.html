@@ -1,0 +1,203 @@
+<h2>Trophy Detail Level — Which feels premium?</h2>
+<p class="subtitle">Custom SVG trophies instead of emoji. Click the style you prefer.</p>
+
+<div class="cards">
+  <!-- Option A: Detailed SVG trophies -->
+  <div class="card" data-choice="detailed-svg" onclick="toggleSelect(this)">
+    <div class="card-image" style="background:#0B0C0F; padding:32px; min-height:320px;">
+      <div style="text-align:center; margin-bottom:20px; font-family:monospace; font-size:10px; color:#888; text-transform:uppercase; letter-spacing:2px;">Custom SVG Trophies</div>
+      <div style="display:flex; justify-content:center; gap:32px; flex-wrap:wrap;">
+
+        <!-- Pace Trophy: Racing helmet -->
+        <div style="text-align:center;">
+          <div style="width:80px; height:80px; margin:0 auto 8px; position:relative;">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <!-- Hex badge frame -->
+              <defs>
+                <linearGradient id="gold1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#FFD700"/>
+                  <stop offset="50%" style="stop-color:#FFA500"/>
+                  <stop offset="100%" style="stop-color:#FFD700"/>
+                </linearGradient>
+                <filter id="glow1"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#gold1)" stroke-width="2.5" filter="url(#glow1)"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>
+              <!-- Racing helmet icon -->
+              <g transform="translate(22,18) scale(0.45)">
+                <path d="M40 10 C20 10 5 25 5 45 C5 55 10 62 18 66 L20 60 C20 55 25 52 35 52 L50 52 C55 52 60 48 62 42 L70 25 C65 15 55 10 40 10Z" fill="#FFD700" opacity="0.9"/>
+                <path d="M35 52 L50 52 C55 52 60 48 62 42 L70 25" fill="none" stroke="#FFA500" stroke-width="2"/>
+                <ellipse cx="30" cy="38" rx="8" ry="6" fill="#0B0C0F" opacity="0.7"/>
+                <path d="M5 45 C5 55 10 62 18 66" fill="none" stroke="#FFA500" stroke-width="1.5"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:system-ui; font-size:11px; color:#F0EDE5; font-weight:700;">Pace Master</div>
+          <div style="font-family:monospace; font-size:9px; color:#FFD400;">GOLD</div>
+        </div>
+
+        <!-- Consistency Trophy: Stopwatch -->
+        <div style="text-align:center;">
+          <div style="width:80px; height:80px; margin:0 auto 8px; position:relative;">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <defs>
+                <linearGradient id="silver1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#E8E8E8"/>
+                  <stop offset="50%" style="stop-color:#A0A0A0"/>
+                  <stop offset="100%" style="stop-color:#E8E8E8"/>
+                </linearGradient>
+                <filter id="glow2"><feGaussianBlur stdDeviation="1.5" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#silver1)" stroke-width="2.5" filter="url(#glow2)"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>
+              <!-- Stopwatch icon -->
+              <g transform="translate(24,18) scale(0.5)">
+                <circle cx="32" cy="38" r="24" fill="none" stroke="#C0C0C0" stroke-width="3"/>
+                <circle cx="32" cy="38" r="20" fill="none" stroke="#888" stroke-width="1"/>
+                <line x1="32" y1="38" x2="32" y2="22" stroke="#E8E8E8" stroke-width="2.5" stroke-linecap="round"/>
+                <line x1="32" y1="38" x2="44" y2="38" stroke="#C0C0C0" stroke-width="2" stroke-linecap="round"/>
+                <circle cx="32" cy="38" r="3" fill="#E8E8E8"/>
+                <rect x="29" y="8" width="6" height="8" rx="2" fill="#C0C0C0"/>
+                <line x1="48" y1="18" x2="54" y2="12" stroke="#C0C0C0" stroke-width="2" stroke-linecap="round"/>
+                <!-- Tick marks -->
+                <line x1="32" y1="16" x2="32" y2="19" stroke="#666" stroke-width="1"/>
+                <line x1="32" y1="57" x2="32" y2="60" stroke="#666" stroke-width="1"/>
+                <line x1="10" y1="38" x2="13" y2="38" stroke="#666" stroke-width="1"/>
+                <line x1="51" y1="38" x2="54" y2="38" stroke="#666" stroke-width="1"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:system-ui; font-size:11px; color:#F0EDE5; font-weight:700;">Consistency</div>
+          <div style="font-family:monospace; font-size:9px; color:#C0C0C0;">SILVER</div>
+        </div>
+
+        <!-- Execution Trophy: Steering wheel -->
+        <div style="text-align:center;">
+          <div style="width:80px; height:80px; margin:0 auto 8px; position:relative;">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <defs>
+                <linearGradient id="bronze1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#CD7F32"/>
+                  <stop offset="50%" style="stop-color:#8B4513"/>
+                  <stop offset="100%" style="stop-color:#CD7F32"/>
+                </linearGradient>
+              </defs>
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#bronze1)" stroke-width="2.5"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>
+              <!-- Steering wheel -->
+              <g transform="translate(20,20) scale(0.5)">
+                <circle cx="40" cy="40" r="28" fill="none" stroke="#CD7F32" stroke-width="5"/>
+                <circle cx="40" cy="40" r="8" fill="#CD7F32" opacity="0.6"/>
+                <circle cx="40" cy="40" r="5" fill="#0B0C0F"/>
+                <line x1="40" y1="32" x2="40" y2="14" stroke="#CD7F32" stroke-width="3" stroke-linecap="round"/>
+                <line x1="33" y1="44" x2="18" y2="54" stroke="#CD7F32" stroke-width="3" stroke-linecap="round"/>
+                <line x1="47" y1="44" x2="62" y2="54" stroke="#CD7F32" stroke-width="3" stroke-linecap="round"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:system-ui; font-size:11px; color:#F0EDE5; font-weight:700;">Execution</div>
+          <div style="font-family:monospace; font-size:9px; color:#CD7F32;">BRONZE</div>
+        </div>
+
+        <!-- Robustness Trophy: Shield/engine -->
+        <div style="text-align:center;">
+          <div style="width:80px; height:80px; margin:0 auto 8px; position:relative;">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <defs>
+                <linearGradient id="gold2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#FFD700"/>
+                  <stop offset="50%" style="stop-color:#FFA500"/>
+                  <stop offset="100%" style="stop-color:#FFD700"/>
+                </linearGradient>
+                <filter id="glow3"><feGaussianBlur stdDeviation="2" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#gold2)" stroke-width="2.5" filter="url(#glow3)"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>
+              <!-- Shield icon -->
+              <g transform="translate(22,16) scale(0.45)">
+                <path d="M40 5 L70 18 L70 48 C70 62 55 72 40 78 C25 72 10 62 10 48 L10 18 Z" fill="none" stroke="#FFD700" stroke-width="3"/>
+                <path d="M40 12 L62 22 L62 46 C62 56 52 64 40 69 C28 64 18 56 18 46 L18 22 Z" fill="rgba(255,215,0,0.08)"/>
+                <!-- Checkered flag inside -->
+                <rect x="30" y="30" width="8" height="8" fill="#FFD700" opacity="0.6"/>
+                <rect x="38" y="30" width="8" height="8" fill="#FFD700" opacity="0.3"/>
+                <rect x="30" y="38" width="8" height="8" fill="#FFD700" opacity="0.3"/>
+                <rect x="38" y="38" width="8" height="8" fill="#FFD700" opacity="0.6"/>
+                <rect x="30" y="46" width="8" height="8" fill="#FFD700" opacity="0.6"/>
+                <rect x="38" y="46" width="8" height="8" fill="#FFD700" opacity="0.3"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:system-ui; font-size:11px; color:#F0EDE5; font-weight:700;">Endurance</div>
+          <div style="font-family:monospace; font-size:9px; color:#FFD400;">GOLD</div>
+        </div>
+
+        <!-- Locked -->
+        <div style="text-align:center; opacity:0.35;">
+          <div style="width:80px; height:80px; margin:0 auto 8px; position:relative;">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="#333" stroke-width="2"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#111"/>
+              <!-- Lock icon -->
+              <g transform="translate(28,24) scale(0.4)">
+                <rect x="10" y="35" width="40" height="30" rx="4" fill="#333" stroke="#444" stroke-width="2"/>
+                <path d="M18 35 V25 C18 14 42 14 42 25 V35" fill="none" stroke="#444" stroke-width="3"/>
+                <circle cx="30" cy="48" r="4" fill="#555"/>
+                <rect x="28" y="48" width="4" height="8" fill="#555"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:system-ui; font-size:11px; color:#444; font-weight:700;">Hidden</div>
+          <div style="font-family:monospace; font-size:9px; color:#333;">LOCKED</div>
+        </div>
+      </div>
+
+      <!-- Full unlock popup preview with SVG trophy -->
+      <div style="margin-top:32px; display:flex; justify-content:center;">
+        <div style="width:380px; background:linear-gradient(180deg, rgba(255,212,0,0.06) 0%, rgba(182,255,46,0.02) 50%, transparent 100%); border:1px solid rgba(255,212,0,0.2); border-radius:16px; padding:24px; text-align:center;">
+          <div style="width:96px; height:96px; margin:0 auto 12px; position:relative;">
+            <div style="position:absolute; inset:-12px; background:radial-gradient(circle, rgba(255,212,0,0.2) 0%, transparent 70%); border-radius:50%;"></div>
+            <svg viewBox="0 0 80 80" width="96" height="96">
+              <defs>
+                <linearGradient id="goldUnlock" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#FFD700"/>
+                  <stop offset="50%" style="stop-color:#FFA500"/>
+                  <stop offset="100%" style="stop-color:#FFD700"/>
+                </linearGradient>
+                <filter id="glowUnlock"><feGaussianBlur stdDeviation="3" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+              </defs>
+              <polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#goldUnlock)" stroke-width="2" filter="url(#glowUnlock)"/>
+              <polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>
+              <!-- Trophy cup -->
+              <g transform="translate(18,14) scale(0.55)">
+                <path d="M25 10 L55 10 L52 45 C52 50 47 55 40 55 C33 55 28 50 28 45 Z" fill="none" stroke="#FFD700" stroke-width="2.5"/>
+                <path d="M28 10 L52 10 L50 40 C50 47 45 51 40 51 C35 51 30 47 30 40 Z" fill="rgba(255,215,0,0.1)"/>
+                <!-- Handles -->
+                <path d="M25 15 C15 15 10 25 15 35 L28 30" fill="none" stroke="#FFD700" stroke-width="2"/>
+                <path d="M55 15 C65 15 70 25 65 35 L52 30" fill="none" stroke="#FFD700" stroke-width="2"/>
+                <!-- Base -->
+                <rect x="34" y="55" width="12" height="6" rx="1" fill="#FFD700" opacity="0.7"/>
+                <rect x="28" y="61" width="24" height="4" rx="2" fill="#FFD700" opacity="0.5"/>
+                <!-- Star -->
+                <polygon points="40,22 43,30 51,30 45,35 47,43 40,38 33,43 35,35 29,30 37,30" fill="#FFD700" opacity="0.8"/>
+              </g>
+            </svg>
+          </div>
+          <div style="font-family:monospace; font-size:10px; color:#FFD400; text-transform:uppercase; letter-spacing:3px; margin-bottom:4px;">Achievement Unlocked</div>
+          <div style="font-family:system-ui; font-size:22px; color:#F0EDE5; font-weight:800;">Flow State</div>
+          <div style="font-family:monospace; font-size:11px; color:#888; margin-top:4px;">Overall score above 90% · Gold Tier</div>
+          <div style="display:flex; gap:6px; justify-content:center; margin-top:12px;">
+            <div style="width:8px; height:8px; border-radius:50%; background:#CD7F32;"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:#C0C0C0;"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:#FFD400; box-shadow:0 0 8px rgba(255,212,0,0.5);"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>Custom SVG Trophies</h3>
+      <p>Unique icon per category: helmet (pace), stopwatch (consistency), steering wheel (execution), shield+checkered (endurance), trophy cup (overall). Each rendered as crisp vector with tier-colored gradients and glow. Scales to any size for cards, popups, and share images.</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:20px; font-size:13px; color:#888;">These are static previews — in the app they'll have CSS keyframe animations: badge scales up with a bounce, glow pulses, then settles. The hex frame draws itself stroke-dasharray style.</p>

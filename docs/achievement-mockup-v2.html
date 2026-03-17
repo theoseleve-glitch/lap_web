@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Achievement System â€” Visual Mockup</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0B0C0F; color:#F0EDE5; font-family:system-ui,-apple-system,sans-serif; padding:32px; }
+  h1 { font-size:24px; font-weight:800; margin-bottom:8px; }
+  h2 { font-size:18px; font-weight:700; margin:40px 0 8px; color:#B6FF2E; }
+  .subtitle { font-size:13px; color:#888; margin-bottom:24px; }
+  .section { background:#141414; border:1px solid rgba(136,136,136,0.1); border-radius:16px; padding:28px; margin-bottom:24px; }
+  .badge-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(100px, 1fr)); gap:16px; }
+  .badge-cell { text-align:center; padding:12px 8px; border-radius:12px; transition:transform 0.2s; cursor:pointer; }
+  .badge-cell:hover { transform:scale(1.08); }
+  .badge-cell.gold { background:rgba(255,212,0,0.04); border:1px solid rgba(255,212,0,0.2); }
+  .badge-cell.silver { background:rgba(192,192,192,0.04); border:1px solid rgba(192,192,192,0.15); }
+  .badge-cell.bronze { background:rgba(205,127,50,0.04); border:1px solid rgba(205,127,50,0.15); }
+  .badge-cell.locked { background:rgba(50,50,50,0.3); border:1px solid rgba(50,50,50,0.3); opacity:0.35; pointer-events:none; }
+  .badge-name { font-size:11px; font-weight:700; margin-top:6px; }
+  .badge-tier { font-family:monospace; font-size:9px; margin-top:2px; }
+  .badge-tier.gold { color:#FFD400; }
+  .badge-tier.silver { color:#C0C0C0; }
+  .badge-tier.bronze { color:#CD7F32; }
+  .share-card { width:560px; height:294px; background:linear-gradient(135deg, #0B0C0F 0%, #1a1a2e 100%); border:1px solid rgba(182,255,46,0.15); border-radius:14px; padding:28px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:space-between; }
+  .licence-card { width:480px; border-radius:14px; padding:22px; background:linear-gradient(135deg, rgba(0,212,255,0.06), transparent); border:1px solid rgba(0,212,255,0.2); }
+  .progress-bar { height:6px; background:#1a1a2e; border-radius:3px; overflow:hidden; margin-top:8px; }
+  .progress-fill { height:100%; border-radius:3px; }
+  .ladder { display:flex; gap:6px; margin-top:16px; }
+  .ladder-step { flex:1; text-align:center; padding:8px 2px; border-radius:6px; border-bottom:2px solid; font-family:monospace; font-size:8px; text-transform:uppercase; letter-spacing:1px; }
+  .unlock-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:100; cursor:pointer; }
+  .unlock-overlay.active { display:flex; }
+  .unlock-card { width:420px; background:linear-gradient(180deg, rgba(255,212,0,0.06) 0%, rgba(182,255,46,0.02) 50%, transparent 100%); border:1px solid rgba(255,212,0,0.2); border-radius:20px; padding:32px; text-align:center; animation:popIn 0.5s cubic-bezier(0.34,1.56,0.64,1); cursor:default; }
+  @keyframes popIn { 0%{transform:scale(0.3);opacity:0} 100%{transform:scale(1);opacity:1} }
+  @keyframes glowPulse { 0%,100%{opacity:0.15} 50%{opacity:0.35} }
+  .unlock-glow { position:absolute; inset:-16px; background:radial-gradient(circle, rgba(255,212,0,0.2) 0%, transparent 70%); border-radius:50%; animation:glowPulse 2s ease-in-out infinite; }
+  .demo-btn { background:rgba(182,255,46,0.1); border:1px solid rgba(182,255,46,0.3); color:#B6FF2E; padding:8px 16px; border-radius:8px; font-family:monospace; font-size:12px; cursor:pointer; }
+  .demo-btn:hover { background:rgba(182,255,46,0.2); }
+</style>
+</head>
+<body>
+
+<h1>Achievement System â€” Visual Mockup</h1>
+<p class="subtitle">Click any earned badge to see the unlock animation. Click "Demo Unlock" for the full effect.</p>
+
+<!-- TROPHY CABINET -->
+<h2>1. Trophy Cabinet</h2>
+<div class="section">
+  <div style="display:flex; gap:32px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid rgba(136,136,136,0.1);">
+    <div style="text-align:center;"><div style="font-size:32px; font-weight:800; color:#B6FF2E;">12</div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase; letter-spacing:1px;">Earned</div></div>
+    <div style="text-align:center;"><div style="font-size:32px; font-weight:800; color:#FFD400;">3</div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase; letter-spacing:1px;">Gold</div></div>
+    <div style="text-align:center;"><div style="font-size:32px; font-weight:800; color:#888;">5</div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase; letter-spacing:1px;">Locked</div></div>
+  </div>
+  <div class="badge-grid" id="badgeGrid"></div>
+  <div style="margin-top:16px;"><button class="demo-btn" id="demoBtn">Demo Unlock Animation</button></div>
+</div>
+
+<!-- SHAREABLE SESSION CARD -->
+<h2>2. Shareable Session Card</h2>
+<div class="section" style="display:flex; justify-content:center;">
+  <div class="share-card">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+      <div>
+        <div style="font-family:monospace; font-size:9px; color:#B6FF2E; text-transform:uppercase; letter-spacing:2px;">Lap Coach Racing</div>
+        <div style="font-size:20px; font-weight:800; margin-top:4px;">Karting Sprint Session</div>
+        <div style="font-family:monospace; font-size:11px; color:#888; margin-top:2px;">Circuit de Bresse Â· Mar 17, 2026</div>
+      </div>
+      <div style="width:52px; height:52px; background:rgba(182,255,46,0.1); border:2px solid #B6FF2E; border-radius:10px; display:flex; align-items:center; justify-content:center;">
+        <span style="font-size:24px; font-weight:900; color:#B6FF2E;">B</span>
+      </div>
+    </div>
+    <div style="display:flex; gap:28px;">
+      <div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase;">Best Lap</div><div style="font-family:monospace; font-size:22px; color:#B6FF2E; font-weight:bold;">0:47.346</div></div>
+      <div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase;">Score</div><div style="font-family:monospace; font-size:22px; font-weight:bold;">71<span style="font-size:13px; color:#888;">/100</span></div></div>
+      <div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase;">Laps</div><div style="font-family:monospace; font-size:22px; font-weight:bold;">62</div></div>
+      <div><div style="font-family:monospace; font-size:9px; color:#888; text-transform:uppercase;">CV%</div><div style="font-family:monospace; font-size:22px; color:#00d4ff; font-weight:bold;">1.2%</div></div>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <span style="font-family:monospace; font-size:9px; color:#555;">2 badges earned</span>
+      <span style="flex:1;"></span>
+      <span style="font-family:monospace; font-size:9px; color:#B6FF2E;">lap-coach.racing</span>
+    </div>
+  </div>
+</div>
+
+<!-- LICENCE PROGRESSION -->
+<h2>3. Licence Progression</h2>
+<div class="section" style="display:flex; justify-content:center;">
+  <div style="width:480px;">
+    <div class="licence-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+        <div>
+          <div style="font-family:monospace; font-size:9px; color:#00d4ff; text-transform:uppercase; letter-spacing:2px;">Current Licence</div>
+          <div style="font-size:28px; font-weight:900;">National</div>
+        </div>
+        <div style="width:60px; height:60px; background:linear-gradient(135deg, #00d4ff, #0066ff); border-radius:10px; display:flex; align-items:center; justify-content:center;">
+          <span style="font-size:28px; font-weight:900; color:white;">N</span>
+        </div>
+      </div>
+      <div style="font-family:monospace; font-size:10px; color:#888;">Progress to <span style="color:#D946EF; font-weight:700;">Pro</span></div>
+      <div class="progress-bar"><div class="progress-fill" style="width:65%; background:linear-gradient(90deg, #00d4ff, #D946EF);"></div></div>
+      <div style="display:flex; justify-content:space-between; margin-top:6px; font-family:monospace; font-size:9px; color:#555;">
+        <span>325 / 500 laps</span><span>Score 72 / 75 needed</span>
+      </div>
+    </div>
+    <div class="ladder">
+      <div class="ladder-step" style="border-color:#888; background:rgba(136,136,136,0.06); color:#888;">Rookie</div>
+      <div class="ladder-step" style="border-color:#B6FF2E; background:rgba(182,255,46,0.06); color:#B6FF2E;">Club</div>
+      <div class="ladder-step" style="border-color:#00d4ff; background:rgba(0,212,255,0.08); color:#00d4ff; font-weight:bold;">National</div>
+      <div class="ladder-step" style="border-color:#555; color:#555;">Pro</div>
+      <div class="ladder-step" style="border-color:#333; color:#333;">Elite</div>
+      <div class="ladder-step" style="border-color:#222; color:#222;">Legend</div>
+    </div>
+  </div>
+</div>
+
+<!-- UNLOCK OVERLAY -->
+<div class="unlock-overlay" id="unlockOverlay">
+  <div class="unlock-card" id="unlockCard">
+    <div style="width:100px; height:100px; margin:0 auto 16px; position:relative;">
+      <div class="unlock-glow"></div>
+      <svg id="unlockSvg" viewBox="0 0 80 80" width="100" height="100"></svg>
+    </div>
+    <div style="font-family:monospace; font-size:10px; color:#FFD400; text-transform:uppercase; letter-spacing:3px; margin-bottom:6px;">Achievement Unlocked</div>
+    <div style="font-size:24px; font-weight:800;" id="unlockTitle"></div>
+    <div style="font-family:monospace; font-size:11px; color:#888; margin-top:6px;" id="unlockDesc"></div>
+    <div style="display:flex; gap:6px; justify-content:center; margin-top:14px;" id="unlockDots"></div>
+    <button class="demo-btn" style="margin-top:16px;" id="dismissBtn">Dismiss</button>
+  </div>
+</div>
+
+<script>
+// Badge data
+const badges = [
+  { name:'Pace Master', tier:'gold', icon:'helmet', desc:'Within 2% of theoretical best' },
+  { name:'Endurance Warrior', tier:'gold', icon:'shield', desc:'Pace fade less than 1%' },
+  { name:'Consistency', tier:'silver', icon:'stopwatch', desc:'CV below 1%' },
+  { name:'Execution', tier:'bronze', icon:'wheel', desc:'85%+ speed efficiency' },
+  { name:'Flow State', tier:'gold', icon:'trophy', desc:'Overall score above 90%' },
+  { name:'???', tier:'locked', icon:'lock', desc:'' },
+  { name:'???', tier:'locked', icon:'lock', desc:'' },
+];
+
+const tierColors = { gold:'#FFD700', silver:'#C0C0C0', bronze:'#CD7F32' };
+const tierGradEnd = { gold:'#FFA500', silver:'#888', bronze:'#8B4513' };
+
+function hexSvg(color1, color2, iconPath, glow) {
+  return '<defs>'
+    + '<linearGradient id="hg_' + color1.replace('#','') + '" x1="0%" y1="0%" x2="100%" y2="100%">'
+    + '<stop offset="0%" style="stop-color:' + color1 + '"/>'
+    + '<stop offset="100%" style="stop-color:' + color2 + '"/>'
+    + '</linearGradient>'
+    + (glow ? '<filter id="hgl_' + color1.replace('#','') + '"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' : '')
+    + '</defs>'
+    + '<polygon points="40,2 74,21 74,59 40,78 6,59 6,21" fill="none" stroke="url(#hg_' + color1.replace('#','') + ')" stroke-width="2.5"'
+    + (glow ? ' filter="url(#hgl_' + color1.replace('#','') + ')"' : '') + '/>'
+    + '<polygon points="40,6 71,23 71,57 40,74 9,57 9,23" fill="#0B0C0F"/>'
+    + iconPath;
+}
+
+const icons = {
+  helmet: '<g transform="translate(22,18) scale(0.45)"><path d="M40 10 C20 10 5 25 5 45 C5 55 10 62 18 66 L20 60 C20 55 25 52 35 52 L50 52 C55 52 60 48 62 42 L70 25 C65 15 55 10 40 10Z" fill="CCC" opacity="0.85"/><ellipse cx="30" cy="38" rx="8" ry="6" fill="#0B0C0F" opacity="0.7"/></g>',
+  shield: '<g transform="translate(22,16) scale(0.45)"><path d="M40 5 L70 18 L70 48 C70 62 55 72 40 78 C25 72 10 62 10 48 L10 18 Z" fill="none" stroke="CCC" stroke-width="3"/><path d="M40 12 L62 22 L62 46 C62 56 52 64 40 69 C28 64 18 56 18 46 L18 22 Z" fill="CCC11"/><rect x="30" y="30" width="8" height="8" fill="CCC" opacity="0.6"/><rect x="38" y="30" width="8" height="8" fill="CCC" opacity="0.3"/><rect x="30" y="38" width="8" height="8" fill="CCC" opacity="0.3"/><rect x="38" y="38" width="8" height="8" fill="CCC" opacity="0.6"/></g>',
+  stopwatch: '<g transform="translate(24,18) scale(0.5)"><circle cx="32" cy="38" r="24" fill="none" stroke="CCC" stroke-width="3"/><circle cx="32" cy="38" r="20" fill="none" stroke="CCC" stroke-width="1" opacity="0.4"/><line x1="32" y1="38" x2="32" y2="22" stroke="CCC" stroke-width="2.5" stroke-linecap="round"/><line x1="32" y1="38" x2="44" y2="38" stroke="CCC" stroke-width="2" stroke-linecap="round" opacity="0.7"/><circle cx="32" cy="38" r="3" fill="CCC"/><rect x="29" y="8" width="6" height="8" rx="2" fill="CCC" opacity="0.7"/></g>',
+  wheel: '<g transform="translate(20,20) scale(0.5)"><circle cx="40" cy="40" r="28" fill="none" stroke="CCC" stroke-width="5"/><circle cx="40" cy="40" r="5" fill="#0B0C0F"/><circle cx="40" cy="40" r="8" fill="CCC" opacity="0.4"/><line x1="40" y1="32" x2="40" y2="14" stroke="CCC" stroke-width="3" stroke-linecap="round"/><line x1="33" y1="44" x2="18" y2="54" stroke="CCC" stroke-width="3" stroke-linecap="round"/><line x1="47" y1="44" x2="62" y2="54" stroke="CCC" stroke-width="3" stroke-linecap="round"/></g>',
+  trophy: '<g transform="translate(18,14) scale(0.55)"><path d="M25 10 L55 10 L52 45 C52 50 47 55 40 55 C33 55 28 50 28 45 Z" fill="none" stroke="CCC" stroke-width="2.5"/><path d="M28 10 L52 10 L50 40 C50 47 45 51 40 51 C35 51 30 47 30 40 Z" fill="CCC11"/><path d="M25 15 C15 15 10 25 15 35 L28 30" fill="none" stroke="CCC" stroke-width="2"/><path d="M55 15 C65 15 70 25 65 35 L52 30" fill="none" stroke="CCC" stroke-width="2"/><rect x="34" y="55" width="12" height="6" rx="1" fill="CCC" opacity="0.7"/><rect x="28" y="61" width="24" height="4" rx="2" fill="CCC" opacity="0.5"/><polygon points="40,22 43,30 51,30 45,35 47,43 40,38 33,43 35,35 29,30 37,30" fill="CCC" opacity="0.8"/></g>',
+  lock: '<g transform="translate(28,24) scale(0.4)"><rect x="10" y="35" width="40" height="30" rx="4" fill="#333" stroke="#444" stroke-width="2"/><path d="M18 35 V25 C18 14 42 14 42 25 V35" fill="none" stroke="#444" stroke-width="3"/><circle cx="30" cy="48" r="4" fill="#555"/></g>',
+};
+
+function colorIcon(iconKey, color) {
+  return (icons[iconKey] || '').replace(/CCC/g, color);
+}
+
+// Build badge grid
+const grid = document.getElementById('badgeGrid');
+badges.forEach(function(b) {
+  const cell = document.createElement('div');
+  cell.className = 'badge-cell ' + b.tier;
+  const c1 = tierColors[b.tier] || '#333';
+  const c2 = tierGradEnd[b.tier] || '#222';
+  const glow = b.tier === 'gold';
+  const svgContent = b.tier === 'locked'
+    ? hexSvg('#333', '#222', icons.lock, false)
+    : hexSvg(c1, c2, colorIcon(b.icon, c1), glow);
+  cell.innerHTML = '<svg viewBox="0 0 80 80" width="64" height="64">' + svgContent + '</svg>'
+    + '<div class="badge-name"' + (b.tier === 'locked' ? ' style="color:#444"' : '') + '>' + b.name + '</div>'
+    + '<div class="badge-tier ' + b.tier + '">' + (b.tier === 'locked' ? 'LOCKED' : b.tier.toUpperCase()) + '</div>';
+  if (b.tier !== 'locked') {
+    cell.addEventListener('click', function() { showUnlock(b.name, b.desc, b.tier, b.icon); });
+  }
+  grid.appendChild(cell);
+});
+
+// Unlock popup
+function showUnlock(name, desc, tier, icon) {
+  document.getElementById('unlockTitle').textContent = name;
+  document.getElementById('unlockDesc').textContent = desc;
+  var c1 = tierColors[tier] || '#888';
+  var c2 = tierGradEnd[tier] || '#555';
+  var svg = document.getElementById('unlockSvg');
+  svg.innerHTML = hexSvg(c1, c2, colorIcon(icon, c1), true);
+  var dots = document.getElementById('unlockDots');
+  var tierOrder = ['bronze','silver','gold'];
+  var html = '';
+  tierOrder.forEach(function(t) {
+    var active = tierOrder.indexOf(t) <= tierOrder.indexOf(tier);
+    var col = active ? tierColors[t] : '#333';
+    var shadow = (t === tier) ? 'box-shadow:0 0 8px ' + col + '60;' : '';
+    html += '<div style="width:8px;height:8px;border-radius:50%;background:' + col + ';' + shadow + '"></div>';
+  });
+  dots.innerHTML = html;
+  document.getElementById('unlockOverlay').classList.add('active');
+}
+
+document.getElementById('unlockOverlay').addEventListener('click', function(e) {
+  if (e.target === this) this.classList.remove('active');
+});
+document.getElementById('dismissBtn').addEventListener('click', function() {
+  document.getElementById('unlockOverlay').classList.remove('active');
+});
+document.getElementById('demoBtn').addEventListener('click', function() {
+  showUnlock('Flow State', 'Overall score above 90% â€” Gold Tier', 'gold', 'trophy');
+});
+</script>
+</body>
+</html>

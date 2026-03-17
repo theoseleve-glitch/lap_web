@@ -15,6 +15,58 @@ Motorsport telemetry analysis SaaS — Python Flask API + Next.js frontend. Inge
 - **Frontend**: `npm run build` (catch errors) → `npm run cf:deploy` → confirm Cloudflare Workers deployment succeeds.
 - **Never stop at "code is written".** The full cycle is: fix → test → deploy backend → deploy frontend → verify live.
 
+## Frontend Color System (MANDATORY)
+
+All colors are defined in `src/styles/tokens.css` as CSS variables and mapped in `tailwind.config.ts`. NEVER use raw hex values or Tailwind default colors. Only use the tokens below.
+
+### Color Tokens
+
+| Token | CSS Variable | Hex | Usage |
+|-------|-------------|-----|-------|
+| `asphalt` | `--asphalt` | `#000000` | Page background (darkest) |
+| `concrete` | `--concrete` | `#141414` | Card/panel backgrounds |
+| `chalk` | `--chalk` | `#F0EDE5` | Primary text |
+| `steel` | `--steel` | `#949494` | Secondary text, labels, borders |
+| `gold` | `--pit-orange` | `#C9A84C` | Primary CTA buttons, links, accents |
+| `acid-green` | `--acid-green` | `#22C55E` | Success, active, positive indicators |
+| `safety-red` | `--safety-red` | `#FF2A2A` | Danger, error, delete, penalties |
+| `marshal-yellow` | `--marshal-yellow` | `#FACC15` | Warning badges/indicators ONLY — never as button background |
+| `racing-purple` | `--racing-purple` | `#8B5CF6` | Rare accent |
+
+### Button Rules (NEVER BREAK THESE)
+
+| Button Type | Background | Text | Hover | Example |
+|-------------|-----------|------|-------|---------|
+| **Primary CTA** | `bg-gold` | `text-white` | `hover:bg-gold/80` | Optimize, Go Live, Upload, Submit |
+| **Danger** | `border border-safety-red/40` | `text-safety-red` | `hover:bg-safety-red/10` | Delete, Finish Race |
+| **Danger Confirm** | `bg-safety-red` | `text-white` | `hover:bg-safety-red/80` | Confirm delete |
+| **Success/Active** | `bg-acid-green` | `text-white` | `hover:bg-acid-green/80` | Pit Out, Resume |
+| **Secondary** | `border border-steel/30` | `text-chalk` | `hover:bg-concrete` | Edit, View Config, Cancel |
+| **Ghost** | none | `text-steel` | `hover:text-chalk` | Tab buttons, toggles |
+
+### FORBIDDEN Combinations
+- `bg-marshal-yellow text-asphalt` — NEVER use marshal-yellow as button background
+- `bg-gold text-asphalt` — NEVER use dark text on gold
+- `bg-gold text-carbon` — carbon is not a token
+- `bg-pit-orange` — ALWAYS use `bg-gold` instead (they map to the same color but `gold` is the canonical name)
+- Raw hex colors like `bg-[#C9A84C]` — use tokens
+- Tailwind defaults like `bg-yellow-500` — use tokens
+
+### Badge/Indicator Rules
+
+| Indicator | Text | Background | Border |
+|-----------|------|-----------|--------|
+| Status (active) | `text-acid-green` | `bg-acid-green/10` | `border-acid-green/30` |
+| Status (warning) | `text-marshal-yellow` | `bg-marshal-yellow/10` | `border-marshal-yellow/30` |
+| Status (error) | `text-safety-red` | `bg-safety-red/10` | `border-safety-red/30` |
+| Status (neutral) | `text-steel` | `bg-steel/10` | `border-steel/30` |
+| Status (complete) | `text-chalk` | `bg-chalk/10` | `border-chalk/30` |
+
+### Font Rules
+- **Headings**: `font-monument` — section titles, race names, driver names
+- **Data/Labels**: `font-telemetry` — numbers, timestamps, table headers, badges, button text
+- **Body**: `font-body` — descriptions, explanations, form labels
+
 ## Quick Reference
 
 ```bash
