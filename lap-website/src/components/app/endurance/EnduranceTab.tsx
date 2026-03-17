@@ -105,10 +105,12 @@ export function EnduranceTab({ sessionId }: EnduranceTabProps) {
       mean_lap_s: sr.mean_lap_s,
     })) || stints;
 
-    // Tier 1: Stint
+    // Tier 1: Stint — merge stint config + stint result data
     if (tier === 'stint' && selectedStint != null) {
-      const stintData = reportStints.find((s) => s.stint_number === selectedStint);
-      return <StintReport sessionId={sessionId} stint={stintData || {} as Stint} onBack={handleBack} />;
+      const stintFromList = reportStints.find((s) => s.stint_number === selectedStint);
+      const stintResult = (report as any).stint_results?.find((sr: any) => sr.stint_number === selectedStint);
+      const merged = { ...(stintFromList || {}), ...(stintResult || {}) } as Stint;
+      return <StintReport sessionId={sessionId} stint={merged} onBack={handleBack} />;
     }
 
     // Tier 2: Driver

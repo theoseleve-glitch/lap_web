@@ -276,7 +276,7 @@ def _process_single_stint(
             session_meta={
                 **session_meta,
                 "driver_name": driver_name,
-                "session_type": "endurance_stint",
+                "session_type": "race",
                 "track_state": condition,
             },
             enable_report=False,

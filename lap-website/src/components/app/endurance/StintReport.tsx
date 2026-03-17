@@ -1,24 +1,12 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api-client';
-import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
+import { StatCard } from '@/components/app';
 import type { Stint } from './types';
 
 interface StintReportProps {
   sessionId: string;
   stint: Stint;
   onBack: () => void;
-}
-
-interface LapRow {
-  lap_number: number;
-  lap_time_s: number | null;
-  speed_mean_mps: number | null;
-  speed_max_mps: number | null;
-  is_valid: boolean;
-  is_best: boolean;
-  invalid_reason: string | null;
 }
 
 function formatTime(s: number | null | undefined): string {
@@ -28,10 +16,6 @@ function formatTime(s: number | null | undefined): string {
   return `${m}:${sec.toFixed(3).padStart(6, '0')}`;
 }
 
-function mpsToKmh(mps: number): string {
-  return (mps * 3.6).toFixed(1);
-}
-
 const conditionBadge: Record<string, string> = {
   dry: 'bg-acid-green/10 text-acid-green border-acid-green/20',
   damp: 'bg-cyan-400/10 text-cyan-400 border-cyan-400/20',
@@ -39,18 +23,10 @@ const conditionBadge: Record<string, string> = {
   mixed: 'bg-marshal-yellow/10 text-marshal-yellow border-marshal-yellow/20',
 };
 
-export function StintReport({ sessionId, stint, onBack }: StintReportProps) {
-  const { data: lapsRes, isLoading, error } = useQuery({
-    queryKey: ['laps', sessionId],
-    queryFn: () => api.get<{ laps: LapRow[] }>(`/sessions/${sessionId}/laps`),
-  });
-
-  const allLaps = lapsRes?.laps || [];
-  const stintLaps = allLaps.filter(
-    (l) => l.lap_number >= stint.start_lap && l.lap_number <= stint.end_lap
-  );
-  const validLaps = stintLaps.filter((l) => l.is_valid && l.lap_time_s && l.lap_time_s > 0);
-  const bestTime = validLaps.length > 0 ? Math.min(...validLaps.map((l) => l.lap_time_s!)) : null;
+export function StintReport({ stint, onBack }: StintReportProps) {
+  const trafficLosses = (stint as any).traffic_losses || [];
+  const trafficTotal = (stint as any).traffic_total_s || 0;
+  const trafficCount = (stint as any).traffic_count || 0;
 
   return (
     <div className="space-y-6">
@@ -84,16 +60,44 @@ export function StintReport({ sessionId, stint, onBack }: StintReportProps) {
         <StatCard label="Best Lap" value={formatTime(stint.best_lap_s)} accent="text-acid-green" />
         <StatCard label="Mean Pace" value={formatTime(stint.mean_lap_s)} />
         <StatCard label="CV%" value={stint.consistency_cv_pct != null ? `${stint.consistency_cv_pct.toFixed(1)}%` : '--'} />
-        <StatCard label="Pace Fade" value={stint.pace_fade_pct != null ? `${stint.pace_fade_pct.toFixed(1)}%` : '--'} />
+        <StatCard label="Pace Fade" value={(stint as any).pace_fade_pct != null ? `${(stint as any).pace_fade_pct.toFixed(1)}%` : '--'} />
       </div>
 
-      {/* Traffic Time Loss */}
-      {((stint as any).traffic_count > 0) && (
-        <div className="bg-concrete rounded-xl border border-safety-red/20 p-4">
-          <div className="flex items-center gap-3">
-            <span className="text-safety-red font-monument text-lg">{(stint as any).traffic_count}</span>
-            <span className="text-steel text-xs font-body">traffic incidents</span>
-            <span className="text-safety-red font-telemetry text-sm ml-auto">{((stint as any).traffic_total_s || 0).toFixed(1)}s lost</span>
+      {/* Traffic Time Loss Events */}
+      {trafficCount > 0 && (
+        <div className="bg-concrete rounded-xl border border-safety-red/20 p-6">
+          <h3 className="text-lg font-monument text-chalk mb-2">Traffic / Incidents</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="text-center">
+              <p className="text-2xl font-monument text-safety-red">{trafficCount}</p>
+              <p className="text-xs font-body text-steel">Incidents</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-monument text-safety-red">{trafficTotal.toFixed(1)}s</p>
+              <p className="text-xs font-body text-steel">Total Time Lost</p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs font-body">
+              <thead>
+                <tr className="text-steel border-b border-steel/10">
+                  <th className="py-2 text-left">#</th>
+                  <th className="py-2 text-right">Lap Time</th>
+                  <th className="py-2 text-right">Neighbor Avg</th>
+                  <th className="py-2 text-right">Time Lost</th>
+                </tr>
+              </thead>
+              <tbody>
+                {trafficLosses.map((tl: any, i: number) => (
+                  <tr key={i} className="border-b border-steel/5 text-chalk">
+                    <td className="py-2 font-telemetry text-safety-red">{i + 1}</td>
+                    <td className="py-2 text-right font-telemetry">{formatTime(tl.lap_time_s)}</td>
+                    <td className="py-2 text-right font-telemetry text-steel">{formatTime(tl.neighbor_mean_s)}</td>
+                    <td className="py-2 text-right font-telemetry text-safety-red">+{tl.time_lost_s?.toFixed(1)}s</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -121,69 +125,6 @@ export function StintReport({ sessionId, stint, onBack }: StintReportProps) {
           </div>
         </div>
       )}
-
-      {/* Lap Table */}
-      <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-        <h3 className="text-lg font-monument text-chalk mb-4">Lap Data</h3>
-        {isLoading ? (
-          <SkeletonCardGrid count={3} />
-        ) : error ? (
-          <QueryError message="Failed to load laps" />
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs font-body">
-              <thead>
-                <tr className="text-steel border-b border-steel/10">
-                  <th className="py-2 text-left">Lap</th>
-                  <th className="py-2 text-right">Time</th>
-                  <th className="py-2 text-right">Delta</th>
-                  <th className="py-2 text-right">Avg Speed</th>
-                  <th className="py-2 text-right">Max Speed</th>
-                  <th className="py-2 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stintLaps.map((lap) => {
-                  const isBest = lap.lap_time_s === bestTime && lap.is_valid;
-                  const delta = bestTime && lap.lap_time_s && lap.is_valid
-                    ? lap.lap_time_s - bestTime
-                    : null;
-                  return (
-                    <tr
-                      key={lap.lap_number}
-                      className={`border-b border-steel/5 ${
-                        isBest ? 'text-acid-green' : lap.is_valid ? 'text-chalk' : 'text-steel/40'
-                      }`}
-                    >
-                      <td className="py-2 font-telemetry">
-                        {lap.lap_number}
-                        {isBest && <span className="ml-1 text-[9px] bg-acid-green/20 px-1 rounded">Best</span>}
-                      </td>
-                      <td className="py-2 text-right font-telemetry">{formatTime(lap.lap_time_s)}</td>
-                      <td className="py-2 text-right font-telemetry">
-                        {delta != null && delta > 0 ? `+${delta.toFixed(3)}` : delta === 0 ? '—' : ''}
-                      </td>
-                      <td className="py-2 text-right font-telemetry">
-                        {lap.speed_mean_mps != null ? `${mpsToKmh(lap.speed_mean_mps)} km/h` : '--'}
-                      </td>
-                      <td className="py-2 text-right font-telemetry">
-                        {lap.speed_max_mps != null ? `${mpsToKmh(lap.speed_max_mps)} km/h` : '--'}
-                      </td>
-                      <td className="py-2">
-                        {lap.is_valid ? (
-                          <span className="text-acid-green/60">Valid</span>
-                        ) : (
-                          <span className="text-safety-red/60">{lap.invalid_reason || 'Invalid'}</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
