@@ -303,11 +303,8 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
       {/* Traffic Time Loss */}
       {((report as any).traffic_count > 0 || (report as any).traffic_total_s > 0) && (
         <div className="bg-concrete rounded-xl border border-steel/10 p-6">
-          <h3 className="text-lg font-monument text-chalk mb-2">Traffic Time Loss</h3>
-          <p className="text-steel text-xs font-body mb-4">
-            Laps where pace dropped 2s+ vs neighbors (likely traffic or incidents)
-          </p>
-          <div className="grid grid-cols-2 gap-4">
+          <h3 className="text-lg font-monument text-chalk mb-4">Traffic Time Loss</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
             <div className="text-center">
               <p className="text-2xl font-monument text-safety-red">{(report as any).traffic_count || 0}</p>
               <p className="text-xs font-body text-steel">Incidents</p>
@@ -317,13 +314,31 @@ export function TeamReport({ report, stints, pitThreshold = 30, onSelectDriver }
               <p className="text-xs font-body text-steel">Total Time Lost</p>
             </div>
           </div>
-          {/* Per-driver breakdown */}
-          <div className="mt-3 space-y-1">
+          {/* Per-stint breakdown */}
+          <div className="space-y-1 mb-3">
+            {stints.map((s) => {
+              const tc = (s as any).traffic_count || 0;
+              const tt = (s as any).traffic_total_s || 0;
+              if (tc === 0) return null;
+              return (
+                <div key={s.stint_number} className="flex items-center gap-3 text-xs font-body">
+                  <span className="text-steel font-telemetry w-12">S{s.stint_number}</span>
+                  <span className="text-steel w-20 truncate">{s.driver_name}</span>
+                  <div className="flex-1 h-3 bg-asphalt rounded overflow-hidden">
+                    <div className="h-full bg-safety-red/40 rounded" style={{ width: `${Math.min((tt / 30) * 100, 100)}%` }} />
+                  </div>
+                  <span className="text-safety-red font-telemetry w-24 text-right">{tc} inc. / {tt.toFixed(1)}s</span>
+                </div>
+              );
+            })}
+          </div>
+          {/* Per-driver totals */}
+          <div className="pt-3 border-t border-steel/10 space-y-1">
             {drivers.map((d: DriverReport) => (
               <div key={d.driver_name} className="flex items-center gap-2 text-xs font-body">
                 <span className="text-steel w-24 truncate">{d.driver_name}</span>
                 <span className="text-safety-red font-telemetry">{(d as any).traffic_count || 0} incidents</span>
-                <span className="text-steel/50">•</span>
+                <span className="text-steel/50">&middot;</span>
                 <span className="text-safety-red font-telemetry">{((d as any).traffic_total_s || 0).toFixed(1)}s lost</span>
               </div>
             ))}
