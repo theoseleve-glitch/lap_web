@@ -164,13 +164,6 @@ export default function UsagePage() {
             <span className="font-monument text-lg text-chalk">
               {PLAN_LABELS[plan] || plan}
             </span>
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-telemetry ${
-                PLAN_STYLES[plan] || PLAN_STYLES.demo
-              }`}
-            >
-              {plan}
-            </span>
           </div>
         )}
       </div>
@@ -249,22 +242,6 @@ export default function UsagePage() {
             <FeatureRow
               label="Pit planning"
               value={entitlements.entitlements.pit_planning}
-            />
-            <FeatureRow
-              label="PDF reports"
-              value={entitlements.entitlements.pdf_reports}
-            />
-            <FeatureRow
-              label="API access"
-              value={entitlements.entitlements.api_access}
-            />
-            <FeatureRow
-              label="Track management"
-              value={entitlements.entitlements.track_management}
-            />
-            <FeatureRow
-              label="Workspace members"
-              value={entitlements.entitlements.max_workspace_members}
             />
           </div>
         ) : (

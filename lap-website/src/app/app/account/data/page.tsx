@@ -39,24 +39,9 @@ interface RetentionSchedule {
   export_recommended: boolean;
 }
 
-interface DeleteStep1 {
-  confirmation_token: string;
-  expires_in_seconds: number;
-  sessions_to_delete: Array<{ id: number; name: string; created_at: string | null }>;
-}
-
-interface DeleteStep2 {
-  deleted: boolean;
-  deleted_count: number;
-  deleted_session_ids: number[];
-}
-
 /* ── Page ─────────────────────────────────────────────────── */
 
 export default function DataPrivacyPage() {
-  const [selectedSessions, setSelectedSessions] = useState<number[]>([]);
-  const [deleteToken, setDeleteToken] = useState<string | null>(null);
-  const [deleteSessions, setDeleteSessions] = useState<Array<{ id: number; name: string }>>([]);
   const [deletePassword, setDeletePassword] = useState('');
   const [showDeleteAccount, setShowDeleteAccount] = useState(false);
 
@@ -75,32 +60,6 @@ export default function DataPrivacyPage() {
   const exportMutation = useMutation({
     mutationFn: () => apiFetch<{ export_id: string }>('/account/export', { method: 'POST' }),
     onSuccess: () => refetchSummary(),
-  });
-
-  const deleteStep1 = useMutation({
-    mutationFn: (sessionIds: number[]) =>
-      apiFetch<DeleteStep1>('/account/data/delete-sessions', {
-        method: 'POST',
-        body: JSON.stringify({ session_ids: sessionIds }),
-      }),
-    onSuccess: (data) => {
-      setDeleteToken(data.confirmation_token);
-      setDeleteSessions(data.sessions_to_delete);
-    },
-  });
-
-  const deleteStep2 = useMutation({
-    mutationFn: (token: string) =>
-      apiFetch<DeleteStep2>('/account/data/delete-sessions', {
-        method: 'POST',
-        body: JSON.stringify({ session_ids: [], confirmation_token: token }),
-      }),
-    onSuccess: () => {
-      setDeleteToken(null);
-      setDeleteSessions([]);
-      setSelectedSessions([]);
-      refetchSummary();
-    },
   });
 
   const deleteAccountMutation = useMutation({
@@ -235,83 +194,6 @@ export default function DataPrivacyPage() {
               ))}
             </div>
           </div>
-        )}
-      </div>
-
-      {/* ── Delete Sessions ────────────────────────── */}
-      <div className="bg-concrete rounded-lg border border-steel/20 p-6 mb-6">
-        <h3 className="font-monument text-sm text-chalk mb-4">Delete Sessions</h3>
-        {summary?.sessions_count === 0 ? (
-          <p className="text-steel text-sm font-body">No sessions to delete</p>
-        ) : deleteToken ? (
-          /* Step 2: Confirm deletion */
-          <div className="bg-asphalt border border-safety-red/30 rounded-md p-4">
-            <p className="text-safety-red font-telemetry text-sm mb-3">
-              Confirm deletion of {deleteSessions.length} session(s):
-            </p>
-            <ul className="space-y-1 mb-4">
-              {deleteSessions.map((s) => (
-                <li key={s.id} className="text-steel text-xs font-body flex items-center gap-1">
-                  <span className="text-safety-red">✕</span> {s.name}
-                </li>
-              ))}
-            </ul>
-            <p className="text-marshal-yellow text-xs font-body mb-3">
-              This action cannot be undone. All data for these sessions will be permanently deleted.
-            </p>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => deleteStep2.mutate(deleteToken)}
-                disabled={deleteStep2.isPending}
-                className="bg-safety-red text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:brightness-110 transition disabled:opacity-50"
-              >
-                {deleteStep2.isPending ? 'Deleting...' : 'Permanently Delete'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setDeleteToken(null); setDeleteSessions([]); }}
-                className="bg-concrete border border-steel/30 text-steel font-telemetry text-sm px-4 py-2 rounded-md hover:text-chalk transition"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          /* Step 1: Select sessions */
-          <>
-            <p className="text-steel text-sm font-body mb-3">
-              Enter session IDs to delete (comma-separated):
-            </p>
-            <div className="flex gap-3">
-              <input
-                type="text"
-                placeholder="e.g. 1, 5, 12"
-                onChange={(e) => {
-                  const ids = e.target.value
-                    .split(',')
-                    .map((s) => parseInt(s.trim(), 10))
-                    .filter((n) => !isNaN(n));
-                  setSelectedSessions(ids);
-                }}
-                disabled={deleteStep1.isPending}
-                className="bg-asphalt border border-steel/30 rounded-md px-3 py-2 text-chalk font-body text-sm flex-1 focus:border-acid-green/40 focus:outline-none disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-              <button
-                type="button"
-                onClick={() => deleteStep1.mutate(selectedSessions)}
-                disabled={selectedSessions.length === 0 || deleteStep1.isPending}
-                className="bg-safety-red/80 text-chalk font-telemetry text-sm px-4 py-2 rounded-md hover:bg-safety-red transition disabled:opacity-50"
-              >
-                {deleteStep1.isPending ? 'Checking...' : 'Delete Selected'}
-              </button>
-            </div>
-            {deleteStep1.isError && (
-              <p className="text-safety-red text-xs font-telemetry mt-2">
-                {(deleteStep1.error as Error).message}
-              </p>
-            )}
-          </>
         )}
       </div>
 
