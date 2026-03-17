@@ -286,7 +286,6 @@ export default function PricingPage() {
                 { feature: 'Session Comparison', demo: false, racer: false, worldClass: true },
                 { feature: 'Race Strategy Dashboard', demo: 'partial', racer: true, worldClass: true },
                 { feature: 'Live Monitoring', demo: false, racer: true, worldClass: true },
-                { feature: 'Gamification', demo: false, racer: true, worldClass: true },
                 { feature: 'Priority Support', demo: false, racer: false, worldClass: true },
               ].map((row) => (
                 <tr key={row.feature} className="hover:bg-concrete/40 transition-colors">
