@@ -35,6 +35,34 @@ _CANONICAL_TO_RAW: dict[str, str] = {
 }
 
 
+def derive_missing_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Derive distance_m and lap_number when the source format lacks them.
+
+    Called after canonical->RaceChrono reverse mapping, so column names are
+    RaceChrono-style ("Distance (m)", "Lap #", etc.).
+
+    Mutates *df* in-place and returns it.
+    """
+    # Derive distance from speed integration
+    if "Distance (m)" not in df.columns and "Speed (m/s)" in df.columns and "Time (s)" in df.columns:
+        try:
+            from scipy.integrate import cumulative_trapezoid
+            speed = pd.to_numeric(df["Speed (m/s)"], errors="coerce").fillna(0).values
+            time = pd.to_numeric(df["Time (s)"], errors="coerce").ffill().fillna(0).values
+            dist = cumulative_trapezoid(speed, time, initial=0)
+            df["Distance (m)"] = dist
+            logger.info("Derived Distance (m) from speed integration")
+        except ImportError:
+            logger.warning("scipy not available; cannot derive Distance (m)")
+
+    # Sentinel lap number if not present (pipeline stages 3-5 derive real laps)
+    if "Lap #" not in df.columns:
+        df["Lap #"] = 0
+        logger.info("Set sentinel Lap # = 0 (will be derived by track detection)")
+
+    return df
+
+
 def _try_import_discover():
     """Import column discovery; returns ``discover_columns`` or None."""
     try:
@@ -117,6 +145,9 @@ def run_ingest(
             "Reversed canonical→RaceChrono names: %s",
             list(_reverse.values()),
         )
+
+    # ── 3b. Derive missing columns (distance, lap) ────────────────
+    raw_df = derive_missing_columns(raw_df)
 
     # ── 4. Column discovery ──────────────────────────────────────
     _discover = _try_import_discover()
