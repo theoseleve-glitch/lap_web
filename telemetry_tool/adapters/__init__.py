@@ -23,11 +23,13 @@ from telemetry_tool.adapters.registry import (
     parse_file,
     register_adapter,
 )
+from telemetry_tool.adapters.vbox_adapter import VboxAdapter
 
 register_adapter(RaceChronoAdapter)
 register_adapter(IRacingAdapter)
 register_adapter(ACCAdapter)
 register_adapter(MoTeCAdapter)
+register_adapter(VboxAdapter)
 register_adapter(GenericCSVAdapter)
 
 __all__ = [
@@ -39,5 +41,6 @@ __all__ = [
     "IRacingAdapter",
     "ACCAdapter",
     "MoTeCAdapter",
+    "VboxAdapter",
     "GenericCSVAdapter",
 ]
