@@ -34,6 +34,13 @@ register_adapter(MoTeCAdapter)
 register_adapter(VboxAdapter)
 register_adapter(RaceBoxCSVAdapter)
 register_adapter(QstarzCSVAdapter)
+
+try:
+    from telemetry_tool.adapters.iracing_binary_adapter import IRacingBinaryAdapter
+    register_adapter(IRacingBinaryAdapter)
+except ImportError:
+    pass
+
 register_adapter(GenericCSVAdapter)
 
 __all__ = [
