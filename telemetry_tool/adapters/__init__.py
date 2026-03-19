@@ -41,6 +41,12 @@ try:
 except ImportError:
     pass
 
+try:
+    from telemetry_tool.adapters.motec_binary_adapter import MoTeCBinaryAdapter
+    register_adapter(MoTeCBinaryAdapter)
+except ImportError:
+    pass
+
 register_adapter(GenericCSVAdapter)
 
 __all__ = [
