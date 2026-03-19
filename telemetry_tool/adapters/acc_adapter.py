@@ -106,6 +106,7 @@ class ACCAdapter(BaseAdapter):
     """Adapter for Assetto Corsa Competizione CSV exports."""
 
     FORMAT_NAME: str = "acc"
+    EXTENSIONS: list[str] = [".csv"]
 
     def __init__(self) -> None:
         self._channels: list[str] = []

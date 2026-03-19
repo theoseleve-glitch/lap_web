@@ -120,6 +120,7 @@ class MoTeCAdapter(BaseAdapter):
     """Adapter for MoTeC i2 CSV exports."""
 
     FORMAT_NAME: str = "motec"
+    EXTENSIONS: list[str] = [".csv"]
 
     def __init__(self) -> None:
         self._channels: list[str] = []
