@@ -44,6 +44,7 @@ from web.models import (
     upsert_session,
     upsert_track,
 )
+from telemetry_tool.adapters.registry import supported_extensions as _supported_extensions
 from web.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,10 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("sessions_v2", __name__, url_prefix="/api/v1")
 
 # File extensions accepted for upload.
-_ALLOWED_EXTENSIONS = {".csv", ".txt", ".ibt", ".ld", ".ldx", ".vbo", ".xrk", ".drk"}
+# _STATIC_ALLOWED covers plain-text formats that are always accepted;
+# supported_extensions() adds all extensions from registered adapters.
+_STATIC_ALLOWED = {".csv", ".txt"}
+_ALLOWED_EXTENSIONS = _STATIC_ALLOWED | _supported_extensions()
 
 # ── Tier limits ────────────────────────────────────────────────────────────
 
@@ -90,6 +94,24 @@ def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str,
             f"File size ({file_size // (1024 * 1024)} MB) exceeds your plan limit "
             f"({max_mb} MB)."
         )
+    # Monthly upload volume check (atomic — locks row to prevent race conditions)
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is not None:
+        try:
+            from auth.entitlements import check_and_record_quota
+            file_size_mb = max(1, file_size // (1024 * 1024))  # at least 1 MB
+            allowed, ctx = check_and_record_quota(
+                conn, user_id, int(workspace_id), "upload_volume_mb", cost=file_size_mb,
+            )
+            if not allowed:
+                limit_mb = ctx.get("limit", 0)
+                used_mb = ctx.get("used", 0)
+                return (
+                    f"Monthly upload volume exceeded ({used_mb} MB / {limit_mb} MB). "
+                    f"Resets {ctx.get('resets_at', 'next month')}."
+                )
+        except Exception:
+            logger.warning("Volume quota check failed — allowing upload", exc_info=True)
     # Session count check
     max_sessions = limits.get("max_sessions")
     if max_sessions is not None:
