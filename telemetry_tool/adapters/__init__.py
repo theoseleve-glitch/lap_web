@@ -15,6 +15,7 @@ from telemetry_tool.adapters.base import BaseAdapter
 from telemetry_tool.adapters.generic_csv_adapter import GenericCSVAdapter
 from telemetry_tool.adapters.iracing_adapter import IRacingAdapter
 from telemetry_tool.adapters.motec_adapter import MoTeCAdapter
+from telemetry_tool.adapters.qstarz_csv_adapter import QstarzCSVAdapter
 from telemetry_tool.adapters.racebox_adapter import RaceBoxCSVAdapter
 
 # -- Auto-register built-in adapters --------------------------------------
@@ -32,6 +33,7 @@ register_adapter(ACCAdapter)
 register_adapter(MoTeCAdapter)
 register_adapter(VboxAdapter)
 register_adapter(RaceBoxCSVAdapter)
+register_adapter(QstarzCSVAdapter)
 register_adapter(GenericCSVAdapter)
 
 __all__ = [
@@ -45,5 +47,6 @@ __all__ = [
     "MoTeCAdapter",
     "VboxAdapter",
     "RaceBoxCSVAdapter",
+    "QstarzCSVAdapter",
     "GenericCSVAdapter",
 ]
