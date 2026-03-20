@@ -628,7 +628,7 @@ function UploadPage() {
                 setPageState('completed');
                 // Single file → redirect immediately; batch → show summary
                 if (batchTotal <= 1) {
-                  setTimeout(() => router.push(`/app/sessions/${sid}`), 1500);
+                  setTimeout(() => router.push(`/app/sessions/${sid}/reveal`), 1500);
                 }
                 return;
               }
