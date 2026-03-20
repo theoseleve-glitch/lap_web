@@ -6091,4 +6091,114 @@ def set_endurance_anchor(session_id: str) -> tuple[dict, int]:
     return api_response({"ok": True}, status=201)
 
 
+# ── Reveal payload builder ────────────────────────────────────────
+
+
+def _build_reveal_payload(
+    session: dict,
+    scores: dict | None,
+    theo_data: dict | None,
+    analysis: dict | None,
+) -> dict:
+    """Assemble the reveal payload from pre-fetched data.
+
+    All inputs are dicts as returned by the repo functions.
+    Returns a dict matching the reveal API contract.
+    """
+    result: dict = {
+        "total_score": session.get("total_score"),
+        "grade": session.get("grade"),
+        "best_lap_s": session.get("best_lap_time_s"),
+        "n_laps": session.get("n_laps"),
+        "track_name": session.get("track_name"),
+        "session_date": session.get("session_date"),
+    }
+
+    # ── Top corners (from theoretical_data.corner_coaching) ──
+    corner_coaching = (theo_data or {}).get("corner_coaching", []) or []
+    # Filter corners with positive time loss, sort desc
+    lossy = [c for c in corner_coaching
+             if (c.get("time_loss_total_s") or 0) > 0]
+    lossy.sort(key=lambda c: c.get("time_loss_total_s", 0), reverse=True)
+
+    result["top_corners"] = []
+    for c in lossy[:3]:
+        hints = c.get("coaching_hints") or []
+        result["top_corners"].append({
+            "corner_id": c.get("corner_id"),
+            "direction": c.get("direction"),
+            "time_loss_s": round(c.get("time_loss_total_s", 0), 3),
+            "coaching_hint": hints[0] if hints else None,
+        })
+
+    result["recoverable_s"] = (
+        round(sum(c.get("time_loss_total_s", 0) for c in lossy), 3)
+        if lossy else None
+    )
+
+    # ── Focus areas (prefer coaching_v3 > coaching_v2 > scores.weaknesses) ──
+    analysis = analysis or {}
+    coaching = analysis.get("coaching_v3") or analysis.get("coaching_v2") or {}
+    raw_focus = coaching.get("focus_areas", []) if coaching else []
+
+    if raw_focus:
+        # Sort by time_loss_s desc if available, take top 3
+        sorted_fa = sorted(raw_focus, key=lambda f: f.get("time_loss_s", 0), reverse=True)
+        result["focus_areas"] = [
+            {"category": f.get("category", "general"), "summary": f.get("summary", "")}
+            for f in sorted_fa[:3]
+        ]
+    else:
+        # Fallback to scores.weaknesses (plain strings)
+        weaknesses = (scores or {}).get("weaknesses", []) or []
+        result["focus_areas"] = [
+            {"category": "general", "summary": w}
+            for w in weaknesses[:3]
+        ]
+
+    # ── Drills (prefer coaching_v3 > coaching_v2) ──
+    raw_drills = coaching.get("drills", []) if coaching else []
+    if raw_drills:
+        sorted_drills = sorted(raw_drills, key=lambda d: d.get("rank", 999))
+        result["drills"] = [
+            {"title": d.get("title", ""), "target_improvement": d.get("target_improvement", "")}
+            for d in sorted_drills[:3]
+        ]
+    else:
+        result["drills"] = []
+
+    # ── Confidence (from theoretical_metrics) ──
+    theo_metrics = (theo_data or {}).get("theoretical_metrics", {}) or {}
+    conf = theo_metrics.get("confidence")
+    if conf and isinstance(conf, dict):
+        result["confidence"] = {
+            "score": conf.get("confidence_score"),
+            "level": conf.get("confidence_level"),
+        }
+    else:
+        result["confidence"] = None
+
+    return result
+
+
+# ── GET /api/v1/sessions/<id>/reveal ──────────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/reveal", methods=["GET"])
+@_safe_api
+def get_reveal(session_id: str) -> tuple[dict, int]:
+    """Return a lightweight reveal payload for post-upload display."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    scores = models.get_score_details(conn, session_id)
+    theo_data = models.get_theoretical_data(conn, session_id)
+    analysis = models.get_analysis_json(conn, session_id)
+
+    payload = _build_reveal_payload(session, scores, theo_data, analysis)
+    return api_response(payload)
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
