@@ -2423,3 +2423,272 @@ class TestNewEndpoints404ForMissingSession:
         assert resp.status_code == 404
         body = resp.get_json()
         assert body["ok"] is False
+
+
+# ── Reveal endpoint test data builders ────────────────────────────
+
+
+def _sample_session_row():
+    """Session dict as returned by get_session_by_id, with reveal-relevant fields."""
+    return {
+        "session_id": "sess-001",
+        "csv_filename": "session.csv",
+        "display_name": "Practice 1",
+        "driver_name": "Alex",
+        "track_name": "Franciacorta",
+        "track_id": "trk-001",
+        "session_date": "2026-03-20",
+        "session_type": "practice",
+        "track_state": "dry",
+        "n_laps": 14,
+        "best_lap_time_s": 58.234,
+        "total_score": 72,
+        "grade": "B",
+        "notes": None,
+        "driver_id": 1,
+        "kart_id": None,
+        "kart_name": None,
+        "track_unnamed": False,
+    }
+
+
+def _sample_theoretical_data():
+    """Theoretical data with corner_coaching and confidence."""
+    return {
+        "corner_coaching": [
+            {
+                "corner_id": 3, "direction": "L",
+                "time_loss_total_s": 0.31,
+                "coaching_hints": ["Trail-brake deeper into corner"],
+            },
+            {
+                "corner_id": 7, "direction": "R",
+                "time_loss_total_s": 0.22,
+                "coaching_hints": ["Earlier throttle application"],
+            },
+            {
+                "corner_id": 1, "direction": "L",
+                "time_loss_total_s": 0.18,
+                "coaching_hints": ["Tighter entry line"],
+            },
+            {
+                "corner_id": 5, "direction": "R",
+                "time_loss_total_s": 0.10,
+                "coaching_hints": [],
+            },
+        ],
+        "theoretical_metrics": {
+            "confidence": {
+                "confidence_score": 82,
+                "confidence_level": "high",
+                "confidence_reasons": ["enough laps"],
+                "component_scores": {},
+            }
+        },
+    }
+
+
+def _sample_analysis_json_with_coaching():
+    """Analysis JSON containing coaching_v3 with focus_areas and drills."""
+    return {
+        "coaching_v3": {
+            "focus_areas": [
+                {"rank": 1, "category": "braking", "time_loss_s": 0.31,
+                 "corner_ids": [3], "summary": "Late braking into T3",
+                 "advice": "Trail-brake deeper"},
+                {"rank": 2, "category": "exit_traction", "time_loss_s": 0.22,
+                 "corner_ids": [7], "summary": "Exit speed lost at T7",
+                 "advice": "Earlier throttle"},
+                {"rank": 3, "category": "consistency", "time_loss_s": 0.15,
+                 "corner_ids": [], "summary": "Lap time variation above target",
+                 "advice": "Focus on rhythm"},
+            ],
+            "drills": [
+                {"rank": 1, "title": "Trail-brake deeper into T3",
+                 "description": "Focus on trail-braking", "focus_corners": [3],
+                 "target_metric": "brake_release_point",
+                 "target_improvement": "0.31s", "lap_count": 5},
+                {"rank": 2, "title": "Hold throttle through T7 exit",
+                 "description": "Exit traction drill", "focus_corners": [7],
+                 "target_metric": "exit_speed",
+                 "target_improvement": "0.22s", "lap_count": 5},
+                {"rank": 3, "title": "Smooth steering T1 entry",
+                 "description": "Entry precision", "focus_corners": [1],
+                 "target_metric": "entry_line",
+                 "target_improvement": "0.18s", "lap_count": 3},
+            ],
+        }
+    }
+
+
+class TestRevealEndpoint:
+    """Tests for GET /api/v1/sessions/<id>/reveal."""
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_full_data(self, mock_conn, mock_session, mock_scores,
+                               mock_theo, mock_analysis, client):
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = _sample_session_row()
+        mock_scores.return_value = {
+            "weaknesses": ["Execution needs work", "Pace below target"],
+        }
+        mock_theo.return_value = _sample_theoretical_data()
+        mock_analysis.return_value = _sample_analysis_json_with_coaching()
+
+        resp = client.get("/api/v1/sessions/sess-001/reveal")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+
+        # Session-level fields from sessions table
+        assert data["total_score"] == 72
+        assert data["grade"] == "B"
+        assert data["best_lap_s"] == 58.234
+        assert data["n_laps"] == 14
+        assert data["track_name"] == "Franciacorta"
+        assert data["session_date"] == "2026-03-20"
+
+        # Top corners: top 3 by time_loss, with coaching_hints[0]
+        assert len(data["top_corners"]) == 3
+        assert data["top_corners"][0]["corner_id"] == 3
+        assert data["top_corners"][0]["time_loss_s"] == 0.31
+        assert data["top_corners"][0]["coaching_hint"] == "Trail-brake deeper into corner"
+        assert data["top_corners"][0]["direction"] == "L"
+
+        # Recoverable: sum of ALL corners with positive loss (0.31+0.22+0.18+0.10)
+        assert abs(data["recoverable_s"] - 0.81) < 0.01
+
+        # Focus areas from coaching_v3
+        assert len(data["focus_areas"]) == 3
+        assert data["focus_areas"][0]["category"] == "braking"
+        assert data["focus_areas"][0]["summary"] == "Late braking into T3"
+
+        # Drills from coaching_v3
+        assert len(data["drills"]) == 3
+        assert data["drills"][0]["title"] == "Trail-brake deeper into T3"
+        assert data["drills"][0]["target_improvement"] == "0.31s"
+
+        # Confidence
+        assert data["confidence"]["score"] == 82
+        assert data["confidence"]["level"] == "high"
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_session_not_found(self, mock_conn, mock_session,
+                                       mock_scores, mock_theo, mock_analysis,
+                                       client):
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = None
+        resp = client.get("/api/v1/sessions/nonexistent/reveal")
+        assert resp.status_code == 404
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_no_coaching_falls_back_to_weaknesses(
+        self, mock_conn, mock_session, mock_scores, mock_theo,
+        mock_analysis, client
+    ):
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = _sample_session_row()
+        mock_scores.return_value = {
+            "weaknesses": ["Execution needs work", "Pace below target"],
+        }
+        mock_theo.return_value = _sample_theoretical_data()
+        mock_analysis.return_value = {}  # No coaching_v2 or v3
+
+        resp = client.get("/api/v1/sessions/sess-001/reveal")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+
+        # Falls back to weaknesses strings
+        assert len(data["focus_areas"]) == 2
+        assert data["focus_areas"][0]["summary"] == "Execution needs work"
+        assert data["focus_areas"][0]["category"] == "general"
+
+        # No drills when no coaching data
+        assert data["drills"] == []
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_coaching_v2_fallback(
+        self, mock_conn, mock_session, mock_scores, mock_theo,
+        mock_analysis, client
+    ):
+        """coaching_v3 missing but coaching_v2 present — should use v2."""
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = _sample_session_row()
+        mock_scores.return_value = {"weaknesses": []}
+        mock_theo.return_value = _sample_theoretical_data()
+        # Only coaching_v2, no coaching_v3
+        mock_analysis.return_value = {
+            "coaching_v2": {
+                "focus_areas": [
+                    {"rank": 1, "category": "braking", "time_loss_s": 0.25,
+                     "summary": "V2 braking focus"},
+                ],
+                "drills": [
+                    {"rank": 1, "title": "V2 drill one",
+                     "target_improvement": "0.25s"},
+                ],
+            }
+        }
+
+        resp = client.get("/api/v1/sessions/sess-001/reveal")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+
+        assert len(data["focus_areas"]) == 1
+        assert data["focus_areas"][0]["summary"] == "V2 braking focus"
+        assert len(data["drills"]) == 1
+        assert data["drills"][0]["title"] == "V2 drill one"
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_no_corners(self, mock_conn, mock_session, mock_scores,
+                                mock_theo, mock_analysis, client):
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = _sample_session_row()
+        mock_scores.return_value = {"weaknesses": []}
+        mock_theo.return_value = {}  # No corner_coaching
+        mock_analysis.return_value = {}
+
+        resp = client.get("/api/v1/sessions/sess-001/reveal")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+
+        assert data["top_corners"] == []
+        assert data["recoverable_s"] is None
+
+    @patch("web.routes.data_v2.models.get_analysis_json")
+    @patch("web.routes.data_v2.models.get_theoretical_data")
+    @patch("web.routes.data_v2.models.get_score_details")
+    @patch("web.routes.data_v2.models.get_session_by_id")
+    @patch("web.routes.data_v2.get_db_connection")
+    def test_reveal_no_confidence(self, mock_conn, mock_session, mock_scores,
+                                   mock_theo, mock_analysis, client):
+        mock_conn.return_value = MagicMock()
+        mock_session.return_value = _sample_session_row()
+        mock_scores.return_value = {"weaknesses": []}
+        mock_theo.return_value = {"corner_coaching": []}  # No theoretical_metrics
+        mock_analysis.return_value = {}
+
+        resp = client.get("/api/v1/sessions/sess-001/reveal")
+        assert resp.status_code == 200
+        data = resp.get_json()["data"]
+
+        assert data["confidence"] is None
