@@ -16,6 +16,9 @@ depends_on = None
 
 
 def upgrade():
+    # No RLS policy: device_pairings is only accessed by device-auth
+    # middleware with explicit WHERE clauses, never through the
+    # RLS-filtered query path used by tenant-scoped routes.
     op.create_table(
         "device_pairings",
         sa.Column("id", sa.Integer, primary_key=True),
@@ -64,4 +67,7 @@ def upgrade():
 def downgrade():
     op.drop_index("idx_sessions_bundle_hash", table_name="sessions")
     op.drop_column("sessions", "source_bundle_hash")
+    op.drop_index("idx_device_pairings_pairing_id", table_name="device_pairings")
+    op.drop_index("idx_device_pairings_user", table_name="device_pairings")
+    op.drop_index("idx_device_pairings_code", table_name="device_pairings")
     op.drop_table("device_pairings")
