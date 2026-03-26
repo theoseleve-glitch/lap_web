@@ -14,6 +14,8 @@ import { KeyboardShortcuts } from '@/components/app/KeyboardShortcuts';
 import { CommandPalette } from '@/components/app/CommandPalette';
 import { UndoToastContainer } from '@/components/ui/UndoToast';
 import { UnitToggle } from '@/components/app/UnitToggle';
+import { LapMonogram } from '@/components/shared/LapMonogram';
+import { logout } from '@/lib/auth';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -79,11 +81,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         className={`${collapsed ? 'w-14' : 'w-60'} bg-concrete border-r border-steel/20 flex flex-col shrink-0 overflow-hidden transition-all duration-300`}
       >
         <div className="p-4 border-b border-steel/20 flex items-center justify-between gap-2">
-          {!collapsed && (
-            <Link href="/" className="font-monument text-2xl text-chalk tracking-tight">
-              LAP
-            </Link>
-          )}
+          <Link href="/" className="flex items-center gap-2" title="LAP">
+            <LapMonogram size={collapsed ? 24 : 28} color="currentColor" className="text-chalk shrink-0" />
+            {!collapsed && (
+              <span className="font-monument text-xl text-chalk tracking-tight">LAP</span>
+            )}
+          </Link>
           <button
             type="button"
             onClick={toggle}
@@ -131,14 +134,6 @@ export function AppShell({ children }: { children: ReactNode }) {
             {!collapsed && <span className="font-body">Help</span>}
           </Link>
           <Link
-            href="/changelog"
-            title={collapsed ? 'Changelog' : undefined}
-            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors text-steel hover:text-chalk hover:bg-asphalt/30`}
-          >
-            <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{'\u2261'}</span>
-            {!collapsed && <span className="font-body">Changelog</span>}
-          </Link>
-          <Link
             href="/app/account"
             title={collapsed ? 'Account' : undefined}
             aria-current={pathname.startsWith('/app/account') ? 'page' : undefined}
@@ -151,6 +146,15 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{'\u25C9'}</span>
             {!collapsed && <span className="font-body">Account</span>}
           </Link>
+          <button
+            type="button"
+            title={collapsed ? 'Log out' : undefined}
+            onClick={() => { logout().then(() => { window.location.href = '/login'; }); }}
+            className={`flex items-center ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-2.5 text-sm transition-colors text-steel hover:text-safety-red hover:bg-asphalt/30 w-full`}
+          >
+            <span className="w-5 text-center font-telemetry shrink-0" aria-hidden="true">{'\u2192'}</span>
+            {!collapsed && <span className="font-body">Log out</span>}
+          </button>
         </div>
       </aside>
 

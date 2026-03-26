@@ -11,7 +11,7 @@ export const colors = {
   asphalt: '#000000',
   concrete: '#141414',
   chalk: '#F0EDE5',
-  steel: '#888888',
+  steel: '#949494',
   acidGreen: '#22C55E',
   safetyRed: '#FF2A2A',
   marshalYellow: '#FACC15',

@@ -233,24 +233,6 @@ body {
   transition-duration: 60ms;
 }
 
-/* ── Room Transitions (kernel-driven) ──── */
-.room {
-  transition: opacity var(--duration-room) var(--ease-inertia),
-              filter var(--duration-room) var(--ease-inertia),
-              transform var(--duration-room) var(--ease-inertia);
-}
-
-.room-exiting {
-  opacity: 0;
-  filter: blur(8px);
-  transform: translateY(-20px);
-}
-
-.room-entering {
-  opacity: 1;
-  filter: blur(0);
-  transform: translateY(0);
-}
 
 /* CSS containment — isolate repaints from triggering full-page layout */
 [id="speed-chart"],
@@ -293,6 +275,16 @@ main > section { contain: layout; }
 }
 .chart-enter {
   animation: chart-fade-in 0.4s ease-out both;
+}
+
+/* ── Share card modal animations ──────── */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes cardReveal {
+  from { opacity: 0; transform: scale(0.92) translateY(20px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
 }
 
 /* ── Print-friendly styles ─────────────── */

@@ -27,7 +27,7 @@ const PALETTE = [
 ];
 
 const C = {
-  bg: '#0B0C0F',
+  bg: '#000000',
   grid: '#30363d',
   text: '#888',
   bright: '#F0EDE5',

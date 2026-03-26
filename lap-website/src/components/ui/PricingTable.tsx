@@ -9,9 +9,9 @@ import { StampButton } from './StampButton';
 
 /** 3 key differentiating features shown by default per plan slug */
 const KEY_FEATURES: Record<string, string[]> = {
-  demo: ['Session Upload', 'Race Strategy', 'Raw Telemetry Retention'],
-  racer: ['Analysis Reports', 'Race Strategy', 'Raw Telemetry Retention'],
-  'world-class': ['Analysis Reports', 'Race Strategy', 'Raw Telemetry Retention'],
+  demo: ['Session Upload', 'Race Strategy', 'Visualization'],
+  racer: ['Analysis Reports', 'Race Strategy', 'Visualization'],
+  'world-class': ['Analysis Reports', 'Race Strategy', 'Visualization'],
 };
 
 /** A/B CTA text overrides per plan slug, keyed by experiment variant */

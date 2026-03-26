@@ -19,11 +19,11 @@ import { useChartHoverStore } from '@/lib/chart-hover-store';
 const COLORS = {
   bg: '#141414',
   grid: '#30363d',
-  text: '#888888',
+  text: '#949494',
   textBright: '#F0EDE5',
-  accent: '#ff6b35',
-  yellow: '#d29922',
-  cyan: '#58a6ff',
+  accent: '#C9A84C',
+  yellow: '#FACC15',
+  cyan: '#3B82F6',
 };
 
 // ── Types ────────────────────────────────────────────────────────
@@ -376,9 +376,9 @@ function drawSpeedTrace(
     const left = Math.max(pad.left, Math.min(sx, ex));
     const right = Math.min(pad.left + pW, Math.max(sx, ex));
     if (right > left) {
-      ctx.fillStyle = 'rgba(182, 255, 46, 0.08)';
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
       ctx.fillRect(left, pad.top, right - left, pH);
-      ctx.strokeStyle = 'rgba(182, 255, 46, 0.5)';
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(left, pad.top, right - left, pH);
     }

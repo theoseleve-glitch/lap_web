@@ -22,7 +22,7 @@ const TIER_COLORS: Record<string, string> = {
   gold: '#FFD700',
   silver: '#C0C0C0',
   bronze: '#CD7F32',
-  locked: '#555555',
+  locked: '#949494',
 };
 
 const TIER_ORDER = ['bronze', 'silver', 'gold'] as const;
@@ -115,7 +115,7 @@ export function AchievementUnlockOverlay({
             width: '90%',
             borderRadius: '1rem',
             padding: '2.5rem 2rem 2rem',
-            background: `linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)`,
+            background: 'linear-gradient(135deg, #141414 0%, #000000 100%)',
             border: `1px solid ${tierColor}33`,
             textAlign: 'center',
             cursor: 'default',
@@ -146,7 +146,7 @@ export function AchievementUnlockOverlay({
           {/* "ACHIEVEMENT UNLOCKED" label */}
           <p
             style={{
-              fontFamily: 'monospace',
+              fontFamily: '"Space Mono", "Fira Code", monospace',
               fontSize: '0.7rem',
               fontWeight: 700,
               textTransform: 'uppercase',
@@ -167,7 +167,7 @@ export function AchievementUnlockOverlay({
             style={{
               fontSize: '1.5rem',
               fontWeight: 900,
-              color: '#f0f0f0',
+              color: '#F0EDE5',
               marginBottom: '0.5rem',
               margin: '0 0 0.5rem 0',
               opacity: phaseGte('text') ? 1 : 0,
@@ -181,9 +181,9 @@ export function AchievementUnlockOverlay({
           {/* Description */}
           <p
             style={{
-              fontFamily: 'monospace',
+              fontFamily: '"Space Mono", "Fira Code", monospace',
               fontSize: '0.85rem',
-              color: '#9ca3af',
+              color: '#949494',
               marginBottom: '1.25rem',
               lineHeight: 1.5,
               opacity: phaseGte('text') ? 1 : 0,
@@ -212,7 +212,7 @@ export function AchievementUnlockOverlay({
                   width: 10,
                   height: 10,
                   borderRadius: '50%',
-                  backgroundColor: i <= tierIndex ? TIER_COLORS[t] : '#333',
+                  backgroundColor: i <= tierIndex ? TIER_COLORS[t] : 'rgba(148, 148, 148, 0.25)',
                   boxShadow: i <= tierIndex ? `0 0 6px ${TIER_COLORS[t]}80` : 'none',
                   transition: 'background-color 0.3s ease, box-shadow 0.3s ease',
                 }}
@@ -231,7 +231,7 @@ export function AchievementUnlockOverlay({
               border: `1px solid ${tierColor}66`,
               backgroundColor: 'transparent',
               color: tierColor,
-              fontFamily: 'monospace',
+              fontFamily: '"Space Mono", "Fira Code", monospace',
               fontSize: '0.85rem',
               fontWeight: 600,
               textTransform: 'uppercase',

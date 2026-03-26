@@ -654,8 +654,8 @@ export default function SessionDetailPage() {
 
       {/* Share card modal */}
       {shareOpen && session && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8" onClick={() => setShareOpen(false)}>
-          <div className="bg-concrete rounded-2xl border border-steel/20 p-6 max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8 animate-[fadeIn_300ms_ease-out]" onClick={() => setShareOpen(false)}>
+          <div className="bg-concrete rounded-2xl border border-acid-green/20 p-6 max-w-2xl w-full shadow-[0_0_60px_-10px_rgba(182,255,46,0.15)] animate-[cardReveal_500ms_cubic-bezier(0.16,1,0.3,1)]" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-monument text-chalk">Share Session</h3>
               <button type="button" onClick={() => setShareOpen(false)} className="text-steel hover:text-chalk text-sm">Close</button>
@@ -667,15 +667,18 @@ export default function SessionDetailPage() {
                 sessionDate: session.session_date || undefined,
                 sessionType: session.session_type || undefined,
                 bestLapTime: session.best_lap_time_s,
-                totalScore: session.total_score,
+                totalScore: scores ? (() => {
+                  const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
+                  return dims.reduce<number>((s, v) => s + (v ?? 0), 0);
+                })() : session.total_score,
                 grade: scores ? (() => {
                   const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
-                  const t = dims.reduce((s, v) => s + (v ?? 0), 0);
+                  const t = dims.reduce<number>((s, v) => s + (v ?? 0), 0);
                   return t >= 90 ? 'A+' : t >= 80 ? 'A' : t >= 65 ? 'B' : t >= 50 ? 'C' : t >= 35 ? 'D' : 'F';
                 })() : session.grade,
                 nLaps: session.n_laps,
                 cvPct: scores?.consistency_score != null && scores?.consistency_max
-                  ? Math.round((scores.consistency_score / scores.consistency_max) * 100) / 10
+                  ? Math.round((scores.consistency_score / scores.consistency_max) * 100)
                   : undefined,
                 badges: scores?.badges,
               }} />
@@ -1706,7 +1709,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       const isPit = lap.invalid_reason === 'Pitted lap';
 
       if (isBest) {
-        ctx.fillStyle = '#3ddc84';
+        ctx.fillStyle = '#22C55E';
       } else if (isJoker) {
         ctx.fillStyle = 'rgba(255,214,0,0.35)';
       } else if (isPit) {
@@ -1732,7 +1735,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     ctx.textAlign = 'left';
     const legendY = 14;
     // Best
-    ctx.fillStyle = '#3ddc84';
+    ctx.fillStyle = '#22C55E';
     ctx.fillRect(pad.left, legendY - 4, 10, 8);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Best', pad.left + 14, legendY + 2);
@@ -2187,7 +2190,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
       const barH = pad.top + cH - y;
       const isBest = times[i] === bestTime;
 
-      ctx.fillStyle = isBest ? '#3ddc84' : 'rgba(255,255,255,0.25)';
+      ctx.fillStyle = isBest ? '#22C55E' : 'rgba(255,255,255,0.25)';
       ctx.fillRect(x, y, barWidth, barH);
 
       // Lap number label
@@ -2198,7 +2201,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     }
 
     // Rolling average line
-    ctx.strokeStyle = '#ff8c00';
+    ctx.strokeStyle = '#C9A84C';
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
@@ -2228,7 +2231,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'left';
     const legendY = 14;
-    ctx.fillStyle = '#ff8c00';
+    ctx.fillStyle = '#C9A84C';
     ctx.fillRect(pad.left, legendY - 4, 12, 2);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Rolling Avg', pad.left + 16, legendY);

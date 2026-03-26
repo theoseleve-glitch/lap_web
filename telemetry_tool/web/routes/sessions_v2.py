@@ -389,11 +389,26 @@ def upload_session() -> tuple[Response, int]:
 
     ext = Path(f.filename).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
-        return api_error(
-            ErrorCode.UNSUPPORTED_FORMAT,
-            f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
-            status=400,
-        )
+        # Return structured import error for unsupported extensions
+        try:
+            from import_errors import ImportErrorCode, ImportFailure, make_support_ref
+            failure = ImportFailure.from_code(
+                ImportErrorCode.UNSUPPORTED_FILE_EXTENSION,
+                support_ref=make_support_ref(),
+                message_override=f"File type '{ext}' is not supported. Accepted: CSV, TXT, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK (AiM).",
+            )
+            return api_error(
+                ErrorCode.UNSUPPORTED_FORMAT,
+                failure.message,
+                details=[{"import_error": failure.to_dict()}],
+                status=400,
+            )
+        except ImportError:
+            return api_error(
+                ErrorCode.UNSUPPORTED_FORMAT,
+                f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
+                status=400,
+            )
 
     # ── 2. Tier limit check ───────────────────────────────────────
     plan_tier = getattr(g, "plan_tier", "demo")
@@ -421,6 +436,30 @@ def upload_session() -> tuple[Response, int]:
         f.save(str(tmp_path))
         logger.info("Saved upload to temp path: %s (%d bytes)",
                      tmp_path, tmp_path.stat().st_size)
+
+        # ── 3b. Preflight validation (fast, in-request) ───────────
+        try:
+            from preflight import run_preflight
+            preflight_result = run_preflight(str(tmp_path))
+            if not preflight_result.ok and preflight_result.failure:
+                failure = preflight_result.failure
+                logger.info(
+                    "Preflight failed: code=%s support_ref=%s file=%s",
+                    failure.code, failure.support_ref, f.filename,
+                )
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    failure.message,
+                    details=[{"import_error": failure.to_dict()}],
+                    status=422,
+                )
+        except ImportError:
+            logger.debug("Preflight module not available — skipping")
+        except Exception:
+            # Preflight is best-effort; don't block upload on preflight bugs
+            logger.warning("Preflight validation raised — continuing", exc_info=True)
 
         # ── 4. Build session metadata ─────────────────────────────
         _VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance", "heat", "final"}
@@ -603,8 +642,22 @@ def upload_session() -> tuple[Response, int]:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception:
             pass
-        return api_error(
-            ErrorCode.ANALYSIS_FAILED,
-            "Failed to accept upload. Please try again or contact support.",
-            status=500,
-        )
+        # Try to return a structured error
+        try:
+            from import_errors import ImportErrorCode, ImportFailure, make_support_ref
+            failure = ImportFailure.from_code(
+                ImportErrorCode.PIPELINE_INTERNAL_ERROR,
+                support_ref=make_support_ref(),
+            )
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                failure.message,
+                details=[{"import_error": failure.to_dict()}],
+                status=500,
+            )
+        except ImportError:
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                "Failed to accept upload. Please try again or contact support.",
+                status=500,
+            )

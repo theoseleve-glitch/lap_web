@@ -21,9 +21,9 @@ export function QuotaCounter({ meterKey, className = '' }: QuotaCounterProps) {
   let remaining: number | null = null;
   let limit: number | null = null;
 
-  if (meterKey === 'reports') {
-    remaining = entitlements.reportsRemaining;
-    limit = entitlements.reportsPerMonth;
+  if (meterKey === 'analyses') {
+    remaining = entitlements.analysesRemaining;
+    limit = entitlements.analysesPerMonth;
   }
 
   // Unlimited plans don't show a counter

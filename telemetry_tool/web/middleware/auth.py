@@ -22,6 +22,8 @@ def log_security_event(*args: Any, **kwargs: Any) -> None:
 
 # Matches /auth/oauth/<provider> and /auth/oauth/<provider>/callback only
 _OAUTH_PATH_RE = re.compile(r"^/auth/oauth/[a-z]+(/callback)?$")
+# Matches /api/v1/devices/pair/<uuid>/status for unauthenticated poll
+_DEVICE_PAIR_STATUS_RE = re.compile(r"^/api/v1/devices/pair/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/status$")
 
 
 def auth_middleware() -> Response | tuple | None:
@@ -47,8 +49,10 @@ def auth_middleware() -> Response | tuple | None:
         "/auth/forgot-password", "/auth/reset-password",
         "/auth/2fa/verify",
         "/api/v1/billing/webhook",  # Uses Stripe signature verification
+        "/api/v1/devices/pair",        # Device pairing (no auth)
+        "/api/v1/sessions/sync-upload",  # Uses DeviceToken auth
     }
-    if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path):
+    if request.path in _AUTH_PUBLIC_PATHS or _OAUTH_PATH_RE.match(request.path) or _DEVICE_PAIR_STATUS_RE.match(request.path):
         return None
 
     # Skip for static assets

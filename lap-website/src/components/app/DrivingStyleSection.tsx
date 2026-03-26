@@ -98,7 +98,7 @@ function drawRadar(
 
   // Draw labels
   ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.font = '10px "Inter", "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   for (let i = 0; i < n; i++) {
     const angle = i * angleStep - Math.PI / 2;

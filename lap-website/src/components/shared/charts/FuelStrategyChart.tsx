@@ -53,7 +53,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.laps || data.laps.length < 1) {
-      ctx.fillStyle = '#8b949e'; ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No fuel data available', w / 2, h / 2); return;
     }
@@ -101,7 +101,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
         const ll = laps[laps.length - 1], lf = fuel[fuel.length - 1], el = ll + lf / ar;
         ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
         ctx.beginPath(); ctx.moveTo(xPx(ll), fPx(lf)); ctx.lineTo(xPx(el), fPx(0)); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#ef4444'; ctx.font = '10px -apple-system, sans-serif';
+        ctx.fillStyle = '#ef4444'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('Empty ~L' + el.toFixed(1), Math.min(xPx(el), w - pad.right - 10), fPx(0) - 4);
       }
@@ -109,7 +109,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     ctx.restore();
 
     // Axis labels
-    ctx.fillStyle = '#8b949e'; ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = 0; v <= fMax; v += fStep) ctx.fillText(v.toFixed(0), pad.left - 6, fPx(v));
     ctx.textAlign = 'left';
@@ -117,13 +117,13 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     for (let v = 0; v <= rMax; v += rStep) ctx.fillText(v.toFixed(1), w - pad.right + 6, rPx(v));
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (let i = 0; i < laps.length; i++) ctx.fillText('L' + laps[i], xPx(laps[i]), pad.top + pH + 6);
-    ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Lap', pad.left + pW / 2, h - 4);
     ctx.save(); ctx.translate(12, pad.top + pH / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Fuel (kg)', 0, 0); ctx.restore();
     ctx.save(); ctx.translate(w - 8, pad.top + pH / 2); ctx.rotate(Math.PI / 2); ctx.fillText('Rate (kg/lap)', 0, 0); ctx.restore();
 
     // Legend
-    ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     let lx = w - pad.right;
     const pL = 'Projected', pLW = ctx.measureText(pL).width + 16;
     ctx.setLineDash([4, 3]); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1;

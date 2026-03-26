@@ -40,6 +40,26 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Structured error helper
+# ---------------------------------------------------------------------------
+
+
+def _make_import_error_json(exc: BaseException) -> str | None:
+    """Convert an exception to a structured ImportFailure JSON string.
+
+    Returns None if the import_errors module is unavailable (graceful degradation).
+    """
+    try:
+        import json as _json
+        from import_errors import ImportFailure, classify_import_error
+        failure = classify_import_error(exc)
+        return _json.dumps(failure.to_dict())
+    except Exception:
+        logger.debug("Could not generate structured import error", exc_info=True)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Entitlement guard
 # ---------------------------------------------------------------------------
 
@@ -98,12 +118,16 @@ def _update_job_progress(
     error_message: Optional[str] = None,
     error_class: Optional[str] = None,
     pause_reason: Optional[str] = None,
+    import_error_json: Optional[str] = None,
     conn=None,
 ) -> None:
     """Write pipeline progress to the PG ``ingestion_jobs`` table.
 
     Accepts an optional ``conn`` to reuse an existing PG connection
     instead of opening a new one per call.
+
+    ``import_error_json`` stores a structured ImportFailure dict as JSON
+    for rich error rendering on the frontend.
     """
     if conn is None:
         conn = _get_pg_connection()
@@ -117,6 +141,7 @@ def _update_job_progress(
             "  error_message = :error_message,"
             "  error_class = :error_class,"
             "  pause_reason = :pause_reason,"
+            "  import_error_json = COALESCE(:import_error_json, import_error_json),"
             "  updated_at = now() "
             "WHERE job_id = :job_id"
         ),
@@ -129,6 +154,7 @@ def _update_job_progress(
             "error_message": error_message,
             "error_class": error_class,
             "pause_reason": pause_reason,
+            "import_error_json": import_error_json,
         },
     )
     conn.commit()
@@ -1025,6 +1051,7 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
+            import_error_json=_make_import_error_json(exc),
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
@@ -1034,6 +1061,7 @@ def pipeline_ingest(self, job_id: str) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
+            import_error_json=_make_import_error_json(exc),
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
@@ -1114,6 +1142,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
+            import_error_json=_make_import_error_json(exc),
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         raise
@@ -1123,6 +1152,7 @@ def pipeline_analyze(self, job_id: Optional[str]) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
+            import_error_json=_make_import_error_json(exc),
         )
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
         if err_class == "transient":
@@ -1197,6 +1227,30 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             stage_name="finalize_complete", stage_index=15, stage_total=15,
         )
 
+        # Record report usage for quota tracking
+        try:
+            from auth.entitlements import record_usage
+            ws_id = int(ctx.workspace_id) if ctx.workspace_id else None
+            if ws_id is not None:
+                _usage_conn = _get_pg_connection()
+                # Look up user_id from the ingestion_jobs record
+                _job_row = _usage_conn.execute(
+                    text("SELECT workspace_id FROM ingestion_jobs WHERE job_id = :jid"),
+                    {"jid": job_id},
+                ).fetchone()
+                if _job_row:
+                    # Get workspace owner as user_id for usage tracking
+                    _owner_row = _usage_conn.execute(
+                        text("SELECT owner_user_id FROM workspaces WHERE id = :wsid"),
+                        {"wsid": ws_id},
+                    ).fetchone()
+                    if _owner_row:
+                        _owner = dict(_owner_row) if not isinstance(_owner_row, dict) else _owner_row
+                        record_usage(_usage_conn, _owner["owner_user_id"], ws_id, "report_generated")
+                        _usage_conn.commit()
+        except Exception:
+            logger.warning("Failed to record report usage for job %s", job_id, exc_info=True)
+
         ctx.cleanup()
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
 
@@ -1214,6 +1268,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class="fatal",
+            import_error_json=_make_import_error_json(exc),
         )
         _increment_batch_counter(job_id, "failed_sessions")
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)
@@ -1224,6 +1279,7 @@ def pipeline_finalize(self, job_id: Optional[str]) -> Optional[str]:
             job_id=job_id, status="failed",
             stage_name=ctx.current_stage, stage_index=None, stage_total=15,
             error_message=str(exc), error_class=err_class,
+            import_error_json=_make_import_error_json(exc),
         )
         _increment_batch_counter(job_id, "failed_sessions")
         release_workspace_lock(redis_client, ctx.workspace_id, job_id)

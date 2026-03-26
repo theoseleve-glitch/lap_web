@@ -33,7 +33,7 @@ _FEATURE_GATES: list[tuple] = [
     # all of /api/v1/sessions/ behind visualization when only the
     # /api/v1/sessions/{id}/visualize sub-path should be gated.
 
-    # Comparison — World-Class only
+    # Comparison — Racer+
     ("GET", "/compare/", "comparison"),
     ("GET", "/api/v1/comparisons/", "comparison"),
     ("GET", "/api/v1/compare/", "comparison"),
@@ -66,15 +66,14 @@ _FEATURE_GATES: list[tuple] = [
 # Each entry: (method, path_pattern, meter_key, cost)
 
 _QUOTA_GATES: list[tuple[str, str, str, int]] = [
-    # Analysis / report generation
-    ("POST", "/analyze/api/start", "reports", 1),
-    ("POST", "/analyze/sync", "reports", 1),
-    ("POST", "/api/v1/batch-reanalyze", "reports", 1),
-
-    # Uploads
-    ("POST", "/api/data/files/upload", "uploads", 1),
-    ("POST", "/api/v1/files/upload", "uploads", 1),
-    ("POST", "/api/v1/ingest/start", "uploads", 1),
+    # Every upload runs the full pipeline inline — one unified "analyses" meter
+    ("POST", "/api/v1/sessions/upload", "analyses", 1),
+    ("POST", "/api/data/files/upload", "analyses", 1),
+    ("POST", "/api/v1/files/upload", "analyses", 1),
+    ("POST", "/api/v1/ingest/start", "analyses", 1),
+    ("POST", "/analyze/api/start", "analyses", 1),
+    ("POST", "/analyze/sync", "analyses", 1),
+    ("POST", "/api/v1/batch-reanalyze", "analyses", 1),
 ]
 
 # ── Paths explicitly excluded from gating ────────────────────────────
@@ -260,15 +259,10 @@ def record_request_usage():
 
 _USAGE_EVENTS: list[tuple[str, str, str]] = [
     # (method, path_prefix, event_type)
-    ("POST", "/analyze/api/start", "report_generated"),
-    ("POST", "/analyze/sync", "report_generated"),
-    ("POST", "/api/v1/batch-reanalyze", "batch_reanalyze"),
+    # All upload/analyze routes are recorded atomically by check_and_record_quota
+    # Only non-quota events need after-request recording:
     ("POST", "/race-strategy/import", "race_config_created"),
     ("POST", "/race-strategy/new", "race_config_created"),
-    ("POST", "/api/v1/sessions/", "csv_uploaded"),  # if upload route exists
-    ("POST", "/api/data/files/upload", "csv_uploaded"),
-    ("POST", "/api/v1/files/upload", "csv_uploaded"),
-    ("POST", "/api/v1/ingest/start", "csv_uploaded"),
 ]
 
 
@@ -277,6 +271,7 @@ _ATOMIC_QUOTA_ROUTES: set[tuple[str, str]] = {
     ("POST", "/analyze/api/start"),
     ("POST", "/analyze/sync"),
     ("POST", "/api/v1/batch-reanalyze"),
+    ("POST", "/api/v1/sessions/upload"),
     ("POST", "/api/data/files/upload"),
     ("POST", "/api/v1/files/upload"),
     ("POST", "/api/v1/ingest/start"),
@@ -399,46 +394,31 @@ def require_feature(feature_name: str):
 
 
 def require_report_quota(fn):
-    """Check monthly report/export quota before allowing report generation."""
+    """Check monthly analyses quota before allowing report generation."""
 
     @wraps(fn)
     def _wrapped(*args, **kwargs):
         snapshot = entitlement_snapshot()
-        user_id, _ = _identity()
-        conn = _get_conn()
-
-        reports_used = 0
-        if user_id is not None:
-            month_start = datetime.now(timezone.utc).replace(
-                day=1, hour=0, minute=0, second=0, microsecond=0,
-            )
-            row = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM data_exports "
-                "WHERE user_id = %(uid)s AND created_at >= %(month_start)s",
-                {"uid": user_id, "month_start": month_start},
-            ).fetchone()
-            reports_used = int((dict(row) if row else {"cnt": 0}).get("cnt", 0))
 
         policy = get_plan_entitlements(snapshot.get("plan_tier", "demo"))
-        limit = policy.get("reports_per_month", 0)
-        remaining = max(0, limit - reports_used) if limit != -1 else 999
+        limit = policy.get("analyses_per_month", 0)
+        used = snapshot.get("analyses_used", 0)
+        remaining = max(0, limit - used) if limit != -1 else 999
         if remaining <= 0:
             from web.api_utils import ErrorCode, ReasonCode, billing_error
             return billing_error(
                 reason_code=ReasonCode.LIMIT_EXCEEDED,
-                message="Monthly report quota exceeded.",
+                message="Monthly analyses quota exceeded.",
                 current_plan=snapshot.get("plan_tier"),
                 error_code=ErrorCode.QUOTA_EXCEEDED,
                 status=429,
                 extra={
                     "limit": limit,
-                    "used": reports_used,
+                    "used": used,
                     "remaining": 0,
                 },
             )
 
-        snapshot["reports_used"] = reports_used
-        snapshot["reports_remaining"] = remaining
         g.entitlement_snapshot = snapshot
         return fn(*args, **kwargs)
 

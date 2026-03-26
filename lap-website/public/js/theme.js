@@ -62,32 +62,39 @@ window.setLang = function(lang) {
     /* ── Color palette — mirrors :root in main.css ── */
     var colors = {
         /* Backgrounds */
-        bgPrimary:   '#0d1117',
-        bgSecondary: '#161b22',
-        bgTertiary:  '#1c2333',
-        bgCard:      '#1a1f2e',
-        bgHover:     '#21273a',
+        bgPrimary:   '#000000',
+        bgSecondary: '#141414',
+        bgTertiary:  'rgba(240, 237, 229, 0.04)',
+        bgCard:      '#141414',
+        bgHover:     'rgba(240, 237, 229, 0.06)',
 
         /* Text */
-        textPrimary:   '#e6edf3',
-        textSecondary: '#9CA3AF',
-        textMuted:     '#6B7280',
+        textPrimary:   '#F0EDE5',
+        textSecondary: '#949494',
+        textMuted:     '#9CA3AF',
 
         /* Accent */
-        accent:     '#ff6b35',
-        accentDim:  '#cc5529',
+        accent:     '#F0EDE5',
+        accentDim:  'rgba(240, 237, 229, 0.22)',
 
         /* Status */
-        green:      '#3fb950',
-        greenDim:   '#238636',
-        yellow:     '#d29922',
-        red:        '#f85149',
-        blue:       '#58a6ff',
-        purple:     '#bc8cff',
+        green:      '#22C55E',
+        greenDim:   'rgba(34, 197, 94, 0.2)',
+        yellow:     '#FACC15',
+        red:        '#FF2A2A',
+        blue:       '#3B82F6',
+        cyan:       '#3B82F6',
+        purple:     '#8B5CF6',
 
         /* Borders */
-        border:      '#30363d',
-        borderLight: '#21262d',
+        border:      'rgba(148, 148, 148, 0.2)',
+        borderLight: 'rgba(148, 148, 148, 0.1)',
+    };
+
+    var fonts = {
+        body: '"Inter", "Segoe UI", sans-serif',
+        mono: '"Space Mono", "Fira Code", monospace',
+        display: '"Space Grotesk", "Arial Black", sans-serif',
     };
 
     /* ── Hydrate from live CSS (override defaults when DOM ready) ── */
@@ -95,7 +102,7 @@ window.setLang = function(lang) {
         colors.bgPrimary    = cssVar('--bg-primary',    colors.bgPrimary);
         colors.bgSecondary  = cssVar('--bg-secondary',  colors.bgSecondary);
         colors.bgTertiary   = cssVar('--bg-tertiary',   colors.bgTertiary);
-        colors.bgCard       = cssVar('--bg-secondary',   colors.bgCard);
+        colors.bgCard       = cssVar('--bg-card',        colors.bgCard);
         colors.bgHover      = cssVar('--bg-hover',      colors.bgHover);
 
         colors.textPrimary   = cssVar('--text-primary',   colors.textPrimary);
@@ -110,10 +117,15 @@ window.setLang = function(lang) {
         colors.yellow   = cssVar('--yellow',  colors.yellow);
         colors.red      = cssVar('--red',     colors.red);
         colors.blue     = cssVar('--blue',    colors.blue);
+        colors.cyan     = cssVar('--cyan',    colors.cyan);
         colors.purple   = cssVar('--purple',  colors.purple);
 
         colors.border      = cssVar('--border',       colors.border);
         colors.borderLight = cssVar('--border-subtle',  colors.borderLight);
+
+        fonts.body = cssVar('--font-body', fonts.body);
+        fonts.mono = cssVar('--font-mono', fonts.mono);
+        fonts.display = cssVar('--font-display', fonts.display);
     }
 
     /* Hydrate immediately (CSS should be loaded before JS) */
@@ -126,24 +138,12 @@ window.setLang = function(lang) {
     /* ── Chart color themes ────────────────────── */
     var CHART_THEMES = {
         default: [
-            '#ff6b35', '#58a6ff', '#3fb950', '#d29922', '#bc8cff',
-            '#f85149', '#79c0ff', '#56d364', '#e3b341', '#d2a8ff',
-            '#ff7b72', '#a5d6ff', '#7ee787', '#f0c000', '#c792ea',
-        ],
-        neon: [
-            '#00ff87', '#f72585', '#4cc9f0', '#fee440', '#7209b7',
-            '#00f5d4', '#ff006e', '#3a86ff', '#fb5607', '#8338ec',
-            '#72efdd', '#ff477e', '#80ffdb', '#ffbe0b', '#560bad',
-        ],
-        pastel: [
-            '#ffadad', '#a0c4ff', '#bdb2ff', '#caffbf', '#ffd6a5',
-            '#fdffb6', '#9bf6ff', '#d0b4ff', '#ffc6ff', '#ffcfd2',
-            '#98f5e1', '#b8c0ff', '#fde4cf', '#c8e7ff', '#e4c1f9',
+            '#22C55E', '#3B82F6', '#C9A84C', '#FF2A2A', '#8B5CF6',
+            '#FACC15', '#EC4899', '#A78BFA', '#F59E0B', '#EF4444',
         ],
         highContrast: [
-            '#ffffff', '#ffff00', '#00ffff', '#ff00ff', '#ff0000',
-            '#00ff00', '#ff8800', '#0088ff', '#88ff00', '#ff0088',
-            '#00ff88', '#8800ff', '#ffcc00', '#00ccff', '#cc00ff',
+            '#F0EDE5', '#22C55E', '#3B82F6', '#C9A84C', '#FF2A2A',
+            '#FACC15', '#8B5CF6', '#FFFFFF', '#22C55E', '#3B82F6',
         ],
         colorblind: [
             '#0077BB', '#EE7733', '#009988', '#CC3311', '#33BBEE',
@@ -215,6 +215,7 @@ window.setLang = function(lang) {
     /* ── Public API ────────────────────────────── */
     window.Theme = {
         colors:           colors,
+        fonts:            fonts,
         lapColor:         lapColor,
         heatColor:        heatColor,
         speedColor:       speedColor,

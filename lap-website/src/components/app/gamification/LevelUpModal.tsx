@@ -31,8 +31,8 @@ function useLevelUpPulseStyle() {
     style.id = LEVEL_UP_STYLE_ID;
     style.textContent = [
       '@keyframes level-up-pulse {',
-      '  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(163, 230, 53, 0.4); }',
-      '  50% { transform: scale(1.1); box-shadow: 0 0 24px 8px rgba(163, 230, 53, 0.3); }',
+      '  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.35); }',
+      '  50% { transform: scale(1.1); box-shadow: 0 0 24px 8px rgba(34, 197, 94, 0.25); }',
       '}',
     ].join('\n');
     document.head.appendChild(style);
@@ -86,8 +86,8 @@ export default function LevelUpModal({
       <div
         className="relative rounded-xl p-8 max-w-sm w-full text-center"
         style={{
-          backgroundColor: '#1a1a2e',
-          border: '2px solid #a3e635',
+          backgroundColor: '#141414',
+          border: '2px solid #22C55E',
           transform: visible ? 'scale(1)' : 'scale(0.9)',
           opacity: visible ? 1 : 0,
           transition:
@@ -98,7 +98,7 @@ export default function LevelUpModal({
         {/* Heading */}
         <h2
           className="font-monument text-3xl font-black tracking-wider mb-6"
-          style={{ color: '#a3e635' }}
+          style={{ color: '#22C55E' }}
         >
           LEVEL UP!
         </h2>
@@ -109,8 +109,8 @@ export default function LevelUpModal({
           <div
             className="flex items-center justify-center w-16 h-16 rounded-full border-2"
             style={{
-              borderColor: '#94a3b8',
-              backgroundColor: 'rgba(148, 163, 184, 0.1)',
+              borderColor: '#949494',
+              backgroundColor: 'rgba(148, 148, 148, 0.1)',
             }}
           >
             <span className="font-monument text-2xl font-bold text-steel">
@@ -125,14 +125,14 @@ export default function LevelUpModal({
           <div
             className="flex items-center justify-center w-16 h-16 rounded-full border-2"
             style={{
-              borderColor: '#a3e635',
-              backgroundColor: 'rgba(163, 230, 53, 0.15)',
+              borderColor: '#22C55E',
+              backgroundColor: 'rgba(34, 197, 94, 0.15)',
               animation: 'level-up-pulse 1.5s ease-in-out infinite',
             }}
           >
             <span
               className="font-monument text-2xl font-bold"
-              style={{ color: '#a3e635' }}
+              style={{ color: '#22C55E' }}
             >
               {newLevel}
             </span>
@@ -153,14 +153,14 @@ export default function LevelUpModal({
           onClick={handleClose}
           className="w-full py-2.5 px-6 rounded-lg font-monument text-sm font-bold uppercase tracking-wider transition-colors"
           style={{
-            backgroundColor: '#a3e635',
-            color: '#1a1a2e',
+            backgroundColor: '#22C55E',
+            color: '#141414',
           }}
           onMouseEnter={(e) => {
-            (e.target as HTMLButtonElement).style.backgroundColor = '#84cc16';
+            (e.target as HTMLButtonElement).style.backgroundColor = '#16a34a';
           }}
           onMouseLeave={(e) => {
-            (e.target as HTMLButtonElement).style.backgroundColor = '#a3e635';
+            (e.target as HTMLButtonElement).style.backgroundColor = '#22C55E';
           }}
         >
           Continue

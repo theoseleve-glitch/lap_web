@@ -118,7 +118,7 @@ export function DeltaTimeChart({
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#888888';
+      ctx.fillStyle = '#949494';
       ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -188,7 +188,7 @@ export function DeltaTimeChart({
     ctx.stroke();
 
     // Y axis labels — use consistent decimal places per step size
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = '#949494';
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -207,7 +207,7 @@ export function DeltaTimeChart({
     }
 
     // Axis titles
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = '#949494';
     ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);

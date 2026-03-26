@@ -81,7 +81,7 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#8b949e'; ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No wheel slip data available', w / 2, h / 2);
       boundsRef.current = null; return;
@@ -123,12 +123,12 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     ctx.restore();
 
     // Labels
-    ctx.fillStyle = '#8b949e'; ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = yMin; v <= yMax + 0.001; v += 0.1) ctx.fillText(v.toFixed(1), pad.left - 6, yPx(v));
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (let v = 0; v <= xMax; v += xStep) ctx.fillText(v.toFixed(0) + 'm', xPx(v), pad.top + pH + 6);
-    ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
     ctx.save(); ctx.translate(12, pad.top + pH / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Slip Ratio', 0, 0); ctx.restore();
 
@@ -151,7 +151,7 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
           ctx.fillStyle = tr.color; ctx.fill(); ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 1; ctx.stroke();
           tips.push(`${tr.label}: ${v.toFixed(3)}`);
         }
-        ctx.font = '10px -apple-system, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         let mw = 0; for (const l of tips) { const m = ctx.measureText(l).width; if (m > mw) mw = m; }
         const tW = mw + 16, tH = tips.length * 14 + 8;
         let tX = hx + 12; if (tX + tW > w - 10) tX = hx - tW - 12;
@@ -161,7 +161,7 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
       }
     }
     // Legend
-    ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     let lx = w - pad.right;
     for (let i = TRACES.length - 1; i >= 0; i--) {
       const t = TRACES[i], lw = ctx.measureText(t.label).width + 16;

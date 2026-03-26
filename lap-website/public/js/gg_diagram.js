@@ -255,7 +255,7 @@
 
             // Friction circle label.
             ctx.fillStyle = C.textPrimary || '#c9d1d9';
-            ctx.font = '12px -apple-system, sans-serif';
+            ctx.font = '12px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'left';
             ctx.fillText(frictionR.toFixed(2) + 'G envelope', cx + rPx + 6, cy - rPx + 14);
 
@@ -263,7 +263,7 @@
 
             // Axis tick labels (outside clip).
             ctx.fillStyle = C.textPrimary || '#c9d1d9';
-            ctx.font = '13px -apple-system, sans-serif';
+            ctx.font = '13px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             for (var g = Math.ceil(gMin / step) * step; g <= gMax; g += step) {
@@ -286,7 +286,7 @@
 
             // Axis titles (larger, more prominent).
             ctx.fillStyle = C.textPrimary || '#e6edf3';
-            ctx.font = 'bold 14px -apple-system, sans-serif';
+            ctx.font = 'bold 14px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
             ctx.fillText('Lateral G', pad.left + pW / 2, h - 16);
@@ -300,7 +300,7 @@
 
             // Quadrant labels (larger, more visible).
             ctx.fillStyle = C.textSecondary || 'rgba(201, 209, 217, 0.5)';
-            ctx.font = 'bold 12px -apple-system, sans-serif';
+            ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             var qCx = xToPixel(0), qCy = yToPixel(0);
@@ -316,7 +316,7 @@
             // Zoom indicator.
             if (zoomLevel > 1.01) {
                 ctx.fillStyle = C.accent || 'rgba(255, 107, 53, 0.8)';
-                ctx.font = '11px -apple-system, sans-serif';
+                ctx.font = '11px "Inter", "Segoe UI", sans-serif';
                 ctx.textAlign = 'right';
                 ctx.textBaseline = 'top';
                 ctx.fillText('Zoom: ' + zoomLevel.toFixed(1) + 'x  (dbl-click to reset)', w - pad.right, pad.top + 4);
@@ -324,7 +324,7 @@
 
             // Stats summary in top-left.
             ctx.fillStyle = C.textSecondary || 'rgba(201, 209, 217, 0.6)';
-            ctx.font = '11px -apple-system, sans-serif';
+            ctx.font = '11px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillText(latG.length + ' samples | Max: ' + maxG.toFixed(2) + 'G', pad.left + 4, pad.top + 4);

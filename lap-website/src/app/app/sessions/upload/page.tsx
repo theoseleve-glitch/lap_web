@@ -9,6 +9,7 @@ import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
+import { ImportErrorPanel, type ImportError } from '@/components/app/ImportErrorPanel';
 import { StintConfigFlow } from '@/components/app/endurance/StintConfigFlow';
 import { StintProcessingProgress } from '@/components/app/endurance/StintProcessingProgress';
 import { TeamReport } from '@/components/app/endurance/TeamReport';
@@ -44,6 +45,8 @@ interface SSEEvent {
   session_id?: string;
   /** Milestone data — key facts from completed stages */
   milestones?: Record<string, string>;
+  /** Structured import error from backend */
+  import_error?: ImportError;
 }
 
 const SESSION_TYPES = [
@@ -409,6 +412,7 @@ function UploadPage() {
   const [sseStatus, setSseStatus] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [errorRequestId, setErrorRequestId] = useState<string | null>(null);
+  const [importError, setImportError] = useState<ImportError | null>(null);
   const [trackLayout, setTrackLayout] = useState<TrackLayout | null>(null);
   const [isSubmittingCorners, setIsSubmittingCorners] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -645,6 +649,12 @@ function UploadPage() {
                 };
                 const errMsg = event.error_message || defaultMsgs[event.status] || 'Processing failed';
                 closeStream();
+                // Capture structured import error if available
+                if (event.import_error) {
+                  setImportError(event.import_error);
+                } else {
+                  setImportError(null);
+                }
                 // In batch mode, record failure and continue
                 if (batchTotal > 1) {
                   setBatchResults((prev) => [...prev, { name: file?.name ?? 'Unknown', sessionId: null, error: errMsg }]);
@@ -841,15 +851,24 @@ function UploadPage() {
       // Don't show error if user cancelled
       if (err instanceof Error && err.message === 'Upload cancelled') return;
       setPageState('error');
+      // Extract structured import error from API error details
       if (err instanceof ApiError) {
         setErrorMessage(err.message);
         setErrorRequestId(err.requestId ?? null);
+        const details = (err as any).details;
+        if (Array.isArray(details) && details[0]?.import_error) {
+          setImportError(details[0].import_error as ImportError);
+        } else {
+          setImportError(null);
+        }
       } else if (err instanceof Error) {
         setErrorMessage(err.message);
         setErrorRequestId(null);
+        setImportError(null);
       } else {
         setErrorMessage('An unexpected error occurred.');
         setErrorRequestId(null);
+        setImportError(null);
       }
     }
   }, [file, driverName, sessionType, trackState, lapRange, excludeLaps, kartName, trackName, sessionDate, jokerEnabled, jokerLap, connectSSE, enduranceDrivers, pitThreshold]);
@@ -899,6 +918,7 @@ function UploadPage() {
     setSseStatus('');
     setJobId(null);
     setErrorMessage('');
+    setImportError(null);
   }, []);
 
   const isFormDisabled = pageState !== 'idle' && pageState !== 'error';
@@ -1253,7 +1273,27 @@ function UploadPage() {
           </div>
 
           {/* ── Error Message ──────────────────────────── */}
-          {errorMessage && (
+          {importError ? (
+            <div className="mb-4">
+              <ImportErrorPanel
+                error={importError}
+                fileName={file?.name}
+                onRetry={() => {
+                  setImportError(null);
+                  setErrorMessage('');
+                  setPageState('idle');
+                  setFile(null);
+                  setFileQueue([]);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                onReupload={() => {
+                  setImportError(null);
+                  setErrorMessage('');
+                  setPageState('idle');
+                }}
+              />
+            </div>
+          ) : errorMessage ? (
             <div className="mb-4 p-3 rounded-lg bg-safety-red/10 border border-safety-red/20 text-safety-red text-sm font-body" role="alert">
               {errorMessage}
               {errorRequestId && (
@@ -1262,7 +1302,7 @@ function UploadPage() {
                 </p>
               )}
             </div>
-          )}
+          ) : null}
 
           {/* ── Submit Button ──────────────────────────── */}
           <div className="flex items-center gap-4">

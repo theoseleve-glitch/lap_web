@@ -451,7 +451,7 @@
 
         /* Friction circle label */
         ctx.fillStyle = C.textPrimary || '#c9d1d9';
-        ctx.font = '12px -apple-system, sans-serif';
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         ctx.fillText(_state.frictionR.toFixed(2) + 'G envelope', cx + rPx + 6, cy - rPx + 14);
 
@@ -459,7 +459,7 @@
 
         /* Axis tick labels */
         ctx.fillStyle = C.textPrimary || '#c9d1d9';
-        ctx.font = '13px -apple-system, sans-serif';
+        ctx.font = '13px "Inter", "Segoe UI", sans-serif';
         for (var g2 = Math.ceil(gMin / step) * step; g2 <= gMax; g2 += step) {
             if (Math.abs(g2) < 0.001) continue;
             var xp = _xToPixel(g2);
@@ -476,7 +476,7 @@
 
         /* Axis titles */
         ctx.fillStyle = C.textPrimary || '#e6edf3';
-        ctx.font = 'bold 14px -apple-system, sans-serif';
+        ctx.font = 'bold 14px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         ctx.fillText('Lateral G', _ggPad.left + pW / 2, h - 16);
         ctx.save();
@@ -488,7 +488,7 @@
 
         /* Quadrant labels */
         ctx.fillStyle = C.textSecondary || 'rgba(201, 209, 217, 0.5)';
-        ctx.font = 'bold 12px -apple-system, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         var qCx = _xToPixel(0), qCy = _yToPixel(0);
         if (qCy > _ggPad.top + 20 && qCy < _ggPad.top + pH) {
@@ -503,7 +503,7 @@
         /* Zoom indicator */
         if (_state.zoomLevel > 1.01) {
             ctx.fillStyle = C.accent || 'rgba(255, 107, 53, 0.8)';
-            ctx.font = '11px -apple-system, sans-serif';
+            ctx.font = '11px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'right'; ctx.textBaseline = 'top';
             ctx.fillText('Zoom: ' + _state.zoomLevel.toFixed(1) + 'x  (dbl-click to reset)', w - _ggPad.right, _ggPad.top + 4);
         }
@@ -573,7 +573,7 @@
         var lapData = _getLapForMap();
         if (!p || !lapData || !lapData.latitudes) {
             ctx.fillStyle = C.textMuted || '#484f58';
-            ctx.font = '12px -apple-system, sans-serif';
+            ctx.font = '12px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('No GPS data for map', mW / 2, mH / 2);
             return;
@@ -611,7 +611,7 @@
                 ctx.beginPath(); ctx.arc(sf.x, sf.y, 5, 0, Math.PI * 2);
                 ctx.fillStyle = C.accent || '#ff6b35'; ctx.fill();
                 ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-                ctx.fillStyle = '#fff'; ctx.font = 'bold 9px system-ui, sans-serif';
+                ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Inter", "Segoe UI", sans-serif';
                 ctx.textAlign = 'left'; ctx.fillText('S/F', sf.x + 8, sf.y + 3);
             }
         }
@@ -635,7 +635,7 @@
 
         /* Map title */
         ctx.fillStyle = C.textMuted || '#484f58';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         var lapLabel = _state.primaryLap ? ('Lap ' + _state.primaryLap) : 'Best Lap';
         ctx.fillText(lapLabel + ' track', mW / 2, mH - 4);
@@ -652,7 +652,7 @@
             ctx.beginPath(); ctx.arc(pp.x, pp.y, 10, 0, Math.PI * 2);
             ctx.fillStyle = col; ctx.fill();
             ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
-            ctx.fillStyle = '#fff'; ctx.font = 'bold 9px system-ui, sans-serif';
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 9px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             ctx.fillText('C' + c.corner_id, pp.x, pp.y);
             ctx.textBaseline = 'alphabetic';

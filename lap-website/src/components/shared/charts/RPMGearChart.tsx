@@ -123,7 +123,7 @@ export function RPMGearChart({
 
     if (!data || !data.distances || data.distances.length < 2) {
       ctx.fillStyle = '#8b949e';
-      ctx.font = '13px -apple-system, sans-serif';
+      ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No RPM/gear data available', w / 2, h / 2);
@@ -187,7 +187,7 @@ export function RPMGearChart({
 
     // Left Y axis labels (RPM)
     ctx.fillStyle = '#8b949e';
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let v = 0; v <= rpmMax; v += rpmStep) {
@@ -209,7 +209,7 @@ export function RPMGearChart({
     }
 
     // Axis titles
-    ctx.font = '11px -apple-system, sans-serif';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
     ctx.save();
@@ -320,7 +320,7 @@ export function RPMGearChart({
           `Speed: ${sVal.toFixed(1)} km/h`,
           `@ ${hoverDist.toFixed(0)}m`,
         ];
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         let maxLineW = 0;
         for (const line of lines) {
           const lw = ctx.measureText(line).width;
@@ -350,7 +350,7 @@ export function RPMGearChart({
     }
 
     // -- Legend (gear colors) ---------------------------------------------
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     const gearsUsed = new Set(gear);

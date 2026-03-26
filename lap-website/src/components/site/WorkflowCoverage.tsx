@@ -8,10 +8,9 @@ import { useTranslation } from '@/i18n';
 const GROUP_META = {
   coaching: { color: 'text-chalk', border: 'border-chalk/30', bg: 'bg-chalk/5' },
   strategy: { color: 'text-gold', border: 'border-gold/30', bg: 'bg-gold/5' },
-  operations: { color: 'text-steel', border: 'border-chalk/20', bg: 'bg-chalk/5' },
 } as const;
 
-const groups = ['coaching', 'strategy', 'operations'] as const;
+const groups = ['coaching', 'strategy'] as const;
 
 export function WorkflowCoverage() {
   const { t } = useTranslation();
@@ -27,7 +26,7 @@ export function WorkflowCoverage() {
         </span>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {groups.map((group) => {
           const meta = GROUP_META[group];
           const modules = workflowModules.filter((m) => m.group === group);

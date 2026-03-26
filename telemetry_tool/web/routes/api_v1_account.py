@@ -1286,7 +1286,20 @@ def data_summary():
     stats_d = dict(stats) if not isinstance(stats, dict) else stats
     sessions_count = stats_d.get("cnt", 0)
     oldest = stats_d.get("oldest")
-    total_storage_mb = 0  # file_size_bytes not tracked in current schema
+    # Sum file_size from ingestion_jobs for this workspace
+    try:
+        storage_row = conn.execute(
+            text(
+                "SELECT COALESCE(SUM(file_size), 0) AS total_bytes "
+                "FROM ingestion_jobs "
+                "WHERE workspace_id = :ws AND status = 'completed'"
+            ),
+            {"ws": workspace_id},
+        ).fetchone()
+        storage_d = dict(storage_row) if not isinstance(storage_row, dict) else storage_row
+        total_storage_mb = round(storage_d["total_bytes"] / (1024 * 1024), 1)
+    except Exception:
+        total_storage_mb = 0  # fallback if ingestion_jobs not available
 
     # Get retention info from entitlements
     ents = get_user_entitlements(conn, user_id, workspace_id)

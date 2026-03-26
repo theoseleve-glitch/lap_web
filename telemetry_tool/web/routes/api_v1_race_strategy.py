@@ -35,6 +35,7 @@ from services.race_strategy import (
     import_race,
     list_races,
     reoptimize,
+    reorder_stints,
     run_optimization,
     set_pit_type,
     set_stint_driver,
@@ -960,6 +961,30 @@ def set_duration_endpoint(race_id: int):
     except Exception as exc:
         logger.exception("set_duration failed for race_id=%s", race_id)
         return api_error(ErrorCode.INTERNAL_ERROR, f"set_duration: {type(exc).__name__}: {exc}", status=500)
+
+
+# ---------------------------------------------------------------------------
+# POST /<race_id>/reorder-stints — swap two adjacent stints
+# ---------------------------------------------------------------------------
+
+@bp.route("/<int:race_id>/reorder-stints", methods=["POST"])
+@rate_limit(tier="write")
+def reorder_stints_endpoint(race_id: int):
+    """Swap two adjacent stints and re-cascade fuel/ballast/pit stops."""
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    direction = data.get("direction")
+    if stint_order is None or direction not in ("up", "down"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and direction (up/down) are required", status=400)
+    try:
+        conn = get_pg_connection()
+        result = reorder_stints(conn, race_id, int(stint_order), direction)
+        if result is None:
+            return api_error(ErrorCode.VALIDATION_ERROR, "Cannot move stint in that direction", status=400)
+        return api_response(result)
+    except Exception as exc:
+        logger.exception("reorder_stints failed for race_id=%s", race_id)
+        return api_error(ErrorCode.INTERNAL_ERROR, f"reorder_stints: {type(exc).__name__}: {exc}", status=500)
 
 
 # ---------------------------------------------------------------------------

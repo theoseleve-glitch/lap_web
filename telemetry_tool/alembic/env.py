@@ -19,8 +19,11 @@ from alembic import context
 config = context.config
 
 # Set up Python logging from the config file.
+# disable_existing_loggers=False is critical — the default (True) disables
+# all loggers created before this call, including gunicorn.access, which
+# silently kills gunicorn access logging when init_pg() runs at app startup.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Override sqlalchemy.url from environment variable when available.
 pg_url = os.environ.get("TELEMETRY_PG_URL")

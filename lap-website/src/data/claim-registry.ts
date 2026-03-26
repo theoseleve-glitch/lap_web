@@ -1,4 +1,4 @@
-export type CapabilityStatus = 'available_now' | 'enterprise_on_request' | 'roadmap';
+export type CapabilityStatus = 'available_now' | 'enterprise_on_request' | 'roadmap' | 'coming_soon';
 
 export interface CapabilityClaim {
   id: string;

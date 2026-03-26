@@ -73,7 +73,7 @@ function drawGG(
   ctx.clearRect(0, 0, w, h);
 
   // Background
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, w, h);
 
   const { accel_lat: aLat, accel_long: aLong } = ggData;
@@ -177,7 +177,7 @@ function drawGG(
 
   // Quadrant labels
   ctx.fillStyle = 'rgba(240, 237, 229, 0.15)';
-  ctx.font = '700 11px "Monument Extended", "Space Mono", monospace';
+  ctx.font = '700 11px "Space Grotesk", "Space Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (oy > PAD.top + 20) {
@@ -231,7 +231,7 @@ function drawGG(
 
   // Axis titles
   ctx.fillStyle = 'rgba(240, 237, 229, 0.6)';
-  ctx.font = '600 10px "Monument Extended", "Space Mono", monospace';
+  ctx.font = '600 10px "Space Grotesk", "Space Mono", monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText('LATERAL G', PAD.left + pW / 2, h - 14);
@@ -410,7 +410,7 @@ export function GGExplorer({
     <div className={`flex flex-col ${className}`}>
       <div
         className="relative flex-1 min-h-0 rounded-lg border border-steel/10"
-        style={{ width: '100%', background: '#0B0C0F', ...(!className.includes('h-full') ? { minHeight: '320px' } : {}) }}
+        style={{ width: '100%', background: 'var(--asphalt)', ...(!className.includes('h-full') ? { minHeight: '320px' } : {}) }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -465,7 +465,7 @@ export function GGExplorer({
             <select
               value={activeLap ?? ''}
               onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-[#C9A84C] focus:outline-none"
+              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-pit-orange focus:outline-none"
             >
               {gpsLaps.map((l) => (
                 <option key={l} value={l}>

@@ -17,8 +17,6 @@ interface ThemeAPI {
 
 const LABELS: Record<string, string> = {
   default: 'Default',
-  neon: 'Neon',
-  pastel: 'Pastel',
   highContrast: 'High Contrast',
   colorblind: 'Colorblind-safe',
 };

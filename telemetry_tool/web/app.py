@@ -389,6 +389,15 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.endurance_upload import bp as endurance_upload_bp
             app.register_blueprint(endurance_upload_bp)
             logger.debug("Registered endurance_upload blueprint")
+
+            # Device pairing and sync endpoints
+            from .routes.devices import bp as devices_bp
+            app.register_blueprint(devices_bp)
+            logger.debug("Registered devices blueprint")
+
+            from .routes.sync_upload import bp as sync_upload_bp
+            app.register_blueprint(sync_upload_bp)
+            logger.debug("Registered sync_upload blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

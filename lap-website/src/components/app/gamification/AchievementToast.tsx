@@ -69,8 +69,8 @@ export default function AchievementToast({
       <div
         className="rounded-lg p-4 shadow-xl flex items-start gap-3"
         style={{
-          backgroundColor: '#1a1a2e',
-          border: '2px solid #ffd700',
+          backgroundColor: '#141414',
+          border: '2px solid #C9A84C',
         }}
       >
         {/* Icon */}
@@ -82,7 +82,7 @@ export default function AchievementToast({
         <div className="flex-1 min-w-0">
           <p
             className="font-monument text-xs font-bold uppercase tracking-wider mb-0.5"
-            style={{ color: '#ffd700' }}
+            style={{ color: '#C9A84C' }}
           >
             Achievement Unlocked
           </p>

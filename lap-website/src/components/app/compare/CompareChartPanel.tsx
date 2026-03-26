@@ -15,8 +15,8 @@ const MODES: { key: ChartMode; label: string; icon: string }[] = [
   { key: 'corners', label: 'Corner Detail', icon: '\u2197' },
 ];
 
-const COLOR_A = '#3ddc84';
-const COLOR_B = '#ff8c00';
+const COLOR_A = '#22C55E';
+const COLOR_B = '#C9A84C';
 
 export default function CompareChartPanel({
   sessionAId,
@@ -40,7 +40,7 @@ export default function CompareChartPanel({
               onClick={() => setMode(m.key)}
               className={`flex items-center gap-2 px-3 py-3 text-left text-sm font-body transition-colors ${
                 active
-                  ? 'bg-zinc-700 text-zinc-100 border-l-2 border-[#3ddc84]'
+                  ? 'bg-zinc-700 text-zinc-100 border-l-2 border-acid-green'
                   : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border-l-2 border-transparent'
               }`}
             >

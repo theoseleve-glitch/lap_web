@@ -7,12 +7,12 @@ import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
 import { LocaleSwitcher } from '@/components/site/LocaleSwitcher';
 import { MobileDrawer } from '@/components/site/MobileDrawer';
+import { LapMonogram } from '@/components/shared/LapMonogram';
 import { useTranslation } from '@/i18n';
 
 const navLabelKey: Record<string, string> = {
   Product: 'nav.product',
   Pricing: 'nav.pricing',
-  'For Venues': 'nav.venues',
   Demo: 'nav.demo',
   Contact: 'nav.contact',
 };
@@ -59,10 +59,11 @@ export function SiteHeader() {
           {/* Logo */}
           <Link
             href="/"
-            className="group relative font-monument text-2xl border-2 border-chalk/70 px-3 py-1.5 leading-none tracking-tight hover:border-pit-orange transition-colors duration-200 min-h-[44px] flex items-center"
+            className="group flex items-center gap-2 min-h-[44px] px-1"
             onClick={() => trackNavRouteClick('/', 'header')}
           >
-            <span className="text-chalk group-hover:text-pit-orange transition-colors duration-200">LAP</span>
+            <LapMonogram size={28} color="currentColor" className="text-chalk group-hover:text-pit-orange transition-colors duration-200" />
+            <span className="font-monument text-xl text-chalk group-hover:text-pit-orange transition-colors duration-200 tracking-tight">LAP</span>
           </Link>
 
           {/* Desktop nav — hidden on mobile */}

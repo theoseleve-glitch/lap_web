@@ -16,10 +16,10 @@ interface AnalyzerCockpitProps {
 const COLORS = {
   concrete: '#141414',
   chalk: '#F0EDE5',
-  steel: '#888888',
-  acidGreen: '#F0EDE5',
+  steel: '#949494',
+  acidGreen: '#22C55E',
   safetyRed: '#FF2A2A',
-  marshalYellow: '#F0EDE5',
+  marshalYellow: '#FACC15',
   pitOrange: '#C9A84C',
 };
 

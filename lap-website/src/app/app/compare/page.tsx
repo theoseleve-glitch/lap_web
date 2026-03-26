@@ -222,8 +222,8 @@ function SessionQuickStart({ disabled }: { disabled: boolean }) {
             type="button"
             disabled={!canCompare}
             onClick={handleCompare}
-            className="bg-[#3ddc84] text-zinc-900 text-xs font-medium px-3 py-1 rounded
-              disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#34c575] transition-colors"
+            className="bg-acid-green text-asphalt text-xs font-medium px-3 py-1 rounded
+              disabled:opacity-40 disabled:cursor-not-allowed hover:bg-acid-green/80 transition-colors"
           >
             Compare
           </button>
@@ -311,8 +311,8 @@ function DriverQuickStart({ disabled }: { disabled: boolean }) {
             type="button"
             disabled={!canCompare}
             onClick={handleCompare}
-            className="bg-[#3ddc84] text-zinc-900 text-xs font-medium px-3 py-1 rounded
-              disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#34c575] transition-colors"
+            className="bg-acid-green text-asphalt text-xs font-medium px-3 py-1 rounded
+              disabled:opacity-40 disabled:cursor-not-allowed hover:bg-acid-green/80 transition-colors"
           >
             Compare
           </button>

@@ -94,11 +94,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <link rel="dns-prefetch" href="https://api.lap-coach.racing" />
         <link
           rel="preload"
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@600;700&family=Space+Mono:wght@400&display=swap&subset=latin"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@600;700&family=Space+Mono:wght@400&display=swap&subset=latin"
           as="style"
         />
         <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Space+Grotesk:wght@600;700&family=Space+Mono:wght@400&display=swap&subset=latin"
+          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@600;700&family=Space+Mono:wght@400&display=swap&subset=latin"
           rel="stylesheet"
         />
         <script

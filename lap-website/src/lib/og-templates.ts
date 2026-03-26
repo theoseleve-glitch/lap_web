@@ -30,7 +30,7 @@ export const OG_DEFAULTS = {
   colors: {
     bg: '#000000',
     title: '#F0EDE5',
-    subtitle: '#888888',
+    subtitle: '#949494',
     brand: '#C9A84C',
   },
   padding: 64,

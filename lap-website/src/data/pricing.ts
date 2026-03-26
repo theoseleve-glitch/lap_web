@@ -30,12 +30,9 @@ export const plans: Plan[] = [
     features: {
       'Session Upload': '1 session (150 MB max)',
       'Race Strategy': 'Up to 4h, basic parameters',
-      'Visualization': '—',
-      'Comparison & Progress': '—',
-      'Coaching Plans': '—',
-      'Live Monitoring': '—',
-      'Pit Stop Planning': '—',
+      'Visualization': '\u2014',
       'Raw Telemetry Retention': '1 month',
+      'Report Retention': '5 years',
     },
     cta: 'Start Free',
     ctaHref: '/register?source=demo',
@@ -52,13 +49,9 @@ export const plans: Plan[] = [
     features: {
       'Analysis Reports': '10 / month (2.5 GB max)',
       'Race Strategy': 'Up to 24h, complex parameters',
-      'Optimizer': 'Equal-time only',
       'Visualization': 'Full',
-      'Comparison & Progress': '—',
-      'Coaching Plans': 'Full',
-      'Live Monitoring': 'Full',
-      'Pit Stop Planning': 'Full',
       'Raw Telemetry Retention': '3 months',
+      'Report Retention': '5 years',
     },
     cta: 'Upgrade',
     ctaHref: '/billing?plan=RACER&billing=annual',
@@ -76,13 +69,9 @@ export const plans: Plan[] = [
     features: {
       'Analysis Reports': 'Unlimited',
       'Race Strategy': 'Unlimited duration',
-      'Optimizer': 'All modes (equal + performance)',
       'Visualization': 'Full',
-      'Comparison & Progress': 'Full',
-      'Coaching Plans': 'Full',
-      'Live Monitoring': 'Full',
-      'Pit Stop Planning': 'Full',
       'Raw Telemetry Retention': '12 months',
+      'Report Retention': '5 years',
     },
     cta: 'Go World-Class',
     ctaHref: '/billing?plan=WORLD-CLASS&billing=annual',
@@ -130,7 +119,7 @@ export const featureEligibilityMatrix: EligibilityRow[] = [
   { feature: 'Badge & Share Card', group: 'coaching', demo: 'Full', racer: 'Full', worldClass: 'Full' },
   { feature: 'Visualization Workspace', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
   { feature: 'Gamification & Achievements', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
-  { feature: 'Comparison & Progress', group: 'coaching', demo: '—', racer: '—', worldClass: 'Full' },
+  { feature: 'Comparison & Progress', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
   { feature: 'Coaching Plans & Drills', group: 'coaching', demo: '—', racer: 'Full', worldClass: 'Full' },
   // STRATEGY
   { feature: 'Race Strategy Dashboard', group: 'strategy', demo: '4h, basic params', racer: '24h, complex params', worldClass: 'Unlimited' },
@@ -140,8 +129,10 @@ export const featureEligibilityMatrix: EligibilityRow[] = [
   // DATA & OPS
   { feature: 'PDF Reports', group: 'data', demo: '—', racer: 'Full', worldClass: 'Full' },
   { feature: 'API Access', group: 'data', demo: '—', racer: '—', worldClass: 'Full' },
+  { feature: 'Logger Auto-Sync', group: 'data', demo: '—', racer: 'Upload only', worldClass: 'Upload + Auto-Analyze' },
+  { feature: 'Linked Devices', group: 'data', demo: '0', racer: '2', worldClass: '3' },
   { feature: 'Raw Telemetry Retention', group: 'data', demo: '1 month', racer: '3 months', worldClass: '12 months' },
-  { feature: 'Report Retention', group: 'data', demo: 'Indefinite', racer: 'Indefinite', worldClass: 'Indefinite' },
+  { feature: 'Report Retention', group: 'data', demo: '5 years', racer: '5 years', worldClass: '5 years' },
 ];
 
 export interface DataLifecycleItem {
@@ -166,7 +157,7 @@ export const dataLifecycle: DataLifecycleItem[] = [
     category: 'PROCESSED REPORTS',
     description: '1–5MB',
     tiers: [
-      { label: 'All plans', value: 'Stored indefinitely' },
+      { label: 'All plans', value: '5 years' },
       { label: 'Venues & Teams', value: '2 years' },
     ],
     note: 'Reports are your permanent record. Lightweight. No extra cost.',

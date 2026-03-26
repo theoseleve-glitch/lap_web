@@ -18,9 +18,12 @@ interface MeResponse {
   entitlements?: {
     plan_tier: string;
     subscription_status: string;
-    reports_per_month: number | null;
-    reports_used: number;
-    reports_remaining: number | null;
+    analyses_per_month: number | null;
+    analyses_used: number;
+    analyses_remaining: number | null;
+    upload_volume_mb_per_month: number | null;
+    upload_volume_mb_used: number;
+    upload_volume_mb_remaining: number | null;
     api_access: boolean;
     comparison_enabled: boolean;
     coaching_plans_enabled: boolean;
@@ -46,9 +49,12 @@ function mapEntitlements(raw: NonNullable<MeResponse['entitlements']>): Entitlem
   return {
     planTier: raw.plan_tier as Entitlements['planTier'],
     subscriptionStatus: raw.subscription_status as Entitlements['subscriptionStatus'],
-    reportsPerMonth: raw.reports_per_month,
-    reportsUsed: raw.reports_used,
-    reportsRemaining: raw.reports_remaining,
+    analysesPerMonth: raw.analyses_per_month,
+    analysesUsed: raw.analyses_used,
+    analysesRemaining: raw.analyses_remaining,
+    uploadVolumeMbPerMonth: raw.upload_volume_mb_per_month ?? null,
+    uploadVolumeMbUsed: raw.upload_volume_mb_used ?? 0,
+    uploadVolumeMbRemaining: raw.upload_volume_mb_remaining ?? null,
     apiAccess: raw.api_access,
     comparisonEnabled: raw.comparison_enabled,
     coachingPlansEnabled: raw.coaching_plans_enabled,

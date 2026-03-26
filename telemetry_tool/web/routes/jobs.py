@@ -488,10 +488,20 @@ def stream(job_id: str):
                 stage_total = job.get("stage_total") or 16
                 progress_pct = round((stage_index / stage_total) * 100, 1) if stage_total > 0 else 0
 
-                # Sanitise error_message for SSE: don't leak internals
+                # Build error payload — prefer structured import_error, fall back to legacy
                 raw_err = job.get("error_message")
+                import_error_json = job.get("import_error_json")
                 safe_err = None
-                if raw_err:
+                import_error = None
+
+                if import_error_json:
+                    # Structured error — pass through as-is
+                    try:
+                        import_error = json.loads(import_error_json) if isinstance(import_error_json, str) else import_error_json
+                        safe_err = import_error.get("message", "Processing failed.")
+                    except (json.JSONDecodeError, TypeError):
+                        safe_err = raw_err or "Processing failed."
+                elif raw_err:
                     err_class = job.get("error_class", "")
                     _SSE_MSGS = {
                         "fatal": "Analysis failed. The file may be corrupted or unsupported.",
@@ -507,6 +517,8 @@ def stream(job_id: str):
                     "error_message": safe_err,
                     "session_id": job.get("session_id") or job.get("job_id"),
                 }
+                if import_error:
+                    event["import_error"] = import_error
                 yield f"data: {json.dumps(event)}\n\n"
 
                 if job.get("status") in _TERMINAL_STATUSES:

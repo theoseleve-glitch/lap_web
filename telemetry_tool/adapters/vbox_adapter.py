@@ -1,7 +1,7 @@
 """VBOX .vbo telemetry adapter.
 
 Parses section-based text format with [header], [column names], [data].
-Converts velocity from knots to m/s, lat/long from minutes*1e-5 to degrees.
+Converts velocity from knots to m/s, lat/long from stored value / 60000 to degrees.
 """
 from __future__ import annotations
 

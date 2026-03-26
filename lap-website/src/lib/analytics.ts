@@ -158,3 +158,9 @@ export const trackReducedMotionToggle = (enabled: boolean) =>
 export const trackPodiumReach = (scrollTimeMs: number, sectionsVisited: number) =>
   track('podium_reach', { total_scroll_time_ms: scrollTimeMs, sections_visited: sectionsVisited });
 export const trackRestartLap = () => track('restart_lap');
+
+// ── Funnel tracking (B2C vs B2B) ────────────────────────
+export const trackB2CFunnel = (step: string, props?: EventProps) =>
+  track('b2c_funnel', { step, ...props });
+export const trackB2BFunnel = (step: string, props?: EventProps) =>
+  track('b2b_funnel', { step, ...props });

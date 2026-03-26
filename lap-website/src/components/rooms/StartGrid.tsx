@@ -17,7 +17,7 @@ export function StartGrid() {
     <section
       id="start-grid"
       data-accent="none"
-      className="relative min-h-[calc(100vh-3rem)] flex items-center justify-center"
+      className="relative min-h-[calc(100dvh-3rem)] flex items-center justify-center"
       aria-label="Hero — what is Lap Coach"
     >
       <div className="flex flex-col items-center justify-center text-center gap-3">

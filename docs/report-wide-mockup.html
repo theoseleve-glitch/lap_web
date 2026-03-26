@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Report Wide Mockup</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap');
+    :root {
+      --bg: #05070a;
+      --panel: #0f141b;
+      --panel-2: #0a0f15;
+      --line: #1c2530;
+      --line-2: #283340;
+      --text: #edf2f7;
+      --muted: #8ea0b3;
+      --green: #b6ff2e;
+      --cyan: #24d2ff;
+      --pink: #d946ef;
+      --orange: #ff7a00;
+      --yellow: #ffd400;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, sans-serif; }
+    .mono, .eyebrow, .panel-head h2, .pill, .score-strip .label, .table th { font-family: "IBM Plex Mono", monospace; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; }
+    .topbar, .summarybar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .topbar { background: #0a0e13; }
+    .title h1 { margin: 0; font-size: 34px; letter-spacing: -0.05em; }
+    .title p { margin: 4px 0 0; color: var(--muted); }
+    .actions, .summarygrid { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .pill { padding: 9px 12px; border: 1px solid var(--line-2); background: #0f161d; color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .summarybar { background: #070c11; }
+    .score-strip { min-width: 150px; padding-right: 18px; border-right: 1px solid var(--line); }
+    .score-strip:last-child { border-right: 0; padding-right: 0; }
+    .score-strip .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .score-strip .value { margin-top: 6px; font-size: 34px; font-weight: 800; letter-spacing: -0.05em; }
+    .workspace { display: grid; grid-template-columns: 1.2fr 1fr 0.86fr; gap: 14px; padding: 14px; min-height: 0; }
+    .col { display: grid; gap: 14px; min-height: 0; }
+    .panel { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--line); min-height: 0; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .panel-body { padding: 14px; }
+    .hero-score { display: grid; grid-template-columns: 180px 1fr; gap: 18px; align-items: start; }
+    .grade-box { padding: 18px; border: 1px solid var(--line); background: #0b1118; text-align: center; }
+    .eyebrow { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .grade { margin-top: 12px; font-size: 72px; font-weight: 800; line-height: 1; color: var(--yellow); }
+    .score { margin-top: 8px; font-size: 30px; font-weight: 700; }
+    .bars { display: grid; gap: 14px; }
+    .bar-label { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 6px; }
+    .track { height: 14px; background: #091018; border: 1px solid var(--line); position: relative; overflow: hidden; }
+    .track span { display: block; height: 100%; }
+    .g { width: 47%; background: var(--green); }
+    .c { width: 84%; background: var(--cyan); }
+    .p { width: 61%; background: var(--pink); }
+    .o { width: 52%; background: var(--orange); }
+    .y { width: 73%; background: var(--yellow); }
+    .map-card { display: grid; gap: 12px; }
+    .map-box { position: relative; height: 280px; border: 1px solid var(--line); background: #081019; overflow: hidden; }
+    .map-box svg { width: 100%; height: 100%; display: block; }
+    .legend { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 12px; }
+    .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+    .legend .best::before { background: var(--green); }
+    .legend .driver::before { background: var(--cyan); }
+    .legend .risk::before { background: var(--orange); }
+    .coach-list { display: grid; gap: 10px; }
+    .note { padding: 12px; border: 1px solid var(--line); background: #0b1118; }
+    .note strong { display: block; margin-bottom: 6px; }
+    .note p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .stat { padding: 12px; border: 1px solid var(--line); background: #0b1118; }
+    .stat strong { display: block; font-size: 28px; margin-top: 8px; }
+    .table { width: 100%; border-collapse: collapse; }
+    .table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .table td { padding: 10px 12px; border-bottom: 1px solid #18202a; font-size: 13px; }
+    .table tr:hover { background: rgba(255, 255, 255, 0.02); }
+    .spark { height: 110px; border: 1px solid var(--line); background: #081019; padding: 10px; }
+    .spark svg { width: 100%; height: 100%; display: block; }
+    .timeline { display: grid; gap: 10px; }
+    .event { padding: 12px; border-left: 3px solid var(--line-2); background: #0b1118; }
+    .event strong { display: block; margin-bottom: 4px; }
+    .event p { margin: 0; color: var(--muted); font-size: 13px; }
+    .bottom-wide { display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; padding: 0 14px 14px; }
+    @media (max-width: 1280px) {
+      .workspace, .bottom-wide { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">
+        <h1>THÉO STIPA · RACE</h1>
+        <p>City Kart Sausson · 17 Mar 2026 · Wide report workspace</p>
+      </div>
+      <div class="actions">
+        <div class="pill">Overview</div>
+        <div class="pill">Analytics</div>
+        <div class="pill">Lap Data</div>
+        <div class="pill">Focus Mode</div>
+      </div>
+    </div>
+
+    <div class="summarybar">
+      <div class="summarygrid">
+        <div class="score-strip"><div class="label">Overall score</div><div class="value">63 / 100</div></div>
+        <div class="score-strip"><div class="label">Best lap</div><div class="value">0:48.882</div></div>
+        <div class="score-strip"><div class="label">Delta to best</div><div class="value">-0.214s</div></div>
+        <div class="score-strip"><div class="label">Consistency CV</div><div class="value">1.4%</div></div>
+      </div>
+      <div class="pill">Sync on</div>
+    </div>
+
+    <div class="workspace">
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><h2>Score breakdown</h2><span class="eyebrow">Not a single sheet anymore</span></div>
+          <div class="panel-body hero-score">
+            <div class="grade-box">
+              <div class="eyebrow">Grade</div>
+              <div class="grade">C</div>
+              <div class="score">63 / 100</div>
+            </div>
+            <div class="bars">
+              <div><div class="bar-label"><span>Pace</span><span>11 / 25</span></div><div class="track"><span class="g"></span></div></div>
+              <div><div class="bar-label"><span>Consistency</span><span>21 / 25</span></div><div class="track"><span class="c"></span></div></div>
+              <div><div class="bar-label"><span>Execution</span><span>11 / 20</span></div><div class="track"><span class="p"></span></div></div>
+              <div><div class="bar-label"><span>Robustness</span><span>10 / 20</span></div><div class="track"><span class="o"></span></div></div>
+              <div><div class="bar-label"><span>Adaptation</span><span>11 / 15</span></div><div class="track"><span class="y"></span></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Track evidence</h2><span class="eyebrow">Main canvas</span></div>
+          <div class="panel-body map-card">
+            <div class="map-box">
+              <svg viewBox="0 0 640 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M80 222C62 222 56 206 74 199L175 195L227 79C237 55 272 45 288 69C297 84 290 110 267 116C240 122 235 94 254 85C282 72 327 82 395 95C438 103 443 120 411 131C378 143 336 135 299 135C279 135 268 154 277 175C284 189 301 207 294 228C287 253 257 257 231 251L202 248C197 248 194 251 196 258L200 275C202 282 197 286 187 286H69C51 286 47 266 80 222Z" stroke="#14252b" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M80 222C62 222 56 206 74 199L175 195L227 79C237 55 272 45 288 69C297 84 290 110 267 116C240 122 235 94 254 85C282 72 327 82 395 95C438 103 443 120 411 131C378 143 336 135 299 135C279 135 268 154 277 175C284 189 301 207 294 228C287 253 257 257 231 251L202 248C197 248 194 251 196 258L200 275C202 282 197 286 187 286H69C51 286 47 266 80 222Z" stroke="#24d2ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M78 219C60 219 54 203 72 196L173 192L224 82C234 58 269 48 286 72C295 87 288 113 265 119C239 125 233 97 251 88C279 75 324 85 392 98C435 106 440 123 408 134C375 146 333 138 296 138C277 138 266 157 274 178C281 192 298 210 291 231C284 256 255 260 229 254L199 251" stroke="#b6ff2e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 8"/>
+                <circle cx="179" cy="195" r="7" fill="#ff7a00"/>
+                <circle cx="411" cy="131" r="7" fill="#ff7a00"/>
+              </svg>
+            </div>
+            <div class="legend">
+              <span class="driver">your lap</span>
+              <span class="best">theoretical best</span>
+              <span class="risk">loss hotspots</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><h2>Coaching priorities</h2><span class="eyebrow">Right beside evidence</span></div>
+          <div class="panel-body coach-list">
+            <div class="note"><strong>1. Release brake earlier in T1</strong><p>You carry too much residual brake to apex and miss the early rotation window. Potential gain: 0.08s.</p></div>
+            <div class="note"><strong>2. Commit earlier on exit in T7</strong><p>Throttle confidence arrives late despite stable mid-corner speed. Potential gain: 0.11s.</p></div>
+            <div class="note"><strong>3. Keep repeatability from laps 12-15</strong><p>Your best consistency cluster already exists. Use it as the reference set, not the absolute best lap alone.</p></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Lap consistency</h2><span class="eyebrow">Always visible</span></div>
+          <div class="panel-body">
+            <div class="spark">
+              <svg viewBox="0 0 420 120" xmlns="http://www.w3.org/2000/svg">
+                <polyline fill="none" stroke="#24d2ff" stroke-width="4" points="10,70 55,61 100,58 145,63 190,52 235,50 280,47 325,54 370,46 410,44"/>
+                <polyline fill="none" stroke="#b6ff2e" stroke-width="2" stroke-dasharray="6 6" points="10,48 410,48"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Corner opportunities</h2><span class="eyebrow">Table, not hidden tab</span></div>
+          <table class="table">
+            <thead><tr><th>Corner</th><th>Issue</th><th>Gain</th></tr></thead>
+            <tbody>
+              <tr><td>T1</td><td>Brake carry</td><td>0.08s</td></tr>
+              <tr><td>T4</td><td>Late apex</td><td>0.05s</td></tr>
+              <tr><td>T7</td><td>Throttle delay</td><td>0.11s</td></tr>
+              <tr><td>T12</td><td>Line width</td><td>0.03s</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><h2>Session info</h2><span class="eyebrow">Inspector rail</span></div>
+          <div class="panel-body stats">
+            <div class="stat"><div class="eyebrow">Driver</div><strong>Théo</strong></div>
+            <div class="stat"><div class="eyebrow">Track</div><strong>CKS</strong></div>
+            <div class="stat"><div class="eyebrow">Kart</div><strong>Sodi SR5</strong></div>
+            <div class="stat"><div class="eyebrow">Laps</div><strong>15</strong></div>
+            <div class="stat"><div class="eyebrow">Condition</div><strong>Dry</strong></div>
+            <div class="stat"><div class="eyebrow">Session</div><strong>Race</strong></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Best lap evidence</h2><span class="eyebrow">Context</span></div>
+          <div class="panel-body">
+            <div class="note"><strong>Best lap #15</strong><p>Fastest lap came when steering input was calmer through sector 2 and throttle pick-up happened 6 m earlier at T7 exit.</p></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Timeline</h2><span class="eyebrow">Narrative strip</span></div>
+          <div class="panel-body timeline">
+            <div class="event"><strong>Lap 9</strong><p>First clean consistency cluster begins.</p></div>
+            <div class="event"><strong>Lap 12</strong><p>Entry into T1 stabilizes. Pace ceiling starts to lift.</p></div>
+            <div class="event"><strong>Lap 15</strong><p>Best lap recorded. Exit throttle timing is closest to ideal.</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-wide">
+      <div class="panel">
+        <div class="panel-head"><h2>Recommended next session plan</h2><span class="eyebrow">Actionable close</span></div>
+        <div class="panel-body coach-list">
+          <div class="note"><strong>Run 3-lap T1/T7 focus block</strong><p>Ignore absolute time for the first run. Track only brake release and throttle commitment quality.</p></div>
+          <div class="note"><strong>Compare against laps 12-15, not the full session</strong><p>Your useful benchmark is the stable late-session cluster, not the noisy early laps.</p></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Driver checklist</h2><span class="eyebrow">Compact rail</span></div>
+        <div class="panel-body coach-list">
+          <div class="note"><strong>Brake release</strong><p>Earlier at T1.</p></div>
+          <div class="note"><strong>Throttle</strong><p>Commit sooner at T7.</p></div>
+          <div class="note"><strong>Goal</strong><p>Push pace score above 14/25.</p></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

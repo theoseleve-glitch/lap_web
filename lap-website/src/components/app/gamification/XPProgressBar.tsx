@@ -36,13 +36,13 @@ export default function XPProgressBar({
       <div
         className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full border-2"
         style={{
-          borderColor: '#a3e635',
-          backgroundColor: 'rgba(163, 230, 53, 0.1)',
+          borderColor: '#22C55E',
+          backgroundColor: 'rgba(34, 197, 94, 0.1)',
         }}
       >
         <span
           className="font-monument text-lg font-bold"
-          style={{ color: '#a3e635' }}
+          style={{ color: '#22C55E' }}
         >
           {level}
         </span>
@@ -57,14 +57,14 @@ export default function XPProgressBar({
         {/* Bar track */}
         <div
           className="w-full h-3 rounded-full overflow-hidden"
-          style={{ backgroundColor: '#1a1a2e' }}
+          style={{ backgroundColor: '#141414' }}
         >
           {/* Bar fill */}
           <div
             className="h-full rounded-full"
             style={{
               width: `${progressPercent}%`,
-              backgroundColor: '#a3e635',
+              backgroundColor: '#22C55E',
               transition: 'width 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           />

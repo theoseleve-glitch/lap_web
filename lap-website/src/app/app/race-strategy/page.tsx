@@ -8,7 +8,7 @@ import { api } from '@/lib/api-client';
 import { StatCard, QueryError, SkeletonCardGrid } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { UpgradeBanner } from '@/components/billing/UpgradeBanner';
-import { canUseFeature } from '@/lib/entitlements-store';
+import { canUseFeature, useEntitlementsStore } from '@/lib/entitlements-store';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -66,6 +66,9 @@ const STATUS_CONFIG: Record<string, { label: string; className: string; dotColor
 export default function RaceStrategyListPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const entitlements = useEntitlementsStore((s) => s.entitlements);
+  const canComplex = canUseFeature('race_strategy_complex');
+  const canFull = canUseFeature('race_strategy_full');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
@@ -158,7 +161,7 @@ export default function RaceStrategyListPage() {
             className="inline-flex items-center gap-1 px-4 py-2 bg-gold text-white font-telemetry text-sm rounded hover:bg-gold/80 transition-colors"
           >
             + New Race
-            {!canUseFeature('race_strategy_full') && (
+            {entitlements && !canFull && !canComplex && (
               <span className="text-[10px] opacity-60 ml-1" title="4h limit on Demo">4h max</span>
             )}
           </Link>
@@ -191,12 +194,18 @@ export default function RaceStrategyListPage() {
         </div>
       </details>
 
-      <div className="mb-4">
-        <UpgradeBanner
-          feature="race_strategy_full"
-          context="Demo plan limited to 4-hour races. Upgrade for unlimited duration."
-        />
-      </div>
+      {entitlements && !canFull && (
+        <div className="mb-4">
+          <UpgradeBanner
+            feature={canComplex ? 'race_strategy_full' : 'race_strategy_complex'}
+            context={
+              canComplex
+                ? 'Racer plan: races up to 24 hours. Upgrade for unlimited duration.'
+                : 'Demo plan: races up to 4 hours. Upgrade for 24-hour races and advanced features.'
+            }
+          />
+        </div>
+      )}
 
       {deleteError && (
         <div className="mb-4 p-3 bg-safety-red/10 border border-safety-red/30 text-safety-red font-body text-sm flex items-center justify-between">

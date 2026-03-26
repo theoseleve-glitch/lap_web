@@ -74,12 +74,12 @@ interface ComparisonData {
 // ── Helpers ──────────────────────────────────────────────────────
 
 const GRADE_COLORS: Record<string, string> = {
-  S: 'text-yellow-400',
-  A: 'text-green-400',
-  B: 'text-cyan-400',
-  C: 'text-yellow-500',
-  D: 'text-orange-400',
-  F: 'text-red-500',
+  S: 'text-acid-green',
+  A: 'text-acid-green',
+  B: 'text-pit-orange',
+  C: 'text-marshal-yellow',
+  D: 'text-pit-orange',
+  F: 'text-safety-red',
 };
 
 function gradeColor(grade: string | null): string {
@@ -91,9 +91,9 @@ function gradeColor(grade: string | null): string {
 function deltaColor(delta: number, lowerIsBetter = false): string {
   if (delta === 0) return 'text-steel';
   if (lowerIsBetter) {
-    return delta < 0 ? 'text-green-400' : 'text-red-400';
+    return delta < 0 ? 'text-acid-green' : 'text-safety-red';
   }
-  return delta > 0 ? 'text-green-400' : 'text-red-400';
+  return delta > 0 ? 'text-acid-green' : 'text-safety-red';
 }
 
 function formatDelta(delta: number | null, decimals = 1): string {
@@ -214,8 +214,8 @@ function ScoreCompareCard({
 
 // ── Main Page ───────────────────────────────────────────────────
 
-const COLOR_A = '#3ddc84'; // acid-green
-const COLOR_B = '#ff8c00'; // pit-orange
+const COLOR_A = '#22C55E';
+const COLOR_B = '#C9A84C';
 
 export default function CompareSessionsPage() {
   const searchParams = useSearchParams();
@@ -932,7 +932,7 @@ function LapTimesTable({
                         {lap.invalid_reason || 'Invalid'}
                       </span>
                     ) : (
-                      <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-telemetry uppercase bg-green-500/10 text-green-400 border border-green-500/20">
+                      <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-telemetry uppercase border border-acid-green/20 bg-acid-green/10 text-acid-green">
                         Valid
                       </span>
                     )}

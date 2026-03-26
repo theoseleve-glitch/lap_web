@@ -25,7 +25,7 @@ interface LapDistributionChartProps {
 
 const ACID = '#b4ff39';
 const STEEL = '#c4c4c4';
-const FONT = '10px "JetBrains Mono", monospace';
+const FONT = '10px "Space Mono", monospace';
 
 export function LapDistributionChart({
   sessionId,
@@ -87,7 +87,7 @@ export function LapDistributionChart({
 
     if (!d || d.bins.length < 2 || d.counts.length === 0) {
       ctx.fillStyle = STEEL;
-      ctx.font = '13px "JetBrains Mono", monospace';
+      ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No data', w / 2, h / 2);

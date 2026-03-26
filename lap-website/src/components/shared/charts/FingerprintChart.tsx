@@ -28,8 +28,8 @@ const STEEL = '#c4c4c4';
 const ACID = '#b4ff39';
 const GRID_COLOR = 'rgba(196,196,196,0.20)';
 const RINGS = [25, 50, 75, 100];
-const LABEL_FONT = '11px "JetBrains Mono", monospace';
-const GRID_FONT = '10px "JetBrains Mono", monospace';
+const LABEL_FONT = '11px "Space Mono", monospace';
+const GRID_FONT = '10px "Space Mono", monospace';
 
 type StatusMsg = string | null;
 function StatusBox({ msg, className }: { msg: string; className?: string }) {

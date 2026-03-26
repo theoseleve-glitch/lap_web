@@ -21,8 +21,8 @@
     // -----------------------------------------------------------------
 
     var C = window.Theme ? window.Theme.colors : {
-        bgCard: '#1e1e2e', border: '#333', textPrimary: '#e0e0e0',
-        textSecondary: '#aaa', textMuted: '#777', accent: '#f97316'
+        bgCard: '#141414', border: 'rgba(148, 148, 148, 0.2)', textPrimary: '#F0EDE5',
+        textSecondary: '#949494', textMuted: '#9CA3AF', accent: '#F0EDE5'
     };
 
     // -----------------------------------------------------------------
@@ -62,7 +62,7 @@
         ctx.fillStyle = C.bgCard || '#1e1e2e';
         ctx.fillRect(0, 0, s.w, s.h);
         ctx.fillStyle = C.textMuted || '#777';
-        ctx.font = '14px system-ui, sans-serif';
+        ctx.font = '14px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(text, s.w / 2, s.h / 2);
@@ -222,7 +222,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Track Map', w / 2, 6);
@@ -288,7 +288,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Track Outline' + (geo.track_name ? ' \u2014 ' + geo.track_name : ''), w / 2, 6);
@@ -324,7 +324,7 @@
 
         // "No GPS data" note
         ctx.fillStyle = C.textMuted || '#777';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'alphabetic';
         ctx.fillText('Track outline only \u2014 no GPS telemetry data', w / 2, h - 10);
@@ -405,7 +405,7 @@
 
         // Y axis labels
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var yi = 0; yi <= 4; yi++) {
@@ -425,7 +425,7 @@
 
         // Axis titles
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 11px system-ui, sans-serif';
+        ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Distance (m)', pad.left + pW / 2, h - 12);
@@ -438,7 +438,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Speed Trace', w / 2, 6);
@@ -555,7 +555,7 @@
 
         // Axis labels
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 11px system-ui, sans-serif';
+        ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Lateral G', pad.left + pW / 2, h - 12);
@@ -568,7 +568,7 @@
 
         // Quadrant labels
         ctx.fillStyle = C.textMuted || '#777';
-        ctx.font = 'bold 10px system-ui, sans-serif';
+        ctx.font = 'bold 10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         if (cy > pad.top + 20 && cy < pad.top + pH - 20) {
@@ -578,14 +578,14 @@
 
         // Stats
         ctx.fillStyle = C.textMuted || '#777';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         ctx.fillText(latG.length + ' pts | Max: ' + maxG.toFixed(2) + 'G', pad.left + 4, pad.top + 4);
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('G-G Diagram', w / 2, 6);
@@ -652,7 +652,7 @@
 
         // Y axis labels (counts)
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var yi = 0; yi <= 4; yi++) {
@@ -673,13 +673,13 @@
 
         // Axis titles
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 11px system-ui, sans-serif';
+        ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Lap Time (s)', pad.left + pW / 2, h - 12);
 
         // Title
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.fillText('Lap Distribution', w / 2, 6);
     }
 
@@ -758,7 +758,7 @@
 
         // Y axis labels
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var yi = 0; yi <= 4; yi++) {
@@ -779,7 +779,7 @@
 
         // Axis titles
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 11px system-ui, sans-serif';
+        ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Lap Number', pad.left + pW / 2, h - 12);
@@ -792,7 +792,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText('Lap Progress', w / 2, 6);
@@ -866,7 +866,7 @@
 
         // Y axis labels
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var yi = 0; yi <= 4; yi++) {
@@ -886,7 +886,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText(title || 'Scatter', w / 2, 6);
@@ -952,7 +952,7 @@
 
         // Y axis labels
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var yi = 0; yi <= 4; yi++) {
@@ -964,7 +964,7 @@
         // X axis labels
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.font = '9px system-ui, sans-serif';
+        ctx.font = '9px "Inter", "Segoe UI", sans-serif';
         for (var xi = 0; xi < labels.length; xi++) {
             var xx = pad.left + (xi + 0.5) * barW;
             ctx.fillText(labels[xi], xx, pad.top + pH + 6);
@@ -972,7 +972,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary || '#aaa';
-        ctx.font = 'bold 12px system-ui, sans-serif';
+        ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillText(title || 'Bar Chart', w / 2, 6);
@@ -991,7 +991,7 @@
         div.style.minHeight = '200px';
         div.style.color = C.textMuted || '#777';
         div.style.fontSize = '14px';
-        div.style.fontFamily = 'system-ui, sans-serif';
+        div.style.fontFamily = '"Inter", "Segoe UI", sans-serif';
         div.textContent = text;
         container.appendChild(div);
     }

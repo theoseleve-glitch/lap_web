@@ -87,7 +87,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
 
     if (!td || !td.distances || td.distances.length < 2) {
-      ctx.fillStyle = '#8b949e'; ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No brake data available', w / 2, h / 2); boundsRef.current = null; return;
     }
@@ -133,14 +133,14 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     ctx.restore();
 
     // Axis labels
-    ctx.fillStyle = '#8b949e'; ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = yTMin; v <= yTMax; v += yStep) ctx.fillText(v.toFixed(0) + '\u00B0', pad.left - 6, tPx(v));
     ctx.textAlign = 'left';
     for (let v = 0; v <= 100; v += 25) ctx.fillText(v + '%', w - pad.right + 6, pPx(v));
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (let v = 0; v <= xMax; v += xStep) ctx.fillText(v.toFixed(0) + 'm', xPx(v), pad.top + pH + 6);
-    ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
     ctx.save(); ctx.translate(12, pad.top + pH / 2); ctx.rotate(-Math.PI / 2); ctx.fillText('Brake Temp (\u00B0C)', 0, 0); ctx.restore();
     ctx.save(); ctx.translate(w - 8, pad.top + pH / 2); ctx.rotate(Math.PI / 2); ctx.fillText('Brake Press (%)', 0, 0); ctx.restore();
@@ -149,7 +149,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     if (yTMax >= FADE) {
       ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(239,68,68,0.4)'; ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.moveTo(pad.left, tPx(FADE)); ctx.lineTo(w - pad.right, tPx(FADE)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(239,68,68,0.5)'; ctx.font = '9px -apple-system, sans-serif';
+      ctx.fillStyle = 'rgba(239,68,68,0.5)'; ctx.font = '9px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('Fade zone', pad.left + 4, tPx(FADE) - 2);
     }
 
@@ -167,7 +167,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
           tips.push(`${tr.label}: ${v.toFixed(0)}\u00B0C`);
         }
         if (pd && pd.brake.length > 0) { const bi = closestIdx(pd.distances, hoverDist); if (bi >= 0) tips.push(`Brake: ${pd.brake[bi].toFixed(0)}%`); }
-        ctx.font = '10px -apple-system, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         let mw = 0; for (const l of tips) { const m = ctx.measureText(l).width; if (m > mw) mw = m; }
         const tW = mw + 16, tH = tips.length * 14 + 8;
         let tX = hx + 12; if (tX + tW > w - 10) tX = hx - tW - 12;
@@ -177,7 +177,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
       }
     }
     // Legend
-    ctx.font = '10px -apple-system, sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     let lx = w - pad.right;
     const bpL = 'Brake %', bpW = ctx.measureText(bpL).width + 16;
     ctx.fillStyle = 'rgba(239,68,68,0.35)'; ctx.fillRect(lx - bpW, pad.top + 2, 8, 8);

@@ -285,8 +285,8 @@ def get_usage():
         r = dict(row) if not isinstance(row, dict) else row
         usage[r["event_type"]] = r["total"]
 
-    reports_limit = entitlements.get("reports_per_month")
-    reports_used = usage.get("report_generated", 0)
+    analyses_limit = entitlements.get("analyses_per_month")
+    analyses_used = usage.get("analyses", 0)
 
     # Calculate days until reset
     today = date.today()
@@ -296,34 +296,33 @@ def get_usage():
         next_month = date(today.year, today.month + 1, 1)
     days_until_reset = (next_month - today).days
 
+    resets_at = next_month.isoformat()
+
     result = {
         "period": today.strftime("%Y-%m"),
         "days_until_reset": days_until_reset,
-        "reports": {
-            "used": reports_used,
-            "limit": reports_limit,
+        "analyses": {
+            "used": analyses_used,
+            "limit": analyses_limit,
             "remaining": (
-                None if reports_limit is None
-                else max(0, reports_limit - reports_used)
+                None if analyses_limit is None or analyses_limit == -1
+                else max(0, analyses_limit - analyses_used)
             ),
-        },
-        "uploads": {
-            "used": usage.get("upload", 0),
-            "limit": None,  # uploads are unlimited for all paid plans
-            "remaining": None,
+            "resets": resets_at,
         },
         "api_calls": {
             "used": usage.get("api_call", 0),
             "limit": 0 if not entitlements.get("api_access") else None,
             "remaining": 0 if not entitlements.get("api_access") else None,
         },
-        "storage_mb": {
-            "used": usage.get("storage_mb", 0),
-            "limit": entitlements.get("max_upload_size_mb"),
+        "upload_volume_mb": {
+            "used": usage.get("upload_volume_mb", 0),
+            "limit": entitlements.get("upload_volume_mb_per_month"),
             "remaining": (
-                None if entitlements.get("max_upload_size_mb") is None
-                else max(0, (entitlements.get("max_upload_size_mb") or 0) - usage.get("storage_mb", 0))
+                None if entitlements.get("upload_volume_mb_per_month") in (None, -1)
+                else max(0, (entitlements.get("upload_volume_mb_per_month") or 0) - usage.get("upload_volume_mb", 0))
             ),
+            "resets": resets_at,
         },
     }
 

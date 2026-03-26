@@ -193,7 +193,7 @@ def upgrade():
     op.create_index("idx_stripe_events_type", "stripe_events", ["event_type"])
 
     # ── 9. RLS on workspace-scoped tables ─────────────────────────────────
-    rls_tables = ["usage_events", "usage_monthly", "entitlement_overrides", "audit_log"]
+    rls_tables = ["usage_events", "usage_monthly", "usage_counters", "entitlement_overrides", "audit_log"]
     for table in rls_tables:
         conn.execute(sa.text(f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY'))
         conn.execute(sa.text(
@@ -212,7 +212,7 @@ def upgrade():
         VALUES
             ('demo', 'Demo', 1, 150, 30, false, false, false, false,
              '4h_basic', false, '["csv"]', 1, 1.0),
-            ('racer', 'Racer', 10, 2500, 90, false, false, true, true,
+            ('racer', 'Racer', 10, 2500, 90, false, true, true, true,
              '24h_complex', true, '["pdf","csv"]', 2, 2.0),
             ('world-class', 'World-Class', NULL, NULL, 365, true, true, true, true,
              'unlimited', true, '["pdf","csv","api"]', 5, 5.0),

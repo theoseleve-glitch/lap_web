@@ -8,24 +8,19 @@ export interface NavLink {
 export const topNavLinks: NavLink[] = [
   { label: 'Product', href: '/product', audience: 'b2c' },
   { label: 'Pricing', href: '/pricing', audience: 'shared' },
-  { label: 'For Venues', href: '/contact?plan=b2b', audience: 'b2b' },
   { label: 'Demo', href: '/demo', audience: 'b2c' },
+  { label: 'Logger', href: '/product/logger', audience: 'b2c' },
   { label: 'Contact', href: '/contact', audience: 'shared' },
 ];
 
 export const footerLinks: NavLink[] = [
   { label: 'Contact', href: '/contact' },
   { label: 'Demo', href: '/demo' },
-  { label: 'Book', href: '/book' },
-  { label: 'Waitlist', href: '/waitlist' },
   { label: 'Help', href: '/help' },
   { label: 'Changelog', href: '/changelog' },
-  { label: 'Billing', href: '/billing' },
   { label: 'Status', href: '/status' },
   { label: 'Privacy', href: '/privacy' },
   { label: 'Terms', href: '/terms' },
   { label: 'Security', href: '/security' },
-  { label: 'DPA', href: '/dpa' },
-  { label: 'Subprocessors', href: '/subprocessors' },
-  { label: 'Accessibility', href: '/accessibility' },
+  { label: 'For Venues & Teams', href: '/venues', audience: 'b2b' },
 ];

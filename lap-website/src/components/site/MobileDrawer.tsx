@@ -5,12 +5,12 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
+import { LapMonogram } from '@/components/shared/LapMonogram';
 import { useTranslation } from '@/i18n';
 
 const navLabelKey: Record<string, string> = {
   Product: 'nav.product',
   Pricing: 'nav.pricing',
-  'For Venues': 'nav.venues',
   Demo: 'nav.demo',
   Contact: 'nav.contact',
 };
@@ -76,13 +76,6 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
 
   if (!open) return null;
 
-  const driverLinks = topNavLinks.filter(
-    (l) => l.audience === 'b2c' || l.audience === 'shared'
-  );
-  const venueLinks = topNavLinks.filter(
-    (l) => l.audience === 'b2b' || l.audience === 'shared'
-  );
-
   return (
     <>
       {/* Backdrop */}
@@ -102,7 +95,10 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
       >
         {/* Close button */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-chalk/10">
-          <span className="font-monument text-xl text-chalk">LAP</span>
+          <span className="flex items-center gap-2">
+            <LapMonogram size={24} color="currentColor" className="text-chalk" />
+            <span className="font-monument text-xl text-chalk">LAP</span>
+          </span>
           <button
             type="button"
             onClick={onClose}
@@ -115,61 +111,28 @@ export function MobileDrawer({ open, onClose }: MobileDrawerProps) {
           </button>
         </div>
 
-        {/* Nav sections */}
-        <nav className="flex-1 overflow-y-auto px-6 py-6 space-y-6" aria-label="Mobile navigation">
-          {/* For Drivers */}
-          <div>
-            <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/60 block mb-3">
-              FOR DRIVERS
-            </span>
-            <ul className="space-y-1">
-              {driverLinks.map((link) => {
-                const active = pathname === link.href;
-                return (
-                  <li key={link.href + link.label}>
-                    <Link
-                      href={link.href}
-                      className={`flex items-center min-h-[44px] px-3 font-body text-base transition-colors cursor-pointer ${
-                        active
-                          ? 'text-chalk border-l-2 border-pit-orange bg-asphalt/50'
-                          : 'text-steel hover:text-chalk'
-                      }`}
-                      onClick={() => trackNavRouteClick(link.href, 'mobile-drawer')}
-                    >
-                      {t(navLabelKey[link.label] ?? '', link.label)}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-
-          {/* For Venues */}
-          <div>
-            <span className="font-telemetry text-[10px] tracking-[0.2em] uppercase text-steel/60 block mb-3">
-              FOR VENUES
-            </span>
-            <ul className="space-y-1">
-              {venueLinks.map((link) => {
-                const active = pathname === link.href;
-                return (
-                  <li key={link.href + link.label + 'venue'}>
-                    <Link
-                      href={link.href}
-                      className={`flex items-center min-h-[44px] px-3 font-body text-base transition-colors cursor-pointer ${
-                        active
-                          ? 'text-chalk border-l-2 border-racing-purple bg-asphalt/50'
-                          : 'text-steel hover:text-chalk'
-                      }`}
-                      onClick={() => trackNavRouteClick(link.href, 'mobile-drawer')}
-                    >
-                      {t(navLabelKey[link.label] ?? '', link.label)}
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto px-6 py-6" aria-label="Mobile navigation">
+          <ul className="space-y-1">
+            {topNavLinks.map((link) => {
+              const active = pathname === link.href;
+              return (
+                <li key={link.href + link.label}>
+                  <Link
+                    href={link.href}
+                    className={`flex items-center min-h-[44px] px-3 font-body text-base transition-colors cursor-pointer ${
+                      active
+                        ? 'text-chalk border-l-2 border-pit-orange bg-asphalt/50'
+                        : 'text-steel hover:text-chalk'
+                    }`}
+                    onClick={() => trackNavRouteClick(link.href, 'mobile-drawer')}
+                  >
+                    {t(navLabelKey[link.label] ?? '', link.label)}
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
         {/* Auth section */}

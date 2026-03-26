@@ -3,22 +3,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { MonumentText } from '@/components/ui/MonumentText';
 import { PitButton } from '@/components/ui/PitButton';
-import { StampButton } from '@/components/ui/StampButton';
-import { trackCtaClick, trackDemoCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
-import { getVariantForKey } from '@/lib/experiments';
+import { trackCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
 
 export function Podium() {
   const [showRestart, setShowRestart] = useState(false);
-  const [ctaVariant, setCtaVariant] = useState<'demo_first' | 'book_first'>('demo_first');
   const trackedRef = useRef(false);
   const startTimeRef = useRef(Date.now());
   const { t } = useTranslation();
-
-  useEffect(() => {
-    const variant = getVariantForKey('cta', 'demo_first');
-    setCtaVariant(variant === 'book_first' ? 'book_first' : 'demo_first');
-  }, []);
 
   // Track podium reach
   useEffect(() => {
@@ -65,37 +57,12 @@ export function Podium() {
           </MonumentText>
 
           <div className="flex flex-col sm:flex-row items-center gap-4">
-            {ctaVariant === 'book_first' ? (
-              <>
-                <PitButton
-                  href="/book"
-                  onClick={() => trackCtaClick('book', 'podium', 'mixed')}
-                >
-                  {t('cta.bookNow')}
-                </PitButton>
-                <StampButton
-                  href="/demo"
-                  onClick={() => { trackCtaClick('try_demo', 'podium', 'mixed'); trackDemoCtaClick('podium'); }}
-                >
-                  {t('cta.tryDemo')}
-                </StampButton>
-              </>
-            ) : (
-              <>
-                <PitButton
-                  href="/register?source=hero"
-                  onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
-                >
-                  {t('cta.startFreeReport')}
-                </PitButton>
-                <StampButton
-                  href="/contact"
-                  onClick={() => trackCtaClick('talk', 'podium', 'b2b')}
-                >
-                  {t('cta.talkToSales')}
-                </StampButton>
-              </>
-            )}
+            <PitButton
+              href="/register?source=hero"
+              onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
+            >
+              {t('cta.startFreeReport')}
+            </PitButton>
           </div>
 
           <p className="font-telemetry text-steel max-w-lg">

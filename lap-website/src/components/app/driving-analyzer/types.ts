@@ -67,7 +67,7 @@ export const DEFAULT_CHARTS: ChartConfig[] = [
   { type: 'speed', label: 'Speed', unit: 'km/h', color: '#F0EDE5' },
   { type: 'g-lat', label: 'Lateral G', unit: 'G', color: '#C9A84C' },
   { type: 'brake-throttle', label: 'Brake / Throttle', unit: '%', color: '#FF2A2A', dual: true },
-  { type: 'steering', label: 'Steering', unit: 'deg', color: '#888888' },
+  { type: 'steering', label: 'Steering', unit: 'deg', color: '#949494' },
 ];
 
 /* ── Reducer state ───────────────────────────────────────── */

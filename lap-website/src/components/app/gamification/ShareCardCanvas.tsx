@@ -75,7 +75,7 @@ function drawHexBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, siz
   pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
   ctx.closePath();
   ctx.strokeStyle = grad;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 3;
   ctx.stroke();
   // Inner fill
   const ir = r * 0.85;
@@ -87,7 +87,7 @@ function drawHexBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, siz
     i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
   }
   ctx.closePath();
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = '#000000';
   ctx.fill();
   // Star inside
   ctx.font = `${Math.round(size * 0.35)}px sans-serif`;
@@ -158,7 +158,7 @@ function drawCard(
   ctx.stroke();
 
   // -- Top-left: branding --
-  ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
+  ctx.font = '600 16px "Inter", "Segoe UI", sans-serif';
   ctx.fillStyle = '#B6FF2E';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -167,7 +167,7 @@ function drawCard(
   // -- Session title --
   const driver = data.driverName || 'Driver';
   const typeCap = (data.sessionType || 'practice').charAt(0).toUpperCase() + (data.sessionType || 'practice').slice(1);
-  ctx.font = '800 36px "Segoe UI", system-ui, sans-serif';
+  ctx.font = '800 36px "Inter", "Segoe UI", sans-serif';
   ctx.fillStyle = '#F0EDE5';
   ctx.fillText(`${driver}`, pad, pad + 36);
 
@@ -181,8 +181,8 @@ function drawCard(
       displayDate = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
   } catch { /* keep raw */ }
-  ctx.font = '500 18px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#888888';
+  ctx.font = '500 18px "Inter", "Segoe UI", sans-serif';
+  ctx.fillStyle = '#949494';
   ctx.fillText(`${track}  \u00B7  ${displayDate}  \u00B7  ${typeCap}`, pad, pad + 82);
 
   // -- Grade badge (top-right) --
@@ -202,7 +202,7 @@ function drawCard(
   ctx.lineWidth = 2;
   ctx.stroke();
   if (grade) {
-    ctx.font = '900 42px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '900 42px "Inter", "Segoe UI", sans-serif';
     ctx.fillStyle = gc;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -218,22 +218,22 @@ function drawCard(
     { label: 'Best Lap', value: formatLapTime(data.bestLapTime), color: '#B6FF2E' },
     { label: 'Score', value: data.totalScore != null ? String(Math.round(data.totalScore)) : '--', color: '#F0EDE5', suffix: '/100', suffixColor: '#555' },
     { label: 'Laps', value: data.nLaps != null ? String(data.nLaps) : '--', color: '#F0EDE5' },
-    { label: 'Consistency', value: data.cvPct != null ? `${data.cvPct.toFixed(1)}%` : '--', color: '#00d4ff' },
+    { label: 'Consistency', value: data.cvPct != null ? `${Math.round(data.cvPct)}%` : '--', color: '#00d4ff' },
   ];
 
   const statSpacing = (w - pad * 2) / stats.length;
   for (let i = 0; i < stats.length; i++) {
     const sx = pad + i * statSpacing;
     const s = stats[i];
-    ctx.font = '500 14px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '500 14px "Inter", "Segoe UI", sans-serif';
     ctx.fillStyle = '#666';
     ctx.fillText(s.label, sx, statY);
-    ctx.font = '800 38px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '800 38px "Inter", "Segoe UI", sans-serif';
     ctx.fillStyle = s.color;
     ctx.fillText(s.value, sx, statY + 26);
     if (s.suffix) {
       const valW = ctx.measureText(s.value).width;
-      ctx.font = '500 22px "Segoe UI", system-ui, sans-serif';
+      ctx.font = '500 22px "Inter", "Segoe UI", sans-serif';
       ctx.fillStyle = s.suffixColor ?? '#555';
       ctx.fillText(s.suffix, sx + valW + 4, statY + 36);
     }
@@ -251,27 +251,27 @@ function drawCard(
   const badges = data.badges || [];
   const badgeY = statY + 130;
   if (badges.length > 0) {
-    ctx.font = '500 12px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#555';
+    ctx.font = '600 14px "Inter", "Segoe UI", sans-serif';
+    ctx.fillStyle = '#666';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('Badges Earned', pad, badgeY);
 
-    const hexSize = 42;
-    const hexGap = 56;
+    const hexSize = 72;
+    const hexGap = 100;
     for (let i = 0; i < badges.length; i++) {
-      const bCx = pad + 24 + i * hexGap;
-      const bCy = badgeY + 50;
+      const bCx = pad + 40 + i * hexGap;
+      const bCy = badgeY + 60;
       drawHexBadge(ctx, bCx, bCy, hexSize, badges[i].tier || 'bronze');
       // Label below hex
-      ctx.font = '500 10px "Segoe UI", system-ui, sans-serif';
+      ctx.font = '600 13px "Inter", "Segoe UI", sans-serif';
       ctx.fillStyle = (TIER_HEX_COLORS[badges[i].tier] || TIER_HEX_COLORS.bronze)[0];
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(BADGE_LABELS[badges[i].id] || '', bCx, bCy + hexSize / 2 + 6);
+      ctx.fillText(BADGE_LABELS[badges[i].id] || '', bCx, bCy + hexSize / 2 + 10);
     }
   } else {
-    ctx.font = '500 13px "Segoe UI", system-ui, sans-serif';
+    ctx.font = '500 14px "Inter", "Segoe UI", sans-serif';
     ctx.fillStyle = '#444';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -281,13 +281,13 @@ function drawCard(
   // -- Bottom-right: URL --
   ctx.textAlign = 'right';
   ctx.textBaseline = 'bottom';
-  ctx.font = '600 15px "Segoe UI", system-ui, sans-serif';
+  ctx.font = '600 15px "Inter", "Segoe UI", sans-serif';
   ctx.fillStyle = '#B6FF2E';
   ctx.fillText('lap-coach.racing', w - pad, h - pad + 4);
 
   // -- Bottom-left: thin tagline --
   ctx.textAlign = 'left';
-  ctx.font = '400 12px "Segoe UI", system-ui, sans-serif';
+  ctx.font = '400 12px "Inter", "Segoe UI", sans-serif';
   ctx.fillStyle = '#444';
   ctx.fillText('Motorsport Telemetry Analysis', pad, h - pad + 4);
 

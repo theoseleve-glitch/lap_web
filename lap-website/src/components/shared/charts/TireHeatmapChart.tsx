@@ -79,7 +79,7 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '', 
     ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
 
     if (!data) {
-      ctx.fillStyle = '#8b949e'; ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No tire temperature data available', w / 2, h / 2); return;
     }
@@ -119,20 +119,20 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '', 
             ctx.arcTo(zx + sW, p.y, zx + sW, p.y + R, R); ctx.lineTo(zx + sW, p.y + tireH - R);
             ctx.arcTo(zx + sW, p.y + tireH, zx + sW - R, p.y + tireH, R); ctx.lineTo(zx, p.y + tireH); ctx.fill();
           } else { ctx.fillRect(zx, p.y, sW, tireH); }
-          ctx.fillStyle = '#1a1a2e'; ctx.font = 'bold 9px -apple-system, sans-serif';
+          ctx.fillStyle = '#141414'; ctx.font = 'bold 9px "Inter", "Segoe UI", sans-serif';
           ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillText(zL[z], zx + sW / 2, p.y + 4);
-          ctx.font = '10px -apple-system, sans-serif'; ctx.textBaseline = 'bottom';
+          ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textBaseline = 'bottom';
           ctx.fillText(zones[z].toFixed(0), zx + sW / 2, p.y + tireH - 4);
         }
       } else {
         ctx.fillStyle = tempToColor(a.total); drawRoundedRect(ctx, p.x, p.y, tireW, tireH, R); ctx.fill();
       }
       // Center temp
-      ctx.fillStyle = '#1a1a2e'; ctx.font = 'bold 16px -apple-system, sans-serif';
+      ctx.fillStyle = '#141414'; ctx.font = 'bold 16px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(a.total.toFixed(0) + '\u00B0', p.x + tireW / 2, p.y + tireH / 2);
       // Label above
-      ctx.fillStyle = '#e0e0e0'; ctx.font = 'bold 11px -apple-system, sans-serif';
+      ctx.fillStyle = '#F0EDE5'; ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
       ctx.textBaseline = 'bottom'; ctx.fillText(a.label, p.x + tireW / 2, p.y - 4);
       // Border
       ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth = 1;
@@ -145,14 +145,14 @@ export function TireHeatmapChart({ sessionId, gpsLaps, bestLap, className = '', 
     const frAvg = (avgs[0].total + avgs[1].total) / 2, reAvg = (avgs[2].total + avgs[3].total) / 2;
     const items = [{ l: 'FL-FR', v: flFr }, { l: 'RL-RR', v: rlRr }, { l: 'Front-Rear', v: frAvg - reAvg }];
     const bSp = w / 4;
-    ctx.font = '11px -apple-system, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (let b = 0; b < 3; b++) {
       const bx = bSp * (b + 1), it = items[b];
       const col = Math.abs(it.v) > 10 ? '#ef4444' : Math.abs(it.v) > 5 ? '#f59e0b' : '#10b981';
       ctx.fillStyle = '#8b949e'; ctx.fillText(it.l, bx, by);
-      ctx.fillStyle = col; ctx.font = 'bold 13px -apple-system, sans-serif';
+      ctx.fillStyle = col; ctx.font = 'bold 13px "Inter", "Segoe UI", sans-serif';
       ctx.fillText((it.v >= 0 ? '+' : '') + it.v.toFixed(1) + '\u00B0C', bx, by + 16);
-      ctx.font = '11px -apple-system, sans-serif';
+      ctx.font = '11px "Inter", "Segoe UI", sans-serif';
     }
   }, []);
 

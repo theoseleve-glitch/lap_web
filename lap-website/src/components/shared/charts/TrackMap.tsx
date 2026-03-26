@@ -3,7 +3,7 @@
  *
  * Renders GPS trace as a speed-colored polyline with an isometric
  * camera tilt (~25°) giving a racing-game overhead view.
- * Dark background (#0B0C0F) — pure racing line, no map tiles.
+ * Dark background (#000000) — pure racing line, no map tiles.
  * Depth cues: shadow underneath, line width varies with depth,
  * subtle ground grid for spatial reference.
  *
@@ -252,7 +252,7 @@ function drawTrack(
   ctx.clearRect(0, 0, w, h);
 
   // Dark background
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, w, h);
 
   const { latitudes: lats, longitudes: lons, speeds } = trace;
@@ -413,7 +413,7 @@ function drawTrack(
 
   // ── Corner labels ──
   if (corners && corners.length > 0) {
-    ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
+    ctx.font = '600 10px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -696,7 +696,7 @@ export function TrackMap(props: TrackMapProps) {
     <div className={`flex flex-col ${className}`}>
       <div
         className="relative flex-1 min-h-0 rounded-lg border border-steel/10"
-        style={{ width: '100%', background: '#0B0C0F', ...(!className.includes('h-full') ? { minHeight: '300px' } : {}) }}
+        style={{ width: '100%', background: 'var(--asphalt)', ...(!className.includes('h-full') ? { minHeight: '300px' } : {}) }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -753,7 +753,7 @@ export function TrackMap(props: TrackMapProps) {
             <select
               value={activeLap ?? ''}
               onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-[#C9A84C] focus:outline-none"
+              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-pit-orange focus:outline-none"
             >
               {gpsLaps.map((l) => (
                 <option key={l} value={l}>

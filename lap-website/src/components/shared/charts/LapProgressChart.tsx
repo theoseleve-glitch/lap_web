@@ -34,7 +34,7 @@ const STEEL_40 = 'rgba(196,196,196,0.4)';
 const ACID = '#b4ff39';
 const ACID_BRIGHT = '#c8ff66';
 const GRID = '#30363d';
-const FONT = '10px "JetBrains Mono", monospace';
+const FONT = '10px "Space Mono", monospace';
 
 /** Format seconds as M:SS.s */
 function fmtTime(s: number): string {
@@ -141,7 +141,7 @@ function drawChart(
     ctx.fillStyle = '#ef4444';
     ctx.fillText('\u25B2 Degrading', tx, 12);
   }
-  ctx.fillStyle = STEEL; ctx.font = '9px "JetBrains Mono", monospace';
+  ctx.fillStyle = STEEL; ctx.font = '9px "Space Mono", monospace';
   ctx.fillText(`${trend_slope > 0 ? '+' : ''}${trend_slope.toFixed(2)}s/lap`, tx, 25);
 
   // Title (top-left)

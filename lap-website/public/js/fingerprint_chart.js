@@ -76,14 +76,14 @@
             // Ring label
             if (pct < 100) {
                 ctx.fillStyle = "rgba(160,160,160,0.5)";
-                ctx.font = "10px system-ui";
+                ctx.font = '10px "Inter", "Segoe UI", sans-serif';
                 ctx.textAlign = "left";
                 ctx.fillText(String(pct), cx + 3, cy - r + 10);
             }
         });
 
         // Axis lines + labels
-        ctx.font = "12px system-ui";
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         for (var i = 0; i < n; i++) {
@@ -98,12 +98,12 @@
             // Label position (just beyond the outer ring)
             var pLabel = polar(i, R + 28);
             ctx.fillStyle = LABEL;
-            ctx.font = "bold 11px system-ui";
+            ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
             ctx.fillText(labels[i], pLabel.x, pLabel.y);
 
             // Value next to label
             ctx.fillStyle = gradeColor(values[i]);
-            ctx.font = "bold 12px system-ui";
+            ctx.font = 'bold 12px "Inter", "Segoe UI", sans-serif';
             var pVal = polar(i, R + 14);
             ctx.fillText(Math.round(values[i]), pVal.x, pVal.y);
         }

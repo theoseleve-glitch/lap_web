@@ -248,7 +248,7 @@ function drawPickerMap(
   ctx.scale(dpr, dpr);
 
   // Background
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, w, h);
 
   const lats = layout.latitudes ?? [];

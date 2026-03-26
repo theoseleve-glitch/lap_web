@@ -715,7 +715,7 @@
 
         // Y axis labels
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var i = 0; i < yTicks.length; i++) {
@@ -731,7 +731,7 @@
 
         // Axis titles
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '12px -apple-system, sans-serif';
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Distance (m)', pad.left + pW / 2, h - 5);
         ctx.save();
@@ -757,7 +757,7 @@
             ctx.setLineDash([]);
 
             ctx.fillStyle = C.accent || '#ff6b35';
-            ctx.font = 'bold 10px -apple-system, sans-serif';
+            ctx.font = 'bold 10px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             ctx.fillText('C' + corner.corner_id, cx, pad.top - 2);

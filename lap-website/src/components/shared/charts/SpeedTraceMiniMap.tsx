@@ -138,7 +138,7 @@ export function SpeedTraceMiniMap({
         // Dot
         ctx.beginPath();
         ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#3ddc84';
+        ctx.fillStyle = '#22C55E';
         ctx.fill();
       }
     },

@@ -251,7 +251,7 @@
         ctx.fillStyle = C.bgCard || '#1a1f2e';
         ctx.fillRect(0, 0, w, h);
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '13px -apple-system, sans-serif';
+        ctx.font = '13px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Select laps above to compare speed profiles', w / 2, h / 2);
         if (legendEl) legendEl.innerHTML = '';
@@ -332,7 +332,7 @@
 
         // Y axis labels.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var i = 0; i < yTicks.length; i++) {
@@ -347,7 +347,7 @@
 
         // Axis titles.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '12px -apple-system, sans-serif';
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Distance (m)', pad.left + pW / 2, h - 5);
         ctx.save();
@@ -507,7 +507,7 @@
 
         // Right Y-axis
         ctx.fillStyle = '#10b981';
-        ctx.font = '10px -apple-system, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         var rightX = pad.left + pW + 6;
@@ -529,7 +529,7 @@
         if (Math.abs(finalDelta) > 0.001) {
             var sign = finalDelta > 0 ? '+' : '';
             ctx.fillStyle = finalDelta > 0 ? 'rgba(239, 68, 68, 0.9)' : 'rgba(16, 185, 129, 0.9)';
-            ctx.font = 'bold 11px -apple-system, sans-serif';
+            ctx.font = 'bold 11px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'right';
             ctx.textBaseline = 'bottom';
             ctx.fillText('Lap ' + lapA + ' ' + sign + finalDelta.toFixed(3) + 's', pad.left + pW, yDelta(finalDelta) - 4);

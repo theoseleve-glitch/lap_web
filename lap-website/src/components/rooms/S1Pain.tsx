@@ -53,16 +53,6 @@ export function S1Pain() {
             </RadioCard>
           </div>
 
-          {hasInteracted && (
-            <div className="mt-4 inline-block border border-chalk/30 px-3 py-1">
-              <span className="font-telemetry text-[11px] tracking-[0.12em] uppercase text-chalk">
-                {t('home.pain.stampLabel')}
-              </span>
-              <span className="block font-telemetry text-[9px] tracking-[0.12em] uppercase text-steel mt-0.5">
-                {t('home.pain.stampDetail')}
-              </span>
-            </div>
-          )}
         </div>
 
         <div className="col-span-full md:col-span-6 flex flex-col items-center justify-center gap-4">

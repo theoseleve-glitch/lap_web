@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { PageIntro } from '@/components/ui/PageIntro';
-import { UsageDashboard } from '@/components/billing/UsageDashboard';
 import { apiFetch } from '@/lib/api-client';
 import { formatDateFromTimestamp } from '@/lib/format-utils';
 
@@ -44,6 +43,15 @@ const STATUS_STYLES: Record<string, string> = {
   canceled: 'bg-safety-red/20 text-safety-red',
   paused: 'bg-steel/20 text-steel',
   free: 'bg-steel/20 text-steel',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  trialing: 'Trial',
+  past_due: 'Past Due',
+  canceled: 'Canceled',
+  paused: 'Paused',
+  free: 'Free',
 };
 
 function formatAmount(amount: number | null, currency: string | null): string {
@@ -103,9 +111,11 @@ export default function BillingPage() {
               <span className="font-monument text-2xl text-chalk">
                 {TIER_LABELS[sub.plan_tier] || sub.plan_tier}
               </span>
-              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-telemetry ${statusClass}`}>
-                {sub.subscription_status}
-              </span>
+              {sub.subscription_status !== 'free' && (
+                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-telemetry ${statusClass}`}>
+                  {STATUS_LABELS[sub.subscription_status] || sub.subscription_status}
+                </span>
+              )}
               {sub.cancel_at_period_end && (
                 <span className="text-xs text-marshal-yellow font-telemetry">
                   Cancels at period end
@@ -126,9 +136,6 @@ export default function BillingPage() {
           </div>
         ) : null}
       </div>
-
-      {/* ── Usage This Month ──────────────────────────────── */}
-      <UsageDashboard className="mb-6" />
 
       {/* ── Quick Actions ─────────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

@@ -24,7 +24,7 @@ interface CornerAnalysisChartProps {
   sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string; controlledLap?: boolean;
 }
 
-const FONT = '10px "JetBrains Mono", monospace';
+const FONT = '10px "Space Mono", monospace';
 const COL = { entry: '#3b82f6', min: '#b4ff39', exit: '#f59e0b', text: '#c4c4c4', grid: 'rgba(255,255,255,0.08)', whisker: '#c4c4c4' };
 const MS_KMH = 3.6;
 
@@ -71,7 +71,7 @@ export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '
     ctx.clearRect(0, 0, w, h);
 
     if (!corners.length) {
-      ctx.fillStyle = COL.text; ctx.font = '13px "JetBrains Mono", monospace';
+      ctx.fillStyle = COL.text; ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No corner data available', w / 2, h / 2);
       return;

@@ -31,6 +31,7 @@ const FEATURE_LABELS: Record<string, string> = {
   visualization: 'Visualization',
   live_monitoring: 'Live Monitoring',
   export_pdf: 'PDF Export',
+  race_strategy_complex: 'Race Strategy (24h)',
   race_strategy_full: 'Full Race Strategy',
 };
 

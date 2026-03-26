@@ -53,6 +53,24 @@
 
   /* ── Muted Text (WCAG AA: 4.58:1 on #000) ── */
   --text-muted: #9CA3AF;
+  --text-primary: var(--chalk);
+  --text-secondary: var(--steel);
+  --bg-primary: var(--asphalt);
+  --bg-secondary: var(--concrete);
+  --bg-tertiary: color-mix(in srgb, var(--concrete) 88%, var(--chalk));
+  --bg-hover: rgba(240, 237, 229, 0.06);
+  --bg-card: var(--concrete);
+  --green: var(--acid-green);
+  --success-dim: color-mix(in srgb, var(--acid-green) 20%, transparent);
+  --yellow: var(--marshal-yellow);
+  --red: var(--safety-red);
+  --blue: var(--chart-series-2);
+  --cyan: var(--chart-series-2);
+  --purple: var(--racing-purple);
+  --border: var(--border-color-default);
+  --border-subtle: var(--border-color-muted);
+  --accent-dim: color-mix(in srgb, var(--accent) 22%, transparent);
+  --font-telemetry: var(--font-mono);
 
   /* ── Spacing (4px base unit) ─────── */
   --space-px: 1px;
@@ -126,8 +144,8 @@
   /* ── Border ────────────────────────── */
   --border-width-default: 1px;
   --border-width-thick: 2px;
-  --border-color-default: rgba(136, 136, 136, 0.2);
-  --border-color-muted: rgba(136, 136, 136, 0.1);
+  --border-color-default: rgba(148, 148, 148, 0.2);
+  --border-color-muted: rgba(148, 148, 148, 0.1);
   --border-color-focus: var(--accent);
   --border-color-error: var(--safety-red);
 

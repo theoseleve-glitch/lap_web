@@ -164,11 +164,11 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.stroke();
     };
 
-    drawLine(kmhA, '#3ddc84');
-    drawLine(kmhB, '#ff8c00');
+    drawLine(kmhA, '#22C55E');
+    drawLine(kmhB, '#C9A84C');
 
     // Y-axis labels (km/h)
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = '#949494';
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -200,9 +200,9 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     // Legend
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#3ddc84';
+    ctx.fillStyle = '#22C55E';
     ctx.fillText('\u2500\u2500 This session', pad.left + 8, pad.top + 8);
-    ctx.fillStyle = '#ff8c00';
+    ctx.fillStyle = '#C9A84C';
     ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
 
     // Crosshair hover
@@ -226,9 +226,9 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       // Dots
       const yA = yScale(sA);
       const yB = yScale(sB);
-      ctx.fillStyle = '#3ddc84';
+      ctx.fillStyle = '#22C55E';
       ctx.beginPath(); ctx.arc(hoverX, yA, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ff8c00';
+      ctx.fillStyle = '#C9A84C';
       ctx.beginPath(); ctx.arc(hoverX, yB, 3, 0, Math.PI * 2); ctx.fill();
 
       // Tooltip
@@ -240,11 +240,11 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.strokeRect(tipX, pad.top + 2, 110, 42);
       ctx.font = '10px "Space Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#888888';
+      ctx.fillStyle = '#949494';
       ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, pad.top + 14);
-      ctx.fillStyle = '#3ddc84';
+      ctx.fillStyle = '#22C55E';
       ctx.fillText(`A: ${sA.toFixed(1)} km/h`, tipX + 5, pad.top + 26);
-      ctx.fillStyle = '#ff8c00';
+      ctx.fillStyle = '#C9A84C';
       ctx.fillText(`B: ${sB.toFixed(1)} km/h`, tipX + 5, pad.top + 38);
     }
   }, [compareData, hoverX]);
@@ -341,7 +341,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.stroke();
 
     // Label
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = '#949494';
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
@@ -373,7 +373,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.strokeRect(tipX, 2, 90, 28);
       ctx.font = '10px "Space Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#888888';
+      ctx.fillStyle = '#949494';
       ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, 14);
       ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
       ctx.fillText(`${d >= 0 ? '+' : ''}${d.toFixed(3)}s`, tipX + 5, 26);

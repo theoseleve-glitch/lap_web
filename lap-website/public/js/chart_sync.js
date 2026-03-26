@@ -243,7 +243,7 @@
 
         // Y axis labels.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var i = 0; i < yTicks.length; i++) {
@@ -259,7 +259,7 @@
 
         // Axis titles.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '12px -apple-system, sans-serif';
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Distance (m)', pad.left + pW / 2, h - 5);
 
@@ -295,7 +295,7 @@
 
             // Legend.
             ctx.fillStyle = C.yellow || '#d29922';
-            ctx.font = '10px -apple-system, sans-serif';
+            ctx.font = '10px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillText('--- Theoretical', pad.left + 8, pad.top + 4);
@@ -330,7 +330,7 @@
             // Legend
             var avgLegendY = theoreticalData ? pad.top + 16 : pad.top + 4;
             ctx.fillStyle = C.cyan || '#58a6ff';
-            ctx.font = '10px -apple-system, sans-serif';
+            ctx.font = '10px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'left';
             ctx.textBaseline = 'top';
             ctx.fillText('... Avg Pace', pad.left + 8, avgLegendY);
@@ -568,7 +568,7 @@
 
         // Y axis labels.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
         for (var i = 0; i < yTicks.length; i++) {
@@ -611,7 +611,7 @@
 
             // Lap number label.
             ctx.fillStyle = isValid[i] ? (C.textSecondary || '#8b949e') : (C.red || '#f85149');
-            ctx.font = '10px -apple-system, sans-serif';
+            ctx.font = '10px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
             ctx.fillText(labels[i], x + barW / 2, pad.top + pH + 6);
@@ -619,7 +619,7 @@
 
         // Axis titles.
         ctx.fillStyle = C.textSecondary || '#8b949e';
-        ctx.font = '12px -apple-system, sans-serif';
+        ctx.font = '12px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Lap Number', pad.left + pW / 2, h - 5);
 
@@ -642,7 +642,7 @@
         ctx.setLineDash([]);
 
         ctx.fillStyle = C.yellow || '#d29922';
-        ctx.font = '10px -apple-system, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
         ctx.fillText('Mean: ' + mean.toFixed(3) + 's (' + validTimes.length + ' valid laps)', pad.left + 4, meanY - 3);

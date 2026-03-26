@@ -18,7 +18,7 @@ interface StintChartProps { sessionId: string; gpsLaps: number[]; bestLap: numbe
 
 type LapEntry = { lap_number: number; lap_time: number };
 
-const FONT = '10px "JetBrains Mono", monospace';
+const FONT = '10px "Space Mono", monospace';
 const ACCENT = '#b4ff39', TEXT = '#c4c4c4', DIM = '#6b6b6b';
 const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f97316', '#ec4899', '#10b981'];
 const SEG = { first: '#3b82f6', middle: '#10b981', last: '#f59e0b' };
@@ -73,7 +73,7 @@ export function StintChart({ sessionId, gpsLaps, bestLap, className = '' }: Stin
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
     if (modeRef.current === 'stints') drawStints(ctx, w, h, stintsRef.current);
     else if (modeRef.current === 'fallback') drawFallback(ctx, w, h, fallbackRef.current);
-    else { ctx.fillStyle = DIM; ctx.font = '13px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('No stint data available', w / 2, h / 2); }
+    else { ctx.fillStyle = DIM; ctx.font = '13px "Space Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('No stint data available', w / 2, h / 2); }
   }, []);
 
   useEffect(() => { if (!loading) draw(); }, [loading, draw]);
@@ -97,7 +97,7 @@ function drawStints(ctx: CanvasRenderingContext2D, w: number, h: number, stints:
   const totalLaps = stints.reduce((s, st) => s + (st.end_lap - st.start_lap + 1), 0);
   if (totalLaps === 0) return;
 
-  ctx.fillStyle = TEXT; ctx.font = '11px "JetBrains Mono", monospace';
+  ctx.fillStyle = TEXT; ctx.font = '11px "Space Mono", monospace';
   ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('STINT TIMELINE', pad.left, 8);
 
@@ -121,13 +121,13 @@ function drawStints(ctx: CanvasRenderingContext2D, w: number, h: number, stints:
     if (best) { ctx.strokeStyle = ACCENT + '40'; ctx.lineWidth = 4; ctx.beginPath(); ctx.roundRect(xOff - 1, pad.top - 1, bW + 2, pH + 2, 5); ctx.stroke(); }
 
     // Stint label + lap range
-    ctx.fillStyle = TEXT; ctx.font = 'bold 12px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = TEXT; ctx.font = 'bold 12px "Space Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.fillText(`S${st.stint_number}`, cx, pad.top + 8);
     ctx.fillStyle = DIM; ctx.font = FONT;
     ctx.fillText(`L${st.start_lap}-${st.end_lap}`, cx, pad.top + 24);
 
     // Avg + best time
-    ctx.fillStyle = best ? ACCENT : TEXT; ctx.font = 'bold 11px "JetBrains Mono", monospace'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = best ? ACCENT : TEXT; ctx.font = 'bold 11px "Space Mono", monospace'; ctx.textBaseline = 'middle';
     ctx.fillText(fmtTime(st.avg_time), cx, pad.top + pH / 2);
     ctx.fillStyle = DIM; ctx.font = FONT;
     ctx.fillText('best ' + fmtTime(st.best_time), cx, pad.top + pH / 2 + 16);
@@ -136,7 +136,7 @@ function drawStints(ctx: CanvasRenderingContext2D, w: number, h: number, stints:
     const dY = pad.top + pH - 20, deg = st.degradation_rate;
     if (Math.abs(deg) > 0.01) {
       const dc = deg > 0.3 ? '#ef4444' : deg > 0.1 ? '#f59e0b' : '#10b981';
-      ctx.fillStyle = dc; ctx.font = 'bold 11px "JetBrains Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillStyle = dc; ctx.font = 'bold 11px "Space Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(`${deg > 0 ? '\u2191' : '\u2193'}${Math.abs(deg).toFixed(2)}s`, cx, dY);
       const sL = Math.min(bW * 0.3, 20);
       ctx.strokeStyle = dc; ctx.lineWidth = 1.5; ctx.beginPath();
@@ -156,7 +156,7 @@ function drawFallback(ctx: CanvasRenderingContext2D, w: number, h: number, laps:
   const pW = w - pad.left - pad.right, pH = h - pad.top - pad.bottom, n = laps.length;
   if (n === 0) return;
 
-  ctx.fillStyle = TEXT; ctx.font = '11px "JetBrains Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+  ctx.fillStyle = TEXT; ctx.font = '11px "Space Mono", monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
   ctx.fillText('LAP TIMES (no stint data)', pad.left, 8);
 
   let yMin = Infinity, yMax = -Infinity;

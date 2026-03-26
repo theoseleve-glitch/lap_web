@@ -1,6 +1,6 @@
 'use client';
 
-import { type ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { ExperienceKernel } from './ExperienceKernel';
 
@@ -57,6 +57,12 @@ function ExperienceContent({ children }: { children: ReactNode }) {
 }
 
 function HomepageShell({ children }: { children: ReactNode }) {
+  // Reset scroll after the full experience shell mounts —
+  // prevents browser scroll restoration from hiding the hero.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   return (
     <ExperienceKernel>
       <ExperienceContent>{children}</ExperienceContent>

@@ -348,7 +348,7 @@ def create_race(conn, data: dict, *, max_duration_s: int | None = None,
         limit_h = max_duration_s / 3600
         raise ValueError(
             f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
-            f"Upgrade your plan for longer races."
+            f"Upgrade to World-Class for unlimited race duration."
         )
 
     # Enforce optimizer mode restriction
@@ -476,7 +476,7 @@ def update_race(conn, race_id: int, data: dict, *, max_duration_s: int | None = 
         limit_h = max_duration_s / 3600
         raise ValueError(
             f"Race duration exceeds your plan's {limit_h:.0f}-hour limit. "
-            f"Upgrade your plan for longer races."
+            f"Upgrade to World-Class for unlimited race duration."
         )
 
     # Enforce optimizer mode restriction
@@ -1177,6 +1177,48 @@ def set_stint_duration(conn, race_id: int, stint_order: int, duration_s: int) ->
     except Exception:
         return None
     engine.set_duration(stint_order, duration_s)
+    engine.save(conn, race_id)
+    conn.commit()
+    return engine.snapshot()
+
+
+def reorder_stints(conn, race_id: int, stint_order: int, direction: str) -> dict | None:
+    """Swap two adjacent stints and re-cascade fuel/ballast/pit stops.
+
+    direction is "up" or "down". Returns the engine snapshot, or None on failure.
+    """
+    try:
+        engine = RaceStateEngine.load(conn, race_id)
+    except Exception:
+        return None
+
+    order_a = stint_order
+    order_b = order_a - 1 if direction == "up" else order_a + 1
+
+    stint_a = engine._get_stint(order_a)
+    stint_b = engine._get_stint(order_b)
+    if not stint_a or not stint_b:
+        return None
+
+    # Swap driver assignments and durations, keep timeline positions
+    stint_a.driver_id, stint_b.driver_id = stint_b.driver_id, stint_a.driver_id
+    stint_a.driver_name, stint_b.driver_name = stint_b.driver_name, stint_a.driver_name
+    stint_a.planned_duration_s, stint_b.planned_duration_s = stint_b.planned_duration_s, stint_a.planned_duration_s
+
+    # Rebuild timeline from the earlier stint
+    pit_time = engine.config.get("min_pit_stop_s") or 60
+    first_order = min(order_a, order_b)
+    first_stint = engine._get_stint(first_order)
+    cursor = first_stint.planned_start_s if first_stint else 0
+    for s in engine.stints:
+        if s.stint_order < first_order:
+            continue
+        s.planned_start_s = cursor
+        s.planned_end_s = cursor + s.planned_duration_s
+        cursor = s.planned_end_s + pit_time
+
+    # Re-cascade fuel, ballast, pit stops from the earlier stint
+    engine._cascade_from(first_order)
     engine.save(conn, race_id)
     conn.commit()
     return engine.snapshot()

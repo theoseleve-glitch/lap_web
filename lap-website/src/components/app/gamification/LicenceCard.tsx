@@ -1,7 +1,7 @@
 'use client';
 
 const TIER_COLORS: Record<string, string> = {
-  rookie: '#888888',
+  rookie: '#949494',
   club: '#B6FF2E',
   national: '#00d4ff',
   pro: '#D946EF',
@@ -10,7 +10,7 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 const ALL_TIERS = [
-  { tier: 'rookie', color: '#888888' },
+  { tier: 'rookie', color: '#949494' },
   { tier: 'club', color: '#B6FF2E' },
   { tier: 'national', color: '#00d4ff' },
   { tier: 'pro', color: '#D946EF' },
