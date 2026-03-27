@@ -11,6 +11,13 @@ export { RacingBadge } from './RacingBadge';
 export { AchievementUnlockOverlay } from './AchievementUnlockOverlay';
 export { LicenceCard } from './LicenceCard';
 export { ShareCardCanvas } from './ShareCardCanvas';
+export { ShareableCard } from './ShareableCard';
+export { DriverProfileCard } from './DriverProfileCard';
+export { StreakTracker } from './StreakTracker';
+export { PointsAnimation } from './PointsAnimation';
+export { ChallengeCard } from './ChallengeCard';
+export { Leaderboard } from './Leaderboard';
+export { AchievementCard } from './AchievementCard';
 
 export type { BadgeIcon, BadgeTier } from './BadgeHex';
 
