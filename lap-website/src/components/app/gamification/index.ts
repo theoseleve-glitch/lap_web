@@ -7,6 +7,7 @@ export { default as DrillExecutionForm } from './DrillExecutionForm';
 export { default as PlanProgressTimeline } from './PlanProgressTimeline';
 export { BadgeHex } from './BadgeHex';
 export { ParticleBurst } from './ParticleBurst';
+export { RacingBadge } from './RacingBadge';
 export { AchievementUnlockOverlay } from './AchievementUnlockOverlay';
 export { LicenceCard } from './LicenceCard';
 export { ShareCardCanvas } from './ShareCardCanvas';

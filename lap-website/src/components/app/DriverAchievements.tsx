@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
-import { BadgeHex, AchievementUnlockOverlay, type BadgeIcon } from './gamification';
+import { RacingBadge, AchievementUnlockOverlay } from './gamification';
 
 interface Achievement {
   id: string;
@@ -27,23 +27,12 @@ interface AchievementsResponse {
   in_progress: Achievement[];
 }
 
-const CATEGORY_ICON: Record<string, BadgeIcon> = {
-  laps: 'helmet',
-  sessions: 'stopwatch',
-  score: 'trophy',
-  consistency: 'stopwatch',
-  tracks: 'shield',
-  pb: 'trophy',
-};
-
-function getBadgeIcon(id: string): BadgeIcon {
-  if (id.startsWith('laps_')) return 'helmet';
-  if (id.startsWith('sessions_')) return 'stopwatch';
-  if (id.startsWith('score_')) return 'trophy';
-  if (id.startsWith('consistency_')) return 'stopwatch';
-  if (id.startsWith('tracks_')) return 'shield';
-  if (id.startsWith('pb_')) return 'trophy';
-  return 'trophy';
+function getCategoryFromId(id: string): 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance' {
+  if (id.startsWith('laps_') || id.startsWith('sessions_')) return 'progress';
+  if (id.startsWith('score_') || id.startsWith('pb_')) return 'technique';
+  if (id.startsWith('consistency_')) return 'consistency';
+  if (id.startsWith('tracks_')) return 'learning';
+  return 'progress';
 }
 
 export function DriverAchievements() {
@@ -80,21 +69,26 @@ export function DriverAchievements() {
       {/* Earned badges */}
       <div className="flex gap-3 flex-wrap">
         {earned.map((a) => {
-          const icon = getBadgeIcon(a.id);
+          const category = getCategoryFromId(a.id);
           return (
             <button
               type="button"
               key={a.id}
               title={`${a.label}: ${a.description}`}
               className="group relative flex flex-col items-center cursor-pointer"
-              onClick={() => setSelected({ key: a.id, label: a.label, description: a.description, icon, tier: 'gold' })}
+              onClick={() => setSelected({ key: a.id, label: a.label, description: a.description, icon: a.id, tier: 'gold' })}
             >
               <div className="transition-transform group-hover:scale-110">
-                <BadgeHex icon={icon} tier="gold" size={48} glow />
+                <RacingBadge
+                  title={a.label}
+                  description={a.description}
+                  unlocked
+                  category={category}
+                />
               </div>
               {/* Tooltip */}
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1
-                bg-zinc-900 border border-zinc-700 rounded text-[10px] text-chalk font-body
+                bg-concrete border border-steel/20 rounded text-[10px] text-chalk font-body
                 whitespace-nowrap hidden group-hover:block z-10">
                 {a.label}
               </div>

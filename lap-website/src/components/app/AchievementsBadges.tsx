@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { BadgeHex, AchievementUnlockOverlay, type BadgeIcon, type BadgeTier } from './gamification';
+import { RacingBadge, AchievementUnlockOverlay } from './gamification';
 
 interface BadgeData {
   id: string;
@@ -11,19 +11,19 @@ interface BadgeData {
   criteria: string;
 }
 
-const CATEGORY_TO_ICON: Record<string, BadgeIcon> = {
-  pace: 'helmet',
-  consistency: 'stopwatch',
-  execution: 'wheel',
-  robustness: 'shield',
-  adaptation: 'shield',
-  total: 'trophy',
+const CATEGORY_MAP: Record<string, 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance'> = {
+  pace: 'technique',
+  consistency: 'consistency',
+  execution: 'technique',
+  robustness: 'endurance',
+  adaptation: 'learning',
+  total: 'progress',
 };
 
 const TIER_COLORS: Record<string, string> = {
-  gold: '#FFD400',
-  silver: '#C0C0C0',
-  bronze: '#CD7F32',
+  gold: '#FACC15',
+  silver: '#949494',
+  bronze: '#C9A84C',
 };
 
 export function AchievementsBadges({ badges }: { badges?: BadgeData[] }) {
@@ -45,9 +45,8 @@ export function AchievementsBadges({ badges }: { badges?: BadgeData[] }) {
       <h2 className="text-lg font-monument text-chalk mb-4">Achievements</h2>
       <div className="flex flex-wrap gap-4">
         {badges.map((badge) => {
-          const icon = CATEGORY_TO_ICON[badge.category] || 'trophy';
-          const tier = badge.tier as BadgeTier;
-          const color = TIER_COLORS[tier] || '#888';
+          const category = CATEGORY_MAP[badge.category] || 'progress';
+          const color = TIER_COLORS[badge.tier] || '#888';
           return (
             <button
               type="button"
@@ -57,18 +56,23 @@ export function AchievementsBadges({ badges }: { badges?: BadgeData[] }) {
                 key: badge.id,
                 label: badge.label,
                 description: badge.criteria,
-                icon: icon,
-                tier: tier,
+                icon: badge.category,
+                tier: badge.tier,
               })}
             >
               <div className="transition-transform group-hover:scale-110">
-                <BadgeHex icon={icon} tier={tier} size={56} glow={tier === 'gold'} />
+                <RacingBadge
+                  title={badge.label}
+                  description={badge.criteria}
+                  unlocked
+                  category={category}
+                />
               </div>
               <span className="text-[10px] font-body text-chalk font-medium text-center w-[70px] leading-tight truncate">
                 {badge.label}
               </span>
               <span className="text-[9px] font-telemetry uppercase" style={{ color }}>
-                {tier}
+                {badge.tier}
               </span>
             </button>
           );

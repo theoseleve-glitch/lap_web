@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { BadgeHex } from '@/components/app/gamification';
+import { RacingBadge } from '@/components/app/gamification';
 
 export default function AchievementUnlockShowcasePage() {
   return (
@@ -9,7 +9,7 @@ export default function AchievementUnlockShowcasePage() {
       id="main-content"
       className="relative min-h-screen overflow-hidden bg-black text-chalk"
     >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,212,0,0.12),transparent_22%),radial-gradient(circle_at_15%_15%,rgba(182,255,46,0.14),transparent_24%),linear-gradient(180deg,#040404_0%,#090909_42%,#000_100%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(201,168,76,0.12),transparent_22%),radial-gradient(circle_at_15%_15%,rgba(34,197,94,0.14),transparent_24%),linear-gradient(180deg,#040404_0%,#090909_42%,#000_100%)]" />
 
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-10 lg:px-10">
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-white/10 bg-white/[0.03] px-6 py-5">
@@ -27,16 +27,21 @@ export default function AchievementUnlockShowcasePage() {
           </Link>
         </div>
 
-        <div className="relative mt-8 flex flex-1 items-center justify-center overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,16,16,0.92),rgba(6,6,6,0.98))] p-8 shadow-[0_40px_120px_-64px_rgba(255,212,0,0.35)]">
+        <div className="relative mt-8 flex flex-1 items-center justify-center overflow-hidden rounded-[32px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,16,16,0.92),rgba(6,6,6,0.98))] p-8 shadow-[0_40px_120px_-64px_rgba(201,168,76,0.35)]">
           <div className="absolute inset-0 bg-black/65" />
-          <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(255,215,0,0.18),transparent_62%)] blur-3xl" />
+          <div className="absolute left-1/2 top-1/2 h-72 w-72 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[radial-gradient(circle,rgba(201,168,76,0.18),transparent_62%)] blur-3xl" />
 
-          <div className="relative z-10 w-full max-w-md rounded-[28px] border border-[#FFD700]/25 bg-[linear-gradient(135deg,#141414_0%,#000_100%)] px-8 py-10 text-center shadow-[0_32px_100px_-40px_rgba(255,215,0,0.35)]">
+          <div className="relative z-10 w-full max-w-md rounded-[28px] border border-gold/25 bg-[linear-gradient(135deg,#141414_0%,#000_100%)] px-8 py-10 text-center shadow-[0_32px_100px_-40px_rgba(201,168,76,0.35)]">
             <div className="flex justify-center">
-              <BadgeHex icon="trophy" tier="gold" size={136} glow animate />
+              <RacingBadge
+                title="Lap Coach Certified"
+                description="Unlock after stacking pace, consistency, and execution gains in one session."
+                unlocked
+                category="progress"
+              />
             </div>
 
-            <p className="mt-6 font-telemetry text-[11px] uppercase tracking-[0.24em] text-[#FFD700]">
+            <p className="mt-6 font-telemetry text-[11px] uppercase tracking-[0.24em] text-gold">
               Achievement Unlocked
             </p>
             <h2 className="mt-3 font-monument text-2xl text-chalk">Telemetry Prodigy</h2>
@@ -45,14 +50,14 @@ export default function AchievementUnlockShowcasePage() {
             </p>
 
             <div className="mt-7 flex justify-center gap-3">
-              <span className="h-2.5 w-2.5 rounded-full bg-[#CD7F32]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#C0C0C0]" />
-              <span className="h-2.5 w-2.5 rounded-full bg-[#FFD700] shadow-[0_0_14px_rgba(255,215,0,0.6)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-gold" />
+              <span className="h-2.5 w-2.5 rounded-full bg-steel" />
+              <span className="h-2.5 w-2.5 rounded-full bg-marshal-yellow shadow-[0_0_14px_rgba(250,204,21,0.6)]" />
             </div>
 
             <button
               type="button"
-              className="mt-8 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-[#FFD700]/40 px-7 py-3 font-telemetry text-sm uppercase tracking-[0.18em] text-[#FFD700]"
+              className="mt-8 inline-flex min-h-[44px] items-center justify-center rounded-xl border border-gold/40 px-7 py-3 font-telemetry text-sm uppercase tracking-[0.18em] text-gold"
             >
               Continue
             </button>

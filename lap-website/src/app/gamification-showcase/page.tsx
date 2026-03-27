@@ -6,13 +6,11 @@ import { AchievementsBadges } from '@/components/app/AchievementsBadges';
 import { BadgeGrid } from '@/components/app/drivers/BadgeGrid';
 import {
   AchievementGrid,
-  BadgeHex,
+  RacingBadge,
   LicenceCard,
   StreakCounter,
   XPProgressBar,
   type Achievement,
-  type BadgeIcon,
-  type BadgeTier,
 } from '@/components/app/gamification';
 import type { DriverBadge } from '@/lib/api-types';
 
@@ -140,16 +138,16 @@ const legacyDriverBadges: DriverBadge[] = [
 ];
 
 const badgeMarks: Array<{
-  icon: BadgeIcon;
-  tier: BadgeTier;
-  label: string;
+  title: string;
+  category: 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance';
+  unlocked: boolean;
 }> = [
-  { icon: 'helmet', tier: 'gold', label: 'Pace' },
-  { icon: 'stopwatch', tier: 'silver', label: 'Consistency' },
-  { icon: 'wheel', tier: 'bronze', label: 'Execution' },
-  { icon: 'shield', tier: 'gold', label: 'Robustness' },
-  { icon: 'trophy', tier: 'silver', label: 'Milestone' },
-  { icon: 'lock', tier: 'locked', label: 'Locked' },
+  { title: 'Hotlap Hunter', category: 'technique', unlocked: true },
+  { title: 'Metronome', category: 'consistency', unlocked: true },
+  { title: 'Apex Hunter', category: 'technique', unlocked: true },
+  { title: 'Stint Manager', category: 'endurance', unlocked: true },
+  { title: 'Track Scout', category: 'learning', unlocked: true },
+  { title: 'First Lap', category: 'progress', unlocked: false },
 ];
 
 function Surface({
@@ -226,13 +224,13 @@ function ShareCardPreview() {
           </p>
           <div className="mt-4 flex gap-5">
             {[
-              { icon: 'helmet' as const, tier: 'gold' as const, label: 'Pace' },
-              { icon: 'stopwatch' as const, tier: 'silver' as const, label: 'Consistency' },
-              { icon: 'wheel' as const, tier: 'bronze' as const, label: 'Execution' },
+              { title: 'Hotlap Hunter', category: 'technique' as const },
+              { title: 'Metronome', category: 'consistency' as const },
+              { title: 'Apex Hunter', category: 'technique' as const },
             ].map((badge) => (
-              <div key={badge.label} className="flex flex-col items-center gap-2">
-                <BadgeHex icon={badge.icon} tier={badge.tier} size={58} glow />
-                <p className="font-body text-[11px] text-chalk">{badge.label}</p>
+              <div key={badge.title} className="flex flex-col items-center gap-2">
+                <RacingBadge title={badge.title} description="" unlocked category={badge.category} />
+                <p className="font-body text-[11px] text-chalk">{badge.title}</p>
               </div>
             ))}
           </div>
@@ -313,9 +311,9 @@ export default function GamificationShowcasePage() {
 
               <LicenceCard
                 tier="club"
-                color="#B6FF2E"
+                color="#22C55E"
                 nextTier="national"
-                nextColor="#00d4ff"
+                nextColor="#C9A84C"
                 progress={{
                   laps: { current: 182, required: 240 },
                   score: { current: 78, required: 86 },
@@ -328,20 +326,20 @@ export default function GamificationShowcasePage() {
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
               {badgeMarks.map((badge) => (
                 <div
-                  key={`${badge.tier}-${badge.label}`}
-                  className="rounded-[22px] border border-white/8 bg-asphalt/70 p-4 text-center"
+                  key={badge.title}
+                  className="rounded-[22px] border border-white/8 bg-asphalt/70 p-4 flex flex-col items-center text-center"
                 >
-                  <BadgeHex
-                    icon={badge.icon}
-                    tier={badge.tier}
-                    size={72}
-                    glow={badge.tier !== 'locked'}
+                  <RacingBadge
+                    title={badge.title}
+                    description=""
+                    unlocked={badge.unlocked}
+                    category={badge.category}
                   />
                   <p className="mt-3 font-body text-xs font-medium text-chalk">
-                    {badge.label}
+                    {badge.title}
                   </p>
                   <p className="mt-1 font-telemetry text-[10px] uppercase tracking-[0.18em] text-steel">
-                    {badge.tier}
+                    {badge.category}
                   </p>
                 </div>
               ))}
