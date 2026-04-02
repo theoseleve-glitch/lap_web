@@ -12,6 +12,12 @@ class SimOptimizerConfig:
     ``SimOptimizerConfig()`` is always valid.
     """
 
+    # ── Solver ─────────────────────────────────────────────────────────
+    solver_max_speed_mps: float = 100.0
+    solver_min_speed_mps: float = 2.0
+    solver_apex_curvature_threshold: float = 0.003
+    solver_wrap_iterations: int = 2
+
     # ── Tyre ──────────────────────────────────────────────────────────
     tyre_pacejka_b_init: float = 10.0
     tyre_pacejka_c_init: float = 1.5
