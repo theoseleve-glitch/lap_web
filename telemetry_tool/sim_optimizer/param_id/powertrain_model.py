@@ -18,51 +18,83 @@ class PowertrainModel:
     gear_torque_maps: dict[int, tuple[np.ndarray, np.ndarray]] = field(
         default_factory=dict
     )  # gear -> (rpm[], torque_nm[])
+    gear_speed_ranges: dict[int, tuple[float, float]] = field(
+        default_factory=dict
+    )  # gear -> (speed_min_mps, speed_max_mps) observed during identification
     wheel_radius_m: float = 0.33
     transmission_efficiency: float = 0.93
     rr_c0: float = 0.012
     rr_c1: float = 0.00008
 
-    def max_drive_accel(self, speed_mps: float, gear: int, mass_kg: float) -> float:
-        """Torque-limited acceleration for a given speed, gear, and mass.
+    def _speed_to_rpm(self, speed_mps: float, gear: int) -> float:
+        """Map vehicle speed to engine RPM using observed speed-RPM relationship."""
+        if gear not in self.gear_torque_maps:
+            return 5000.0
+        rpm_arr = self.gear_torque_maps[gear][0]
+        rpm_min, rpm_max = float(rpm_arr[0]), float(rpm_arr[-1])
 
-        Interpolates torque from the gear's RPM-torque map, converts to
-        wheel force via transmission efficiency and wheel radius, then
-        returns a = F / m.
-        """
+        if gear in self.gear_speed_ranges:
+            s_min, s_max = self.gear_speed_ranges[gear]
+            if s_max > s_min:
+                t = (speed_mps - s_min) / (s_max - s_min)
+                return float(np.clip(rpm_min + t * (rpm_max - rpm_min), rpm_min, rpm_max))
+
+        # Fallback: use wheel_radius to estimate (RPM = speed / (wheel_radius * 2*pi) * 60 * ratio)
+        # Without ratio, use a conservative mid-RPM
+        return float(np.clip((rpm_min + rpm_max) / 2, rpm_min, rpm_max))
+
+    def max_drive_accel(self, speed_mps: float, gear: int, mass_kg: float) -> float:
+        """Torque-limited acceleration for a given speed, gear, and mass."""
         if gear not in self.gear_torque_maps:
             return 0.0
         rpm_arr, torque_arr = self.gear_torque_maps[gear]
         if len(rpm_arr) == 0:
             return 0.0
 
-        # Estimate RPM from speed (simplified: use the map's RPM range)
-        # In practice RPM comes from telemetry; here we interpolate at
-        # a representative RPM derived from speed and gear ratio proxy.
-        # For the model we interpolate torque at the given speed-derived RPM.
-        # Use a simple heuristic: map speed linearly across the RPM range.
-        rpm_min, rpm_max = float(rpm_arr[0]), float(rpm_arr[-1])
-        # Clamp interpolation RPM to map bounds
-        rpm_query = np.clip(
-            rpm_min + (speed_mps / max(speed_mps, 1.0)) * (rpm_max - rpm_min),
-            rpm_min,
-            rpm_max,
-        )
+        rpm_query = self._speed_to_rpm(speed_mps, gear)
         torque = float(np.interp(rpm_query, rpm_arr, torque_arr))
         force = torque * self.transmission_efficiency / self.wheel_radius_m
-        return force / max(mass_kg, 1.0)
+        return max(force / max(mass_kg, 1.0), 0.0)
 
     def rolling_resistance_accel(self, speed_mps: float) -> float:
         """Rolling resistance deceleration: (c0 + c1 * |v|) * g."""
         return (self.rr_c0 + self.rr_c1 * abs(speed_mps)) * _G
 
     def optimal_gear(self, speed_mps: float, mass_kg: float) -> int:
-        """Select the gear that maximizes drive acceleration at this speed."""
+        """Select the gear that maximizes drive acceleration at this speed.
+
+        Only considers gears whose observed speed range includes the current speed
+        (with 20% margin). Falls back to the gear with the closest speed range.
+        """
         if not self.gear_torque_maps:
             return 1
-        best_gear = min(self.gear_torque_maps.keys())
-        best_accel = -1.0
+
+        # First: try gears whose speed range covers this speed
+        candidates = []
         for g in self.gear_torque_maps:
+            if g in self.gear_speed_ranges:
+                s_min, s_max = self.gear_speed_ranges[g]
+                margin = (s_max - s_min) * 0.2
+                if s_min - margin <= speed_mps <= s_max + margin:
+                    candidates.append(g)
+
+        if not candidates:
+            # Fallback: pick gear with closest speed range midpoint
+            best_g = min(self.gear_torque_maps.keys())
+            best_dist = float("inf")
+            for g in self.gear_torque_maps:
+                if g in self.gear_speed_ranges:
+                    s_min, s_max = self.gear_speed_ranges[g]
+                    mid = (s_min + s_max) / 2
+                    d = abs(speed_mps - mid)
+                    if d < best_dist:
+                        best_dist = d
+                        best_g = g
+            candidates = [best_g]
+
+        best_gear = candidates[0]
+        best_accel = -1.0
+        for g in candidates:
             a = self.max_drive_accel(speed_mps, g, mass_kg)
             if a > best_accel:
                 best_accel = a
@@ -175,7 +207,10 @@ def identify_powertrain_model(
                 mask = (g_rpm >= lo) & (g_rpm < hi)
             if np.sum(mask) > 0:
                 bin_centers.append((lo + hi) / 2.0)
-                bin_torques.append(float(np.median(torque[mask])))
+                # Use 85th percentile instead of median — we want the car's
+                # capability, not the average. Median underestimates because
+                # many full-throttle samples are mid-gear-change or partial.
+                bin_torques.append(float(np.percentile(torque[mask], 85)))
 
         if len(bin_centers) < 3:
             continue
@@ -185,8 +220,17 @@ def identify_powertrain_model(
             np.array(bin_torques),
         )
 
+    # Store observed speed ranges per gear for speed-to-RPM mapping
+    gear_speed_ranges: dict[int, tuple[float, float]] = {}
+    for g in gear_torque_maps:
+        gear_ft_mask = ft_mask & (gear == g)
+        if gear_ft_mask.sum() > 0:
+            g_speed = speed_mps[gear_ft_mask]
+            gear_speed_ranges[int(g)] = (float(g_speed.min()), float(g_speed.max()))
+
     return PowertrainModel(
         gear_torque_maps=gear_torque_maps,
+        gear_speed_ranges=gear_speed_ranges,
         wheel_radius_m=wheel_radius,
         transmission_efficiency=eff,
         rr_c0=config.powertrain_rr_c0,

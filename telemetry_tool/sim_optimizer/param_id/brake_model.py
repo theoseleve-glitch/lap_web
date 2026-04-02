@@ -125,7 +125,8 @@ def identify_brake_model(
                 fade_rate = (cold_decel - hot_decel) / temp_diff
 
     # Clamp all outputs
-    max_decel = float(np.clip(max_decel, 5.0, 20.0))
+    # GT3/prototype cars with downforce can brake at 2.5G+ (25 m/s^2)
+    max_decel = float(np.clip(max_decel, 5.0, 30.0))
     bias = float(np.clip(median_bias, 0.40, 0.75))
     fade_rate = float(np.clip(fade_rate, 0.0, 0.01))
 
