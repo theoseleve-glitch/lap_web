@@ -55,6 +55,8 @@ interface SpeedTraceChartProps {
   distRange?: [number, number] | null;
   /** Callback when user drag-selects a distance range on the chart. */
   onDistRangeChange?: (range: [number, number] | null) => void;
+  /** When true, fetches and overlays the theoretical optimal speed profile */
+  showTheoretical?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ interface DrawOptions {
   speeds: number[];       // m/s
   avgSpeeds?: number[];   // m/s
   refSpeeds?: number[];   // m/s
+  theoreticalSpeeds?: { distances: number[]; speeds: number[] } | null; // kph, own distance axis
   hoverDistanceM: number | null;
   /** When set, ref line legend shows "Lap N" instead of "Theoretical" */
   refLapLabel?: string | null;
@@ -187,6 +190,10 @@ function drawSpeedTrace(
     const avgMax = safeMax(avgSpeeds) * 3.6 * 1.1;
     if (avgMax > yMax) yMax = avgMax;
   }
+  if (opts.theoreticalSpeeds && opts.theoreticalSpeeds.speeds.length > 0) {
+    const theoMax = safeMax(opts.theoreticalSpeeds.speeds) * 1.1; // already kph
+    if (theoMax > yMax) yMax = theoMax;
+  }
   if (yMax <= yMin) yMax = yMin + 1;
 
   const bounds = { xMin, xMax, yMin, yMax, plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH };
@@ -250,6 +257,34 @@ function drawSpeedTrace(
   ctx.beginPath();
   ctx.rect(pad.left, pad.top, pW, pH);
   ctx.clip();
+
+  // Theoretical optimal speed (dashed chalk — drawn first so it sits behind actual)
+  if (opts.theoreticalSpeeds && opts.theoreticalSpeeds.distances.length > 0) {
+    const td = opts.theoreticalSpeeds.distances;
+    const ts = opts.theoreticalSpeeds.speeds; // already kph
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = 'rgba(240, 237, 229, 0.6)'; // chalk at 60%
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < td.length; i++) {
+      const x = xToPixel(td[i]);
+      const y = yToPixel(ts[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = COLORS.textBright;
+    ctx.globalAlpha = 0.6;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('- - Theoretical', pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
 
   // Reference line (dashed gold)
   if (refSpeeds && refSpeeds.length > 0) {
@@ -590,6 +625,7 @@ export function SpeedTraceChart({
   controlledLap = false,
   distRange = null,
   onDistRangeChange,
+  showTheoretical = false,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -603,6 +639,7 @@ export function SpeedTraceChart({
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
   const dragRef = useRef<{ startX: number; currentX: number } | null>(null);
   const [dragSelection, setDragSelection] = useState<[number, number] | null>(null);
+  const [theoreticalData, setTheoreticalData] = useState<{ distances: number[]; speeds: number[] } | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
@@ -676,6 +713,33 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [sessionId, activeLap, compareLap]);
 
+  // ── Fetch theoretical optimal speed profile ─────────────────
+  useEffect(() => {
+    if (!showTheoretical || !sessionId) {
+      setTheoreticalData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ speed_profile?: { distance_m: number[]; speed_kph: number[] } }>(
+          `/sessions/${encodeURIComponent(sessionId)}/theoretical`,
+        );
+        if (cancelled) return;
+        if (res?.speed_profile) {
+          setTheoreticalData({
+            distances: res.speed_profile.distance_m,
+            speeds: res.speed_profile.speed_kph,
+          });
+        }
+      } catch {
+        // Theoretical data is optional — silently skip on 404 or error
+        if (!cancelled) setTheoreticalData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showTheoretical, sessionId]);
+
   // ── Draw ────────────────────────────────────────────────────
   // Compute delta time when ref data is available
   const actualDelta = (primaryLapTime != null && compareLapTime != null)
@@ -719,6 +783,7 @@ export function SpeedTraceChart({
       speeds: chartData.speeds,
       refSpeeds: refSpeeds ?? chartData.ref_speeds,
       avgSpeeds: !refSpeeds ? (avgSpeeds ?? chartData.avg_speeds) : undefined,
+      theoreticalSpeeds: theoreticalData,
       hoverDistanceM: hoverDistance,
       refLapLabel: activeCompareLap != null ? `Lap ${activeCompareLap}` : null,
       primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
@@ -733,7 +798,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
 
   useEffect(() => {
     render();

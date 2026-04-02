@@ -11,6 +11,8 @@ import { TireHeatmapChart } from '@/components/shared/charts/TireHeatmapChart';
 import { WheelSlipChart } from '@/components/shared/charts/WheelSlipChart';
 import { BrakeAnalysisChart } from '@/components/shared/charts/BrakeAnalysisChart';
 import { FuelStrategyChart } from '@/components/shared/charts/FuelStrategyChart';
+import { TheoreticalDeltaChart } from '@/components/shared/charts/TheoreticalDeltaChart';
+import { CornerCoachingTable } from '@/components/shared/charts/CornerCoachingTable';
 import { useSessionChannels } from '@/hooks/useSessionChannels';
 import { LapSpeedOverlay } from './LapSpeedOverlay';
 import { LapDistribution } from './LapDistribution';
@@ -157,6 +159,19 @@ export function AnalyticsTab({
           bestLap={bestLap}
           className="w-full"
         />
+        </div>
+      </div>
+
+      {/* ── Row 2b: Theoretical Delta + Corner Coaching (sim optimizer) ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
+          <h3 className="text-sm font-monument text-chalk mb-3">Theoretical Delta</h3>
+          <div className="chart-enter">
+            <TheoreticalDeltaChart sessionId={sessionId} bestLap={bestLap} className="w-full" />
+          </div>
+        </div>
+        <div>
+          <CornerCoachingTable sessionId={sessionId} className="w-full" />
         </div>
       </div>
 
