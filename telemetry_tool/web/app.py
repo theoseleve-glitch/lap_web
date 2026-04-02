@@ -290,6 +290,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.api_v1_entities',    'bp', 'api_v1_entities_bp'), # Entity CRUD (drivers, tracks)
         ('.routes.api_changelog',      'bp', 'api_changelog_bp'),  # API changelog endpoint
         ('.routes.api_rss',            'bp', 'api_rss_bp'),        # RSS feed endpoint
+        ('.routes.theoretical',        'bp', 'theoretical_bp'),    # Sim optimizer theoretical lap endpoints
     ]
 
     import importlib
