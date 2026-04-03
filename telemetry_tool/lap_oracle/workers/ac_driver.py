@@ -82,28 +82,41 @@ class ACDriverWorker(BaseWorker):
     # -- Combo selection ---------------------------------------------------
 
     def _pick_next_combo(self) -> Optional[Tuple[str, str]]:
-        """Pick a car/track combo that needs data.
+        """Pick a car/track combo from AC's installed content.
 
-        Returns (car_name, track_name) or None if nothing to do.
+        Returns (car_folder_name, track_folder_name) or None.
+        Only uses actual AC content folder names — never data lake names
+        from other sims.
         """
-        vehicles = self.lake.list_vehicles()
-        tracks = self.lake.list_tracks()
+        from telemetry_tool.lap_oracle.config import SIM_PATHS
 
-        # Prefer AC vehicles+tracks
-        ac_vehicles = [(s, c) for s, c in vehicles if s == "ac"]
-        ac_tracks = [(s, t) for s, t in tracks if s == "ac"]
+        # Discover installed AC cars and tracks from disk
+        ac_cars: List[str] = []
+        ac_tracks: List[str] = []
+        for base in SIM_PATHS.get("ac", []):
+            cars_dir = base / "content" / "cars"
+            tracks_dir = base / "content" / "tracks"
+            if cars_dir.is_dir():
+                for d in sorted(cars_dir.iterdir()):
+                    if d.is_dir() and d.name not in ac_cars:
+                        ac_cars.append(d.name)
+            if tracks_dir.is_dir():
+                for d in sorted(tracks_dir.iterdir()):
+                    if d.is_dir() and d.name not in ac_tracks:
+                        ac_tracks.append(d.name)
 
-        for _, car in ac_vehicles:
-            for _, track in ac_tracks:
+        if not ac_cars or not ac_tracks:
+            logger.warning("No AC cars or tracks found on disk")
+            return None
+
+        # Pick first combo not yet driven
+        for track in ac_tracks:
+            for car in ac_cars[:10]:  # limit to first 10 cars per track
                 if not self.lake.job_exists("solve", "ac", car, track):
                     return (car, track)
 
-        # Fall back to any vehicle+track pair
-        for _, car in vehicles[:5]:
-            for _, track in tracks[:5]:
-                return (car, track)
-
-        return None
+        # All combos driven — cycle back to first
+        return (ac_cars[0], ac_tracks[0])
 
     # -- race.ini ----------------------------------------------------------
 
