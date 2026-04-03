@@ -24,13 +24,13 @@ from telemetry_tool.lap_oracle.workers.sweep import SweepWorker
 
 logger = logging.getLogger(__name__)
 
-# Phase definitions and their hour boundaries
-_PHASE_BOUNDARIES = [
-    (2, "harvest"),
-    (6, "identify"),
-    (24, "solve"),
-    (40, "full"),
-    (46, "refine"),
+# Phase boundaries as fraction of total run time
+_PHASE_FRACTIONS = [
+    (0.04, "harvest"),    # first 4% (~2h of 48h)
+    (0.125, "identify"),  # next 8% (~6h of 48h)
+    (0.50, "solve"),      # next 38% (~24h of 48h)
+    (0.83, "full"),       # next 33% (~40h of 48h)
+    (0.96, "refine"),     # next 13% (~46h of 48h)
 ]
 
 
@@ -88,11 +88,11 @@ class Orchestrator:
 
     # -- phase logic -------------------------------------------------------
 
-    @staticmethod
-    def _get_phase(elapsed_hours: float) -> str:
+    def _get_phase(self, elapsed_hours: float) -> str:
         """Return the current phase name for *elapsed_hours*."""
-        for boundary, phase in _PHASE_BOUNDARIES:
-            if elapsed_hours < boundary:
+        total = self.config.run_hours
+        for fraction, phase in _PHASE_FRACTIONS:
+            if elapsed_hours < fraction * total:
                 return phase
         return "report"
 

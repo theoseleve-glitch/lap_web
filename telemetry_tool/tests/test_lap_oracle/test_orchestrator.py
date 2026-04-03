@@ -40,14 +40,16 @@ def tmp_lake(tmp_config: OracleConfig) -> DataLake:
 
 
 class TestPhaseScheduling:
-    """Orchestrator._get_phase returns correct phase for each hour range."""
+    """Orchestrator._get_phase returns correct phase based on fraction of run time."""
 
     @pytest.mark.parametrize(
         "hours, expected",
         [
+            # 48h run: harvest < 4% (1.92h), identify < 12.5% (6h), solve < 50% (24h),
+            #          full < 83% (39.84h), refine < 96% (46.08h), report >= 96%
             (0.0, "harvest"),
             (1.0, "harvest"),
-            (1.99, "harvest"),
+            (1.91, "harvest"),
             (2.0, "identify"),
             (4.0, "identify"),
             (5.99, "identify"),
@@ -56,17 +58,39 @@ class TestPhaseScheduling:
             (23.99, "solve"),
             (24.0, "full"),
             (30.0, "full"),
-            (39.99, "full"),
+            (39.0, "full"),
             (40.0, "refine"),
             (45.0, "refine"),
-            (45.99, "refine"),
-            (46.0, "report"),
+            (46.0, "refine"),
+            (46.1, "report"),
             (47.0, "report"),
             (100.0, "report"),
         ],
     )
-    def test_phase_for_hour(self, hours: float, expected: str) -> None:
-        assert Orchestrator._get_phase(hours) == expected
+    def test_phase_for_hour(self, tmp_path, hours: float, expected: str) -> None:
+        cfg = OracleConfig(
+            run_hours=48.0,
+            data_dir=tmp_path / "oracle",
+            db_path=tmp_path / "oracle" / "test.db",
+        )
+        orch = Orchestrator(cfg)
+        assert orch._get_phase(hours) == expected
+
+    def test_short_run_phases_proportional(self, tmp_path) -> None:
+        """4-hour run should hit identify within ~10 minutes, solve within ~30."""
+        cfg = OracleConfig(
+            run_hours=4.0,
+            data_dir=tmp_path / "oracle",
+            db_path=tmp_path / "oracle" / "test.db",
+        )
+        orch = Orchestrator(cfg)
+        assert orch._get_phase(0.0) == "harvest"
+        assert orch._get_phase(0.1) == "harvest"    # 6 min: still harvest
+        assert orch._get_phase(0.2) == "identify"    # 12 min: identify
+        assert orch._get_phase(0.6) == "solve"        # 36 min: solve (15% of 4h)
+        assert orch._get_phase(1.9) == "solve"        # 1.9h: still solve (47.5%)
+        assert orch._get_phase(2.5) == "full"          # 2.5h: full (62.5%)
+        assert orch._get_phase(3.8) == "refine"       # 3.8h: refine (95%)
 
 
 # ── Worker spawning ──────────────────────────────────────────────────
