@@ -91,20 +91,23 @@ class ACGymEnv(_BASE_ENV):
             )
 
         self._port = port
-        self._sock: Optional[socket.socket] = None
         self._physics_shm = None
         self._graphics_shm = None
+        self._gamepad = None
         self._connected = False
         self._prev_lap_dist = 0.0
 
     # -- Connection --------------------------------------------------------
 
     def connect(self) -> bool:
-        """Open shared memory and TCP connection to the AC bridge.
+        """Open shared memory for reading and virtual gamepad for control.
 
-        Returns True if both SHM and TCP are connected.
+        Returns True if at least SHM or gamepad is connected.
         """
-        # SHM
+        shm_ok = False
+        gamepad_ok = False
+
+        # SHM for reading telemetry
         if HAS_MMAP:
             try:
                 self._physics_shm = mmap.mmap(
@@ -113,40 +116,33 @@ class ACGymEnv(_BASE_ENV):
                 self._graphics_shm = mmap.mmap(
                     -1, 4096, SHM_GRAPHICS, access=mmap.ACCESS_READ,
                 )
+                shm_ok = True
+                logger.info("AC shared memory connected")
             except (OSError, ValueError) as exc:
                 logger.warning("Cannot open AC SHM: %s", exc)
                 self._physics_shm = None
                 self._graphics_shm = None
 
-        # TCP — retry with backoff (AC Python apps load after the game UI)
-        for attempt in range(10):
-            try:
-                self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                self._sock.settimeout(5.0)
-                self._sock.connect(("127.0.0.1", self._port))
-                self._connected = True
-                logger.info("Connected to AC bridge on port %d (attempt %d)", self._port, attempt + 1)
-                return True
-            except (socket.error, OSError) as exc:
-                if self._sock:
-                    self._sock.close()
-                self._sock = None
-                if attempt < 9:
-                    logger.debug("Bridge not ready (attempt %d): %s — retrying in %ds", attempt + 1, exc, 3 * (attempt + 1))
-                    time.sleep(3 * (attempt + 1))  # 3s, 6s, 9s... up to 30s
-                else:
-                    logger.warning("Cannot connect to AC bridge after 10 attempts: %s", exc)
-        self._connected = False
-        return False
+        # Virtual gamepad for control injection
+        try:
+            from telemetry_tool.lap_oracle.rl.gamepad_controller import GamepadController
+            self._gamepad = GamepadController()
+            gamepad_ok = self._gamepad.connect()
+            if gamepad_ok:
+                logger.info("Virtual gamepad connected")
+            else:
+                logger.warning("Virtual gamepad failed to connect")
+        except ImportError:
+            logger.warning("GamepadController not available")
+
+        self._connected = gamepad_ok
+        return shm_ok or gamepad_ok
 
     def close(self) -> None:
         """Disconnect from AC."""
-        if self._sock is not None:
-            try:
-                self._sock.close()
-            except OSError:
-                pass
-            self._sock = None
+        if self._gamepad is not None:
+            self._gamepad.release()
+            self._gamepad = None
         if self._physics_shm is not None:
             self._physics_shm.close()
             self._physics_shm = None
@@ -201,18 +197,9 @@ class ACGymEnv(_BASE_ENV):
     def _send_control(
         self, steer: float, throttle: float, brake: float,
     ) -> None:
-        """Send control command to the AC bridge via TCP."""
-        if self._sock is None:
-            return
-        cmd = json.dumps({
-            "steer": steer,
-            "throttle": throttle,
-            "brake": brake,
-        })
-        try:
-            self._sock.sendall((cmd + "\n").encode("utf-8"))
-        except (socket.error, OSError) as exc:
-            logger.warning("Send control failed: %s", exc)
+        """Send control inputs via virtual gamepad."""
+        if self._gamepad is not None and self._gamepad.connected:
+            self._gamepad.send(steer, throttle, brake)
 
     def _read_state(self) -> np.ndarray:
         """Read observation from shared memory.
