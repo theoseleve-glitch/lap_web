@@ -209,27 +209,36 @@ class ACDriverWorker(BaseWorker):
     # -- AC lifecycle ------------------------------------------------------
 
     def _launch_ac(self) -> None:
-        """Launch acs.exe directly (skips launcher, starts session immediately)."""
-        # acs.exe is the actual game engine; AssettoCorsa.exe is just the launcher
-        ac_dir = Path(self.config.ac_exe).parent
-        acs_exe = ac_dir / "acs.exe"
-        if not acs_exe.exists():
-            acs_exe = ac_dir / "acs_x86.exe"
-        if not acs_exe.exists():
-            # Fall back to launcher
-            acs_exe = Path(self.config.ac_exe)
-        if not acs_exe.exists():
-            logger.warning("AC exe not found: %s", acs_exe)
-            return
+        """Launch AC via Content Manager or Steam launcher.
 
-        self._ac_process = subprocess.Popen(
-            [str(acs_exe)],
-            cwd=str(ac_dir),  # AC reads race.ini and content/ relative to CWD
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        self._ac_running = True
-        logger.info("Launched AC acs.exe (pid=%d) from %s", self._ac_process.pid, ac_dir)
+        Content Manager handles CSP patching and proper session setup.
+        Falls back to Steam launch if CM not found.
+        """
+        cm_exe = Path("C:/Users/Admin/Desktop/Content Manager.exe")
+        ac_exe = Path(self.config.ac_exe)
+
+        if cm_exe.exists():
+            # Content Manager: launch with race preset via command line
+            # CM reads race.ini and starts the session directly
+            self._ac_process = subprocess.Popen(
+                [str(cm_exe), "--race"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._ac_running = True
+            logger.info("Launched AC via Content Manager (pid=%d)", self._ac_process.pid)
+        elif ac_exe.exists():
+            # Fallback: launch via AssettoCorsa.exe (the launcher)
+            self._ac_process = subprocess.Popen(
+                [str(ac_exe)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            self._ac_running = True
+            logger.info("Launched AC via launcher (pid=%d)", self._ac_process.pid)
+        else:
+            logger.warning("Neither Content Manager nor AC exe found")
+            return
 
         # Wait for SHM to become available
         timeout = self.config.ac_launch_timeout
