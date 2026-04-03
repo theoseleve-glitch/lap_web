@@ -20,8 +20,8 @@ ORACLE_DB: Path = ORACLE_DATA / "oracle.db"
 # -- Discovered sim install paths --------------------------------------
 SIM_PATHS: Dict[str, List[Path]] = {
     "ac": [
+        Path("D:/SteamLibrary/steamapps/common/assettocorsa"),  # primary (has CSP)
         Path("C:/Program Files (x86)/Steam/steamapps/common/assettocorsa"),
-        Path("D:/SteamLibrary/steamapps/common/assettocorsa"),
     ],
     "acc": [
         Path(
