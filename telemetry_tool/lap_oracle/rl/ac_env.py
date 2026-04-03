@@ -118,19 +118,26 @@ class ACGymEnv(_BASE_ENV):
                 self._physics_shm = None
                 self._graphics_shm = None
 
-        # TCP
-        try:
-            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self._sock.settimeout(5.0)
-            self._sock.connect(("127.0.0.1", self._port))
-            self._connected = True
-            logger.info("Connected to AC bridge on port %d", self._port)
-            return True
-        except (socket.error, OSError) as exc:
-            logger.warning("Cannot connect to AC bridge: %s", exc)
-            self._sock = None
-            self._connected = False
-            return False
+        # TCP — retry with backoff (AC Python apps load after the game UI)
+        for attempt in range(10):
+            try:
+                self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self._sock.settimeout(5.0)
+                self._sock.connect(("127.0.0.1", self._port))
+                self._connected = True
+                logger.info("Connected to AC bridge on port %d (attempt %d)", self._port, attempt + 1)
+                return True
+            except (socket.error, OSError) as exc:
+                if self._sock:
+                    self._sock.close()
+                self._sock = None
+                if attempt < 9:
+                    logger.debug("Bridge not ready (attempt %d): %s — retrying in %ds", attempt + 1, exc, 3 * (attempt + 1))
+                    time.sleep(3 * (attempt + 1))  # 3s, 6s, 9s... up to 30s
+                else:
+                    logger.warning("Cannot connect to AC bridge after 10 attempts: %s", exc)
+        self._connected = False
+        return False
 
     def close(self) -> None:
         """Disconnect from AC."""

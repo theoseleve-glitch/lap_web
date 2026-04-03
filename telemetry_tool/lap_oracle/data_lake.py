@@ -286,9 +286,10 @@ class DataLake:
     def save_track(self, track: TrackModel) -> Path:
         """Persist *track* as a compressed npz file.  Atomic write via temp file."""
         dest = self.data_dir / "tracks" / f"{track.sim}_{track.name}.npz"
-        tmp = dest.with_suffix(".npz.tmp")
+        # np.savez_compressed appends .npz if not present, so use .tmp as stem
+        tmp_stem = self.data_dir / "tracks" / f"_tmp_{track.sim}_{track.name}"
         np.savez_compressed(
-            str(tmp),
+            str(tmp_stem),
             centerline_xy=track.centerline_xy,
             width_left=track.width_left,
             width_right=track.width_right,
@@ -299,7 +300,14 @@ class DataLake:
             sector_boundaries=np.array(track.sector_boundaries, dtype=np.int64),
             meta=np.array([track.total_length_m], dtype=np.float64),
         )
-        tmp.replace(dest)  # atomic on same filesystem
+        tmp_file = tmp_stem.with_suffix(".npz")  # savez_compressed adds .npz
+        try:
+            tmp_file.replace(dest)
+        except OSError:
+            # Windows: target may be locked; fall back to copy+delete
+            import shutil
+            shutil.copy2(str(tmp_file), str(dest))
+            tmp_file.unlink(missing_ok=True)
         return dest
 
     def load_track(
