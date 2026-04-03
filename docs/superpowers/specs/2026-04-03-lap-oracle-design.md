@@ -2,7 +2,7 @@
 
 **Date:** 2026-04-03
 **Status:** Draft
-**Sims:** Assetto Corsa, ACC, Le Mans Ultimate, iRacing, F1 25
+**Sims:** Assetto Corsa, ACC, Le Mans Ultimate, iRacing, F1 2021 (CodeMasters UDP)
 
 ---
 
@@ -421,9 +421,9 @@ Each setup parameter maps to vehicle model changes:
 - Diff settings → traction split model
 - ARB → lateral load transfer distribution
 
-### 3.3 F1 25 UDP Adapter (New)
+### 3.3 F1 2021 UDP Adapter (New)
 
-F1 25 uses the same UDP telemetry format as F1 23/24 (CodeMasters/EA):
+**Note:** F1 25 is NOT installed. F1 2021 (`D:/SteamLibrary/steamapps/common/F1 2021/`) uses the same CodeMasters UDP telemetry format:
 
 ```python
 # UDP packet types (port 20777)
@@ -691,4 +691,79 @@ After 48 hours, the system should have:
 | GPU OOM during training | Training crashes | Batch size auto-reduction; checkpoint recovery |
 | 48h not enough for full coverage | Incomplete database | Priority scheduling ensures highest-value combos solved first |
 | Track extraction fails | No track model | Fall back to TUMFTM tracks + recorded GPS traces |
-| F1 25 not installed | No F1 25 data | Worker skipped; 4 sims still covered |
+| F1 2021 not running | No F1 UDP data | Worker skipped; 4 sims still covered |
+
+## 11. Discovered Sim Install Paths (from machine scan)
+
+### Assetto Corsa
+- **Install:** `C:/Program Files (x86)/Steam/steamapps/common/assettocorsa/` + `D:/SteamLibrary/steamapps/common/assettocorsa/`
+- **Car physics:** `content/cars/*/data.acd` (encrypted ZIP with car.ini, tyres.ini, drivetrain.ini, suspensions.ini, aero.ini)
+- **Track AI:** `content/tracks/*/ai/fast_lane.ai.csv` (racing line + boundaries)
+- **User setups:** `C:/Users/Admin/Documents/Assetto Corsa/setups/` (ferrari_312t, ks_ferrari_sf70h, ks_praga_r1, tatuusfa1, ad_sodi_rt10_gx390, yzd_alpine_a110_1600s)
+- **Telemetry:** `C:/Users/Admin/Documents/Assetto Corsa/ctelemetry/` + `aim/telemetry_dump.act` (12.9 MB)
+
+### ACC
+- **Install:** `C:/Program Files (x86)/Steam/steamapps/common/Assetto Corsa Competizione/`
+- **Track fastlane:** `AC2/Content/Cache/` (AI fastlane data for 24+ tracks: barcelona, monza, spa, silverstone, etc.)
+- **User setups:** `C:/Users/Admin/Documents/Assetto Corsa Competizione/Setups/`
+- **MoTeC:** `C:/Users/Admin/Documents/Assetto Corsa Competizione/MoTeC/`
+- **Results:** `C:/Users/Admin/Documents/Assetto Corsa Competizione/Results/`
+
+### iRacing
+- **Telemetry:** `C:/Users/Admin/Documents/iRacing/telemetry/` — **24GB, 100+ .ibt files** (ferrari488gt3, formulair04, ligierjsp320, bmwm2csr, etc.)
+- **Setups:** `C:/Users/Admin/Documents/iRacing/setups/` — **108 car directories** (audirs3lms, ferrari488gt3, ferrari499p, formulair04, bmwm4gt3, etc.)
+- **Lap files:** `C:/Users/Admin/Documents/iRacing/lapfiles/`
+- **Config:** `C:/Users/Admin/Documents/iRacing/app.ini`
+
+### Le Mans Ultimate
+- **Install:** `D:/SteamLibrary/steamapps/common/Le Mans Ultimate/`
+- **Vehicles:** `Core/Vehicles/` (vehicle physics and models in .mas archives)
+- **Locations:** `Core/Locations/` (Commonmaps.mas 212 MB)
+- **Weather:** `Core/Shared/WeatherFX.mas` (18.4 MB) + `Weather.mas` (2.2 MB)
+- **User setups:** `UserData/Setups/`
+
+### F1 2021
+- **Install:** `D:/SteamLibrary/steamapps/common/F1 2021/`
+- **No F1 25 found** — F1 2021 is the latest F1 game installed
+
+### Bonus Sims (lower priority)
+- **rFactor 2:** `D:/SteamLibrary/steamapps/common/rFactor2/` (shares engine with LMU)
+- **RaceRoom:** `D:/SteamLibrary/steamapps/common/raceroom racing experience/` (90+ car folders)
+- **Automobilista 2:** `D:/SteamLibrary/steamapps/common/Automobilista 2/`
+- **KartKraft:** on D: drive
+
+## 12. TUM MVDC Key Algorithms (Extracted from ZIP)
+
+### Vehicle Model (Single-Track Bicycle)
+```
+State: [x, y, psi, vx, vy]
+Inputs: [dPsi_radps, ax_mps2, ay_mps2]
+
+Longitudinal: vx[k+1] = vx[k] + (ax + dPsi*vy)*Ts
+Lateral:      vy[k+1] = vy[k] + (ay - dPsi*vx)*Ts
+Yaw:          psi[k+1] = psi[k] + dPsi*Ts
+Position:     Heun 2nd-order integration (global frame)
+```
+
+### Pacejka Tire Force
+```
+Fy = C * sin(B * atan(A*alpha - D*(A*alpha - atan(A*alpha))))
+Slip angle: alpha = atan2(-vyT, vxT) per tire (rotated by steering)
+Long slip:  lambda = 100*(v_wheel - v_ref)/max(v_min, v_ref)
+```
+
+### EKF State Estimation
+- Prediction: state propagation with Q = B_d*diag(InputCov)*B_d'
+- Update: K = P_pred*H_d / (H_d*P_pred*H_d' + R) with outlier rejection
+- Fuses: 2 localization sources + 2 velocity sources (selective via bitmask)
+
+### Tube-MPC Trajectory Tracking
+- Horizon: N = 40 steps
+- Coordinates: curvilinear (arc-length s, lateral offset d, relative heading)
+- Solver: OSQP quadratic programming
+- Constraints: lateral bounds, friction circle, terminal invariant set
+
+### Online Learning
+- **RLS:** Recursive Least Squares for model weight adaptation
+- **Disturbance:** Recursive mean + quantile bound estimation
+- **Steering:** Gaussian process in (curvature, velocity) space
