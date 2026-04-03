@@ -284,10 +284,11 @@ class DataLake:
     # =====================================================================
 
     def save_track(self, track: TrackModel) -> Path:
-        """Persist *track* as a compressed npz file.  Returns the path."""
+        """Persist *track* as a compressed npz file.  Atomic write via temp file."""
         dest = self.data_dir / "tracks" / f"{track.sim}_{track.name}.npz"
+        tmp = dest.with_suffix(".npz.tmp")
         np.savez_compressed(
-            str(dest),
+            str(tmp),
             centerline_xy=track.centerline_xy,
             width_left=track.width_left,
             width_right=track.width_right,
@@ -298,6 +299,7 @@ class DataLake:
             sector_boundaries=np.array(track.sector_boundaries, dtype=np.int64),
             meta=np.array([track.total_length_m], dtype=np.float64),
         )
+        tmp.replace(dest)  # atomic on same filesystem
         return dest
 
     def load_track(
@@ -307,7 +309,12 @@ class DataLake:
         path = self.data_dir / "tracks" / f"{sim}_{name}.npz"
         if not path.exists():
             return None
-        data = np.load(str(path), allow_pickle=False)
+        try:
+            data = np.load(str(path), allow_pickle=False)
+        except (EOFError, OSError, ValueError) as exc:
+            logger.warning("Corrupted track file %s: %s — removing", path, exc)
+            path.unlink(missing_ok=True)
+            return None
         total_length = float(data["meta"][0])
         sector_boundaries = data["sector_boundaries"].tolist()
         return TrackModel(
