@@ -320,17 +320,87 @@ weather_features = [
 ]
 ```
 
-#### W5: AC Driver Worker (CPU + GPU time-shared)
+#### W5: AC Driver Worker — FULLY AUTONOMOUS (CPU + GPU time-shared)
 
-**Purpose:** Autonomously drive in Assetto Corsa to collect targeted data.
+**Purpose:** Own the entire AC lifecycle — launch, configure, drive, collect, kill, repeat — for 48 hours unattended.
 
-**AC shared memory write-back:**
-AC exposes `acpmf_physics` for reading. For control injection, two approaches ranked by reliability:
+**The user walks away after pressing "go". No human intervention for 48 hours.**
 
-1. **AC Python app API** (preferred) — AC loads Python apps from `apps/python/`. A custom app can call `ac.setSteerAngle()`, `ac.setGas()`, `ac.setBrake()`, `ac.setGear()` to control the car. This is AC's official extension mechanism.
-2. **CSP (Custom Shaders Patch) Lua scripting** (fallback) — CSP exposes `ac.setInput()` Lua bindings. More powerful but requires CSP installed.
+**AC Process Manager:**
+The worker controls AC as a subprocess:
+```
+Loop (for each car/track combo in priority queue):
+  1. Write race.ini → set car model, track, practice session, no opponents
+  2. Launch AC via direct exe or Steam CLI
+  3. Wait for SHM connection (poll acpmf_physics, timeout 60s)
+  4. Wait for session_active (graphics.status == ACC_LIVE)
+  5. Drive N laps with RL agent (collect telemetry via SHM read)
+  6. Kill AC process (taskkill /F /IM acs.exe)
+  7. Process collected telemetry → feed to Identify + Solve workers
+  8. Pick next car/track combo from priority queue
+  9. Goto 1
+```
 
-If neither is available (AC not installed), the RL worker gracefully skips and all other workers continue.
+**race.ini manipulation:**
+```ini
+; Written by Oracle before each AC launch
+[RACE]
+MODEL=ks_ferrari_488_gt3    ; car folder name
+TRACK=monza                  ; track folder name  
+CONFIG_TRACK=                ; track layout variant
+AI_LEVEL=0                   ; no AI opponents
+SESSION_NAME=practice
+LAPS=0                       ; unlimited
+TIME=30                      ; 30 min session
+```
+
+File location: `C:/Users/Admin/Documents/Assetto Corsa/cfg/race.ini`
+
+**AC launch command:**
+```bash
+# Direct exe (faster, no Steam overlay)
+"C:/Program Files (x86)/Steam/steamapps/common/assettocorsa/AssettoCorsa.exe"
+
+# Or via Steam (ensures proper init)  
+start steam://rungameid/244210
+```
+
+**Control injection via AC Python app:**
+AC loads Python apps from `apps/python/` at startup. We install `lap_oracle_bridge/`:
+
+```
+assettocorsa/apps/python/lap_oracle_bridge/
+├── lap_oracle_bridge.py    # Main AC app (runs inside AC process)
+└── config.ini              # App metadata
+```
+
+The bridge app:
+1. Starts a TCP server on `localhost:9876` inside AC
+2. Receives control commands: `{"throttle": 0.8, "brake": 0.0, "steer": -0.12, "gear": 4}`
+3. Applies via `ac.ext_setDriverInput()` (CSP) or native `ac.setInput()` calls
+4. Sends back state confirmation
+
+The Oracle connects to this TCP socket after AC launches.
+
+**Fallback if bridge fails:** Pure data collection mode — AC drives with AI, Oracle reads telemetry via SHM. Less useful but still collects vehicle dynamics data.
+
+**Car/track enumeration:**
+Oracle scans `C:/Program Files (x86)/Steam/steamapps/common/assettocorsa/content/cars/` and `content/tracks/` to discover all installed cars and tracks. Prioritizes by:
+1. Cars with existing telemetry data (can validate models)
+2. Popular combos (GT3 cars on racing circuits)
+3. Untested combos (exploration for coverage)
+
+**Session flow per combo (~5-10 minutes each):**
+- Laps 1-2: Warm-up (conservative driving, tyre temp buildup)
+- Laps 3-8: Data collection (RL agent pushes limits, varied lines)
+- Laps 9-10: Validation (attempt OCP-optimal trajectory)
+- Kill AC, process data, move to next combo
+
+**Throughput estimate (48h):**
+- ~7 min per combo (AC launch + 10 laps + kill + process)
+- ~8 combos/hour = **~380 car/track combos in 48 hours**
+- With 50 cars × 20 tracks = 1000 possible combos
+- Priority scheduling ensures highest-value combos first
 
 **Gym environment:**
 ```python
@@ -453,22 +523,49 @@ priority = (
 )
 ```
 
-**Phase scheduling:**
+**Phase scheduling (fully autonomous, zero human intervention):**
 ```
-Phase 1 (hours 0-4):   HARVEST — all harvest workers active, others idle
-Phase 2 (hours 4-8):   IDENTIFY — fit vehicle models from harvested data
-Phase 3 (hours 8-20):  SOLVE+TRAIN — OCP solving begins, GPU training starts, AC driver begins
-Phase 4 (hours 20-36): FULL PARALLEL — all workers active, setup sweeping begins
-Phase 5 (hours 36-44): REFINE — re-solve with improved models, deep setup optimization
-Phase 6 (hours 44-48): REPORT — generate final reports, save best models
+Phase 1 (hours 0-2):   HARVEST — extract all zip files, sim files, iRacing .ibt, F1 telemetry
+                        (~18GB of F1 zips + 24GB iRacing .ibt + sim files)
+Phase 2 (hours 2-6):   IDENTIFY — fit vehicle models from harvested data
+                        AC Driver starts: first car/track combo launched
+Phase 3 (hours 6-24):  SOLVE+DRIVE+TRAIN — OCP solving, AC cycling through combos,
+                        GPU training starts once first solutions arrive
+Phase 4 (hours 24-40): FULL PARALLEL — all workers active, setup sweeping,
+                        AC focused on high-value combos, neural net improving
+Phase 5 (hours 40-46): REFINE — re-solve with improved models from AC data,
+                        deep setup optimization on top-50 combos
+Phase 6 (hours 46-48): REPORT — generate final reports, save models, stop AC
 ```
+
+**Pre-flight (user does ONCE before walking away):**
+1. Run `python scripts/setup_oracle.py` — installs AC bridge app, verifies SHM, checks deps
+2. Run `python scripts/launch_oracle.py --hours 48` — starts the system
+3. Walk away
 
 **Fault tolerance:**
 - Workers catch all exceptions, log, and continue to next job
 - Orchestrator monitors worker health (heartbeat every 60s)
 - Crashed workers auto-restart with backoff
+- **AC crash recovery:** if AC hangs or crashes, kill process, wait 30s, relaunch with same or next combo
+- **AC launch timeout:** if SHM not connected within 90s of launch, kill and retry (max 3 retries per combo)
 - All intermediate results persisted to disk (resume-safe)
 - SQLite WAL mode for concurrent reads/writes
+- **Power-safe:** checkpoint state every 5 minutes. `--resume` flag picks up where it left off
+
+**Available data for harvest** (from Downloads):
+- `2022-main.zip` — 65K F1 telemetry files (3.8 GB)
+- `2023-main.zip` — 65K F1 telemetry files (3.8 GB)
+- `2024-main.zip` — 73K F1 telemetry files (4.3 GB)
+- `2025-main.zip` — 143K F1 telemetry files (5.0 GB), 25 GPs, ~70K laps
+- `2026-main.zip` — 20K F1 telemetry files (1.3 GB)
+- `raw.zip` — 30 kart session CSVs (649 MB)
+- `archive.zip` — Kaggle F1 lap data (20 MB)
+- `archive (1).zip` — Dallara 100K (5 MB)
+- `archive (2).zip` — Motorsport data (59 MB)
+- `archive (3).zip` — Simulated dataset (223 MB)
+- iRacing: 100+ .ibt files (24 GB) in `Documents/iRacing/telemetry/`
+- Total: **~43 GB of training data**
 
 ## 4. Output Artifacts
 
