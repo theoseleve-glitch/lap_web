@@ -82,40 +82,61 @@ class ACDriverWorker(BaseWorker):
     # -- Combo selection ---------------------------------------------------
 
     def _pick_next_combo(self) -> Optional[Tuple[str, str]]:
-        """Pick a car/track combo from AC's installed content.
+        """Pick a validated car/track combo from AC's installed content.
 
-        Returns (car_folder_name, track_folder_name) or None.
-        Only uses actual AC content folder names — never data lake names
-        from other sims.
+        Returns (car_folder_name, track_spec) or None.
+        track_spec is "track_folder" or "track_folder/layout" if layouts exist.
+        Only returns combos where the car has a .kn5 model and the track has ui/.
         """
         from telemetry_tool.lap_oracle.config import SIM_PATHS
 
-        # Discover installed AC cars and tracks from disk
         ac_cars: List[str] = []
-        ac_tracks: List[str] = []
+        ac_tracks: List[str] = []  # "track" or "track/layout"
+
         for base in SIM_PATHS.get("ac", []):
+            # Validate cars: must have at least one .kn5 3D model
             cars_dir = base / "content" / "cars"
-            tracks_dir = base / "content" / "tracks"
             if cars_dir.is_dir():
                 for d in sorted(cars_dir.iterdir()):
-                    if d.is_dir() and d.name not in ac_cars:
+                    if not d.is_dir() or d.name in ac_cars:
+                        continue
+                    has_model = any(d.glob("*.kn5"))
+                    has_data = (d / "data.acd").exists() or (d / "data").is_dir()
+                    if has_model and has_data:
                         ac_cars.append(d.name)
+
+            # Validate tracks: must have ui/ folder. Check for layouts.
+            tracks_dir = base / "content" / "tracks"
             if tracks_dir.is_dir():
                 for d in sorted(tracks_dir.iterdir()):
-                    if d.is_dir() and d.name not in ac_tracks:
-                        ac_tracks.append(d.name)
+                    if not d.is_dir():
+                        continue
+                    # Check for layout subfolders (e.g. ks_monza66/road, ks_monza66/junior)
+                    layouts_found = False
+                    for sub in sorted(d.iterdir()):
+                        if sub.is_dir() and (sub / "ui").is_dir():
+                            spec = d.name + "/" + sub.name
+                            if spec not in ac_tracks:
+                                ac_tracks.append(spec)
+                                layouts_found = True
+                    # If no layouts, check if top-level has ui/
+                    if not layouts_found and (d / "ui").is_dir():
+                        if d.name not in ac_tracks:
+                            ac_tracks.append(d.name)
 
         if not ac_cars or not ac_tracks:
-            logger.warning("No AC cars or tracks found on disk")
+            logger.warning("No valid AC cars (%d) or tracks (%d)", len(ac_cars), len(ac_tracks))
             return None
 
-        # Pick first combo not yet driven
-        for track in ac_tracks:
-            for car in ac_cars[:10]:  # limit to first 10 cars per track
-                if not self.lake.job_exists("solve", "ac", car, track):
-                    return (car, track)
+        logger.info("AC content: %d cars, %d tracks", len(ac_cars), len(ac_tracks))
 
-        # All combos driven — cycle back to first
+        # Pick first combo not yet driven
+        for track_spec in ac_tracks:
+            for car in ac_cars[:10]:
+                track_key = track_spec.replace("/", "_")
+                if not self.lake.job_exists("solve", "ac", car, track_key):
+                    return (car, track_spec)
+
         return (ac_cars[0], ac_tracks[0])
 
     # -- race.ini ----------------------------------------------------------
@@ -132,19 +153,40 @@ class ACDriverWorker(BaseWorker):
         cp = configparser.ConfigParser()
         cp.optionxform = str  # preserve case
 
+        # Track spec can be "track_name" or "track_name/layout"
+        if "/" in track:
+            track_name, config_track = track.split("/", 1)
+        else:
+            track_name, config_track = track, ""
+
         cp["RACE"] = {
             "MODEL": car,
             "MODEL_CONFIG": "",
             "SKIN": "",
-            "TRACK": track,
-            "CONFIG_TRACK": "",
+            "TRACK": track_name,
+            "CONFIG_TRACK": config_track,
             "AI_LEVEL": "0",
             "PENALTIES": "0",
             "LAPS": str(_LAPS_PER_SESSION + 1),
+            "CARS": "1",
+            "FIXED_SETUP": "0",
         }
+        # Find first available skin
+        skin = ""
+        from telemetry_tool.lap_oracle.config import SIM_PATHS
+        for base in SIM_PATHS.get("ac", []):
+            skins_dir = base / "content" / "cars" / car / "skins"
+            if skins_dir.is_dir():
+                for s in sorted(skins_dir.iterdir()):
+                    if s.is_dir():
+                        skin = s.name
+                        break
+                if skin:
+                    break
+
         cp["CAR_0"] = {
             "MODEL": car,
-            "SKIN": "",
+            "SKIN": skin,
             "SETUP": "",
             "BALLAST": "0",
             "RESTRICTOR": "0",
@@ -167,19 +209,27 @@ class ACDriverWorker(BaseWorker):
     # -- AC lifecycle ------------------------------------------------------
 
     def _launch_ac(self) -> None:
-        """Launch the AC executable and wait for SHM to appear."""
-        ac_exe = Path(self.config.ac_exe)
-        if not ac_exe.exists():
-            logger.warning("AC exe not found: %s", ac_exe)
+        """Launch acs.exe directly (skips launcher, starts session immediately)."""
+        # acs.exe is the actual game engine; AssettoCorsa.exe is just the launcher
+        ac_dir = Path(self.config.ac_exe).parent
+        acs_exe = ac_dir / "acs.exe"
+        if not acs_exe.exists():
+            acs_exe = ac_dir / "acs_x86.exe"
+        if not acs_exe.exists():
+            # Fall back to launcher
+            acs_exe = Path(self.config.ac_exe)
+        if not acs_exe.exists():
+            logger.warning("AC exe not found: %s", acs_exe)
             return
 
         self._ac_process = subprocess.Popen(
-            [str(ac_exe)],
+            [str(acs_exe)],
+            cwd=str(ac_dir),  # AC reads race.ini and content/ relative to CWD
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
         self._ac_running = True
-        logger.info("Launched AC (pid=%d)", self._ac_process.pid)
+        logger.info("Launched AC acs.exe (pid=%d) from %s", self._ac_process.pid, ac_dir)
 
         # Wait for SHM to become available
         timeout = self.config.ac_launch_timeout
