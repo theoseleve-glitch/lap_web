@@ -2,6 +2,8 @@
 
 import Link from 'next/link';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { EntityGlossary } from '@/components/seo/EntityGlossary';
+import { RelatedPages as SeoRelatedPages } from '@/components/seo/RelatedPages';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { WorkflowCoverage } from '@/components/site/WorkflowCoverage';
 import { ScreenshotGallery } from '@/components/site/ScreenshotGallery';
@@ -98,6 +100,8 @@ export default function ProductPage() {
 
       <SocialShare title="LAP — Motorsport Telemetry Analysis" className="mb-8" />
       <RelatedPages pathname="/product" />
+      <EntityGlossary />
+      <SeoRelatedPages currentPath="/product" />
     </main>
     </>
   );

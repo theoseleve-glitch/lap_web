@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { BreadcrumbJsonLd } from '@/components/seo/BreadcrumbJsonLd';
+import { PageJsonLd } from '@/components/seo/PageJsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { PricingTable } from '@/components/ui/PricingTable';
 import { ChartTooltip } from '@/components/ui/ChartTooltip';
@@ -103,6 +105,18 @@ export default function PricingPage() {
 
   return (
     <>
+    <BreadcrumbJsonLd pathname="/pricing" />
+    <PageJsonLd
+      type="FAQPage"
+      title="Pricing"
+      description="Choose the right LAP plan for your racing programme."
+      pathname="/pricing"
+      faqItems={[
+        { question: 'What file formats does LAP support?', answer: 'RaceChrono CSV, RaceBox CSV, AiM CSV, and MoTeC CSV with GPS data.' },
+        { question: 'Can I switch plans?', answer: 'Yes, you can upgrade or downgrade at any time. Changes take effect on your next billing cycle.' },
+        { question: 'Is there a free trial?', answer: 'The Demo tier is free forever with 3 analyses per month. No credit card required.' },
+      ]}
+    />
     <JsonLd
       pathname="/pricing"
       faqItems={[

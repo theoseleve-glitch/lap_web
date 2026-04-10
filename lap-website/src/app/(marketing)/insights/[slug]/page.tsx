@@ -1,6 +1,8 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { BreadcrumbJsonLd } from '@/components/seo/BreadcrumbJsonLd';
+import { PageJsonLd } from '@/components/seo/PageJsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { insightEntries } from '@/data/insights-cms';
 import { generateSeoMetadata } from '@/lib/seo';
@@ -28,6 +30,13 @@ export default function InsightDetailPage({ params }: { params: { slug: string }
 
   return (
     <>
+    <BreadcrumbJsonLd pathname={`/insights/${article.slug}`} />
+    <PageJsonLd
+      type="Article"
+      title={article.title}
+      description={article.summary}
+      pathname={`/insights/${article.slug}`}
+    />
     <JsonLd
       pathname="/insights"
       article={{ title: article.title, datePublished: '2026-01-01', summary: article.summary }}
