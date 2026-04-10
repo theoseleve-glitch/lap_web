@@ -49,6 +49,8 @@ interface TrackMapProps {
   distRange?: [number, number] | null;
   /** When set, fetches and draws a second lap trace for comparison. */
   compareLap?: number | null;
+  /** Color mode: "speed" (default) or "grip" (headroom heatmap). */
+  colorMode?: "speed" | "grip";
 }
 
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
@@ -72,6 +74,27 @@ function speedToColor(t: number): string {
   }
 
   return `rgb(${r},${g},${b})`;
+}
+
+/* ── Grip headroom → Color (red → gold → green) ────────── */
+
+function gripHeadroomColor(headroom_pct: number): string {
+  if (headroom_pct > 15) return '#22C55E';
+  if (headroom_pct > 5) {
+    const t = (headroom_pct - 5) / 10;
+    const r = Math.round(201 * (1 - t) + 34 * t);
+    const g = Math.round(168 * (1 - t) + 197 * t);
+    const b = Math.round(76 * (1 - t) + 94 * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  if (headroom_pct > 0) {
+    const t = headroom_pct / 5;
+    const r = Math.round(255 * (1 - t) + 201 * t);
+    const g = Math.round(42 * (1 - t) + 168 * t);
+    const b = Math.round(42 * (1 - t) + 76 * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  return '#FF2A2A';
 }
 
 /* ── 2.5D Isometric projection ──────────────────────────── */
@@ -236,6 +259,8 @@ function drawTrack(
   hoverIndex?: number,
   distRange?: [number, number] | null,
   compareTrace?: TrackMapData | null,
+  colorMode: "speed" | "grip" = "speed",
+  gripDelta?: { distance_m: number; headroom_pct: number }[] | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -374,7 +399,15 @@ function drawTrack(
     ctx.lineWidth = inRange ? 1.5 : 0.5;
     ctx.globalAlpha = inRange ? 1.0 : 0.15;
 
-    if (speeds && speeds.length === lats.length) {
+    if (colorMode === 'grip' && gripDelta && dists) {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let j = 0; j < gripDelta.length; j++) {
+        const dd = Math.abs(gripDelta[j].distance_m - (dists[i] ?? 0));
+        if (dd < bestDist) { bestDist = dd; bestIdx = j; }
+      }
+      ctx.strokeStyle = inRange ? gripHeadroomColor(gripDelta[bestIdx].headroom_pct) : '#444';
+    } else if (speeds && speeds.length === lats.length) {
       const t = (speeds[i] - minSpd) / spdRange;
       ctx.strokeStyle = inRange ? speedToColor(t) : '#444';
     } else {
@@ -488,6 +521,28 @@ function drawTrack(
     ctx.fill();
   }
 
+  // ── Grip headroom legend ──
+  if (colorMode === 'grip') {
+    const legX = w - 20;
+    const legY = 16;
+    const legH = 60;
+    const legW = 8;
+    const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
+    grad.addColorStop(0, '#22C55E');
+    grad.addColorStop(0.5, '#C9A84C');
+    grad.addColorStop(1, '#FF2A2A');
+    ctx.fillStyle = grad;
+    ctx.fillRect(legX - legW, legY, legW, legH);
+    ctx.fillStyle = '#949494';
+    ctx.font = '8px "Space Mono", monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Headroom', legX - legW - 4, legY);
+    ctx.fillText('+15%', legX - legW - 4, legY + 12);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0%', legX - legW - 4, legY + legH);
+  }
+
   // Store projection on canvas for hit-testing
   (canvas as unknown as Record<string, unknown>)._proj = proj;
 }
@@ -528,6 +583,7 @@ export function TrackMap(props: TrackMapProps) {
     controlledLap = false,
     distRange,
     compareLap = null,
+    colorMode = 'speed',
   } = props;
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -537,6 +593,7 @@ export function TrackMap(props: TrackMapProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [gripDelta, setGripDelta] = useState<{ distance_m: number; headroom_pct: number }[] | null>(null);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -601,11 +658,31 @@ export function TrackMap(props: TrackMapProps) {
     return () => { cancelled = true; };
   }, [sessionId, compareLap]);
 
+  // ── Fetch grip delta data ─────────────────────────────────
+  useEffect(() => {
+    if (colorMode !== 'grip' || !sessionId) {
+      setGripDelta(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ bins: { distance_m: number; headroom_pct: number }[] }>(
+          `/sessions/${encodeURIComponent(sessionId)}/track-delta`,
+        );
+        if (!cancelled && res?.bins) setGripDelta(res.bins);
+      } catch {
+        if (!cancelled) setGripDelta(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [colorMode, sessionId]);
+
   // ── Draw on canvas ──────────────────────────────────────
   const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
-    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace);
-  }, [trace, compareTrace, corners, hoverIdx, distRange]);
+    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta);
+  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta]);
 
   useEffect(() => { draw(); }, [draw]);
 

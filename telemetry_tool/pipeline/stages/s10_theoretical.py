@@ -52,6 +52,9 @@ def run_theoretical(
     grip_map: Any = None,
     friction_envelope: Any = None,
     distance_quality: Any = None,
+    track_id: str | None = None,
+    vehicle_class: str = "car",
+    condition: str = "dry",
 ) -> tuple[
     Optional[pd.DataFrame],  # theoretical_lap
     str,                      # sim_method
@@ -501,6 +504,9 @@ def run_optimal_v2(
     *,
     speed_pct: float = 98.0,
     corners: Optional[list[dict[str, Any]]] = None,
+    track_id: str | None = None,
+    vehicle_class: str = "car",
+    condition: str = "dry",
 ) -> Optional[dict[str, Any]]:
     """Run the unified optimal solver (feature-flagged by ``OPTIMAL_V2``).
 
@@ -544,6 +550,34 @@ def run_optimal_v2(
 
     if caps is None:
         return None
+
+    # Try aggregate grip from track surface (PG mode, >= 3 sessions)
+    if (grip_map is None or getattr(grip_map, "is_global_fallback", False)) and track_id:
+        try:
+            import os
+            if os.environ.get("USE_PG", "0") == "1":
+                from track_surface import get_aggregate_grip, get_global_aggregate_grip
+                from web.db import get_db_connection
+                _agg_conn = get_db_connection()
+                _agg = get_aggregate_grip(
+                    _agg_conn, track_id,
+                    vehicle_class=vehicle_class, condition=condition,
+                )
+                if _agg is not None and _agg.session_count >= 3:
+                    grip_map = _agg
+                    logger.info("Using workspace aggregate grip for track %s (%d sessions)",
+                                track_id, _agg.session_count)
+                else:
+                    _gagg = get_global_aggregate_grip(
+                        _agg_conn, track_id,
+                        vehicle_class=vehicle_class, condition=condition,
+                    )
+                    if _gagg is not None and _gagg.session_count >= 5:
+                        grip_map = _gagg
+                        logger.info("Using global aggregate grip for track %s (%d sessions)",
+                                    track_id, _gagg.session_count)
+        except Exception as _agg_exc:
+            logger.debug("Aggregate grip lookup skipped: %s", _agg_exc)
 
     # Apply grip map override
     if grip_map is not None and not grip_map.is_global_fallback and caps.mu is None:

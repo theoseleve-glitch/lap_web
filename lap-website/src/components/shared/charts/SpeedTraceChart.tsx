@@ -57,6 +57,8 @@ interface SpeedTraceChartProps {
   onDistRangeChange?: (range: [number, number] | null) => void;
   /** When true, fetches and overlays the theoretical optimal speed profile */
   showTheoretical?: boolean;
+  /** When true, fetches and overlays the aggregate physics ceiling */
+  showPhysicsCeiling?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -118,6 +120,7 @@ interface DrawOptions {
   avgSpeeds?: number[];   // m/s
   refSpeeds?: number[];   // m/s
   theoreticalSpeeds?: { distances: number[]; speeds: number[] } | null; // kph, own distance axis
+  ceilingSpeeds?: { distances: number[]; speeds: number[]; sessions: number } | null;
   hoverDistanceM: number | null;
   /** When set, ref line legend shows "Lap N" instead of "Theoretical" */
   refLapLabel?: string | null;
@@ -193,6 +196,10 @@ function drawSpeedTrace(
   if (opts.theoreticalSpeeds && opts.theoreticalSpeeds.speeds.length > 0) {
     const theoMax = safeMax(opts.theoreticalSpeeds.speeds) * 1.1; // already kph
     if (theoMax > yMax) yMax = theoMax;
+  }
+  if (opts.ceilingSpeeds && opts.ceilingSpeeds.speeds.length > 0) {
+    const ceilMax = safeMax(opts.ceilingSpeeds.speeds) * 1.1;
+    if (ceilMax > yMax) yMax = ceilMax;
   }
   if (yMax <= yMin) yMax = yMin + 1;
 
@@ -282,6 +289,65 @@ function drawSpeedTrace(
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     ctx.fillText('- - Theoretical', pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
+
+  // Physics ceiling from aggregate track surface (dashed gold, filled area)
+  if (opts.ceilingSpeeds && opts.ceilingSpeeds.distances.length > 0) {
+    const cd = opts.ceilingSpeeds.distances;
+    const cs = opts.ceilingSpeeds.speeds;
+
+    // Fill area between actual speed and ceiling
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = '#C9A84C';
+    ctx.beginPath();
+    let fillStarted = false;
+    for (let i = 0; i < cd.length; i++) {
+      const x = xToPixel(cd[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      const y = yToPixel(cs[i]);
+      if (!fillStarted) { ctx.moveTo(x, y); fillStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    if (fillStarted && distances.length > 0) {
+      for (let i = cd.length - 1; i >= 0; i--) {
+        const x = xToPixel(cd[i]);
+        if (x < pad.left || x > pad.left + pW) continue;
+        const idx = closestIndex(distances, cd[i]);
+        const actualKph = (speeds[idx] ?? 0) * 3.6;
+        const y = yToPixel(actualKph);
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Dashed gold ceiling line
+    ctx.save();
+    ctx.setLineDash([8, 4]);
+    ctx.strokeStyle = '#C9A84C';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    let ceilStarted = false;
+    for (let i = 0; i < cd.length; i++) {
+      const x = xToPixel(cd[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      const y = yToPixel(cs[i]);
+      if (!ceilStarted) { ctx.moveTo(x, y); ceilStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Legend
+    ctx.fillStyle = '#C9A84C';
+    ctx.globalAlpha = 0.7;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`- - Track Limit (${opts.ceilingSpeeds.sessions} sessions)`, pad.left + 8, legendY);
     ctx.globalAlpha = 1.0;
     legendY += 12;
   }
@@ -626,6 +692,7 @@ export function SpeedTraceChart({
   distRange = null,
   onDistRangeChange,
   showTheoretical = false,
+  showPhysicsCeiling = false,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -640,6 +707,7 @@ export function SpeedTraceChart({
   const dragRef = useRef<{ startX: number; currentX: number } | null>(null);
   const [dragSelection, setDragSelection] = useState<[number, number] | null>(null);
   const [theoreticalData, setTheoreticalData] = useState<{ distances: number[]; speeds: number[] } | null>(null);
+  const [ceilingData, setCeilingData] = useState<{ distances: number[]; speeds: number[]; sessions: number } | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
@@ -740,6 +808,35 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [showTheoretical, sessionId]);
 
+  // ── Fetch physics ceiling ────────────────────────────────────
+  useEffect(() => {
+    if (!showPhysicsCeiling || !sessionId) {
+      setCeilingData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{
+          ceiling_speeds_kph: number[];
+          distances: number[];
+          aggregate_sessions: number;
+        }>(`/sessions/${encodeURIComponent(sessionId)}/physics-ceiling`);
+        if (cancelled) return;
+        if (res?.ceiling_speeds_kph) {
+          setCeilingData({
+            distances: res.distances,
+            speeds: res.ceiling_speeds_kph,
+            sessions: res.aggregate_sessions,
+          });
+        }
+      } catch {
+        if (!cancelled) setCeilingData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showPhysicsCeiling, sessionId]);
+
   // ── Draw ────────────────────────────────────────────────────
   // Compute delta time when ref data is available
   const actualDelta = (primaryLapTime != null && compareLapTime != null)
@@ -784,6 +881,7 @@ export function SpeedTraceChart({
       refSpeeds: refSpeeds ?? chartData.ref_speeds,
       avgSpeeds: !refSpeeds ? (avgSpeeds ?? chartData.avg_speeds) : undefined,
       theoreticalSpeeds: theoreticalData,
+      ceilingSpeeds: ceilingData,
       hoverDistanceM: hoverDistance,
       refLapLabel: activeCompareLap != null ? `Lap ${activeCompareLap}` : null,
       primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
@@ -798,7 +896,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
 
   useEffect(() => {
     render();

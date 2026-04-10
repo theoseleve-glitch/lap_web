@@ -878,6 +878,33 @@ def run_full_analysis(
         if _friction_envelope_result and hasattr(_friction_envelope_result, "to_dict") else None
     )
 
+    # Step 09j — Aggregate grip into track surface (PG mode only)
+    if os.environ.get("USE_PG", "0") == "1" and _grip_map is not None:
+        try:
+            from track_surface import upsert_session_grip
+            from web.db import get_db_connection as _get_ts_conn
+            _ts_conn = _get_ts_conn()
+            _ts_track_id = summary.get("track_id", "unknown_track")
+            _ts_vehicle_class = meta.get("vehicle_class", "car")
+            _ts_condition = meta.get("track_state", "dry")
+            _ts_updated = upsert_session_grip(
+                _ts_conn, _ts_track_id, _grip_map, _friction_envelope_result,
+                vehicle_class=_ts_vehicle_class,
+                condition=_ts_condition,
+            )
+            summary["track_surface_bins_updated"] = _ts_updated
+            try:
+                from track_surface import upsert_global_grip
+                upsert_global_grip(
+                    _ts_conn, _ts_track_id, _grip_map, _friction_envelope_result,
+                    vehicle_class=_ts_vehicle_class,
+                    condition=_ts_condition,
+                )
+            except Exception as _tsg_exc:
+                logger.debug("Global track surface upsert skipped: %s", _tsg_exc)
+        except Exception as _ts_exc:
+            logger.warning("Track surface aggregation skipped: %s", _ts_exc)
+
     # ══════════════════════════════════════════════════════════════
     # PHASE 4: Theoretical Lap + Corner Analysis (step 10)
     # ══════════════════════════════════════════════════════════════
@@ -922,6 +949,9 @@ def run_full_analysis(
             grip_map=_grip_map,
             friction_envelope=_friction_envelope_result,
             distance_quality=_dq,
+            track_id=track_id,
+            vehicle_class=meta.get("vehicle_class", "car"),
+            condition=meta.get("track_state", "dry"),
         )
         _record("10_theoretical", theo_result, err)
         _fire_progress("10_theoretical")
@@ -1122,6 +1152,35 @@ def run_full_analysis(
         _record("S10h_corner_labels", corner_labels, _err)
         if corner_labels is not None:
             summary["corner_labels"] = corner_labels
+
+    # ══════════════════════════════════════════════════════════════
+    # PHASE 4b: Track Surface Reconstruction (step 10d)
+    # ══════════════════════════════════════════════════════════════
+    from pipeline.stages import s10d_surface
+
+    _adapter_fmt = summary.get("adapter_format", "racechrono")
+
+    surface_result, err = _safe_step(
+        "10d_track_surface", s10d_surface.run_surface_build,
+        resampled_laps, track_id, _adapter_fmt,
+    )
+    _record("10d_track_surface", surface_result, err)
+    if surface_result:
+        summary["track_surface_summary"] = surface_result.get("surface_summary")
+        summary["track_surface_accumulated"] = surface_result.get("accumulated", False)
+
+    # Step 10d-ii — Upsert 1D surface properties into PG (global table)
+    if os.environ.get("USE_PG", "0") == "1" and surface_result:
+        _session_surface = surface_result.get("session_surface") or surface_result.get("track_surface")
+        if _session_surface is not None:
+            try:
+                from track_surface.store import upsert_global_surface
+                from web.db import get_db_connection as _get_surf_conn
+                _surf_conn = _get_surf_conn()
+                _surf_updated = upsert_global_surface(_surf_conn, track_id, _session_surface)
+                summary["track_surface_global_bins"] = _surf_updated
+            except Exception as _surf_exc:
+                logger.warning("Global surface upsert skipped: %s", _surf_exc)
 
     # ══════════════════════════════════════════════════════════════
     # PHASE 5: Features, ML, Scoring, Reports, Persist (steps 11-15)

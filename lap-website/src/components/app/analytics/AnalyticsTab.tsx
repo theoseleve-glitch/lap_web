@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { BACKEND_URL } from '@/lib/api-client';
 import { GpsTrace, SpeedTraceZoom, GGExplorer } from '@/components/app/charts';
 import { SectorPanel, SpeedTraceMiniMap } from '@/components/shared/charts';
@@ -13,6 +14,7 @@ import { BrakeAnalysisChart } from '@/components/shared/charts/BrakeAnalysisChar
 import { FuelStrategyChart } from '@/components/shared/charts/FuelStrategyChart';
 import { TheoreticalDeltaChart } from '@/components/shared/charts/TheoreticalDeltaChart';
 import { CornerCoachingTable } from '@/components/shared/charts/CornerCoachingTable';
+import { CornerCoachingV4 } from '@/components/shared/charts/CornerCoachingV4';
 import { useSessionChannels } from '@/hooks/useSessionChannels';
 import { LapSpeedOverlay } from './LapSpeedOverlay';
 import { LapDistribution } from './LapDistribution';
@@ -63,6 +65,7 @@ export function AnalyticsTab({
   trackName,
 }: AnalyticsTabProps) {
   const apiBase = BACKEND_URL;
+  const [trackColorMode, setTrackColorMode] = useState<"speed" | "grip">("speed");
   const { channels } = useSessionChannels(sessionId);
 
   const hasControls = channels.throttle || channels.brake;
@@ -90,6 +93,28 @@ export function AnalyticsTab({
                 tips={['Click a point to see its distance on the speed trace', 'Use the lap dropdown to change which lap is displayed']}
               />
             </div>
+            <div className="flex items-center gap-1 mb-2">
+              <button
+                onClick={() => setTrackColorMode("speed")}
+                className={`px-2 py-0.5 text-xs font-telemetry rounded transition-colors ${
+                  trackColorMode === "speed"
+                    ? "text-chalk bg-steel/20"
+                    : "text-steel hover:text-chalk"
+                }`}
+              >
+                Speed
+              </button>
+              <button
+                onClick={() => setTrackColorMode("grip")}
+                className={`px-2 py-0.5 text-xs font-telemetry rounded transition-colors ${
+                  trackColorMode === "grip"
+                    ? "text-chalk bg-steel/20"
+                    : "text-steel hover:text-chalk"
+                }`}
+              >
+                Grip
+              </button>
+            </div>
             <div className="chart-enter flex-1 min-h-0" role="img" aria-label="GPS track map showing the racing line for the selected lap">
               <GpsTrace
                 sessionId={sessionId}
@@ -97,6 +122,7 @@ export function AnalyticsTab({
                 gpsLaps={gpsLaps}
                 bestLap={bestLap}
                 className="w-full h-full"
+                colorMode={trackColorMode}
               />
             </div>
           </div>
@@ -122,6 +148,7 @@ export function AnalyticsTab({
                 gpsLaps={gpsLaps}
                 bestLap={bestLap}
                 className="w-full"
+                showPhysicsCeiling
               />
             </div>
           </div>
@@ -162,7 +189,12 @@ export function AnalyticsTab({
         </div>
       </div>
 
-      {/* ── Row 2b: Theoretical Delta + Corner Coaching (sim optimizer) ── */}
+      {/* ── Row 2b: Aggregate Corner Coaching (multi-session proven envelope) ── */}
+      <div>
+        <CornerCoachingV4 sessionId={sessionId} className="w-full" />
+      </div>
+
+      {/* ── Row 2c: Theoretical Delta + Corner Coaching (sim optimizer) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-concrete rounded-xl border border-steel/10 p-4">
           <h3 className="text-sm font-monument text-chalk mb-3">Theoretical Delta</h3>

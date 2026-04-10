@@ -36,6 +36,8 @@ function ToolRenderer({
   bestLap,
   distRange,
   onDistRangeChange,
+  trackColorMode,
+  onTrackColorModeChange,
 }: {
   toolId: ToolId;
   sessionId: string;
@@ -44,6 +46,8 @@ function ToolRenderer({
   bestLap: number | null;
   distRange?: [number, number] | null;
   onDistRangeChange?: (range: [number, number] | null) => void;
+  trackColorMode?: "speed" | "grip";
+  onTrackColorModeChange?: (mode: "speed" | "grip") => void;
 }) {
   switch (toolId) {
     case 'speed-trace':
@@ -58,12 +62,37 @@ function ToolRenderer({
             className="w-full h-full"
             distRange={distRange}
             onDistRangeChange={onDistRangeChange}
+            showPhysicsCeiling
           />
         </ChartErrorBoundary>
       );
     case 'track-map':
       return (
         <ChartErrorBoundary chartName="GpsTrace" minHeight="200px">
+          {onTrackColorModeChange && (
+            <div className="absolute top-1 right-2 z-10 flex items-center gap-1">
+              <button
+                onClick={() => onTrackColorModeChange("speed")}
+                className={`px-2 py-0.5 text-xs font-telemetry rounded transition-colors ${
+                  trackColorMode === "speed"
+                    ? "text-chalk bg-steel/20"
+                    : "text-steel hover:text-chalk"
+                }`}
+              >
+                Speed
+              </button>
+              <button
+                onClick={() => onTrackColorModeChange("grip")}
+                className={`px-2 py-0.5 text-xs font-telemetry rounded transition-colors ${
+                  trackColorMode === "grip"
+                    ? "text-chalk bg-steel/20"
+                    : "text-steel hover:text-chalk"
+                }`}
+              >
+                Grip
+              </button>
+            </div>
+          )}
           <GpsTrace
             sessionId={sessionId}
             apiBase={apiBase}
@@ -72,6 +101,7 @@ function ToolRenderer({
             controlledLap
             className="w-full h-full"
             distRange={distRange}
+            colorMode={trackColorMode}
           />
         </ChartErrorBoundary>
       );
@@ -202,6 +232,7 @@ export function FocusMode({
   const [focusLap, setFocusLap] = useState<number | null>(null);
   const activeLap = focusLap ?? bestLap ?? gpsLaps[0] ?? null;
   const [distRange, setDistRange] = useState<[number, number] | null>(null);
+  const [trackColorMode, setTrackColorMode] = useState<"speed" | "grip">("speed");
 
   // Ensure store has defaults for this tab on first open
   useEffect(() => {
@@ -310,6 +341,8 @@ export function FocusMode({
         bestLap={activeLap}
         distRange={distRange}
         onDistRangeChange={setDistRange}
+        trackColorMode={trackColorMode}
+        onTrackColorModeChange={setTrackColorMode}
       />
     </div>
   );
