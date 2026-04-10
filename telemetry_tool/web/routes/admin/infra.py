@@ -50,21 +50,193 @@ def _serialize_row(row):
     return result
 
 
+def _raw_conn():
+    """Return a raw psycopg2 connection (bypasses request-scoped RLS context).
+
+    Admin infra queries need cross-workspace visibility, so they must
+    not use the per-request PgConnectionWrapper which has SET LOCAL ROLE
+    applied by the tenant middleware.
+    """
+    import os
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    return psycopg2.connect(os.environ.get(
+        "TELEMETRY_PG_URL",
+        "postgresql://telemetry:telemetry@localhost:5432/telemetry",
+    ), cursor_factory=RealDictCursor)
+
+
+def _collect_storage_metrics(conn) -> dict:
+    """Collect comprehensive storage metrics from DB + filesystem.
+
+    Uses a raw connection (not the request-scoped one) to bypass RLS
+    so admin gets cross-workspace aggregates.
+    """
+    import os
+    import shutil
+
+    metrics: dict = {}
+
+    # Use raw connection to bypass RLS
+    raw = _raw_conn()
+    cur = raw.cursor()
+
+    # 1. PostgreSQL database size
+    cur.execute("SELECT pg_database_size(current_database()) AS size")
+    row = cur.fetchone()
+    metrics["db_size_bytes"] = row["size"] if row else 0
+
+    # 2. Top 10 largest tables
+    cur.execute(
+        "SELECT relname AS table_name, "
+        "pg_total_relation_size(c.oid) AS total_bytes, "
+        "pg_relation_size(c.oid) AS data_bytes, "
+        "pg_indexes_size(c.oid) AS index_bytes "
+        "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+        "WHERE n.nspname = 'public' AND c.relkind = 'r' "
+        "ORDER BY pg_total_relation_size(c.oid) DESC LIMIT 10"
+    )
+    metrics["top_tables"] = [_serialize_row(r) for r in cur.fetchall()]
+
+    # 3. Upload storage (from ingestion_jobs)
+    cur.execute(
+        "SELECT COALESCE(SUM(file_size), 0) AS total_bytes, "
+        "COUNT(*) AS file_count, "
+        "COALESCE(AVG(file_size), 0) AS avg_bytes, "
+        "COALESCE(MAX(file_size), 0) AS max_bytes "
+        "FROM ingestion_jobs WHERE status = 'completed'"
+    )
+    row = cur.fetchone()
+    metrics["uploads"] = _serialize_row(row) if row else {}
+
+    # 4. Per-workspace storage breakdown (top 10)
+    cur.execute(
+        "SELECT w.display_name AS workspace_name, "
+        "COALESCE(SUM(ij.file_size), 0) AS total_bytes, "
+        "COUNT(ij.job_id) AS file_count "
+        "FROM workspaces w LEFT JOIN ingestion_jobs ij "
+        "ON ij.workspace_id = w.id AND ij.status = 'completed' "
+        "GROUP BY w.id, w.display_name "
+        "ORDER BY total_bytes DESC LIMIT 10"
+    )
+    metrics["per_user_storage"] = [_serialize_row(r) for r in cur.fetchall()]
+
+    # 5. Filesystem disk usage (host-level)
+    try:
+        disk = shutil.disk_usage("/")
+        metrics["disk"] = {
+            "total_bytes": disk.total,
+            "used_bytes": disk.used,
+            "free_bytes": disk.free,
+            "used_pct": round(disk.used / disk.total * 100, 1) if disk.total else 0,
+        }
+    except Exception:
+        metrics["disk"] = None
+
+    # 6. Upload directory size (if accessible)
+    upload_dir = os.environ.get("UPLOAD_DIR", "/app/data/raw")
+    try:
+        dir_total = 0
+        dir_count = 0
+        for dirpath, _, filenames in os.walk(upload_dir):
+            for f in filenames:
+                fp = os.path.join(dirpath, f)
+                try:
+                    dir_total += os.path.getsize(fp)
+                    dir_count += 1
+                except OSError:
+                    pass
+        metrics["upload_dir"] = {
+            "path": upload_dir,
+            "total_bytes": dir_total,
+            "file_count": dir_count,
+        }
+    except Exception:
+        metrics["upload_dir"] = None
+
+    # 7. Redis memory (if available)
+    try:
+        r = _get_redis()
+        if r:
+            info = r.info("memory")
+            metrics["redis"] = {
+                "used_memory_bytes": info.get("used_memory", 0),
+                "peak_memory_bytes": info.get("used_memory_peak", 0),
+                "max_memory_bytes": info.get("maxmemory", 0),
+            }
+    except Exception:
+        metrics["redis"] = None
+
+    # 8. Row counts for key tables
+    cur.execute(
+        "SELECT "
+        "(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL) AS users, "
+        "(SELECT COUNT(*) FROM sessions) AS sessions, "
+        "(SELECT COUNT(*) FROM laps) AS laps, "
+        "(SELECT COUNT(*) FROM app_events) AS events, "
+        "(SELECT COUNT(*) FROM ingestion_jobs) AS uploads"
+    )
+    row = cur.fetchone()
+    metrics["row_counts"] = _serialize_row(row) if row else {}
+
+    # Clean up raw connection
+    raw.close()
+
+    metrics["collected_at"] = datetime.now(timezone.utc).isoformat()
+    return metrics
+
+
 @bp.route("/infra/storage", methods=["GET"])
 @require_superadmin
 @require_admin_role("root_admin", "sre_admin")
 def storage_breakdown():
-    """Storage breakdown: DB size, table sizes."""
+    """Comprehensive storage breakdown: DB, filesystem, Redis, per-user."""
+    conn = _get_conn()
+    snapshot = request.args.get("snapshot", "0") == "1"
+
+    metrics = _collect_storage_metrics(conn)
+
+    # Optionally save as snapshot for historical tracking
+    if snapshot:
+        try:
+            conn.execute(
+                "INSERT INTO system_metrics_snapshots (collected_at, metrics_json) "
+                "VALUES (%(ts)s, %(data)s)",
+                {"ts": datetime.now(timezone.utc), "data": json.dumps(metrics)},
+            )
+            conn.commit()
+        except Exception:
+            logger.warning("Failed to save storage snapshot", exc_info=True)
+
+    return api_response(metrics)
+
+
+@bp.route("/infra/storage/history", methods=["GET"])
+@require_superadmin
+@require_admin_role("root_admin", "sre_admin")
+def storage_history():
+    """Historical storage snapshots for trend analysis."""
+    days = request.args.get("days", 30, type=int)
+    days = min(days, 365)
     conn = _get_conn()
 
-    row = conn.execute(
-        "SELECT pg_database_size(current_database()) AS size"
-    ).fetchone()
-    r = dict(row) if not isinstance(row, dict) else row
+    cur.execute(
+        "SELECT collected_at, metrics_json FROM system_metrics_snapshots "
+        "WHERE collected_at >= now() - make_interval(days => %(days)s) "
+        "ORDER BY collected_at",
+        {"days": days},
+    ).fetchall()
 
-    return api_response({
-        "db_size_bytes": r.get("size", 0),
-    })
+    snapshots = []
+    for row in rows:
+        r = _serialize_row(row)
+        try:
+            r["metrics"] = json.loads(r.pop("metrics_json", "{}"))
+        except Exception:
+            r["metrics"] = {}
+        snapshots.append(r)
+
+    return api_response({"snapshots": snapshots})
 
 
 @bp.route("/infra/maintenance", methods=["GET"])
