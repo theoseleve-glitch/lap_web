@@ -106,6 +106,16 @@ def _solve_casadi(
     ds = tk.ds.astype(np.float64)          # (N-1,)
     kappa = np.abs(tk.curvature).astype(np.float64)   # (N,)
 
+    # Vertical curvature for speed-dependent grip (compression/crest effect)
+    # Positive = compression (car pushed into ground), negative = crest
+    kv = np.zeros(N, dtype=np.float64)
+    if hasattr(track, "vert_curvature") and track.vert_curvature is not None:
+        src = np.asarray(track.vert_curvature, dtype=np.float64)
+        if len(src) == N:
+            kv = src
+        elif len(src) > 0:
+            kv = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(src)), src)
+
     # -- Vehicle shorthand -------------------------------------------------
     m = vehicle.mass_kg
     cda = vehicle.cda
@@ -114,6 +124,14 @@ def _solve_casadi(
     a_brake_max = vehicle.max_brake_decel
     mu_lat = vehicle.tyre_lat.D * weather.grip_multiplier
     mu_long = vehicle.tyre_long.D * weather.grip_multiplier
+
+    # Per-distance grip from track surface aggregate (overrides uniform tyre mu)
+    grip = np.ones(N, dtype=np.float64)
+    if hasattr(tk, "grip_map") and tk.grip_map is not None and len(tk.grip_map) == N:
+        grip = np.clip(tk.grip_map.astype(np.float64), 0.3, 3.0)
+    elif hasattr(track, "grip_map") and track.grip_map is not None and len(track.grip_map) > 0:
+        grip = np.interp(np.linspace(0, 1, N), np.linspace(0, 1, len(track.grip_map)), track.grip_map)
+        grip = np.clip(grip, 0.3, 3.0)
 
     # -- Initial guess: cornering speed ------------------------------------
     v_guess = corner_speed(kappa, vehicle) * weather.grip_multiplier
@@ -146,27 +164,42 @@ def _solve_casadi(
         opti.subject_to(V[i + 1] ** 2 == V[i] ** 2 + 2 * Ax[i] * ds[i])
 
         # 2. Lateral accel from curvature
-        ay_i = V[i] ** 2 * kappa[i]
+        # Curvature correction: kappa_actual = kappa_center / (1 - N_lat * kappa_center)
+        # Tighter line (N_lat toward inside) -> higher curvature -> lower speed
+        # Wider line (N_lat toward outside) -> lower curvature -> higher speed
+        # Guard: clamp denominator to prevent singularity when N_lat*kappa -> 1
+        kappa_i = kappa[i]
+        denom_i = 1.0 - N_lat[i] * kappa_i
+        denom_i = ca.fmax(denom_i, 0.1)  # prevent division by zero
+        kappa_actual_i = kappa_i / denom_i
+        ay_i = V[i] ** 2 * kappa_actual_i
 
-        # 3. Downforce
+        # 3. Effective gravity: includes terrain vertical curvature
+        #    g_eff = g + v² * κ_v  (compression adds grip, crests remove it)
+        g_eff_i = G + V[i] ** 2 * kv[i]
+        g_eff_i = ca.fmax(g_eff_i, 1.0)  # prevent negative at extreme crests
+
+        # 4. Downforce (aero)
         fz_aero = 0.5 * RHO_AIR * cla * V[i] ** 2
-        fz_total = m * G + fz_aero
+        fz_total = m * g_eff_i + fz_aero
 
-        # 4. Friction ellipse
-        ax_lim = mu_long * fz_total / m
-        ay_lim = mu_lat * fz_total / m
+        # 5. Friction ellipse with per-distance grip from track surface
+        mu_lat_i = mu_lat * grip[i]
+        mu_long_i = mu_long * grip[i]
+        ax_lim = mu_long_i * fz_total / m
+        ay_lim = mu_lat_i * fz_total / m
         opti.subject_to(
             (Ax[i] / ax_lim) ** 2 + (ay_i / ay_lim) ** 2 <= 1.0
         )
 
-        # 5. Power limit
+        # 6. Power limit
         drag = 0.5 * RHO_AIR * cda * V[i] ** 2 / m
-        rr = 0.01 * G
+        rr = 0.01 * g_eff_i  # rolling resistance scales with effective g
         v_safe = ca.fmax(V[i], 5.0)
         opti.subject_to(Ax[i] <= p_max / (m * v_safe) - drag - rr)
 
-        # 6. Brake limit
-        opti.subject_to(Ax[i] >= -(a_brake_max + drag + rr))
+        # 7. Brake limit (scales with effective grip)
+        opti.subject_to(Ax[i] >= -(a_brake_max * g_eff_i / G + drag + rr))
 
     # 7. Speed bounds
     opti.subject_to(opti.bounded(5.0, V, 120.0))
@@ -251,8 +284,25 @@ def _build_solution(
     # Distance
     distance_m = np.concatenate(([0.0], np.cumsum(ds)))
 
-    # Steering placeholder
-    steering = np.zeros(N, dtype=np.float64)
+    # Compute steering angle from path curvature
+    # kappa_path = kappa_center / (1 - N_lat * kappa_center) + d2N_lat/ds2
+    kappa_center = np.abs(tk.curvature).astype(np.float64)
+    denom = 1.0 - n_lat_sol * kappa_center
+    denom = np.maximum(denom, 0.1)
+    kappa_path = kappa_center / denom
+
+    # Add second derivative of lateral offset (path curvature from offset variation)
+    # d2N_lat/ds2 via central finite differences
+    d2n = np.zeros(N)
+    for i in range(1, N - 1):
+        ds_avg = (ds[i - 1] + ds[min(i, len(ds) - 1)]) / 2.0
+        if ds_avg > 0.01:
+            d2n[i] = (n_lat_sol[i + 1] - 2 * n_lat_sol[i] + n_lat_sol[i - 1]) / (ds_avg ** 2)
+    kappa_path += d2n
+
+    # Steering = atan(wheelbase * kappa_path)
+    wb = vehicle.wheelbase_m if hasattr(vehicle, 'wheelbase_m') else 2.65
+    steering = np.arctan(wb * kappa_path)
 
     # Sector times
     sector_times = _compute_sector_times(

@@ -70,33 +70,23 @@ def surface_to_track_model(surface: TrackSurface):
     else:
         grip_map = np.ones(n)
 
-    # Vertical curvature → speed-dependent grip multiplier.
-    #
-    # At speed v through vertical curvature kappa_v:
-    #   g_effective = g + v² * kappa_v
-    #   grip_effective = mu * g_effective / g
-    #
-    # The OCP solver's friction constraint is:
-    #   (ax/ax_lim)^2 + (ay/ay_lim)^2 <= 1
-    # where ay_lim = mu * g.
-    #
-    # To inject the compression bonus without modifying the solver itself,
-    # we fold an estimated compression multiplier into the grip_map.
-    # We use a reference speed of ~60% of the estimated corner speed
-    # (conservative: underestimates the bonus at high speed, but prevents
-    # overestimation at low speed where it matters less).
+    # NOTE: grip_map is the centerline (n=0) slice of the 2D grip surface.
+    # The OCP solver now modulates this per-distance via `grip[i]` in its
+    # friction constraint. Full 2D (lateral-varying) grip would require
+    # the solver to look up mu(s, n) inside the NLP — currently not wired
+    # because CasADi Opti can't call Python functions inside constraints.
+    # The 1D centerline slice is a conservative approximation.
+
+    # Vertical curvature: pass directly to the OCP solver.
+    # The solver now uses g_eff = g + V[i]² × κ_v[i] in its friction
+    # constraint, making grip truly speed-dependent per its own speed
+    # variable.  No need to fold into grip_map as a static approximation.
+    vert_curvature = np.zeros(n)
     if surface.vert_curvature_1pm is not None:
         kv = surface.vert_curvature_1pm
         if len(kv) != n:
             kv = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(kv)), kv)
-        # Reference speed: use curvature-based cornering speed estimate
-        kappa_abs = np.abs(surface.frenet.curvature_1pm)
-        kappa_safe = np.maximum(kappa_abs, 0.002)  # min 500m radius
-        v_ref = np.sqrt(1.2 * 9.81 / kappa_safe)   # approx corner speed at 1.2G
-        v_ref = np.clip(v_ref, 15.0, 80.0)          # 54-288 kph range
-        compression_multiplier = (9.81 + v_ref ** 2 * kv) / 9.81
-        compression_multiplier = np.clip(compression_multiplier, 0.3, 3.0)
-        grip_map = grip_map * compression_multiplier
+        vert_curvature = kv
 
     return TrackModel(
         name=surface.track_id,
@@ -108,7 +98,95 @@ def surface_to_track_model(surface: TrackSurface):
         elevation=elevation,
         banking=banking,
         grip_map=grip_map,
+        vert_curvature=vert_curvature,
         total_length_m=surface.frenet.total_length_m,
+    )
+
+
+def vehicle_model_to_params(vm) -> "VehicleParams":
+    """Convert sim_optimizer VehicleModel to lap_oracle VehicleParams.
+
+    Maps identified sub-models (tyre, aero, powertrain, brake, mass)
+    to the VehicleParams dataclass used by the OCP solver.
+
+    Parameters
+    ----------
+    vm : sim_optimizer.param_id.vehicle_model.VehicleModel
+
+    Returns
+    -------
+    VehicleParams
+    """
+    try:
+        from lap_oracle.config import VehicleParams, PacejkaParams
+    except ImportError:
+        raise ImportError("lap_oracle.config not available")
+
+    # Mass
+    mass_kg = vm.mass.total_mass_kg(fuel_level_l=0) if hasattr(vm, 'mass') else 1300.0
+
+    # Aero
+    cda = vm.aero.cda if hasattr(vm, 'aero') and hasattr(vm.aero, 'cda') else 0.8
+    cla = vm.aero.cla if hasattr(vm, 'aero') and hasattr(vm.aero, 'cla') else 0.0
+
+    # Power — estimate from powertrain model torque maps.
+    # gear_torque_maps values are (rpm_array, torque_array) tuples.
+    max_power_w = 400_000.0  # default GT car
+    if hasattr(vm, 'powertrain') and hasattr(vm.powertrain, 'gear_torque_maps'):
+        max_torques = []
+        for gear, map_tuple in vm.powertrain.gear_torque_maps.items():
+            if map_tuple is not None and len(map_tuple) == 2:
+                rpm_arr, torque_arr = map_tuple
+                # P = T * omega = T * RPM * 2*pi / 60
+                power_arr = torque_arr * rpm_arr * 2 * 3.14159 / 60.0
+                if len(power_arr) > 0:
+                    max_torques.append(float(power_arr.max()))
+        if max_torques:
+            eff = getattr(vm.powertrain, 'transmission_efficiency', 0.9)
+            max_power_w = max(max_torques) * eff
+
+    # Braking
+    max_brake_decel = 10.0
+    if hasattr(vm, 'brake') and hasattr(vm.brake, 'max_decel_mps2'):
+        max_brake_decel = vm.brake.max_decel_mps2
+
+    # Tyre grip — extract peak mu from TyreModel fields
+    mu_lat = 1.0
+    mu_long = 1.0
+    if hasattr(vm, 'tyre'):
+        # TyreModel stores mu_lat / mu_long directly
+        if hasattr(vm.tyre, 'mu_lat'):
+            mu_lat = vm.tyre.mu_lat
+        elif hasattr(vm, 'max_lateral_g'):
+            # Estimate from the vehicle's max lateral G at a reference speed
+            try:
+                ay_max = vm.max_lateral_g(30.0)  # at 30 m/s
+                mu_lat = ay_max / 9.80665
+            except Exception:
+                pass
+
+        if hasattr(vm.tyre, 'mu_long'):
+            mu_long = vm.tyre.mu_long
+        else:
+            mu_long = mu_lat * 0.95  # typical ratio
+
+    tyre_lat = PacejkaParams(D=mu_lat)
+    tyre_long = PacejkaParams(B=12.0, C=1.4, D=mu_long, E=-0.3)
+
+    # Wheelbase — estimate from mass (karts are light)
+    wheelbase_m = 2.65  # default
+    if mass_kg < 250:
+        wheelbase_m = 1.05  # kart
+
+    return VehicleParams(
+        mass_kg=mass_kg,
+        wheelbase_m=wheelbase_m,
+        cda=cda,
+        cla=cla,
+        max_power_w=max_power_w,
+        max_brake_decel=max_brake_decel,
+        tyre_lat=tyre_lat,
+        tyre_long=tyre_long,
     )
 
 

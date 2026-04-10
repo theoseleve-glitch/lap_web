@@ -5675,67 +5675,6 @@ def get_global_surface(track_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
-# GET /api/v1/tracks/<track_id>/model
-# ══════════════════════════════════════════════════════════════════
-
-
-@bp.route("/tracks/<track_id>/model", methods=["GET"])
-@_safe_api
-def get_track_model(track_id: str) -> tuple[dict, int]:
-    """Return full track surface model for 3D frontend visualization.
-
-    Reads the accumulated TrackSurface from the Parquet sidecar (not from
-    analysis_json) and returns the surface summary plus arrays needed for
-    WebGL rendering: centerline, curvature, elevation, boundaries, camber,
-    vertical curvature, and curb positions.
-
-    Query params:
-        vehicle_class: generic|gt3|gt4|formula|kart|road (default: generic)
-        condition:      dry|damp|wet|heavy_wet (default: dry)
-    """
-    from flask import request as flask_request
-
-    try:
-        from track_surface.store import load_track_model
-    except ImportError:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            "Track surface module not available",
-            status=404,
-        )
-
-    v_class = flask_request.args.get("vehicle_class", "generic")
-    condition = flask_request.args.get("condition", "dry")
-
-    surface = load_track_model(track_id, vehicle_class=v_class, condition=condition)
-    if surface is None:
-        return api_error(
-            ErrorCode.NOT_FOUND,
-            f"No track model for '{track_id}'",
-            status=404,
-        )
-
-    result = surface.to_summary_dict()
-    # Arrays for frontend 3D rendering
-    result["centerline_x"] = surface.frenet.centerline_xy[:, 0].tolist()
-    result["centerline_y"] = surface.frenet.centerline_xy[:, 1].tolist()
-    result["curvature"] = surface.frenet.curvature_1pm.tolist()
-    if surface.has_elevation:
-        result["elevation_m"] = surface.elevation_m.tolist()
-    if surface.has_boundaries:
-        result["width_left"] = surface.width_left.tolist()
-        result["width_right"] = surface.width_right.tolist()
-    if surface.has_vert_curvature:
-        result["vert_curvature"] = surface.vert_curvature_1pm.tolist()
-    if surface.has_camber:
-        result["camber_rad"] = surface.camber_rad.tolist()
-    if surface.curbs:
-        result["curbs"] = [c.to_dict() for c in surface.curbs]
-
-    return api_response(result)
-
-
-# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/corner-coaching-v4
 # ══════════════════════════════════════════════════════════════════
 
@@ -6150,6 +6089,133 @@ def get_surface_profile(session_id: str) -> tuple[dict, int]:
 
     result["track_id"] = analysis.get("track_id")
     result["n_laps"] = surface_summary.get("n_laps", 0)
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/racing-line
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/racing-line", methods=["GET"])
+@_safe_api
+def get_racing_line(session_id: str) -> tuple[dict, int]:
+    """Compute or return cached optimal racing line for this session's track.
+
+    Uses the CasADi OCP solver with the track surface model to find the
+    minimum-time path through the track, including lateral offset, speed,
+    throttle, brake, and steering at each point.
+    """
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Racing line requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Check for cached result
+    cached = analysis.get("racing_line")
+    if cached and isinstance(cached, dict) and cached.get("distance_m"):
+        return api_response(cached)
+
+    # Need track surface with boundaries for the solver
+    track_id = analysis.get("track_id")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected", status=404)
+
+    # Try to load the TrackSurface and solver bridge
+    try:
+        from track_surface.store import load_track_model
+        from track_surface.solver_bridge import solve_optimal_line
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Solver modules not available", status=404)
+
+    surface = load_track_model(track_id)
+    if surface is None or not surface.has_boundaries:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Track surface needs boundaries (3+ sessions with GPS data) to compute racing line",
+            status=404,
+        )
+
+    # Resolve vehicle params
+    vehicle_params = None
+    try:
+        from lap_oracle.config import VehicleParams
+        # Try to get VehicleModel from the sim optimizer results in analysis_json
+        sim_vehicle = analysis.get("sim_optimizer_vehicle")
+        if sim_vehicle and isinstance(sim_vehicle, dict):
+            vehicle_params = VehicleParams.from_dict(sim_vehicle)
+    except Exception:
+        pass
+
+    if vehicle_params is None:
+        try:
+            from lap_oracle.config import VehicleParams
+            vehicle_class = analysis.get("vehicle_class", "car")
+            if vehicle_class == "kart":
+                vehicle_params = VehicleParams(
+                    mass_kg=180, wheelbase_m=1.05, cda=0.5, cla=0.0,
+                    max_power_w=20000, max_brake_decel=8.0,
+                )
+            else:
+                vehicle_params = VehicleParams()  # GT car defaults
+        except ImportError:
+            return api_error(ErrorCode.NOT_FOUND, "Vehicle config not available", status=404)
+
+    # Run the OCP solver with tight timeout
+    n_points = int(request.args.get("n_points", 100))
+    n_points = max(50, min(n_points, 300))
+    max_time = float(request.args.get("max_time", 20.0))
+    max_time = max(5.0, min(max_time, 60.0))
+
+    try:
+        solution = solve_optimal_line(
+            surface, vehicle_params,
+            n_points=n_points, max_time_s=max_time,
+        )
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "CasADi solver not installed", status=404)
+    except Exception as exc:
+        logger.warning("Racing line solve failed: %s", exc)
+        return api_error(ErrorCode.NOT_FOUND, "Solver failed: %s" % exc, status=404)
+
+    if solution is None:
+        return api_error(ErrorCode.NOT_FOUND, "Solver produced no result", status=404)
+
+    # Build response
+    import numpy as np
+
+    result = {
+        "track_id": track_id,
+        "lap_time_s": round(solution.optimal_lap_time_s, 3),
+        "solver_status": solution.solver_status,
+        "solver_time_s": round(solution.solver_time_s, 2),
+        "n_points": len(solution.distance_m),
+        "distance_m": np.round(solution.distance_m, 2).tolist(),
+        "speed_mps": np.round(solution.speed_mps, 3).tolist(),
+        "speed_kph": np.round(solution.speed_mps * 3.6, 1).tolist(),
+        "lateral_offset_m": np.round(solution.lateral_offset_m, 3).tolist(),
+        "throttle": np.round(solution.throttle, 3).tolist(),
+        "brake": np.round(solution.brake, 3).tolist(),
+        "steering_rad": np.round(solution.steering_rad, 4).tolist(),
+    }
+
+    # Cache in analysis_json for future requests
+    try:
+        analysis["racing_line"] = result
+        models.insert_analysis_json(conn, session_id, analysis)
+        conn.commit()
+    except Exception:
+        pass  # Cache failure is non-fatal
 
     return api_response(result)
 
