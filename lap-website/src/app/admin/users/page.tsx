@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 
@@ -119,7 +120,13 @@ export default function AdminUsersPage() {
                       ? new Date(user.created_at).toLocaleDateString()
                       : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 flex items-center gap-2">
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="rounded px-2 py-1 text-xs text-white/50 hover:bg-white/10 hover:text-white"
+                    >
+                      View
+                    </Link>
                     {user.suspended_at ? (
                       <button
                         type="button"
