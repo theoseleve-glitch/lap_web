@@ -17,6 +17,7 @@ export interface AuthUser {
   id: number;
   email: string;
   display_name: string;
+  is_superadmin?: boolean;
 }
 
 export interface LoginResponse {
