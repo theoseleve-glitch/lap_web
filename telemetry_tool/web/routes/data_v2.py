@@ -5639,6 +5639,161 @@ def get_corner_coaching_v4(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-ribbon
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-ribbon", methods=["GET"])
+@_safe_api
+def get_track_ribbon(session_id: str) -> tuple[dict, int]:
+    """Return track centerline with normals and width for 2.5D ribbon rendering.
+
+    Each point has: lat, lon, distance, normal vector (perpendicular to heading),
+    width (from GPS scatter or default), grip mu, and headroom.
+    """
+    import numpy as np
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Get GPS trace for best lap
+    lap = request.args.get("lap", type=int)
+    try:
+        gps = models.get_gps_trace(conn, session_id, lap)
+    except Exception:
+        gps = None
+    if not gps or not gps.get("latitudes") or len(gps["latitudes"]) < 3:
+        return api_error(ErrorCode.NOT_FOUND, "No GPS trace data", status=404)
+
+    lats = np.array(gps["latitudes"], dtype=float)
+    lons = np.array(gps["longitudes"], dtype=float)
+    dists = np.array(gps.get("distances", []), dtype=float) if gps.get("distances") else np.arange(len(lats), dtype=float)
+    speeds = np.array(gps.get("speeds", []), dtype=float) if gps.get("speeds") else None
+
+    n = len(lats)
+    if n < 3:
+        return api_error(ErrorCode.NOT_FOUND, "Too few GPS points", status=404)
+
+    # Compute normals (perpendicular to heading at each point)
+    # Convert lat/lon to local meters
+    cos_lat = np.cos(np.radians(np.mean(lats)))
+    x_m = (lons - np.mean(lons)) * cos_lat * 111320  # approx meters
+    y_m = (lats - np.mean(lats)) * 111320
+
+    # Heading vector via finite differences
+    dx = np.gradient(x_m)
+    dy = np.gradient(y_m)
+    mag = np.sqrt(dx**2 + dy**2)
+    mag[mag < 1e-9] = 1e-9
+
+    # Normal = 90° rotation of tangent (pointing left)
+    nx = -dy / mag
+    ny = dx / mag
+
+    # Default width: 8m for a karting track, can be overridden by aggregate scatter
+    default_width_m = 8.0
+    widths = np.full(n, default_width_m)
+
+    # Try to get width from aggregate track surface (lateral_scatter_m)
+    analysis = models.get_analysis_json(conn, session_id)
+    track_id = None
+    vehicle_class = "car"
+    condition_state = "dry"
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+        vehicle_class = analysis.get("vehicle_class", "car")
+        condition_state = analysis.get("track_state", "dry")
+
+    grip_values = np.full(n, 0.0)
+    headroom_values = np.full(n, 0.0)
+    aggregate_sessions = 0
+
+    if track_id and track_id != "unknown_track":
+        import os
+        if os.environ.get("USE_PG", "0") == "1":
+            try:
+                from track_surface import get_track_surface
+                surface = get_track_surface(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+                if surface and surface.get("bins"):
+                    bins = surface["bins"]
+                    aggregate_sessions = surface.get("total_sessions", 0)
+                    # Build lookup arrays from bins
+                    bin_dists = np.array([b["distance_m"] for b in bins])
+                    bin_widths = np.array([b.get("lateral_scatter_m") or default_width_m for b in bins])
+                    bin_mu = np.array([b["mu_lat_p95"] for b in bins])
+
+                    # Interpolate to GPS point distances
+                    if len(bin_dists) > 1 and len(dists) > 1:
+                        widths = np.interp(dists, bin_dists, bin_widths)
+                        # Clamp widths to reasonable range
+                        widths = np.clip(widths, 3.0, 20.0)
+                        # Scale up scatter to approximate full track width
+                        # lateral_scatter is 1-sigma of GPS spread, full width ≈ 4*sigma
+                        widths = np.maximum(widths * 4, 5.0)
+                        grip_values = np.interp(dists, bin_dists, bin_mu)
+            except Exception:
+                pass
+
+    # Subsample if too many points (target ~200 for smooth rendering)
+    max_pts = 300
+    if n > max_pts:
+        step = max(1, n // max_pts)
+        indices = np.arange(0, n, step)
+        # Always include last point
+        if indices[-1] != n - 1:
+            indices = np.append(indices, n - 1)
+        lats = lats[indices]
+        lons = lons[indices]
+        dists = dists[indices] if len(dists) == n else dists[indices] if len(dists) > max(indices) else np.arange(len(indices), dtype=float)
+        nx = nx[indices]
+        ny = ny[indices]
+        widths = widths[indices]
+        grip_values = grip_values[indices]
+        headroom_values = headroom_values[indices]
+        if speeds is not None and len(speeds) == n:
+            speeds = speeds[indices]
+        n = len(lats)
+
+    # Build response
+    points = []
+    for i in range(n):
+        pt = {
+            "lat": round(float(lats[i]), 7),
+            "lon": round(float(lons[i]), 7),
+            "distance_m": round(float(dists[i]), 1) if i < len(dists) else float(i),
+            "nx": round(float(nx[i]), 6),
+            "ny": round(float(ny[i]), 6),
+            "width_m": round(float(widths[i]), 1),
+            "mu_p95": round(float(grip_values[i]), 4) if grip_values[i] > 0 else None,
+        }
+        if speeds is not None and i < len(speeds):
+            pt["speed_mps"] = round(float(speeds[i]), 2)
+        points.append(pt)
+
+    # Corner metadata
+    corner_list = []
+    if analysis and isinstance(analysis, dict):
+        for c in analysis.get("corners", []):
+            if isinstance(c, dict) and "s_start" in c:
+                corner_list.append({
+                    "corner_id": c.get("corner_id"),
+                    "corner_name": c.get("corner_name", f"T{c.get('corner_id', '?')}"),
+                    "direction": c.get("direction", "?"),
+                    "s_apex": c.get("s_apex"),
+                })
+
+    return api_response({
+        "points": points,
+        "corners": corner_list,
+        "aggregate_sessions": aggregate_sessions,
+        "track_id": track_id,
+        "point_count": len(points),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/optimal-v2
 # ══════════════════════════════════════════════════════════════════
 

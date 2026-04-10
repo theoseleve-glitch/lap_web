@@ -65,7 +65,7 @@ export function AnalyticsTab({
   trackName,
 }: AnalyticsTabProps) {
   const apiBase = BACKEND_URL;
-  const [trackColorMode, setTrackColorMode] = useState<"speed" | "grip">("speed");
+  const [trackColorMode, setTrackColorMode] = useState<"speed" | "grip" | "ribbon">("speed");
   const { channels } = useSessionChannels(sessionId);
 
   const hasControls = channels.throttle || channels.brake;
@@ -113,6 +113,16 @@ export function AnalyticsTab({
                 }`}
               >
                 Grip
+              </button>
+              <button
+                onClick={() => setTrackColorMode("ribbon")}
+                className={`px-2 py-0.5 text-xs font-telemetry rounded transition-colors ${
+                  trackColorMode === "ribbon"
+                    ? "text-chalk bg-steel/20"
+                    : "text-steel hover:text-chalk"
+                }`}
+              >
+                Surface
               </button>
             </div>
             <div className="chart-enter flex-1 min-h-0" role="img" aria-label="GPS track map showing the racing line for the selected lap">

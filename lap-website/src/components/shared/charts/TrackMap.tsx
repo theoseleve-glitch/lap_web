@@ -49,8 +49,8 @@ interface TrackMapProps {
   distRange?: [number, number] | null;
   /** When set, fetches and draws a second lap trace for comparison. */
   compareLap?: number | null;
-  /** Color mode: "speed" (default) or "grip" (headroom heatmap). */
-  colorMode?: "speed" | "grip";
+  /** Color mode: "speed" (default), "grip" (headroom heatmap), or "ribbon" (filled 2.5D width). */
+  colorMode?: "speed" | "grip" | "ribbon";
 }
 
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
@@ -259,8 +259,9 @@ function drawTrack(
   hoverIndex?: number,
   distRange?: [number, number] | null,
   compareTrace?: TrackMapData | null,
-  colorMode: "speed" | "grip" = "speed",
+  colorMode: "speed" | "grip" | "ribbon" = "speed",
   gripDelta?: { distance_m: number; headroom_pct: number }[] | null,
+  ribbonData?: { points: { lat: number; lon: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[]; aggregate_sessions: number } | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -380,6 +381,166 @@ function drawTrack(
   }
   ctx.stroke();
 
+  // ── Ribbon mode: filled quads with width ──
+  if (colorMode === 'ribbon' && ribbonData && ribbonData.points.length > 2) {
+    // Project ribbon points and compute edges
+    const rPts = ribbonData.points;
+    const rProj = buildProjection(
+      rPts.map(p => p.lat),
+      rPts.map(p => p.lon),
+      w, h, 30,
+    );
+
+    // Compute screen-space normals and edge points
+    const leftXs: number[] = [];
+    const leftYs: number[] = [];
+    const rightXs: number[] = [];
+    const rightYs: number[] = [];
+
+    for (let i = 0; i < rPts.length; i++) {
+      const cx = rProj.pxs[i];
+      const cy = rProj.pys[i];
+
+      // Compute screen-space tangent from projected points
+      let tx: number, ty: number;
+      if (i === 0) {
+        tx = rProj.pxs[1] - rProj.pxs[0];
+        ty = rProj.pys[1] - rProj.pys[0];
+      } else if (i === rPts.length - 1) {
+        tx = rProj.pxs[i] - rProj.pxs[i - 1];
+        ty = rProj.pys[i] - rProj.pys[i - 1];
+      } else {
+        tx = rProj.pxs[i + 1] - rProj.pxs[i - 1];
+        ty = rProj.pys[i + 1] - rProj.pys[i - 1];
+      }
+      const tMag = Math.sqrt(tx * tx + ty * ty) || 1;
+      // Normal = 90 deg rotation of tangent
+      const nnx = -ty / tMag;
+      const nny = tx / tMag;
+
+      // Width in pixels: approximate by using the projection scale
+      // Use half-width of 4px as base, scale with actual track width
+      const halfW = Math.max(3, Math.min(20, rPts[i].width_m * 0.4));
+
+      leftXs.push(cx + nnx * halfW);
+      leftYs.push(cy + nny * halfW);
+      rightXs.push(cx - nnx * halfW);
+      rightYs.push(cy - nny * halfW);
+    }
+
+    // Draw shadow first
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.moveTo(leftXs[0], leftYs[0] + 4);
+    for (let i = 1; i < leftXs.length; i++) ctx.lineTo(leftXs[i], leftYs[i] + 4);
+    for (let i = rightXs.length - 1; i >= 0; i--) ctx.lineTo(rightXs[i], rightYs[i] + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Draw filled ribbon — per-segment quads with grip coloring
+    for (let i = 0; i < rPts.length - 1; i++) {
+      const mu = rPts[i].mu_p95;
+      let color: string;
+      if (mu != null && mu > 0) {
+        // Map mu to color: low grip (red) -> medium (gold) -> high grip (green)
+        if (mu > 1.2) color = '#22C55E';
+        else if (mu > 0.9) {
+          const t = (mu - 0.9) / 0.3;
+          const r = Math.round(201 * (1 - t) + 34 * t);
+          const g = Math.round(168 * (1 - t) + 197 * t);
+          const b = Math.round(76 * (1 - t) + 94 * t);
+          color = `rgb(${r},${g},${b})`;
+        } else {
+          const t = Math.max(0, mu / 0.9);
+          const r = Math.round(255 * (1 - t) + 201 * t);
+          const g = Math.round(42 * (1 - t) + 168 * t);
+          const b = Math.round(42 * (1 - t) + 76 * t);
+          color = `rgb(${r},${g},${b})`;
+        }
+      } else {
+        // No aggregate data — use speed coloring or neutral
+        const spd = rPts[i].speed_mps;
+        if (spd != null) {
+          const maxSpd2 = 40; // rough max for karts
+          const t = Math.min(1, spd / maxSpd2);
+          color = speedToColor(t);
+        } else {
+          color = '#F0EDE5';
+        }
+      }
+
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(leftXs[i], leftYs[i]);
+      ctx.lineTo(leftXs[i + 1], leftYs[i + 1]);
+      ctx.lineTo(rightXs[i + 1], rightYs[i + 1]);
+      ctx.lineTo(rightXs[i], rightYs[i]);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Draw edge lines (subtle border)
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = '#F0EDE5';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(leftXs[0], leftYs[0]);
+    for (let i = 1; i < leftXs.length; i++) ctx.lineTo(leftXs[i], leftYs[i]);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(rightXs[0], rightYs[0]);
+    for (let i = 1; i < rightXs.length; i++) ctx.lineTo(rightXs[i], rightYs[i]);
+    ctx.stroke();
+
+    // Centerline (thin dashed chalk)
+    ctx.globalAlpha = 0.2;
+    ctx.strokeStyle = '#F0EDE5';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < rPts.length; i++) {
+      if (i === 0) ctx.moveTo(rProj.pxs[i], rProj.pys[i]);
+      else ctx.lineTo(rProj.pxs[i], rProj.pys[i]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+
+    // Grip legend
+    const legX = w - 20;
+    const legY = 16;
+    const legH = 60;
+    const legW = 8;
+    const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
+    grad.addColorStop(0, '#22C55E');
+    grad.addColorStop(0.5, '#C9A84C');
+    grad.addColorStop(1, '#FF2A2A');
+    ctx.fillStyle = grad;
+    ctx.fillRect(legX - legW, legY, legW, legH);
+    ctx.fillStyle = '#949494';
+    ctx.font = '8px "Space Mono", monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Grip', legX - legW - 4, legY);
+    ctx.fillText('High', legX - legW - 4, legY + 12);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Low', legX - legW - 4, legY + legH);
+
+    // Session count badge
+    if (ribbonData.aggregate_sessions > 0) {
+      ctx.fillStyle = '#949494';
+      ctx.font = '8px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${ribbonData.aggregate_sessions} sessions`, 8, h - 16);
+    }
+  }
+
+  if (colorMode !== 'ribbon' || !ribbonData) {
   // ── Main track (speed-colored segments) ──
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -420,6 +581,7 @@ function drawTrack(
     ctx.stroke();
   }
   ctx.globalAlpha = 1.0;
+  } // end non-ribbon track draw
 
   // ── Start/finish marker ──
   const sx = proj.pxs[0];
@@ -594,6 +756,10 @@ export function TrackMap(props: TrackMapProps) {
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [gripDelta, setGripDelta] = useState<{ distance_m: number; headroom_pct: number }[] | null>(null);
+  const [ribbonData, setRibbonData] = useState<{
+    points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[];
+    aggregate_sessions: number;
+  } | null>(null);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -678,11 +844,31 @@ export function TrackMap(props: TrackMapProps) {
     return () => { cancelled = true; };
   }, [colorMode, sessionId]);
 
+  // ── Fetch ribbon data ───────────────────────────────────
+  useEffect(() => {
+    if (colorMode !== 'ribbon' || !sessionId) {
+      setRibbonData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[]; aggregate_sessions: number }>(
+          `/sessions/${encodeURIComponent(sessionId)}/track-ribbon`,
+        );
+        if (!cancelled && res?.points) setRibbonData(res);
+      } catch {
+        if (!cancelled) setRibbonData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [colorMode, sessionId]);
+
   // ── Draw on canvas ──────────────────────────────────────
   const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
-    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta);
-  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta]);
+    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta, ribbonData);
+  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta, ribbonData]);
 
   useEffect(() => { draw(); }, [draw]);
 
