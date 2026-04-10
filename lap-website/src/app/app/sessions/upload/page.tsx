@@ -9,6 +9,7 @@ import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
+import { trackEvent } from '@/hooks/useTrackEvent';
 import { ImportErrorPanel, type ImportError } from '@/components/app/ImportErrorPanel';
 import { StintConfigFlow } from '@/components/app/endurance/StintConfigFlow';
 import { StintProcessingProgress } from '@/components/app/endurance/StintProcessingProgress';
@@ -614,6 +615,7 @@ function UploadPage() {
 
               if (event.status === 'completed') {
                 const sid = event.session_id || jId;
+                trackEvent('session.upload', { session_id: sid ?? '' });
                 // Apply user-specified track name (pipeline auto-detects, this overrides)
                 const tn = trackNameRef.current?.trim();
                 if (tn && sid) {

@@ -12,6 +12,7 @@ import { SkeletonSessionDetail } from '@/components/app/Skeleton';
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
 import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
+import { trackEvent } from '@/hooks/useTrackEvent';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -30,6 +31,7 @@ const AchievementUnlockOverlay = lazy(() =>
 );
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
+const HandlingBalanceCard = lazy(() => import('@/components/app/HandlingBalanceCard').then(m => ({ default: m.HandlingBalanceCard })));
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -314,6 +316,8 @@ export default function SessionDetailPage() {
   const [laps, setLaps] = useState<LapData[]>([]);
   const [scores, setScores] = useState<ScoreData | null>(null);
   const [corners, setCorners] = useState<CornerData[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [handlingBalance, setHandlingBalance] = useState<any>(null);
   const [conditionPhases, setConditionPhases] = useState<ConditionPhase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -361,7 +365,7 @@ export default function SessionDetailPage() {
         const [lapsRes, scoresRes, cornersRes, phasesRes] = await Promise.allSettled([
           api.get<{ laps: LapData[] }>(`/sessions/${sessionId}/laps`),
           api.get<ScoreData>(`/sessions/${sessionId}/scores`),
-          api.get<{ corners: CornerData[] }>(`/sessions/${sessionId}/corners`),
+          api.get<{ corners: CornerData[]; handling_balance?: any }>(`/sessions/${sessionId}/corners`),
           api.get<{ phases: ConditionPhase[] }>(`/sessions/${sessionId}/condition-phases`),
         ]);
 
@@ -375,6 +379,9 @@ export default function SessionDetailPage() {
         }
         if (cornersRes.status === 'fulfilled') {
           setCorners(cornersRes.value.corners || []);
+          if (cornersRes.value.handling_balance) {
+            setHandlingBalance(cornersRes.value.handling_balance);
+          }
         }
         if (phasesRes.status === 'fulfilled') {
           setConditionPhases(phasesRes.value.phases || []);
@@ -392,6 +399,12 @@ export default function SessionDetailPage() {
     return () => {
       cancelled = true;
     };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionId) {
+      trackEvent('session.view', { session_id: sessionId });
+    }
   }, [sessionId]);
 
   // Trigger gamification UI once when scores load
@@ -432,7 +445,8 @@ export default function SessionDetailPage() {
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
-  }, []);
+    trackEvent('session.tab_switch', { tab, session_id: sessionId });
+  }, [sessionId]);
 
   // Close export dropdown on outside click or Escape
   useEffect(() => {
@@ -619,7 +633,7 @@ export default function SessionDetailPage() {
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} onSessionUpdate={setSession} />
+        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} handlingBalance={handlingBalance} onSessionUpdate={setSession} />
       )}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'analytics' && (
@@ -840,6 +854,7 @@ function OverviewTab({
   bestLap,
   sessionId,
   corners,
+  handlingBalance,
   onSessionUpdate,
 }: {
   session: SessionData;
@@ -848,6 +863,8 @@ function OverviewTab({
   bestLap: number | null;
   sessionId: string;
   corners: CornerData[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handlingBalance: any;
   onSessionUpdate: (s: SessionData) => void;
 }) {
   const bestLapData = laps.find((l) => l.is_best);
@@ -1271,6 +1288,18 @@ function OverviewTab({
       <div className="lg:col-span-3 space-y-8">
         <Suspense fallback={<div className="py-8 text-center text-steel text-sm">Loading analysis&hellip;</div>}>
           <DrivingStyleSection sessionId={sessionId} />
+          {handlingBalance && (
+            <HandlingBalanceCard
+              sessionId={sessionId}
+              bestLap={bestLap}
+              summary={handlingBalance.summary}
+              focusCorners={handlingBalance.focus_corners}
+              bestLapMistakes={handlingBalance.best_lap_mistakes}
+              drivingTips={handlingBalance.driving_tips}
+              cornerPositions={handlingBalance.corner_positions}
+              recommendations={handlingBalance.setup_recommendations}
+            />
+          )}
           <SessionDebrief
             totalScore={session.total_score}
             grade={session.grade}

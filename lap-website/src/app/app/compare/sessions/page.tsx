@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { trackEvent } from '@/hooks/useTrackEvent';
 import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
 import { ScoreRadarChart } from '@/components/app/compare/ScoreRadarChart';
@@ -282,6 +283,7 @@ export default function CompareSessionsPage() {
         );
         if (!cancelled) {
           setComparison(res);
+          trackEvent('compare.run', { session_a: sessionAId, session_b: sessionBId });
         }
       } catch (err) {
         if (!cancelled) {
