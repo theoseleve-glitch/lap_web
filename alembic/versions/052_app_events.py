@@ -5,13 +5,13 @@ to a workspace. Uses RANGE partitioning on created_at for efficient
 time-based queries and retention management. RLS enforces workspace
 isolation using the same app.workspace_id pattern as all other tables.
 
-Revision ID: 022
-Revises: 021
+Revision ID: 052
+Revises: 051
 """
 from alembic import op
 
-revision = "022"
-down_revision = "021"
+revision = "052"
+down_revision = "051"
 branch_labels = None
 depends_on = None
 
