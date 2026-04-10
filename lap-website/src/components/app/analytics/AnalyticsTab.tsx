@@ -15,6 +15,7 @@ import { FuelStrategyChart } from '@/components/shared/charts/FuelStrategyChart'
 import { TheoreticalDeltaChart } from '@/components/shared/charts/TheoreticalDeltaChart';
 import { CornerCoachingTable } from '@/components/shared/charts/CornerCoachingTable';
 import { CornerCoachingV4 } from '@/components/shared/charts/CornerCoachingV4';
+import { SurfaceProfileChart } from '@/components/shared/charts/SurfaceProfileChart';
 import { useSessionChannels } from '@/hooks/useSessionChannels';
 import { LapSpeedOverlay } from './LapSpeedOverlay';
 import { LapDistribution } from './LapDistribution';
@@ -202,6 +203,11 @@ export function AnalyticsTab({
       {/* ── Row 2b: Aggregate Corner Coaching (multi-session proven envelope) ── */}
       <div>
         <CornerCoachingV4 sessionId={sessionId} className="w-full" />
+      </div>
+
+      {/* ── Row 2b2: Surface Profile (elevation, slope, camber, roughness) ── */}
+      <div>
+        <SurfaceProfileChart sessionId={sessionId} className="w-full" />
       </div>
 
       {/* ── Row 2c: Theoretical Delta + Corner Coaching (sim optimizer) ── */}

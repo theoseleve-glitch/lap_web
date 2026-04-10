@@ -487,3 +487,76 @@ def get_global_aggregate_grip(
         session_count=session_count,
         track_id=track_id,
     )
+
+
+# -- Snapshots (evolution tracking) -----------------------------------------
+
+
+def save_snapshot(
+    conn: Any,
+    track_id: str,
+    vehicle_class: str = "car",
+    condition: str = "dry",
+    session_id: str | None = None,
+) -> bool:
+    """Save a point-in-time snapshot of the aggregate grip profile.
+
+    Called after upsert_session_grip. Reads the current aggregate state
+    and stores it as a JSONB snapshot for evolution tracking.
+    """
+    import json
+
+    if not track_id or track_id == "unknown_track":
+        return False
+
+    # Read current aggregate
+    sql_read = """
+        SELECT distance_m, mu_lat_p95, mu_lat_mean, sample_count, session_count
+        FROM track_surfaces
+        WHERE track_id = %(track_id)s
+          AND vehicle_class = %(vehicle_class)s
+          AND condition = %(condition)s
+        ORDER BY distance_m
+    """
+    try:
+        rows = conn.execute(sql_read, {
+            "track_id": track_id,
+            "vehicle_class": vehicle_class,
+            "condition": condition,
+        }).fetchall()
+    except Exception:
+        return False
+
+    if not rows:
+        return False
+
+    session_count = max(r[4] for r in rows)
+
+    # Build JSONB profile
+    profile = [
+        {"d": round(r[0], 1), "p95": round(r[1], 4), "mean": round(r[2], 4), "n": r[3]}
+        for r in rows
+    ]
+
+    sql_insert = """
+        INSERT INTO track_surface_snapshots
+            (track_id, vehicle_class, condition, session_count,
+             grip_profile, session_id)
+        VALUES
+            (%(track_id)s, %(vehicle_class)s, %(condition)s, %(session_count)s,
+             %(grip_profile)s, %(session_id)s)
+    """
+    try:
+        conn.execute(sql_insert, {
+            "track_id": track_id,
+            "vehicle_class": vehicle_class,
+            "condition": condition,
+            "session_count": session_count,
+            "grip_profile": json.dumps(profile),
+            "session_id": session_id,
+        })
+        logger.info("Track surface snapshot saved: track=%s, sessions=%d", track_id, session_count)
+        return True
+    except Exception as exc:
+        logger.warning("Snapshot save failed: %s", exc)
+        return False

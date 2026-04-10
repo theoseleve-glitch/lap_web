@@ -893,6 +893,18 @@ def run_full_analysis(
                 condition=_ts_condition,
             )
             summary["track_surface_bins_updated"] = _ts_updated
+            # Save evolution snapshot
+            if _ts_updated > 0:
+                try:
+                    from track_surface.persistence import save_snapshot
+                    save_snapshot(
+                        _ts_conn, _ts_track_id,
+                        vehicle_class=_ts_vehicle_class,
+                        condition=_ts_condition,
+                        session_id=str(meta.get("session_id", "")),
+                    )
+                except Exception as _snap_exc:
+                    logger.debug("Snapshot save skipped: %s", _snap_exc)
             try:
                 from track_surface import upsert_global_grip
                 upsert_global_grip(

@@ -5794,6 +5794,179 @@ def get_track_ribbon(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-evolution
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-evolution", methods=["GET"])
+@_safe_api
+def get_track_evolution(session_id: str) -> tuple[dict, int]:
+    """Return grip evolution timeline for this session's track.
+
+    Shows how the aggregate grip profile has changed over time,
+    with per-snapshot mu_p95 averages and session counts.
+    """
+    import os
+    import json
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Track evolution requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    track_id = None
+    vehicle_class = "car"
+    condition_state = "dry"
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+        vehicle_class = analysis.get("vehicle_class", "car")
+        condition_state = analysis.get("track_state", "dry")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected", status=404)
+
+    sql = """
+        SELECT snapshot_at, session_count, grip_profile, session_id
+        FROM track_surface_snapshots
+        WHERE track_id = %(track_id)s
+          AND vehicle_class = %(vehicle_class)s
+          AND condition = %(condition)s
+        ORDER BY snapshot_at ASC
+    """
+    try:
+        rows = conn.execute(sql, {
+            "track_id": track_id,
+            "vehicle_class": vehicle_class,
+            "condition": condition_state,
+        }).fetchall()
+    except Exception:
+        return api_error(ErrorCode.NOT_FOUND, "No evolution data", status=404)
+
+    if not rows:
+        return api_error(ErrorCode.NOT_FOUND, "No evolution snapshots yet", status=404)
+
+    snapshots = []
+    for r in rows:
+        profile = r[2] if isinstance(r[2], list) else json.loads(r[2]) if isinstance(r[2], str) else []
+        # Compute average mu_p95 across all bins
+        mu_values = [p.get("p95", 0) for p in profile if isinstance(p, dict)]
+        avg_mu = sum(mu_values) / len(mu_values) if mu_values else 0
+
+        snapshots.append({
+            "timestamp": str(r[0]),
+            "session_count": r[1],
+            "avg_mu_p95": round(avg_mu, 4),
+            "bin_count": len(profile),
+            "session_id": r[3],
+        })
+
+    return api_response({
+        "track_id": track_id,
+        "vehicle_class": vehicle_class,
+        "condition": condition_state,
+        "snapshots": snapshots,
+        "snapshot_count": len(snapshots),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/surface-profile
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/surface-profile", methods=["GET"])
+@_safe_api
+def get_surface_profile(session_id: str) -> tuple[dict, int]:
+    """Return enriched track surface properties: elevation, slope, camber, roughness.
+
+    Reads from the pipeline's track_surface_summary stored in analysis_json.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Try track_surface_summary first (from s10d pipeline stage)
+    surface_summary = analysis.get("track_surface_summary")
+    if not surface_summary or not isinstance(surface_summary, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No surface profile data — this session may not have enough laps", status=404)
+
+    # Extract available arrays
+    result: dict[str, Any] = {"available_layers": []}
+
+    # Distance grid
+    s_grid = surface_summary.get("s_grid")
+    if s_grid:
+        result["distance_m"] = s_grid
+
+    # Elevation
+    elevation = surface_summary.get("elevation_m")
+    if elevation:
+        result["elevation_m"] = elevation
+        result["available_layers"].append("elevation")
+
+    # Slope
+    slope = surface_summary.get("slope_pct")
+    if slope:
+        result["slope_pct"] = slope
+        result["available_layers"].append("slope")
+
+    # Camber
+    camber = surface_summary.get("camber_rad")
+    if camber:
+        result["camber_rad"] = camber
+        # Convert to degrees for frontend
+        result["camber_deg"] = [round(math.degrees(c), 2) if c is not None else None for c in camber]
+        result["available_layers"].append("camber")
+
+    # Vertical curvature (compressions and crests)
+    vert_curv = surface_summary.get("vert_curvature_1pm")
+    if vert_curv:
+        result["vert_curvature_1pm"] = vert_curv
+        result["available_layers"].append("vert_curvature")
+
+    # Width
+    width_left = surface_summary.get("width_left_m")
+    width_right = surface_summary.get("width_right_m")
+    if width_left and width_right:
+        result["width_left_m"] = width_left
+        result["width_right_m"] = width_right
+        result["total_width_m"] = [
+            round((l or 0) + (r or 0), 1)
+            for l, r in zip(width_left, width_right)
+        ]
+        result["available_layers"].append("width")
+
+    # Grip variance as roughness proxy (from grip_map bin stats)
+    grip_map = analysis.get("grip_map")
+    if grip_map and isinstance(grip_map, dict):
+        distance_bins = grip_map.get("distance_bins", [])
+        mu_p95 = grip_map.get("mu_p95", [])
+        mu_mean = grip_map.get("mu_mean", [])
+        if distance_bins and mu_p95 and mu_mean:
+            # Roughness proxy: difference between p95 and mean (higher = more variable surface)
+            roughness = [round(p - m, 4) for p, m in zip(mu_p95, mu_mean)]
+            result["roughness_mu_delta"] = roughness
+            result["roughness_distance_m"] = distance_bins
+            result["available_layers"].append("roughness")
+
+    if not result.get("available_layers"):
+        return api_error(ErrorCode.NOT_FOUND, "No surface enrichment data available", status=404)
+
+    result["track_id"] = analysis.get("track_id")
+    result["n_laps"] = surface_summary.get("n_laps", 0)
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/optimal-v2
 # ══════════════════════════════════════════════════════════════════
 
