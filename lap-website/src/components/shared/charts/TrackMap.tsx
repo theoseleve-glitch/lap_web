@@ -261,7 +261,7 @@ function drawTrack(
   compareTrace?: TrackMapData | null,
   colorMode: "speed" | "grip" | "ribbon" = "speed",
   gripDelta?: { distance_m: number; headroom_pct: number }[] | null,
-  ribbonData?: { points: { lat: number; lon: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[]; aggregate_sessions: number } | null,
+  ribbonData?: { points: { lat: number; lon: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[]; aggregate_sessions: number } | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -440,26 +440,29 @@ function drawTrack(
     ctx.fill();
     ctx.restore();
 
-    // Draw filled ribbon — per-segment quads with grip coloring
+    // Grip mu -> color mapping
+    const gripMuColor = (muVal: number): string => {
+      if (muVal > 1.2) return '#22C55E';
+      if (muVal > 0.9) {
+        const t = (muVal - 0.9) / 0.3;
+        const r = Math.round(201 * (1 - t) + 34 * t);
+        const g = Math.round(168 * (1 - t) + 197 * t);
+        const b = Math.round(76 * (1 - t) + 94 * t);
+        return `rgb(${r},${g},${b})`;
+      }
+      const t = Math.max(0, muVal / 0.9);
+      const r = Math.round(255 * (1 - t) + 201 * t);
+      const g = Math.round(42 * (1 - t) + 168 * t);
+      const b = Math.round(42 * (1 - t) + 76 * t);
+      return `rgb(${r},${g},${b})`;
+    };
+
+    // Draw filled ribbon — per-segment split quads with lateral grip coloring
     for (let i = 0; i < rPts.length - 1; i++) {
       const mu = rPts[i].mu_p95;
       let color: string;
       if (mu != null && mu > 0) {
-        // Map mu to color: low grip (red) -> medium (gold) -> high grip (green)
-        if (mu > 1.2) color = '#22C55E';
-        else if (mu > 0.9) {
-          const t = (mu - 0.9) / 0.3;
-          const r = Math.round(201 * (1 - t) + 34 * t);
-          const g = Math.round(168 * (1 - t) + 197 * t);
-          const b = Math.round(76 * (1 - t) + 94 * t);
-          color = `rgb(${r},${g},${b})`;
-        } else {
-          const t = Math.max(0, mu / 0.9);
-          const r = Math.round(255 * (1 - t) + 201 * t);
-          const g = Math.round(42 * (1 - t) + 168 * t);
-          const b = Math.round(42 * (1 - t) + 76 * t);
-          color = `rgb(${r},${g},${b})`;
-        }
+        color = gripMuColor(mu);
       } else {
         // No aggregate data — use speed coloring or neutral
         const spd = rPts[i].speed_mps;
@@ -472,11 +475,30 @@ function drawTrack(
         }
       }
 
-      ctx.fillStyle = color;
+      // Compute center points for split rendering
+      const midX0 = (leftXs[i] + rightXs[i]) / 2;
+      const midY0 = (leftYs[i] + rightYs[i]) / 2;
+      const midX1 = (leftXs[i + 1] + rightXs[i + 1]) / 2;
+      const midY1 = (leftYs[i + 1] + rightYs[i + 1]) / 2;
+
+      // Left half (uses mu_left if available)
+      const muLeft = rPts[i].mu_left ?? mu;
+      ctx.fillStyle = muLeft != null && muLeft > 0 ? gripMuColor(muLeft) : color;
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
       ctx.moveTo(leftXs[i], leftYs[i]);
       ctx.lineTo(leftXs[i + 1], leftYs[i + 1]);
+      ctx.lineTo(midX1, midY1);
+      ctx.lineTo(midX0, midY0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Right half (uses mu_right if available)
+      const muRight = rPts[i].mu_right ?? mu;
+      ctx.fillStyle = muRight != null && muRight > 0 ? gripMuColor(muRight) : color;
+      ctx.beginPath();
+      ctx.moveTo(midX0, midY0);
+      ctx.lineTo(midX1, midY1);
       ctx.lineTo(rightXs[i + 1], rightYs[i + 1]);
       ctx.lineTo(rightXs[i], rightYs[i]);
       ctx.closePath();
@@ -757,7 +779,7 @@ export function TrackMap(props: TrackMapProps) {
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   const [gripDelta, setGripDelta] = useState<{ distance_m: number; headroom_pct: number }[] | null>(null);
   const [ribbonData, setRibbonData] = useState<{
-    points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[];
+    points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[];
     aggregate_sessions: number;
   } | null>(null);
 
@@ -853,7 +875,7 @@ export function TrackMap(props: TrackMapProps) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiFetch<{ points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; speed_mps?: number }[]; aggregate_sessions: number }>(
+        const res = await apiFetch<{ points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[]; aggregate_sessions: number }>(
           `/sessions/${encodeURIComponent(sessionId)}/track-ribbon`,
         );
         if (!cancelled && res?.points) setRibbonData(res);

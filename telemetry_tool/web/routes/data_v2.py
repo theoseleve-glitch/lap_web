@@ -5313,6 +5313,125 @@ def get_pre_session_briefing(track_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/model
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/model", methods=["GET"])
+@_safe_api
+def get_track_model(track_id: str) -> tuple[dict, int]:
+    """Return the full accumulated track model for 3D visualization.
+
+    Reads from the Parquet sidecar (not analysis_json), keyed by
+    vehicle_class and condition.
+
+    Query params:
+        vehicle_class: gt3|gt4|formula|kart|road|generic (default: generic)
+        condition: dry|damp|wet|heavy_wet (default: dry)
+    """
+    from flask import request as flask_request
+
+    v_class = flask_request.args.get("vehicle_class", "generic")
+    condition = flask_request.args.get("condition", "dry")
+
+    try:
+        from track_surface.store import load_track_model
+        surface = load_track_model(track_id, vehicle_class=v_class, condition=condition)
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    if surface is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No track model for '{track_id}' (class={v_class}, cond={condition})",
+            status=404,
+        )
+
+    result = surface.to_summary_dict()
+    # Add arrays for frontend 3D rendering
+    result["centerline_x"] = [round(float(v), 2) for v in surface.frenet.centerline_xy[:, 0]]
+    result["centerline_y"] = [round(float(v), 2) for v in surface.frenet.centerline_xy[:, 1]]
+    result["curvature"] = [round(float(v), 5) for v in surface.frenet.curvature_1pm]
+    if surface.has_elevation:
+        result["elevation_m"] = [round(float(v), 2) for v in surface.elevation_m]
+    if surface.has_boundaries:
+        result["width_left"] = [round(float(v), 2) for v in surface.width_left]
+        result["width_right"] = [round(float(v), 2) for v in surface.width_right]
+    if surface.has_vert_curvature:
+        result["vert_curvature"] = [round(float(v), 5) for v in surface.vert_curvature_1pm]
+    if surface.has_camber:
+        result["camber_rad"] = [round(float(v), 4) for v in surface.camber_rad]
+    if surface.curbs:
+        result["curbs"] = [c.to_dict() for c in surface.curbs]
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/drivers — multi-driver line comparison
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/drivers", methods=["GET"])
+@_safe_api
+def get_track_driver_lines(track_id: str) -> tuple[dict, int]:
+    """Compare multiple drivers' racing lines at the same track.
+
+    Returns Frenet (s, n) traces for each driver's best lap,
+    overlaid on the accumulated track model.
+
+    Query params:
+        session_ids: comma-separated session IDs to compare
+    """
+    from flask import request as flask_request
+    import json
+
+    session_ids = flask_request.args.get("session_ids", "")
+    if not session_ids:
+        return api_error(ErrorCode.VALIDATION, "session_ids query param required", status=400)
+
+    ids = [s.strip() for s in session_ids.split(",") if s.strip()]
+    if len(ids) < 1 or len(ids) > 10:
+        return api_error(ErrorCode.VALIDATION, "Provide 1-10 session IDs", status=400)
+
+    conn = get_db_connection()
+    drivers = []
+
+    for sid in ids:
+        session = models.get_session_by_id(conn, sid)
+        if session is None:
+            continue
+
+        analysis = models.get_analysis_json(conn, sid)
+        if not analysis or not isinstance(analysis, dict):
+            continue
+
+        # Get GPS trace for best lap
+        gps = models.get_gps_trace(conn, sid, lap_number=None)  # best lap
+        if not gps:
+            continue
+
+        driver_name = session.get("driver_name", "Unknown") if isinstance(session, dict) else "Unknown"
+        best_time = session.get("best_lap_time_s") if isinstance(session, dict) else None
+
+        drivers.append({
+            "session_id": sid,
+            "driver_name": driver_name,
+            "best_lap_time_s": best_time,
+            "latitudes": gps.get("latitudes", []),
+            "longitudes": gps.get("longitudes", []),
+            "distances": gps.get("distances", []),
+            "speeds": gps.get("speeds", []),
+        })
+
+    return api_response({
+        "track_id": track_id,
+        "driver_count": len(drivers),
+        "drivers": drivers,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/track-delta
 # ══════════════════════════════════════════════════════════════════
 
@@ -5556,6 +5675,67 @@ def get_global_surface(track_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/model
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/model", methods=["GET"])
+@_safe_api
+def get_track_model(track_id: str) -> tuple[dict, int]:
+    """Return full track surface model for 3D frontend visualization.
+
+    Reads the accumulated TrackSurface from the Parquet sidecar (not from
+    analysis_json) and returns the surface summary plus arrays needed for
+    WebGL rendering: centerline, curvature, elevation, boundaries, camber,
+    vertical curvature, and curb positions.
+
+    Query params:
+        vehicle_class: generic|gt3|gt4|formula|kart|road (default: generic)
+        condition:      dry|damp|wet|heavy_wet (default: dry)
+    """
+    from flask import request as flask_request
+
+    try:
+        from track_surface.store import load_track_model
+    except ImportError:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Track surface module not available",
+            status=404,
+        )
+
+    v_class = flask_request.args.get("vehicle_class", "generic")
+    condition = flask_request.args.get("condition", "dry")
+
+    surface = load_track_model(track_id, vehicle_class=v_class, condition=condition)
+    if surface is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No track model for '{track_id}'",
+            status=404,
+        )
+
+    result = surface.to_summary_dict()
+    # Arrays for frontend 3D rendering
+    result["centerline_x"] = surface.frenet.centerline_xy[:, 0].tolist()
+    result["centerline_y"] = surface.frenet.centerline_xy[:, 1].tolist()
+    result["curvature"] = surface.frenet.curvature_1pm.tolist()
+    if surface.has_elevation:
+        result["elevation_m"] = surface.elevation_m.tolist()
+    if surface.has_boundaries:
+        result["width_left"] = surface.width_left.tolist()
+        result["width_right"] = surface.width_right.tolist()
+    if surface.has_vert_curvature:
+        result["vert_curvature"] = surface.vert_curvature_1pm.tolist()
+    if surface.has_camber:
+        result["camber_rad"] = surface.camber_rad.tolist()
+    if surface.curbs:
+        result["curbs"] = [c.to_dict() for c in surface.curbs]
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/corner-coaching-v4
 # ══════════════════════════════════════════════════════════════════
 
@@ -5757,6 +5937,10 @@ def get_track_ribbon(session_id: str) -> tuple[dict, int]:
         n = len(lats)
 
     # Build response
+    # Physics assumption: grip is highest on the racing line (center),
+    # drops ~15% at track edges due to less rubber deposition
+    _EDGE_GRIP_FACTOR = 0.85  # edges have ~85% of centerline grip
+
     points = []
     for i in range(n):
         pt = {
@@ -5768,6 +5952,10 @@ def get_track_ribbon(session_id: str) -> tuple[dict, int]:
             "width_m": round(float(widths[i]), 1),
             "mu_p95": round(float(grip_values[i]), 4) if grip_values[i] > 0 else None,
         }
+        if grip_values[i] > 0:
+            pt["mu_center"] = round(float(grip_values[i]), 4)
+            pt["mu_left"] = round(float(grip_values[i] * _EDGE_GRIP_FACTOR), 4)
+            pt["mu_right"] = round(float(grip_values[i] * _EDGE_GRIP_FACTOR), 4)
         if speeds is not None and i < len(speeds):
             pt["speed_mps"] = round(float(speeds[i]), 2)
         points.append(pt)

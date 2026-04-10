@@ -199,7 +199,7 @@ def compute_grip_map(
     dist_vals = first_df[dist_col].values
     d_min, d_max = float(dist_vals[0]), float(dist_vals[-1])
     if n_bins <= 0:
-        n_bins = max(20, min(200, len(dist_vals) // 2))
+        n_bins = max(20, min(400, len(dist_vals) // 2))
     bin_edges = np.linspace(d_min, d_max, n_bins + 1)
     bin_centers = 0.5 * (bin_edges[:-1] + bin_edges[1:])
 

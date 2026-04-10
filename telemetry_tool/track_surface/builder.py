@@ -16,7 +16,13 @@ import pandas as pd
 
 from track_surface.boundary import estimate_boundaries
 from track_surface.centerline import extract_centerline
-from track_surface.elevation import build_elevation_profile, compute_vertical_curvature, estimate_camber
+from track_surface.elevation import (
+    build_elevation_profile,
+    build_elevation_surface,
+    compute_vertical_curvature,
+    detect_curbs,
+    estimate_camber,
+)
 from track_surface.frenet import FrenetFrame
 from track_surface.grip_2d import build_grip_surface
 from track_surface.model import TrackSurface
@@ -97,7 +103,7 @@ def build_track_surface(
                 track_id, n_laps, adapter_format)
 
     # 2. Extract centerline
-    cl_xy, total_length = extract_centerline(xy_list, ds_m=1.0)
+    cl_xy, total_length = extract_centerline(xy_list, ds_m=0.5)
 
     # 3. Build Frenet frame
     frenet = FrenetFrame.from_centerline(cl_xy)
@@ -133,12 +139,24 @@ def build_track_surface(
         if np.any(np.abs(camber_est) > 1e-4):
             camber_rad = camber_est
 
-    # 8. 2D grip (>= 10 laps) — uses vertical curvature for terrain-corrected mu
-    grip_2d = None
-    if n_laps >= 10:
-        grip_2d = build_grip_surface(frenet, enriched_laps, vert_curvature=vert_curvature)
+    # 8. 3D elevation surface z(s,n) + curb detection (>= 3 laps with z)
+    elev_surface = None
+    curbs = None
+    if has_z and n_laps >= 3:
+        elev_surface = build_elevation_surface(frenet, laps_snz)
+        if elev_surface is not None:
+            curbs = detect_curbs(elev_surface)
 
-    # 9. Assemble
+    # 9. 2D grip (>= 10 laps) — uses vertical curvature for terrain-corrected mu
+    grip_2d = None
+    if n_laps >= 5:
+        grip_2d = build_grip_surface(
+            frenet, enriched_laps,
+            s_bin_m=2.0, n_bin_m=0.5, n_range_m=8.0,
+            vert_curvature=vert_curvature,
+        )
+
+    # 10. Assemble
     surface = TrackSurface(
         track_id=track_id,
         frenet=frenet,
@@ -148,6 +166,8 @@ def build_track_surface(
         slope_pct=slope_pct,
         vert_curvature_1pm=vert_curvature,
         camber_rad=camber_rad,
+        elevation_surface=elev_surface,
+        curbs=curbs,
         grip_2d=grip_2d,
         n_laps=n_laps,
         sim_sources=[adapter_format],
