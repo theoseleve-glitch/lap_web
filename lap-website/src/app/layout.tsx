@@ -55,6 +55,15 @@ const jsonLd = {
       applicationCategory: 'SportsApplication',
       operatingSystem: 'Web',
       description: 'Motorsport telemetry analysis platform for kart and car drivers',
+      featureList: [
+        'GPS telemetry ingestion from RaceChrono, RaceBox, AiM, MoTeC',
+        'Automatic corner detection from GPS trajectory',
+        'Four-pillar scoring: Pace, Consistency, Execution, Robustness',
+        'Per-corner coaching insights',
+        'Session-vs-session comparison with distance synchronization',
+        'Track auto-detection from GPS coordinates',
+        'PDF coaching reports',
+      ],
       offers: [
         { '@type': 'Offer', name: 'Demo', price: '0', priceCurrency: 'EUR' },
         { '@type': 'Offer', name: 'Racer', price: '69', priceCurrency: 'EUR', billingPeriod: 'P1Y' },
@@ -71,6 +80,16 @@ const jsonLd = {
         addressLocality: 'Nantes',
         postalCode: '44000',
         addressCountry: 'FR',
+      },
+    },
+    {
+      '@type': 'WebSite',
+      name: BRAND.productName,
+      url: siteUrl.href,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${siteUrl.href}/insights?q={search_term_string}`,
+        'query-input': 'required name=search_term_string',
       },
     },
   ],
