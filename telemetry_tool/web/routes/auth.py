@@ -210,7 +210,6 @@ def register():
 
         result = {
             "access_token": access_token,
-            "refresh_token": refresh_token,
             "user": user,
         }
         resp = make_response(api_response(result, status=201))
@@ -283,9 +282,10 @@ def login():
                    {"ip": ip}, ip_address=ip, user_agent=ua)
         _check_login_anomaly(conn, result["user"]["id"], ip, ua)
 
+        refresh_token = result.pop("refresh_token", None)
         resp = make_response(api_response(result))
-        if result.get("refresh_token"):
-            _set_refresh_cookie(resp, result["refresh_token"])
+        if refresh_token:
+            _set_refresh_cookie(resp, refresh_token)
         set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except AuthError as e:
@@ -423,7 +423,6 @@ def refresh():
 
         result = {
             "access_token": new_access,
-            "refresh_token": new_refresh,
             "user": dict(user) if user else {},
         }
         resp = make_response(api_response(result))
