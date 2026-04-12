@@ -2186,6 +2186,14 @@ _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed", "green", "rubbered", "dust
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def _strip_html(value: str | None) -> str | None:
+    """Strip HTML tags from user-provided text to prevent stored XSS."""
+    if value is None:
+        return None
+    import re
+    return re.sub(r"<[^>]+>", "", value).strip()
+
+
 def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
     """Validate PATCH body fields and return (errors, cleaned_body).
 
@@ -2193,33 +2201,35 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
     list of ``{"field": ..., "message": ...}`` dicts.  ``cleaned_body``
     contains only the recognised updatable keys from ``body`` (unknown
     keys are silently dropped).
+
+    All free-text string fields are HTML-stripped to prevent stored XSS.
     """
     errors: list[dict] = []
     cleaned: dict = {}
 
     for field, value in body.items():
         if field == "driver_name":
-            # driver_name is handled separately (upsert); just pass through.
+            # driver_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "driver_name", "message": "Must be a string."})
             else:
-                cleaned["driver_name"] = value
+                cleaned["driver_name"] = _strip_html(value)
             continue
 
         if field == "track_name":
-            # track_name is handled separately (upsert); just pass through.
+            # track_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "track_name", "message": "Must be a string."})
             else:
-                cleaned["track_name"] = value
+                cleaned["track_name"] = _strip_html(value)
             continue
 
         if field == "kart_name":
-            # kart_name is handled separately (upsert); just pass through.
+            # kart_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "kart_name", "message": "Must be a string."})
             else:
-                cleaned["kart_name"] = value
+                cleaned["kart_name"] = _strip_html(value)
             continue
 
         if field == "kart_details":
@@ -2319,7 +2329,7 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
             else:
                 cleaned[field] = value
 
-        # -- display_name length --
+        # -- display_name length + HTML strip --
         elif field == "display_name":
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "display_name", "message": "Must be a string."})
@@ -2329,9 +2339,9 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                     "message": "Must be at most 200 characters.",
                 })
             else:
-                cleaned[field] = value
+                cleaned[field] = _strip_html(value)
 
-        # -- notes length --
+        # -- notes length + HTML strip --
         elif field == "notes":
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "notes", "message": "Must be a string."})
@@ -2341,7 +2351,7 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                     "message": "Must be at most 2000 characters.",
                 })
             else:
-                cleaned[field] = value
+                cleaned[field] = _strip_html(value)
 
     return errors, cleaned
 

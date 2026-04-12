@@ -26,11 +26,10 @@ export function hasBillingAuth(request: Request): boolean {
   if (process.env.BILLING_ALLOW_GUEST === 'true') return true;
 
   const cookieHeader = request.headers.get('cookie') ?? '';
+  // Must match the actual cookie names set by the auth system
   const authCookiePatterns = [
-    'session=',
-    'access_token_cookie=',
-    'refresh_token_cookie=',
-    '__session=',
+    'lap_refresh_token=',
+    'lap_session_id=',
   ];
 
   return authCookiePatterns.some((pattern) => cookieHeader.includes(pattern));
