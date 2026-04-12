@@ -176,7 +176,7 @@ def register():
     try:
         user = register_user(conn, email, password, display_name or email.split("@")[0])
         secret = current_app.config["JWT_SECRET"]
-        access_token = create_access_token(user["id"], secret)
+        access_token = create_access_token(user["id"], secret, email_verified=False)
         refresh_token = create_refresh_token()
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=current_app.config.get("JWT_REFRESH_EXPIRY_DAYS", 30)
@@ -399,9 +399,14 @@ def refresh():
             {"id": old_token_id},
         )
 
-        # Issue new token pair
+        # Issue new token pair — query actual email_verified state from DB
         secret = current_app.config["JWT_SECRET"]
-        new_access = create_access_token(user_id, secret)
+        ev_row = conn.execute(
+            "SELECT email_verified FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+        email_verified = bool((ev_row or {}).get("email_verified", False))
+        new_access = create_access_token(user_id, secret, email_verified=email_verified)
         new_refresh = create_refresh_token()
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=current_app.config.get("JWT_REFRESH_EXPIRY_DAYS", 30)

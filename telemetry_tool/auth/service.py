@@ -126,13 +126,14 @@ def register_user(conn, email: str, password: str, display_name: str) -> dict:
             {"email": email, "password_hash": password_hash, "display_name": display_name},
         )
         row = cur.fetchone()
-        conn.commit()
 
-        # Auto-create personal workspace for the new user.
+        # Auto-create personal workspace for the new user (same transaction).
+        # Commit happens after both succeed so an orphaned user row is impossible.
         from auth.workspace import create_personal_workspace
         create_personal_workspace(conn, user_id=row["id"],
                                   display_name=f"{display_name}'s Workspace")
 
+        conn.commit()
         return dict(row)
     except Exception as e:
         conn.rollback()
