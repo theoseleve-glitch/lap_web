@@ -63,7 +63,8 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
   }, [candidates, search]);
 
   function handleSelect(c: ReferenceCandidate) {
-    setReference(c.session_id, 1);
+    // Use the reference session's best lap
+    setReference(c.session_id, c.best_lap_number ?? 1);
     setOpen(false);
     setSearch('');
   }

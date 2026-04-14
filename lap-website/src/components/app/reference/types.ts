@@ -3,6 +3,7 @@ export interface ReferenceCandidate {
   driver_name: string;
   session_date: string;
   best_lap_time_s: number | null;
+  best_lap_number: number | null;
   n_laps: number;
   session_type: string;
 }

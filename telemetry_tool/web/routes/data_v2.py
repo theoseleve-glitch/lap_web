@@ -7517,7 +7517,10 @@ def get_reference_candidates(session_id: str) -> tuple[dict, int]:
 
     rows = conn.execute(
         """SELECT s.session_id, d.driver_name, s.session_date,
-                  s.best_lap_time_s, s.n_laps, s.session_type
+                  s.best_lap_time_s, s.n_laps, s.session_type,
+                  (SELECT l.lap_number FROM laps l
+                   WHERE l.session_id = s.session_id AND l.is_best = 1
+                   LIMIT 1) AS best_lap_number
            FROM sessions s
            LEFT JOIN drivers d ON s.driver_id = d.driver_id
            LEFT JOIN tracks t ON s.track_id = t.track_id
@@ -7534,6 +7537,7 @@ def get_reference_candidates(session_id: str) -> tuple[dict, int]:
             "driver_name": r["driver_name"],
             "session_date": r["session_date"],
             "best_lap_time_s": r["best_lap_time_s"],
+            "best_lap_number": r["best_lap_number"],
             "n_laps": r["n_laps"],
             "session_type": r["session_type"],
         }
