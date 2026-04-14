@@ -25,6 +25,7 @@ import { DevelopmentDrills } from './DevelopmentDrills';
 import { ChartThemePicker } from '@/components/app/ChartThemePicker';
 import { ChartAnnotations } from '@/components/app/ChartAnnotations';
 import { ChartTooltip } from '@/components/ui/ChartTooltip';
+import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
 
 interface CornerData {
   corner_id: number;
@@ -83,7 +84,9 @@ export function AnalyticsTab({
         <ChartThemePicker />
       </div>
       {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
+        <ReferenceFAB sessionId={sessionId} />
         <div className="lg:col-span-1">
           <div className="bg-concrete rounded-xl border border-steel/10 p-4 h-full flex flex-col">
             <div className="flex items-center gap-2 mb-3 shrink-0">
@@ -186,6 +189,7 @@ export function AnalyticsTab({
           </div>
         </div>
       </div>
+      </ReferenceOverlayProvider>
 
       {/* ── Row 2: Delta Time Chart ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
