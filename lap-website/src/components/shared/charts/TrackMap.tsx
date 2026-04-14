@@ -13,9 +13,10 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -265,6 +266,8 @@ function drawTrack(
   gripDelta?: { distance_m: number; headroom_pct: number }[] | null,
   ribbonData?: { points: { lat: number; lon: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[]; aggregate_sessions: number } | null,
   racingLine?: { distance_m: number[]; lateral_offset_m: number[]; speed_kph: number[]; lap_time_s: number; solver_status: string } | null,
+  crossRefTrace?: { latitudes: number[]; longitudes: number[]; distances: number[] } | null,
+  hoverDistance?: number | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -368,6 +371,29 @@ function drawTrack(
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
+  }
+
+  // ── Cross-session reference GPS path (dashed racing-purple) ──
+  if (crossRefTrace && crossRefTrace.latitudes && crossRefTrace.latitudes.length > 1 && proj.toXY) {
+    const rLats = crossRefTrace.latitudes;
+    const rLons = crossRefTrace.longitudes;
+    ctx.save();
+    ctx.strokeStyle = '#8B5CF6';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < rLats.length; i++) {
+      const [px, py] = proj.toXY(rLats[i], rLons[i]);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+    ctx.restore();
   }
 
   // ── Shadow pass (dark, blurred, offset below track) ──
@@ -781,6 +807,30 @@ function drawTrack(
     ctx.beginPath();
     ctx.arc(hx, hy, 4, 0, Math.PI * 2);
     ctx.fill();
+
+    // ── Dual hover marker: reference position (hollow purple circle) ──
+    if (crossRefTrace && crossRefTrace.latitudes.length > 1 && proj.toXY && hoverDistance != null) {
+      const rDists = crossRefTrace.distances;
+      let rIdx = 0;
+      if (rDists && rDists.length > 1) {
+        let lo = 0, hi = rDists.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (rDists[mid] < hoverDistance) lo = mid + 1;
+          else hi = mid;
+        }
+        rIdx = lo;
+      }
+      const [rpx, rpy] = proj.toXY(crossRefTrace.latitudes[rIdx], crossRefTrace.longitudes[rIdx]);
+      ctx.save();
+      ctx.strokeStyle = '#8B5CF6';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(rpx, rpy, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
   }
 
   // ── Racing line overlay for line modes (speed/grip) ──
@@ -874,6 +924,17 @@ export function TrackMap(props: TrackMapProps) {
     colorMode = 'speed',
     showRacingLine = false,
   } = props;
+
+  const { referenceData } = useReferenceOverlay();
+
+  const crossRefTrace = useMemo(() => {
+    if (!referenceData?.gps?.reference?.latitudes?.length) return null;
+    return {
+      latitudes: referenceData.gps.reference.latitudes,
+      longitudes: referenceData.gps.reference.longitudes,
+      distances: referenceData.distances,
+    };
+  }, [referenceData]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [trace, setTrace] = useState<TrackMapData | null>(preFetchedData ?? null);
@@ -1027,8 +1088,11 @@ export function TrackMap(props: TrackMapProps) {
   // ── Draw on canvas ──────────────────────────────────────
   const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
-    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta, ribbonData, racingLine);
-  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta, ribbonData, racingLine]);
+    const hoverDist = (hoverIdx != null && trace.distances && trace.distances[hoverIdx] != null)
+      ? trace.distances[hoverIdx]
+      : null;
+    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta, ribbonData, racingLine, crossRefTrace, hoverDist);
+  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta, ribbonData, racingLine, crossRefTrace]);
 
   useEffect(() => { draw(); }, [draw]);
 
