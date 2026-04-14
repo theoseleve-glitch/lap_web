@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
 import { trackEvent } from '@/hooks/useTrackEvent';
 import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
 import { ScoreRadarChart } from '@/components/app/compare/ScoreRadarChart';
+import { ReferenceOverlayProvider, useReferenceOverlay } from '@/components/app/reference';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -211,6 +212,26 @@ function ScoreCompareCard({
       </div>
     </div>
   );
+}
+
+// ── Compare Auto Reference ──────────────────────────────────────
+
+function CompareAutoReference({
+  sessionBId,
+  lapB,
+  children,
+}: {
+  sessionBId: string;
+  lapB: number;
+  children: ReactNode;
+}) {
+  const { setReference, referenceSession } = useReferenceOverlay();
+  useEffect(() => {
+    if (sessionBId && lapB && referenceSession !== sessionBId) {
+      setReference(sessionBId, lapB);
+    }
+  }, [sessionBId, lapB, setReference, referenceSession]);
+  return <>{children}</>;
 }
 
 // ── Main Page ───────────────────────────────────────────────────
@@ -631,8 +652,25 @@ export default function CompareSessionsPage() {
             );
           })()}
 
-          {/* ── Chart Panel (Speed / GPS / Sectors / Corners) ── */}
-          <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+          {/* ── Chart Panel (Speed / GPS / Sectors / Corners / GG) ── */}
+          {(() => {
+            const primaryLap = comparison.session_a.laps.find((l) => l.is_best)?.lap_number ?? null;
+            const lapB = comparison.session_b.laps.find((l) => l.is_best)?.lap_number ?? null;
+            return (
+              <ReferenceOverlayProvider
+                sessionId={sessionAId}
+                primaryLap={primaryLap}
+              >
+                {lapB != null ? (
+                  <CompareAutoReference sessionBId={sessionBId} lapB={lapB}>
+                    <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+                  </CompareAutoReference>
+                ) : (
+                  <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+                )}
+              </ReferenceOverlayProvider>
+            );
+          })()}
 
           {/* ── Lap-by-Lap Comparison ────────────────────────── */}
           <div>

@@ -5,14 +5,16 @@ import SpeedOverlayPanel from './SpeedOverlayPanel';
 import GpsOverlayPanel from './GpsOverlayPanel';
 import SectorDeltaPanel from './SectorDeltaPanel';
 import CornerComparePanel from './CornerComparePanel';
+import { GGExplorer } from '@/components/app/charts';
 
-type ChartMode = 'speed' | 'gps' | 'sectors' | 'corners';
+type ChartMode = 'speed' | 'gps' | 'sectors' | 'corners' | 'gg';
 
 const MODES: { key: ChartMode; label: string; icon: string }[] = [
   { key: 'speed',   label: 'Speed Overlay', icon: '~' },
   { key: 'gps',     label: 'GPS Overlay',   icon: '\u25CE' },
   { key: 'sectors', label: 'Sector Delta',  icon: '\u25A6' },
   { key: 'corners', label: 'Corner Detail', icon: '\u2197' },
+  { key: 'gg',      label: 'G-G Explorer',  icon: '\u25C9' },
 ];
 
 const COLOR_A = '#22C55E';
@@ -84,6 +86,16 @@ export default function CompareChartPanel({
             colorA={COLOR_A}
             colorB={COLOR_B}
           />
+        )}
+        {mode === 'gg' && (
+          <div className="p-4">
+            <GGExplorer
+              sessionId={sessionAId}
+              gpsLaps={[]}
+              bestLap={null}
+              className="w-full"
+            />
+          </div>
         )}
       </div>
     </div>
