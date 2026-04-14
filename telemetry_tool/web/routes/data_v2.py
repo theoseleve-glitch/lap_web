@@ -7542,4 +7542,180 @@ def get_reference_candidates(session_id: str) -> tuple[dict, int]:
     return api_response(candidates)
 
 
+# ── GET /api/v1/sessions/<id>/reference-data ──────────────────────────────────
+
+
+def _cum_delta(dists: list[float], speeds_a: list[float], speeds_b: list[float]) -> list[float]:
+    """Cumulative time delta between two speed traces on a common distance axis.
+
+    Positive values mean session_b is slower than session_a at that point.
+    """
+    delta: list[float] = [0.0]
+    for i in range(1, len(dists)):
+        ds = dists[i] - dists[i - 1]
+        va = speeds_a[i] if speeds_a[i] > 0 else speeds_a[i - 1]
+        vb = speeds_b[i] if speeds_b[i] > 0 else speeds_b[i - 1]
+        ta = ds / va if va > 0 else 0
+        tb = ds / vb if vb > 0 else 0
+        delta.append(round(delta[-1] + (tb - ta), 4))
+    return delta
+
+
+@bp.route("/sessions/<session_id>/reference-data", methods=["GET"])
+@_safe_api
+def get_reference_data(session_id: str) -> tuple[dict, int]:
+    """Return speed, GPS, and GG data for primary + reference lap on a common distance axis."""
+    ref_session_id = request.args.get("ref_session")
+    if not ref_session_id:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "ref_session parameter is required", status=400)
+
+    try:
+        primary_lap = int(request.args.get("primary_lap", 0))
+        ref_lap = int(request.args.get("ref_lap", 0))
+    except (ValueError, TypeError):
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "primary_lap and ref_lap must be integers", status=400)
+
+    conn = get_db_connection()
+
+    # Validate both sessions exist
+    primary_session = models.get_session_by_id(conn, session_id)
+    if primary_session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    ref_session = models.get_session_by_id(conn, ref_session_id)
+    if ref_session is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         f"Reference session {ref_session_id} not found", status=404)
+
+    # Validate both sessions are on the same track
+    primary_track_id = primary_session.get("track_id")
+    ref_track_id = ref_session.get("track_id")
+    if not primary_track_id or not ref_track_id or primary_track_id != ref_track_id:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Sessions must be on the same track for reference overlay",
+            status=400,
+        )
+
+    # Resolve lap numbers (fall back to best/first if 0 or None provided)
+    if not primary_lap:
+        primary_lap = _resolve_lap_number(conn, session_id)
+    if not ref_lap:
+        ref_lap = _resolve_lap_number(conn, ref_session_id)
+
+    if primary_lap is None or ref_lap is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No laps found for one or both sessions", status=404)
+
+    # Fetch GPS traces
+    primary_trace = models.get_gps_trace(conn, session_id, primary_lap)
+    ref_trace = models.get_gps_trace(conn, ref_session_id, ref_lap)
+
+    if primary_trace is None or ref_trace is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "GPS trace not found for one or both sessions", status=404)
+
+    import numpy as np
+
+    dist_a = primary_trace.get("distances", [])
+    spd_a = primary_trace.get("speeds", [])
+    dist_b = ref_trace.get("distances", [])
+    spd_b = ref_trace.get("speeds", [])
+
+    if not dist_a or not spd_a or not dist_b or not spd_b:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "Insufficient trace data for reference overlay", status=404)
+
+    # Normalize to 0-based distances
+    if dist_a[0] != 0:
+        d0 = dist_a[0]
+        dist_a = [d - d0 for d in dist_a]
+    if dist_b[0] != 0:
+        d0 = dist_b[0]
+        dist_b = [d - d0 for d in dist_b]
+
+    # Common distance axis — use shorter lap's range, max 500 points
+    max_dist = min(dist_a[-1], dist_b[-1])
+    if max_dist <= 0:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No valid distance range for reference overlay", status=404)
+
+    n_points = min(500, min(len(dist_a), len(dist_b)))
+    common = np.linspace(0, max_dist, n_points)
+    common_list = common.tolist()
+
+    # Interpolate speed onto common axis
+    interp_spd_a = np.interp(common, dist_a, spd_a).tolist()
+    interp_spd_b = np.interp(common, dist_b, spd_b).tolist()
+
+    # Interpolate GPS onto common axis
+    lat_a = primary_trace.get("latitudes", [])
+    lon_a = primary_trace.get("longitudes", [])
+    lat_b = ref_trace.get("latitudes", [])
+    lon_b = ref_trace.get("longitudes", [])
+
+    interp_lat_a = np.interp(common, dist_a, lat_a).tolist() if lat_a else []
+    interp_lon_a = np.interp(common, dist_a, lon_a).tolist() if lon_a else []
+    interp_lat_b = np.interp(common, dist_b, lat_b).tolist() if lat_b else []
+    interp_lon_b = np.interp(common, dist_b, lon_b).tolist() if lon_b else []
+
+    # Interpolate GG data onto common axis (may be absent)
+    accel_lat_a = primary_trace.get("accel_lat", [])
+    accel_long_a = primary_trace.get("accel_long", [])
+    accel_lat_b = ref_trace.get("accel_lat", [])
+    accel_long_b = ref_trace.get("accel_long", [])
+
+    interp_accel_lat_a = np.interp(common, dist_a, accel_lat_a).tolist() if accel_lat_a else [0.0] * n_points
+    interp_accel_long_a = np.interp(common, dist_a, accel_long_a).tolist() if accel_long_a else [0.0] * n_points
+    interp_accel_lat_b = np.interp(common, dist_b, accel_lat_b).tolist() if accel_lat_b else [0.0] * n_points
+    interp_accel_long_b = np.interp(common, dist_b, accel_long_b).tolist() if accel_long_b else [0.0] * n_points
+
+    # Cumulative time delta (positive = reference is slower)
+    delta_s = _cum_delta(common_list, interp_spd_a, interp_spd_b)
+
+    # Lap times from DB
+    primary_lap_row = conn.execute(
+        "SELECT lap_time_s FROM laps WHERE session_id = :sid AND lap_number = :lap",
+        {"sid": session_id, "lap": primary_lap},
+    ).fetchone()
+    ref_lap_row = conn.execute(
+        "SELECT lap_time_s FROM laps WHERE session_id = :sid AND lap_number = :lap",
+        {"sid": ref_session_id, "lap": ref_lap},
+    ).fetchone()
+
+    primary_lap_time = primary_lap_row["lap_time_s"] if primary_lap_row else None
+    ref_lap_time = ref_lap_row["lap_time_s"] if ref_lap_row else None
+
+    return api_response({
+        "primary": {
+            "session_id": session_id,
+            "lap_number": primary_lap,
+            "lap_time_s": primary_lap_time,
+        },
+        "reference": {
+            "session_id": ref_session_id,
+            "lap_number": ref_lap,
+            "lap_time_s": ref_lap_time,
+            "driver_name": ref_session.get("driver_name"),
+            "session_date": ref_session.get("session_date"),
+        },
+        "distances": common_list,
+        "speed": {
+            "primary": interp_spd_a,
+            "reference": interp_spd_b,
+            "delta_s": delta_s,
+        },
+        "gps": {
+            "primary": {"latitudes": interp_lat_a, "longitudes": interp_lon_a},
+            "reference": {"latitudes": interp_lat_b, "longitudes": interp_lon_b},
+        },
+        "gg": {
+            "primary": {"accel_lat": interp_accel_lat_a, "accel_long": interp_accel_long_a},
+            "reference": {"accel_lat": interp_accel_lat_b, "accel_long": interp_accel_long_b},
+        },
+    })
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
