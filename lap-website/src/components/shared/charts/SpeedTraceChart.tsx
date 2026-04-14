@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
 
 // ── Design tokens ────────────────────────────────────────────────
 const COLORS = {
@@ -130,6 +131,11 @@ interface DrawOptions {
   distRange?: [number, number] | null;
   /** Pixel range of active drag selection [startPx, endPx] */
   dragSelection?: [number, number] | null;
+  /** Cross-session reference overlay data */
+  crossRefDistances?: number[] | null;
+  crossRefSpeeds?: number[] | null;   // m/s
+  crossRefDeltaS?: number[] | null;   // delta_s: positive = ref slower = primary faster
+  crossRefLabel?: string | null;
 }
 
 function drawSpeedTrace(
@@ -200,6 +206,10 @@ function drawSpeedTrace(
   if (opts.ceilingSpeeds && opts.ceilingSpeeds.speeds.length > 0) {
     const ceilMax = safeMax(opts.ceilingSpeeds.speeds) * 1.1;
     if (ceilMax > yMax) yMax = ceilMax;
+  }
+  if (opts.crossRefSpeeds && opts.crossRefSpeeds.length > 0) {
+    const xRefMax = safeMax(opts.crossRefSpeeds) * 3.6 * 1.1;
+    if (xRefMax > yMax) yMax = xRefMax;
   }
   if (yMax <= yMin) yMax = yMin + 1;
 
@@ -427,6 +437,37 @@ function drawSpeedTrace(
     ctx.stroke();
   }
 
+  // Cross-session reference speed line (dashed racing-purple)
+  if (opts.crossRefDistances && opts.crossRefSpeeds && opts.crossRefDistances.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = '#8B5CF6';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    let xRefStarted = false;
+    const xRefDist = opts.crossRefDistances;
+    const xRefSpd = opts.crossRefSpeeds;
+    for (let i = 0; i < Math.min(xRefDist.length, xRefSpd.length); i++) {
+      const d = xRefDist[i]!, rs = xRefSpd[i]!;
+      if (d == null || rs == null || !isFinite(rs)) continue;
+      const x = xToPixel(d);
+      const y = yToPixel(rs * 3.6);
+      if (!xRefStarted) { ctx.moveTo(x, y); xRefStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+    // Legend entry
+    ctx.fillStyle = '#8B5CF6';
+    ctx.globalAlpha = 0.9;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(opts.crossRefLabel ? `- - ${opts.crossRefLabel}` : '- - Ref Session', pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
+
   // End plot-area clip
   ctx.restore();
 
@@ -482,6 +523,54 @@ function drawSpeedTrace(
       ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(left, pad.top, right - left, pH);
+    }
+  }
+
+  // ── Cross-session delta bar ───────────────────────────────
+  if (opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1) {
+    const barH = 10;
+    const barY = pad.top + pH - barH; // sits at the very bottom of the plot area
+    const xRefDist = opts.crossRefDistances;
+    const deltaS = opts.crossRefDeltaS;
+    ctx.save();
+    for (let i = 0; i < Math.min(xRefDist.length, deltaS.length) - 1; i++) {
+      const d0 = xRefDist[i]!, d1 = xRefDist[i + 1]!;
+      const dv = deltaS[i]!;
+      if (d0 == null || d1 == null || dv == null) continue;
+      const x0 = xToPixel(d0);
+      const x1 = xToPixel(d1);
+      if (x1 < pad.left || x0 > pad.left + pW) continue;
+      // delta_s > 0 means ref is slower → primary is faster → green
+      ctx.fillStyle = dv > 0 ? 'rgba(34,197,94,0.3)' : 'rgba(255,42,42,0.3)';
+      ctx.fillRect(Math.max(pad.left, x0), barY, Math.min(x1, pad.left + pW) - Math.max(pad.left, x0), barH);
+    }
+    ctx.restore();
+  }
+
+  // ── Cross-session hover marker ────────────────────────────
+  if (
+    hoverDistanceM !== null &&
+    hoverDistanceM >= xMin &&
+    hoverDistanceM <= xMax &&
+    opts.crossRefDistances &&
+    opts.crossRefSpeeds &&
+    opts.crossRefDistances.length > 0
+  ) {
+    const xRefIdx = closestIndex(opts.crossRefDistances, hoverDistanceM);
+    if (xRefIdx >= 0 && xRefIdx < opts.crossRefSpeeds.length) {
+      const rs = opts.crossRefSpeeds[xRefIdx];
+      if (rs != null && isFinite(rs)) {
+        const hx = xToPixel(hoverDistanceM);
+        const hy = yToPixel(rs * 3.6);
+        ctx.save();
+        ctx.strokeStyle = '#8B5CF6';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 
@@ -713,6 +802,8 @@ export function SpeedTraceChart({
   const setHover = useChartHoverStore((s) => s.setHover);
   const clearHover = useChartHoverStore((s) => s.clearHover);
 
+  const { referenceData } = useReferenceOverlay();
+
   // Sync selectedLap when controlled externally (e.g. Focus Mode unified selector)
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -875,6 +966,11 @@ export function SpeedTraceChart({
     const speedH = hasDelta ? Math.round(rect.height * 0.65) : rect.height;
     const deltaH = hasDelta ? rect.height - speedH : 0;
 
+    // Build cross-session reference label
+    const crossRefLabel = referenceData
+      ? `${referenceData.reference.driver_name} L${referenceData.reference.lap_number}`
+      : null;
+
     boundsRef.current = drawSpeedTrace(ctx, rect.width, speedH, {
       distances: chartData.distances,
       speeds: chartData.speeds,
@@ -887,6 +983,10 @@ export function SpeedTraceChart({
       primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
       distRange,
       dragSelection,
+      crossRefDistances: referenceData?.distances ?? null,
+      crossRefSpeeds: referenceData?.speed.reference ?? null,
+      crossRefDeltaS: referenceData?.speed.delta_s ?? null,
+      crossRefLabel,
     });
 
     if (hasDelta && deltaSeconds) {
@@ -896,7 +996,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData]);
 
   useEffect(() => {
     render();
