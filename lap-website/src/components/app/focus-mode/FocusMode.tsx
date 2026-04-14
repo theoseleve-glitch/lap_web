@@ -17,6 +17,7 @@ import { SplitPane } from './SplitPane';
 import { ToolDock, useToolDock, type ToolId } from './ToolDock';
 import { CornerNavBar } from './CornerNavBar';
 import { useFocusModeStore } from '@/stores/focus-mode-store';
+import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
 
 interface FocusModeProps {
   sessionId: string;
@@ -452,21 +453,24 @@ export function FocusMode({
         </div>
       </div>
 
-      {/* Main workspace: ToolDock + content */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <ToolDock
-          activeTools={toolState}
-          onToggle={toggle}
-          onReset={() => {
-            reset();
-            store.resetLayout(activeTab);
-          }}
-          dockVisible={store.dockVisible}
-        />
-        <div className="flex-1 min-h-0 overflow-hidden">
-          {mainContent}
+      {/* Main workspace: ToolDock + content + ReferenceOverlay */}
+      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={activeLap}>
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          <ToolDock
+            activeTools={toolState}
+            onToggle={toggle}
+            onReset={() => {
+              reset();
+              store.resetLayout(activeTab);
+            }}
+            dockVisible={store.dockVisible}
+          />
+          <div className="flex-1 min-h-0 overflow-hidden relative">
+            {mainContent}
+            <ReferenceFAB sessionId={sessionId} />
+          </div>
         </div>
-      </div>
+      </ReferenceOverlayProvider>
     </div>
   );
 }

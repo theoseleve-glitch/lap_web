@@ -7,6 +7,7 @@ import { api, BACKEND_URL } from '@/lib/api-client';
 import { SpeedTraceZoom, GpsTrace, GGExplorer } from '@/components/app/charts';
 import { ChartErrorBoundary } from '@/components/shared/ChartErrorBoundary';
 import { FullscreenToggle } from '@/components/shared/charts/FullscreenToggle';
+import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -211,68 +212,72 @@ export default function VisualizeSessionPage() {
       </div>
 
       {/* Main content — 3-panel VRS-style layout */}
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        {/* GPS Map — left, full height */}
-        <div className="flex-1 min-w-0 min-h-0 relative border-r border-steel/10">
-          <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
-            track map
-          </span>
-          <FullscreenToggle className="h-full w-full overflow-hidden" label="GPS Track Map fullscreen">
-            <ChartErrorBoundary chartName="GpsTrace">
-              <GpsTrace
-                sessionId={sessionId}
-                apiBase={apiBase}
-                gpsLaps={[]}
-                bestLap={primaryLap}
-                compareLap={compareLap}
-                className="w-full h-full"
-              />
-            </ChartErrorBoundary>
-          </FullscreenToggle>
-        </div>
-
-        {/* Right panels — Speed Trace + GG Diagram, stacked */}
-        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-          {/* Speed Trace — top right */}
-          <div className="flex-1 min-h-0 relative border-b border-steel/10">
+      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={primaryLap}>
+        <div className="flex flex-1 min-h-0 overflow-hidden relative">
+          {/* GPS Map — left, full height */}
+          <div className="flex-1 min-w-0 min-h-0 relative border-r border-steel/10">
             <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
-              speed trace
+              track map
             </span>
-            <FullscreenToggle className="h-full w-full overflow-hidden" label="Speed Trace fullscreen">
-              <ChartErrorBoundary chartName="SpeedTrace">
-                <SpeedTraceZoom
+            <FullscreenToggle className="h-full w-full overflow-hidden" label="GPS Track Map fullscreen">
+              <ChartErrorBoundary chartName="GpsTrace">
+                <GpsTrace
                   sessionId={sessionId}
                   apiBase={apiBase}
                   gpsLaps={[]}
                   bestLap={primaryLap}
                   compareLap={compareLap}
-                  primaryLapTime={primaryLapTime}
-                  compareLapTime={compareLapTime}
                   className="w-full h-full"
                 />
               </ChartErrorBoundary>
             </FullscreenToggle>
           </div>
 
-          {/* GG Diagram — bottom right */}
-          <div className="flex-1 min-h-0 relative">
-            <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
-              g-g diagram
-            </span>
-            <FullscreenToggle className="h-full w-full overflow-hidden" label="G-G Diagram fullscreen">
-              <ChartErrorBoundary chartName="GGExplorer">
-                <GGExplorer
-                  sessionId={sessionId}
-                  apiBase={apiBase}
-                  gpsLaps={[]}
-                  bestLap={primaryLap}
-                  className="w-full h-full"
-                />
-              </ChartErrorBoundary>
-            </FullscreenToggle>
+          {/* Right panels — Speed Trace + GG Diagram, stacked */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            {/* Speed Trace — top right */}
+            <div className="flex-1 min-h-0 relative border-b border-steel/10">
+              <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+                speed trace
+              </span>
+              <FullscreenToggle className="h-full w-full overflow-hidden" label="Speed Trace fullscreen">
+                <ChartErrorBoundary chartName="SpeedTrace">
+                  <SpeedTraceZoom
+                    sessionId={sessionId}
+                    apiBase={apiBase}
+                    gpsLaps={[]}
+                    bestLap={primaryLap}
+                    compareLap={compareLap}
+                    primaryLapTime={primaryLapTime}
+                    compareLapTime={compareLapTime}
+                    className="w-full h-full"
+                  />
+                </ChartErrorBoundary>
+              </FullscreenToggle>
+            </div>
+
+            {/* GG Diagram — bottom right */}
+            <div className="flex-1 min-h-0 relative">
+              <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
+                g-g diagram
+              </span>
+              <FullscreenToggle className="h-full w-full overflow-hidden" label="G-G Diagram fullscreen">
+                <ChartErrorBoundary chartName="GGExplorer">
+                  <GGExplorer
+                    sessionId={sessionId}
+                    apiBase={apiBase}
+                    gpsLaps={[]}
+                    bestLap={primaryLap}
+                    className="w-full h-full"
+                  />
+                </ChartErrorBoundary>
+              </FullscreenToggle>
+            </div>
           </div>
+
+          <ReferenceFAB sessionId={sessionId} />
         </div>
-      </div>
+      </ReferenceOverlayProvider>
 
       {/* Lap selector bar — bottom, collapsible */}
       {sidebarOpen && (
