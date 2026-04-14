@@ -7494,4 +7494,52 @@ def get_reveal(session_id: str) -> tuple[dict, int]:
     return api_response(payload)
 
 
+# ── GET /api/v1/sessions/<id>/reference-candidates ────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/reference-candidates", methods=["GET"])
+@_safe_api
+def get_reference_candidates(session_id: str) -> tuple[dict, int]:
+    """Return sessions on the same track for the reference picker."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_name = session.get("track_name")
+    if not track_name:
+        return api_response([])
+
+    try:
+        limit = max(1, min(int(request.args.get("limit", 20)), 50))
+    except (ValueError, TypeError):
+        limit = 20
+
+    rows = conn.execute(
+        """SELECT s.session_id, d.driver_name, s.session_date,
+                  s.best_lap_time_s, s.n_laps, s.session_type
+           FROM sessions s
+           LEFT JOIN drivers d ON s.driver_id = d.driver_id
+           LEFT JOIN tracks t ON s.track_id = t.track_id
+           WHERE t.track_name = :track AND s.session_id != :sid
+                 AND s.deleted_at IS NULL
+           ORDER BY s.session_date DESC
+           LIMIT :lim""",
+        {"track": track_name, "sid": session_id, "lim": limit},
+    ).fetchall()
+
+    candidates = [
+        {
+            "session_id": r["session_id"],
+            "driver_name": r["driver_name"],
+            "session_date": r["session_date"],
+            "best_lap_time_s": r["best_lap_time_s"],
+            "n_laps": r["n_laps"],
+            "session_type": r["session_type"],
+        }
+        for r in rows
+    ]
+    return api_response(candidates)
+
+
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).
