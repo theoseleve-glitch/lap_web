@@ -10,9 +10,10 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -53,10 +54,18 @@ function densityColor(t: number): string {
 
 const PAD = { top: 30, right: 20, bottom: 45, left: 55 };
 
+interface CrossRefGG {
+  accel_lat: number[];
+  accel_long: number[];
+  distances: number[];
+}
+
 function drawGG(
   canvas: HTMLCanvasElement,
   ggData: GGData,
   hoverIdx: number | null,
+  crossRefGG?: CrossRefGG | null,
+  crossRefHoverIdx?: number | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -137,6 +146,29 @@ function drawGG(
     ctx.setLineDash([]);
   }
 
+  // Reference scatter (drawn BEFORE density so it appears behind primary dots)
+  if (crossRefGG && crossRefGG.accel_lat.length > 0) {
+    ctx.save();
+    ctx.strokeStyle = '#8B5CF6';
+    ctx.lineWidth = 1 * dpr;
+    ctx.globalAlpha = 0.4;
+    const refLat = crossRefGG.accel_lat;
+    const refLong = crossRefGG.accel_long;
+    for (let i = 0; i < refLat.length; i++) {
+      if (refLat[i] == null || refLong[i] == null) continue;
+      if (!isFinite(refLat[i]) || !isFinite(refLong[i])) continue;
+      const rpx = xToPixel(refLat[i]);
+      const rpy = yToPixel(refLong[i]);
+      if (rpx < PAD.left || rpx > PAD.left + pW) continue;
+      if (rpy < PAD.top || rpy > PAD.top + pH) continue;
+      ctx.beginPath();
+      ctx.arc(rpx, rpy, 3 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  }
+
   // Density scatter
   const GRID_SIZE = 35;
   const grid: Record<string, number> = {};
@@ -207,6 +239,29 @@ function drawGG(
     }
   }
 
+  // Reference hover marker
+  if (
+    crossRefGG &&
+    crossRefHoverIdx != null &&
+    crossRefHoverIdx >= 0 &&
+    crossRefHoverIdx < crossRefGG.accel_lat.length
+  ) {
+    const rLat = crossRefGG.accel_lat[crossRefHoverIdx];
+    const rLong = crossRefGG.accel_long[crossRefHoverIdx];
+    if (isFinite(rLat) && isFinite(rLong)) {
+      const rhx = xToPixel(rLat);
+      const rhy = yToPixel(rLong);
+      ctx.save();
+      ctx.strokeStyle = '#8B5CF6';
+      ctx.lineWidth = 2 * dpr;
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.arc(rhx, rhy, 6 * dpr, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
   ctx.restore(); // end clip
 
   // Axis tick labels
@@ -265,6 +320,17 @@ export function GGExplorer({
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
+  // Reference overlay
+  const { referenceData } = useReferenceOverlay();
+  const crossRefGG = useMemo<CrossRefGG | null>(() => {
+    if (!referenceData?.gg?.reference?.accel_lat?.length) return null;
+    return {
+      accel_lat: referenceData.gg.reference.accel_lat,
+      accel_long: referenceData.gg.reference.accel_long,
+      distances: referenceData.distances,
+    };
+  }, [referenceData]);
+
   // Sync when parent controls the lap (Focus Mode)
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -310,16 +376,32 @@ export function GGExplorer({
     return () => { cancelled = true; };
   }, [sessionId, preFetchedData, activeLap]);
 
+  // Derive reference hover index from hovered distance via primary distances
+  const crossRefHoverIdx = useMemo<number | null>(() => {
+    if (!crossRefGG || hoverIdx == null || !ggData?.distances) return null;
+    const primaryDist = ggData.distances[hoverIdx];
+    if (primaryDist == null) return null;
+    const refDists = crossRefGG.distances;
+    if (!refDists || refDists.length === 0) return null;
+    let lo = 0, hi = refDists.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (refDists[mid] < primaryDist) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }, [crossRefGG, hoverIdx, ggData]);
+
   // ── Draw on canvas ──────────────────────────────────────
   useEffect(() => {
     if (!ggData || !canvasRef.current) return;
-    drawGG(canvasRef.current, ggData, hoverIdx);
-  }, [ggData, hoverIdx]);
+    drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx);
+  }, [ggData, hoverIdx, crossRefGG, crossRefHoverIdx]);
 
   // Stable draw ref for ResizeObserver — avoids re-attaching on every hover
   const drawRef = useRef<() => void>(() => {});
   drawRef.current = () => {
-    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx);
+    if (ggData && canvasRef.current) drawGG(canvasRef.current, ggData, hoverIdx, crossRefGG, crossRefHoverIdx);
   };
 
   // Redraw on resize — attached once per data change, not per hover
@@ -329,7 +411,7 @@ export function GGExplorer({
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, [ggData]);
+  }, [ggData, crossRefGG]);
 
   // ── Hover handling ──────────────────────────────────────
   const handleCanvasMove = useCallback(
