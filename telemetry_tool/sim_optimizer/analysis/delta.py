@@ -106,14 +106,21 @@ def compute_lap_delta(
     # 4. Speed delta
     speed_delta = theo_speed - act_speed
 
-    # 5. Cumulative time delta
-    ds = np.diff(common_d)
-    v_act_mid = np.maximum(0.5 * (act_speed[:-1] + act_speed[1:]), _MIN_SPEED_MPS)
-    v_theo_mid = np.maximum(0.5 * (theo_speed[:-1] + theo_speed[1:]), _MIN_SPEED_MPS)
-
-    dt_act = ds / v_act_mid
-    dt_theo = ds / v_theo_mid
-    cum_delta = np.concatenate(([0.0], np.cumsum(dt_act - dt_theo)))
+    # 5. Cumulative time delta — canonical engine.
+    #    Sign convention: positive = actual slower than theoretical = time lost.
+    #    (A = theoretical reference, B = actual driver.) Trapezoidal, NaN-safe,
+    #    no hard speed floor — the old _MIN_SPEED_MPS clamp fabricated motion
+    #    in genuine low-speed regions and is no longer needed.
+    from telemetry_tool.deltas import cumulative_delta
+    _delta = cumulative_delta(
+        progress_a=common_d,
+        speed_a=theo_speed,
+        progress_b=common_d,
+        speed_b=act_speed,
+        n_grid=len(common_d),
+        anchor_to_official=False,
+    )
+    cum_delta = _delta.delta_s
 
     # 6. Input deltas
     throttle_delta = theo_throttle - act_throttle

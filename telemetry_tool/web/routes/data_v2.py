@@ -3100,24 +3100,10 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "message": "GPS trace not found for one or both laps",
         })
 
-    def _cumulative_time(distances: list[float], speeds: list[float]) -> list[float]:
-        """Build cumulative time array using trapezoidal integration."""
-        t = [0.0]
-        for i in range(1, len(distances)):
-            ds = distances[i] - distances[i - 1]
-            v0 = speeds[i - 1] if speeds[i - 1] and speeds[i - 1] > 0 else 0
-            v1 = speeds[i] if speeds[i] and speeds[i] > 0 else 0
-            v_avg = (v0 + v1) / 2 if (v0 + v1) > 0 else 0
-            if v_avg > 0:
-                t.append(t[-1] + ds / v_avg)
-            else:
-                t.append(t[-1])
-        return t
-
     dist_a = trace_a.get("distances", [])
-    spd_a = trace_a.get("speeds", [])
+    spd_a  = trace_a.get("speeds", [])
     dist_b = trace_b.get("distances", [])
-    spd_b = trace_b.get("speeds", [])
+    spd_b  = trace_b.get("speeds", [])
 
     if not dist_a or not spd_a or not dist_b or not spd_b:
         return api_response({
@@ -3125,45 +3111,33 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "message": "Insufficient trace data for delta computation",
         })
 
-    # Normalize per-lap distances to 0-based (stored as session-cumulative)
-    if dist_a and dist_a[0] != 0:
-        _off = dist_a[0]
-        dist_a = [d - _off for d in dist_a]
-    if dist_b and dist_b[0] != 0:
-        _off = dist_b[0]
-        dist_b = [d - _off for d in dist_b]
+    # Canonical engine — trapezoidal, NaN-safe, no forward-fill. When both
+    # official lap times are known we anchor the cumulative curves so the
+    # final delta equals the true lap-time difference.
+    from telemetry_tool.deltas import cumulative_delta
+    result = cumulative_delta(
+        progress_a=dist_a,
+        speed_a=spd_a,
+        progress_b=dist_b,
+        speed_b=spd_b,
+        lap_time_a_s=real_time_a,
+        lap_time_b_s=real_time_b,
+        n_grid=min(500, len(dist_a)),
+        anchor_to_official=True,
+    )
 
-    time_a = _cumulative_time(dist_a, spd_a)
-    time_b = _cumulative_time(dist_b, spd_b)
-
-    # Scale cumulative times to match actual lap times so the final
-    # delta equals the true lap-time difference.
-    if real_time_a and time_a[-1] > 0:
-        scale_a = real_time_a / time_a[-1]
-        time_a = [t * scale_a for t in time_a]
-    if real_time_b and time_b[-1] > 0:
-        scale_b = real_time_b / time_b[-1]
-        time_b = [t * scale_b for t in time_b]
-
-    # Interpolate to common distance axis (use shorter lap)
-    import numpy as np
-    max_dist = min(dist_a[-1] if dist_a else 0, dist_b[-1] if dist_b else 0)
-    if max_dist <= 0:
+    if result.progress_m.size == 0:
         return api_response({
             "available": False, "reason_code": "no_valid_distance",
             "message": "No valid distance range for delta",
         })
 
-    common_dist = np.linspace(0, max_dist, min(500, len(dist_a)))
-    interp_a = np.interp(common_dist, dist_a, time_a)
-    interp_b = np.interp(common_dist, dist_b, time_b)
-    delta = (interp_b - interp_a).tolist()
-
     return api_response({
-        "distances": common_dist.tolist(),
-        "delta_s": delta,
-        "lap_a": lap_a,
-        "lap_b": lap_b,
+        "distances": result.progress_m.tolist(),
+        "delta_s":   result.delta_s.tolist(),
+        "lap_a":     lap_a,
+        "lap_b":     lap_b,
+        "anchored":  result.anchored,
     })
 
 
@@ -7549,22 +7523,6 @@ def get_reference_candidates(session_id: str) -> tuple[dict, int]:
 # ── GET /api/v1/sessions/<id>/reference-data ──────────────────────────────────
 
 
-def _cum_delta(dists: list[float], speeds_a: list[float], speeds_b: list[float]) -> list[float]:
-    """Cumulative time delta between two speed traces on a common distance axis.
-
-    Positive values mean session_b is slower than session_a at that point.
-    """
-    delta: list[float] = [0.0]
-    for i in range(1, len(dists)):
-        ds = dists[i] - dists[i - 1]
-        va = speeds_a[i] if speeds_a[i] > 0 else speeds_a[i - 1]
-        vb = speeds_b[i] if speeds_b[i] > 0 else speeds_b[i - 1]
-        ta = ds / va if va > 0 else 0
-        tb = ds / vb if vb > 0 else 0
-        delta.append(round(delta[-1] + (tb - ta), 4))
-    return delta
-
-
 @bp.route("/sessions/<session_id>/reference-data", methods=["GET"])
 @_safe_api
 def get_reference_data(session_id: str) -> tuple[dict, int]:
@@ -7676,10 +7634,7 @@ def get_reference_data(session_id: str) -> tuple[dict, int]:
     interp_accel_lat_b = np.interp(common, dist_b, accel_lat_b).tolist() if accel_lat_b else [0.0] * n_points
     interp_accel_long_b = np.interp(common, dist_b, accel_long_b).tolist() if accel_long_b else [0.0] * n_points
 
-    # Cumulative time delta (positive = reference is slower)
-    delta_s = _cum_delta(common_list, interp_spd_a, interp_spd_b)
-
-    # Lap times from DB
+    # Lap times from DB (needed before delta so we can anchor to official).
     primary_lap_row = conn.execute(
         "SELECT lap_time_s FROM laps WHERE session_id = :sid AND lap_number = :lap",
         {"sid": session_id, "lap": primary_lap},
@@ -7691,6 +7646,21 @@ def get_reference_data(session_id: str) -> tuple[dict, int]:
 
     primary_lap_time = primary_lap_row["lap_time_s"] if primary_lap_row else None
     ref_lap_time = ref_lap_row["lap_time_s"] if ref_lap_row else None
+
+    # Canonical cumulative delta — trapezoidal, NaN-safe, no forward-fill.
+    # Anchored to the official lap-time difference when both times are known.
+    from telemetry_tool.deltas import cumulative_delta
+    delta_result = cumulative_delta(
+        progress_a=dist_a,
+        speed_a=spd_a,
+        progress_b=dist_b,
+        speed_b=spd_b,
+        lap_time_a_s=primary_lap_time,
+        lap_time_b_s=ref_lap_time,
+        n_grid=n_points,
+        anchor_to_official=True,
+    )
+    delta_s = delta_result.delta_s.tolist()
 
     return api_response({
         "primary": {

@@ -99,28 +99,35 @@ def compute_line_delta(
     -------
     LineDelta with per-metre comparison.
     """
-    # Project actual positions
+    # Project actual positions to Frenet frame along the optimal line.
     x = actual_df["x_m"].to_numpy()
     y = actual_df["y_m"].to_numpy()
     actual_s, actual_n = frenet.xy_to_sn(x, y)
     actual_speed = actual_df["speed_mps"].to_numpy()
 
-    # Resample actual to the optimal distance grid
+    # Resample the actual trajectory onto the optimal s-grid.
     actual_n_resampled = np.interp(optimal_distance_m, actual_s, actual_n)
     actual_speed_resampled = np.interp(optimal_distance_m, actual_s, actual_speed)
 
     delta_n = actual_n_resampled - optimal_lateral_m
     delta_speed = actual_speed_resampled - optimal_speed_mps
 
-    # Compute cumulative time delta
-    ds = np.diff(optimal_distance_m, prepend=0)
-    ds[0] = ds[1] if len(ds) > 1 else 1.0
-
-    # Time = ds / v, delta_t = ds/v_actual - ds/v_optimal
-    v_actual_safe = np.maximum(actual_speed_resampled, 1.0)
-    v_optimal_safe = np.maximum(optimal_speed_mps, 1.0)
-    dt = ds / v_actual_safe - ds / v_optimal_safe
-    cumulative = np.cumsum(dt)
+    # Canonical cumulative-delta engine: trapezoidal, NaN-safe, no forward-
+    # fill. Sign convention: positive delta ⇒ B (actual) slower than A
+    # (optimal) — which matches "time lost" for this comparison.
+    from telemetry_tool.deltas import cumulative_delta
+    result = cumulative_delta(
+        progress_a=optimal_distance_m,
+        speed_a=optimal_speed_mps,
+        progress_b=optimal_distance_m,          # resampled onto same grid
+        speed_b=actual_speed_resampled,
+        n_grid=len(optimal_distance_m),
+        anchor_to_official=False,
+    )
+    # The canonical function returns its own 0-based grid (same length as
+    # optimal_distance_m since we passed the same grid spacing). Use the
+    # optimal grid for the LineDelta fields.
+    cumulative = result.delta_s
 
     return LineDelta(
         distance_m=optimal_distance_m,
