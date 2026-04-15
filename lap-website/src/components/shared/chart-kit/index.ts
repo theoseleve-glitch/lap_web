@@ -71,3 +71,4 @@ export {
   type ChartEmptyStateProps,
   type ChartErrorStateProps,
 } from './shell/ChartStates';
+export { SectionHeader, type SectionHeaderProps } from './shell/SectionHeader';
