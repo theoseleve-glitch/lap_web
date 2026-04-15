@@ -396,6 +396,7 @@ export function FocusMode({
   }
 
   return (
+    <ReferenceOverlayProvider sessionId={sessionId} primaryLap={activeLap}>
     <div
       className="fixed inset-0 z-50 bg-asphalt flex flex-col overflow-hidden"
       role="dialog"
@@ -415,6 +416,7 @@ export function FocusMode({
           </div>
         </div>
         <div className="flex items-center gap-3">
+          <ReferenceFAB sessionId={sessionId} />
           {distRange && (
             <button
               type="button"
@@ -453,24 +455,22 @@ export function FocusMode({
         </div>
       </div>
 
-      {/* Main workspace: ToolDock + content + ReferenceOverlay */}
-      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={activeLap}>
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-          <ToolDock
-            activeTools={toolState}
-            onToggle={toggle}
-            onReset={() => {
-              reset();
-              store.resetLayout(activeTab);
-            }}
-            dockVisible={store.dockVisible}
-          />
-          <div className="flex-1 min-h-0 overflow-hidden relative">
-            {mainContent}
-            <ReferenceFAB sessionId={sessionId} />
-          </div>
+      {/* Main workspace: ToolDock + content */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <ToolDock
+          activeTools={toolState}
+          onToggle={toggle}
+          onReset={() => {
+            reset();
+            store.resetLayout(activeTab);
+          }}
+          dockVisible={store.dockVisible}
+        />
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {mainContent}
         </div>
-      </ReferenceOverlayProvider>
+      </div>
     </div>
+    </ReferenceOverlayProvider>
   );
 }

@@ -80,13 +80,13 @@ export function AnalyticsTab({
   return (
     <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
     <div className="space-y-6">
-      {/* Chart color theme selector */}
-      <div className="flex justify-end">
+      {/* Header row: reference picker + theme selector */}
+      <div className="flex justify-end items-center gap-3">
+        <ReferenceFAB sessionId={sessionId} />
         <ChartThemePicker />
       </div>
       {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
-        <ReferenceFAB sessionId={sessionId} />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1">
           <div className="bg-concrete rounded-xl border border-steel/10 p-4 h-full flex flex-col">
             <div className="flex items-center gap-2 mb-3 shrink-0">

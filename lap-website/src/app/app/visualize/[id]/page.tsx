@@ -161,6 +161,7 @@ export default function VisualizeSessionPage() {
   // ── Full-screen layout ─────────────────────────────────────────
 
   return (
+    <ReferenceOverlayProvider sessionId={sessionId} primaryLap={primaryLap}>
     <div className="fixed inset-0 z-50 flex flex-col bg-[#0f1117] overflow-hidden">
       {/* Top bar — minimal chrome */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-steel/10 bg-concrete shrink-0">
@@ -201,6 +202,7 @@ export default function VisualizeSessionPage() {
               Best: {formatLapTime(session.best_lap_time_s)}
             </span>
           )}
+          <ReferenceFAB sessionId={sessionId} />
           <button
             type="button"
             onClick={toggleSidebar}
@@ -212,8 +214,7 @@ export default function VisualizeSessionPage() {
       </div>
 
       {/* Main content — 3-panel VRS-style layout */}
-      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={primaryLap}>
-        <div className="flex flex-1 min-h-0 overflow-hidden relative">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* GPS Map — left, full height */}
           <div className="flex-1 min-w-0 min-h-0 relative border-r border-steel/10">
             <span className="absolute top-1 left-2 z-10 text-[9px] font-monument text-steel/40 uppercase tracking-wider pointer-events-none">
@@ -275,9 +276,7 @@ export default function VisualizeSessionPage() {
             </div>
           </div>
 
-          <ReferenceFAB sessionId={sessionId} />
         </div>
-      </ReferenceOverlayProvider>
 
       {/* Lap selector bar — bottom, collapsible */}
       {sidebarOpen && (
@@ -326,5 +325,6 @@ export default function VisualizeSessionPage() {
         </div>
       )}
     </div>
+    </ReferenceOverlayProvider>
   );
 }

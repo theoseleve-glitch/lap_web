@@ -84,7 +84,7 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
       ? new Date(ref.session_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
       : '';
     return (
-      <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-concrete border border-racing-purple/50 rounded-lg px-3 py-1.5 font-telemetry text-xs shadow-lg">
+      <div className="inline-flex items-center gap-2 bg-concrete border border-racing-purple/50 rounded-lg px-3 py-1.5 font-telemetry text-xs">
         {isLoading && (
           <span className="animate-spin w-3 h-3 border border-racing-purple border-t-transparent rounded-full" />
         )}
@@ -104,11 +104,11 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
   }
 
   return (
-    <div className="absolute top-3 right-3 z-20" ref={modalRef}>
+    <div className="relative inline-block" ref={modalRef}>
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 bg-racing-purple/15 border border-racing-purple/50 text-racing-purple hover:bg-racing-purple/25 hover:border-racing-purple rounded-lg px-3 py-1.5 text-xs font-telemetry transition-colors shadow-lg"
+          className="inline-flex items-center gap-1.5 bg-racing-purple/15 border border-racing-purple/50 text-racing-purple hover:bg-racing-purple/25 hover:border-racing-purple rounded-lg px-3 py-1.5 text-xs font-telemetry transition-colors"
           aria-label="Compare with a lap from another session"
           title="Overlay a lap from another session on these charts"
         >
@@ -118,7 +118,7 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
       )}
 
       {open && (
-        <div className="absolute top-10 right-0 w-80 bg-concrete border border-steel/20 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute top-10 right-0 w-80 bg-concrete border border-steel/20 rounded-xl shadow-2xl overflow-hidden z-30">
           <div className="flex items-center justify-between px-3 py-2 border-b border-steel/10">
             <div>
               <div className="text-xs font-monument text-chalk">Compare with another session</div>
