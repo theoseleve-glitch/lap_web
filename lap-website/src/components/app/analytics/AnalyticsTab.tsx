@@ -184,9 +184,9 @@ export function AnalyticsTab({
             description="What happened in your fastest lap — speed, line, and grip usage."
           />
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Track map — tall left column (1/3 width) */}
-            <div className="lg:col-span-1 lg:row-span-2">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            {/* Track map — left column (1/3 width), natural height */}
+            <div className="lg:col-span-1">
               <ChartCard>
                 <ChartHeader
                   title="Track Map"
@@ -199,7 +199,8 @@ export function AnalyticsTab({
                   }
                 />
                 <div
-                  className="chart-enter flex-1 min-h-[380px] lg:min-h-0 w-full"
+                  className="chart-enter w-full"
+                  style={{ height: 420 }}
                   role="img"
                   aria-label="GPS track map showing the racing line"
                 >
@@ -217,8 +218,8 @@ export function AnalyticsTab({
               </ChartCard>
             </div>
 
-            {/* Speed trace — hero (top right, 2/3 width, primary tone) */}
-            <div className="lg:col-span-2">
+            {/* Speed trace + GG stacked, 2/3 width */}
+            <div className="lg:col-span-2 flex flex-col gap-5">
               <ChartCard tone="primary">
                 <ChartHeader
                   title="Speed Trace"
@@ -246,10 +247,7 @@ export function AnalyticsTab({
                   />
                 </div>
               </ChartCard>
-            </div>
 
-            {/* G-G diagram — bottom right, 2/3 width */}
-            <div className="lg:col-span-2">
               <ChartCard>
                 <ChartHeader
                   title="G-G Diagram"

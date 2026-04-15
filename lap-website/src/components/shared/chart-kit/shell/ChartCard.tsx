@@ -52,7 +52,7 @@ export function ChartCard({
     <section
       id={id}
       aria-label={ariaLabel}
-      className={`relative bg-concrete border ${TONE_BORDER[tone]} rounded-xl ${DENSITY_PADDING[density]} flex flex-col h-full w-full`}
+      className={`relative bg-concrete border ${TONE_BORDER[tone]} rounded-xl ${DENSITY_PADDING[density]} flex flex-col`}
       style={fixedHeight != null ? { height: fixedHeight } : undefined}
       data-density={density}
     >
