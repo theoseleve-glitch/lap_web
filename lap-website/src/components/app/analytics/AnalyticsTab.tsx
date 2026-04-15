@@ -14,8 +14,8 @@
  * No more bare bg-concrete wrappers, no more inconsistent titles.
  */
 
-import { useEffect, useState } from 'react';
-import { BACKEND_URL } from '@/lib/api-client';
+import { useEffect, useMemo, useState } from 'react';
+import { api, BACKEND_URL } from '@/lib/api-client';
 import {
   ChartCard,
   ChartHeader,
@@ -137,6 +137,31 @@ export function AnalyticsTab({
     }
   }, [bestLap, primaryLap]);
 
+  // Fetch lap metadata once so we can pass official lap times into charts
+  // that need anchored deltas (e.g. SpeedTrace's embedded delta panel).
+  interface LapMeta { lap_number: number; lap_time_s: number | null; is_best: number; is_valid: number; }
+  const [lapsMeta, setLapsMeta] = useState<LapMeta[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ laps: LapMeta[] }>(`/sessions/${sessionId}/laps`)
+      .then((res) => { if (!cancelled) setLapsMeta(res.laps ?? []); })
+      .catch(() => { /* silent — downstream charts fall back gracefully */ });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const primaryLapTime = useMemo(() => {
+    if (primaryLap == null) return null;
+    const row = lapsMeta.find((l) => l.lap_number === primaryLap);
+    return row?.lap_time_s ?? null;
+  }, [lapsMeta, primaryLap]);
+
+  const compareLapTime = useMemo(() => {
+    if (compareLap == null) return null;
+    const row = lapsMeta.find((l) => l.lap_number === compareLap);
+    return row?.lap_time_s ?? null;
+  }, [lapsMeta, compareLap]);
+
   const { channels } = useSessionChannels(sessionId);
 
   const hasControls = channels.throttle || channels.brake;
@@ -241,6 +266,8 @@ export function AnalyticsTab({
                     gpsLaps={gpsLaps}
                     bestLap={primaryLap}
                     compareLap={compareLap}
+                    primaryLapTime={primaryLapTime}
+                    compareLapTime={compareLapTime}
                     controlledLap
                     className="w-full"
                     showPhysicsCeiling
