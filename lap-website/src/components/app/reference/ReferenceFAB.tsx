@@ -77,23 +77,25 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
   }
 
   // Active state — pill showing reference info
+  // Active state — labeled pill showing reference info
   if (referenceSession && referenceData) {
     const ref = referenceData.reference;
     const dateStr = ref.session_date
       ? new Date(ref.session_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
       : '';
     return (
-      <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2 bg-concrete border border-racing-purple/40 rounded-full px-3 py-1.5 font-telemetry text-xs text-racing-purple shadow-lg">
+      <div className="absolute top-3 right-3 z-20 flex items-center gap-2 bg-concrete border border-racing-purple/50 rounded-lg px-3 py-1.5 font-telemetry text-xs shadow-lg">
         {isLoading && (
           <span className="animate-spin w-3 h-3 border border-racing-purple border-t-transparent rounded-full" />
         )}
-        <span className="text-chalk">{dateStr}</span>
-        <span>L{ref.lap_number}</span>
-        <span>({formatTime(ref.lap_time_s)})</span>
+        <span className="text-steel uppercase text-[9px] tracking-wider">Reference</span>
+        <span className="text-racing-purple">{dateStr} L{ref.lap_number}</span>
+        <span className="text-chalk">({formatTime(ref.lap_time_s)})</span>
         <button
           onClick={clearReference}
-          className="ml-1 text-racing-purple hover:text-chalk transition-colors"
+          className="ml-1 text-steel hover:text-safety-red transition-colors text-base leading-none"
           aria-label="Clear reference lap"
+          title="Remove reference lap"
         >
           &times;
         </button>
@@ -102,25 +104,30 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
   }
 
   return (
-    <div className="absolute bottom-4 right-4 z-20" ref={modalRef}>
+    <div className="absolute top-3 right-3 z-20" ref={modalRef}>
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          className="w-10 h-10 bg-racing-purple rounded-full flex items-center justify-center text-white text-lg shadow-lg hover:bg-racing-purple/80 transition-colors"
-          aria-label="Add reference lap from another session"
-          title="Add reference lap"
+          className="flex items-center gap-1.5 bg-racing-purple/15 border border-racing-purple/50 text-racing-purple hover:bg-racing-purple/25 hover:border-racing-purple rounded-lg px-3 py-1.5 text-xs font-telemetry transition-colors shadow-lg"
+          aria-label="Compare with a lap from another session"
+          title="Overlay a lap from another session on these charts"
         >
-          +
+          <span className="text-base leading-none">+</span>
+          <span className="uppercase tracking-wider text-[10px]">Compare with another session</span>
         </button>
       )}
 
       {open && (
-        <div className="absolute bottom-12 right-0 w-72 bg-concrete border border-steel/20 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute top-10 right-0 w-80 bg-concrete border border-steel/20 rounded-xl shadow-2xl overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-steel/10">
-            <span className="text-xs font-monument text-chalk">Add Reference Lap</span>
+            <div>
+              <div className="text-xs font-monument text-chalk">Compare with another session</div>
+              <div className="text-[10px] font-telemetry text-steel mt-0.5">Pick a session on this track to overlay its best lap</div>
+            </div>
             <button
               onClick={() => setOpen(false)}
-              className="text-steel hover:text-chalk text-sm"
+              className="text-steel hover:text-chalk text-base leading-none"
+              aria-label="Close"
             >
               &times;
             </button>
@@ -130,22 +137,22 @@ export function ReferenceFAB({ sessionId }: ReferenceFABProps) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search sessions..."
+              placeholder="Search by date, driver, or type..."
               className="w-full bg-asphalt text-chalk border border-steel/20 rounded px-2 py-1.5 text-xs font-telemetry placeholder:text-steel/50 focus:outline-none focus:border-racing-purple/50"
             />
           </div>
           <div className="max-h-60 overflow-y-auto px-2 pb-2 space-y-1">
             {loadingCandidates && (
-              <div className="text-center py-4 text-steel text-xs">Loading...</div>
+              <div className="text-center py-4 text-steel text-xs">Loading sessions...</div>
             )}
             {!loadingCandidates && filtered.length === 0 && (
-              <div className="text-center py-4 text-steel text-xs">No sessions on this track</div>
+              <div className="text-center py-4 text-steel text-xs">No other sessions on this track</div>
             )}
             {filtered.map((c) => (
               <button
                 key={c.session_id}
                 onClick={() => handleSelect(c)}
-                className="w-full text-left px-2 py-1.5 rounded hover:bg-steel/10 transition-colors group"
+                className="w-full text-left px-2 py-1.5 rounded hover:bg-racing-purple/10 hover:border-racing-purple/30 border border-transparent transition-colors group"
               >
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-telemetry text-chalk">
