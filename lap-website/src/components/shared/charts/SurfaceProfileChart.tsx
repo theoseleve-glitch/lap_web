@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface SurfaceProfileData {
   distance_m?: number[];
@@ -27,14 +28,14 @@ interface SurfaceProfileChartProps {
 }
 
 const COLORS = {
-  bg: '#141414',
-  grid: '#30363d',
-  text: '#949494',
-  chalk: '#F0EDE5',
-  elevation: '#3B82F6',    // blue
-  slope: '#C9A84C',        // gold
-  camber: '#8B5CF6',       // racing-purple
-  roughness: '#FF2A2A',    // safety-red
+  bg: chartColor.surface,
+  grid: chartColor.grid,
+  text: chartColor.textSecondary,
+  chalk: chartColor.text,
+  elevation: chartColor.palette[3],     // blue
+  slope: chartColor.series.primary,     // gold
+  camber: chartColor.series.reference,  // racing-purple
+  roughness: chartColor.series.negative,// safety-red
 };
 
 function drawProfile(
@@ -170,7 +171,7 @@ function drawProfile(
   // Hover line
   if (hoverDist != null && hoverDist >= xMin && hoverDist <= xMax) {
     const hx = xToPixel(hoverDist);
-    ctx.strokeStyle = '#C9A84C';
+    ctx.strokeStyle = chartColor.series.primary;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();

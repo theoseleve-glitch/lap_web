@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 import { useReferenceOverlay } from '@/components/app/reference';
 
 /* ── Types ──────────────────────────────────────────────── */
@@ -82,7 +83,7 @@ function drawGG(
   ctx.clearRect(0, 0, w, h);
 
   // Background
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = chartColor.surface;
   ctx.fillRect(0, 0, w, h);
 
   const { accel_lat: aLat, accel_long: aLong } = ggData;
@@ -149,7 +150,7 @@ function drawGG(
   // Reference scatter (drawn BEFORE density so it appears behind primary dots)
   if (crossRefGG && crossRefGG.accel_lat.length > 0) {
     ctx.save();
-    ctx.strokeStyle = '#8B5CF6';
+    ctx.strokeStyle = chartColor.series.reference;
     ctx.lineWidth = 1 * dpr;
     ctx.globalAlpha = 0.4;
     const refLat = crossRefGG.accel_lat;
@@ -234,7 +235,7 @@ function drawGG(
       ctx.fillStyle = 'rgba(201, 168, 76, 0.3)';
       ctx.beginPath(); ctx.arc(hx, hy, 8, 0, 2 * Math.PI); ctx.fill();
       // Inner dot
-      ctx.fillStyle = '#C9A84C';
+      ctx.fillStyle = chartColor.series.primary;
       ctx.beginPath(); ctx.arc(hx, hy, 4, 0, 2 * Math.PI); ctx.fill();
     }
   }
@@ -252,7 +253,7 @@ function drawGG(
       const rhx = xToPixel(rLat);
       const rhy = yToPixel(rLong);
       ctx.save();
-      ctx.strokeStyle = '#8B5CF6';
+      ctx.strokeStyle = chartColor.series.reference;
       ctx.lineWidth = 2 * dpr;
       ctx.globalAlpha = 1;
       ctx.beginPath();

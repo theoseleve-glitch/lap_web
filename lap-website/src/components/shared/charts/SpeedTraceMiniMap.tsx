@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { api } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface GpsData {
   latitudes: number[];
@@ -132,13 +133,13 @@ export function SpeedTraceMiniMap({
         // Glow
         ctx.beginPath();
         ctx.arc(dx, dy, 5, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(61,220,132,0.3)';
+        ctx.fillStyle = `${chartColor.series.positive}4D`;  // 30% alpha
         ctx.fill();
 
         // Dot
         ctx.beginPath();
         ctx.arc(dx, dy, 2.5, 0, Math.PI * 2);
-        ctx.fillStyle = '#22C55E';
+        ctx.fillStyle = chartColor.series.positive;
         ctx.fill();
       }
     },

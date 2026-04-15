@@ -45,7 +45,7 @@ const GEAR_COLORS: Record<number, string> = {
 };
 
 function gearColor(g: number): string {
-  return GEAR_COLORS[g] ?? '#9ca3af';
+  return GEAR_COLORS[g] ?? chartColor.textSecondary;
 }
 
 export function RPMGearChart({

@@ -17,6 +17,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -82,7 +83,7 @@ function speedToColor(t: number): string {
 /* ── Grip headroom → Color (red → gold → green) ────────── */
 
 function gripHeadroomColor(headroom_pct: number): string {
-  if (headroom_pct > 15) return '#22C55E';
+  if (headroom_pct > 15) return chartColor.series.positive;
   if (headroom_pct > 5) {
     const t = (headroom_pct - 5) / 10;
     const r = Math.round(201 * (1 - t) + 34 * t);
@@ -97,7 +98,7 @@ function gripHeadroomColor(headroom_pct: number): string {
     const b = Math.round(42 * (1 - t) + 76 * t);
     return `rgb(${r},${g},${b})`;
   }
-  return '#FF2A2A';
+  return chartColor.series.negative;
 }
 
 /* ── 2.5D Isometric projection ──────────────────────────── */
@@ -284,7 +285,7 @@ function drawTrack(
   ctx.clearRect(0, 0, w, h);
 
   // Dark background
-  ctx.fillStyle = '#000000';
+  ctx.fillStyle = chartColor.surface;
   ctx.fillRect(0, 0, w, h);
 
   const { latitudes: lats, longitudes: lons, speeds } = trace;
@@ -362,7 +363,7 @@ function drawTrack(
         const t = (cSpeeds[i] - cMinSpd) / cSpdRange;
         ctx.strokeStyle = speedToColor(t);
       } else {
-        ctx.strokeStyle = '#F0EDE5';
+        ctx.strokeStyle = chartColor.text;
       }
       ctx.beginPath();
       ctx.moveTo(cProj.pxs[i], cProj.pys[i]);
@@ -378,7 +379,7 @@ function drawTrack(
     const rLats = crossRefTrace.latitudes;
     const rLons = crossRefTrace.longitudes;
     ctx.save();
-    ctx.strokeStyle = '#8B5CF6';
+    ctx.strokeStyle = chartColor.series.reference;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.globalAlpha = 0.5;
@@ -460,7 +461,7 @@ function drawTrack(
     // Draw shadow first
     ctx.save();
     ctx.globalAlpha = 0.15;
-    ctx.fillStyle = '#000000';
+    ctx.fillStyle = chartColor.surface;
     ctx.beginPath();
     ctx.moveTo(leftXs[0], leftYs[0] + 4);
     for (let i = 1; i < leftXs.length; i++) ctx.lineTo(leftXs[i], leftYs[i] + 4);
@@ -471,7 +472,7 @@ function drawTrack(
 
     // Grip mu -> color mapping
     const gripMuColor = (muVal: number): string => {
-      if (muVal > 1.2) return '#22C55E';
+      if (muVal > 1.2) return chartColor.series.positive;
       if (muVal > 0.9) {
         const t = (muVal - 0.9) / 0.3;
         const r = Math.round(201 * (1 - t) + 34 * t);
@@ -500,7 +501,7 @@ function drawTrack(
           const t = Math.min(1, spd / maxSpd2);
           color = speedToColor(t);
         } else {
-          color = '#F0EDE5';
+          color = chartColor.text;
         }
       }
 
@@ -536,7 +537,7 @@ function drawTrack(
 
     // Draw edge lines (subtle border)
     ctx.globalAlpha = 0.3;
-    ctx.strokeStyle = '#F0EDE5';
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 0.5;
     ctx.beginPath();
     ctx.moveTo(leftXs[0], leftYs[0]);
@@ -549,7 +550,7 @@ function drawTrack(
 
     // Centerline (thin dashed chalk)
     ctx.globalAlpha = 0.2;
-    ctx.strokeStyle = '#F0EDE5';
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 0.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -569,7 +570,7 @@ function drawTrack(
       ctx.save();
 
       // Draw the racing line as a thick gold line
-      ctx.strokeStyle = '#C9A84C';
+      ctx.strokeStyle = chartColor.series.primary;
       ctx.lineWidth = 2.5;
       ctx.globalAlpha = 0.9;
       ctx.setLineDash([]);
@@ -623,7 +624,7 @@ function drawTrack(
 
       // Racing line label
       ctx.globalAlpha = 0.8;
-      ctx.fillStyle = '#C9A84C';
+      ctx.fillStyle = chartColor.series.primary;
       ctx.font = '9px "Space Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -642,12 +643,12 @@ function drawTrack(
     const legH = 60;
     const legW = 8;
     const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
-    grad.addColorStop(0, '#22C55E');
-    grad.addColorStop(0.5, '#C9A84C');
-    grad.addColorStop(1, '#FF2A2A');
+    grad.addColorStop(0, chartColor.series.positive);
+    grad.addColorStop(0.5, chartColor.series.primary);
+    grad.addColorStop(1, chartColor.series.negative);
     ctx.fillStyle = grad;
     ctx.fillRect(legX - legW, legY, legW, legH);
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '8px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -658,7 +659,7 @@ function drawTrack(
 
     // Session count badge
     if (ribbonData.aggregate_sessions > 0) {
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '8px "Space Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
@@ -693,12 +694,12 @@ function drawTrack(
         const dd = Math.abs(gripDelta[j].distance_m - (dists[i] ?? 0));
         if (dd < bestDist) { bestDist = dd; bestIdx = j; }
       }
-      ctx.strokeStyle = inRange ? gripHeadroomColor(gripDelta[bestIdx].headroom_pct) : '#444';
+      ctx.strokeStyle = inRange ? gripHeadroomColor(gripDelta[bestIdx].headroom_pct) : chartColor.borderStrong;
     } else if (speeds && speeds.length === lats.length) {
       const t = (speeds[i] - minSpd) / spdRange;
-      ctx.strokeStyle = inRange ? speedToColor(t) : '#444';
+      ctx.strokeStyle = inRange ? speedToColor(t) : chartColor.borderStrong;
     } else {
-      ctx.strokeStyle = inRange ? '#F0EDE5' : '#333';
+      ctx.strokeStyle = inRange ? chartColor.text : chartColor.border;
     }
 
     ctx.beginPath();
@@ -718,7 +719,7 @@ function drawTrack(
   ctx.arc(sx, sy, 8, 0, Math.PI * 2);
   ctx.fill();
   // Inner dot
-  ctx.fillStyle = '#F0EDE5';
+  ctx.fillStyle = chartColor.text;
   ctx.beginPath();
   ctx.arc(sx, sy, 4, 0, Math.PI * 2);
   ctx.fill();
@@ -803,7 +804,7 @@ function drawTrack(
     ctx.fill();
 
     // Inner dot
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.beginPath();
     ctx.arc(hx, hy, 4, 0, Math.PI * 2);
     ctx.fill();
@@ -823,7 +824,7 @@ function drawTrack(
       }
       const [rpx, rpy] = proj.toXY(crossRefTrace.latitudes[rIdx], crossRefTrace.longitudes[rIdx]);
       ctx.save();
-      ctx.strokeStyle = '#8B5CF6';
+      ctx.strokeStyle = chartColor.series.reference;
       ctx.lineWidth = 2;
       ctx.globalAlpha = 0.85;
       ctx.beginPath();
@@ -836,7 +837,7 @@ function drawTrack(
   // ── Racing line overlay for line modes (speed/grip) ──
   if (colorMode !== 'ribbon' && racingLine && racingLine.distance_m.length > 2) {
     ctx.save();
-    ctx.strokeStyle = '#C9A84C';
+    ctx.strokeStyle = chartColor.series.primary;
     ctx.lineWidth = 2;
     ctx.globalAlpha = 0.6;
     ctx.setLineDash([6, 3]);
@@ -851,7 +852,7 @@ function drawTrack(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 0.7;
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.font = '9px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -866,12 +867,12 @@ function drawTrack(
     const legH = 60;
     const legW = 8;
     const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
-    grad.addColorStop(0, '#22C55E');
-    grad.addColorStop(0.5, '#C9A84C');
-    grad.addColorStop(1, '#FF2A2A');
+    grad.addColorStop(0, chartColor.series.positive);
+    grad.addColorStop(0.5, chartColor.series.primary);
+    grad.addColorStop(1, chartColor.series.negative);
     ctx.fillStyle = grad;
     ctx.fillRect(legX - legW, legY, legW, legH);
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '8px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
