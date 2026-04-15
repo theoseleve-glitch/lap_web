@@ -38,6 +38,12 @@ class TrackSurface:
     # Camber (None if < 5 laps or insufficient lateral spread)
     camber_rad: np.ndarray | None = None    # (M,) banking angle, radians
 
+    # 3D elevation surface z(s,n) (None if insufficient lateral z-coverage)
+    elevation_surface: object | None = None  # ElevationSurface from elevation.py
+
+    # Detected curbs at track edges
+    curbs: list | None = None  # list[CurbDetection] from elevation.py
+
     # 2D grip (None if < 10 laps)
     grip_2d: GripSurface | None = None
 
@@ -60,6 +66,14 @@ class TrackSurface:
     @property
     def has_camber(self) -> bool:
         return self.camber_rad is not None
+
+    @property
+    def has_elevation_3d(self) -> bool:
+        return self.elevation_surface is not None
+
+    @property
+    def has_curbs(self) -> bool:
+        return self.curbs is not None and len(self.curbs) > 0
 
     @property
     def has_grip_2d(self) -> bool:
@@ -95,5 +109,8 @@ class TrackSurface:
             "has_elevation": self.has_elevation,
             "has_camber": self.has_camber,
             "has_vert_curvature": self.has_vert_curvature,
+            "has_elevation_3d": self.has_elevation_3d,
+            "has_curbs": self.has_curbs,
+            "n_curbs": len(self.curbs) if self.curbs else 0,
             "has_grip_2d": self.has_grip_2d,
         }

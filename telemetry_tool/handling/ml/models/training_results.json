@@ -1,0 +1,44 @@
+{
+  "naive_bayes": {
+    "accuracy": 0.8889
+  },
+  "ridge": {
+    "r2": 0.3752,
+    "mae": 0.1686
+  },
+  "gmm": {
+    "n_clusters": 7,
+    "labels": {
+      "0": "neutral",
+      "1": "oversteer",
+      "2": "oversteer",
+      "3": "oversteer",
+      "4": "oversteer",
+      "5": "oversteer",
+      "6": "oversteer"
+    }
+  },
+  "anomaly": {
+    "overall_rate": 0.0024,
+    "event_rate": 0.0004
+  },
+  "random_forest": {
+    "accuracy": 0.6857
+  },
+  "data_summary": {
+    "total_rows": 260136,
+    "sources": {
+      "dtm_events": 258847,
+      "tumftm_features": 622,
+      "f1_features": 459,
+      "motorsport_features": 10,
+      "kart_features": 198
+    },
+    "n_features": 60,
+    "label_dist": {
+      "os": 176711,
+      "neutral": 5713,
+      "us": 77712
+    }
+  }
+}

@@ -14,11 +14,16 @@ import { DrsLabel } from '@/components/chrome/DrsLabel';
 import { SectorGateSweep } from '@/components/chrome/SectorGateSweep';
 import { FinishLine } from '@/components/chrome/FinishLine';
 import { TimecodeCounter } from '@/components/chrome/TimecodeCounter';
+import { GrainOverlay } from '@/components/chrome/GrainOverlay';
+import { AmbientGlow } from '@/components/chrome/AmbientGlow';
+import { CustomScrollbar } from '@/components/chrome/CustomScrollbar';
+import { SoundToggle } from '@/components/chrome/SoundToggle';
 import { SiteHeader } from '@/components/site/SiteHeader';
 import { SiteFooter } from '@/components/site/SiteFooter';
 import { GsapProvider } from '@/components/providers/GsapProvider';
 import { PerformanceProvider } from '@/lib/performance-context';
 import { EXPERIENCE_V2 } from '@/lib/feature-flags';
+import { soundManager } from '@/lib/sound-manager';
 import dynamic from 'next/dynamic';
 
 const BackgroundCanvas = dynamic(
@@ -33,6 +38,10 @@ function ExperienceContent({ children }: { children: ReactNode }) {
     <>
       <SiteHeader />
       <CustomCursor />
+      <GrainOverlay />
+      <AmbientGlow />
+      <CustomScrollbar />
+      <SoundToggle />
       <TimecodeCounter />
       {EXPERIENCE_V2 && <TimingTower />}
       {EXPERIENCE_V2 && <DeltaHud />}
@@ -57,10 +66,15 @@ function ExperienceContent({ children }: { children: ReactNode }) {
 }
 
 function HomepageShell({ children }: { children: ReactNode }) {
-  // Reset scroll after the full experience shell mounts —
-  // prevents browser scroll restoration from hiding the hero.
+  // Lenis smooth scroll is handled by ExperienceKernel → InputManager → ScrollController.
+  // That instance also feeds globalProgress/scrollVelocity/currentChapter into the kernel
+  // store, which drives the 3D background (TrackRibbon, SpeedStreaks, BackgroundController).
+  // Do NOT add a second useLenis here — two Lenis instances will fight each other.
+
   useEffect(() => {
     window.scrollTo(0, 0);
+    soundManager.init();
+    soundManager.startAmbient();
   }, []);
 
   return (
@@ -75,6 +89,10 @@ function SubpageShell({ children }: { children: ReactNode }) {
     <PerformanceProvider>
       <GsapProvider>
         <SiteHeader />
+        <GrainOverlay />
+        <AmbientGlow />
+        <CustomScrollbar />
+        <CustomCursor />
         {children}
         <SiteFooter />
       </GsapProvider>

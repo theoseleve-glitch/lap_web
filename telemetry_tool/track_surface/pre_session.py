@@ -149,6 +149,22 @@ def generate_pre_session_briefing(
                 "message": f"{len(comp_warnings)} compression zone(s) may pool water — brake earlier",
             })
 
+    # Puddle zones from drainage model (wet-specific)
+    if is_wet and surface.has_elevation_3d:
+        try:
+            from track_surface.drainage import compute_drainage
+            puddles = compute_drainage(surface.elevation_surface)
+            if puddles:
+                briefing.condition_alerts.append({
+                    "type": "puddle_zones",
+                    "severity": "high" if len(puddles) >= 3 else "medium",
+                    "count": len(puddles),
+                    "zones": [p.to_dict() for p in puddles[:5]],  # top 5
+                    "message": f"{len(puddles)} puddle zone(s) predicted from track drainage — watch for standing water",
+                })
+        except Exception:
+            pass  # drainage module optional
+
     if condition == "damp":
         briefing.condition_alerts.append({
             "type": "mixed_conditions",

@@ -62,6 +62,7 @@ class ErrorCode:
     NOT_READY = "NOT_READY"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
     DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
+    SUPPORT_TIER_REFUSED = "SUPPORT_TIER_REFUSED"
 
 
 class ReasonCode:
@@ -109,6 +110,7 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     ErrorCode.NOT_READY:            {"status": 503, "message": "Service is starting up"},
     ErrorCode.NOT_IMPLEMENTED:      {"status": 501, "message": "Not implemented"},
     ErrorCode.DATA_UNAVAILABLE:     {"status": 404, "message": "Requested data is not available"},
+    ErrorCode.SUPPORT_TIER_REFUSED: {"status": 451, "message": "Output unavailable at current support tier"},
 }
 
 

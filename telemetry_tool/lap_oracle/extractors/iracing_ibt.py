@@ -139,6 +139,52 @@ def _read_channel(
     return out
 
 
+def _extract_single_lap(
+    positions: np.ndarray,
+    lap_dist_pct: np.ndarray,
+) -> tuple:
+    """Extract positions for the first complete lap.
+
+    Uses LapDistPct (0→1 per lap) to find where lap boundaries are
+    (where pct drops from ~1 back to ~0).  Returns the longest
+    complete lap's positions.
+    """
+    n = min(len(positions), len(lap_dist_pct))
+    positions = positions[:n]
+    pct = lap_dist_pct[:n]
+
+    # Find lap boundaries: where pct drops significantly (>0.5 decrease)
+    dpct = np.diff(pct)
+    boundaries = np.where(dpct < -0.5)[0] + 1  # index AFTER the drop
+
+    if len(boundaries) < 1:
+        # No complete lap found — return everything (fallback)
+        return positions, pct
+
+    # Collect all complete laps
+    starts = [0] + list(boundaries)
+    ends = list(boundaries) + [n]
+    best_start, best_end = 0, n
+    best_len = 0
+
+    for s, e in zip(starts, ends):
+        seg_pct = pct[s:e]
+        # A "complete" lap goes from ~0 to ~0.9+
+        if len(seg_pct) > 100 and seg_pct[-1] > 0.8 and seg_pct[0] < 0.2:
+            if e - s > best_len:
+                best_len = e - s
+                best_start, best_end = s, e
+
+    if best_len > 100:
+        return positions[best_start:best_end], pct[best_start:best_end]
+
+    # Fallback: use first boundary pair
+    if len(boundaries) >= 2:
+        return positions[boundaries[0]:boundaries[1]], pct[boundaries[0]:boundaries[1]]
+
+    return positions[:boundaries[0]], pct[:boundaries[0]]
+
+
 def extract_positions(ibt_path: Path) -> Optional[np.ndarray]:
     """Extract GPS positions from an iRacing .ibt file.
 
@@ -200,6 +246,16 @@ def extract_positions(ibt_path: Path) -> Optional[np.ndarray]:
                      (np.abs(positions[:, 1]) < 1e-9))
             positions = positions[mask]
 
+            # Extract single lap using LapDistPct (0→1 per lap)
+            if "LapDistPct" in vars_map:
+                pct = _read_channel(
+                    f, vars_map["LapDistPct"],
+                    hdr["data_start"], hdr["buf_len"], num_samples,
+                )
+                if pct is not None:
+                    pct = pct[mask[:len(pct)] if len(mask) <= len(pct) else mask]
+                    positions, pct = _extract_single_lap(positions, pct)
+
             if positions.shape[0] < 10:
                 logger.warning(
                     "Only %d valid positions in %s",
@@ -208,7 +264,7 @@ def extract_positions(ibt_path: Path) -> Optional[np.ndarray]:
                 return None
 
             logger.info(
-                "Extracted %d positions from %s",
+                "Extracted %d positions (single lap) from %s",
                 positions.shape[0], ibt_path.name,
             )
             return positions

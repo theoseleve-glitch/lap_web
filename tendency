@@ -1,0 +1,10 @@
+time="2026-04-03T00:23:36Z" level=warning msg="The \"SENTRY_DSN_WORKER\" variable is not set. Defaulting to a blank string."
+time="2026-04-03T00:23:36Z" level=warning msg="The \"SENTRY_DSN_API\" variable is not set. Defaulting to a blank string."
+time="2026-04-03T00:23:36Z" level=warning msg="The \"SENTRY_DSN_WORKER\" variable is not set. Defaulting to a blank string."
+time="2026-04-03T00:23:36Z" level=warning msg="The \"SENTRY_DSN_WORKER\" variable is not set. Defaulting to a blank string."
+time="2026-04-03T00:23:36Z" level=warning msg="/opt/lap-api/docker-compose.prod.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+  File "<stdin>", line 8
+    cur.execute(SELECT session_id FROM sessions WHERE csv_filename = KCT_R2.csv LIMIT 1)
+                ^^^^^^^^^^^^^^^^^
+SyntaxError: invalid syntax. Perhaps you forgot a comma?
+

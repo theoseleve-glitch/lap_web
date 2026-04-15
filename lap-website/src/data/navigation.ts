@@ -9,7 +9,6 @@ export const topNavLinks: NavLink[] = [
   { label: 'Product', href: '/product', audience: 'b2c' },
   { label: 'Pricing', href: '/pricing', audience: 'shared' },
   { label: 'Demo', href: '/demo', audience: 'b2c' },
-  { label: 'Logger', href: '/product/logger', audience: 'b2c' },
   { label: 'Contact', href: '/contact', audience: 'shared' },
 ];
 

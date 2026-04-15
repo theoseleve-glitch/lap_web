@@ -1,28 +1,34 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
 /**
- * Thin progress bar at the top of the viewport during page navigation.
- * Detects route changes via usePathname() and shows a CSS-animated bar.
+ * Page transition system: gold progress bar + full-page wipe on navigation.
+ * Exit: gold bar fills + content fades out (300ms).
+ * Enter: content fades in (400ms).
  */
 export function NavigationProgress() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<'idle' | 'exit' | 'enter'>('idle');
+  const prevPathRef = useRef(pathname);
 
   const start = useCallback(() => {
     setLoading(true);
     setProgress(20);
+    setPhase('exit');
   }, []);
 
   const finish = useCallback(() => {
     setProgress(100);
+    setPhase('enter');
     const timer = setTimeout(() => {
       setLoading(false);
       setProgress(0);
-    }, 300);
+      setPhase('idle');
+    }, 500);
     return () => clearTimeout(timer);
   }, []);
 
@@ -41,7 +47,10 @@ export function NavigationProgress() {
 
   // Finish on route change
   useEffect(() => {
-    finish();
+    if (pathname !== prevPathRef.current) {
+      prevPathRef.current = pathname;
+      finish();
+    }
   }, [pathname, finish]);
 
   // Trickle progress while loading
@@ -56,18 +65,65 @@ export function NavigationProgress() {
     return () => clearInterval(timer);
   }, [loading]);
 
-  if (!loading && progress === 0) return null;
-
   return (
-    <div
-      className="fixed top-0 left-0 right-0 z-[9999] h-0.5 pointer-events-none"
-      role="progressbar"
-      aria-valuenow={Math.round(progress)}
-    >
-      <div
-        className="h-full bg-pit-orange transition-all duration-300 ease-out"
-        style={{ width: `${progress}%`, opacity: progress >= 100 ? 0 : 1 }}
-      />
-    </div>
+    <>
+      {/* Progress bar */}
+      {(loading || progress > 0) && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[9999] h-0.5 pointer-events-none"
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+        >
+          <div
+            className="h-full bg-gold transition-all duration-300 ease-out"
+            style={{ width: `${progress}%`, opacity: progress >= 100 ? 0 : 1 }}
+          />
+        </div>
+      )}
+
+      {/* Page content fade — applied via CSS class on <main> */}
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          .page-transition-exit main {
+            opacity: 0.4;
+            filter: blur(4px);
+            transform: translateY(-8px);
+            transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+          }
+          .page-transition-enter main {
+            animation: pageEnter 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+          }
+          @keyframes pageEnter {
+            from {
+              opacity: 0;
+              filter: blur(4px);
+              transform: translateY(16px);
+            }
+            to {
+              opacity: 1;
+              filter: blur(0px);
+              transform: translateY(0);
+            }
+          }
+        }
+      `}</style>
+
+      {/* Apply class to body for transition phases */}
+      <TransitionClassApplier phase={phase} />
+    </>
   );
+}
+
+function TransitionClassApplier({ phase }: { phase: 'idle' | 'exit' | 'enter' }) {
+  useEffect(() => {
+    const body = document.body;
+    body.classList.remove('page-transition-exit', 'page-transition-enter');
+    if (phase === 'exit') body.classList.add('page-transition-exit');
+    if (phase === 'enter') body.classList.add('page-transition-enter');
+    return () => {
+      body.classList.remove('page-transition-exit', 'page-transition-enter');
+    };
+  }, [phase]);
+
+  return null;
 }

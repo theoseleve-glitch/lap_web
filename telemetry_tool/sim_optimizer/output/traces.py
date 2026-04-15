@@ -27,8 +27,8 @@ def serialize_theoretical_trace(trace) -> dict[str, Any]:
         "throttle_pct": _to_list(trace.throttle_pct),
         "brake_pct": _to_list(trace.brake_pct),
         "steering_deg": _to_list(trace.steering_deg),
-        "gear": [int(g) for g in np.asarray(trace.gear)],
-        "limit_type": [int(lt) for lt in np.asarray(trace.limit_type)],
+        "gear": [int(g) if isinstance(g, (int, float, np.integer, np.floating)) else 0 for g in np.asarray(trace.gear)],
+        "limit_type": [str(lt) for lt in np.asarray(trace.limit_type)],
     }
 
 

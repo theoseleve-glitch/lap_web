@@ -1,6 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useSplitText } from '@/hooks/useSplitText';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
 interface MonumentTextProps {
   children: ReactNode;
@@ -8,6 +10,10 @@ interface MonumentTextProps {
   as?: 'h1' | 'h2' | 'h3' | 'p' | 'span';
   className?: string;
   reveal?: boolean;
+  /** Enable per-character split-text animation (overrides reveal) */
+  split?: boolean;
+  /** Use scroll-scrub instead of triggered animation */
+  scrub?: boolean;
 }
 
 const sizeMap = {
@@ -23,12 +29,23 @@ export function MonumentText({
   as: Tag = 'h2',
   className = '',
   reveal = false,
+  split = false,
+  scrub = false,
 }: MonumentTextProps) {
+  const { reducedMotion } = useReducedMotion();
+  const splitRef = useSplitText<HTMLElement>({
+    disabled: !split || reducedMotion,
+    scrub,
+    stagger: 0.015,
+    start: 'top 85%',
+  });
+
   return (
     <Tag
+      ref={split ? splitRef : undefined}
       className={`font-monument ${className}`}
-      style={{ fontSize: sizeMap[size] }}
-      {...(reveal ? { 'data-monument-reveal': '' } : {})}
+      style={{ fontSize: sizeMap[size], perspective: split ? '600px' : undefined }}
+      {...(reveal && !split ? { 'data-monument-reveal': '' } : {})}
     >
       {children}
     </Tag>

@@ -293,6 +293,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.theoretical',        'bp', 'theoretical_bp'),    # Sim optimizer theoretical lap endpoints
         ('.routes.events',             'bp', 'events_bp'),          # Engagement tracking + usage dashboard
         ('.routes.seo_health',         'bp', 'seo_health_bp'),      # SEO health check endpoint
+        ('.routes.track_surface_analysis', 'bp', 'track_surface_analysis_bp'),  # Track-surface analysis app layer
     ]
 
     import importlib

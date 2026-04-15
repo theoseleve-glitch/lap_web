@@ -402,6 +402,245 @@ function BadgeIcon({ title, color, unlocked }: { title: string; color: string; u
         <path d="M8 21h8" stroke={fill} strokeWidth="2" strokeLinecap="round" />
       </svg>
     ),
+
+    /* === BACKEND ACHIEVEMENT LABELS (driver_achievements.py) === */
+    'First Laps': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M5 3v18" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <path d="M5 3h10l-3 4 3 4H5" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="2" strokeLinejoin="round" />
+      </svg>
+    ),
+    'First Steps': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M9 4a2 2 0 014 0v3a2 2 0 01-4 0V4z" fill={fill} opacity={0.6} />
+        <path d="M11 12a2 2 0 014 0v3a2 2 0 01-4 0v-3z" fill={fill} opacity={0.8} />
+        <path d="M8 19a2 2 0 014 0v1a2 2 0 01-4 0v-1z" fill={fill} />
+        <circle cx="11" cy="2" r="1" fill={fill} opacity={0.4} />
+        <circle cx="13" cy="10" r="1" fill={fill} opacity={0.6} />
+      </svg>
+    ),
+    'Getting Serious': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2C8 7 5 10 5 14a7 7 0 0014 0c0-4-3-7-7-12z" fill={fill} opacity={0.3} />
+        <path d="M12 8c-2 3-4 5-4 7a4 4 0 008 0c0-2-2-4-4-7z" fill={fill} />
+        <path d="M11 14h2v3h-2z" fill={fill} opacity={0.5} />
+      </svg>
+    ),
+    'Century Club': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="12" r="9" stroke={fill} strokeWidth="2" />
+        <text x="12" y="16" textAnchor="middle" fill={fill} fontSize="9" fontWeight="bold">100</text>
+      </svg>
+    ),
+    'Track Warrior': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2l2 4h4l-3 3 1 5-4-2-4 2 1-5-3-3h4l2-4z" fill={fill} />
+        <path d="M7 18l5-4 5 4" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 22h6" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
+    'Lap Legend': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M5 16l3-7h8l3 7-3 4H8l-3-4z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="2" strokeLinejoin="round" />
+        <path d="M8 12h8M9 16h6" stroke={fill} strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="12" cy="6" r="3" fill={fill} opacity={0.6} />
+      </svg>
+    ),
+    'Regular Driver': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <rect x="3" y="4" width="18" height="16" rx="2" stroke={fill} strokeWidth="2" />
+        <path d="M3 9h18" stroke={fill} strokeWidth="2" />
+        <path d="M8 4V2M16 4V2" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <rect x="7" y="12" width="3" height="3" rx="0.5" fill={fill} />
+        <rect x="11" y="12" width="3" height="3" rx="0.5" fill={fill} opacity={0.6} />
+        <rect x="15" y="12" width="3" height="3" rx="0.5" fill={fill} opacity={0.3} />
+      </svg>
+    ),
+    'Dedicated': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 21C12 21 4 15 4 9a4 4 0 018 0 4 4 0 018 0c0 6-8 12-8 12z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="2" />
+        <path d="M12 13l-2-2 2-2 2 2-2 2z" fill={fill} />
+      </svg>
+    ),
+    'Track Addict': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="12" r="9" stroke={fill} strokeWidth="2" />
+        <path d="M12 7v6" stroke={fill} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M12 13l4 3" stroke={fill} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M8 3l1 2M16 3l-1 2M20 8l-2 1M4 8l2 1" stroke={fill} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+    'Above Average': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M3 17l4-4 4 2 4-6 4 3" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M16 6h5v5" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M21 6l-5 5" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
+    'High Performer': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 20V8" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <path d="M8 12l4-8 4 8" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5 20h14" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <circle cx="12" cy="4" r="2" fill={fill} opacity={0.5} />
+      </svg>
+    ),
+    'Elite Driver': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2l4 8-4 4-4-4 4-8z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="2" />
+        <path d="M8 10l-4 8h16l-4-8" stroke={fill} strokeWidth="2" strokeLinejoin="round" />
+        <path d="M6 18l6 4 6-4" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    'Consistent Run': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M2 12h4l2-3 2 6 2-6 2 3h8" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="20" cy="12" r="2" fill={fill} opacity={0.5} />
+      </svg>
+    ),
+    'Iron Consistency': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="6" cy="12" r="3" stroke={fill} strokeWidth="2" />
+        <circle cx="12" cy="12" r="3" stroke={fill} strokeWidth="2" />
+        <circle cx="18" cy="12" r="3" stroke={fill} strokeWidth="2" />
+        <path d="M9 12h-0M15 12h-0" stroke={fill} strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    ),
+    'Explorer': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="12" r="9" stroke={fill} strokeWidth="2" />
+        <polygon points="16,6 10,10 8,18 14,14" fill={fill} fillOpacity={0.5} stroke={fill} strokeWidth="1" />
+        <circle cx="12" cy="12" r="1.5" fill={fill} />
+      </svg>
+    ),
+    'Globetrotter': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="12" r="9" stroke={fill} strokeWidth="2" />
+        <ellipse cx="12" cy="12" rx="4" ry="9" stroke={fill} strokeWidth="1.5" />
+        <path d="M3 12h18M4 7h16M4 17h16" stroke={fill} strokeWidth="1" />
+      </svg>
+    ),
+    'Circuit Collector': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2l2 3h3l-1 3 2 2-3 1-1 3-2-2-2 2-1-3-3-1 2-2-1-3h3l2-3z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="1.5" />
+        <circle cx="12" cy="12" r="3" fill={fill} />
+        <text x="12" y="14.5" textAnchor="middle" fill="black" fontSize="5" fontWeight="bold">10</text>
+      </svg>
+    ),
+    'Record Breaker': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill={fill} />
+        <path d="M16 2l2 2-2 2" stroke={fill} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    'Relentless': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2v20" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <path d="M8 6l4-4 4 4" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 11l4-4 4 4" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity={0.6} />
+        <path d="M8 16l4-4 4 4" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" opacity={0.3} />
+      </svg>
+    ),
+
+    /* === BACKEND ACHIEVEMENT LABELS (gamification/achievements.py) === */
+    'Regular': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <rect x="3" y="4" width="18" height="16" rx="2" stroke={fill} strokeWidth="2" />
+        <path d="M3 9h18" stroke={fill} strokeWidth="2" />
+        <path d="M8 4V2M16 4V2" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <circle cx="12" cy="14" r="2" fill={fill} />
+      </svg>
+    ),
+    'Veteran': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2l2 4h4l-3 3 1 5-4-2-4 2 1-5-3-3h4l2-4z" fill={fill} fillOpacity={0.4} stroke={fill} strokeWidth="1.5" />
+        <path d="M7 15l5-2 5 2v6l-5-2-5 2v-6z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="1.5" />
+      </svg>
+    ),
+    'Medal Winner': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="15" r="6" stroke={fill} strokeWidth="2" />
+        <path d="M8 3h8l-2 8h-4l-2-8z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="1.5" />
+        <path d="M12 13v4M10 15h4" stroke={fill} strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+    ),
+    'Bronze Collection': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M5 3h14l-2 5H7L5 3z" fill={fill} fillOpacity={0.2} stroke={fill} strokeWidth="1.5" />
+        <path d="M7 8v8l5 4 5-4V8" stroke={fill} strokeWidth="2" />
+        <text x="12" y="16" textAnchor="middle" fill={fill} fontSize="8" fontWeight="bold">B</text>
+      </svg>
+    ),
+    'Silver Collection': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M5 3h14l-2 5H7L5 3z" fill={fill} fillOpacity={0.3} stroke={fill} strokeWidth="1.5" />
+        <path d="M7 8v8l5 4 5-4V8" stroke={fill} strokeWidth="2" />
+        <text x="12" y="16" textAnchor="middle" fill={fill} fontSize="8" fontWeight="bold">S</text>
+      </svg>
+    ),
+    'Gold Standard': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M5 16l3-7h8l3 7-3 4H8l-3-4z" fill={fill} fillOpacity={0.4} stroke={fill} strokeWidth="2" strokeLinejoin="round" />
+        <path d="M9 14h6" stroke={fill} strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M8 9l4-7 4 7" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    'Hat Trick': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M7 4l5 3 5-3v5l-5 3-5-3V4z" fill={fill} fillOpacity={0.2} stroke={fill} strokeWidth="1.5" />
+        <text x="12" y="9" textAnchor="middle" fill={fill} fontSize="5" fontWeight="bold">3</text>
+        <path d="M4 15h16" stroke={fill} strokeWidth="1.5" />
+        <path d="M6 15l-1 6h14l-1-6" stroke={fill} strokeWidth="1.5" />
+      </svg>
+    ),
+    'Week Warrior': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <rect x="3" y="4" width="18" height="16" rx="2" stroke={fill} strokeWidth="2" />
+        <path d="M3 9h18" stroke={fill} strokeWidth="2" />
+        <path d="M8 4V2M16 4V2" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        {/* 7 dots for 7 days */}
+        <circle cx="6" cy="13" r="1" fill={fill} />
+        <circle cx="9" cy="13" r="1" fill={fill} />
+        <circle cx="12" cy="13" r="1" fill={fill} />
+        <circle cx="15" cy="13" r="1" fill={fill} />
+        <circle cx="18" cy="13" r="1" fill={fill} />
+        <circle cx="6" cy="17" r="1" fill={fill} />
+        <circle cx="9" cy="17" r="1" fill={fill} />
+      </svg>
+    ),
+    'Iron Will': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 2C8 7 5 10 5 14a7 7 0 0014 0c0-4-3-7-7-12z" stroke={fill} strokeWidth="2" />
+        <path d="M12 8c-2 3-3 4-3 6a3 3 0 006 0c0-2-1-3-3-6z" fill={fill} />
+        <path d="M10 20h4" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
+    'Plan Complete': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <circle cx="12" cy="12" r="9" stroke={fill} strokeWidth="2" />
+        <path d="M8 12l3 3 5-6" stroke={fill} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    'Perfect Week': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <rect x="3" y="4" width="18" height="16" rx="2" stroke={fill} strokeWidth="2" />
+        <path d="M3 9h18" stroke={fill} strokeWidth="2" />
+        <path d="M8 4V2M16 4V2" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+        <path d="M9 14l2 2 4-4" stroke={fill} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    'New PB': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill={fill} />
+      </svg>
+    ),
+    'Level Up': (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" opacity={opacity}>
+        <path d="M12 19V5" stroke={fill} strokeWidth="2.5" strokeLinecap="round" />
+        <path d="M5 12l7-7 7 7" stroke={fill} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5 20h14" stroke={fill} strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    ),
   };
 
   return icons[title] || (

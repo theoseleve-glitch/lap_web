@@ -216,6 +216,12 @@ class RawChannelSet:
     shock_vel_lr: np.ndarray | None = None
     shock_vel_rr: np.ndarray | None = None
 
+    # Per-wheel ride height (mm)
+    ride_height_lf: np.ndarray | None = None
+    ride_height_rf: np.ndarray | None = None
+    ride_height_lr: np.ndarray | None = None
+    ride_height_rr: np.ndarray | None = None
+
     # Per-wheel brake
     brake_line_press_lf: np.ndarray | None = None
     brake_line_press_rf: np.ndarray | None = None
@@ -360,6 +366,8 @@ for _wh in _WHEELS:
     # Shock deflection / velocity
     _FIELD_TO_COL[f"shock_defl_{_wh_lower}"] = f"irsdk__{_wh}shockDefl"
     _FIELD_TO_COL[f"shock_vel_{_wh_lower}"] = f"irsdk__{_wh}shockVel"
+    # Ride height
+    _FIELD_TO_COL[f"ride_height_{_wh_lower}"] = f"irsdk__{_wh}rideHeight"
     # Brake line pressure / temp
     _FIELD_TO_COL[f"brake_line_press_{_wh_lower}"] = f"irsdk__{_wh}brakeLinePress"
     _FIELD_TO_COL[f"brake_temp_{_wh_lower}"] = f"irsdk__{_wh}brakeTemp"

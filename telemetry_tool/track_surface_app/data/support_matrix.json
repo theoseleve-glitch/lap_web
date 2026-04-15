@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "sim": "iracing",
+      "vehicle": "mx5",
+      "track": "daytona_rc",
+      "max_support_tier": "A",
+      "validated_vehicle_profile": "iracing_mx5_2024",
+      "validated_track_profile": "daytona_rc_v5"
+    },
+    {
+      "sim": "iracing",
+      "vehicle": "mx5",
+      "track": "spa",
+      "max_support_tier": "B",
+      "validated_vehicle_profile": "iracing_mx5_2024",
+      "validated_track_profile": "spa_v3"
+    }
+  ]
+}

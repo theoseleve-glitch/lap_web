@@ -312,20 +312,10 @@ export function AnalyticsTab({
             <div className="chart-enter">
               <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
             </div>
-            <ChartCard>
-              <ChartHeader
-                title="Lap Distribution"
-                subtitle="histogram of lap times"
-                info="How tight or scattered your pace was across the session."
-              />
-              <div
-                className="chart-enter"
-                role="img"
-                aria-label="Lap time distribution histogram"
-              >
-                <LapDistribution sessionId={sessionId} apiBase={apiBase} />
-              </div>
-            </ChartCard>
+            {/* LapDistribution owns its ChartCard — do not wrap */}
+            <div className="chart-enter">
+              <LapDistribution sessionId={sessionId} apiBase={apiBase} />
+            </div>
           </div>
 
           <ChartCard>

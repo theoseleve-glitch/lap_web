@@ -174,6 +174,32 @@ def build_grip_surface(
 
         mu = np.abs(a_lat_v) / g_eff
 
+        # Tire degradation correction: hot tires = degraded grip
+        # If tire temp data is available, penalise mu when temps exceed optimal
+        _OPTIMAL_TIRE_TEMP_C = 90.0  # typical optimal operating temp
+        _TEMP_PENALTY_PER_10C = 0.02  # 2% grip loss per 10°C over optimal
+        for temp_col in ("tire_temp_fl", "tire_temp_fr", "tire_temp_rl", "tire_temp_rr"):
+            if temp_col in lap_df.columns:
+                t_arr = pd.to_numeric(lap_df[temp_col], errors="coerce").to_numpy()
+                t_valid = t_arr[valid]
+                if np.any(np.isfinite(t_valid)):
+                    over_temp = np.clip(t_valid - _OPTIMAL_TIRE_TEMP_C, 0, 50)
+                    penalty = 1.0 - (over_temp / 10.0) * _TEMP_PENALTY_PER_10C
+                    mu = mu * np.clip(penalty, 0.8, 1.0)
+                break  # use first available tire channel
+
+        # Tire wear correction: worn tires = less grip
+        for wear_col in ("tire_wear_fl", "tire_wear_fr", "tire_wear_rl", "tire_wear_rr"):
+            if wear_col in lap_df.columns:
+                w_arr = pd.to_numeric(lap_df[wear_col], errors="coerce").to_numpy()
+                w_valid = w_arr[valid]
+                if np.any(np.isfinite(w_valid)):
+                    # wear_pct is remaining tread (100% = new, 0% = bald)
+                    # Grip penalty below 50% remaining
+                    wear_penalty = np.where(w_valid < 50, 0.95 + 0.05 * (w_valid / 50), 1.0)
+                    mu = mu * np.clip(wear_penalty, 0.85, 1.0)
+                break
+
         # Bin into grid
         s_idx = np.clip(np.searchsorted(s_bins, s_proj) - 1, 0, M - 1)
         n_idx = np.clip(np.searchsorted(n_bins, n_proj) - 1, 0, K - 1)

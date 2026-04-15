@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { useEntityDelete } from '@/hooks/useEntityDelete';
@@ -32,6 +33,11 @@ const AchievementUnlockOverlay = lazy(() =>
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
 const HandlingBalanceCard = lazy(() => import('@/components/app/HandlingBalanceCard').then(m => ({ default: m.HandlingBalanceCard })));
+
+const TrackSurfacePanel = dynamic(
+  () => import('@/components/app/track-surface').then(m => ({ default: m.default })),
+  { ssr: false, loading: () => <div className="h-64 bg-concrete rounded-lg animate-pulse" /> }
+);
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -1309,6 +1315,11 @@ function OverviewTab({
           />
           <AchievementsBadges badges={scores?.badges} />
         </Suspense>
+
+        <section className="space-y-4">
+          <h2 className="font-monument text-lg text-chalk">Track Surface</h2>
+          <TrackSurfacePanel sessionId={sessionId} />
+        </section>
       </div>
     </div>
   );

@@ -226,11 +226,12 @@ export default function DashboardPage() {
 
         {/* How It Works */}
         <h3 className="font-body text-chalk text-lg mb-4">How It Works</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           {[
             { step: '1', title: 'Upload CSV', desc: 'Export from RaceChrono, RaceBox, or any GPS logger and upload your file.' },
             { step: '2', title: 'Auto-Analysis', desc: 'Our 14-stage pipeline processes your data: GPS, laps, corners, scoring, coaching.' },
             { step: '3', title: 'Improve', desc: 'Review your score, follow coaching hints, and track progress across sessions.' },
+            { step: '4', title: 'Auto-Sync', desc: 'Install the Lap Coach Logger on your PC to capture iRacing & ACC sessions and sync them automatically.' },
           ].map((s) => (
             <div key={s.step} className="bg-concrete rounded-lg border border-steel/10 p-5">
               <div className="w-8 h-8 rounded-full bg-acid-green/20 text-acid-green font-monument text-sm flex items-center justify-center mb-3">
@@ -240,6 +241,22 @@ export default function DashboardPage() {
               <p className="text-steel text-sm font-body">{s.desc}</p>
             </div>
           ))}
+        </div>
+
+        {/* Logger Download */}
+        <div className="bg-concrete rounded-lg border border-steel/10 p-5 mb-8 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="flex-1">
+            <h3 className="font-monument text-base text-chalk mb-1">Lap Coach Logger</h3>
+            <p className="text-steel text-sm font-body">
+              Capture iRacing &amp; ACC telemetry automatically. Sessions sync to your dashboard — no manual CSV export needed.
+            </p>
+          </div>
+          <a
+            href="https://api.lap-coach.racing/downloads/LapCoachLogger-Setup-1.1.0.exe"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-gold text-white font-telemetry text-xs uppercase tracking-wider rounded hover:bg-gold/80 transition-colors shrink-0"
+          >
+            ↓ Download for Windows
+          </a>
         </div>
 
         {/* Feature Cards */}
@@ -377,6 +394,28 @@ export default function DashboardPage() {
           className="inline-flex items-center gap-2 px-4 py-2.5 border border-steel/20 text-steel font-telemetry text-sm rounded-lg hover:text-chalk hover:border-steel/40 transition-colors"
         >
           Compare Sessions
+        </Link>
+      </div>
+
+      {/* Logger Download */}
+      <div className="flex items-center gap-4 mb-6 px-4 py-3 bg-concrete border border-steel/10 rounded-lg">
+        <div className="flex-1 min-w-0">
+          <p className="text-chalk text-sm font-body truncate">
+            <span className="font-monument">Lap Coach Logger</span>
+            <span className="text-steel ml-2">— auto-capture iRacing &amp; ACC sessions</span>
+          </p>
+        </div>
+        <a
+          href="https://api.lap-coach.racing/downloads/LapCoachLogger-Setup-1.1.0.exe"
+          className="inline-flex items-center gap-1.5 px-4 py-2 border border-steel/30 text-chalk font-telemetry text-xs uppercase tracking-wider rounded hover:bg-concrete transition-colors shrink-0"
+        >
+          ↓ Download
+        </a>
+        <Link
+          href="/app/account/devices"
+          className="text-gold font-telemetry text-xs uppercase tracking-wider hover:text-gold/80 transition-colors shrink-0"
+        >
+          Pair Device
         </Link>
       </div>
 

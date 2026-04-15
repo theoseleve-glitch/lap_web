@@ -17,6 +17,8 @@ from track_surface.persistence import (
     upsert_session_grip,
 )
 from track_surface.store import (
+    detect_track_condition,
+    detect_vehicle_class,
     load_track_model,
     merge_track_model,
     upsert_global_surface,
@@ -27,6 +29,8 @@ __all__ = [
     "get_aggregate_grip",
     "get_global_aggregate_grip",
     "get_track_surface",
+    "detect_track_condition",
+    "detect_vehicle_class",
     "load_track_model",
     "merge_track_model",
     "upsert_global_grip",

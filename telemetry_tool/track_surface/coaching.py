@@ -84,3 +84,36 @@ def generate_spatial_coaching(
         })
 
     return results
+
+
+def enrich_coaching_with_bumps(
+    coaching_results: list[dict],
+    bumps: list,  # list[SurfaceBump] from bump_detection
+    corners: list[dict],
+) -> list[dict]:
+    """Add bump warnings to corner coaching results.
+
+    For each corner, check if any bumps fall within its s_start..s_end range.
+    If so, append a bump warning to the coaching text.
+    """
+    if not bumps:
+        return coaching_results
+
+    for result in coaching_results:
+        cid = result.get("corner_id")
+        corner = next((c for c in corners if c.get("corner_id") == cid), None)
+        if not corner:
+            continue
+
+        s_start = corner.get("s_start", 0)
+        s_end = corner.get("s_end", 0)
+
+        corner_bumps = [b for b in bumps if s_start <= b.s_position <= s_end]
+        if corner_bumps:
+            worst = max(corner_bumps, key=lambda b: b.severity)
+            bump_text = f" Surface {worst.bump_type} at s={worst.s_position:.0f}m (severity {worst.severity:.0%}) — may unsettle car under braking."
+            result["coaching"] = result.get("coaching", "") + bump_text
+            result["has_bump_warning"] = True
+            result["bump_count"] = len(corner_bumps)
+
+    return coaching_results

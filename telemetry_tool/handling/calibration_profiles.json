@@ -1,0 +1,168 @@
+{
+  "kart": {
+    "apex_timing": {
+      "neutral": -0.036,
+      "std": 0.262,
+      "dead_zone": 0.05,
+      "scale": 0.2
+    },
+    "corner_balance": {
+      "neutral": 1.0,
+      "std": 0.85,
+      "dead_zone_lo": 0.8,
+      "dead_zone_hi": 1.2,
+      "scale": 0.8
+    },
+    "speed_recovery": {
+      "neutral": 0.091,
+      "std": 0.138,
+      "dead_zone": 0.04,
+      "scale": 0.12
+    },
+    "lat_g_jerk": {
+      "neutral": 0.35,
+      "std": 0.2,
+      "dead_zone": 0.1,
+      "scale": 0.3
+    },
+    "trail_braking": {
+      "dead_zone": 0.15,
+      "scale": 0.25
+    },
+    "gg_shape": {
+      "dead_zone": 0.15,
+      "scale": 1.0
+    },
+    "yaw_residual": {
+      "dead_zone": 0.1,
+      "scale": 0.3
+    },
+    "heading_accel": {
+      "mid_neutral": 1.27,
+      "exit_neutral": 1.05,
+      "mid_dead": 0.25,
+      "exit_dead": 0.2,
+      "scale": 0.5
+    },
+    "path_divergence": {
+      "scale": 500.0
+    },
+    "friction_asymmetry": {
+      "dead_zone_lo": 0.85,
+      "dead_zone_hi": 1.15,
+      "scale": 0.3
+    },
+    "speed_scrub": {
+      "dead_zone_lo": 2.0,
+      "dead_zone_hi": 3.0,
+      "scale": 1.5
+    },
+    "throttle_response": {
+      "dead_zone_lo": 0.15,
+      "dead_zone_hi": 0.35,
+      "scale": 0.2
+    },
+    "steering_corrections": {
+      "dead_zone": 2.0,
+      "scale": 4.0
+    },
+    "lat_g_plateau": {
+      "dead_zone_lo": 0.8,
+      "dead_zone_hi": 1.2,
+      "scale": 0.5
+    },
+    "braking_distance": {
+      "neutral": 0.25,
+      "dead_zone_lo": 0.15,
+      "dead_zone_hi": 0.35,
+      "scale": 0.15
+    },
+    "line_variation": {
+      "spread_cap": 3.0,
+      "max_reduction": 0.8
+    }
+  },
+  "car": {
+    "apex_timing": {
+      "neutral": 0.45,
+      "std": 0.7011,
+      "dead_zone": 0.69,
+      "scale": 1.0516
+    },
+    "corner_balance": {
+      "neutral": -0.2505,
+      "std": 0.7684,
+      "dead_zone_lo": -1.0505,
+      "dead_zone_hi": 0.5495,
+      "scale": 0.7684
+    },
+    "speed_recovery": {
+      "neutral": 0.913,
+      "std": 0.5089,
+      "dead_zone": 0.1155,
+      "scale": 0.5089
+    },
+    "lat_g_jerk": {
+      "neutral": -0.4665,
+      "std": 0.713,
+      "dead_zone": 0.7694,
+      "scale": 1.0696
+    },
+    "trail_braking": {
+      "dead_zone": 1.0,
+      "scale": 1.4008
+    },
+    "gg_shape": {
+      "dead_zone": 0.7265,
+      "scale": 1.079
+    },
+    "yaw_residual": {
+      "dead_zone": 0.1,
+      "scale": 0.3
+    },
+    "heading_accel": {
+      "mid_neutral": 0.903,
+      "exit_neutral": 0.7495,
+      "mid_dead": 0.1325,
+      "exit_dead": 0.106,
+      "scale": 0.2697
+    },
+    "path_divergence": {
+      "scale": 500.0
+    },
+    "friction_asymmetry": {
+      "dead_zone_lo": 0.85,
+      "dead_zone_hi": 1.15,
+      "scale": 0.3
+    },
+    "speed_scrub": {
+      "dead_zone_lo": 2.0,
+      "dead_zone_hi": 3.0,
+      "scale": 1.5
+    },
+    "throttle_response": {
+      "dead_zone_lo": 0.15,
+      "dead_zone_hi": 0.35,
+      "scale": 0.2
+    },
+    "steering_corrections": {
+      "dead_zone": 2.0,
+      "scale": 4.0
+    },
+    "lat_g_plateau": {
+      "dead_zone_lo": 0.8,
+      "dead_zone_hi": 1.2,
+      "scale": 0.5
+    },
+    "braking_distance": {
+      "neutral": 0.25,
+      "dead_zone_lo": 0.15,
+      "dead_zone_hi": 0.35,
+      "scale": 0.15
+    },
+    "line_variation": {
+      "spread_cap": 3.0,
+      "max_reduction": 0.8
+    }
+  }
+}

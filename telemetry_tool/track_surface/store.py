@@ -40,10 +40,74 @@ def _default_sidecar_root() -> Path:
 
 
 def _track_model_dir(track_id: str, sidecar_root: str | None = None) -> Path:
+    """Base directory for a track's geometry (shared across classes/conditions)."""
     root = Path(sidecar_root) if sidecar_root else _default_sidecar_root()
     d = root / "track_models" / track_id
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def _grip_model_dir(
+    track_id: str,
+    vehicle_class: str = "generic",
+    condition: str = "dry",
+    sidecar_root: str | None = None,
+) -> Path:
+    """Directory for class+condition-specific grip data."""
+    base = _track_model_dir(track_id, sidecar_root)
+    d = base / vehicle_class / condition
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+# -- Vehicle class detection --------------------------------------------------
+
+_CLASS_KEYWORDS: dict[str, list[str]] = {
+    "gt3":     ["gt3", "488 gt3", "huracan gt3", "911 gt3", "amg gt3", "m4 gt3"],
+    "gt4":     ["gt4", "cayman gt4", "alpine gt4"],
+    "formula": ["formula", "f3", "f4", "ir-04", "w12", "w13", "sf-23", "dallara"],
+    "lmp":     ["lmp1", "lmp2", "lmdh", "hypercar", "963", "499p", "9x8"],
+    "touring": ["tcr", "btcc", "wtcr", "civic", "elantra"],
+    "kart":    ["kart", "rotax", "x30", "ok", "shifter"],
+    "road":    ["road", "street", "mx-5", "miata"],
+}
+
+
+def detect_vehicle_class(vehicle_name: str | None = None) -> str:
+    """Detect vehicle class from car name string.
+
+    Returns one of: gt3, gt4, formula, lmp, touring, kart, road, generic.
+    """
+    if not vehicle_name:
+        return "generic"
+    name_lower = vehicle_name.lower()
+    for cls, keywords in _CLASS_KEYWORDS.items():
+        if any(kw in name_lower for kw in keywords):
+            return cls
+    return "generic"
+
+
+def detect_track_condition(
+    track_wetness: float | None = None,
+    grip_multiplier: float | None = None,
+) -> str:
+    """Detect track condition from telemetry metadata.
+
+    Returns one of: dry, damp, wet, heavy_wet.
+    """
+    if track_wetness is not None:
+        if track_wetness > 0.7:
+            return "heavy_wet"
+        if track_wetness > 0.3:
+            return "wet"
+        if track_wetness > 0.05:
+            return "damp"
+    if grip_multiplier is not None:
+        if grip_multiplier < 0.7:
+            return "wet"
+        if grip_multiplier < 0.9:
+            return "damp"
+    return "dry"
 
 
 # -- Load ---------------------------------------------------------------------
@@ -52,8 +116,13 @@ def _track_model_dir(track_id: str, sidecar_root: str | None = None) -> Path:
 def load_track_model(
     track_id: str,
     sidecar_root: str | None = None,
+    vehicle_class: str = "generic",
+    condition: str = "dry",
 ) -> TrackSurface | None:
     """Load an accumulated TrackSurface from the Parquet sidecar.
+
+    Geometry (centerline, boundaries, elevation) is shared across classes.
+    Grip data is keyed by (vehicle_class, condition).
 
     Returns None if no model exists for this track.
     """
@@ -106,13 +175,19 @@ def load_track_model(
                 if np.any(np.isfinite(arr)):
                     setattr(surface, attr, arr)
 
-        # Load 2D grip if exists
-        grip_path = model_dir / "grip_2d.parquet"
+        # Load 2D grip from class+condition-keyed directory
+        grip_dir = _grip_model_dir(track_id, vehicle_class, condition, sidecar_root)
+        grip_path = grip_dir / "grip_2d.parquet"
         if grip_path.exists():
             surface.grip_2d = _load_grip_2d(grip_path)
+        else:
+            # Fall back to base dir (legacy or generic grip)
+            legacy_grip = model_dir / "grip_2d.parquet"
+            if legacy_grip.exists():
+                surface.grip_2d = _load_grip_2d(legacy_grip)
 
-        logger.info("Loaded track model: track=%s, laps=%d, tier=%s",
-                     track_id, n_laps, surface.quality_tier)
+        logger.info("Loaded track model: track=%s, class=%s, cond=%s, laps=%d, tier=%s",
+                     track_id, vehicle_class, condition, n_laps, surface.quality_tier)
         return surface
 
     except Exception as exc:
@@ -157,8 +232,13 @@ def merge_track_model(
     track_id: str,
     new_surface: TrackSurface,
     sidecar_root: str | None = None,
+    vehicle_class: str = "generic",
+    condition: str = "dry",
 ) -> bool:
     """Merge a session's TrackSurface into the accumulated sidecar.
+
+    Geometry (centerline, elevation, boundaries) merges into the shared
+    base directory.  Grip data merges into the class+condition subdirectory.
 
     Creates the sidecar from scratch if none exists (bootstrap).
     Returns True on success, False if rejected or failed.
@@ -172,15 +252,17 @@ def merge_track_model(
 
     model_dir = _track_model_dir(track_id, sidecar_root)
     model_path = model_dir / "track_model.parquet"
+    grip_dir = _grip_model_dir(track_id, vehicle_class, condition, sidecar_root)
 
-    existing = load_track_model(track_id, sidecar_root)
+    existing = load_track_model(track_id, sidecar_root, vehicle_class, condition)
 
     if existing is None:
-        # Bootstrap: save new surface directly
+        # Bootstrap: save geometry to shared dir, grip to keyed dir
         _save_surface_parquet(model_path, new_surface)
         if new_surface.grip_2d is not None:
-            _save_grip_2d(model_dir / "grip_2d.parquet", new_surface.grip_2d)
-        logger.info("Bootstrapped track model: track=%s, laps=%d", track_id, new_surface.n_laps)
+            _save_grip_2d(grip_dir / "grip_2d.parquet", new_surface.grip_2d)
+        logger.info("Bootstrapped track model: track=%s, class=%s, cond=%s, laps=%d",
+                     track_id, vehicle_class, condition, new_surface.n_laps)
         return True
 
     # Validate compatibility
@@ -265,7 +347,7 @@ def merge_track_model(
     # Save
     _save_surface_parquet(model_path, merged)
     if merged.grip_2d is not None:
-        _save_grip_2d(model_dir / "grip_2d.parquet", merged.grip_2d)
+        _save_grip_2d(grip_dir / "grip_2d.parquet", merged.grip_2d)
 
     logger.info("Merged track model: track=%s, laps=%d→%d, tier=%s",
                 track_id, existing.n_laps, n_merged, merged.quality_tier)

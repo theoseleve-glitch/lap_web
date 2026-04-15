@@ -486,6 +486,36 @@ def _store_theoretical_data(session_id: str, result: dict, conn=None) -> None:
     logger.info("Persisted theoretical data for session %s", session_id)
 
 
+def _try_store_raw_sidecar(ctx: PipelineContext) -> None:
+    """Store raw irsdk__ Parquet sidecar for .ibt uploads.
+
+    When the uploaded file is an iRacing .ibt binary, re-reads it using the
+    sim optimizer's ibt_loader to produce the irsdk__-prefixed DataFrame
+    and stores it as a Parquet sidecar. This enables the sim optimizer API
+    endpoints (/theoretical, /delta, /corners) for the session.
+
+    Best-effort: logs and continues on any failure.
+    """
+    file_path = ctx.file_path
+    if not file_path or not file_path.lower().endswith(".ibt"):
+        return
+
+    try:
+        from telemetry_tool.sim_optimizer.ingest.ibt_loader import load_ibt
+        from web.routes.theoretical import store_raw_sidecar
+
+        raw_df = load_ibt(file_path)
+        if raw_df is not None and len(raw_df) > 0:
+            session_id = ctx.session_id or ctx.job_id
+            store_raw_sidecar(session_id, raw_df)
+            logger.info(
+                "Stored irsdk__ raw sidecar for session %s (%d rows, %d cols)",
+                session_id, len(raw_df), len(raw_df.columns),
+            )
+    except Exception:
+        logger.warning("Failed to store raw sidecar for %s — continuing", file_path, exc_info=True)
+
+
 def _run_ingest_stages(ctx: PipelineContext) -> None:
     """Pass-through: mark ingest stages 1-4 as completed.
 
@@ -684,6 +714,9 @@ def _run_finalize_stages(ctx: PipelineContext, job_id: Optional[str] = None, con
 
     # ── Persist all session data to the database ──────────────────
     _persist_session_data(ctx, result)
+
+    # ── Store raw irsdk__ sidecar for .ibt uploads (sim optimizer) ──
+    _try_store_raw_sidecar(ctx)
 
     # ── OCP theoretical solver — disabled for v1 (expensive, not surfaced in UI yet) ──
     # TODO(v2): re-enable when OCP results are displayed in session reports

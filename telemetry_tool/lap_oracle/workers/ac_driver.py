@@ -8,8 +8,6 @@ Falls back to SHM-only data collection if the TCP bridge cannot connect.
 """
 from __future__ import annotations
 
-import configparser
-import io
 import logging
 import subprocess
 import time
@@ -26,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 # Number of laps to collect per AC session
 _LAPS_PER_SESSION = 5
+
+# Track names/patterns to skip (not real circuits)
+_SKIP_TRACKS = {"drift", "drag", "dragstrip", "hillclimb", "test", "showroom"}
 
 
 class ACDriverWorker(BaseWorker):
@@ -105,24 +106,40 @@ class ACDriverWorker(BaseWorker):
                     if has_model and has_data:
                         ac_cars.append(d.name)
 
-            # Validate tracks: must have ui/ folder. Check for layouts.
+            # Validate tracks: must have ui/ + data/ + ai/ (complete track)
             tracks_dir = base / "content" / "tracks"
             if tracks_dir.is_dir():
                 for d in sorted(tracks_dir.iterdir()):
                     if not d.is_dir():
                         continue
-                    # Check for layout subfolders (e.g. ks_monza66/road, ks_monza66/junior)
+
+                    def _is_valid_track(track_dir: Path) -> bool:
+                        """Check track has essential physics/AI files."""
+                        return (
+                            (track_dir / "ui").is_dir()
+                            and (track_dir / "data").is_dir()
+                            and (track_dir / "ai").is_dir()
+                            and (track_dir / "ai" / "fast_lane.ai").exists()
+                        )
+
+                    # Check for layout subfolders
                     layouts_found = False
                     for sub in sorted(d.iterdir()):
-                        if sub.is_dir() and (sub / "ui").is_dir():
+                        if sub.is_dir() and _is_valid_track(sub):
                             spec = d.name + "/" + sub.name
                             if spec not in ac_tracks:
                                 ac_tracks.append(spec)
                                 layouts_found = True
-                    # If no layouts, check if top-level has ui/
-                    if not layouts_found and (d / "ui").is_dir():
+                    # If no layouts, check top-level
+                    if not layouts_found and _is_valid_track(d):
                         if d.name not in ac_tracks:
                             ac_tracks.append(d.name)
+
+        # Filter out non-circuit tracks (drift arenas, drag strips, etc.)
+        ac_tracks = [
+            t for t in ac_tracks
+            if not any(skip in t.lower() for skip in _SKIP_TRACKS)
+        ]
 
         if not ac_cars or not ac_tracks:
             logger.warning("No valid AC cars (%d) or tracks (%d)", len(ac_cars), len(ac_tracks))
@@ -130,28 +147,26 @@ class ACDriverWorker(BaseWorker):
 
         logger.info("AC content: %d cars, %d tracks", len(ac_cars), len(ac_tracks))
 
-        # Pick first combo not yet driven
+        # Pick first combo not yet driven (check ac_drive jobs, not solve)
         for track_spec in ac_tracks:
             for car in ac_cars[:10]:
                 track_key = track_spec.replace("/", "_")
-                if not self.lake.job_exists("solve", "ac", car, track_key):
+                if not self.lake.job_exists("ac_drive", "ac", car, track_key):
                     return (car, track_spec)
 
-        return (ac_cars[0], ac_tracks[0])
+        return None  # all combos driven
 
     # -- race.ini ----------------------------------------------------------
 
     def _write_race_ini(self, car: str, track: str) -> Path:
         """Write AC race.ini for the requested car/track combo.
 
-        Returns the path to the written file.
+        Uses plain string output (no configparser) because AC's INI reader
+        requires ``KEY=VALUE`` with no spaces around ``=``.
         """
         cfg_dir = Path(self.config.ac_cfg_dir)
         cfg_dir.mkdir(parents=True, exist_ok=True)
         race_ini = cfg_dir / "race.ini"
-
-        cp = configparser.ConfigParser()
-        cp.optionxform = str  # preserve case
 
         # Track spec can be "track_name" or "track_name/layout"
         if "/" in track:
@@ -159,18 +174,6 @@ class ACDriverWorker(BaseWorker):
         else:
             track_name, config_track = track, ""
 
-        cp["RACE"] = {
-            "MODEL": car,
-            "MODEL_CONFIG": "",
-            "SKIN": "",
-            "TRACK": track_name,
-            "CONFIG_TRACK": config_track,
-            "AI_LEVEL": "0",
-            "PENALTIES": "0",
-            "LAPS": str(_LAPS_PER_SESSION + 1),
-            "CARS": "1",
-            "FIXED_SETUP": "0",
-        }
         # Find first available skin
         skin = ""
         from telemetry_tool.lap_oracle.config import SIM_PATHS
@@ -184,76 +187,99 @@ class ACDriverWorker(BaseWorker):
                 if skin:
                     break
 
-        cp["CAR_0"] = {
-            "MODEL": car,
-            "SKIN": skin,
-            "SETUP": "",
-            "BALLAST": "0",
-            "RESTRICTOR": "0",
-            "DRIVER_NAME": "Lap Oracle",
-            "NATIONALITY": "",
-        }
-        cp["SESSION_0"] = {
-            "NAME": "Practice",
-            "TYPE": "1",
-            "DURATION_MINUTES": "30",
-            "SPAWN_SET": "START",
-        }
-
-        buf = io.StringIO()
-        cp.write(buf)
-        race_ini.write_text(buf.getvalue(), encoding="utf-8")
+        content = (
+            "[HEADER]\n"
+            "VERSION=2\n"
+            "\n"
+            "[RACE]\n"
+            f"MODEL={car}\n"
+            "MODEL_CONFIG=\n"
+            f"SKIN={skin}\n"
+            f"TRACK={track_name}\n"
+            f"CONFIG_TRACK={config_track}\n"
+            "AI_LEVEL=0\n"
+            "PENALTIES=0\n"
+            f"LAPS={_LAPS_PER_SESSION + 1}\n"
+            "CARS=1\n"
+            "FIXED_SETUP=0\n"
+            "DRIFT_MODE=0\n"
+            "\n"
+            "[CAR_0]\n"
+            f"MODEL={car}\n"
+            f"SKIN={skin}\n"
+            "SETUP=\n"
+            "BALLAST=0\n"
+            "RESTRICTOR=0\n"
+            "DRIVER_NAME=Lap Oracle\n"
+            "NATIONALITY=\n"
+            "\n"
+            "[SESSION_0]\n"
+            "NAME=Practice\n"
+            "TYPE=1\n"
+            "DURATION_MINUTES=30\n"
+            "SPAWN_SET=START\n"
+        )
+        race_ini.write_text(content, encoding="utf-8")
         logger.debug("Wrote race.ini: %s", race_ini)
         return race_ini
 
     # -- AC lifecycle ------------------------------------------------------
 
     def _launch_ac(self) -> None:
-        """Launch AC via Content Manager or Steam launcher.
+        """Launch AC via Content Manager or Steam.
 
-        Content Manager handles CSP patching and proper session setup.
-        Falls back to Steam launch if CM not found.
+        Direct acs.exe launch crashes in SharedMemoryWriter::writeStatic
+        because CSP requires Content Manager's initialization chain.
+        Falls back to Steam launch (steam://rungameid/244210) if CM
+        is not found.
         """
         cm_exe = Path("C:/Users/Admin/Desktop/Content Manager.exe")
-        ac_exe = Path(self.config.ac_exe)
 
         if cm_exe.exists():
-            # Content Manager: launch with race preset via command line
-            # CM reads race.ini and starts the session directly
+            # CM reads race.ini from Documents and launches AC properly
             self._ac_process = subprocess.Popen(
-                [str(cm_exe), "--race"],
+                [str(cm_exe), "--run=race"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             self._ac_running = True
             logger.info("Launched AC via Content Manager (pid=%d)", self._ac_process.pid)
-        elif ac_exe.exists():
-            # Fallback: launch via AssettoCorsa.exe (the launcher)
-            self._ac_process = subprocess.Popen(
-                [str(ac_exe)],
+        else:
+            # Fall back to Steam launch — handles CSP initialization
+            subprocess.Popen(
+                ["cmd", "/c", "start", "steam://rungameid/244210"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
             self._ac_running = True
-            logger.info("Launched AC via launcher (pid=%d)", self._ac_process.pid)
-        else:
-            logger.warning("Neither Content Manager nor AC exe found")
-            return
+            self._ac_process = None  # Steam manages the process
+            logger.info("Launched AC via Steam")
 
-        # Wait for SHM to become available
+        # Wait for AC to be fully running.
+        # CRITICAL: Do NOT touch shared memory (mmap) during AC startup.
+        # Any SHM access before AC finishes initializing can corrupt the
+        # memory-mapped region and crash SharedMemoryWriter::writeStatic.
+        # Instead, just wait and check process liveness.
         timeout = self.config.ac_launch_timeout
         start = time.time()
-        while time.time() - start < timeout:
-            try:
-                import mmap
-                shm = mmap.mmap(-1, 4096, "acpmf_physics", access=mmap.ACCESS_READ)
-                shm.close()
-                logger.info("AC SHM detected after %.1f s", time.time() - start)
-                return
-            except (OSError, ValueError):
-                time.sleep(2.0)
+        wait_secs = min(30.0, timeout * 0.3)
 
-        logger.warning("AC SHM not detected within %d s", timeout)
+        logger.info("Waiting %.0f s for AC to initialize...", wait_secs)
+        while time.time() - start < wait_secs:
+            time.sleep(2.0)
+            if self._ac_process is not None and self._ac_process.poll() is not None:
+                logger.warning("AC process died during startup (exit code %d)", self._ac_process.returncode)
+                self._ac_running = False
+                return
+
+        # After initial wait, check if process is still alive
+        if self._ac_process is not None and self._ac_process.poll() is not None:
+            logger.warning("AC process died after init wait (exit code %d)", self._ac_process.returncode)
+            self._ac_running = False
+            return
+
+        logger.info("AC startup wait complete (%.1f s), process alive (pid=%d)",
+                     time.time() - start, self._ac_process.pid)
 
     def _kill_ac(self) -> None:
         """Kill the AC process forcefully."""
@@ -266,7 +292,7 @@ class ACDriverWorker(BaseWorker):
                 pass
 
         # taskkill as backup
-        for exe_name in ("acs.exe", "AssettoCorsa.exe"):
+        for exe_name in ("acs.exe", "acs_x86.exe", "AssettoCorsa.exe"):
             try:
                 subprocess.run(
                     ["taskkill", "/F", "/IM", exe_name],
@@ -328,30 +354,41 @@ class ACDriverWorker(BaseWorker):
         track: str,
         telemetry: List[np.ndarray],
     ) -> None:
-        """Build VehicleParams from telemetry and enqueue solve jobs."""
+        """Save telemetry, mark combo as driven, enqueue solve if possible."""
+        track_key = track.replace("/", "_")
+
         if not telemetry:
+            # Mark combo as driven even with no data (prevents retry loop)
+            self.lake.add_job(
+                "ac_drive", sim="ac", car=car, track=track_key, priority=0.0,
+            )
             return
 
         # Save raw telemetry
         tel_dir = self.lake.data_dir / "telemetry" / "ac"
         tel_dir.mkdir(parents=True, exist_ok=True)
-        tel_path = tel_dir / f"{car}_{track}.npz"
+        tel_path = tel_dir / f"{car}_{track_key}.npz"
         np.savez_compressed(
             str(tel_path),
             frames=np.array(telemetry, dtype=np.float32),
         )
 
-        # Enqueue solve job if vehicle exists
+        # Always mark combo as driven so we don't repeat it
+        self.lake.add_job(
+            "ac_drive", sim="ac", car=car, track=track_key, priority=0.0,
+        )
+
+        # Enqueue solve job if vehicle model exists
         vehicle = self.lake.load_vehicle("ac", car)
         if vehicle is not None and not self.lake.job_exists(
-            "solve", "ac", car, track,
+            "solve", "ac", car, track_key,
         ):
             self.lake.add_job(
-                "solve", sim="ac", car=car, track=track, priority=7.0,
+                "solve", sim="ac", car=car, track=track_key, priority=7.0,
             )
 
         self.lake.log_progress(
             "ac_driver",
             ac_laps_completed=_LAPS_PER_SESSION,
-            details={"car": car, "track": track, "frames": len(telemetry)},
+            details={"car": car, "track": track_key, "frames": len(telemetry)},
         )

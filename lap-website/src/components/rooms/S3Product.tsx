@@ -1,184 +1,200 @@
 'use client';
 
-import { useState } from 'react';
-import Image from 'next/image';
+import { useEffect, useRef } from 'react';
+import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { useTranslation } from '@/i18n';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 
-/* ── Screenshot tab data ────────────────────────────────── */
+gsap.registerPlugin(ScrollTrigger);
 
-interface ScreenTab {
-  labelKey: string;
-  descKey: string;
-  image: string;
-  alt: string;
-}
-
-const COACHING_TABS: ScreenTab[] = [
+const PIPELINE_STAGES = [
   {
-    labelKey: 'home.product.coachingTab1Label',
-    descKey: 'home.product.coachingTab1Desc',
-    image: '/images/screenshots/report-overview.png',
-    alt: 'Session score breakdown showing Pace, Consistency, Execution, Robustness, and Adaptation pillars with session info',
+    step: '01',
+    name: 'LOG',
+    headline: 'Record the session',
+    detail: 'Upload from iRacing, ACC, or F1. Or connect a GPS logger for real-world sessions. One entry point for all data.',
   },
   {
-    labelKey: 'home.product.coachingTab2Label',
-    descKey: 'home.product.coachingTab2Desc',
-    image: '/images/screenshots/focus-mode.png',
-    alt: 'Focus Mode with track map, GG diagram, speed trace, and lap overlay side by side',
+    step: '02',
+    name: 'PROCESS',
+    headline: 'Clean and structure the data',
+    detail: 'GPS filtering, derived channels, track detection, lap splitting, and resampling. A 14-stage pipeline handles the engineering so you don\u2019t have to.',
   },
   {
-    labelKey: 'home.product.coachingTab3Label',
-    descKey: 'home.product.coachingTab3Desc',
-    image: '/images/screenshots/lap-data.png',
-    alt: 'Performance summary with best time, mean time, consistency, and lap times bar chart',
-  },
-];
-
-const STRATEGY_TABS: ScreenTab[] = [
-  {
-    labelKey: 'home.product.strategyTab1Label',
-    descKey: 'home.product.strategyTab1Desc',
-    image: '/images/screenshots/race-config.png',
-    alt: 'Race strategy config with duration, drivers, weights, fuel, and stint timeline',
+    step: '03',
+    name: 'ANALYZE',
+    headline: 'Corner-by-corner breakdown',
+    detail: 'Every corner scored for entry, apex, and exit. Speed traces, GG diagrams, and GPS overlay reveal exactly where time was lost and why.',
   },
   {
-    labelKey: 'home.product.strategyTab2Label',
-    descKey: 'home.product.strategyTab2Desc',
-    image: '/images/screenshots/race-stints.png',
-    alt: 'Driver summary and stint table with fuel, ballast, and pit lap details',
+    step: '04',
+    name: 'SCORE',
+    headline: 'Build your driver profile',
+    detail: 'Pace, Consistency, Execution, Robustness \u2014 four pillars scored out of 25 each. One session gives you a number. Ten sessions give you a pattern.',
   },
   {
-    labelKey: 'home.product.strategyTab3Label',
-    descKey: 'home.product.strategyTab3Desc',
-    image: '/images/screenshots/live-dashboard.png',
-    alt: 'Live race dashboard with elapsed time, fuel status, current and next driver cards',
+    step: '05',
+    name: 'TRACK',
+    headline: 'Measure progression over time',
+    detail: 'Session-over-session comparison, plateau detection, and improvement velocity. See whether your changes are actually working.',
+  },
+  {
+    step: '06',
+    name: 'STRATEGIZE',
+    headline: 'Support race day decisions',
+    detail: 'Stint planning, fuel management, pit windows, and live monitoring. Race strategy tools that connect to your driver data.',
+  },
+  {
+    step: '07',
+    name: 'PREPARE',
+    headline: 'Enter the next session with a plan',
+    detail: 'Coaching priorities, focus areas, and measurable targets. Every session debrief ends with what to change next.',
   },
 ];
-
-/* ── Tab viewer component ───────────────────────────────── */
-
-function ScreenTabViewer({
-  tabs,
-  accent,
-  t,
-}: {
-  tabs: ScreenTab[];
-  accent: 'chalk' | 'gold';
-  t: (key: string, fallback?: string) => string;
-}) {
-  const [active, setActive] = useState(0);
-  const current = tabs[active];
-
-  const accentBorder = accent === 'gold' ? 'border-gold' : 'border-chalk';
-  const accentText = accent === 'gold' ? 'text-gold' : 'text-chalk';
-  const accentBg = accent === 'gold' ? 'bg-gold' : 'bg-chalk';
-
-  return (
-    <div>
-      {/* Screenshot */}
-      <div className="relative w-full aspect-video bg-asphalt border border-chalk/15 overflow-hidden mb-3">
-        {tabs.map((tab, i) => (
-          <div
-            key={tab.labelKey}
-            className="absolute inset-0 transition-opacity duration-300"
-            style={{ opacity: i === active ? 1 : 0 }}
-            aria-hidden={i !== active}
-          >
-            <Image
-              src={tab.image}
-              alt={tab.alt}
-              fill
-              sizes="(max-width: 768px) 100vw, 600px"
-              className="object-cover object-top"
-              priority={i === 0}
-            />
-          </div>
-        ))}
-        {/* Label overlay */}
-        <div className={`absolute top-2 left-2 font-telemetry text-[10px] tracking-[0.12em] uppercase ${accentText} opacity-80 bg-asphalt/60 px-1.5 py-0.5`}>
-          {t(current.labelKey)}
-        </div>
-        {/* Progress bar */}
-        <div
-          className={`absolute bottom-0 left-0 h-[2px] ${accentBg} transition-all duration-300`}
-          style={{ width: `${((active + 1) / tabs.length) * 100}%` }}
-        />
-      </div>
-
-      {/* Tab buttons */}
-      <div className="flex gap-1 mb-3">
-        {tabs.map((tab, i) => (
-          <button
-            key={tab.labelKey}
-            type="button"
-            onClick={() => setActive(i)}
-            className={`flex-1 py-1.5 px-2 font-telemetry text-[9px] tracking-[0.1em] uppercase transition-colors border ${
-              i === active
-                ? `${accentBorder} ${accentText}`
-                : 'border-steel/20 text-steel hover:text-chalk hover:border-steel/40'
-            }`}
-          >
-            {t(tab.labelKey)}
-          </button>
-        ))}
-      </div>
-
-      {/* Description */}
-      <p className="font-body text-steel text-sm leading-relaxed min-h-[3rem]">
-        {t(current.descKey)}
-      </p>
-    </div>
-  );
-}
-
-/* ── Main section ───────────────────────────────────────── */
 
 export function S3Product() {
-  const { t } = useTranslation();
+  const sectionRef = useRef<HTMLElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+  const { reducedMotion } = useReducedMotion();
+
+  useEffect(() => {
+    if (reducedMotion || !sectionRef.current || !trackRef.current) return;
+
+    const totalWidth = trackRef.current.scrollWidth - window.innerWidth;
+
+    // Pin the section and scrub the horizontal track
+    const mainSt = ScrollTrigger.create({
+      trigger: sectionRef.current,
+      start: 'top top',
+      end: () => `+=${totalWidth}`,
+      pin: true,
+      scrub: 1,
+      anticipatePin: 1,
+      animation: gsap.to(trackRef.current, {
+        x: -totalWidth,
+        ease: 'none',
+      }),
+      onUpdate: (self) => {
+        if (progressRef.current) {
+          progressRef.current.style.width = `${self.progress * 100}%`;
+        }
+      },
+    });
+
+    // Each card fades in during horizontal scroll
+    const cards = trackRef.current.querySelectorAll('.pipeline-card');
+    cards.forEach((card) => {
+      gsap.fromTo(card, {
+        opacity: 0.3,
+        scale: 0.95,
+      }, {
+        opacity: 1,
+        scale: 1,
+        duration: 0.5,
+        ease: 'power2.out',
+        scrollTrigger: {
+          trigger: card,
+          containerAnimation: mainSt.animation!,
+          start: 'left 80%',
+          end: 'left 40%',
+          scrub: 1,
+        },
+      });
+    });
+
+    return () => {
+      ScrollTrigger.getAll().forEach((t) => t.kill());
+    };
+  }, [reducedMotion]);
+
+  // Fallback: vertical stack for reduced motion
+  if (reducedMotion) {
+    return (
+      <section id="s3-product" data-accent="none" className="relative py-16 md:py-24" aria-label="Product ecosystem">
+        <div className="grid-lap">
+          <div className="col-span-full text-center mb-12">
+            <MonumentText size="h1" as="h2">
+              ONE SYSTEM FROM RAW SESSION<br />
+              <span className="text-gold">TO NEXT-SESSION ACTION.</span>
+            </MonumentText>
+          </div>
+          <div className="col-span-full max-w-4xl mx-auto space-y-4">
+            {PIPELINE_STAGES.map((stage) => (
+              <div key={stage.step} className="border border-chalk/10 bg-concrete/40 p-5">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="font-telemetry text-[10px] text-gold">{stage.step}</span>
+                  <span className="font-monument text-xs text-gold tracking-widest">{stage.name}</span>
+                  <span className="font-monument text-xs text-chalk">{stage.headline}</span>
+                </div>
+                <p className="font-body text-sm text-steel leading-relaxed">{stage.detail}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section
+      ref={sectionRef}
       id="s3-product"
-      data-accent="green"
-      className="room relative py-16 md:py-24"
-      aria-label="Sector 3 — The product"
+      data-accent="none"
+      className="relative min-h-screen overflow-hidden"
+      aria-label="Product ecosystem"
     >
-      <div className="grid-lap">
-        {/* Monument header */}
-        <div className="col-span-full text-center mb-12">
-          <MonumentText size="xl" as="h2" reveal>
-            {t('home.product.monument')}
-          </MonumentText>
-        </div>
+      {/* Header — stays visible during pin */}
+      <div className="pt-16 pb-8 px-grid-margin text-center">
+        <MonumentText size="h1" as="h2" split>
+          ONE SYSTEM FROM RAW SESSION<br />
+          <span className="text-gold">TO NEXT-SESSION ACTION.</span>
+        </MonumentText>
+        <p className="font-body text-body text-steel max-w-prose mx-auto mt-4">
+          Logging, analysis, progression, and race tools&nbsp;&mdash; connected.
+        </p>
+      </div>
 
-        {/* Coaching — primary, full width */}
-        <div className="col-span-full max-w-4xl mx-auto">
-          <div className="border border-chalk/15 p-5">
-            <h3 className="font-monument text-xs text-chalk tracking-widest mb-1">
-              {t('home.product.coachingSubhead')}
-            </h3>
-            <p className="font-body text-steel text-sm mb-4">
-              {t('home.product.coachingTagline')}
-            </p>
-            <ScreenTabViewer tabs={COACHING_TABS} accent="chalk" t={t} />
-          </div>
+      {/* Progress bar */}
+      <div className="mx-grid-margin mb-6">
+        <div className="h-px bg-steel/20 relative">
+          <div ref={progressRef} className="absolute top-0 left-0 h-full bg-gold transition-none" style={{ width: 0 }} />
         </div>
-
-        {/* Race Day Tools — secondary, narrower */}
-        <div className="col-span-full max-w-2xl mx-auto mt-8">
-          <p className="font-telemetry text-[10px] text-steel tracking-[0.12em] uppercase mb-3">ALSO INCLUDED</p>
-          <div className="border border-steel/20 p-4">
-            <h3 className="font-monument text-xs text-gold tracking-widest mb-1">
-              {t('home.product.strategySubhead')}
-            </h3>
-            <p className="font-body text-steel text-sm mb-4">
-              {t('home.product.strategyTagline')}
-            </p>
-            <ScreenTabViewer tabs={STRATEGY_TABS} accent="gold" t={t} />
-          </div>
+        <div className="flex justify-between mt-2">
+          {PIPELINE_STAGES.map((s) => (
+            <span key={s.step} className="font-telemetry text-[9px] text-steel/40 tracking-[0.12em]">
+              {s.step}
+            </span>
+          ))}
         </div>
       </div>
+
+      {/* Horizontal scroll track */}
+      <div ref={trackRef} className="flex gap-6 pl-grid-margin pr-[50vw]" style={{ width: 'max-content' }}>
+        {PIPELINE_STAGES.map((stage) => (
+          <div
+            key={stage.step}
+            className="pipeline-card shrink-0 w-[min(420px,80vw)] border border-chalk/10 bg-concrete/40 p-8 flex flex-col"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 border border-gold/40 bg-concrete flex items-center justify-center">
+                <span className="font-telemetry text-sm text-gold">{stage.step}</span>
+              </div>
+              <span className="font-monument text-sm text-gold tracking-widest">
+                {stage.name}
+              </span>
+            </div>
+            <h3 className="font-monument text-h3 text-chalk mb-3">
+              {stage.headline}
+            </h3>
+            <p className="font-body text-body text-steel leading-relaxed flex-1">
+              {stage.detail}
+            </p>
+          </div>
+        ))}
+      </div>
+
     </section>
   );
 }

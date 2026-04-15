@@ -27,7 +27,7 @@ from telemetry_tool.lap_oracle.config import (
 )
 
 # Valid job types and statuses ------------------------------------------------
-_JOB_TYPES = {"harvest", "identify", "solve", "sweep", "train"}
+_JOB_TYPES = {"harvest", "identify", "solve", "sweep", "train", "ac_drive"}
 _JOB_STATUSES = {"pending", "running", "completed", "failed"}
 
 # SQL DDL --------------------------------------------------------------------

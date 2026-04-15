@@ -1,18 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { MonumentText } from '@/components/ui/MonumentText';
-import { PitButton } from '@/components/ui/PitButton';
-import { trackCtaClick, trackPodiumReach, trackRestartLap } from '@/lib/analytics';
-import { useTranslation } from '@/i18n';
+import { trackCtaClick, trackPodiumReach } from '@/lib/analytics';
+import { useMagnetic } from '@/hooks/useMagnetic';
 
 export function Podium() {
-  const [showRestart, setShowRestart] = useState(false);
   const trackedRef = useRef(false);
   const startTimeRef = useRef(Date.now());
-  const { t } = useTranslation();
+  const magneticRef = useMagnetic<HTMLAnchorElement>();
 
-  // Track podium reach
   useEffect(() => {
     if (trackedRef.current) return;
 
@@ -20,7 +18,7 @@ export function Podium() {
       ([entry]) => {
         if (entry.isIntersecting && !trackedRef.current) {
           trackedRef.current = true;
-          trackPodiumReach(Date.now() - startTimeRef.current, 11);
+          trackPodiumReach(Date.now() - startTimeRef.current, 10);
         }
       },
       { threshold: 0.5 },
@@ -31,53 +29,35 @@ export function Podium() {
     return () => observer.disconnect();
   }, []);
 
-  // Show restart after 3s
-  useEffect(() => {
-    const timer = setTimeout(() => setShowRestart(true), 3000);
-    return () => clearTimeout(timer);
-  }, []);
-
-  const handleRestart = () => {
-    trackRestartLap();
-    // Lenis intercepts native smooth scroll
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
   return (
     <section
       id="podium"
-      data-accent="orange"
-      className="room relative py-16 md:py-24"
-      aria-label="Podium — Final action"
+      data-accent="none"
+      className="relative py-24 md:py-32"
+      aria-label="Final CTA"
     >
       <div className="grid-lap">
-        <div className="col-span-full flex flex-col items-center justify-center text-center gap-8">
-          <MonumentText size="xl" as="h2" reveal>
-            {t('home.podium.monument1')}<br />{t('home.podium.monument2')}
+        <div className="col-span-full flex flex-col items-center justify-center text-center gap-6">
+          <MonumentText size="xl" as="h2" split>
+            YOUR DRIVING<br />
+            <span className="text-gold mix-blend-difference">DESERVES BETTER</span><br />
+            THAN GUESSWORK.
           </MonumentText>
 
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-            <PitButton
-              href="/register?source=hero"
-              onClick={() => trackCtaClick('start_free_report', 'podium', 'b2c')}
-            >
-              {t('cta.startFreeReport')}
-            </PitButton>
-          </div>
-
-          <p className="font-telemetry text-steel max-w-lg">
-            {t('home.podium.subtext')}
+          <p className="font-body text-body text-steel max-w-prose">
+            Run a lap. Get your report. See what changes.
           </p>
 
-          {showRestart && (
-            <button
-              type="button"
-              className="font-telemetry text-steel/50 hover:text-steel transition-opacity duration-[420ms] mt-8"
-              onClick={handleRestart}
-            >
-              {t('home.podium.restart')}
-            </button>
-          )}
+          <Link
+            ref={magneticRef}
+            href="/register?source=podium"
+            data-cursor="GO"
+            className="cta-glow inline-flex items-center justify-center min-h-[48px] px-10 py-4 bg-gold text-white font-telemetry text-[12px] tracking-[0.12em] uppercase font-bold transition-all duration-[420ms] hover:brightness-110 hover:shadow-[0_0_32px_rgba(201,168,76,0.25)] mt-4"
+            onClick={() => trackCtaClick('start_free', 'podium', 'b2c')}
+          >
+            Start free — try the demo dashboard
+          </Link>
+
         </div>
       </div>
     </section>

@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Track Surface 3D — Grip Heatmap</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; color: #f0ede5; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; overflow: hidden; height: 100vh; display: flex; }
+
+  /* Sidebar */
+  .sidebar { width: 280px; min-width: 280px; background: #141414; border-right: 1px solid #2a2a2a; display: flex; flex-direction: column; overflow-y: auto; }
+  .sidebar h1 { font-family: system-ui, sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 16px 16px 8px; color: #c9a84c; }
+  .sidebar h2 { font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #949494; padding: 12px 16px 4px; }
+  .control-group { padding: 4px 16px 8px; }
+  .control-row { display: flex; align-items: center; justify-content: space-between; padding: 3px 0; }
+  .control-row label { font-size: 11px; color: #949494; }
+  .control-row span { font-size: 11px; color: #f0ede5; min-width: 40px; text-align: right; }
+  input[type="range"] { width: 100px; accent-color: #c9a84c; height: 4px; }
+  input[type="checkbox"] { accent-color: #c9a84c; }
+
+  /* Mode buttons */
+  .mode-btns { display: flex; gap: 4px; padding: 8px 16px; }
+  .mode-btn { flex: 1; padding: 6px 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; border: 1px solid #2a2a2a; background: transparent; color: #949494; cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+  .mode-btn.active { border-color: #c9a84c; color: #c9a84c; background: rgba(201,168,76,0.08); }
+  .mode-btn:hover:not(.active) { color: #f0ede5; border-color: #444; }
+
+  /* Preset buttons */
+  .presets { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 16px 12px; }
+  .preset-btn { padding: 4px 8px; font-size: 10px; border: 1px solid #2a2a2a; background: transparent; color: #949494; cursor: pointer; border-radius: 3px; }
+  .preset-btn:hover { color: #f0ede5; border-color: #c9a84c; }
+
+  /* Legend */
+  .legend { padding: 12px 16px; border-top: 1px solid #2a2a2a; margin-top: auto; }
+  .legend-title { font-size: 10px; color: #949494; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 6px; }
+  .legend-bar { height: 12px; border-radius: 3px; margin-bottom: 4px; }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 9px; color: #949494; }
+
+  /* Stats */
+  .stats { padding: 8px 16px; border-top: 1px solid #2a2a2a; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 10px; padding: 2px 0; }
+  .stat-row .label { color: #949494; }
+  .stat-row .value { color: #f0ede5; }
+
+  /* Canvas */
+  .viewport { flex: 1; position: relative; }
+  canvas { display: block; width: 100% !important; height: 100% !important; }
+
+  /* HUD overlay */
+  .hud { position: absolute; top: 12px; right: 16px; font-size: 10px; color: #949494; text-align: right; pointer-events: none; }
+  .hud .fps { color: #22c55e; }
+
+  /* Info overlay */
+  .info-overlay { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); background: rgba(20,20,20,0.85); border: 1px solid #2a2a2a; border-radius: 6px; padding: 8px 16px; font-size: 10px; color: #949494; pointer-events: none; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h1>Track Surface 3D</h1>
+
+  <h2>Visualization Mode</h2>
+  <div class="mode-btns">
+    <button class="mode-btn active" data-mode="grip">Grip</button>
+    <button class="mode-btn" data-mode="elevation">Elev</button>
+    <button class="mode-btn" data-mode="delta">Delta</button>
+  </div>
+
+  <h2>Presets</h2>
+  <div class="presets">
+    <button class="preset-btn" data-preset="spa">Spa-like</button>
+    <button class="preset-btn" data-preset="monza">Monza-like</button>
+    <button class="preset-btn" data-preset="kart">Kart Track</button>
+    <button class="preset-btn" data-preset="oval">Oval</button>
+    <button class="preset-btn" data-preset="nurburgring">Ring-like</button>
+  </div>
+
+  <h2>Track Shape</h2>
+  <div class="control-group">
+    <div class="control-row"><label>Corners</label><input type="range" id="cornerCount" min="4" max="20" value="12"><span id="cornerCountVal">12</span></div>
+    <div class="control-row"><label>Track Width</label><input type="range" id="trackWidth" min="4" max="20" value="10" step="0.5"><span id="trackWidthVal">10m</span></div>
+    <div class="control-row"><label>Elevation</label><input type="range" id="elevScale" min="0" max="30" value="12" step="1"><span id="elevScaleVal">12m</span></div>
+    <div class="control-row"><label>Compression</label><input type="range" id="compression" min="0" max="100" value="40"><span id="compressionVal">40%</span></div>
+  </div>
+
+  <h2>Grip Model</h2>
+  <div class="control-group">
+    <div class="control-row"><label>Rubber Line Width</label><input type="range" id="rubberWidth" min="1" max="8" value="3" step="0.5"><span id="rubberWidthVal">3m</span></div>
+    <div class="control-row"><label>Rubber Intensity</label><input type="range" id="rubberIntensity" min="0" max="100" value="60"><span id="rubberIntensityVal">60%</span></div>
+    <div class="control-row"><label>Off-line Penalty</label><input type="range" id="offlinePenalty" min="0" max="50" value="25"><span id="offlinePenaltyVal">25%</span></div>
+  </div>
+
+  <h2>Overlays</h2>
+  <div class="control-group">
+    <div class="control-row"><label>Optimal Line</label><input type="checkbox" id="showOptimal" checked></div>
+    <div class="control-row"><label>Actual Line</label><input type="checkbox" id="showActual" checked></div>
+    <div class="control-row"><label>Curb Markers</label><input type="checkbox" id="showCurbs" checked></div>
+    <div class="control-row"><label>Wireframe</label><input type="checkbox" id="showWireframe"></div>
+    <div class="control-row"><label>Surface Opacity</label><input type="range" id="surfaceOpacity" min="30" max="100" value="90"><span id="surfaceOpacityVal">90%</span></div>
+  </div>
+
+  <div class="stats" id="stats">
+    <div class="stat-row"><span class="label">Track Length</span><span class="value" id="statLength">—</span></div>
+    <div class="stat-row"><span class="label">Elev. Range</span><span class="value" id="statElev">—</span></div>
+    <div class="stat-row"><span class="label">Corners</span><span class="value" id="statCorners">—</span></div>
+    <div class="stat-row"><span class="label">Max Grip</span><span class="value" id="statMaxGrip">—</span></div>
+    <div class="stat-row"><span class="label">Min Grip</span><span class="value" id="statMinGrip">—</span></div>
+    <div class="stat-row"><span class="label">Vertices</span><span class="value" id="statVerts">—</span></div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-title" id="legendTitle">Grip Coefficient (mu)</div>
+    <div class="legend-bar" id="legendBar"></div>
+    <div class="legend-labels"><span id="legendLow">0.7</span><span id="legendMid">1.0</span><span id="legendHigh">1.4</span></div>
+  </div>
+</div>
+
+<div class="viewport" id="viewport">
+  <div class="hud"><span id="fpsDisplay" class="fps">-- fps</span></div>
+  <div class="info-overlay">Drag to rotate &middot; Scroll to zoom &middot; Right-drag to pan</div>
+</div>
+
+<script>
+// ─── THREE.JS INLINE (minimal) ────────────────────────────────────
+// Using a self-contained mini Three.js-like renderer for zero dependencies
+// Actually, let's use the import map approach with a CDN fallback that's inlined
+</script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.min.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ─── State ────────────────────────────────────────────────────────
+const state = {
+  mode: 'grip',
+  cornerCount: 12,
+  trackWidth: 10,
+  elevScale: 12,
+  compression: 40,
+  rubberWidth: 3,
+  rubberIntensity: 60,
+  offlinePenalty: 25,
+  showOptimal: true,
+  showActual: true,
+  showCurbs: true,
+  showWireframe: false,
+  surfaceOpacity: 90,
+};
+
+const PRESETS = {
+  spa: { cornerCount: 14, trackWidth: 12, elevScale: 25, compression: 70, rubberWidth: 3, rubberIntensity: 65, offlinePenalty: 30 },
+  monza: { cornerCount: 8, trackWidth: 14, elevScale: 5, compression: 20, rubberWidth: 4, rubberIntensity: 70, offlinePenalty: 20 },
+  kart: { cornerCount: 10, trackWidth: 6, elevScale: 2, compression: 10, rubberWidth: 2, rubberIntensity: 50, offlinePenalty: 15 },
+  oval: { cornerCount: 4, trackWidth: 16, elevScale: 8, compression: 50, rubberWidth: 5, rubberIntensity: 80, offlinePenalty: 35 },
+  nurburgring: { cornerCount: 20, trackWidth: 10, elevScale: 30, compression: 60, rubberWidth: 3, rubberIntensity: 55, offlinePenalty: 25 },
+};
+
+// ─── Colors ───────────────────────────────────────────────────────
+const COL = {
+  gripHigh:  new THREE.Color(0x22c55e),  // acid-green
+  gripMid:   new THREE.Color(0xfacc15),  // marshal-yellow
+  gripLow:   new THREE.Color(0xff2a2a),  // safety-red
+  elevLow:   new THREE.Color(0x3b82f6),  // blue
+  elevMid:   new THREE.Color(0x949494),  // steel
+  elevHigh:  new THREE.Color(0xf0ede5),  // chalk
+  deltaGood: new THREE.Color(0x22c55e),
+  deltaBad:  new THREE.Color(0xff2a2a),
+  gold:      new THREE.Color(0xc9a84c),
+  chalk:     new THREE.Color(0xf0ede5),
+  curb:      new THREE.Color(0xff2a2a),
+  curbAlt:   new THREE.Color(0xfacc15),
+};
+
+// ─── Scene Setup ──────────────────────────────────────────────────
+const viewport = document.getElementById('viewport');
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000);
+viewport.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x000000, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(50, 1, 1, 5000);
+camera.position.set(0, 300, 400);
+camera.lookAt(0, 0, 0);
+
+// Lights
+const ambient = new THREE.AmbientLight(0x404040, 0.6);
+scene.add(ambient);
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(200, 400, 300);
+scene.add(dir);
+const hemi = new THREE.HemisphereLight(0x1a1a3e, 0x0a0a0a, 0.4);
+scene.add(hemi);
+
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(3000, 3000);
+const groundMat = new THREE.MeshBasicMaterial({ color: 0x080808, side: THREE.DoubleSide });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -2;
+scene.add(ground);
+
+// ─── Track Generation ─────────────────────────────────────────────
+let trackMesh, wireframeMesh, optimalLine, actualLine, curbMarkers = [];
+let trackPoints = [], trackLength = 0;
+
+function generateTrackPath(nCorners) {
+  const points = [];
+  const n = nCorners * 20; // points per lap
+  const baseRadius = 120 + nCorners * 8;
+
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2;
+
+    // Base shape: deformed circle with varying radius
+    let r = baseRadius;
+    for (let h = 1; h <= Math.floor(nCorners / 2); h++) {
+      const amp = (15 + Math.random() * 10) / h;
+      const phase = (h * 1.37) % (Math.PI * 2); // deterministic pseudo-random
+      r += amp * Math.sin(h * t + phase);
+    }
+
+    const x = r * Math.cos(t);
+    const z = r * Math.sin(t);
+
+    // Elevation: sine waves for hills + compressions
+    const elevBase = Math.sin(t * 2.3) * 0.5 + Math.sin(t * 1.1) * 0.3 + Math.sin(t * 3.7) * 0.2;
+    // Compression dips
+    const compAmt = state.compression / 100;
+    const compDips = Math.sin(t * nCorners * 0.5) * compAmt * 0.4;
+    const y = (elevBase + compDips) * state.elevScale;
+
+    points.push(new THREE.Vector3(x, y, z));
+  }
+  return points;
+}
+
+function computeFrenetFrames(points) {
+  const frames = [];
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const prev = points[(i - 1 + n) % n];
+    const curr = points[i];
+    const next = points[(i + 1) % n];
+
+    const tangent = new THREE.Vector3().subVectors(next, prev).normalize();
+    const up = new THREE.Vector3(0, 1, 0);
+    const normal = new THREE.Vector3().crossVectors(tangent, up).normalize();
+    if (normal.length() < 0.01) normal.set(1, 0, 0);
+    const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+
+    // Curvature estimation
+    const d1 = new THREE.Vector3().subVectors(curr, prev);
+    const d2 = new THREE.Vector3().subVectors(next, curr);
+    const cross = new THREE.Vector3().crossVectors(d1, d2);
+    const curvature = cross.length() / Math.max(d1.length() * d2.length(), 0.001);
+
+    frames.push({ point: curr, tangent, normal, binormal, curvature });
+  }
+  return frames;
+}
+
+function gripAtOffset(s, n, frames) {
+  const frame = frames[s % frames.length];
+  const halfWidth = state.trackWidth / 2;
+  const nNorm = n / halfWidth; // -1 to +1
+
+  // Base grip: racing line (center) has highest grip
+  const rubberW = state.rubberWidth / state.trackWidth;
+  const rubberDist = Math.abs(nNorm) / Math.max(rubberW, 0.01);
+  const rubberFactor = Math.exp(-rubberDist * rubberDist * 2);
+  const rubberBonus = rubberFactor * (state.rubberIntensity / 100) * 0.5;
+
+  // Off-line penalty
+  const offlineFactor = Math.abs(nNorm);
+  const offlinePen = offlineFactor * (state.offlinePenalty / 100) * 0.4;
+
+  // Curvature bonus (high curvature corners = more rubber)
+  const curvBonus = Math.min(frame.curvature * 50, 0.15) * rubberFactor;
+
+  // Compression bonus
+  const compAmt = state.compression / 100;
+  const sNorm = s / frames.length;
+  const compBonus = Math.max(0, Math.sin(sNorm * Math.PI * 2 * state.cornerCount * 0.5)) * compAmt * 0.15;
+
+  return Math.max(0.5, Math.min(1.6, 1.0 + rubberBonus + curvBonus + compBonus - offlinePen));
+}
+
+function elevationColor(y, minY, maxY) {
+  const range = Math.max(maxY - minY, 0.1);
+  const t = (y - minY) / range;
+  const c = new THREE.Color();
+  if (t < 0.5) c.lerpColors(COL.elevLow, COL.elevMid, t * 2);
+  else c.lerpColors(COL.elevMid, COL.elevHigh, (t - 0.5) * 2);
+  return c;
+}
+
+function gripColor(mu) {
+  const c = new THREE.Color();
+  const t = Math.max(0, Math.min(1, (mu - 0.6) / 0.8)); // 0.6-1.4 range
+  if (t < 0.5) c.lerpColors(COL.gripLow, COL.gripMid, t * 2);
+  else c.lerpColors(COL.gripMid, COL.gripHigh, (t - 0.5) * 2);
+  return c;
+}
+
+function deltaColor(delta) {
+  // delta: 0 = on optimal, 1 = far off
+  const c = new THREE.Color();
+  c.lerpColors(COL.deltaGood, COL.deltaBad, Math.min(1, delta));
+  return c;
+}
+
+function buildTrack() {
+  // Clear existing
+  if (trackMesh) { scene.remove(trackMesh); trackMesh.geometry.dispose(); }
+  if (wireframeMesh) { scene.remove(wireframeMesh); wireframeMesh.geometry.dispose(); }
+  if (optimalLine) { scene.remove(optimalLine); optimalLine.geometry.dispose(); }
+  if (actualLine) { scene.remove(actualLine); actualLine.geometry.dispose(); }
+  curbMarkers.forEach(m => { scene.remove(m); m.geometry.dispose(); });
+  curbMarkers = [];
+
+  trackPoints = generateTrackPath(state.cornerCount);
+  const frames = computeFrenetFrames(trackPoints);
+  const n = frames.length;
+  const lateralSteps = 20;
+  const halfW = state.trackWidth / 2;
+
+  // Compute track length
+  trackLength = 0;
+  for (let i = 0; i < n; i++) {
+    const next = (i + 1) % n;
+    trackLength += frames[i].point.distanceTo(frames[next].point);
+  }
+
+  // Build mesh
+  const positions = [];
+  const colors = [];
+  const indices = [];
+  let minY = Infinity, maxY = -Infinity;
+
+  // Pre-pass for elevation range
+  for (let i = 0; i < n; i++) {
+    const y = frames[i].point.y;
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+
+  // Vertices: n points along track x (lateralSteps+1) across width
+  for (let i = 0; i < n; i++) {
+    const f = frames[i];
+    for (let j = 0; j <= lateralSteps; j++) {
+      const nOffset = ((j / lateralSteps) - 0.5) * state.trackWidth;
+      const pos = new THREE.Vector3()
+        .copy(f.point)
+        .addScaledVector(f.normal, nOffset);
+
+      // Slight crown: center higher than edges
+      pos.y += (1 - Math.abs(nOffset / halfW)) * 0.3;
+
+      positions.push(pos.x, pos.y, pos.z);
+
+      // Color by mode
+      let col;
+      if (state.mode === 'grip') {
+        const mu = gripAtOffset(i, nOffset, frames);
+        col = gripColor(mu);
+      } else if (state.mode === 'elevation') {
+        col = elevationColor(pos.y, minY, maxY);
+      } else {
+        // Delta mode: distance from optimal line (center)
+        const delta = Math.abs(nOffset) / halfW;
+        col = deltaColor(delta * 0.8);
+      }
+      colors.push(col.r, col.g, col.b);
+    }
+  }
+
+  // Indices: triangle strip connecting adjacent rows
+  const stride = lateralSteps + 1;
+  for (let i = 0; i < n; i++) {
+    const nextI = (i + 1) % n;
+    for (let j = 0; j < lateralSteps; j++) {
+      const a = i * stride + j;
+      const b = i * stride + j + 1;
+      const c = nextI * stride + j;
+      const d = nextI * stride + j + 1;
+      indices.push(a, c, b);
+      indices.push(b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = new THREE.MeshPhongMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: state.surfaceOpacity / 100,
+    shininess: 30,
+  });
+  trackMesh = new THREE.Mesh(geo, mat);
+  scene.add(trackMesh);
+
+  // Wireframe
+  if (state.showWireframe) {
+    const wireMat = new THREE.MeshBasicMaterial({
+      color: 0x333333,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.3,
+    });
+    wireframeMesh = new THREE.Mesh(geo.clone(), wireMat);
+    scene.add(wireframeMesh);
+  }
+
+  // Optimal line (gold, slightly offset from racing line)
+  if (state.showOptimal) {
+    const optPts = [];
+    for (let i = 0; i < n; i++) {
+      const f = frames[i];
+      // Optimal line: varies smoothly inside/outside based on curvature
+      const optOffset = -f.curvature * 200 * halfW * 0.3;
+      const clampedOffset = Math.max(-halfW * 0.8, Math.min(halfW * 0.8, optOffset));
+      const pos = new THREE.Vector3()
+        .copy(f.point)
+        .addScaledVector(f.normal, clampedOffset);
+      pos.y += 0.5;
+      optPts.push(pos);
+    }
+    optPts.push(optPts[0].clone()); // close loop
+    const optGeo = new THREE.BufferGeometry().setFromPoints(optPts);
+    const optMat = new THREE.LineBasicMaterial({ color: COL.gold, linewidth: 2 });
+    optimalLine = new THREE.Line(optGeo, optMat);
+    scene.add(optimalLine);
+  }
+
+  // Actual line (chalk, follows center with some noise)
+  if (state.showActual) {
+    const actPts = [];
+    let drift = 0;
+    for (let i = 0; i < n; i++) {
+      const f = frames[i];
+      drift += (Math.sin(i * 0.1) * 0.3 - drift * 0.05);
+      const pos = new THREE.Vector3()
+        .copy(f.point)
+        .addScaledVector(f.normal, drift);
+      pos.y += 0.4;
+      actPts.push(pos);
+    }
+    actPts.push(actPts[0].clone());
+    const actGeo = new THREE.BufferGeometry().setFromPoints(actPts);
+    const actMat = new THREE.LineBasicMaterial({ color: COL.chalk, linewidth: 1, transparent: true, opacity: 0.7 });
+    actualLine = new THREE.Line(actGeo, actMat);
+    scene.add(actualLine);
+  }
+
+  // Curb markers
+  if (state.showCurbs) {
+    for (let i = 0; i < n; i += 3) {
+      const f = frames[i];
+      if (f.curvature > 0.005) {
+        for (const side of [-1, 1]) {
+          const offset = side * halfW * 0.95;
+          const pos = new THREE.Vector3()
+            .copy(f.point)
+            .addScaledVector(f.normal, offset);
+          pos.y += 0.3;
+
+          const curbGeo = new THREE.BoxGeometry(2, 0.3, 0.8);
+          const isRed = (Math.floor(i / 3) % 2 === 0);
+          const curbMat = new THREE.MeshBasicMaterial({
+            color: isRed ? COL.curb : COL.curbAlt,
+            transparent: true,
+            opacity: 0.8,
+          });
+          const curb = new THREE.Mesh(curbGeo, curbMat);
+          curb.position.copy(pos);
+          curb.lookAt(pos.clone().add(f.tangent));
+          scene.add(curb);
+          curbMarkers.push(curb);
+        }
+      }
+    }
+  }
+
+  // Update stats
+  document.getElementById('statLength').textContent = `${Math.round(trackLength)}m`;
+  document.getElementById('statElev').textContent = `${(maxY - minY).toFixed(1)}m`;
+  document.getElementById('statCorners').textContent = state.cornerCount;
+  const grips = [];
+  for (let i = 0; i < n; i += 10) {
+    grips.push(gripAtOffset(i, 0, frames));
+  }
+  document.getElementById('statMaxGrip').textContent = Math.max(...grips).toFixed(2);
+  document.getElementById('statMinGrip').textContent = Math.min(...grips).toFixed(2);
+  document.getElementById('statVerts').textContent = (positions.length / 3).toLocaleString();
+}
+
+// ─── Legend ────────────────────────────────────────────────────────
+function updateLegend() {
+  const bar = document.getElementById('legendBar');
+  const title = document.getElementById('legendTitle');
+  const low = document.getElementById('legendLow');
+  const mid = document.getElementById('legendMid');
+  const high = document.getElementById('legendHigh');
+
+  if (state.mode === 'grip') {
+    bar.style.background = 'linear-gradient(to right, #ff2a2a, #facc15, #22c55e)';
+    title.textContent = 'Grip Coefficient (mu)';
+    low.textContent = '0.6'; mid.textContent = '1.0'; high.textContent = '1.4';
+  } else if (state.mode === 'elevation') {
+    bar.style.background = 'linear-gradient(to right, #3b82f6, #949494, #f0ede5)';
+    title.textContent = 'Elevation (m)';
+    low.textContent = 'Low'; mid.textContent = 'Mid'; high.textContent = 'High';
+  } else {
+    bar.style.background = 'linear-gradient(to right, #22c55e, #ff2a2a)';
+    title.textContent = 'Line Delta (off-optimal)';
+    low.textContent = 'On-line'; mid.textContent = ''; high.textContent = 'Off-line';
+  }
+}
+
+// ─── Orbit Controls (manual) ──────────────────────────────────────
+let orbitTheta = 0.3, orbitPhi = 1.0, orbitRadius = 500, orbitTarget = new THREE.Vector3(0, 0, 0);
+let isDragging = false, isRightDrag = false, lastMouse = { x: 0, y: 0 };
+
+function updateCamera() {
+  const sinPhi = Math.sin(orbitPhi);
+  const cosPhi = Math.cos(orbitPhi);
+  camera.position.set(
+    orbitTarget.x + orbitRadius * sinPhi * Math.sin(orbitTheta),
+    orbitTarget.y + orbitRadius * cosPhi,
+    orbitTarget.z + orbitRadius * sinPhi * Math.cos(orbitTheta),
+  );
+  camera.lookAt(orbitTarget);
+}
+
+viewport.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  isRightDrag = e.button === 2;
+  lastMouse = { x: e.clientX, y: e.clientY };
+});
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - lastMouse.x;
+  const dy = e.clientY - lastMouse.y;
+  lastMouse = { x: e.clientX, y: e.clientY };
+
+  if (isRightDrag) {
+    // Pan
+    const right = new THREE.Vector3().crossVectors(
+      new THREE.Vector3().subVectors(camera.position, orbitTarget).normalize(),
+      camera.up
+    ).normalize();
+    const up = camera.up.clone();
+    orbitTarget.addScaledVector(right, -dx * 0.5);
+    orbitTarget.addScaledVector(up, dy * 0.5);
+  } else {
+    orbitTheta -= dx * 0.005;
+    orbitPhi = Math.max(0.1, Math.min(Math.PI - 0.1, orbitPhi - dy * 0.005));
+  }
+  updateCamera();
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+viewport.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  orbitRadius = Math.max(50, Math.min(2000, orbitRadius + e.deltaY * 0.5));
+  updateCamera();
+}, { passive: false });
+viewport.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// ─── Controls Binding ─────────────────────────────────────────────
+function bindSlider(id, key, suffix = '') {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById(id + 'Val');
+  el.value = state[key];
+  valEl.textContent = state[key] + suffix;
+  el.addEventListener('input', () => {
+    state[key] = parseFloat(el.value);
+    valEl.textContent = state[key] + suffix;
+    buildTrack();
+    updateLegend();
+  });
+}
+
+function bindCheck(id, key) {
+  const el = document.getElementById(id);
+  el.checked = state[key];
+  el.addEventListener('change', () => {
+    state[key] = el.checked;
+    buildTrack();
+  });
+}
+
+bindSlider('cornerCount', 'cornerCount', '');
+bindSlider('trackWidth', 'trackWidth', 'm');
+bindSlider('elevScale', 'elevScale', 'm');
+bindSlider('compression', 'compression', '%');
+bindSlider('rubberWidth', 'rubberWidth', 'm');
+bindSlider('rubberIntensity', 'rubberIntensity', '%');
+bindSlider('offlinePenalty', 'offlinePenalty', '%');
+bindSlider('surfaceOpacity', 'surfaceOpacity', '%');
+bindCheck('showOptimal', 'showOptimal');
+bindCheck('showActual', 'showActual');
+bindCheck('showCurbs', 'showCurbs');
+bindCheck('showWireframe', 'showWireframe');
+
+// Mode buttons
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    state.mode = btn.dataset.mode;
+    buildTrack();
+    updateLegend();
+  });
+});
+
+// Presets
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const p = PRESETS[btn.dataset.preset];
+    if (!p) return;
+    Object.assign(state, p);
+    // Update all sliders
+    ['cornerCount', 'trackWidth', 'elevScale', 'compression', 'rubberWidth', 'rubberIntensity', 'offlinePenalty'].forEach(k => {
+      const el = document.getElementById(k);
+      if (el) el.value = state[k];
+      const valEl = document.getElementById(k + 'Val');
+      if (valEl) valEl.textContent = state[k] + (k.includes('Width') ? 'm' : k.includes('Scale') ? 'm' : k.includes('Count') ? '' : '%');
+    });
+    buildTrack();
+    updateLegend();
+  });
+});
+
+// ─── Resize ───────────────────────────────────────────────────────
+function onResize() {
+  const w = viewport.clientWidth;
+  const h = viewport.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', onResize);
+
+// ─── Animation Loop ───────────────────────────────────────────────
+let frameCount = 0, lastFpsTime = performance.now();
+const fpsEl = document.getElementById('fpsDisplay');
+
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fpsEl.textContent = frameCount + ' fps';
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+
+// ─── Init ─────────────────────────────────────────────────────────
+onResize();
+updateCamera();
+buildTrack();
+updateLegend();
+animate();
+</script>
+</body>
+</html>

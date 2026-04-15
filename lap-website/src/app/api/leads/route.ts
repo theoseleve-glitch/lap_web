@@ -35,51 +35,31 @@ export async function POST(request: Request) {
     .find((part) => part.startsWith('lap_session_id='))
     ?.split('=')[1];
 
-  if (!challengeToken) {
-    recordLeadAbuseEvent('challenge_missing');
-    await sendServerConversion({ event: 'lead_abuse_signal', sourcePath: undefined, leadType: 'unknown' });
-    return NextResponse.json(
-      {
-        ok: false,
-        message: 'Challenge token is required.',
-      },
-      { status: 400 },
-    );
-  }
-
-  const challenge = await verifyBotChallenge({ token: challengeToken, remoteIp: ip });
-  if (!challenge.ok) {
-    const alert = recordLeadAbuseEvent('challenge_failed');
-    await sendServerConversion({
-      event: 'lead_abuse_signal',
-      sourcePath: undefined,
-      leadType: 'unknown',
-      sessionId: sessionIdFromCookie,
-      attribution: { reason: challenge.reason ?? 'challenge_failed', provider: challenge.provider ?? 'unknown' },
-    });
-    if (alert.shouldAlert) {
-      console.error('Lead abuse alert triggered', {
-        ratio: alert.ratio,
-        total: alert.total,
-        reason: 'challenge_failed',
-      });
+  // Bot challenge verification — only enforced when a provider is configured.
+  // When no provider is set, rely on honeypot + rate limiting + duplicate detection.
+  if (challengeToken) {
+    const challenge = await verifyBotChallenge({ token: challengeToken, remoteIp: ip });
+    if (!challenge.ok && challenge.reason !== 'challenge provider is not configured') {
+      const alert = recordLeadAbuseEvent('challenge_failed');
       await sendServerConversion({
-        event: 'lead_abuse_alert',
-        attribution: {
-          reason: 'challenge_failed',
-          ratio: String(alert.ratio ?? 0),
-          total: String(alert.total ?? 0),
-        },
+        event: 'lead_abuse_signal',
+        sourcePath: undefined,
+        leadType: 'unknown',
+        sessionId: sessionIdFromCookie,
+        attribution: { reason: challenge.reason ?? 'challenge_failed', provider: challenge.provider ?? 'unknown' },
       });
+      if (alert.shouldAlert) {
+        console.error('Lead abuse alert triggered', {
+          ratio: alert.ratio,
+          total: alert.total,
+          reason: 'challenge_failed',
+        });
+      }
+      return NextResponse.json(
+        { ok: false, message: 'Challenge verification failed.' },
+        { status: 403 },
+      );
     }
-
-    return NextResponse.json(
-      {
-        ok: false,
-        message: 'Challenge verification failed.',
-      },
-      { status: 403 },
-    );
   }
 
   if (!validation.valid) {

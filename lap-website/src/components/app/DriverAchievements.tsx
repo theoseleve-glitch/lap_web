@@ -28,10 +28,11 @@ interface AchievementsResponse {
 }
 
 function getCategoryFromId(id: string): 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance' {
-  if (id.startsWith('laps_') || id.startsWith('sessions_')) return 'progress';
-  if (id.startsWith('score_') || id.startsWith('pb_')) return 'technique';
-  if (id.startsWith('consistency_')) return 'consistency';
+  if (id.startsWith('laps_') || id.startsWith('sessions_') || id === 'first_session') return 'progress';
+  if (id.startsWith('score_') || id.startsWith('pb_') || id === 'personal_best' || id === 'score_jump') return 'technique';
+  if (id.startsWith('consistency_') || id.startsWith('streak_') || id === 'plan_completed' || id === 'all_drills_week') return 'consistency';
   if (id.startsWith('tracks_')) return 'learning';
+  if (id.startsWith('all_') || id === 'first_badge') return 'endurance';
   return 'progress';
 }
 

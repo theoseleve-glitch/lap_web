@@ -11,6 +11,7 @@
   --marshal-yellow: #FACC15;
   --pit-orange: #C9A84C;
   --racing-purple: #8B5CF6;
+  --racing-red: #DC2626;
 
   /* ── Active accent (overridden per room via data-accent) ── */
   --accent: var(--chalk);
@@ -195,6 +196,7 @@
 [data-accent="yellow"]  { --accent: var(--marshal-yellow); }
 [data-accent="orange"]  { --accent: var(--pit-orange); }
 [data-accent="purple"]  { --accent: var(--racing-purple); }
+[data-accent="racing-red"] { --accent: var(--racing-red); }
 
 /* ── High-Contrast Mode (outdoor/sunlight use) ── */
 @media (prefers-contrast: more) {
@@ -225,4 +227,127 @@
   --acid-green: #00FF66;
   --safety-red: #FF3333;
   --marshal-yellow: #FFE033;
+}
+
+/* ── Lenis Smooth Scroll ─────────────────── */
+html.lenis, html.lenis body {
+  scroll-behavior: auto;
+}
+html.lenis {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto;
+}
+
+/* ── Hide Native Scrollbar (replaced by CustomScrollbar) ── */
+html {
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Section Background Color Transitions ── */
+main#main-content {
+  transition: background-color 1.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+[data-bg-tint="warm"]    { background-color: #080604; }
+[data-bg-tint="cool"]    { background-color: #040608; }
+[data-bg-tint="gold"]    { background-color: #0a0804; }
+[data-bg-tint="neutral"] { background-color: #000000; }
+
+/* ── Ambient gradient blobs ─────────────── */
+@keyframes ambientDrift {
+  0%   { transform: translate(0, 0) scale(1); }
+  33%  { transform: translate(3%, -4%) scale(1.05); }
+  66%  { transform: translate(-2%, 3%) scale(0.97); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+.ambient-blob {
+  position: fixed;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(120px);
+  animation: ambientDrift 25s ease-in-out infinite;
+  will-change: transform;
+  z-index: 0;
+}
+
+/* ── Section divider ────────────────────── */
+.section-divider {
+  position: relative;
+  height: 1px;
+  margin: 0 auto;
+  max-width: 90%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(201, 168, 76, 0.15) 20%,
+    rgba(201, 168, 76, 0.3) 50%,
+    rgba(201, 168, 76, 0.15) 80%,
+    transparent 100%
+  );
+}
+
+/* ── Card hover lift ───────────────────── */
+.card-lift {
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.5s ease;
+}
+.card-lift:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.3);
+  border-color: rgba(201, 168, 76, 0.2);
+}
+
+/* ── Link underline reveal ──────────────── */
+.link-reveal {
+  position: relative;
+  text-decoration: none;
+}
+.link-reveal::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: var(--accent, var(--pit-orange));
+  transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.link-reveal:hover::after {
+  width: 100%;
+}
+
+/* ── CTA glow pulse on hover ────────────── */
+.cta-glow {
+  position: relative;
+}
+.cta-glow::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  opacity: 0;
+  background: var(--pit-orange);
+  filter: blur(16px);
+  transition: opacity 0.5s ease;
+  z-index: -1;
+}
+.cta-glow:hover::before {
+  opacity: 0.15;
+}
+
+/* ── Reduced Motion: disable all custom animations ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  main#main-content {
+    transition: none;
+  }
 }

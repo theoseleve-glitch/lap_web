@@ -209,6 +209,9 @@ class TrackModel:
     grip_map: np.ndarray = field(
         default_factory=lambda: np.empty(0, dtype=np.float64),
     )
+    vert_curvature: np.ndarray = field(
+        default_factory=lambda: np.empty(0, dtype=np.float64),
+    )
     sector_boundaries: List[int] = field(default_factory=list)
     total_length_m: float = 0.0
 
@@ -357,7 +360,7 @@ class OracleConfig:
         ),
     )
     ac_bridge_port: int = 9876
-    ac_launch_timeout: int = 90
+    ac_launch_timeout: int = 150
     ac_max_retries: int = 3
 
     # -- Neural surrogate parameters -----------------------------------
