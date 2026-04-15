@@ -138,7 +138,18 @@ export function JsonLd({ pathname, faqItems, article, softwareApp, howTo, review
       description: article.summary,
       publisher: { '@type': 'Organization', name: 'Lap Coach' },
     });
-  } else if (jsonLdType === 'FAQPage' && faqItems?.length) {
+  } else if (!faqItems?.length) {
+    graph.push({
+      '@type': 'WebPage',
+      name: entry?.title,
+      url: `${siteUrl}${pathname}`,
+    });
+  }
+
+  // FAQ schema is emitted whenever faqItems are provided — not only for
+  // pages typed as FAQPage in the routemap. Any page that answers questions
+  // should carry FAQ structured data (Google rich results, LLM retrieval).
+  if (faqItems?.length) {
     graph.push({
       '@type': 'FAQPage',
       mainEntity: faqItems.map((item) => ({
@@ -146,12 +157,6 @@ export function JsonLd({ pathname, faqItems, article, softwareApp, howTo, review
         name: item.question,
         acceptedAnswer: { '@type': 'Answer', text: item.answer },
       })),
-    });
-  } else {
-    graph.push({
-      '@type': 'WebPage',
-      name: entry?.title,
-      url: `${siteUrl}${pathname}`,
     });
   }
 
