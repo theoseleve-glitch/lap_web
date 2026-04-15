@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "_documentation": {
+    "purpose": "Per-class release-gate thresholds. Resolved most-specific-wins: by_track_x_vehicle > by_vehicle_class > by_track_class > default.",
+    "track_classes": ["banked", "flat", "mixed"],
+    "vehicle_classes": ["GT4", "TouringCar", "TCR", "F3", "Spec"],
+    "fields": "See ThresholdProfile dataclass in release_gate.py for the full field list."
+  },
+  "default": {
+    "description": "Conservative default — used when no class override applies",
+    "lambda_band": [0.6, 1.6],
+    "lambda_in_band_pct_warn": 50.0,
+    "min_field_coverage_pct_warn": 5.0,
+    "min_accept_pct_warn": 30.0,
+    "min_accept_pct_fail": 10.0,
+    "max_fallback_depth_2_pct_warn": 30.0,
+    "max_fallback_depth_2_pct_fail": 60.0,
+    "max_transition_pct_warn": 20.0,
+    "max_transition_pct_fail": 40.0,
+    "racing_line_lift_min_warn": -0.05,
+    "racing_line_lift_min_fail": -0.10,
+    "max_lap_to_lap_std_warn": 0.20,
+    "max_fy_residual_std_n_warn": 3000.0,
+    "min_bucket_active_warn": 2,
+    "min_bucket_active_fail": 1
+  },
+  "by_track_class": {
+    "banked": {
+      "description": "Banked tracks have higher real transition rates and naturally sparser bucketed coverage on the centerline",
+      "max_transition_pct_warn": 25.0,
+      "max_transition_pct_fail": 50.0,
+      "max_fallback_depth_2_pct_warn": 35.0,
+      "max_fallback_depth_2_pct_fail": 65.0
+    },
+    "flat": {
+      "description": "Flat tracks should have low transition activity",
+      "max_transition_pct_warn": 15.0,
+      "max_transition_pct_fail": 30.0
+    }
+  },
+  "by_vehicle_class": {
+    "GT4": {
+      "description": "GT4 is the calibrated reference class — strict tire-model expectation",
+      "lambda_band": [0.9, 1.6],
+      "max_fy_residual_std_n_warn": 2500.0
+    },
+    "TouringCar": {
+      "description": "TouringCar tire D scale is uncalibrated as of v1 — wider lambda band, looser residual",
+      "lambda_band": [0.6, 1.5],
+      "max_fy_residual_std_n_warn": 4000.0
+    },
+    "TCR": {
+      "description": "FWD touring car — drive_rear_only assumption violated, wide tolerances",
+      "lambda_band": [0.5, 1.5],
+      "max_fy_residual_std_n_warn": 4500.0
+    },
+    "F3": {
+      "lambda_band": [0.7, 1.7]
+    }
+  },
+  "by_track_x_vehicle": {
+    "banked,GT4": {
+      "description": "Daytona-with-GT4 is the calibrated baseline — tightest expectations",
+      "lambda_band": [0.9, 1.6],
+      "max_fy_residual_std_n_warn": 2500.0,
+      "max_fallback_depth_2_pct_warn": 30.0,
+      "max_fallback_depth_2_pct_fail": 70.0
+    },
+    "flat,TouringCar": {
+      "description": "Spa-with-BMW M2 — known sparse-coverage scenario; relaxed FB ceiling so the gate doesn't FAIL on data-density alone",
+      "max_fallback_depth_2_pct_warn": 60.0,
+      "max_fallback_depth_2_pct_fail": 80.0
+    }
+  }
+}
