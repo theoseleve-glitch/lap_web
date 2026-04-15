@@ -568,38 +568,29 @@ function drawSpeedTrace(
 }
 
 // ── Delta time drawing ──────────────────────────────────────────
-/** Compute cumulative time delta between primary and ref speeds.
- *  Uses trapezoidal integration, then scales to match actual lap time diff.
- *  Positive = primary is slower (losing time). */
-function computeDeltaTime(
-  distances: number[],
-  primarySpeeds: number[],
-  refSpeeds: number[],
-  actualDeltaS: number | null,
-): number[] {
-  const n = Math.min(distances.length, primarySpeeds.length, refSpeeds.length);
-  const delta: number[] = [0];
-  const MIN_SPEED = 0.5; // m/s floor to avoid div-by-zero
-  for (let i = 1; i < n; i++) {
-    const ds = distances[i] - distances[i - 1];
-    if (ds <= 0) { delta.push(delta[delta.length - 1]); continue; }
-    // Trapezoidal: average speed over segment
-    const sp = Math.max(MIN_SPEED, (primarySpeeds[i - 1] + primarySpeeds[i]) / 2);
-    const sr = Math.max(MIN_SPEED, (refSpeeds[i - 1] + refSpeeds[i]) / 2);
-    const dt = ds / sp - ds / sr;
-    delta.push(delta[delta.length - 1] + dt);
+//
+// Delta is computed on the backend by the canonical cumulative_delta
+// engine (telemetry_tool/deltas.py) and fetched via /sessions/:id/delta.
+// The client only projects that anchored curve onto this chart's x-axis
+// via `linearInterp` below — no integration, no scaling, no forward-fill.
+
+/** Piecewise-linear interpolation. Mirrors numpy.interp's clamping
+ *  behaviour: values outside `xs` clamp to the boundary y. */
+function linearInterp(x: number, xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n === 0) return 0;
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[n - 1]) return ys[n - 1];
+  // Binary search for the bracket
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) lo = mid;
+    else hi = mid;
   }
-  // Scale to match actual lap time difference if available
-  if (actualDeltaS != null && delta.length > 1) {
-    const rawFinal = delta[delta.length - 1];
-    if (Math.abs(rawFinal) > 0.001) {
-      const scale = actualDeltaS / rawFinal;
-      for (let i = 1; i < delta.length; i++) {
-        delta[i] *= scale;
-      }
-    }
-  }
-  return delta;
+  const t = (x - xs[lo]) / (xs[hi] - xs[lo]);
+  return ys[lo] + t * (ys[hi] - ys[lo]);
 }
 
 function drawDeltaChart(
@@ -918,16 +909,52 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [showPhysicsCeiling, sessionId]);
 
-  // ── Draw ────────────────────────────────────────────────────
-  // Compute delta time when ref data is available
-  const actualDelta = (primaryLapTime != null && compareLapTime != null)
-    ? primaryLapTime - compareLapTime
-    : null;
+  // ── Fetch canonical anchored delta from backend ───────────────
+  //
+  // Every delta curve in the product routes through the canonical
+  // cumulative_delta engine (telemetry_tool/deltas.py). This fetch pulls
+  // the anchored delta for primary vs compare laps — same path the
+  // separate "Time Delta" card uses — so the two deltas agree.
+  //
+  // Sign from backend: positive = lap_b slower than lap_a.
+  // Sign this chart expects: positive = primary slower (losing time).
+  // With lap_a=primary, lap_b=compare we need to negate.
+  const [backendDelta, setBackendDelta] = useState<{ distances: number[]; delta_s: number[] } | null>(null);
+  useEffect(() => {
+    if (!sessionId || activeCompareLap == null || activeLap == null || activeLap === activeCompareLap) {
+      setBackendDelta(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ distances: number[]; delta_s: number[] }>(
+        `/sessions/${encodeURIComponent(sessionId)}/delta?lap_a=${activeLap}&lap_b=${activeCompareLap}`,
+      )
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.distances && data?.delta_s) {
+          setBackendDelta({ distances: data.distances, delta_s: data.delta_s });
+        } else {
+          setBackendDelta(null);
+        }
+      })
+      .catch(() => { if (!cancelled) setBackendDelta(null); });
+    return () => { cancelled = true; };
+  }, [sessionId, activeLap, activeCompareLap]);
 
+  // Project the backend delta (on its own uniform grid) onto the speed
+  // trace's distance axis so the two sub-charts align vertically.
   const deltaSeconds = useMemo(() => {
-    if (!chartData?.distances || !chartData?.speeds || !refSpeeds) return null;
-    return computeDeltaTime(chartData.distances, chartData.speeds, refSpeeds, actualDelta);
-  }, [chartData, refSpeeds, actualDelta]);
+    if (!chartData?.distances || !backendDelta) return null;
+    const xs = backendDelta.distances;
+    const ys = backendDelta.delta_s;
+    if (xs.length < 2 || ys.length < 2) return null;
+    return chartData.distances.map((d) => {
+      // Flip sign: backend's delta_s is (compare - primary);
+      // this chart's delta is (primary - compare).
+      return -linearInterp(d, xs, ys);
+    });
+  }, [chartData, backendDelta]);
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
