@@ -199,7 +199,7 @@ export function AnalyticsTab({
                   }
                 />
                 <div
-                  className="chart-enter flex-1 min-h-[420px]"
+                  className="chart-enter flex-1 min-h-[380px] lg:min-h-0 w-full"
                   role="img"
                   aria-label="GPS track map showing the racing line"
                 >

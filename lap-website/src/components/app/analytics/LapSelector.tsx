@@ -100,7 +100,11 @@ export function LapSelector({
           aria-label="Primary lap"
         >
           {orderedLaps.map((l) => (
-            <option key={l.lap_number} value={l.lap_number}>
+            <option
+              key={l.lap_number}
+              value={l.lap_number}
+              style={{ backgroundColor: '#141414', color: '#F0EDE5' }}
+            >
               {labelFor(l)}
             </option>
           ))}
@@ -138,11 +142,17 @@ export function LapSelector({
           }}
           aria-label="Compare lap"
         >
-          <option value="">None</option>
+          <option value="" style={{ backgroundColor: '#141414', color: '#F0EDE5' }}>
+            None
+          </option>
           {orderedLaps
             .filter((l) => l.lap_number !== primaryLap)
             .map((l) => (
-              <option key={l.lap_number} value={l.lap_number}>
+              <option
+                key={l.lap_number}
+                value={l.lap_number}
+                style={{ backgroundColor: '#141414', color: '#F0EDE5' }}
+              >
                 {labelFor(l)}
               </option>
             ))}
