@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
 
 interface DeltaData {
   distances: number[];
@@ -45,6 +46,8 @@ export function DeltaTimeChart({
     xMin: number; xMax: number; yMin: number; yMax: number;
     plotX: number; plotY: number; plotW: number; plotH: number;
   } | null>(null);
+
+  const { referenceData } = useReferenceOverlay();
 
   const safeLaps = gpsLaps ?? [];
   const [lapA, setLapA] = useState<number>(bestLap ?? safeLaps[0] ?? 0);
@@ -134,13 +137,24 @@ export function DeltaTimeChart({
     const dists = data.distances;
     const deltas = data.delta_s;
 
-    // Compute ranges
+    // Cross-session reference delta (if active)
+    const refDists = referenceData?.distances ?? null;
+    const refDeltas = referenceData?.speed?.delta_s ?? null;
+    const hasRef = !!(refDists && refDeltas && refDists.length > 1);
+
+    // Compute ranges (including reference if present)
     const xMin = distRange ? distRange[0] : 0;
     const xMax = distRange ? distRange[1] : (dists[dists.length - 1] || 1);
     let maxAbs = 0;
     for (let i = 0; i < deltas.length; i++) {
       const a = Math.abs(deltas[i]);
       if (a > maxAbs) maxAbs = a;
+    }
+    if (hasRef) {
+      for (let i = 0; i < refDeltas!.length; i++) {
+        const a = Math.abs(refDeltas![i]);
+        if (a > maxAbs) maxAbs = a;
+      }
     }
     if (maxAbs < 0.05) maxAbs = 0.1;
     maxAbs = Math.ceil(maxAbs * 20) / 20; // round up to nearest 0.05
@@ -245,7 +259,7 @@ export function DeltaTimeChart({
     ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
     ctx.fill();
 
-    // Delta line
+    // Delta line (intra-session)
     ctx.strokeStyle = '#F0EDE5';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -256,6 +270,24 @@ export function DeltaTimeChart({
       else ctx.lineTo(x, y);
     }
     ctx.stroke();
+
+    // Cross-session reference delta line (dashed racing-purple)
+    if (hasRef) {
+      ctx.save();
+      ctx.strokeStyle = '#8B5CF6';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      for (let i = 0; i < refDists!.length; i++) {
+        const x = xToPixel(refDists![i]);
+        const y = yToPixel(refDeltas![i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.restore(); // unclip
 
@@ -320,18 +352,36 @@ export function DeltaTimeChart({
       }
     }
 
+    // ── Final reference delta annotation (purple, below intra-session) ──
+    if (hasRef && refDeltas!.length > 0) {
+      const finalRefDelta = refDeltas![refDeltas!.length - 1];
+      if (Math.abs(finalRefDelta) > 0.001) {
+        const sign = finalRefDelta > 0 ? '+' : '';
+        ctx.fillStyle = '#8B5CF6';
+        ctx.font = 'bold 12px "Space Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const labelY = Math.max(pad.top + 22, Math.min(pad.top + pH - 8, yToPixel(finalRefDelta)));
+        ctx.fillText(`${sign}${finalRefDelta.toFixed(3)}s`, rightCol, labelY);
+      }
+    }
+
     // ── Legend (right margin, below final delta) ────────────
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
     // Green/red legend items at bottom of right margin
-    const legendY = pad.top + pH - 28;
+    const legendY = hasRef ? pad.top + pH - 42 : pad.top + pH - 28;
     ctx.fillStyle = '#10b981';
     ctx.fillText(`▲ Lap ${lapA} faster`, rightCol, legendY);
     ctx.fillStyle = '#ef4444';
     ctx.fillText(`▼ Lap ${lapA} slower`, rightCol, legendY + 14);
-  }, [lapA, lapB, distRange]);
+    if (hasRef) {
+      ctx.fillStyle = '#8B5CF6';
+      ctx.fillText(`- - vs reference`, rightCol, legendY + 28);
+    }
+  }, [lapA, lapB, distRange, referenceData]);
 
   // ── Redraw when data changes ──────────────────────────────
   useEffect(() => {

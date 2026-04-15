@@ -78,13 +78,13 @@ export function AnalyticsTab({
   const hasFuel = channels.fuel;
 
   return (
+    <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
     <div className="space-y-6">
       {/* Chart color theme selector */}
       <div className="flex justify-end">
         <ChartThemePicker />
       </div>
       {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
-      <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
         <ReferenceFAB sessionId={sessionId} />
         <div className="lg:col-span-1">
@@ -189,7 +189,6 @@ export function AnalyticsTab({
           </div>
         </div>
       </div>
-      </ReferenceOverlayProvider>
 
       {/* ── Row 2: Delta Time Chart ── */}
       <div className="bg-concrete rounded-xl border border-steel/10 p-4">
@@ -358,5 +357,6 @@ export function AnalyticsTab({
         <DevelopmentDrills scores={scores} corners={corners} />
       </div>
     </div>
+    </ReferenceOverlayProvider>
   );
 }
