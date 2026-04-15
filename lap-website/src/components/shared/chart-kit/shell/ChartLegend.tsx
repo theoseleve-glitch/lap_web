@@ -1,15 +1,16 @@
 /**
  * ChartLegend — semantic legend for chart series.
  *
- * Symbol shapes match what the canvas draws:
- *  - line:    solid line (most series)
- *  - dashed:  dashed line (reference, theoretical)
- *  - dot:     filled circle (scatter, single point)
- *  - hollow:  hollow circle (cross-session reference scatter)
- *  - bar:     small block (delta bar)
+ * Typography:
+ *   label  — 10px font-telemetry text-chalk/90     (what this series is)
+ *   meta   — 10px font-telemetry text-steel/70     (optional value/time)
  *
- * Legend lives at the bottom of the chart card and inherits the chalk/steel
- * type colors — never bright bg.
+ * Symbol shapes match what the canvas draws:
+ *   line    solid line
+ *   dashed  dashed line (reference, theoretical)
+ *   dot     filled circle (scatter, single point)
+ *   hollow  hollow circle (cross-session reference scatter, best-lap marker)
+ *   bar     small block (delta bar)
  */
 
 export interface LegendItem {
@@ -25,7 +26,13 @@ export interface ChartLegendProps {
   align?: 'left' | 'center' | 'right';
 }
 
-function Symbol({ symbol = 'line', color }: { symbol?: LegendItem['symbol']; color: string }) {
+function Symbol({
+  symbol = 'line',
+  color,
+}: {
+  symbol?: LegendItem['symbol'];
+  color: string;
+}) {
   if (symbol === 'dot') {
     return (
       <span
@@ -47,7 +54,7 @@ function Symbol({ symbol = 'line', color }: { symbol?: LegendItem['symbol']; col
   if (symbol === 'bar') {
     return (
       <span
-        className="inline-block w-3 h-2"
+        className="inline-block w-3 h-1.5"
         style={{ backgroundColor: color }}
         aria-hidden
       />
@@ -81,15 +88,18 @@ const ALIGN: Record<NonNullable<ChartLegendProps['align']>, string> = {
 export function ChartLegend({ items, align = 'left' }: ChartLegendProps) {
   if (items.length === 0) return null;
   return (
-    <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 ${ALIGN[align]}`}>
+    <div
+      className={`flex flex-wrap items-center gap-x-4 gap-y-1 mt-3 ${ALIGN[align]}`}
+      style={{ fontVariantNumeric: 'tabular-nums slashed-zero' }}
+    >
       {items.map((item) => (
         <div key={item.label} className="flex items-center gap-2">
           <Symbol symbol={item.symbol} color={item.color} />
-          <span className="text-[10px] font-telemetry text-chalk">
+          <span className="text-[10px] font-telemetry text-chalk/90">
             {item.label}
           </span>
           {item.meta && (
-            <span className="text-[10px] font-telemetry text-steel">
+            <span className="text-[10px] font-telemetry text-steel/70 tabular-nums">
               {item.meta}
             </span>
           )}

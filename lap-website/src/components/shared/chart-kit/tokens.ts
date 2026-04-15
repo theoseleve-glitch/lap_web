@@ -24,9 +24,9 @@ export const chartColor = {
   gridStrong: 'rgba(148,148,148,0.14)', // emphasized gridline (zero baseline)
 
   // Text
-  text: '#F0EDE5',             // chalk — primary
-  textSecondary: '#949494',    // steel — secondary
-  textMuted: 'rgba(148,148,148,0.55)',  // tick labels, legends
+  text: '#F0EDE5',                         // chalk — primary
+  textSecondary: 'rgba(148,148,148,0.85)', // steel @ 85% — axis title, key labels
+  textMuted: 'rgba(148,148,148,0.60)',     // steel @ 60% — tick labels (legible but quiet)
 
   // Crosshair
   crosshair: 'rgba(240,237,229,0.18)',  // chalk @ 18% — quiet vertical line
@@ -95,14 +95,14 @@ export const plotPadding = {
 // In canvas we need raw font strings.
 export const chartFont = {
   title: '600 13px "PP Monument Extended", "Inter", sans-serif',
-  subtitle: '11px "JetBrains Mono", "Space Mono", monospace',
-  axisLabel: '10px "JetBrains Mono", "Space Mono", monospace',
-  axisTitle: '11px "JetBrains Mono", "Space Mono", monospace',
-  tickLabel: '10px "JetBrains Mono", "Space Mono", monospace',
-  tooltip: '11px "JetBrains Mono", "Space Mono", monospace',
-  tooltipBold: '600 11px "JetBrains Mono", "Space Mono", monospace',
-  legend: '10px "JetBrains Mono", "Space Mono", monospace',
-  seriesLabel: '600 10px "JetBrains Mono", "Space Mono", monospace',
+  subtitle: '11px "Space Mono", "JetBrains Mono", monospace',
+  axisLabel: '10px "Space Mono", "JetBrains Mono", monospace',
+  axisTitle: '10px "Space Mono", "JetBrains Mono", monospace',
+  tickLabel: '10px "Space Mono", "JetBrains Mono", monospace',
+  tooltip: '11px "Space Mono", "JetBrains Mono", monospace',
+  tooltipBold: '600 11px "Space Mono", "JetBrains Mono", monospace',
+  legend: '10px "Space Mono", "JetBrains Mono", monospace',
+  seriesLabel: '600 10px "Space Mono", "JetBrains Mono", monospace',
 } as const;
 
 // ── Stroke widths — keep frame quiet, data series prominent ──────────────

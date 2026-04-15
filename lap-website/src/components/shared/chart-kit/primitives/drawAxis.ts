@@ -62,6 +62,8 @@ export function drawAxis(ctx: CanvasRenderingContext2D, opts: DrawAxisOptions): 
   ctx.save();
   ctx.strokeStyle = theme.color.axis;
   ctx.lineWidth = theme.stroke.axis;
+  // Canvas doesn't honour CSS font-variant-numeric, but Space Mono is monospace
+  // so digits align naturally. Keep it consistent with DOM typography (10px).
   ctx.fillStyle = theme.color.textMuted;
   ctx.font = theme.font.tickLabel;
 
