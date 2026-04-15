@@ -14,7 +14,7 @@
  * No more bare bg-concrete wrappers, no more inconsistent titles.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { BACKEND_URL } from '@/lib/api-client';
 import {
   ChartCard,
@@ -41,6 +41,7 @@ import { LapDistribution } from './LapDistribution';
 import { LapProgressTracker } from './LapProgressTracker';
 import { SessionComparison } from './SessionComparison';
 import { DevelopmentDrills } from './DevelopmentDrills';
+import { LapSelector } from './LapSelector';
 import { ChartThemePicker } from '@/components/app/ChartThemePicker';
 import { ChartAnnotations } from '@/components/app/ChartAnnotations';
 import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
@@ -123,6 +124,19 @@ export function AnalyticsTab({
 }: AnalyticsTabProps) {
   const apiBase = BACKEND_URL;
   const [trackColorMode, setTrackColorMode] = useState<'speed' | 'grip' | 'ribbon'>('speed');
+
+  // Session-level lap selection — drives every chart in the tab.
+  // Primary defaults to the session best lap (from parent). Compare is opt-in.
+  const [primaryLap, setPrimaryLap] = useState<number | null>(bestLap);
+  const [compareLap, setCompareLap] = useState<number | null>(null);
+
+  // Keep primaryLap in sync if bestLap resolves later (laps loaded after mount).
+  useEffect(() => {
+    if (primaryLap == null && bestLap != null) {
+      setPrimaryLap(bestLap);
+    }
+  }, [bestLap, primaryLap]);
+
   const { channels } = useSessionChannels(sessionId);
 
   const hasControls = channels.throttle || channels.brake;
@@ -140,10 +154,23 @@ export function AnalyticsTab({
 
   return (
     <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
-      {/* ── Page controls strip (quiet, right-aligned, not a "tier") ── */}
-      <div className="flex items-center justify-end gap-3 pb-2">
-        <ReferenceFAB sessionId={sessionId} />
-        <ChartThemePicker />
+      {/* ── Page controls strip (quiet, not a "tier") ── */}
+      <div className="flex items-center justify-between gap-3 pb-2 flex-wrap">
+        <LapSelector
+          sessionId={sessionId}
+          primaryLap={primaryLap}
+          compareLap={compareLap}
+          onPrimaryChange={(l) => {
+            setPrimaryLap(l);
+            // if user picks the same lap as compare, drop compare
+            if (l != null && l === compareLap) setCompareLap(null);
+          }}
+          onCompareChange={setCompareLap}
+        />
+        <div className="flex items-center gap-3">
+          <ReferenceFAB sessionId={sessionId} />
+          <ChartThemePicker />
+        </div>
       </div>
 
       <div className="space-y-12">
@@ -180,7 +207,9 @@ export function AnalyticsTab({
                     sessionId={sessionId}
                     apiBase={apiBase}
                     gpsLaps={gpsLaps}
-                    bestLap={bestLap}
+                    bestLap={primaryLap}
+                    compareLap={compareLap}
+                    controlledLap
                     className="w-full h-full"
                     colorMode={trackColorMode}
                   />
@@ -199,7 +228,7 @@ export function AnalyticsTab({
                     <ChartAnnotations sessionId={sessionId} canvasId="speed-chart" />
                   }
                 />
-                <SpeedTraceMiniMap sessionId={sessionId} bestLap={bestLap} size={80} />
+                <SpeedTraceMiniMap sessionId={sessionId} bestLap={primaryLap} size={80} />
                 <div
                   className="chart-enter"
                   role="img"
@@ -209,7 +238,9 @@ export function AnalyticsTab({
                     sessionId={sessionId}
                     apiBase={apiBase}
                     gpsLaps={gpsLaps}
-                    bestLap={bestLap}
+                    bestLap={primaryLap}
+                    compareLap={compareLap}
+                    controlledLap
                     className="w-full"
                     showPhysicsCeiling
                   />
@@ -234,7 +265,8 @@ export function AnalyticsTab({
                     sessionId={sessionId}
                     apiBase={apiBase}
                     gpsLaps={gpsLaps}
-                    bestLap={bestLap}
+                    bestLap={primaryLap}
+                    controlledLap
                     className="w-full"
                   />
                 </div>
@@ -267,7 +299,9 @@ export function AnalyticsTab({
               <DeltaTimeChart
                 sessionId={sessionId}
                 gpsLaps={gpsLaps}
-                bestLap={bestLap}
+                bestLap={primaryLap}
+                compareLap={compareLap}
+                controlledLap
                 className="w-full"
               />
             </div>
@@ -309,7 +343,7 @@ export function AnalyticsTab({
                 sessionId={sessionId}
                 apiBase={apiBase}
                 gpsLaps={gpsLaps}
-                bestLap={bestLap}
+                bestLap={primaryLap}
               />
             </div>
           </ChartCard>
@@ -342,7 +376,8 @@ export function AnalyticsTab({
                     <PedalTraceChart
                       sessionId={sessionId}
                       gpsLaps={gpsLaps}
-                      bestLap={bestLap}
+                      bestLap={primaryLap}
+                      controlledLap
                       className="w-full"
                     />
                   </div>
@@ -358,7 +393,8 @@ export function AnalyticsTab({
                       <RPMGearChart
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -377,7 +413,8 @@ export function AnalyticsTab({
                       <LiveFrictionCircle
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -401,7 +438,8 @@ export function AnalyticsTab({
                   <LiveFrictionCircle
                     sessionId={sessionId}
                     gpsLaps={gpsLaps}
-                    bestLap={bestLap}
+                    bestLap={primaryLap}
+                    controlledLap
                     className="w-full"
                   />
                 </div>
@@ -425,7 +463,8 @@ export function AnalyticsTab({
                       <TireHeatmapChart
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -445,7 +484,8 @@ export function AnalyticsTab({
                       <WheelSlipChart
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -471,7 +511,8 @@ export function AnalyticsTab({
                       <BrakeAnalysisChart
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -491,7 +532,8 @@ export function AnalyticsTab({
                       <FuelStrategyChart
                         sessionId={sessionId}
                         gpsLaps={gpsLaps}
-                        bestLap={bestLap}
+                        bestLap={primaryLap}
+                        controlledLap
                         className="w-full"
                       />
                     </div>
@@ -538,7 +580,7 @@ export function AnalyticsTab({
               <div className="chart-enter">
                 <TheoreticalDeltaChart
                   sessionId={sessionId}
-                  bestLap={bestLap}
+                  bestLap={primaryLap}
                   className="w-full"
                 />
               </div>

@@ -27,6 +27,8 @@ interface DeltaTimeChartProps {
   sessionId: string;
   gpsLaps: number[];
   bestLap: number | null;
+  /** Optional external compare lap — drives lapB when provided. */
+  compareLap?: number | null;
   className?: string;
   controlledLap?: boolean;
   distRange?: [number, number] | null;
@@ -36,6 +38,7 @@ export function DeltaTimeChart({
   sessionId,
   gpsLaps,
   bestLap,
+  compareLap,
   className = '',
   controlledLap = false,
   distRange,
@@ -65,6 +68,11 @@ export function DeltaTimeChart({
   useEffect(() => {
     if (controlledLap && bestLap != null) setLapA(bestLap);
   }, [controlledLap, bestLap]);
+
+  // External compareLap drives lapB. When null, keep user's local selection.
+  useEffect(() => {
+    if (compareLap != null) setLapB(compareLap);
+  }, [compareLap]);
 
   // ── Fetch delta data ──────────────────────────────────────────
   useEffect(() => {
