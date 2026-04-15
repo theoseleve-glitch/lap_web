@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface WheelSlipData {
   distances: number[]; fl: number[]; fr: number[]; rl: number[]; rr: number[]; available: boolean;
@@ -18,10 +19,10 @@ interface WheelSlipChartProps {
 }
 
 const TRACES = [
-  { key: 'fl' as const, label: 'FL', color: '#3b82f6' },
-  { key: 'fr' as const, label: 'FR', color: '#22d3ee' },
-  { key: 'rl' as const, label: 'RL', color: '#f97316' },
-  { key: 'rr' as const, label: 'RR', color: '#ef4444' },
+  { key: 'fl' as const, label: 'FL', color: chartColor.palette[3] },
+  { key: 'fr' as const, label: 'FR', color: chartColor.palette[5] },
+  { key: 'rl' as const, label: 'RL', color: chartColor.palette[4] },
+  { key: 'rr' as const, label: 'RR', color: chartColor.series.negative },
 ];
 const LOCKUP = -0.15, SPIN = 0.10;
 
@@ -78,10 +79,10 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pad = { top: 20, right: 20, bottom: 38, left: 58 };
     const pW = w - pad.left - pad.right, pH = h - pad.top - pad.bottom;
-    ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = chartColor.surface; ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = chartColor.textSecondary; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No wheel slip data available', w / 2, h / 2);
       boundsRef.current = null; return;
@@ -96,13 +97,13 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     const yPx = (v: number) => pad.top + ((yMax - v) / (yMax - yMin)) * pH;
 
     // Grid
-    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = chartColor.grid; ctx.lineWidth = 0.5;
     for (let v = yMin; v <= yMax + 0.001; v += 0.05) { ctx.beginPath(); ctx.moveTo(pad.left, yPx(v)); ctx.lineTo(w - pad.right, yPx(v)); ctx.stroke(); }
     const xRange = xMax - xMin;
     const xStep = xRange <= 200 ? 25 : xRange <= 500 ? 50 : xRange <= 1000 ? 100 : xRange <= 3000 ? 250 : 500;
     for (let v = 0; v <= xMax; v += xStep) { ctx.beginPath(); ctx.moveTo(xPx(v), pad.top); ctx.lineTo(xPx(v), pad.top + pH); ctx.stroke(); }
     // Zero line
-    ctx.strokeStyle = '#6e7681'; ctx.lineWidth = 1;
+    ctx.strokeStyle = chartColor.axis; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(pad.left, yPx(0)); ctx.lineTo(w - pad.right, yPx(0)); ctx.stroke();
 
     ctx.save(); ctx.beginPath(); ctx.rect(pad.left, pad.top, pW, pH); ctx.clip();
@@ -111,8 +112,8 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
       let lock = false, spin = false;
       for (const tr of TRACES) { const v = data[tr.key][i]; if (v < LOCKUP) lock = true; if (v > SPIN) spin = true; }
       const x1 = xPx(dists[i]), x2 = xPx(dists[i + 1]);
-      if (lock) { ctx.fillStyle = 'rgba(239,68,68,0.08)'; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
-      if (spin) { ctx.fillStyle = 'rgba(249,115,22,0.08)'; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
+      if (lock) { ctx.fillStyle = `${chartColor.series.negative}14`; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
+      if (spin) { ctx.fillStyle = `${chartColor.palette[4]}14`; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
     }
     // Traces
     for (const tr of TRACES) {
@@ -123,7 +124,7 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     ctx.restore();
 
     // Labels
-    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
+    ctx.fillStyle = chartColor.textSecondary; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = yMin; v <= yMax + 0.001; v += 0.1) ctx.fillText(v.toFixed(1), pad.left - 6, yPx(v));
     ctx.textAlign = 'center'; ctx.textBaseline = 'top';
@@ -134,29 +135,29 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
 
     // Threshold lines
     ctx.setLineDash([4, 4]); ctx.lineWidth = 0.8;
-    ctx.strokeStyle = 'rgba(239,68,68,0.4)'; ctx.beginPath(); ctx.moveTo(pad.left, yPx(LOCKUP)); ctx.lineTo(w - pad.right, yPx(LOCKUP)); ctx.stroke();
-    ctx.strokeStyle = 'rgba(249,115,22,0.4)'; ctx.beginPath(); ctx.moveTo(pad.left, yPx(SPIN)); ctx.lineTo(w - pad.right, yPx(SPIN)); ctx.stroke();
+    ctx.strokeStyle = `${chartColor.series.negative}66`; ctx.beginPath(); ctx.moveTo(pad.left, yPx(LOCKUP)); ctx.lineTo(w - pad.right, yPx(LOCKUP)); ctx.stroke();
+    ctx.strokeStyle = `${chartColor.palette[4]}66`; ctx.beginPath(); ctx.moveTo(pad.left, yPx(SPIN)); ctx.lineTo(w - pad.right, yPx(SPIN)); ctx.stroke();
     ctx.setLineDash([]);
 
     // Hover
     if (hoverDist !== null && hoverDist >= xMin && hoverDist <= xMax) {
       const hx = xPx(hoverDist);
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = chartColor.crosshair; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(hx, pad.top); ctx.lineTo(hx, pad.top + pH); ctx.stroke(); ctx.setLineDash([]);
       const idx = closestIdx(dists, hoverDist);
       if (idx >= 0) {
         const tips: string[] = [hoverDist.toFixed(0) + 'm'];
         for (const tr of TRACES) {
           const v = data[tr.key][idx]; ctx.beginPath(); ctx.arc(hx, yPx(v), 4, 0, Math.PI * 2);
-          ctx.fillStyle = tr.color; ctx.fill(); ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.fillStyle = tr.color; ctx.fill(); ctx.strokeStyle = chartColor.text; ctx.lineWidth = 1; ctx.stroke();
           tips.push(`${tr.label}: ${v.toFixed(3)}`);
         }
         ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         let mw = 0; for (const l of tips) { const m = ctx.measureText(l).width; if (m > mw) mw = m; }
         const tW = mw + 16, tH = tips.length * 14 + 8;
         let tX = hx + 12; if (tX + tW > w - 10) tX = hx - tW - 12;
-        ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(tX, pad.top + 10, tW, tH);
-        ctx.fillStyle = '#e6edf3'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillStyle = chartColor.tooltipBg; ctx.fillRect(tX, pad.top + 10, tW, tH);
+        ctx.fillStyle = chartColor.text; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
         for (let i = 0; i < tips.length; i++) ctx.fillText(tips[i], tX + 8, pad.top + 14 + i * 14);
       }
     }
@@ -166,7 +167,7 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     for (let i = TRACES.length - 1; i >= 0; i--) {
       const t = TRACES[i], lw = ctx.measureText(t.label).width + 16;
       ctx.fillStyle = t.color; ctx.fillRect(lx - lw, pad.top + 2, 8, 8);
-      ctx.fillStyle = '#8b949e'; ctx.fillText(t.label, lx, pad.top + 2); lx -= lw + 8;
+      ctx.fillStyle = chartColor.textSecondary; ctx.fillText(t.label, lx, pad.top + 2); lx -= lw + 8;
     }
   }, []);
 
@@ -197,16 +198,16 @@ export function WheelSlipChart({ sessionId, gpsLaps, bestLap, className = '', co
     <div ref={containerRef} className={className} role="img" aria-label="Wheel slip chart showing tire grip levels">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         {!controlledLap && (
-          <label className="flex items-center gap-1.5 text-gray-400">
+          <label className="flex items-center gap-1.5 text-steel">
             Lap:
             <select value={selectedLap} onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700">
+              className="bg-concrete text-chalk text-sm rounded px-2 py-1 border border-steel/20">
               {gpsLaps.map((l) => <option key={l} value={l}>Lap {l}{l === bestLap ? ' (Best)' : ''}</option>)}
             </select>
           </label>
         )}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {error && <span className="text-xs text-safety-red">{error}</span>}
       </div>
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '240px', display: 'block' }} />

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────── */
 
@@ -21,15 +22,15 @@ interface LapDistributionProps {
 /* ── Colors ─────────────────────────────────── */
 
 const C = {
-  bg: '#000000',
-  grid: '#30363d',
-  text: '#888',
-  bright: '#F0EDE5',
-  bar: '#58a6ff',
-  barBest: '#00ff64',
-  barInvalid: '#ff3c3c50',
-  median: '#d29922',
-  mean: '#ff6b35',
+  bg: chartColor.surfaceMuted,
+  grid: chartColor.grid,
+  text: chartColor.textSecondary,
+  bright: chartColor.text,
+  bar: chartColor.palette[3],
+  barBest: chartColor.series.positive,
+  barInvalid: `${chartColor.series.negative}80`,
+  median: chartColor.series.warning,
+  mean: chartColor.palette[4],
 };
 
 /* ── Helpers ────────────────────────────────── */
@@ -250,7 +251,7 @@ export function LapDistribution({ sessionId, className = '' }: LapDistributionPr
   }, [render]);
 
   if (error) {
-    return <div className={`text-red-400 p-4 text-sm ${className}`}>{error}</div>;
+    return <div className={`text-safety-red p-4 text-sm ${className}`}>{error}</div>;
   }
 
   return (

@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface BrakeTempData {
   distances: number[]; fl: number[]; fr: number[]; rl: number[]; rr: number[]; available: boolean;
@@ -19,10 +20,10 @@ interface BrakeAnalysisChartProps {
 }
 
 const TRACES = [
-  { key: 'fl' as const, label: 'FL', color: '#3b82f6' },
-  { key: 'fr' as const, label: 'FR', color: '#22d3ee' },
-  { key: 'rl' as const, label: 'RL', color: '#f97316' },
-  { key: 'rr' as const, label: 'RR', color: '#ef4444' },
+  { key: 'fl' as const, label: 'FL', color: chartColor.palette[3] },
+  { key: 'fr' as const, label: 'FR', color: chartColor.palette[5] },
+  { key: 'rl' as const, label: 'RL', color: chartColor.palette[4] },
+  { key: 'rr' as const, label: 'RR', color: chartColor.series.negative },
 ];
 const FADE = 600;
 
@@ -84,10 +85,10 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pad = { top: 20, right: 58, bottom: 38, left: 58 };
     const pW = w - pad.left - pad.right, pH = h - pad.top - pad.bottom;
-    ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = chartColor.surface; ctx.fillRect(0, 0, w, h);
 
     if (!td || !td.distances || td.distances.length < 2) {
-      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = chartColor.textSecondary; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No brake data available', w / 2, h / 2); boundsRef.current = null; return;
     }
@@ -102,7 +103,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     const pPx = (v: number) => pad.top + ((100 - v) / 100) * pH;
 
     // Grid
-    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = chartColor.grid; ctx.lineWidth = 0.5;
     const yStep = yTMax - yTMin <= 300 ? 50 : yTMax - yTMin <= 600 ? 100 : 200;
     for (let v = yTMin; v <= yTMax; v += yStep) { ctx.beginPath(); ctx.moveTo(pad.left, tPx(v)); ctx.lineTo(w - pad.right, tPx(v)); ctx.stroke(); }
     const xRange = xMax - xMin;
@@ -113,14 +114,14 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     // Fade zones
     for (let i = 0; i < dists.length - 1; i++) {
       let fade = false; for (const tr of TRACES) { if (td[tr.key][i] > FADE) { fade = true; break; } }
-      if (fade) { const x1 = xPx(dists[i]), x2 = xPx(dists[i + 1]); ctx.fillStyle = 'rgba(239,68,68,0.1)'; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
+      if (fade) { const x1 = xPx(dists[i]), x2 = xPx(dists[i + 1]); ctx.fillStyle = `${chartColor.series.negative}1A`; ctx.fillRect(x1, pad.top, x2 - x1, pH); }
     }
     // Brake pressure fill
     if (pd && pd.brake && pd.brake.length > 0) {
-      ctx.fillStyle = 'rgba(239,68,68,0.12)'; ctx.beginPath(); ctx.moveTo(xPx(pd.distances[0]), pPx(0));
+      ctx.fillStyle = `${chartColor.series.negative}1F`; ctx.beginPath(); ctx.moveTo(xPx(pd.distances[0]), pPx(0));
       for (let i = 0; i < pd.distances.length; i++) ctx.lineTo(xPx(pd.distances[i]), pPx(pd.brake[i]));
       ctx.lineTo(xPx(pd.distances[pd.distances.length - 1]), pPx(0)); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = 'rgba(239,68,68,0.35)'; ctx.lineWidth = 1; ctx.beginPath();
+      ctx.strokeStyle = `${chartColor.series.negative}59`; ctx.lineWidth = 1; ctx.beginPath();
       for (let i = 0; i < pd.distances.length; i++) { const x = xPx(pd.distances[i]), y = pPx(pd.brake[i]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
       ctx.stroke();
     }
@@ -133,7 +134,7 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     ctx.restore();
 
     // Axis labels
-    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
+    ctx.fillStyle = chartColor.textSecondary; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = yTMin; v <= yTMax; v += yStep) ctx.fillText(v.toFixed(0) + '\u00B0', pad.left - 6, tPx(v));
     ctx.textAlign = 'left';
@@ -147,23 +148,23 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
 
     // Fade threshold line
     if (yTMax >= FADE) {
-      ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(239,68,68,0.4)'; ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 4]); ctx.strokeStyle = `${chartColor.series.negative}66`; ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.moveTo(pad.left, tPx(FADE)); ctx.lineTo(w - pad.right, tPx(FADE)); ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(239,68,68,0.5)'; ctx.font = '9px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = `${chartColor.series.negative}80`; ctx.font = '9px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'left'; ctx.textBaseline = 'bottom'; ctx.fillText('Fade zone', pad.left + 4, tPx(FADE) - 2);
     }
 
     // Hover
     if (hoverDist !== null && hoverDist >= xMin && hoverDist <= xMax) {
       const hx = xPx(hoverDist);
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = chartColor.crosshair; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(hx, pad.top); ctx.lineTo(hx, pad.top + pH); ctx.stroke(); ctx.setLineDash([]);
       const idx = closestIdx(dists, hoverDist);
       if (idx >= 0) {
         const tips: string[] = [hoverDist.toFixed(0) + 'm'];
         for (const tr of TRACES) {
           const v = td[tr.key][idx]; ctx.beginPath(); ctx.arc(hx, tPx(v), 4, 0, Math.PI * 2);
-          ctx.fillStyle = tr.color; ctx.fill(); ctx.strokeStyle = '#e6edf3'; ctx.lineWidth = 1; ctx.stroke();
+          ctx.fillStyle = tr.color; ctx.fill(); ctx.strokeStyle = chartColor.text; ctx.lineWidth = 1; ctx.stroke();
           tips.push(`${tr.label}: ${v.toFixed(0)}\u00B0C`);
         }
         if (pd && pd.brake.length > 0) { const bi = closestIdx(pd.distances, hoverDist); if (bi >= 0) tips.push(`Brake: ${pd.brake[bi].toFixed(0)}%`); }
@@ -171,8 +172,8 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
         let mw = 0; for (const l of tips) { const m = ctx.measureText(l).width; if (m > mw) mw = m; }
         const tW = mw + 16, tH = tips.length * 14 + 8;
         let tX = hx + 12; if (tX + tW > w - 10) tX = hx - tW - 12;
-        ctx.fillStyle = 'rgba(0,0,0,0.85)'; ctx.fillRect(tX, pad.top + 10, tW, tH);
-        ctx.fillStyle = '#e6edf3'; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+        ctx.fillStyle = chartColor.tooltipBg; ctx.fillRect(tX, pad.top + 10, tW, tH);
+        ctx.fillStyle = chartColor.text; ctx.textAlign = 'left'; ctx.textBaseline = 'top';
         for (let i = 0; i < tips.length; i++) ctx.fillText(tips[i], tX + 8, pad.top + 14 + i * 14);
       }
     }
@@ -180,12 +181,12 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     let lx = w - pad.right;
     const bpL = 'Brake %', bpW = ctx.measureText(bpL).width + 16;
-    ctx.fillStyle = 'rgba(239,68,68,0.35)'; ctx.fillRect(lx - bpW, pad.top + 2, 8, 8);
-    ctx.fillStyle = '#8b949e'; ctx.fillText(bpL, lx, pad.top + 2); lx -= bpW + 8;
+    ctx.fillStyle = `${chartColor.series.negative}59`; ctx.fillRect(lx - bpW, pad.top + 2, 8, 8);
+    ctx.fillStyle = chartColor.textSecondary; ctx.fillText(bpL, lx, pad.top + 2); lx -= bpW + 8;
     for (let i = TRACES.length - 1; i >= 0; i--) {
       const t = TRACES[i], lw = ctx.measureText(t.label).width + 16;
       ctx.fillStyle = t.color; ctx.fillRect(lx - lw, pad.top + 2, 8, 8);
-      ctx.fillStyle = '#8b949e'; ctx.fillText(t.label, lx, pad.top + 2); lx -= lw + 8;
+      ctx.fillStyle = chartColor.textSecondary; ctx.fillText(t.label, lx, pad.top + 2); lx -= lw + 8;
     }
   }, []);
 
@@ -216,16 +217,16 @@ export function BrakeAnalysisChart({ sessionId, gpsLaps, bestLap, className = ''
     <div ref={containerRef} className={className} role="img" aria-label="Brake analysis chart showing braking events and patterns">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         {!controlledLap && (
-          <label className="flex items-center gap-1.5 text-gray-400">
+          <label className="flex items-center gap-1.5 text-steel">
             Lap:
             <select value={selectedLap} onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700">
+              className="bg-concrete text-chalk text-sm rounded px-2 py-1 border border-steel/20">
               {gpsLaps.map((l) => <option key={l} value={l}>Lap {l}{l === bestLap ? ' (Best)' : ''}</option>)}
             </select>
           </label>
         )}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {error && <span className="text-xs text-safety-red">{error}</span>}
       </div>
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '260px', display: 'block' }} />

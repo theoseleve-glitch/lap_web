@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface LapProgressData {
   lap_numbers: number[];
@@ -29,11 +30,11 @@ interface LapProgressChartProps {
   controlledLap?: boolean;
 }
 
-const STEEL = '#c4c4c4';
-const STEEL_40 = 'rgba(196,196,196,0.4)';
-const ACID = '#b4ff39';
-const ACID_BRIGHT = '#c8ff66';
-const GRID = '#30363d';
+const STEEL = chartColor.textSecondary;
+const STEEL_40 = `${chartColor.textSecondary}66`;
+const ACID = chartColor.series.positive;
+const ACID_BRIGHT = chartColor.series.positive;
+const GRID = chartColor.grid;
 const FONT = '10px "Space Mono", monospace';
 
 /** Format seconds as M:SS.s */
@@ -108,14 +109,14 @@ function drawChart(
   // Rolling average line
   if (rolling_avg.length > 0) {
     const cnt = Math.min(n, rolling_avg.length);
-    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 1.5;
+    ctx.strokeStyle = chartColor.text; ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < cnt; i++) {
       const x = bcx(i), y = yToP(rolling_avg[i]!);
       i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
     ctx.stroke();
-    ctx.fillStyle = '#ffffff';
+    ctx.fillStyle = chartColor.text;
     for (let i = 0; i < cnt; i++) {
       ctx.beginPath(); ctx.arc(bcx(i), yToP(rolling_avg[i]!), 2, 0, Math.PI * 2); ctx.fill();
     }
@@ -138,7 +139,7 @@ function drawChart(
     ctx.fillStyle = ACID;
     ctx.fillText('\u25BC Improving', tx, 12);
   } else {
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = chartColor.series.negative;
     ctx.fillText('\u25B2 Degrading', tx, 12);
   }
   ctx.fillStyle = STEEL; ctx.font = '9px "Space Mono", monospace';
@@ -216,7 +217,7 @@ export function LapProgressChart({
         style={{ minHeight: '220px' }}>
         <div className="text-steel p-4 text-sm text-center">
           <p className="font-telemetry text-chalk mb-1">Lap Progress</p>
-          <p className="text-red-400 text-xs">{error}</p>
+          <p className="text-safety-red text-xs">{error}</p>
         </div>
       </div>
     );

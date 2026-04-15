@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface RPMGearData {
   distances: number[];
@@ -33,14 +34,14 @@ interface RPMGearChartProps {
 }
 
 const GEAR_COLORS: Record<number, string> = {
-  0: '#9ca3af', // neutral — gray
-  1: '#4488ff',
-  2: '#44ddff',
-  3: '#44ff88',
-  4: '#ffff44',
-  5: '#ff8844',
-  6: '#ff4444',
-  7: '#ff44ff',
+  0: chartColor.textMuted,        // neutral — muted
+  1: chartColor.palette[3],       // blue
+  2: chartColor.palette[5],       // cyan
+  3: chartColor.series.positive,  // green
+  4: chartColor.series.warning,   // yellow
+  5: chartColor.palette[4],       // orange
+  6: chartColor.series.negative,  // red
+  7: chartColor.palette[6],       // pink
 };
 
 function gearColor(g: number): string {
@@ -118,11 +119,11 @@ export function RPMGearChart({
     const pH = h - pad.top - pad.bottom;
 
     // Background
-    ctx.fillStyle = '#1a1f2e';
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#8b949e';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -161,7 +162,7 @@ export function RPMGearChart({
     const spdToPixel = (v: number) => pad.top + pH - (v / spdMax) * pH;
 
     // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
 
     // Y grid (RPM)
@@ -186,7 +187,7 @@ export function RPMGearChart({
     }
 
     // Left Y axis labels (RPM)
-    ctx.fillStyle = '#8b949e';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -229,8 +230,8 @@ export function RPMGearChart({
     ctx.rect(pad.left, pad.top, pW, pH);
     ctx.clip();
 
-    // Speed line (thin gray, drawn first so RPM sits on top)
-    ctx.strokeStyle = 'rgba(156, 163, 175, 0.5)';
+    // Speed line (thin muted, drawn first so RPM sits on top)
+    ctx.strokeStyle = `${chartColor.textSecondary}80`;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -259,7 +260,7 @@ export function RPMGearChart({
     }
 
     // Vertical tick marks at shift points
-    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.strokeStyle = `${chartColor.text}33`;
     ctx.lineWidth = 1;
     ctx.setLineDash([2, 2]);
     for (let i = 1; i < gear.length; i++) {
@@ -281,7 +282,7 @@ export function RPMGearChart({
       const idx = closestIdx(dists, hoverDist);
 
       // Vertical crosshair
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -300,16 +301,16 @@ export function RPMGearChart({
         ctx.arc(hx, rpmToPixel(rVal), 4, 0, Math.PI * 2);
         ctx.fillStyle = gearColor(gVal);
         ctx.fill();
-        ctx.strokeStyle = '#e6edf3';
+        ctx.strokeStyle = chartColor.text;
         ctx.lineWidth = 1;
         ctx.stroke();
 
         // Speed dot
         ctx.beginPath();
         ctx.arc(hx, spdToPixel(sVal), 3, 0, Math.PI * 2);
-        ctx.fillStyle = '#9ca3af';
+        ctx.fillStyle = chartColor.textSecondary;
         ctx.fill();
-        ctx.strokeStyle = '#e6edf3';
+        ctx.strokeStyle = chartColor.text;
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -332,18 +333,18 @@ export function RPMGearChart({
         if (tipX + tipW > w - 10) tipX = hx - tipW - 12;
         let tipY = pad.top + 10;
 
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = chartColor.tooltipBg;
         ctx.beginPath();
         ctx.roundRect(tipX, tipY, tipW, tipH, 4);
         ctx.fill();
 
-        ctx.fillStyle = '#e6edf3';
+        ctx.fillStyle = chartColor.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         for (let i = 0; i < lines.length; i++) {
           // Color the gear line with the gear color
           if (i === 1) ctx.fillStyle = gearColor(gVal);
-          else ctx.fillStyle = '#e6edf3';
+          else ctx.fillStyle = chartColor.text;
           ctx.fillText(lines[i], tipX + 8, tipY + 4 + i * 16);
         }
       }
@@ -366,7 +367,7 @@ export function RPMGearChart({
 
     // Speed legend on the right
     ctx.textAlign = 'right';
-    ctx.fillStyle = 'rgba(156, 163, 175, 0.7)';
+    ctx.fillStyle = `${chartColor.textSecondary}B3`;
     ctx.fillText('\u2014 Speed', w - pad.right, pad.top + 2);
   }, [selectedLap]);
 
@@ -446,12 +447,12 @@ export function RPMGearChart({
     <div ref={containerRef} className={className} role="img" aria-label="RPM and gear chart showing engine speed and gear selection">
       {/* Lap selector */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        {!controlledLap && (<label className="flex items-center gap-1.5 text-gray-400">
+        {!controlledLap && (<label className="flex items-center gap-1.5 text-steel">
           Lap:
           <select
             value={selectedLap}
             onChange={(e) => setSelectedLap(Number(e.target.value))}
-            className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
+            className="bg-concrete text-chalk text-sm rounded px-2 py-1 border border-steel/20"
           >
             {gpsLaps.map((l) => (
               <option key={l} value={l}>
@@ -461,7 +462,7 @@ export function RPMGearChart({
           </select>
         </label>)}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {error && <span className="text-xs text-safety-red">{error}</span>}
       </div>
 
       {/* Chart canvas */}

@@ -8,6 +8,7 @@ import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
 import { ScoreRadarChart } from '@/components/app/compare/ScoreRadarChart';
 import { ReferenceOverlayProvider, useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -236,8 +237,8 @@ function CompareAutoReference({
 
 // ── Main Page ───────────────────────────────────────────────────
 
-const COLOR_A = '#22C55E';
-const COLOR_B = '#C9A84C';
+const COLOR_A = chartColor.series.positive;
+const COLOR_B = chartColor.series.primary;
 
 export default function CompareSessionsPage() {
   const searchParams = useSearchParams();
@@ -472,7 +473,7 @@ export default function CompareSessionsPage() {
               {templates.map((tpl, i) => (
                 <div
                   key={`${tpl.sessionA}-${tpl.sessionB}`}
-                  className="flex items-center gap-1 bg-zinc-800 rounded px-2 py-1 text-xs font-body group"
+                  className="flex items-center gap-1 bg-concrete rounded px-2 py-1 text-xs font-body group"
                 >
                   <button
                     type="button"

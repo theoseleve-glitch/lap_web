@@ -132,7 +132,7 @@ export default function VisualizeSessionPage() {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1117]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-asphalt">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-acid-green border-t-transparent rounded-full animate-spin mx-auto mb-4" />
           <p className="text-steel font-body">Loading visualization...</p>
@@ -143,7 +143,7 @@ export default function VisualizeSessionPage() {
 
   if (error || !session) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0f1117]">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-asphalt">
         <div className="text-center">
           <h1 className="text-2xl font-monument text-chalk mb-2">Session Not Found</h1>
           <p className="text-steel font-body mb-4">{error || 'The session could not be loaded.'}</p>
@@ -162,7 +162,7 @@ export default function VisualizeSessionPage() {
 
   return (
     <ReferenceOverlayProvider sessionId={sessionId} primaryLap={primaryLap}>
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#0f1117] overflow-hidden">
+    <div className="fixed inset-0 z-50 flex flex-col bg-asphalt overflow-hidden">
       {/* Top bar — minimal chrome */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-steel/10 bg-concrete shrink-0">
         <div className="flex items-center gap-3">

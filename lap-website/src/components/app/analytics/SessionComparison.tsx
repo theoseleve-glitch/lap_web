@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, type MouseEvent as ReactMouseEvent } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 const MPS_TO_KMH = 3.6;
 
@@ -118,8 +119,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const pw = w - pad.left - pad.right;
     const ph = h - pad.top - pad.bottom;
 
-    // Background — matches SpeedTraceChart (#141414)
-    ctx.fillStyle = '#141414';
+    // Background
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     const { distances, speeds_a, speeds_b } = compareData;
@@ -138,7 +139,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const yScale = (v: number) => pad.top + ph - ((v - yMin) / yRange) * ph;
 
     // Grid lines
-    ctx.strokeStyle = '#30363d';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
     const ySteps = 5;
     for (let i = 0; i <= ySteps; i++) {
@@ -164,11 +165,11 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.stroke();
     };
 
-    drawLine(kmhA, '#22C55E');
-    drawLine(kmhB, '#C9A84C');
+    drawLine(kmhA, chartColor.series.positive);
+    drawLine(kmhB, chartColor.series.primary);
 
     // Y-axis labels (km/h)
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -200,9 +201,9 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     // Legend
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#22C55E';
+    ctx.fillStyle = chartColor.series.positive;
     ctx.fillText('\u2500\u2500 This session', pad.left + 8, pad.top + 8);
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.fillText('\u2500\u2500 Comparison', pad.left + 8, pad.top + 20);
 
     // Crosshair hover
@@ -214,7 +215,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       const sB = kmhB[idx];
 
       // Vertical line
-      ctx.strokeStyle = '#F0EDE5';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 0.5;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -226,25 +227,25 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       // Dots
       const yA = yScale(sA);
       const yB = yScale(sB);
-      ctx.fillStyle = '#22C55E';
+      ctx.fillStyle = chartColor.series.positive;
       ctx.beginPath(); ctx.arc(hoverX, yA, 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#C9A84C';
+      ctx.fillStyle = chartColor.series.primary;
       ctx.beginPath(); ctx.arc(hoverX, yB, 3, 0, Math.PI * 2); ctx.fill();
 
       // Tooltip
       const tipX = hoverX + 10 > w - 120 ? hoverX - 120 : hoverX + 10;
-      ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.fillRect(tipX, pad.top + 2, 110, 42);
-      ctx.strokeStyle = '#30363d';
+      ctx.strokeStyle = chartColor.grid;
       ctx.lineWidth = 1;
       ctx.strokeRect(tipX, pad.top + 2, 110, 42);
       ctx.font = '10px "Space Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, pad.top + 14);
-      ctx.fillStyle = '#22C55E';
+      ctx.fillStyle = chartColor.series.positive;
       ctx.fillText(`A: ${sA.toFixed(1)} km/h`, tipX + 5, pad.top + 26);
-      ctx.fillStyle = '#C9A84C';
+      ctx.fillStyle = chartColor.series.primary;
       ctx.fillText(`B: ${sB.toFixed(1)} km/h`, tipX + 5, pad.top + 38);
     }
   }, [compareData, hoverX]);
@@ -278,8 +279,8 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const pad = { left: 45, right: 10 };
     const pw = w - pad.left - pad.right;
 
-    // Background — matches SpeedTraceChart (#141414)
-    ctx.fillStyle = '#141414';
+    // Background
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     const { distances, delta_s } = compareData;
@@ -297,7 +298,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     const yScale = (v: number) => yMid - (v / absMax) * (h / 2 - 5);
 
     // Zero line
-    ctx.strokeStyle = '#30363d';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 1;
     ctx.setLineDash([3, 3]);
     ctx.beginPath();
@@ -315,7 +316,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     }
     ctx.lineTo(xScale(distances[distances.length - 1]), yMid);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+    ctx.fillStyle = `${chartColor.series.positive}33`;
     ctx.fill();
 
     // Red fill (negative = slower)
@@ -326,11 +327,11 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     }
     ctx.lineTo(xScale(distances[distances.length - 1]), yMid);
     ctx.closePath();
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+    ctx.fillStyle = `${chartColor.series.negative}33`;
     ctx.fill();
 
     // Delta line
-    ctx.strokeStyle = '#F0EDE5';
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < distances.length; i++) {
@@ -341,7 +342,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
     ctx.stroke();
 
     // Label
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.fillText('Time delta (s)', pad.left + 5, 12);
@@ -353,7 +354,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       const dist = distances[idx];
       const d = delta_s[idx];
 
-      ctx.strokeStyle = '#F0EDE5';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 0.5;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -362,20 +363,20 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
       ctx.stroke();
       ctx.setLineDash([]);
 
-      ctx.fillStyle = '#F0EDE5';
+      ctx.fillStyle = chartColor.text;
       ctx.beginPath(); ctx.arc(hoverX, yScale(d), 3, 0, Math.PI * 2); ctx.fill();
 
       const tipX = hoverX + 10 > w - 100 ? hoverX - 100 : hoverX + 10;
-      ctx.fillStyle = 'rgba(20, 20, 20, 0.9)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.fillRect(tipX, 2, 90, 28);
-      ctx.strokeStyle = '#30363d';
+      ctx.strokeStyle = chartColor.grid;
       ctx.lineWidth = 1;
       ctx.strokeRect(tipX, 2, 90, 28);
       ctx.font = '10px "Space Mono", monospace';
       ctx.textAlign = 'left';
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.fillText(`${dist.toFixed(0)}m`, tipX + 5, 14);
-      ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
+      ctx.fillStyle = d >= 0 ? chartColor.series.positive : chartColor.series.negative;
       ctx.fillText(`${d >= 0 ? '+' : ''}${d.toFixed(3)}s`, tipX + 5, 26);
     }
   }, [compareData, hoverX]);
@@ -415,11 +416,11 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
 
       {/* Loading / error states */}
       {loading && (
-        <div className="flex items-center justify-center p-8 text-gray-500">
+        <div className="flex items-center justify-center p-8 text-steel">
           <div className="text-sm">Loading comparison...</div>
         </div>
       )}
-      {error && <div className="text-red-400 text-sm p-4">{error}</div>}
+      {error && <div className="text-safety-red text-sm p-4">{error}</div>}
 
       {/* Empty state */}
       {!selectedId && !loading && (
@@ -444,7 +445,7 @@ export function SessionComparison({ sessionId, trackName, className = '' }: Sess
             {compareData.session_a?.best_time_s != null && compareData.session_b?.best_time_s != null && (
               <div className="bg-asphalt/50 rounded-lg px-4 py-2 border border-steel/10">
                 <div className="text-xs text-steel font-body">Delta</div>
-                <div className={`text-sm font-telemetry ${compareData.session_a.best_time_s <= compareData.session_b.best_time_s ? 'text-green-400' : 'text-red-400'}`}>
+                <div className={`text-sm font-telemetry ${compareData.session_a.best_time_s <= compareData.session_b.best_time_s ? 'text-acid-green' : 'text-safety-red'}`}>
                   {compareData.session_a.best_time_s <= compareData.session_b.best_time_s ? '-' : '+'}
                   {Math.abs(compareData.session_a.best_time_s - compareData.session_b.best_time_s).toFixed(3)}s
                 </div>

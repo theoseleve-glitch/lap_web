@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────── */
 
@@ -22,16 +23,13 @@ interface LapSpeedOverlayProps {
 
 /* ── Colors ─────────────────────────────────── */
 
-const PALETTE = [
-  '#00ff64', '#58a6ff', '#ff6b35', '#d29922', '#ff3c8e',
-  '#8b5cf6', '#06b6d4', '#eab308', '#f87171', '#34d399',
-];
+const PALETTE = chartColor.palette;
 
 const C = {
-  bg: '#000000',
-  grid: '#30363d',
-  text: '#888',
-  bright: '#F0EDE5',
+  bg: chartColor.surfaceMuted,
+  grid: chartColor.grid,
+  text: chartColor.textSecondary,
+  bright: chartColor.text,
 };
 
 /* ── Helpers ────────────────────────────────── */
@@ -197,7 +195,7 @@ function draw(
   // ── Cross-session reference overlay (dashed racing-purple) ──
   if (refOverlay && refOverlay.distances.length > 1) {
     ctx.save();
-    ctx.strokeStyle = '#8B5CF6';
+    ctx.strokeStyle = chartColor.series.reference;
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
     ctx.globalAlpha = 0.85;
@@ -211,7 +209,7 @@ function draw(
     ctx.restore();
 
     // Legend entry for reference
-    ctx.fillStyle = '#8B5CF6';
+    ctx.fillStyle = chartColor.series.reference;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';

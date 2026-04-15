@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface DeltaData {
   distances: number[];
@@ -116,12 +117,12 @@ export function DeltaTimeChart({
     const pW = w - pad.left - pad.right;
     const pH = h - pad.top - pad.bottom;
 
-    // Background — matches SpeedTraceChart (#141414)
-    ctx.fillStyle = '#141414';
+    // Background
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -168,7 +169,7 @@ export function DeltaTimeChart({
     const yToPixel = (v: number) => pad.top + pH / 2 - (v / maxAbs) * (pH / 2);
 
     // Grid
-    ctx.strokeStyle = '#30363d';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
 
     // Y grid — symmetric around zero
@@ -194,7 +195,7 @@ export function DeltaTimeChart({
     }
 
     // Zero line (bold)
-    ctx.strokeStyle = '#6e7681';
+    ctx.strokeStyle = chartColor.axis;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(pad.left, yToPixel(0));
@@ -202,7 +203,7 @@ export function DeltaTimeChart({
     ctx.stroke();
 
     // Y axis labels — use consistent decimal places per step size
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -221,7 +222,7 @@ export function DeltaTimeChart({
     }
 
     // Axis titles
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
@@ -245,7 +246,7 @@ export function DeltaTimeChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+    ctx.fillStyle = `${chartColor.series.positive}33`;
     ctx.fill();
 
     // Red fill (negative = lap A slower)
@@ -256,11 +257,11 @@ export function DeltaTimeChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+    ctx.fillStyle = `${chartColor.series.negative}33`;
     ctx.fill();
 
     // Delta line (intra-session)
-    ctx.strokeStyle = '#F0EDE5';
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -274,7 +275,7 @@ export function DeltaTimeChart({
     // Cross-session reference delta line (dashed racing-purple)
     if (hasRef) {
       ctx.save();
-      ctx.strokeStyle = '#8B5CF6';
+      ctx.strokeStyle = chartColor.series.reference;
       ctx.lineWidth = 2;
       ctx.setLineDash([6, 4]);
       ctx.globalAlpha = 0.85;
@@ -296,7 +297,7 @@ export function DeltaTimeChart({
     const rightCol = pad.left + pW + 10; // right margin start
     if (Math.abs(finalDelta) > 0.001) {
       const sign = finalDelta > 0 ? '+' : '';
-      const color = finalDelta > 0 ? '#10b981' : '#ef4444';
+      const color = finalDelta > 0 ? chartColor.series.positive : chartColor.series.negative;
       ctx.fillStyle = color;
       ctx.font = 'bold 12px "Space Mono", monospace';
       ctx.textAlign = 'left';
@@ -310,7 +311,7 @@ export function DeltaTimeChart({
       const hx = xToPixel(hoverDist);
 
       // Vertical crosshair
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -328,16 +329,16 @@ export function DeltaTimeChart({
         // Dot
         ctx.beginPath();
         ctx.arc(hx, py, 5, 0, Math.PI * 2);
-        ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
+        ctx.fillStyle = d >= 0 ? chartColor.series.positive : chartColor.series.negative;
         ctx.fill();
-        ctx.strokeStyle = '#F0EDE5';
+        ctx.strokeStyle = chartColor.text;
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Tooltip
         const sign = d >= 0 ? '+' : '';
         const label = sign + d.toFixed(3) + 's @ ' + hoverDist.toFixed(0) + 'm';
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = chartColor.tooltipBg;
         ctx.font = '11px "Space Mono", monospace';
         const metrics = ctx.measureText(label);
         const tipW = metrics.width + 12;
@@ -345,7 +346,7 @@ export function DeltaTimeChart({
         let tipX = hx + 10;
         if (tipX + tipW > w - 10) tipX = hx - tipW - 10;
         ctx.fillRect(tipX, py - tipH / 2, tipW, tipH);
-        ctx.fillStyle = '#F0EDE5';
+        ctx.fillStyle = chartColor.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, tipX + 6, py);
@@ -357,7 +358,7 @@ export function DeltaTimeChart({
       const finalRefDelta = refDeltas![refDeltas!.length - 1];
       if (Math.abs(finalRefDelta) > 0.001) {
         const sign = finalRefDelta > 0 ? '+' : '';
-        ctx.fillStyle = '#8B5CF6';
+        ctx.fillStyle = chartColor.series.reference;
         ctx.font = 'bold 12px "Space Mono", monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -373,12 +374,12 @@ export function DeltaTimeChart({
 
     // Green/red legend items at bottom of right margin
     const legendY = hasRef ? pad.top + pH - 42 : pad.top + pH - 28;
-    ctx.fillStyle = '#10b981';
+    ctx.fillStyle = chartColor.series.positive;
     ctx.fillText(`▲ Lap ${lapA} faster`, rightCol, legendY);
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = chartColor.series.negative;
     ctx.fillText(`▼ Lap ${lapA} slower`, rightCol, legendY + 14);
     if (hasRef) {
-      ctx.fillStyle = '#8B5CF6';
+      ctx.fillStyle = chartColor.series.reference;
       ctx.fillText(`- - vs reference`, rightCol, legendY + 28);
     }
   }, [lapA, lapB, distRange, referenceData]);

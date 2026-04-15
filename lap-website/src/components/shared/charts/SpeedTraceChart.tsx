@@ -15,17 +15,7 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
 import { useReferenceOverlay } from '@/components/app/reference';
-
-// ── Design tokens ────────────────────────────────────────────────
-const COLORS = {
-  bg: '#141414',
-  grid: '#30363d',
-  text: '#949494',
-  textBright: '#F0EDE5',
-  accent: '#C9A84C',
-  yellow: '#FACC15',
-  cyan: '#3B82F6',
-};
+import { chartColor } from '@/components/shared/chart-kit';
 
 // ── Types ────────────────────────────────────────────────────────
 interface SpeedTraceData {
@@ -145,12 +135,12 @@ function drawSpeedTrace(
   opts: DrawOptions,
 ): { xMin: number; xMax: number; yMin: number; yMax: number; plotX: number; plotY: number; plotW: number; plotH: number } | null {
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = COLORS.bg;
+  ctx.fillStyle = chartColor.surface;
   ctx.fillRect(0, 0, w, h);
 
   const { distances, speeds, avgSpeeds, refSpeeds, hoverDistanceM } = opts;
   if (!distances || distances.length < 2) {
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '13px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -219,7 +209,7 @@ function drawSpeedTrace(
   const yToPixel = (v: number) => pad.top + pH - (v - yMin) / (yMax - yMin) * pH;
 
   // Grid lines
-  ctx.strokeStyle = COLORS.grid;
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 0.5;
   const yTicks = niceRange(yMin, yMax, 5);
   for (const tick of yTicks) {
@@ -239,7 +229,7 @@ function drawSpeedTrace(
   }
 
   // Y-axis labels
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '11px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -255,12 +245,12 @@ function drawSpeedTrace(
   }
 
   // Axis titles
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '12px "Space Mono", monospace';
   ctx.textAlign = 'center';
   // Compact unit labels — no full axis titles (tick labels are self-explanatory)
   ctx.font = '10px "Space Mono", monospace';
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.textAlign = 'left';
   ctx.fillText('km/h', pad.left + 2, pad.top - 4);
   ctx.textAlign = 'right';
@@ -293,7 +283,7 @@ function drawSpeedTrace(
     }
     ctx.stroke();
     ctx.restore();
-    ctx.fillStyle = COLORS.textBright;
+    ctx.fillStyle = chartColor.text;
     ctx.globalAlpha = 0.6;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
@@ -311,7 +301,7 @@ function drawSpeedTrace(
     // Fill area between actual speed and ceiling
     ctx.save();
     ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.beginPath();
     let fillStarted = false;
     for (let i = 0; i < cd.length; i++) {
@@ -337,7 +327,7 @@ function drawSpeedTrace(
     // Dashed gold ceiling line
     ctx.save();
     ctx.setLineDash([8, 4]);
-    ctx.strokeStyle = '#C9A84C';
+    ctx.strokeStyle = chartColor.series.primary;
     ctx.lineWidth = 1.5;
     ctx.globalAlpha = 0.7;
     ctx.beginPath();
@@ -352,7 +342,7 @@ function drawSpeedTrace(
     ctx.restore();
 
     // Legend
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.globalAlpha = 0.7;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
@@ -362,9 +352,9 @@ function drawSpeedTrace(
     legendY += 12;
   }
 
-  // Reference line (dashed gold)
+  // Reference line (dashed marshal-yellow)
   if (refSpeeds && refSpeeds.length > 0) {
-    ctx.strokeStyle = COLORS.yellow;
+    ctx.strokeStyle = chartColor.series.warning;
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 4]);
     ctx.beginPath();
@@ -378,7 +368,7 @@ function drawSpeedTrace(
     }
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = COLORS.yellow;
+    ctx.fillStyle = chartColor.series.warning;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -386,9 +376,9 @@ function drawSpeedTrace(
     legendY += 12;
   }
 
-  // Average pace (dotted cyan)
+  // Average pace (dotted blue)
   if (avgSpeeds && avgSpeeds.length > 0) {
-    ctx.strokeStyle = COLORS.cyan;
+    ctx.strokeStyle = chartColor.palette[3];
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.globalAlpha = 0.6;
@@ -404,7 +394,7 @@ function drawSpeedTrace(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
-    ctx.fillStyle = COLORS.cyan;
+    ctx.fillStyle = chartColor.palette[3];
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -414,7 +404,7 @@ function drawSpeedTrace(
 
   // Primary lap label
   if (opts.primaryLapLabel) {
-    ctx.fillStyle = COLORS.accent;
+    ctx.fillStyle = chartColor.series.primary;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -440,7 +430,7 @@ function drawSpeedTrace(
   // Cross-session reference speed line (dashed racing-purple)
   if (opts.crossRefDistances && opts.crossRefSpeeds && opts.crossRefDistances.length > 1) {
     ctx.save();
-    ctx.strokeStyle = '#8B5CF6';
+    ctx.strokeStyle = chartColor.series.reference;
     ctx.lineWidth = 1.5;
     ctx.setLineDash([6, 4]);
     ctx.globalAlpha = 0.7;
@@ -458,7 +448,7 @@ function drawSpeedTrace(
     ctx.stroke();
     ctx.restore();
     // Legend entry
-    ctx.fillStyle = '#8B5CF6';
+    ctx.fillStyle = chartColor.series.reference;
     ctx.globalAlpha = 0.9;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
@@ -474,7 +464,7 @@ function drawSpeedTrace(
   // Hover crosshair
   if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
     const hx = xToPixel(hoverDistanceM);
-    ctx.strokeStyle = COLORS.textBright + '60';
+    ctx.strokeStyle = chartColor.crosshair;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -493,7 +483,7 @@ function drawSpeedTrace(
       // Speed dot
       ctx.beginPath();
       ctx.arc(hx, speedY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.accent;
+      ctx.fillStyle = chartColor.series.primary;
       ctx.fill();
 
       // Tooltip background
@@ -501,11 +491,11 @@ function drawSpeedTrace(
       const tw = ctx.measureText(label).width + 12;
       const tx = Math.min(hx + 8, w - pad.right - tw);
       const ty = Math.max(pad.top, speedY - 24);
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.beginPath();
       ctx.roundRect(tx, ty, tw, 20, 4);
       ctx.fill();
-      ctx.fillStyle = COLORS.textBright;
+      ctx.fillStyle = chartColor.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx + 6, ty + 10);
@@ -563,7 +553,7 @@ function drawSpeedTrace(
         const hx = xToPixel(hoverDistanceM);
         const hy = yToPixel(rs * 3.6);
         ctx.save();
-        ctx.strokeStyle = '#8B5CF6';
+        ctx.strokeStyle = chartColor.series.reference;
         ctx.lineWidth = 2;
         ctx.globalAlpha = 0.9;
         ctx.beginPath();
@@ -631,7 +621,7 @@ function drawDeltaChart(
   const oy = y0 + pad.top;
 
   // Separator line
-  ctx.strokeStyle = COLORS.grid;
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x0, y0);
@@ -639,7 +629,7 @@ function drawDeltaChart(
   ctx.stroke();
 
   // Background
-  ctx.fillStyle = '#0d0d0d';
+  ctx.fillStyle = chartColor.surfaceMuted;
   ctx.fillRect(x0, y0, w, h);
 
   if (distances.length < 2 || deltaSeconds.length < 2) return;
@@ -663,7 +653,7 @@ function drawDeltaChart(
 
   // Zero line
   const zeroY = yToPixel(0);
-  ctx.strokeStyle = '#555';
+  ctx.strokeStyle = chartColor.axis;
   ctx.lineWidth = 0.5;
   ctx.setLineDash([4, 3]);
   ctx.beginPath();
@@ -673,7 +663,7 @@ function drawDeltaChart(
   ctx.setLineDash([]);
 
   // Y-axis ticks
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '10px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -682,7 +672,7 @@ function drawDeltaChart(
     const ty = yToPixel(tick);
     ctx.fillText(`${tick > 0 ? '+' : ''}${tick.toFixed(1)}s`, ox - 6, ty);
     if (tick !== 0) {
-      ctx.strokeStyle = COLORS.grid;
+      ctx.strokeStyle = chartColor.grid;
       ctx.lineWidth = 0.3;
       ctx.beginPath();
       ctx.moveTo(ox, ty);
@@ -709,7 +699,7 @@ function drawDeltaChart(
   // Line colored by sign
   for (let i = 0; i < n - 1; i++) {
     const d = deltaSeconds[i];
-    ctx.strokeStyle = d <= 0 ? '#00ff64' : '#ff3c3c';
+    ctx.strokeStyle = d <= 0 ? chartColor.series.positive : chartColor.series.negative;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(xToPixel(distances[i]), yToPixel(deltaSeconds[i]));
@@ -718,7 +708,7 @@ function drawDeltaChart(
   }
 
   // Label
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '9px "Space Mono", monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -727,7 +717,7 @@ function drawDeltaChart(
   // Final delta value
   const finalDelta = deltaSeconds[n - 1];
   const sign = finalDelta <= 0 ? '' : '+';
-  ctx.fillStyle = finalDelta <= 0 ? '#00ff64' : '#ff3c3c';
+  ctx.fillStyle = finalDelta <= 0 ? chartColor.series.positive : chartColor.series.negative;
   ctx.font = '11px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.fillText(`${sign}${finalDelta.toFixed(3)}s`, ox + pW - 4, oy + 2);
@@ -735,7 +725,7 @@ function drawDeltaChart(
   // Hover crosshair
   if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
     const hx = xToPixel(hoverDistanceM);
-    ctx.strokeStyle = COLORS.textBright + '60';
+    ctx.strokeStyle = chartColor.crosshair;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -754,11 +744,11 @@ function drawDeltaChart(
       const tw = ctx.measureText(label).width + 8;
       const tx = Math.min(hx + 6, x0 + w - pad.right - tw);
       const ty = Math.max(oy, yToPixel(dt) - 14);
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.beginPath();
       ctx.roundRect(tx, ty, tw, 16, 3);
       ctx.fill();
-      ctx.fillStyle = dt <= 0 ? '#00ff64' : '#ff3c3c';
+      ctx.fillStyle = dt <= 0 ? chartColor.series.positive : chartColor.series.negative;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx + 4, ty + 8);
@@ -1114,7 +1104,7 @@ export function SpeedTraceChart({
       <div className={`flex items-center justify-center rounded-lg border border-steel/10 bg-concrete ${className}`} style={{ minHeight: '250px' }}>
         <div className="text-steel p-4 text-sm text-center">
           <p className="font-telemetry text-chalk mb-1">Speed Trace</p>
-          <p className="text-red-400 text-xs">{error}</p>
+          <p className="text-safety-red text-xs">{error}</p>
         </div>
       </div>
     );

@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -213,7 +214,7 @@ function RadarChart({
     c.clearRect(0, 0, logicalW, logicalH);
 
     // Draw grid rings
-    c.strokeStyle = 'rgba(148, 148, 148, 0.3)';
+    c.strokeStyle = chartColor.axis;
     c.lineWidth = 1;
     for (const ring of RADAR_RINGS) {
       const r = (ring / RADAR_MAX) * radius;
@@ -230,7 +231,7 @@ function RadarChart({
     }
 
     // Draw axes
-    c.strokeStyle = 'rgba(148, 148, 148, 0.5)';
+    c.strokeStyle = chartColor.borderStrong;
     c.lineWidth = 1;
     for (let i = 0; i < numAxes; i++) {
       const angle = startAngle + i * angleStep;
@@ -241,7 +242,7 @@ function RadarChart({
     }
 
     // Draw axis labels
-    c.fillStyle = '#F0EDE5';
+    c.fillStyle = chartColor.text;
     c.font = '13px Inter, sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
@@ -254,7 +255,7 @@ function RadarChart({
     }
 
     // Draw ring value labels
-    c.fillStyle = '#949494';
+    c.fillStyle = chartColor.textSecondary;
     c.font = '10px "Space Mono", monospace';
     c.textAlign = 'left';
     c.textBaseline = 'middle';
@@ -309,12 +310,12 @@ function RadarChart({
     c.font = '11px Inter, sans-serif';
     c.fillStyle = colorA;
     c.fillRect(cx - 120, legendY - 6, 12, 12);
-    c.fillStyle = '#F0EDE5';
+    c.fillStyle = chartColor.text;
     c.textAlign = 'left';
     c.fillText(driverAName, cx - 104, legendY);
     c.fillStyle = colorB;
     c.fillRect(cx + 20, legendY - 6, 12, 12);
-    c.fillStyle = '#F0EDE5';
+    c.fillStyle = chartColor.text;
     c.fillText(driverBName, cx + 36, legendY);
   }, [scoresA, scoresB, colorA, colorB, driverAName, driverBName]);
 
@@ -387,7 +388,7 @@ function TrendChart({
     const uniqueDates = Array.from(new Set(allDates));
 
     if (uniqueDates.length === 0) {
-      c.fillStyle = '#949494';
+      c.fillStyle = chartColor.textSecondary;
       c.font = '14px Inter, sans-serif';
       c.textAlign = 'center';
       c.fillText('No trend data available', logicalW / 2, logicalH / 2);
@@ -409,9 +410,9 @@ function TrendChart({
     }
 
     // Y grid lines
-    c.strokeStyle = 'rgba(148, 148, 148, 0.2)';
+    c.strokeStyle = chartColor.grid;
     c.lineWidth = 1;
-    c.fillStyle = '#949494';
+    c.fillStyle = chartColor.textSecondary;
     c.font = '10px "Space Mono", monospace';
     c.textAlign = 'right';
     c.textBaseline = 'middle';
@@ -425,7 +426,7 @@ function TrendChart({
     }
 
     // X axis labels
-    c.fillStyle = '#949494';
+    c.fillStyle = chartColor.textSecondary;
     c.font = '10px "Space Mono", monospace';
     c.textAlign = 'center';
     c.textBaseline = 'top';
@@ -443,7 +444,7 @@ function TrendChart({
 
     // Y axis label
     c.save();
-    c.fillStyle = '#949494';
+    c.fillStyle = chartColor.textSecondary;
     c.font = '11px Inter, sans-serif';
     c.textAlign = 'center';
     c.translate(14, marginTop + chartH / 2);
@@ -475,7 +476,7 @@ function TrendChart({
         c.arc(x, y, 4, 0, 2 * Math.PI);
         c.fillStyle = color;
         c.fill();
-        c.strokeStyle = '#000000';
+        c.strokeStyle = chartColor.surfaceMuted;
         c.lineWidth = 1.5;
         c.stroke();
       }
@@ -490,12 +491,12 @@ function TrendChart({
     c.textBaseline = 'middle';
     c.fillStyle = colorA;
     c.fillRect(logicalW / 2 - 120, legendY - 6, 12, 12);
-    c.fillStyle = '#F0EDE5';
+    c.fillStyle = chartColor.text;
     c.textAlign = 'left';
     c.fillText(driverAName, logicalW / 2 - 104, legendY);
     c.fillStyle = colorB;
     c.fillRect(logicalW / 2 + 20, legendY - 6, 12, 12);
-    c.fillStyle = '#F0EDE5';
+    c.fillStyle = chartColor.text;
     c.fillText(driverBName, logicalW / 2 + 36, legendY);
   }, [trendA, trendB, colorA, colorB, driverAName, driverBName]);
 
@@ -546,8 +547,8 @@ function CompareRow({
 
 // ── Main Page ───────────────────────────────────────────────────
 
-const COLOR_A = '#22C55E';
-const COLOR_B = '#C9A84C';
+const COLOR_A = chartColor.series.positive;
+const COLOR_B = chartColor.series.primary;
 
 export default function CompareDriversPage() {
   const searchParams = useSearchParams();

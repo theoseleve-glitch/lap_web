@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────── */
 
@@ -21,18 +22,18 @@ interface LapProgressTrackerProps {
 /* ── Colors ─────────────────────────────────── */
 
 const C = {
-  bg: '#000000',
-  grid: '#30363d',
-  text: '#888',
-  bright: '#F0EDE5',
-  line: '#58a6ff',
-  dot: '#58a6ff',
-  best: '#00ff64',
-  pb: '#d29922',
-  avg: '#ff6b35',
-  invalid: '#ff3c3c',
-  zone_fast: 'rgba(0,255,100,0.08)',
-  zone_slow: 'rgba(255,60,60,0.06)',
+  bg: chartColor.surfaceMuted,
+  grid: chartColor.grid,
+  text: chartColor.textSecondary,
+  bright: chartColor.text,
+  line: chartColor.palette[3],
+  dot: chartColor.palette[3],
+  best: chartColor.series.positive,
+  pb: chartColor.series.warning,
+  avg: chartColor.palette[4],
+  invalid: chartColor.series.negative,
+  zone_fast: `${chartColor.series.positive}14`,
+  zone_slow: `${chartColor.series.negative}0F`,
 };
 
 /* ── Helpers ────────────────────────────────── */
@@ -241,7 +242,7 @@ export function LapProgressTracker({ sessionId, className = '' }: LapProgressTra
   }, [render]);
 
   if (error) {
-    return <div className={`text-red-400 p-4 text-sm ${className}`}>{error}</div>;
+    return <div className={`text-safety-red p-4 text-sm ${className}`}>{error}</div>;
   }
 
   return (

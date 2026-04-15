@@ -31,19 +31,19 @@ interface SectorPanelProps {
 }
 
 function gapColor(gap: number, maxGap: number): string {
-  if (maxGap === 0) return 'text-green-400';
+  if (maxGap === 0) return 'text-acid-green';
   const ratio = gap / maxGap;
-  if (ratio < 0.33) return 'text-green-400';
-  if (ratio < 0.66) return 'text-yellow-400';
-  return 'text-red-400';
+  if (ratio < 0.33) return 'text-acid-green';
+  if (ratio < 0.66) return 'text-marshal-yellow';
+  return 'text-safety-red';
 }
 
 function gapBgColor(gap: number, maxGap: number): string {
-  if (maxGap === 0) return 'bg-green-900/30';
+  if (maxGap === 0) return 'bg-acid-green/20';
   const ratio = gap / maxGap;
-  if (ratio < 0.33) return 'bg-green-900/30';
-  if (ratio < 0.66) return 'bg-yellow-900/30';
-  return 'bg-red-900/30';
+  if (ratio < 0.33) return 'bg-acid-green/20';
+  if (ratio < 0.66) return 'bg-marshal-yellow/20';
+  return 'bg-safety-red/20';
 }
 
 export function SectorPanel({ sessionId, data: preFetched, className = '' }: SectorPanelProps) {
@@ -79,15 +79,15 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
   }, [data]);
 
   if (loading) {
-    return <div className={`text-gray-500 p-4 ${className}`}>Loading sector data...</div>;
+    return <div className={`text-steel p-4 ${className}`}>Loading sector data...</div>;
   }
 
   if (error) {
-    return <div className={`text-red-400 p-4 ${className}`}>Failed to load sectors: {error}</div>;
+    return <div className={`text-safety-red p-4 ${className}`}>Failed to load sectors: {error}</div>;
   }
 
   if (!data || !data.sector_stats || data.sector_stats.length === 0) {
-    return <div className={`text-gray-500 p-4 ${className}`}>No sector data available</div>;
+    return <div className={`text-steel p-4 ${className}`}>No sector data available</div>;
   }
 
   const maxGap = Math.max(
@@ -98,21 +98,21 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
   );
 
   return (
-    <div className={`bg-gray-900 rounded-lg p-4 ${className}`}>
+    <div className={`bg-concrete rounded-lg p-4 ${className}`}>
       {/* Ideal lap header */}
-      <div className="text-sm text-gray-400 mb-3">
+      <div className="text-sm text-steel mb-3">
         Ideal Lap:{' '}
-        <span className="text-white font-mono font-semibold">
+        <span className="text-chalk font-mono font-semibold">
           {data.ideal_lap_time_s != null ? `${data.ideal_lap_time_s.toFixed(3)}s` : '--'}
         </span>
-        <span className="text-gray-500 ml-2">(sum of best sectors)</span>
+        <span className="text-steel/60 ml-2">(sum of best sectors)</span>
       </div>
 
       {/* Sector table */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-gray-500 text-xs">
+            <tr className="text-steel text-xs">
               <th className="text-left pr-4 pb-2" />
               {data.sector_stats.map((s, i) => (
                 <th key={s.sector ?? i} className="text-center px-3 pb-2 font-normal">
@@ -122,16 +122,16 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
             </tr>
           </thead>
           <tbody>
-            <tr className="text-gray-300">
-              <td className="pr-4 py-1 text-gray-500 text-xs">Best</td>
+            <tr className="text-chalk">
+              <td className="pr-4 py-1 text-steel text-xs">Best</td>
               {data.sector_stats.map((s) => (
                 <td key={s.sector} className="text-center px-3 py-1 font-mono">
                   {s.best_s != null ? s.best_s.toFixed(1) : '--'}
                 </td>
               ))}
             </tr>
-            <tr className="text-gray-300">
-              <td className="pr-4 py-1 text-gray-500 text-xs">Mean</td>
+            <tr className="text-chalk">
+              <td className="pr-4 py-1 text-steel text-xs">Mean</td>
               {data.sector_stats.map((s) => (
                 <td key={s.sector} className="text-center px-3 py-1 font-mono">
                   {s.mean_s != null ? s.mean_s.toFixed(1) : '--'}
@@ -139,7 +139,7 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
               ))}
             </tr>
             <tr>
-              <td className="pr-4 py-1 text-gray-500 text-xs">Gap</td>
+              <td className="pr-4 py-1 text-steel text-xs">Gap</td>
               {data.sector_stats.map((s) => {
                 const gap = s.mean_s != null && s.best_s != null ? s.mean_s - s.best_s : 0;
                 return (
@@ -172,13 +172,13 @@ export function SectorPanel({ sessionId, data: preFetched, className = '' }: Sec
           );
         })}
       </div>
-      <div className="text-xs text-gray-600 mt-1">
+      <div className="text-xs text-steel/40 mt-1">
         green = close to best, red = far from best
       </div>
 
       {/* Insights */}
       {insights.length > 0 && (
-        <div className="mt-3 text-xs text-gray-400 space-y-1">
+        <div className="mt-3 text-xs text-steel space-y-1">
           {insights.map((insight, i) => (
             <div key={i}>Insight: {insight}</div>
           ))}

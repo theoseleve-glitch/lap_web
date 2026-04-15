@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface Stint {
   stint_number: number; start_lap: number; end_lap: number;
@@ -19,9 +20,11 @@ interface StintChartProps { sessionId: string; gpsLaps: number[]; bestLap: numbe
 type LapEntry = { lap_number: number; lap_time: number };
 
 const FONT = '10px "Space Mono", monospace';
-const ACCENT = '#b4ff39', TEXT = '#c4c4c4', DIM = '#6b6b6b';
-const PALETTE = ['#3b82f6', '#22d3ee', '#a78bfa', '#f97316', '#ec4899', '#10b981'];
-const SEG = { first: '#3b82f6', middle: '#10b981', last: '#f59e0b' };
+const ACCENT = chartColor.series.positive;
+const TEXT = chartColor.textSecondary;
+const DIM = chartColor.textMuted;
+const PALETTE = chartColor.palette.slice() as string[];
+const SEG = { first: chartColor.palette[3], middle: chartColor.series.positive, last: chartColor.series.warning };
 
 const fmtTime = (s: number) => { const m = Math.floor(s / 60); const r = s - m * 60; return m > 0 ? `${m}:${r.toFixed(2).padStart(5, '0')}` : r.toFixed(2); };
 const niceStep = (range: number, n: number) => { const r = range / n; const m = Math.pow(10, Math.floor(Math.log10(r))); const k = r / m; return (k < 1.5 ? 1 : k < 3 ? 2 : k < 7 ? 5 : 10) * m; };
@@ -83,7 +86,7 @@ export function StintChart({ sessionId, gpsLaps, bestLap, className = '' }: Stin
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Stint analysis chart">
       {loading && <span className="text-xs animate-pulse" style={{ color: TEXT }}>Loading...</span>}
-      {error && <span className="text-xs text-red-400">{error}</span>}
+      {error && <span className="text-xs text-safety-red">{error}</span>}
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '220px', display: 'block' }} />
       </div>
@@ -135,7 +138,7 @@ function drawStints(ctx: CanvasRenderingContext2D, w: number, h: number, stints:
     // Degradation
     const dY = pad.top + pH - 20, deg = st.degradation_rate;
     if (Math.abs(deg) > 0.01) {
-      const dc = deg > 0.3 ? '#ef4444' : deg > 0.1 ? '#f59e0b' : '#10b981';
+      const dc = deg > 0.3 ? chartColor.series.negative : deg > 0.1 ? chartColor.series.warning : chartColor.series.positive;
       ctx.fillStyle = dc; ctx.font = 'bold 11px "Space Mono", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(`${deg > 0 ? '\u2191' : '\u2193'}${Math.abs(deg).toFixed(2)}s`, cx, dY);
       const sL = Math.min(bW * 0.3, 20);
@@ -167,7 +170,7 @@ function drawFallback(ctx: CanvasRenderingContext2D, w: number, h: number, laps:
 
   // Y grid
   const yStep = niceStep(yMax - yMin, 5);
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.lineWidth = 0.5; ctx.fillStyle = DIM; ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  ctx.strokeStyle = chartColor.grid; ctx.lineWidth = 0.5; ctx.fillStyle = DIM; ctx.font = FONT; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
   for (let v = Math.ceil(yMin / yStep) * yStep; v <= yMax; v += yStep) {
     const y = yPx(v); ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
     ctx.fillText(fmtTime(v), pad.left - 6, y);

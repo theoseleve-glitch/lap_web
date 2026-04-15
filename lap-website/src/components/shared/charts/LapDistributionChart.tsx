@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface DistributionData {
   bins: number[];
@@ -23,8 +24,8 @@ interface LapDistributionChartProps {
   controlledLap?: boolean;
 }
 
-const ACID = '#b4ff39';
-const STEEL = '#c4c4c4';
+const ACID = chartColor.series.positive;
+const STEEL = chartColor.textSecondary;
 const FONT = '10px "Space Mono", monospace';
 
 export function LapDistributionChart({
@@ -107,7 +108,7 @@ export function LapDistributionChart({
     const yPx = (v: number) => pad.top + pH - (v / yTop) * pH;
 
     // Y grid lines
-    ctx.strokeStyle = 'rgba(196,196,196,0.12)';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
     const yStep = yTop <= 5 ? 1 : yTop <= 15 ? 2 : yTop <= 40 ? 5 : 10;
     for (let v = 0; v <= yTop; v += yStep) {
@@ -120,7 +121,7 @@ export function LapDistributionChart({
 
     // Histogram bars
     const barGap = Math.max(1, Math.round(pW / nBars * 0.08));
-    ctx.fillStyle = 'rgba(180, 255, 57, 0.6)';
+    ctx.fillStyle = `${chartColor.series.positive}99`;
     for (let i = 0; i < nBars; i++) {
       const x1 = xPx(bins[i]) + barGap;
       const x2 = xPx(bins[i + 1]) - barGap;
@@ -144,9 +145,9 @@ export function LapDistributionChart({
       ctx.setLineDash([]);
     };
 
-    drawVLine(d.q1, 'rgba(196,196,196,0.4)', [3, 4]);
-    drawVLine(d.q3, 'rgba(196,196,196,0.4)', [3, 4]);
-    drawVLine(d.mean, 'rgba(255,255,255,0.7)', [5, 4]);
+    drawVLine(d.q1, `${chartColor.textSecondary}66`, [3, 4]);
+    drawVLine(d.q3, `${chartColor.textSecondary}66`, [3, 4]);
+    drawVLine(d.mean, `${chartColor.text}B3`, [5, 4]);
     drawVLine(d.median, ACID, [5, 4]);
 
     // X axis labels
@@ -188,7 +189,7 @@ export function LapDistributionChart({
     const ly = pad.top + 2;
     const lineH = 14;
 
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    ctx.fillStyle = `${chartColor.text}B3`;
     ctx.fillText('Mean: ' + d.mean.toFixed(2) + 's', lx, ly);
     ctx.fillStyle = ACID;
     ctx.fillText('Median: ' + d.median.toFixed(2) + 's', lx, ly + lineH);
@@ -210,7 +211,7 @@ export function LapDistributionChart({
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Lap time distribution histogram">
       {loading && <span className="text-xs text-steel animate-pulse block mb-2">Loading...</span>}
-      {error && <span className="text-xs text-red-400 block mb-2">{error}</span>}
+      {error && <span className="text-xs text-safety-red block mb-2">{error}</span>}
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '240px', display: 'block' }} />
       </div>

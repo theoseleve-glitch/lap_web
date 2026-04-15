@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface FuelData { laps: number[]; fuel_remaining: number[]; consumption_rate: number[]; available: boolean; }
 interface FuelStrategyChartProps {
@@ -50,10 +51,10 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pad = { top: 20, right: 58, bottom: 38, left: 58 };
     const pW = w - pad.left - pad.right, pH = h - pad.top - pad.bottom;
-    ctx.fillStyle = '#1a1f2e'; ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = chartColor.surface; ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.laps || data.laps.length < 1) {
-      ctx.fillStyle = '#949494'; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
+      ctx.fillStyle = chartColor.textSecondary; ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No fuel data available', w / 2, h / 2); return;
     }
@@ -69,7 +70,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     const rPx = (v: number) => pad.top + ((rMax - v) / rMax) * pH;
 
     // Grid
-    ctx.strokeStyle = '#30363d'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = chartColor.grid; ctx.lineWidth = 0.5;
     const fStep = fMax <= 20 ? 2 : fMax <= 50 ? 5 : fMax <= 100 ? 10 : 20;
     for (let v = 0; v <= fMax; v += fStep) { ctx.beginPath(); ctx.moveTo(pad.left, fPx(v)); ctx.lineTo(w - pad.right, fPx(v)); ctx.stroke(); }
     for (let i = 0; i < laps.length; i++) { ctx.beginPath(); ctx.moveTo(xPx(laps[i]), pad.top); ctx.lineTo(xPx(laps[i]), pad.top + pH); ctx.stroke(); }
@@ -79,29 +80,29 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     const barW = laps.length > 1 ? Math.max(6, (pW / laps.length) * 0.5) : 30;
     for (let i = 0; i < laps.length; i++) {
       const cx = xPx(laps[i]), bh = (rate[i] / rMax) * pH, by = pad.top + pH - bh;
-      ctx.fillStyle = 'rgba(249,115,22,0.4)'; ctx.fillRect(cx - barW / 2, by, barW, bh);
-      ctx.strokeStyle = 'rgba(249,115,22,0.7)'; ctx.lineWidth = 1; ctx.strokeRect(cx - barW / 2, by, barW, bh);
+      ctx.fillStyle = `${chartColor.palette[4]}66`; ctx.fillRect(cx - barW / 2, by, barW, bh);
+      ctx.strokeStyle = `${chartColor.palette[4]}B3`; ctx.lineWidth = 1; ctx.strokeRect(cx - barW / 2, by, barW, bh);
     }
     // Fuel fill
     ctx.beginPath(); ctx.moveTo(xPx(laps[0]), fPx(0));
     for (let i = 0; i < laps.length; i++) ctx.lineTo(xPx(laps[i]), fPx(fuel[i]));
     ctx.lineTo(xPx(laps[laps.length - 1]), fPx(0)); ctx.closePath();
-    ctx.fillStyle = 'rgba(16,185,129,0.15)'; ctx.fill();
+    ctx.fillStyle = `${chartColor.series.positive}26`; ctx.fill();
     // Fuel line
-    ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2; ctx.beginPath();
+    ctx.strokeStyle = chartColor.series.positive; ctx.lineWidth = 2; ctx.beginPath();
     for (let i = 0; i < laps.length; i++) { const x = xPx(laps[i]), y = fPx(fuel[i]); i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
     ctx.stroke();
     // Dots
-    for (let i = 0; i < laps.length; i++) { ctx.beginPath(); ctx.arc(xPx(laps[i]), fPx(fuel[i]), 3, 0, Math.PI * 2); ctx.fillStyle = '#10b981'; ctx.fill(); }
+    for (let i = 0; i < laps.length; i++) { ctx.beginPath(); ctx.arc(xPx(laps[i]), fPx(fuel[i]), 3, 0, Math.PI * 2); ctx.fillStyle = chartColor.series.positive; ctx.fill(); }
     // Projected fuel-out
     if (laps.length >= 3) {
       const n = Math.min(3, rate.length); let ar = 0;
       for (let i = rate.length - n; i < rate.length; i++) ar += rate[i]; ar /= n;
       if (ar > 0) {
         const ll = laps[laps.length - 1], lf = fuel[fuel.length - 1], el = ll + lf / ar;
-        ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
+        ctx.strokeStyle = chartColor.series.negative; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
         ctx.beginPath(); ctx.moveTo(xPx(ll), fPx(lf)); ctx.lineTo(xPx(el), fPx(0)); ctx.stroke(); ctx.setLineDash([]);
-        ctx.fillStyle = '#ef4444'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
+        ctx.fillStyle = chartColor.series.negative; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         ctx.fillText('Empty ~L' + el.toFixed(1), Math.min(xPx(el), w - pad.right - 10), fPx(0) - 4);
       }
@@ -109,7 +110,7 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     ctx.restore();
 
     // Axis labels
-    ctx.fillStyle = '#949494'; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
+    ctx.fillStyle = chartColor.textSecondary; ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (let v = 0; v <= fMax; v += fStep) ctx.fillText(v.toFixed(0), pad.left - 6, fPx(v));
     ctx.textAlign = 'left';
@@ -126,15 +127,15 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
     ctx.font = '10px "Inter", "Segoe UI", sans-serif'; ctx.textAlign = 'right'; ctx.textBaseline = 'top';
     let lx = w - pad.right;
     const pL = 'Projected', pLW = ctx.measureText(pL).width + 16;
-    ctx.setLineDash([4, 3]); ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = chartColor.series.negative; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(lx - pLW, pad.top + 6); ctx.lineTo(lx - pLW + 8, pad.top + 6); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = '#8b949e'; ctx.fillText(pL, lx, pad.top + 2); lx -= pLW + 8;
+    ctx.fillStyle = chartColor.textSecondary; ctx.fillText(pL, lx, pad.top + 2); lx -= pLW + 8;
     const rL = 'Rate', rLW = ctx.measureText(rL).width + 16;
-    ctx.fillStyle = 'rgba(249,115,22,0.5)'; ctx.fillRect(lx - rLW, pad.top + 2, 8, 8);
-    ctx.fillStyle = '#8b949e'; ctx.fillText(rL, lx, pad.top + 2); lx -= rLW + 8;
+    ctx.fillStyle = `${chartColor.palette[4]}80`; ctx.fillRect(lx - rLW, pad.top + 2, 8, 8);
+    ctx.fillStyle = chartColor.textSecondary; ctx.fillText(rL, lx, pad.top + 2); lx -= rLW + 8;
     const fL = 'Fuel', fLW = ctx.measureText(fL).width + 16;
-    ctx.fillStyle = '#10b981'; ctx.fillRect(lx - fLW, pad.top + 2, 8, 8);
-    ctx.fillStyle = '#8b949e'; ctx.fillText(fL, lx, pad.top + 2);
+    ctx.fillStyle = chartColor.series.positive; ctx.fillRect(lx - fLW, pad.top + 2, 8, 8);
+    ctx.fillStyle = chartColor.textSecondary; ctx.fillText(fL, lx, pad.top + 2);
   }, []);
 
   useEffect(() => { if (!loading) draw(); }, [loading, draw]);
@@ -146,9 +147,9 @@ export function FuelStrategyChart({ sessionId, gpsLaps, bestLap, className = '' 
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Fuel strategy chart showing fuel consumption and pit stop planning">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        <span className="text-gray-400">Fuel Strategy</span>
+        <span className="text-steel">Fuel Strategy</span>
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {error && <span className="text-xs text-safety-red">{error}</span>}
       </div>
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '240px', display: 'block' }} />

@@ -1,5 +1,7 @@
 'use client';
 
+import { chartColor } from '@/components/shared/chart-kit';
+
 interface CornerData {
   corner_id: number;
   available: boolean;
@@ -56,7 +58,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Baseline Run',
       description: 'Drive 10 clean laps focusing on smooth inputs to establish your baseline.',
       target: 'All corners',
-      color: '#3b82f6',
+      color: chartColor.palette[3],
     });
     return drills;
   }
@@ -68,7 +70,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Consistency Drill',
       description: `Repeat the same braking point for ${worstLabel} across 5 laps. Focus on hitting the same marks every time.`,
       target: worstLabel,
-      color: '#f59e0b',
+      color: chartColor.series.warning,
     });
   }
 
@@ -78,7 +80,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Pace Attack',
       description: `Attack ${worstLabel} more aggressively ${delta}. Gradually increase corner entry speed over 3-5 laps.`,
       target: worstLabel,
-      color: '#ef4444',
+      color: chartColor.series.negative,
     });
   }
 
@@ -87,7 +89,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Throttle Precision',
       description: `Focus on smooth throttle application through ${worstLabel}. Progressive roll-on, no sudden inputs.`,
       target: worstLabel,
-      color: '#10b981',
+      color: chartColor.series.positive,
     });
   }
 
@@ -96,7 +98,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Endurance Stint',
       description: 'Complete 10 clean laps without invalid markers. Focus on maintaining pace within 0.5% of your best.',
       target: 'Full circuit',
-      color: '#8b5cf6',
+      color: chartColor.series.reference,
     });
   }
 
@@ -110,7 +112,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
         title: 'Line Refinement',
         description: `Repeat 5 laps targeting identical racing line through ${worstLabel}. Same turn-in, apex, exit every lap.`,
         target: worstLabel,
-        color: '#06b6d4',
+        color: chartColor.palette[5],
       });
     }
   }
@@ -120,7 +122,7 @@ function buildDrills(scores: ScoreData | null, corners: CornerData[]): Drill[] {
       title: 'Technique Polish',
       description: `Drive 10 clean laps focusing on smooth inputs. Target your weakest corner: ${worstLabel}.`,
       target: worstLabel,
-      color: '#3b82f6',
+      color: chartColor.palette[3],
     });
   }
 

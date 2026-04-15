@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch, ApiError } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface TheoreticalDeltaData {
   distance_m: number[];
@@ -103,11 +104,11 @@ export function TheoreticalDeltaChart({
     const pH = h - pad.top - pad.bottom;
 
     // Background
-    ctx.fillStyle = '#141414';
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distance_m || data.distance_m.length < 2) {
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -139,7 +140,7 @@ export function TheoreticalDeltaChart({
     const yToPixel = (v: number) => pad.top + pH / 2 - (v / maxAbs) * (pH / 2);
 
     // Grid
-    ctx.strokeStyle = '#30363d';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
 
     // Y grid
@@ -165,7 +166,7 @@ export function TheoreticalDeltaChart({
     }
 
     // Zero line (dashed steel)
-    ctx.strokeStyle = '#949494';
+    ctx.strokeStyle = chartColor.textSecondary;
     ctx.lineWidth = 1;
     ctx.setLineDash([6, 4]);
     ctx.beginPath();
@@ -175,7 +176,7 @@ export function TheoreticalDeltaChart({
     ctx.setLineDash([]);
 
     // Y axis labels
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -194,7 +195,7 @@ export function TheoreticalDeltaChart({
     }
 
     // Axis titles
-    ctx.fillStyle = '#949494';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
@@ -218,7 +219,7 @@ export function TheoreticalDeltaChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 42, 42, 0.2)';
+    ctx.fillStyle = `${chartColor.series.negative}33`;
     ctx.fill();
 
     // Green fill (negative = gaining time)
@@ -229,11 +230,11 @@ export function TheoreticalDeltaChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(34, 197, 94, 0.2)';
+    ctx.fillStyle = `${chartColor.series.positive}33`;
     ctx.fill();
 
     // Delta line (chalk)
-    ctx.strokeStyle = '#F0EDE5';
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -251,13 +252,13 @@ export function TheoreticalDeltaChart({
     const rightCol = pad.left + pW + 10;
     if (typeof totalLoss === 'number') {
       const sign = totalLoss > 0 ? '+' : '';
-      const color = totalLoss > 0 ? '#FF2A2A' : '#22C55E';
+      const color = totalLoss > 0 ? chartColor.series.negative : chartColor.series.positive;
       ctx.fillStyle = color;
       ctx.font = 'bold 12px "Space Mono", monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${sign}${totalLoss.toFixed(3)}s`, rightCol, pad.top + 14);
-      ctx.fillStyle = '#949494';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '9px "Space Mono", monospace';
       ctx.fillText('total loss', rightCol, pad.top + 28);
     }
@@ -267,16 +268,16 @@ export function TheoreticalDeltaChart({
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     const legendY = pad.top + pH - 28;
-    ctx.fillStyle = '#FF2A2A';
+    ctx.fillStyle = chartColor.series.negative;
     ctx.fillText('▲ Losing time', rightCol, legendY);
-    ctx.fillStyle = '#22C55E';
+    ctx.fillStyle = chartColor.series.positive;
     ctx.fillText('▼ Gaining time', rightCol, legendY + 14);
 
     // ── Hover crosshair ─────────────────────────────────────
     if (hoverDist !== null && hoverDist >= xMin && hoverDist <= xMax) {
       const hx = xToPixel(hoverDist);
 
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -293,16 +294,16 @@ export function TheoreticalDeltaChart({
         // Dot
         ctx.beginPath();
         ctx.arc(hx, py, 5, 0, Math.PI * 2);
-        ctx.fillStyle = d >= 0 ? '#FF2A2A' : '#22C55E';
+        ctx.fillStyle = d >= 0 ? chartColor.series.negative : chartColor.series.positive;
         ctx.fill();
-        ctx.strokeStyle = '#F0EDE5';
+        ctx.strokeStyle = chartColor.text;
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Tooltip
         const sign = d >= 0 ? '+' : '';
         const label = sign + d.toFixed(3) + 's @ ' + hoverDist.toFixed(0) + 'm';
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = chartColor.tooltipBg;
         ctx.font = '11px "Space Mono", monospace';
         const metrics = ctx.measureText(label);
         const tipW = metrics.width + 12;
@@ -310,7 +311,7 @@ export function TheoreticalDeltaChart({
         let tipX = hx + 10;
         if (tipX + tipW > w - 10) tipX = hx - tipW - 10;
         ctx.fillRect(tipX, py - tipH / 2, tipW, tipH);
-        ctx.fillStyle = '#F0EDE5';
+        ctx.fillStyle = chartColor.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, tipX + 6, py);
