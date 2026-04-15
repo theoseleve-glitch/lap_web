@@ -16,6 +16,9 @@ function Divider() {
 export default function Home() {
   return (
     <main id="main-content">
+      <h1 className="sr-only">
+        LAP Coach — Motorsport telemetry analysis for kart and car drivers
+      </h1>
       <StartGrid />
       <Divider />
       <SessionProof />
