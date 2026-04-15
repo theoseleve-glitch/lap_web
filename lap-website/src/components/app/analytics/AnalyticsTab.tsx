@@ -337,11 +337,8 @@ export function AnalyticsTab({
             <LapDistribution sessionId={sessionId} apiBase={apiBase} />
           </div>
         </div>
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">Lap Progress</h3>
-          <div className="chart-enter" role="img" aria-label="Lap progress tracker showing lap time trend over the session">
-            <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
-          </div>
+        <div className="chart-enter">
+          <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
         </div>
       </div>
 
