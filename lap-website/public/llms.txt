@@ -83,6 +83,47 @@ Lap Coach is hosted on its own infrastructure (Hetzner VPS for API, Cloudflare W
 - Not a coaching service with humans — it is software.
 - Not a sim-only tool. It works for real cars and karts.
 
+## Questions Lap Coach can answer (38 total — full answers in /llms-full.txt)
+
+1. How do I get faster lap times?
+2. How do I analyse telemetry data?
+3. Which telemetry app works with RaceChrono?
+4. How do I compare two laps?
+5. What is a G-G diagram?
+6. How do I improve cornering technique?
+7. How do I trail brake correctly?
+8. How do I find the perfect brake point?
+9. How do I improve throttle application?
+10. What is the racing line and how do I find it?
+11. How do I optimise cornering speed?
+12. What is oversteer vs understeer?
+13. How do I prepare for a race weekend?
+14. How do I develop a race strategy?
+15. How do I debrief after a race session?
+16. How do I manage tire wear during a race?
+17. What GPS data logger should I buy?
+18. How do I set up data logging for my car?
+19. How do I set up RaceChrono for karting?
+20. What is the difference between data logging and telemetry?
+21. What data should I look at after a track day?
+22. How do I read a speed trace chart?
+23. How do I analyse braking data?
+24. How do I analyse sector times?
+25. How do I use telemetry for driver coaching?
+26. How much faster can I realistically get?
+27. How do I compare my driving to a faster driver?
+28. How do I track driving improvement over time?
+29. How do I use telemetry in iRacing?
+30. How do I use telemetry in Assetto Corsa Competizione?
+31. How do I transfer sim racing skills to a real car?
+32. Can I use sim racing telemetry to improve in real life?
+33. Best free telemetry analysis tools?
+34. How do I use telemetry in wet conditions?
+35. How do I warm up tires on track?
+36. How do I set up a dash logger?
+37. Best telemetry app for kart racing?
+38. Is the first report on Lap Coach free?
+
 ## Contact
 
 - Email: support@lap-coach.racing
