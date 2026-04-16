@@ -31,6 +31,27 @@ import { CornerNavBar } from './CornerNavBar';
 import { useFocusModeStore } from '@/stores/focus-mode-store';
 import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
 
+/* ── Surface tokens (fullscreen-only, darker than the chart-kit) ── */
+
+/** Near-black panel surface: gradient reads as black, inset highlight
+ *  gives the top edge just enough structure to separate from the workspace. */
+const PANEL_STYLE: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #080808 0%, #040404 100%)',
+  border: '1px solid rgba(255,255,255,0.05)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03)',
+  borderRadius: 8,
+};
+
+const TOP_BAR_STYLE: React.CSSProperties = {
+  background: '#050505',
+  borderBottom: '1px solid rgba(255,255,255,0.06)',
+};
+
+const RAIL_STYLE: React.CSSProperties = {
+  background: 'linear-gradient(180deg, #070707 0%, #040404 100%)',
+  borderRight: '1px solid rgba(255,255,255,0.04)',
+};
+
 /* ── Panel label map ──────────────────────────────────────── */
 
 const PANEL_LABELS: Record<ToolId, { title: string; sub?: string }> = {
@@ -284,7 +305,7 @@ export function FocusMode({
   const renderPanel = (toolId: ToolId) => {
     const meta = PANEL_LABELS[toolId] ?? { title: toolId.replace(/-/g, ' ') };
     return (
-      <div key={toolId} className="h-full w-full relative overflow-hidden flex flex-col bg-concrete/60 rounded-lg">
+      <div key={toolId} className="h-full w-full relative overflow-hidden flex flex-col" style={PANEL_STYLE}>
         {/* Panel header — thin, typed, unobtrusive */}
         <div className="flex items-baseline justify-between px-3 pt-2 pb-1 shrink-0">
           <div className="flex items-baseline gap-2">
@@ -363,7 +384,7 @@ export function FocusMode({
         aria-label="Focus Mode — Fullscreen Analysis"
       >
         {/* ═══ TOP COMMAND BAR ═══════════════════════════════════ */}
-        <header className="flex items-center justify-between px-4 py-2 border-b border-steel/10 bg-concrete/50 shrink-0">
+        <header className="flex items-center justify-between px-4 py-2 shrink-0" style={TOP_BAR_STYLE}>
           {/* Left zone: mode + keyboard hints */}
           <div className="flex items-center gap-4">
             <h2 className="text-[11px] font-monument text-chalk uppercase tracking-[0.2em]">
@@ -447,6 +468,7 @@ export function FocusMode({
               store.resetLayout(activeTab);
             }}
             dockVisible={store.dockVisible}
+            style={RAIL_STYLE}
           />
           <div className="flex-1 min-h-0 overflow-hidden bg-asphalt">
             {mainContent}

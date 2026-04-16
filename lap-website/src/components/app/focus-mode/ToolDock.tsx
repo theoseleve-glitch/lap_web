@@ -170,13 +170,14 @@ interface ToolDockProps {
   onToggle: (toolId: ToolId) => void;
   onReset: () => void;
   dockVisible: boolean;
+  style?: React.CSSProperties;
 }
 
 function GroupDivider() {
   return <div className="w-5 h-px bg-steel/12 my-1.5" />;
 }
 
-export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDockProps) {
+export function ToolDock({ activeTools, onToggle, onReset, dockVisible, style }: ToolDockProps) {
   if (!dockVisible) return null;
 
   const groups = ['primary', 'secondary', 'meta'] as const;
@@ -184,7 +185,8 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDo
 
   return (
     <nav
-      className="flex flex-col items-center py-4 gap-0.5 w-14 bg-concrete/80 border-r border-steel/10 shrink-0"
+      className="flex flex-col items-center py-4 gap-0.5 w-14 shrink-0"
+      style={style}
       aria-label="Analysis tools"
     >
       {groupedTools.map((group, gi) => (
@@ -200,8 +202,8 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible }: ToolDo
                 className={`
                   w-10 h-10 flex items-center justify-center rounded-lg transition-all relative group
                   ${isActive
-                    ? 'bg-gold/12 text-gold border-l-2 border-gold/60 rounded-l-none'
-                    : 'text-steel/70 hover:text-chalk hover:bg-steel/8 border-l-2 border-transparent'
+                    ? 'text-gold border-l-2 border-gold/70 rounded-l-none'
+                    : 'text-steel/60 hover:text-chalk border-l-2 border-transparent'
                   }
                 `}
                 title={`${tool.label} (${tool.shortcut})`}
