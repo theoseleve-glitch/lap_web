@@ -5,9 +5,9 @@
  * cannot be exfiltrated by XSS.  On page refresh the token is lost, but
  * a silent refresh call (using the httpOnly cookie) recovers it.
  *
- * The active workspace ID follows the same in-memory pattern.  It is
- * sent as the `X-Workspace-Id` header on every API call so the backend
- * tenant middleware can set the correct RLS context.
+ * Single-user model: workspace is auto-resolved server-side from the
+ * authenticated user.  No X-Workspace-Id header or client-side workspace
+ * state is needed.
  *
  * BroadcastChannel coordination: when one tab refreshes its access token,
  * it broadcasts the new token to all other tabs so they don't make
@@ -16,7 +16,6 @@
  */
 
 let _accessToken: string | null = null;
-let _workspaceId: number | null = null;
 
 export function getAccessToken(): string | null {
   return _accessToken;
@@ -24,14 +23,6 @@ export function getAccessToken(): string | null {
 
 export function setAccessToken(token: string | null): void {
   _accessToken = token;
-}
-
-export function getWorkspaceId(): number | null {
-  return _workspaceId;
-}
-
-export function setWorkspaceId(id: number | null): void {
-  _workspaceId = id;
 }
 
 // ── User profile (cached from last auth action) ───────────────────
@@ -58,7 +49,7 @@ export function setUserProfile(user: StoredUserProfile | null): void {
 export const AUTH_CHANNEL_NAME = 'lap-auth';
 
 export type AuthBroadcastMessage =
-  | { type: 'token-refresh'; accessToken: string; workspaceId: number | null }
+  | { type: 'token-refresh'; accessToken: string }
   | { type: 'logout' };
 
 let _channel: BroadcastChannel | null = null;
@@ -76,12 +67,8 @@ export function getAuthChannel(): BroadcastChannel | null {
       const msg = event.data;
       if (msg.type === 'token-refresh') {
         _accessToken = msg.accessToken;
-        if (msg.workspaceId !== undefined) {
-          _workspaceId = msg.workspaceId;
-        }
       } else if (msg.type === 'logout') {
         _accessToken = null;
-        _workspaceId = null;
         _userProfile = null;
       }
     };
@@ -93,9 +80,9 @@ export function getAuthChannel(): BroadcastChannel | null {
  * Broadcast a token-refresh event to other tabs.
  * Called after a successful silent refresh or login.
  */
-export function broadcastTokenRefresh(accessToken: string, workspaceId: number | null): void {
+export function broadcastTokenRefresh(accessToken: string): void {
   const channel = getAuthChannel();
-  channel?.postMessage({ type: 'token-refresh', accessToken, workspaceId });
+  channel?.postMessage({ type: 'token-refresh', accessToken });
 }
 
 /**

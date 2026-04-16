@@ -294,6 +294,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.events',             'bp', 'events_bp'),          # Engagement tracking + usage dashboard
         ('.routes.seo_health',         'bp', 'seo_health_bp'),      # SEO health check endpoint
         ('.routes.track_surface_analysis', 'bp', 'track_surface_analysis_bp'),  # Track-surface analysis app layer
+        ('.routes.bundles',                'bp', 'bundles_bp'),                 # Logger bundle intake boundary
     ]
 
     import importlib
@@ -338,15 +339,13 @@ def create_app(config: Config | None = None) -> Flask:
             app.before_request(entitlement_middleware)
             app.after_request(record_successful_usage)
             logger.debug("Registered entitlement middleware")
-            from .routes.teams import bp as teams_bp
-            from .routes.teams import invitations_bp
             from .routes.workspaces import bp as workspaces_bp
             app.register_blueprint(workspaces_bp)
-            app.register_blueprint(teams_bp)
-            app.register_blueprint(invitations_bp)
+            # Teams/invitations blueprints intentionally not registered —
+            # single-user model, no collaborative team features.
             from .routes.admin import bp as admin_bp
             app.register_blueprint(admin_bp)
-            logger.debug("Registered workspace, team, and admin blueprints")
+            logger.debug("Registered workspace and admin blueprints")
             # Initialize Celery with Flask app context
             from celery_app import make_celery
             celery_inst = make_celery(app)

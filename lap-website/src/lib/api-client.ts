@@ -7,7 +7,7 @@
  * httpOnly cookie and then replay the original request.
  */
 
-import { getAccessToken, getWorkspaceId, broadcastLogout } from './auth-store';
+import { getAccessToken, broadcastLogout } from './auth-store';
 import { parseEnvelopeOrThrow } from './http-envelope';
 
 /**
@@ -65,12 +65,6 @@ function buildHeaders(): Record<string, string> {
     const token = getAccessToken();
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-    }
-
-    // Attach active workspace for RLS tenant isolation
-    const wsId = getWorkspaceId();
-    if (wsId !== null) {
-      headers['X-Workspace-Id'] = String(wsId);
     }
 
     // Attach CSRF token from cookie (double-submit pattern)

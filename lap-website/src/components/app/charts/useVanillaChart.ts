@@ -11,7 +11,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { getAccessToken, getWorkspaceId } from '@/lib/auth-store';
+import { getAccessToken } from '@/lib/auth-store';
 
 /* ── Global type augmentation for the Old Tool's window globals ── */
 declare global {
@@ -146,8 +146,6 @@ function patchFetchHelper(apiBase: string): void {
     const headers: Record<string, string> = {};
     const token = getAccessToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const wsId = getWorkspaceId();
-    if (wsId != null) headers['X-Workspace-Id'] = String(wsId);
     return headers;
   };
 

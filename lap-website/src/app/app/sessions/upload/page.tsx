@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
-import { getAccessToken, getWorkspaceId, getUserProfile } from '@/lib/auth-store';
+import { getAccessToken, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
 import { logger } from '@/lib/logger';
 import { trackEvent } from '@/hooks/useTrackEvent';
@@ -215,8 +215,6 @@ function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = {};
   const token = getAccessToken();
   if (token) headers['Authorization'] = `Bearer ${token}`;
-  const wsId = getWorkspaceId();
-  if (wsId !== null) headers['X-Workspace-Id'] = String(wsId);
   return headers;
 }
 
@@ -792,12 +790,10 @@ function UploadPage() {
         if (sessionDate) formData.append('session_date', sessionDate);
 
         const token = getAccessToken();
-        const wsId = getWorkspaceId();
         const resp = await fetch(`${BACKEND_URL}/api/v1/endurance/detect`, {
           method: 'POST',
           headers: {
             ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            ...(wsId ? { 'X-Workspace-Id': String(wsId) } : {}),
           },
           body: formData,
         });
