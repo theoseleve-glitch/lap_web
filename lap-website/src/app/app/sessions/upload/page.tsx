@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { QuotaIndicator } from '@/components/app/plan';
 import { BACKEND_URL, ApiError, api } from '@/lib/api-client';
 import { getAccessToken, getUserProfile } from '@/lib/auth-store';
 import { CornerEditor, type TrackLayout } from '@/components/app/CornerEditor';
@@ -942,6 +943,9 @@ function UploadPage() {
           </Link>
         }
       />
+      <div className="mb-4">
+        <QuotaIndicator compact />
+      </div>
 
       {/* ── Upload Form (shown in idle/error states) ── */}
       {showForm && (

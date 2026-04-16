@@ -9,6 +9,7 @@ import { PageIntro } from '@/components/ui/PageIntro';
 import { DriverAchievements } from '@/components/app/DriverAchievements';
 import { ActivationChecklist } from '@/components/app/ActivationChecklist';
 import { NpsSurvey } from '@/components/app/NpsSurvey';
+import { QuotaIndicator } from '@/components/app/plan';
 
 /** Inline Sparkline — lightweight SVG replacement for deleted chart component */
 function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
@@ -283,6 +284,11 @@ export default function DashboardPage() {
   return (
     <div>
       <PageIntro title="Dashboard" subtitle="Your telemetry overview" />
+
+      {/* Plan quota — inline usage bar */}
+      <div className="mb-4">
+        <QuotaIndicator />
+      </div>
 
       {/* 7 Stat Cards — 2 rows */}
       <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3 mb-4">
