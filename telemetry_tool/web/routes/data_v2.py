@@ -42,6 +42,7 @@ from flask import Blueprint, Response, g, request, send_file
 
 from web import models
 from web.api_utils import ErrorCode, api_error, api_response
+from web.chart_cache import chart_cached
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
 from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
@@ -404,6 +405,7 @@ def get_laps(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/speed-trace", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_speed_trace(session_id: str) -> tuple[dict, int]:
     """Return speed vs distance arrays for a lap.
 
@@ -574,6 +576,7 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/gps-trace", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_gps_trace(session_id: str) -> tuple[dict, int]:
     """Return GPS coordinates and speed arrays for a lap.
 
@@ -650,6 +653,7 @@ def get_gps_trace(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/gg-data", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_gg_data(session_id: str) -> tuple[dict, int]:
     """Return lateral and longitudinal acceleration arrays for GG diagram.
 
@@ -753,6 +757,7 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/scores", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_scores(session_id: str) -> tuple[dict, int]:
     """Return score breakdown for a session."""
     conn = get_db_connection()
@@ -879,6 +884,7 @@ def _merge_coaching_labels(conn: Any, session_id: str, corners: list[dict]) -> N
 
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_corners(session_id: str) -> tuple[dict, int]:
     """Return corner boundaries merged with coaching metrics.
 
@@ -1387,6 +1393,10 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     result = delete_entity_cascade(conn, "session", session_id)
     audit_log(conn, "session.delete", {"session_id": session_id, "impact": result["impact"]})
     conn.commit()
+
+    # Invalidate cached chart responses for this session.
+    from web.chart_cache import invalidate_session_cache
+    invalidate_session_cache(session_id)
 
     try:
         from web.rollups import refresh_rollups
@@ -3062,6 +3072,7 @@ def get_corner_metrics_summary(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/delta", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_delta(session_id: str) -> tuple[dict, int]:
     """Compute time delta between two laps on the fly.
 
