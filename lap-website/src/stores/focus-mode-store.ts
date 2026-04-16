@@ -16,11 +16,11 @@ interface FocusModeState {
 }
 
 const TAB_DEFAULTS: Record<string, ToolId[]> = {
-  overview: ['track-map', 'gg-diagram', 'speed-trace'],
-  corners: ['track-map', 'gg-diagram', 'speed-trace'],
-  analytics: ['track-map', 'gg-diagram', 'speed-trace'],
-  laps: ['track-map', 'gg-diagram', 'speed-trace'],
-  timeline: ['track-map', 'gg-diagram', 'speed-trace'],
+  overview: ['track-map', 'speed-trace', 'gg-diagram'],
+  corners: ['track-map', 'speed-trace', 'gg-diagram'],
+  analytics: ['track-map', 'speed-trace', 'gg-diagram'],
+  laps: ['track-map', 'speed-trace', 'gg-diagram'],
+  timeline: ['track-map', 'speed-trace', 'gg-diagram'],
 };
 
 export const useFocusModeStore = create<FocusModeState>()(

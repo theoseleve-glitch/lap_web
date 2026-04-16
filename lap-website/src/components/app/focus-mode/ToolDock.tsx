@@ -153,9 +153,9 @@ const TOOLS: Tool[] = [
 ];
 
 const SMART_DEFAULTS: Partial<Record<ToolId, ToolId[]>> = {
-  'speed-trace': ['speed-trace', 'track-map'],
-  'track-map': ['track-map', 'speed-trace'],
-  'gg-diagram': ['gg-diagram', 'track-map'],
+  'speed-trace': ['track-map', 'speed-trace', 'gg-diagram'],
+  'track-map': ['track-map', 'speed-trace', 'gg-diagram'],
+  'gg-diagram': ['track-map', 'speed-trace', 'gg-diagram'],
   'lap-overlay': ['lap-overlay', 'speed-trace'],
   'lap-progress': ['lap-progress', 'lap-distribution'],
   'lap-distribution': ['lap-distribution', 'lap-progress'],

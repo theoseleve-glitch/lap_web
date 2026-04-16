@@ -252,7 +252,7 @@ export function FocusMode({
 
   const activeToolIds = useMemo(() => {
     if (storeTools && storeTools.length > 0) return storeTools;
-    return ['track-map', 'gg-diagram', 'speed-trace'] as ToolId[];
+    return ['track-map', 'speed-trace', 'gg-diagram'] as ToolId[];
   }, [storeTools]);
 
   // Keyboard shortcuts
@@ -356,16 +356,22 @@ export function FocusMode({
       </div>
     );
   } else {
-    const [first, ...stacked] = toolIds;
+    // Pin track-map to the left panel when it's active. Otherwise use the
+    // first tool. This guarantees the spatial reference (GPS map) is always
+    // the full-height anchor on the left when available.
+    const hasTrackMap = toolIds.includes('track-map');
+    const leftTool = hasTrackMap ? 'track-map' as ToolId : toolIds[0];
+    const rightTools = toolIds.filter((id) => id !== leftTool);
+
     mainContent = (
       <div className="h-full flex gap-1.5 p-1.5">
-        {/* Primary panel — 42% width */}
+        {/* Left: primary spatial panel — 42% width, full height */}
         <div className="h-full" style={{ width: '42%' }}>
-          {renderPanel(first)}
+          {renderPanel(leftTool)}
         </div>
-        {/* Stacked secondaries */}
+        {/* Right: stacked analysis panels */}
         <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-          {stacked.map((id) => (
+          {rightTools.map((id) => (
             <div key={id} className="flex-1 min-h-0">
               {renderPanel(id)}
             </div>
