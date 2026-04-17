@@ -81,29 +81,21 @@ export function NavigationProgress() {
         </div>
       )}
 
-      {/* Page content fade — applied via CSS class on <main> */}
+      {/* Page content transition — subtle opacity only, no blur.
+          Blur was causing the "blurry flash" the user sees on every
+          link click. A clean opacity dip is premium; blur is jarring. */}
       <style>{`
         @media (prefers-reduced-motion: no-preference) {
           .page-transition-exit main {
-            opacity: 0.4;
-            filter: blur(4px);
-            transform: translateY(-8px);
-            transition: all 300ms cubic-bezier(0.16, 1, 0.3, 1);
+            opacity: 0.6;
+            transition: opacity 200ms ease-out;
           }
           .page-transition-enter main {
-            animation: pageEnter 400ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: pageEnter 300ms ease-out forwards;
           }
           @keyframes pageEnter {
-            from {
-              opacity: 0;
-              filter: blur(4px);
-              transform: translateY(16px);
-            }
-            to {
-              opacity: 1;
-              filter: blur(0px);
-              transform: translateY(0);
-            }
+            from { opacity: 0.6; }
+            to   { opacity: 1; }
           }
         }
       `}</style>
