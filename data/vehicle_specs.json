@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "vehicles": {
+    "mclaren_570s_gt4": {
+      "name": "McLaren 570S GT4",
+      "drive_layout": "RWD",
+      "mass_kg": 1222.5,
+      "wheelbase_m": 2.67,
+      "track_front_m": 1.666,
+      "track_rear_m": 1.627,
+      "weight_dist_front": 0.435,
+      "aero_cla": 1.46,
+      "cg_height_m": 0.15,
+      "brake_bias_front": 0.49,
+      "steer_ratio": 14.0,
+      "camber_front_deg": -4.0,
+      "camber_rear_deg": -2.8,
+      "tire_d1_lat_default": 2.8,
+      "tire_d1_long_default": 2.7,
+      "klass": "GT4"
+    },
+    "bmw_m2_csr": {
+      "name": "BMW M2 CSR",
+      "drive_layout": "RWD",
+      "mass_kg": 1500.0,
+      "wheelbase_m": 2.69,
+      "track_front_m": 1.585,
+      "track_rear_m": 1.588,
+      "weight_dist_front": 0.5,
+      "aero_cla": 0.4,
+      "cg_height_m": 0.3,
+      "brake_bias_front": 0.55,
+      "steer_ratio": 16.0,
+      "camber_front_deg": -3.0,
+      "camber_rear_deg": -2.0,
+      "tire_d1_lat_default": 2.8,
+      "tire_d1_long_default": 2.7,
+      "klass": "TouringCar"
+    },
+    "audi_rs3_lms": {
+      "name": "Audi RS3 LMS",
+      "drive_layout": "FWD",
+      "mass_kg": 1265.0,
+      "wheelbase_m": 2.63,
+      "track_front_m": 1.58,
+      "track_rear_m": 1.58,
+      "weight_dist_front": 0.62,
+      "aero_cla": 0.5,
+      "cg_height_m": 0.32,
+      "brake_bias_front": 0.65,
+      "steer_ratio": 14.0,
+      "camber_front_deg": -3.5,
+      "camber_rear_deg": -2.5,
+      "tire_d1_lat_default": 2.8,
+      "tire_d1_long_default": 2.7,
+      "klass": "TCR"
+    }
+  }
+}

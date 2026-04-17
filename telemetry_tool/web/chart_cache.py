@@ -79,7 +79,13 @@ def chart_cached(ttl: int = 3600) -> Callable:
                     cached = redis.get(key)
                     if cached is not None:
                         body = json.loads(cached)
-                        return body, 200
+                        # Guard: only serve cached data that looks like a valid
+                        # API envelope (has "ok": true). Never serve cached errors.
+                        if isinstance(body, dict) and body.get("ok") is True:
+                            return body, 200
+                        else:
+                            # Stale or invalid — delete and fall through to fresh query.
+                            redis.delete(key)
                 except Exception:
                     logger.debug("chart_cache: Redis read failed for %s", key)
 

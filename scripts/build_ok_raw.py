@@ -666,8 +666,66 @@ try:
           f'bank valid: {diag.get("n_bins_bank_valid")} '
           f'({diag.get("bank_coverage_frac", 0)*100:.1f}%)')
     print(f'  mean bank on valid bins:  {diag.get("mean_bank_on_valid_deg", 0):+.2f} deg')
-    print(f'  mean grade on valid bins: {diag.get("mean_grade_on_valid_deg", 0):+.2f} deg  [diagnostic-only]')
+    print(f'  mean grade on valid bins: {diag.get("mean_grade_on_valid_deg", 0):+.2f} deg  [IMU, diagnostic-only]')
     print(f'  laps used for bank: {diag.get("n_laps_used_bank")}/{diag.get("n_laps_total")}')
+
+    # ── Additive: elevation-derived grade (Gold shadow, deterministic) ──
+    try:
+        from track_surface.road_attitude_field import estimate_grade_from_elevation
+        # Elevation is stored on the same 600-bin bronze s-grid via s_grid.
+        elev_s = s_grid.copy()
+        elev_z = elevation.copy()   # already de-meaned and savgol-smoothed above
+        # Evaluate onto the field's 5-m s-grid so the channel lines up with
+        # the bank channel for the viewer.
+        target_s = np.asarray(road_attitude_field_dict['s_bins'], dtype=float)
+        elev_grade = estimate_grade_from_elevation(
+            elev_z, elev_s, target_s_bins=target_s,
+            smoothing_window_m=20.0,
+        )
+        # Merge additive-only: new keys prefixed grade_elevation_*, and a
+        # per-channel diagnostics sub-dict. Existing grade_* IMU channel is
+        # untouched so consumers can compare.
+        road_attitude_field_dict['grade_elevation_mean_deg'] = (
+            [round(float(v), 3) for v in elev_grade.grade_mean_deg]
+        )
+        road_attitude_field_dict['grade_elevation_std_deg'] = (
+            [round(float(v), 3) for v in elev_grade.grade_std_deg]
+        )
+        road_attitude_field_dict['grade_elevation_confidence'] = (
+            [round(float(v), 3) for v in elev_grade.confidence]
+        )
+        road_attitude_field_dict['grade_elevation_evidence_count'] = (
+            [int(v) for v in elev_grade.evidence_count]
+        )
+        road_attitude_field_dict['grade_elevation_lap_coverage'] = (
+            [int(v) for v in elev_grade.lap_coverage]
+        )
+        road_attitude_field_dict['grade_elevation_diagnostics'] = elev_grade.diagnostics
+        # Reflect in the top-level production_ready contract.
+        road_attitude_field_dict.setdefault('production_ready', {})
+        road_attitude_field_dict['production_ready']['grade_elevation'] = False
+
+        eg_diag = elev_grade.diagnostics
+        print(f'\n  Elevation-derived grade (additive, shadow):')
+        print(f'    source:     {eg_diag.get("source")}')
+        print(f'    smoothing:  {eg_diag.get("smoothing_window_m"):.1f} m '
+              f'({eg_diag.get("smoothing_window_samples")} samples)')
+        print(f'    coverage:   {eg_diag.get("coverage_fraction", 0)*100:.1f}%')
+        print(f'    high-conf:  {eg_diag.get("high_confidence_fraction", 0)*100:.1f}%')
+        print(f'    sigma:      {eg_diag.get("propagated_sigma_grade_deg", 0):.2f} deg')
+        print(f'    mean grade (conf>0.5): '
+              f'{eg_diag.get("mean_grade_on_confident_deg", 0):+.2f} deg')
+    except Exception as e:
+        print(f'  Elevation-derived grade skipped ({type(e).__name__}: {e})')
+        road_attitude_field_dict['grade_elevation_diagnostics'] = {
+            'source': 'elevation_profile',
+            'empty': True,
+            'reason': f'{type(e).__name__}: {e}',
+            'production_ready': {
+                'shadow_visualization': False,
+                'active_correction': False,
+            },
+        }
 except Exception as e:
     print(f'\nGold-alpha shadow: skipped ({type(e).__name__}: {e})')
     # Emit a safe empty structure so downstream consumers can always rely
@@ -684,6 +742,289 @@ except Exception as e:
         'confidence': [], 'evidence_count': [], 'lap_coverage': [],
         'diagnostics': {'empty': True, 'reason': f'{type(e).__name__}: {e}'},
     }
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLD-ALPHA SHADOW (DERIVED):
+# Bank-field-corrected lateral demand, as a separate overlay channel.
+#
+# STRICT CONTRACT:
+#   • Does not read from or write to ``lat_demand_all`` / ``lat_demand_ceiling``
+#     or any bronze/silver JSON key.
+#   • Reads only the already-published ``road_attitude_field`` AND the
+#     existing bronze-tier magnitude arrays (read-only copies).
+#   • Writes a NEW top-level JSON key: ``lateral_demand_shadow_bank_corrected``.
+#   • Tier = ``gold_alpha_shadow``. Not a production product.
+#
+# Correction rule, per-bin:
+#   conf_i = bank_confidence interpolated at s_i
+#   bank_i = bank_mean_deg interpolated at s_i
+#   if conf_i >= BANK_CORRECTION_CONFIDENCE_THRESHOLD:
+#       signed_raw    = sign(curvature_i) * raw_magnitude_i
+#       signed_corr   = signed_raw - sin(radians(bank_i))
+#       corrected_i   = |signed_corr|
+#       applied_i     = True
+#   else:
+#       corrected_i   = raw_magnitude_i
+#       applied_i     = False
+# ═══════════════════════════════════════════════════════════════════
+
+BANK_CORRECTION_CONFIDENCE_THRESHOLD = 0.60
+
+lateral_demand_shadow_dict = None
+try:
+    raf_ok = (
+        road_attitude_field_dict is not None
+        and road_attitude_field_dict.get('s_bins')
+        and road_attitude_field_dict.get('bank_mean_deg')
+    )
+    if raf_ok:
+        raf_s = np.asarray(road_attitude_field_dict['s_bins'], dtype=float)
+        raf_bank = np.asarray(road_attitude_field_dict['bank_mean_deg'], dtype=float)
+        raf_conf = np.asarray(road_attitude_field_dict['bank_confidence'], dtype=float)
+
+        bank_at_bin = np.interp(s_grid, raf_s, raf_bank)
+        conf_at_bin = np.interp(s_grid, raf_s, raf_conf)
+        applied = conf_at_bin >= BANK_CORRECTION_CONFIDENCE_THRESHOLD
+        # Sign of track curvature as a proxy for signed IMU convention.
+        # Bronze magnitude arrays are unsigned; we re-sign them so the
+        # gravity-subtraction is physically sensible.
+        sign_curv = np.sign(curvature)
+        sin_bank = np.sin(np.deg2rad(bank_at_bin))
+
+        def _apply_shadow_correction(raw_magnitude: np.ndarray) -> np.ndarray:
+            signed_raw = sign_curv * raw_magnitude.copy()
+            signed_corr = np.where(applied, signed_raw - sin_bank, signed_raw)
+            return np.abs(signed_corr)
+
+        all_p90_corr = _apply_shadow_correction(lat_demand_all)
+        excited_p90_corr = _apply_shadow_correction(lat_demand_ceiling)
+        combined_p90_corr = _apply_shadow_correction(combined_demand_p90)
+
+        lateral_demand_shadow_dict = {
+            'tier': 'gold_alpha_shadow',
+            'confidence_threshold': float(BANK_CORRECTION_CONFIDENCE_THRESHOLD),
+            'disclaimer': (
+                'Shadow-only diagnostic overlay. Bank-field-corrected lateral '
+                'demand. Bronze (data.lateral_demand) and Silver '
+                '(data.lateral_demand_2d) canonical outputs are UNCHANGED. '
+                'Correction is confidence-gated; bins with bank_confidence < '
+                f'{BANK_CORRECTION_CONFIDENCE_THRESHOLD} pass raw through unchanged.'
+            ),
+            'applied_mask': [bool(v) for v in applied],
+            'bank_deg_at_bin': [round(float(v), 3) for v in bank_at_bin],
+            'bank_confidence_at_bin': [round(float(v), 3) for v in conf_at_bin],
+            # Corrected magnitudes
+            'all_p90': [round(float(v), 3) for v in all_p90_corr],
+            'excited_p90': [round(float(v), 3) for v in excited_p90_corr],
+            'combined_p90': [round(float(v), 3) for v in combined_p90_corr],
+            # Per-bin delta (corrected − raw) for diagnostics / viewer tooltip
+            'delta_all_p90': [round(float(a - b), 3)
+                              for a, b in zip(all_p90_corr, lat_demand_all)],
+            'delta_excited_p90': [round(float(a - b), 3)
+                                  for a, b in zip(excited_p90_corr, lat_demand_ceiling)],
+            'applied_frac': round(float(applied.mean()), 4),
+        }
+
+        n_applied = int(applied.sum())
+        mean_abs_delta_excited = float(np.mean(np.abs(excited_p90_corr - lat_demand_ceiling)))
+        print(f'\nShadow: bank-corrected demand overlay')
+        print(f'  Bins corrected: {n_applied}/{len(applied)} '
+              f'({applied.mean()*100:.1f}%, threshold={BANK_CORRECTION_CONFIDENCE_THRESHOLD})')
+        print(f'  Mean |delta excited_p90|: {mean_abs_delta_excited:.4f} G')
+    else:
+        print('\nShadow: bank-corrected demand overlay skipped (field unavailable).')
+except Exception as e:
+    print(f'\nShadow: bank-corrected demand overlay failed ({type(e).__name__}: {e})')
+    lateral_demand_shadow_dict = None
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLD-ALPHA SHADOW (LONGITUDINAL): elevation-grade correction experiment.
+#
+# EXISTING PRODUCT BOUNDARY:
+#   This repo does NOT have a canonical bronze longitudinal demand channel
+#   analogous to ``lateral_demand.excited_p90``. We do not invent one.
+#   What we compute below is a **shadow-mode diagnostic aggregate** from
+#   per-lap IMU samples, kept under a clearly-named shadow JSON key with
+#   a disclaimer making the boundary explicit.
+#
+# SIGN CONVENTION (re-derived from existing code, not guessed):
+#   road_attitude_estimator.py:189  — "on uphill, gravity pulls back, so
+#       a_x_phone reads negative on x"  → raw_along ≈ -sin(grade) at steady
+#       speed uphill.
+#   attitude_correction.py:253      — ``along_corrected = along_raw +
+#       sin(grade_rad)``.
+#   estimate_grade_from_elevation    — grade = atan(dz/ds), +grade = uphill.
+#   → corrected_along = raw_along_imu + sin(grade_rad).
+#   Tests pin this convention per-sign (see test_longitudinal_grade_shadow.py).
+#
+# REFERENCE METRIC:
+#   GPS-derived dv/dt_g. On flat ground, corrected IMU should match dv/dt.
+#   On grade, raw IMU differs by sin(grade); corrected should align.
+# ═══════════════════════════════════════════════════════════════════
+
+LONG_GRADE_CORRECTION_CONFIDENCE_THRESHOLD = 0.60
+
+longitudinal_demand_shadow_dict = None
+try:
+    raf_has_elev = (
+        road_attitude_field_dict is not None
+        and road_attitude_field_dict.get('grade_elevation_mean_deg')
+        and len(road_attitude_field_dict.get('grade_elevation_mean_deg', [])) > 0
+    )
+    if not raf_has_elev:
+        print('\nShadow: longitudinal grade-correction skipped (no elevation grade).')
+    else:
+        raf_s = np.asarray(road_attitude_field_dict['s_bins'], dtype=float)
+        raf_grade = np.asarray(road_attitude_field_dict['grade_elevation_mean_deg'], dtype=float)
+        raf_grade_conf = np.asarray(road_attitude_field_dict['grade_elevation_confidence'], dtype=float)
+
+        # Bronze s-grid (600 bins) — reuse the existing `s_grid`.
+        grade_at_bin = np.interp(s_grid, raf_s, raf_grade)
+        grade_conf_at_bin = np.interp(s_grid, raf_s, raf_grade_conf)
+        applied_bin = grade_conf_at_bin >= LONG_GRADE_CORRECTION_CONFIDENCE_THRESHOLD
+        sin_grade_at_bin = np.sin(np.deg2rad(grade_at_bin))
+
+        # Per-bin accumulators for the shadow aggregates.
+        n_bronze_bins = len(s_grid)
+        along_imu_samples = [[] for _ in range(n_bronze_bins)]      # raw kart-x IMU
+        along_cor_samples = [[] for _ in range(n_bronze_bins)]      # corrected
+        dvdt_samples      = [[] for _ in range(n_bronze_bins)]      # GPS dv/dt_g reference
+        residual_raw      = [[] for _ in range(n_bronze_bins)]      # |raw − dv/dt|
+        residual_cor      = [[] for _ in range(n_bronze_bins)]      # |corrected − dv/dt|
+
+        ds_m_local_shadow = track_length / n_bronze_bins
+
+        for lap in all_laps:
+            if lap.get('accel_3d') is None or lap.get('time_arr') is None:
+                continue
+            mount = session_mounts.get(lap['src'])
+            if mount is None:
+                continue
+            R = mount.R_phone_to_kart
+            accel_kart_x = (lap['accel_3d'] @ R.T)[:, 0]            # signed kart forward
+            t = lap['time_arr']
+            dt_lap = float(np.median(np.diff(t))) if len(t) > 1 else 0.04
+            dvdt_g = np.gradient(lap['speed']) / max(dt_lap, 1e-6) / _G
+
+            # Project each lap sample to bronze s-bin via the centerline.
+            lx, ly = to_xy(lap['lat'], lap['lon'])
+            dlx = np.diff(lx)
+            dly = np.diff(ly)
+            dls = np.sqrt(dlx ** 2 + dly ** 2)
+            lap_dist = np.concatenate([[0], np.cumsum(dls)])
+            if lap_dist[-1] <= 0:
+                continue
+            # For each raw IMU/GPS sample, find its s-bin on the shared s_grid.
+            s_per_sample = np.interp(
+                np.arange(len(lap['speed'])),
+                np.arange(len(lap_dist)),
+                lap_dist,
+            )
+            s_per_sample = np.clip(s_per_sample, 0.0, track_length - 1e-6)
+            bin_per_sample = np.floor(s_per_sample / ds_m_local_shadow).astype(int)
+            bin_per_sample = np.clip(bin_per_sample, 0, n_bronze_bins - 1)
+
+            grade_applied_per_sample = applied_bin[bin_per_sample]
+            sin_grade_per_sample = sin_grade_at_bin[bin_per_sample]
+            along_cor = np.where(
+                grade_applied_per_sample,
+                accel_kart_x + sin_grade_per_sample,
+                accel_kart_x,
+            )
+
+            speed_ok = lap['speed'] > 5.0
+            for i in range(len(accel_kart_x)):
+                if not speed_ok[i] or not np.isfinite(accel_kart_x[i]):
+                    continue
+                b = int(bin_per_sample[i])
+                along_imu_samples[b].append(float(accel_kart_x[i]))
+                along_cor_samples[b].append(float(along_cor[i]))
+                dvdt_samples[b].append(float(dvdt_g[i]))
+                residual_raw[b].append(float(abs(accel_kart_x[i] - dvdt_g[i])))
+                residual_cor[b].append(float(abs(along_cor[i] - dvdt_g[i])))
+
+        def _p90_abs(pool):
+            if len(pool) < 5:
+                return 0.0
+            return float(np.percentile(np.abs(pool), 90))
+
+        def _mean_abs(pool):
+            if not pool:
+                return 0.0
+            return float(np.mean(np.abs(pool)))
+
+        along_raw_p90  = np.array([_p90_abs(p) for p in along_imu_samples])
+        along_cor_p90  = np.array([_p90_abs(p) for p in along_cor_samples])
+        dvdt_p90       = np.array([_p90_abs(p) for p in dvdt_samples])
+        mean_res_raw   = np.array([_mean_abs(p) for p in residual_raw])
+        mean_res_cor   = np.array([_mean_abs(p) for p in residual_cor])
+
+        # Smooth the magnitude fields for viewer readability.
+        along_raw_p90 = np.clip(savgol_smooth(along_raw_p90, 11, 2), 0.0, 2.0)
+        along_cor_p90 = np.clip(savgol_smooth(along_cor_p90, 11, 2), 0.0, 2.0)
+        dvdt_p90      = np.clip(savgol_smooth(dvdt_p90, 11, 2), 0.0, 2.0)
+
+        delta_p90 = along_cor_p90 - along_raw_p90
+        applied_frac = float(applied_bin.mean())
+
+        # Summary metric: per-bin mean residual improvement.
+        better_bins = int((mean_res_cor < mean_res_raw).sum())
+        total_eval_bins = int(((mean_res_raw > 0) | (mean_res_cor > 0)).sum())
+        improvement_frac = (
+            better_bins / total_eval_bins if total_eval_bins > 0 else 0.0
+        )
+
+        longitudinal_demand_shadow_dict = {
+            'tier': 'gold_alpha_shadow',
+            'product_note': (
+                'NOT a bronze canonical product. The repo does not expose a '
+                'bronze longitudinal demand channel analogous to '
+                'lateral_demand. These aggregates are computed here strictly '
+                'for shadow-mode evaluation of the elevation-grade '
+                'correction. Do not build downstream product features on '
+                'these arrays.'
+            ),
+            'confidence_threshold': float(LONG_GRADE_CORRECTION_CONFIDENCE_THRESHOLD),
+            'disclaimer': (
+                'Shadow-only diagnostic overlay. Elevation-derived grade '
+                'correction. Bronze (data.lateral_demand) and Silver '
+                '(data.lateral_demand_2d) canonical outputs are UNCHANGED. '
+                'Correction is confidence-gated; bins with grade_elevation_'
+                f'confidence < {LONG_GRADE_CORRECTION_CONFIDENCE_THRESHOLD} '
+                f'pass raw through unchanged.'
+            ),
+            'correction_formula': 'corrected_along = raw_along_imu + sin(grade_rad)',
+            'reference_metric': (
+                'mean |corrected − dv/dt_g| vs mean |raw − dv/dt_g|; smaller '
+                'is better. GPS-derived dv/dt is the external reference.'
+            ),
+            'applied_mask':          [bool(v) for v in applied_bin],
+            'grade_deg_at_bin':      [round(float(v), 3) for v in grade_at_bin],
+            'grade_confidence_at_bin': [round(float(v), 3) for v in grade_conf_at_bin],
+            'all_p90_raw_imu':       [round(float(v), 3) for v in along_raw_p90],
+            'all_p90_corrected':     [round(float(v), 3) for v in along_cor_p90],
+            'all_p90_dvdt_reference': [round(float(v), 3) for v in dvdt_p90],
+            'delta_all_p90':         [round(float(v), 3) for v in delta_p90],
+            'mean_residual_raw_g':   [round(float(v), 4) for v in mean_res_raw],
+            'mean_residual_cor_g':   [round(float(v), 4) for v in mean_res_cor],
+            'applied_frac':          round(applied_frac, 4),
+            'bins_correction_helps_frac': round(improvement_frac, 4),
+            'production_ready': False,
+        }
+
+        n_applied = int(applied_bin.sum())
+        print(f'\nShadow: longitudinal grade-correction overlay')
+        print(f'  Correction threshold: {LONG_GRADE_CORRECTION_CONFIDENCE_THRESHOLD}')
+        print(f'  Bins with correction applied: {n_applied}/{n_bronze_bins} ({applied_frac*100:.1f}%)')
+        print(f'  Bins where correction reduces residual vs raw: '
+              f'{better_bins}/{total_eval_bins} ({improvement_frac*100:.1f}%)')
+        print(f'  Mean |delta| p90 along: {float(np.mean(np.abs(delta_p90))):.4f} G')
+
+except Exception as e:
+    print(f'\nShadow: longitudinal grade-correction failed ({type(e).__name__}: {e})')
+    longitudinal_demand_shadow_dict = None
 
 
 # Build driver traces
@@ -803,6 +1144,607 @@ if demand_2d_dict is not None:
 if road_attitude_field_dict is not None:
     data['road_attitude_field'] = road_attitude_field_dict
 
+# Gold-alpha shadow DERIVED: bank-field-corrected lateral demand.
+# Separate overlay. Bronze and Silver above are completely unchanged.
+if lateral_demand_shadow_dict is not None:
+    data['lateral_demand_shadow_bank_corrected'] = lateral_demand_shadow_dict
+
+# Gold-alpha shadow DERIVED: grade-corrected longitudinal (diagnostic).
+# NOT a bronze product. Read the `product_note` field in this block.
+if longitudinal_demand_shadow_dict is not None:
+    data['longitudinal_demand_shadow_grade_corrected'] = longitudinal_demand_shadow_dict
+
+# (Gold Lab block is attached after it is computed, below.)
+
+# Gold-alpha compare summary — diagnostic-only pointer to the output of
+# scripts/evaluate_bank_corrected_opt_in_candidate.py. Purely additive.
+# No product coupling: if the evaluator has not run, the key is omitted.
+try:
+    import csv as _csv_mod
+    _gold_cmp_path = os.path.join(
+        _REPO_ROOT, 'docs', 'validation',
+        'bank_corrected_opt_in_candidate_metrics.csv',
+    )
+    if os.path.isfile(_gold_cmp_path):
+        best_row = None
+        with open(_gold_cmp_path, 'r', encoding='utf-8') as _cf:
+            for row in _csv_mod.DictReader(_cf):
+                if (row.get('is_best_combo') == 'True'
+                        and row.get('regime') == 'all_valid'):
+                    best_row = row
+                    break
+        if best_row is not None:
+            data['gold_compare_summary'] = {
+                'tier': 'gold_alpha_shadow',
+                'source_script': 'scripts/evaluate_bank_corrected_opt_in_candidate.py',
+                'disclaimer': (
+                    'Diagnostic pointer to the promotion-gate evaluation. '
+                    'Does not affect any canonical, shadow, or viewer output. '
+                    'Regenerate by running the evaluator script.'
+                ),
+                'bank_shadow_opt_in_candidate': best_row['decision_at_combo'] in (
+                    'OPT_IN_CANDIDATE', 'STRONG_OPT_IN_CANDIDATE',
+                ),
+                'decision_class': best_row['decision_at_combo'],
+                'recommended_conf_threshold': float(best_row['threshold']),
+                'recommended_correction_scale': float(best_row['scale']),
+                'summary_metrics': {
+                    'cal_raw': float(best_row['cal_raw']),
+                    'cal_cor': float(best_row['cal_cor']),
+                    'rmse_raw_g': float(best_row['rmse_raw']),
+                    'rmse_cor_g': float(best_row['rmse_cor']),
+                    'applied_frac': float(best_row['applied_frac']),
+                    'conf_weighted_applied': float(best_row['conf_weighted_applied']),
+                    'bins_improved_frac': float(best_row['bin_improved_frac']),
+                    'bins_worsened_frac': float(best_row['bin_worsened_frac']),
+                    'broad_harm_frac': float(best_row['broad_harm_frac']),
+                },
+            }
+            print(f'\nGold compare summary: decision = '
+                  f'{best_row["decision_at_combo"]} '
+                  f'(threshold={best_row["threshold"]}, scale={best_row["scale"]})')
+except Exception as _e:
+    print(f'\nGold compare summary: skipped ({type(_e).__name__}: {_e})')
+
+
+# ═══════════════════════════════════════════════════════════════════
+# GOLD LAB — first-class beta candidate + compare workspace
+#
+# Additive only. Does NOT modify Bronze or Silver.
+# If any upstream artefact is missing, the relevant sub-block is omitted
+# from data.gold_lab rather than faked.
+#
+# Beta candidate: lat_demand_bank_corrected_beta
+#   threshold = 0.50 (lower than shadow's 0.60 — more of the track covered)
+#   scale     = 1.00
+#   default_enabled = false    (opt-in only; Bronze remains canonical)
+#
+# Zone intelligence is loaded from track_surface.gold_lab for a single
+# shared classification that viewer, build, and tests all agree on.
+# ═══════════════════════════════════════════════════════════════════
+
+BETA_CONFIDENCE_THRESHOLD = 0.50
+BETA_CORRECTION_SCALE = 1.00
+
+try:
+    from track_surface.gold_lab import (
+        PlausibilityFlags,
+        classify_zones_bulk,
+        zone_counts,
+        ZONE_CLASSES,
+    )
+    import csv as _gl_csv
+
+    gold_lab_dict: dict | None = None
+
+    raf_ok_for_beta = (
+        road_attitude_field_dict is not None
+        and road_attitude_field_dict.get('s_bins')
+        and road_attitude_field_dict.get('bank_mean_deg')
+    )
+
+    # ── Beta candidate correction on bronze s-grid ──
+    beta_candidate_block: dict | None = None
+    if raf_ok_for_beta:
+        raf_s_b = np.asarray(road_attitude_field_dict['s_bins'], dtype=float)
+        raf_bank_b = np.asarray(road_attitude_field_dict['bank_mean_deg'], dtype=float)
+        raf_conf_b = np.asarray(road_attitude_field_dict['bank_confidence'], dtype=float)
+
+        bank_at_bin_beta = np.interp(s_grid, raf_s_b, raf_bank_b)
+        conf_at_bin_beta = np.interp(s_grid, raf_s_b, raf_conf_b)
+        applied_beta = conf_at_bin_beta >= BETA_CONFIDENCE_THRESHOLD
+
+        sign_curv_beta = np.sign(curvature)
+        sin_bank_beta = BETA_CORRECTION_SCALE * np.sin(np.deg2rad(bank_at_bin_beta))
+
+        def _apply_beta(raw: np.ndarray) -> np.ndarray:
+            signed_raw = sign_curv_beta * raw.copy()
+            signed_corr = np.where(applied_beta, signed_raw - sin_bank_beta, signed_raw)
+            return np.abs(signed_corr)
+
+        all_p90_beta = _apply_beta(lat_demand_all)
+        excited_p90_beta = _apply_beta(lat_demand_ceiling)
+        combined_p90_beta = _apply_beta(combined_demand_p90)
+
+        applied_frac_beta = float(applied_beta.mean())
+
+        beta_candidate_block = {
+            'label': 'lat_demand_bank_corrected_beta',
+            'status': 'opt_in_candidate',
+            'default_enabled': False,
+            'canonical': False,
+            'product_note': (
+                'Experimental alternative to Bronze lateral demand. NOT an '
+                'upgrade claim. Bronze remains canonical and default. Opt-in '
+                'only; select via Gold Lab mode bar.'
+            ),
+            'decision_class': 'OPT_IN_CANDIDATE',
+            'threshold': BETA_CONFIDENCE_THRESHOLD,
+            'correction_scale': BETA_CORRECTION_SCALE,
+            'applied_mask': [bool(v) for v in applied_beta],
+            'bank_deg_at_bin': [round(float(v), 3) for v in bank_at_bin_beta],
+            'bank_confidence_at_bin': [round(float(v), 3) for v in conf_at_bin_beta],
+            'all_p90': [round(float(v), 3) for v in all_p90_beta],
+            'excited_p90': [round(float(v), 3) for v in excited_p90_beta],
+            'combined_p90': [round(float(v), 3) for v in combined_p90_beta],
+            'delta_excited_p90': [
+                round(float(a - b), 3)
+                for a, b in zip(excited_p90_beta, lat_demand_ceiling)
+            ],
+            'applied_frac': round(applied_frac_beta, 4),
+            'correction_formula': (
+                'corrected = |sign(κ)·raw − correction_scale·sin(bank_rad)| '
+                'where bank_confidence(s) ≥ threshold; else raw.'
+            ),
+        }
+
+    # ── Load plausibility CSV (optional) ──
+    plaus_rows_by_s: dict[float, PlausibilityFlags] = {}
+    _plaus_csv = os.path.join(_REPO_ROOT, 'docs', 'validation',
+                              'bank_field_plausibility_metrics.csv')
+    if os.path.isfile(_plaus_csv):
+        with open(_plaus_csv, 'r', encoding='utf-8') as _pf:
+            for _row in _gl_csv.DictReader(_pf):
+                try:
+                    _s = float(_row['s_m'])
+                except (KeyError, ValueError):
+                    continue
+                plaus_rows_by_s[_s] = PlausibilityFlags.from_csv_row(_row)
+
+    # ── Zone classification on bronze s-grid ──
+    zones_beta: list[str] | None = None
+    if beta_candidate_block is not None:
+        # For each bronze bin, find the nearest plausibility row by s.
+        plaus_for_bins: list[PlausibilityFlags | None] = []
+        plaus_keys = sorted(plaus_rows_by_s.keys()) if plaus_rows_by_s else []
+        for s_val in s_grid:
+            if not plaus_keys:
+                plaus_for_bins.append(None)
+                continue
+            # nearest key
+            nearest = min(plaus_keys, key=lambda k: abs(k - float(s_val)))
+            if abs(nearest - float(s_val)) <= 10.0:
+                plaus_for_bins.append(plaus_rows_by_s[nearest])
+            else:
+                plaus_for_bins.append(None)
+        zones_beta = classify_zones_bulk(
+            bank_confidence_arr=beta_candidate_block['bank_confidence_at_bin'],
+            applied_arr=beta_candidate_block['applied_mask'],
+            plausibility_rows=plaus_for_bins,
+            conf_threshold=BETA_CONFIDENCE_THRESHOLD,
+        )
+
+    # ── Load evaluator CSV compare metrics (optional) ──
+    global_metrics_block: dict | None = None
+    regime_metrics_block: dict | None = None
+    safety_flags_block: dict | None = None
+    blocked_strong_reason: str | None = None
+    evaluator_csv = os.path.join(
+        _REPO_ROOT, 'docs', 'validation',
+        'bank_corrected_opt_in_candidate_metrics.csv',
+    )
+    if os.path.isfile(evaluator_csv):
+        best_rows: dict[str, dict] = {}
+        with open(evaluator_csv, 'r', encoding='utf-8') as _ef:
+            for _row in _gl_csv.DictReader(_ef):
+                if _row.get('is_best_combo') == 'True':
+                    best_rows[_row['regime']] = _row
+        if 'all_valid' in best_rows:
+            av = best_rows['all_valid']
+            global_metrics_block = {
+                'cal_raw': float(av['cal_raw']),
+                'cal_cor': float(av['cal_cor']),
+                'rmse_raw_g': float(av['rmse_raw']),
+                'rmse_cor_g': float(av['rmse_cor']),
+                'bias_raw_g': float(av['bias_raw']),
+                'bias_cor_g': float(av['bias_cor']),
+                'applied_frac': float(av['applied_frac']),
+                'conf_weighted_applied': float(av['conf_weighted_applied']),
+                'bins_improved_frac': float(av['bin_improved_frac']),
+                'bins_worsened_frac': float(av['bin_worsened_frac']),
+                'broad_harm_frac': float(av['broad_harm_frac']),
+                'max_regime_regression': float(av['max_regime_regression']),
+                'max_regression_regime': av['max_regression_regime'],
+                'improvements_in_plausible_frac': float(av['improvements_in_plausible_frac']),
+                'regressions_in_suspicious_frac': float(av['regressions_in_suspicious_frac']),
+            }
+            regime_metrics_block = {}
+            regime_wins = 0
+            best_regime_gain = 0.0
+            best_regime_name = ''
+            for name, row in best_rows.items():
+                if name == 'all_valid':
+                    continue
+                raw = float(row['cal_raw'])
+                cor = float(row['cal_cor'])
+                err_raw = abs(raw - 1.0)
+                err_cor = abs(cor - 1.0)
+                if err_cor < err_raw:
+                    regime_wins += 1
+                gain = err_raw - err_cor
+                if gain > best_regime_gain:
+                    best_regime_gain = gain
+                    best_regime_name = name
+                regime_metrics_block[name] = {
+                    'cal_raw': raw, 'cal_cor': cor,
+                    'err_raw': round(err_raw, 4),
+                    'err_cor': round(err_cor, 4),
+                    'delta': round(err_cor - err_raw, 4),
+                    'winner': 'corrected' if err_cor < err_raw else 'raw' if err_cor > err_raw else 'tie',
+                    'applied_frac': float(row['applied_frac']),
+                }
+            # Determine why strong failed
+            plausible_frac = global_metrics_block['improvements_in_plausible_frac']
+            if plausible_frac < 0.50:
+                blocked_strong_reason = (
+                    f'plausible-zone concentration only {plausible_frac*100:.1f}% '
+                    f'(needs ≥ 50% for STRONG)'
+                )
+            elif regime_wins < 5:
+                blocked_strong_reason = (
+                    f'only {regime_wins}/6 regimes won (needs ≥ 5 for STRONG)'
+                )
+            elif (global_metrics_block['cal_raw']
+                  and abs(global_metrics_block['cal_raw'] - 1.0) -
+                      abs(global_metrics_block['cal_cor'] - 1.0)) < 0.05:
+                blocked_strong_reason = 'global improvement < 0.05 (needs ≥ 0.05 for STRONG)'
+
+            safety_flags_block = {
+                'broad_harm_frac_cap': 0.55,
+                'broad_harm_frac_now': global_metrics_block['broad_harm_frac'],
+                'broad_harm_triggered': global_metrics_block['broad_harm_frac'] > 0.55,
+                'rmse_regression_cap_g': 0.03,
+                'rmse_regression_now_g': round(
+                    global_metrics_block['rmse_cor_g'] - global_metrics_block['rmse_raw_g'], 4,
+                ),
+                'rmse_regression_triggered': (
+                    global_metrics_block['rmse_cor_g']
+                    - global_metrics_block['rmse_raw_g']
+                ) > 0.03,
+                'regime_wins': regime_wins,
+                'regime_wins_needed_opt_in': 4,
+                'regime_wins_needed_strong': 5,
+                'best_regime_gain': round(best_regime_gain, 4),
+                'best_regime': best_regime_name,
+            }
+
+    # ── Promotion gate block ──
+    decision_block = {
+        'decision_class': (
+            beta_candidate_block['decision_class']
+            if beta_candidate_block is not None
+            else 'UNKNOWN'
+        ),
+        'canonical_recommendation': False,
+        'blocked_strong_reason': blocked_strong_reason or 'unknown (evaluator CSV absent)',
+        'next_promotion_condition': (
+            'Re-run plausibility audit after a tighter bank field and confirm '
+            '≥ 50% of bins that the correction helps are in audit-plausible '
+            'zones. Once that holds, the decision class will graduate to '
+            'STRONG_OPT_IN_CANDIDATE.'
+        ),
+        'canonical_promotion_condition': (
+            'Canonical promotion additionally requires surveyed bank ground '
+            'truth on at least one track, showing corrected lateral demand '
+            'matches true centripetal within < 0.03 cal_bias distance to 1.0.'
+        ),
+    }
+
+    # ── Diagnostic channels references ──
+    diag_channels = {
+        'bank_field': {
+            'location': 'data.road_attitude_field (bank_* fields)',
+            'status': 'shadow',
+            'coverage': (
+                float(road_attitude_field_dict.get('diagnostics', {})
+                      .get('bank_coverage_frac', 0.0))
+                if road_attitude_field_dict else 0.0
+            ),
+        },
+        'grade_elevation': {
+            'location': 'data.road_attitude_field (grade_elevation_* fields)',
+            'status': 'shadow_deterministic',
+            'coverage': (
+                float(road_attitude_field_dict.get('grade_elevation_diagnostics', {})
+                      .get('coverage_fraction', 0.0))
+                if road_attitude_field_dict else 0.0
+            ),
+        },
+        'longitudinal_grade_shadow': {
+            'location': 'data.longitudinal_demand_shadow_grade_corrected',
+            'status': 'shadow_diagnostic_only',
+            'operator_ui': False,
+            'note': (
+                'Classified NEUTRAL in the longitudinal shadow experiment. '
+                'Engineer-only diagnostics — no operator-facing map mode.'
+            ),
+        },
+    }
+
+    # ── Assemble gold_lab block ──
+    gold_lab_dict = {
+        'version': '1.0',
+        'canonical_products': {
+            'bronze_default': 'lateral_demand',
+            'silver_default': 'lateral_demand_2d',
+        },
+        'candidate_products': {},
+        'diagnostic_channels': diag_channels,
+        'compare': {
+            'available_modes': [
+                'bronze',
+                'silver',
+                'bank_field_shadow',
+                'grade_elevation_shadow',
+                'bank_corrected_shadow',
+                'bank_corrected_beta',
+            ],
+            'default_compare_pair': ['bronze', 'lat_demand_bank_corrected_beta'],
+        },
+        'promotion_gate': decision_block,
+        'zone_classes_enum': list(ZONE_CLASSES),
+    }
+    if beta_candidate_block is not None:
+        gold_lab_dict['candidate_products']['lat_demand_bank_corrected_beta'] = (
+            beta_candidate_block
+        )
+    if zones_beta is not None:
+        gold_lab_dict['zones_on_bronze_grid'] = zones_beta
+        gold_lab_dict['zone_counts'] = zone_counts(zones_beta)
+    if global_metrics_block is not None:
+        gold_lab_dict['compare']['global_metrics'] = global_metrics_block
+    if regime_metrics_block is not None:
+        gold_lab_dict['compare']['regime_metrics'] = regime_metrics_block
+    if safety_flags_block is not None:
+        gold_lab_dict['compare']['safety_flags'] = safety_flags_block
+
+    print(f'\nGold Lab assembled:')
+    print(f'  candidate_products:      '
+          f'{list(gold_lab_dict["candidate_products"].keys())}')
+    print(f'  diagnostic_channels:     '
+          f'{list(gold_lab_dict["diagnostic_channels"].keys())}')
+    if 'zone_counts' in gold_lab_dict:
+        zc = gold_lab_dict['zone_counts']
+        print(f'  zone_counts:             applied_plausible='
+              f'{zc["high_conf_plausible_applied"]}, '
+              f'applied_suspicious={zc["high_conf_suspicious_applied"]}, '
+              f'applied_neither={zc["high_conf_neither_applied"]}, '
+              f'skipped_passthrough={zc["low_conf_raw_passthrough"]}, '
+              f'skipped_suspicious={zc["low_conf_suspicious"]}, '
+              f'neutral={zc["neutral_unclassified"]}')
+    if 'global_metrics' in gold_lab_dict['compare']:
+        gm = gold_lab_dict['compare']['global_metrics']
+        print(f'  global cal_raw->cal_cor: {gm["cal_raw"]:.3f} -> {gm["cal_cor"]:.3f}')
+    print(f'  decision_class:          {decision_block["decision_class"]}')
+    print(f'  canonical_recommendation:{decision_block["canonical_recommendation"]}')
+except Exception as _gle:
+    print(f'\nGold Lab: skipped ({type(_gle).__name__}: {_gle})')
+    gold_lab_dict = None
+
+# Gold Lab — experimental physics workspace. Additive only. Canonical
+# defaults (Bronze, Silver) remain unchanged. See data.gold_lab.promotion_gate.
+if gold_lab_dict is not None:
+    data['gold_lab'] = gold_lab_dict
+
+# ═══════════════════════════════════════════════════════════════════
+# SESSION COMPARE STUDIO — lap-vs-lap analysis
+#
+# Compares the two driver traces already built (best = "hamilton",
+# median = "verstappen") using distance-aligned speed/throttle/line.
+# This is a CANONICAL feature — it reads from the same data the
+# viewer already has and produces a structured coaching analysis.
+# ═══════════════════════════════════════════════════════════════════
+
+try:
+    from track_surface.session_compare import (
+        LapTrace, compare_laps, to_json_dict,
+    )
+
+    def _drv_to_trace(drv: dict, label: str) -> LapTrace:
+        return LapTrace(
+            x=np.array(drv['x'], dtype=float),
+            y=np.array(drv['y'], dtype=float),
+            speed_kph=np.array(drv['speed_kph'], dtype=float),
+            throttle=np.array(drv['throttle'], dtype=float),
+            n_offset=np.array(drv['n_offset'], dtype=float),
+            lat_demand_g=np.array(drv.get('lat_demand_g', drv.get('grip_mu', [0])), dtype=float),
+            lap_time_s=float(drv['lap_time']),
+            label=label,
+        )
+
+    ref_trace = _drv_to_trace(drv_best, f'best ({drv_best["lap_time"]:.3f}s, {drv_best["src"]})')
+    cand_trace = _drv_to_trace(drv_median, f'median ({drv_median["lap_time"]:.3f}s, {drv_median["src"]})')
+    track_s_centers = np.linspace(0, track_length, n_bins)
+
+    compare_result = compare_laps(
+        reference=ref_trace,
+        candidate=cand_trace,
+        track_curvature=curvature,
+        track_s_grid=track_s_centers,
+        grid_spacing_m=1.5,
+    )
+    data['session_compare'] = to_json_dict(compare_result)
+
+    gs = compare_result.global_summary
+    print(f'\nSession Compare Studio:')
+    print(f'  Ref: {ref_trace.label}  Cand: {cand_trace.label}')
+    print(f'  Lap time delta: {gs["lap_time_delta_s"]:+.3f} s')
+    print(f'  Corners detected: {gs["n_corners_detected"]}')
+    print(f'  Top loss corner: T{gs["top_loss_corner"]}')
+    print(f'  Top gain corner: T{gs["top_gain_corner"]}')
+    print(f'  Top 3 fixes:')
+    for fix in compare_result.top_fixes[:3]:
+        print(f'    T{fix["corner_id"]}: {fix["time_delta_ms"]:+.0f}ms — {fix["coach_text"][:80]}')
+    attrib = gs['time_lost_by_phase']
+    print(f'  Attribution: braking {attrib["braking_s"]:+.3f}s, '
+          f'corner {attrib["corner_s"]:+.3f}s, '
+          f'exit {attrib["exit_traction_s"]:+.3f}s, '
+          f'straight {attrib["straight_carry_s"]:+.3f}s, '
+          f'uncertain {attrib["uncertain_s"]:+.3f}s')
+    # ── DRIVER DEVELOPMENT INTELLIGENCE ──
+    # Analyze ALL laps (not just best/median) through the compare engine,
+    # then aggregate recurring patterns for development profiling.
+    try:
+        from track_surface.driver_development import (
+            CornerFeatures, classify_corner_archetype,
+            analyze_development, to_json_dict as dev_to_json,
+        )
+
+        # Build a trace for every lap, compare each against the best (reference).
+        all_corner_features: list = []
+        all_lap_times: dict = {}
+        session_order_dev: list = []
+
+        for lap_idx, lap in enumerate(all_laps):
+            lx, ly = to_xy(lap['lat'], lap['lon'])
+            spd_kph = lap['speed'] * 3.6
+            # Re-derive throttle approximation.
+            dv = np.gradient(spd_kph)
+            thr = np.clip((dv + 2) * 20, 0, 100)
+            # Lateral offset from centerline (nearest-neighbor).
+            n_off = np.zeros(len(lx))
+            for i_s in range(len(lx)):
+                d2 = (center_x - lx[i_s]) ** 2 + (center_y - ly[i_s]) ** 2
+                nearest = int(np.argmin(d2))
+                ddx = lx[i_s] - center_x[nearest]
+                ddy = ly[i_s] - center_y[nearest]
+                n_off[i_s] = ddx * nx_c[nearest] + ddy * ny_c[nearest]
+
+            step = max(1, len(lx) // 800)
+            idx_arr = list(range(0, len(lx), step))
+
+            cand_trace = LapTrace(
+                x=np.array([float(lx[i]) for i in idx_arr]),
+                y=np.array([float(ly[i]) for i in idx_arr]),
+                speed_kph=np.array([float(spd_kph[i]) for i in idx_arr]),
+                throttle=np.array([float(thr[i]) for i in idx_arr]),
+                n_offset=np.array([float(n_off[i]) for i in idx_arr]),
+                lat_demand_g=np.array([float(abs(lap['alat_g'][i])) for i in idx_arr]),
+                lap_time_s=float(lap['time']),
+                label=f'lap_{lap_idx}_{lap["src"]}',
+            )
+            lap_id = cand_trace.label
+            all_lap_times[lap_id] = cand_trace.lap_time_s
+            src = lap['src']
+            if src not in session_order_dev:
+                session_order_dev.append(src)
+
+            # Compare this lap against the reference (best).
+            try:
+                cmp = compare_laps(
+                    reference=ref_trace,
+                    candidate=cand_trace,
+                    track_curvature=curvature,
+                    track_s_grid=track_s_centers,
+                    grid_spacing_m=1.5,
+                )
+                # Extract per-corner features.
+                for pkt_dict in [
+                    {
+                        'corner_id': p.corner_id,
+                        'time_delta_ms': p.time_delta_ms,
+                        'primary_cause': p.primary_cause,
+                        'confidence': p.confidence,
+                        'evidence': p.evidence,
+                    }
+                    for p in cmp.corner_packets
+                ]:
+                    # Determine archetype from reference speed at apex.
+                    apex_s = pkt_dict.get('s_apex_m', 0.0)
+                    # Use min speed from evidence.
+                    min_spd = float(pkt_dict['evidence'].get('min_speed_ref_kph', 50.0) or 50.0)
+                    # Peak curvature: look up from track curvature near entry.
+                    peak_k = 0.03
+                    archetype = classify_corner_archetype(min_spd, peak_k, 30.0)
+
+                    cf = CornerFeatures.from_corner_packet(
+                        pkt_dict, lap_id=lap_id, session_id=src,
+                        archetype=archetype,
+                    )
+                    all_corner_features.append(cf)
+            except Exception:
+                pass
+
+        dev_intel = analyze_development(
+            all_corner_features, all_lap_times,
+            session_order_dev, track_name='Ouest Karting',
+        )
+        data['development_intelligence'] = dev_to_json(dev_intel)
+
+        print(f'\nDriver Development Intelligence:')
+        print(f'  Sessions: {dev_intel.sessions_analyzed}, Laps: {dev_intel.laps_analyzed}')
+        print(f'  Direction: {dev_intel.overall_direction}')
+        print(f'  Confidence: {dev_intel.analysis_confidence}')
+        print(f'  Weaknesses: {len(dev_intel.recurring_weaknesses)}, '
+              f'Strengths: {len(dev_intel.recurring_strengths)}')
+        if dev_intel.priority_focuses:
+            f = dev_intel.priority_focuses[0]
+            print(f'  Top priority: {f.label} (score {f.priority_score:.3f})')
+        for s in dev_intel.storyline:
+            print(f'  [{s["type"]}] {s["text"][:100]}')
+
+    except Exception as _de:
+        print(f'  Development Intelligence: failed ({type(_de).__name__}: {_de})')
+
+    # ── COACHING INTELLIGENCE ──
+    try:
+        from track_surface.coaching_intelligence import (
+            generate_coaching, to_json_dict as coaching_to_json,
+        )
+        coaching = generate_coaching(
+            corner_packets=[
+                {
+                    'corner_id': p.corner_id,
+                    'time_delta_ms': p.time_delta_ms,
+                    'primary_cause': p.primary_cause,
+                    'confidence': p.confidence,
+                    'evidence': p.evidence,
+                }
+                for p in compare_result.corner_packets
+            ],
+            weaknesses=data.get('development_intelligence', {}).get('recurring_weaknesses', []),
+            priorities=data.get('development_intelligence', {}).get('priority_focuses', []),
+            sessions_analyzed=dev_intel.sessions_analyzed if 'dev_intel' in dir() else 1,
+            track_name='Ouest Karting',
+        )
+        data['coaching_intelligence'] = coaching_to_json(coaching)
+
+        print(f'\nCoaching Intelligence:')
+        print(f'  Actions: {len(coaching.actions)}')
+        for a in coaching.actions[:3]:
+            print(f'    [{a.status}] {a.title} at {", ".join("T" + str(c) for c in a.corners[:4])} '
+                  f'| gain ~{a.estimated_gain_ms:.0f}ms | conf {a.confidence:.2f} | '
+                  f'priority {a.priority_score:.3f}')
+        if coaching.focus_summary:
+            print(f'  Focus: {coaching.focus_summary[:120]}...')
+        print(f'  Families: {len(coaching.corner_families)}')
+    except Exception as _ce:
+        print(f'  Coaching Intelligence: failed ({type(_ce).__name__}: {_ce})')
+
+except Exception as _sce:
+    print(f'\nSession Compare Studio: failed ({type(_sce).__name__}: {_sce})')
+    import traceback; traceback.print_exc()
+
 with open('track-surface-ok-data.json', 'w') as f:
     json.dump(data, f)
 print(f'\nSaved track-surface-ok-data.json')
@@ -877,3 +1819,18 @@ new_html = html[:m.start(1)] + new_json + html[m.end(1):]
 with open('ouest-karting-live.html', 'w', encoding='utf-8') as f:
     f.write(new_html)
 print('Wrote ouest-karting-live.html')
+
+# ── LAP Driver Development Studio ──
+studio_template = os.path.join(_REPO_ROOT, 'lap-studio.html')
+if os.path.isfile(studio_template):
+    with open(studio_template, 'r', encoding='utf-8') as f:
+        studio_html = f.read()
+    studio_json = json.dumps(data, separators=(',', ':'))
+    studio_out = studio_html.replace(
+        'const INLINE_DATA = null;',
+        'const INLINE_DATA = ' + studio_json + ';',
+        1,
+    )
+    with open('lap-studio-live.html', 'w', encoding='utf-8') as f:
+        f.write(studio_out)
+    print('Wrote lap-studio-live.html')

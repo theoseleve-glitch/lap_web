@@ -21,9 +21,14 @@ from track_surface_app.domain import (
 
 @dataclass
 class AnalysisRunRecord:
-    """Snapshot of one row from analysis_runs."""
+    """Snapshot of one row from analysis_runs.
+
+    ``session_id`` tolerates both integers (legacy CSV-path sessions) and
+    strings (bundle-path runs that use the bundle_id as the run's session
+    surrogate). Callers treat it as opaque.
+    """
     run_id: str
-    session_id: int
+    session_id: int | str
     workspace_id: int
     status: AnalysisRunStatus
     support_tier: SupportTier | None
@@ -52,6 +57,16 @@ def _parse_json(value: Any, default):
         return json.loads(value)
     except (TypeError, ValueError, json.JSONDecodeError):
         return default
+
+
+def _coerce_session_id(value: Any):
+    """Return int when parseable, otherwise the original string."""
+    if value is None:
+        return 0
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _enum_or_none(cls, value: Any):
@@ -98,7 +113,7 @@ class AnalysisRunRepository:
 
         return AnalysisRunRecord(
             run_id=_g("run_id"),
-            session_id=int(_g("session_id")),
+            session_id=_coerce_session_id(_g("session_id")),
             workspace_id=int(_g("workspace_id")),
             status=AnalysisRunStatus(_g("status")),
             support_tier=_enum_or_none(SupportTier, _g("support_tier")),

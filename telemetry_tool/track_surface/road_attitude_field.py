@@ -658,3 +658,232 @@ def _empty_field(cfg: RoadAttitudeFieldConfig) -> RoadAttitudeField:
         lap_coverage=empty_i,
         diagnostics={'empty': True, 'reason': 'no_data'},
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Elevation-derived grade — additive Gold shadow channel
+# ─────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class ElevationGradeResult:
+    """Grade(s) estimated from the smoothed elevation profile.
+
+    Unlike the IMU grade channel, this is **deterministic** — a single
+    smoothed derivative of altitude vs. arc length, not a per-lap
+    aggregate. Evidence/coverage metrics are reported as honest
+    deterministic equivalents, not fabricated lap counts.
+    """
+
+    s_bins: np.ndarray                # (M,) target bin centers (meters)
+    grade_mean_deg: np.ndarray        # (M,)
+    grade_std_deg: np.ndarray         # (M,) propagated uncertainty
+    confidence: np.ndarray            # (M,) 0..1
+    evidence_count: np.ndarray        # (M,) elevation samples in local window
+    lap_coverage: np.ndarray          # (M,) binary: 1 if bin has any evidence
+    diagnostics: dict = field(default_factory=dict)
+
+
+# Physically plausible clamp for karting tracks. Anything above this is
+# more likely a numeric artifact than a real slope.
+_ELEV_GRADE_CLAMP_DEG = 10.0
+
+# Magnitudes above this count as "possibly implausible" for kart tracks.
+# Does NOT clip — only dials confidence down.
+_ELEV_GRADE_PLAUSIBLE_MAX_DEG = 6.0
+
+
+def estimate_grade_from_elevation(
+    elevation_values: np.ndarray,
+    elevation_s_bins: np.ndarray,
+    *,
+    target_s_bins: np.ndarray | None = None,
+    smoothing_window_m: float = 20.0,
+    min_samples_in_window: int = 5,
+    edge_fadeout_bins: int = 5,
+    stability_scale_deg: float = 0.5,
+    rtk_altitude_sigma_m: float = 0.3,
+) -> ElevationGradeResult:
+    """Compute ``grade(s) = atan(dz/ds)`` from a smoothed elevation profile.
+
+    Parameters
+    ----------
+    elevation_values : (K,) altitude in meters, uniformly (or near-uniformly)
+        spaced along the track.
+    elevation_s_bins : (K,) arc-length (m) for each elevation sample.
+    target_s_bins : optional (M,) s-grid on which to return the result.
+        Defaults to ``elevation_s_bins``.
+    smoothing_window_m : Savitzky-Golay window length in meters. Longer =
+        smoother slope but less spatial resolution.
+    min_samples_in_window : minimum elevation samples in the smoothing window
+        for a bin to be considered "has evidence".
+    edge_fadeout_bins : number of bins at each end over which confidence
+        fades from 0 to 1. Boundary savgol smoothing is less trustworthy.
+    stability_scale_deg : scale for the local-variation penalty. A bin
+        whose grade differs from its neighbours by ``stability_scale_deg``
+        gets consistency score 0.
+    rtk_altitude_sigma_m : altitude measurement uncertainty. Propagated
+        into per-bin ``grade_std_deg`` via a first-order linearisation.
+
+    Returns
+    -------
+    ElevationGradeResult
+
+    Honest semantics
+    ----------------
+    * ``evidence_count[i]`` is the number of elevation samples inside the
+      smoothing window centred on bin i — a deterministic measure of how
+      much local data supports the slope at bin i. It is **not** a lap
+      count.
+    * ``lap_coverage[i]`` is ``1`` if the bin has any evidence, else ``0``.
+      A deterministic profile has no meaningful lap count; the binary
+      indicator is the honest equivalent.
+    * ``confidence[i]`` combines edge distance, local-variation stability,
+      and magnitude plausibility. It does NOT include a lap-count term.
+    """
+    z = np.asarray(elevation_values, dtype=float)
+    s_src = np.asarray(elevation_s_bins, dtype=float)
+    n_src = len(z)
+    if n_src < 11:
+        return _empty_elevation_grade(target_s_bins if target_s_bins is not None else s_src)
+
+    if target_s_bins is None:
+        target_s_bins = s_src.copy()
+    else:
+        target_s_bins = np.asarray(target_s_bins, dtype=float)
+
+    # Median sample spacing in the source grid. Savgol needs odd window
+    # and at most len(z).
+    ds_src = float(np.median(np.diff(s_src)))
+    if ds_src <= 0 or not np.isfinite(ds_src):
+        ds_src = 1.0
+    win_samples = max(5, int(smoothing_window_m / ds_src))
+    if win_samples % 2 == 0:
+        win_samples += 1
+    win_samples = min(win_samples, n_src if n_src % 2 == 1 else n_src - 1)
+    win_samples = max(win_samples, 5)
+
+    from scipy.signal import savgol_filter
+    z_smooth = savgol_filter(z, win_samples, polyorder=3, mode='nearest')
+    dz_ds = savgol_filter(z, win_samples, polyorder=3, deriv=1, mode='nearest') / ds_src
+
+    # grade(s) on the source grid
+    grade_src_deg = np.degrees(np.arctan(dz_ds))
+    grade_src_deg = np.clip(grade_src_deg, -_ELEV_GRADE_CLAMP_DEG, _ELEV_GRADE_CLAMP_DEG)
+
+    # Resample onto the target grid.
+    grade_on_target = np.interp(target_s_bins, s_src, grade_src_deg)
+    M = len(target_s_bins)
+
+    # Per-bin propagated uncertainty: sigma_grade ≈ sigma_z × √2 / win_length_m
+    # (first-order via central difference). Bounded below by 0.1° to avoid
+    # overclaiming precision.
+    win_length_m = win_samples * ds_src
+    sigma_grade_deg = max(0.1, float(np.degrees(
+        rtk_altitude_sigma_m * np.sqrt(2.0) / max(win_length_m, 1.0)
+    )))
+    grade_std = np.full(M, sigma_grade_deg)
+
+    # Evidence count per target bin: elevation samples within ±window/2 of
+    # the bin's s-coordinate. Deterministic — not a lap count.
+    evidence_count = np.zeros(M, dtype=int)
+    half_window = smoothing_window_m / 2.0
+    for i, s in enumerate(target_s_bins):
+        lo = np.searchsorted(s_src, s - half_window)
+        hi = np.searchsorted(s_src, s + half_window)
+        evidence_count[i] = int(hi - lo)
+    lap_coverage = (evidence_count >= 1).astype(int)
+
+    # ── Confidence components ──
+
+    # c_avail: availability — enough samples in the local window
+    c_avail = np.clip(evidence_count / max(1, min_samples_in_window), 0.0, 1.0)
+
+    # c_edge: fade near boundaries of the source grid (not target grid,
+    # since target may extend past source)
+    edge_dist = np.minimum(
+        np.arange(M),
+        (M - 1) - np.arange(M),
+    )
+    c_edge = np.clip(edge_dist / max(1, edge_fadeout_bins), 0.0, 1.0)
+
+    # c_stability: local grade consistency with neighbours. A bin with
+    # |grade − neighbour_mean| >> stability_scale gets low consistency.
+    grade_neighbour = np.copy(grade_on_target)
+    if M >= 3:
+        grade_neighbour[1:-1] = 0.5 * (grade_on_target[:-2] + grade_on_target[2:])
+    variation = np.abs(grade_on_target - grade_neighbour)
+    c_stability = np.clip(1.0 - variation / max(stability_scale_deg, 1e-6), 0.0, 1.0)
+
+    # c_magnitude: sanity — implausibly steep grades dial confidence down
+    excess = np.maximum(0.0, np.abs(grade_on_target) - _ELEV_GRADE_PLAUSIBLE_MAX_DEG)
+    c_magnitude = np.clip(
+        1.0 - excess / max(_ELEV_GRADE_CLAMP_DEG - _ELEV_GRADE_PLAUSIBLE_MAX_DEG, 1e-6),
+        0.0, 1.0,
+    )
+
+    # Product — if ANY source of uncertainty is high, confidence is low.
+    confidence = c_avail * c_edge * c_stability * c_magnitude
+
+    diagnostics = {
+        'source': 'elevation_profile',
+        'derivative_method': 'savgol_poly3_deriv1',
+        'smoothing_window_m': float(win_samples * ds_src),
+        'smoothing_window_samples': int(win_samples),
+        'source_n_samples': int(n_src),
+        'source_ds_m': float(ds_src),
+        'rtk_altitude_sigma_m': float(rtk_altitude_sigma_m),
+        'propagated_sigma_grade_deg': float(sigma_grade_deg),
+        'coverage_fraction': float(lap_coverage.mean()),
+        'high_confidence_fraction': float((confidence > 0.5).mean()),
+        'mean_grade_on_confident_deg': float(
+            np.mean(grade_on_target[confidence > 0.5])
+            if np.any(confidence > 0.5) else 0.0
+        ),
+        'median_confidence': float(np.median(confidence)),
+        # Honest recommendation for downstream product decisions.
+        'production_ready': {
+            'description': (
+                'Confidence reflects propagated altitude uncertainty and local '
+                'stability, not lap counts. Channel is deterministic; the same '
+                'input always yields the same output. Treat as diagnostic until '
+                'a track with surveyed grade ground truth is available.'
+            ),
+            'shadow_visualization': True,
+            'active_correction': False,
+        },
+    }
+
+    return ElevationGradeResult(
+        s_bins=target_s_bins,
+        grade_mean_deg=grade_on_target,
+        grade_std_deg=grade_std,
+        confidence=confidence,
+        evidence_count=evidence_count,
+        lap_coverage=lap_coverage,
+        diagnostics=diagnostics,
+    )
+
+
+def _empty_elevation_grade(target_s_bins: np.ndarray | None) -> ElevationGradeResult:
+    if target_s_bins is None:
+        target_s_bins = np.array([], dtype=float)
+    target_s_bins = np.asarray(target_s_bins, dtype=float)
+    M = len(target_s_bins)
+    return ElevationGradeResult(
+        s_bins=target_s_bins,
+        grade_mean_deg=np.zeros(M),
+        grade_std_deg=np.zeros(M),
+        confidence=np.zeros(M),
+        evidence_count=np.zeros(M, dtype=int),
+        lap_coverage=np.zeros(M, dtype=int),
+        diagnostics={
+            'source': 'elevation_profile',
+            'empty': True,
+            'reason': 'insufficient_elevation_samples',
+            'production_ready': {
+                'shadow_visualization': False,
+                'active_correction': False,
+            },
+        },
+    )

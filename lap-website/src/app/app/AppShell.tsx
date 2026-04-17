@@ -40,6 +40,12 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
+    label: 'ANALYSIS',
+    items: [
+      { href: '/app/bundles', label: 'Session Analysis', icon: '◇' },
+    ],
+  },
+  {
     label: 'ENGINEER',
     items: [
       { href: '/app/tracks', label: 'Tracks', icon: '◌' },

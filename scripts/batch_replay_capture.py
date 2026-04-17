@@ -521,6 +521,20 @@ def collect_ibt(new_ibts: list[Path], session_info: dict,
     with open(out_path / "capture_meta.json", "w") as f:
         json.dump(meta, f, indent=2)
 
+    # ── Cloud sync hook (never blocks capture) ──────────────
+    if copied:
+        try:
+            from desktop_sync.hooks import on_ibt_captured
+            on_ibt_captured(
+                ibt_path=copied[0],
+                capture_meta=meta,
+                output_dir=out_path,
+            )
+        except ImportError:
+            pass   # desktop_sync not available
+        except Exception as exc:
+            log.debug("[SYNC] Hook failed (non-fatal): %s", exc)
+
     return copied
 
 

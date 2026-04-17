@@ -38,9 +38,16 @@ export function FeatureGate({
 }: FeatureGateProps) {
   const { hasFeature, isLoading } = useUserPlan();
 
-  // While loading, show children (optimistic) to avoid layout flicker.
-  // If the feature is actually locked, the backend will 403 the API call.
-  if (isLoading) return <>{children}</>;
+  // During loading, show a quiet placeholder — NOT children. Showing children
+  // optimistically would briefly expose locked features before the plan check
+  // completes, then yank them away (bad UX, potential data leaks).
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8 text-steel/40 font-telemetry text-[10px] uppercase tracking-wider">
+        Loading...
+      </div>
+    );
+  }
 
   if (hasFeature(feature)) return <>{children}</>;
 

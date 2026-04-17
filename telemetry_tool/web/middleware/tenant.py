@@ -44,9 +44,25 @@ def tenant_middleware() -> Response | tuple | None:
     conn = get_pg_connection()
 
     ws_id = get_default_workspace_id(conn, user_id)
+    if not ws_id:
+        # New user whose personal workspace hasn't been created yet (rare:
+        # only possible if registration failed mid-way). Auto-create it now
+        # so the request can proceed with correct RLS context.
+        try:
+            from auth.workspace import create_personal_workspace
+            ws_id = create_personal_workspace(conn, user_id)
+            conn.commit()
+            logger.info("Auto-created personal workspace for user %s", user_id)
+        except Exception:
+            logger.warning("Failed to auto-create workspace for user %s", user_id, exc_info=True)
+
     if ws_id:
         set_workspace_context(conn, ws_id)
         g.workspace_id = ws_id
+        g.workspace_role = "owner"
+    else:
+        # Last resort: set a safe default so downstream code doesn't crash.
+        g.workspace_id = "default"
         g.workspace_role = "owner"
 
     # Resolve plan tier (used by rate limiter and feature gating)

@@ -6,7 +6,8 @@
 <title>Ouest Karting — Real Track Surface 3D</title>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#000;color:#f0ede5;font-family:'SF Mono','Cascadia Code','Consolas',monospace;overflow:hidden;height:100vh;display:flex}
+  body{background:#000;color:#f0ede5;font-family:'SF Mono','Cascadia Code','Consolas',monospace;overflow:hidden;height:100vh;display:flex;flex-direction:column}
+  .main-row{display:flex;flex:1;min-height:0}
   .sidebar{width:260px;min-width:260px;background:#141414;border-right:1px solid #2a2a2a;display:flex;flex-direction:column;overflow-y:auto}
   .sidebar h1{font-family:system-ui,sans-serif;font-size:13px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:14px 14px 4px;color:#c9a84c}
   .sidebar .sub{font-size:10px;color:#949494;padding:0 14px 8px}
@@ -50,6 +51,7 @@
 </style>
 </head>
 <body>
+<div class="main-row">
 <div class="sidebar">
   <h1>Ouest Karting</h1>
   <div class="sub">Kart — 42 laps across 5 sessions · Best: 70.46s</div>
@@ -57,12 +59,16 @@
   <h2>Heatmap Mode</h2>
   <div class="mode-btns">
     <button class="mode-btn" data-mode="speed">Speed</button>
-    <button class="mode-btn active" data-mode="grip">Lat Demand</button>
-    <button class="mode-btn" data-mode="silver">Demand 2D</button>
+    <button class="mode-btn active" data-mode="grip" title="Canonical Bronze lateral demand">Bronze Demand</button>
+    <button class="mode-btn" data-mode="silver" title="Canonical Silver demand surface (s, n)">Silver Demand Surface</button>
     <button class="mode-btn" data-mode="utilization">Combined</button>
     <button class="mode-btn" data-mode="elevation">Elev</button>
     <button class="mode-btn" data-mode="curvature">Curv</button>
-    <button class="mode-btn" data-mode="bank" title="Track-space bank estimate (shadow mode)">Bank Field</button>
+    <button class="mode-btn" data-mode="bank" title="Track-space bank estimate (shadow)">Bank Field (Shadow)</button>
+    <button class="mode-btn" data-mode="grade_elev" title="Elevation-derived grade (shadow, diagnostic)">Grade Field (Elevation Shadow)</button>
+    <button class="mode-btn" data-mode="bank_corrected" title="Bank-corrected demand — shadow only (threshold 0.60)">Lat Demand + Bank (Shadow)</button>
+    <button class="mode-btn" data-mode="bank_beta" title="Bank-corrected demand — opt-in Beta Candidate (threshold 0.50)" style="border-color:#8B5CF6;color:#8B5CF6">Lat Demand + Bank (Beta Candidate)</button>
+    <button class="mode-btn" data-mode="compare" title="Lap-vs-lap delta — Session Compare Studio" style="border-color:#c9a84c;color:#c9a84c;font-weight:700">Compare</button>
   </div>
 
   <h2>Track</h2>
@@ -109,6 +115,58 @@
     <div class="legend-bar" id="legendBar" style="background:linear-gradient(to right,#ff2a2a,#facc15,#22c55e)"></div>
     <div class="legend-labels"><span id="lLow">0</span><span id="lMid">140</span><span id="lHigh">272</span></div>
   </div>
+  <!-- ═════ GOLD LAB section (experimental physics workspace) ═════ -->
+  <div id="goldLabSection" class="stats" style="border-top:1px solid #2a2a2a;display:none">
+    <div style="font-size:9px;color:#8B5CF6;padding:4px 0 2px;text-transform:uppercase;letter-spacing:.1em;font-weight:700">Gold Lab</div>
+    <div style="font-size:8px;color:#949494;margin-bottom:4px;line-height:1.4">Experimental physics workspace. Canonical Bronze + Silver defaults are unchanged.</div>
+    <!-- Promotion gate surface -->
+    <div id="goldLabGate" style="margin-bottom:6px;padding:5px 6px;background:rgba(139,92,246,.06);border:1px solid #8B5CF633;border-radius:3px">
+      <div style="font-size:8px;color:#8B5CF6;text-transform:uppercase;letter-spacing:.08em">Decision</div>
+      <div class="stat-row" style="margin-top:2px"><span class="l">Class</span><span class="v" id="glDecClass">--</span></div>
+      <div class="stat-row"><span class="l">Canonical?</span><span class="v" id="glCanon">--</span></div>
+      <div class="stat-row"><span class="l" style="max-width:140px;white-space:normal;font-size:8px">Blocked strong</span><span class="v" id="glBlocked" style="font-size:8px;max-width:140px;white-space:normal">--</span></div>
+    </div>
+    <!-- Engineering HUD (metrics) -->
+    <div id="goldLabHUD" style="display:none">
+      <div style="font-size:8px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px">Engineering HUD</div>
+      <div class="stat-row"><span class="l">Recommended T / scale</span><span class="v" id="glReco">--</span></div>
+      <div class="stat-row"><span class="l">Applied frac</span><span class="v" id="glApplied">--</span></div>
+      <div class="stat-row"><span class="l">Conf-weighted applied</span><span class="v" id="glApplCW">--</span></div>
+      <div class="stat-row"><span class="l">cal_bias raw / cor</span><span class="v" id="glCal">--</span></div>
+      <div class="stat-row"><span class="l">RMSE raw / cor (G)</span><span class="v" id="glRmse">--</span></div>
+      <div class="stat-row"><span class="l">Regime wins</span><span class="v" id="glWins">--</span></div>
+      <div class="stat-row"><span class="l">Best regime gain</span><span class="v" id="glBestReg">--</span></div>
+      <div class="stat-row"><span class="l">Worst regime Δ</span><span class="v" id="glWorstReg">--</span></div>
+      <div class="stat-row"><span class="l">Safety warnings</span><span class="v" id="glSafety" style="color:#FF2A2A">--</span></div>
+      <!-- Zone counts -->
+      <div style="font-size:8px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin:6px 0 2px">Zones on bronze grid</div>
+      <div class="stat-row"><span class="l">Applied · plausible</span><span class="v" id="glZonePA">--</span></div>
+      <div class="stat-row"><span class="l">Applied · suspicious</span><span class="v" id="glZoneSA" style="color:#8B5CF6">--</span></div>
+      <div class="stat-row"><span class="l">Applied · neither</span><span class="v" id="glZoneNA">--</span></div>
+      <div class="stat-row"><span class="l">Skipped · passthrough</span><span class="v" id="glZoneLP">--</span></div>
+      <div class="stat-row"><span class="l">Skipped · suspicious</span><span class="v" id="glZoneLS">--</span></div>
+    </div>
+    <!-- Spatial inspection overlay toggles -->
+    <div style="font-size:8px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin:6px 0 2px">Overlays</div>
+    <label class="control-row" style="font-size:9px"><input type="checkbox" id="glToggleApplied"> Outline applied bins</label>
+    <label class="control-row" style="font-size:9px"><input type="checkbox" id="glTogglePlaus"> Highlight plausible zones</label>
+    <label class="control-row" style="font-size:9px"><input type="checkbox" id="glToggleSusp"> Highlight suspicious zones</label>
+    <div id="glPinnedZone" style="font-size:8px;color:#949494;margin-top:4px;line-height:1.4"></div>
+  </div>
+  <!-- ═════ end Gold Lab ═════ -->
+
+  <!-- ═════ DEVELOPMENT INTELLIGENCE ═════ -->
+  <div id="devIntelSection" style="border-top:1px solid #2a2a2a;display:none;padding:6px 14px">
+    <div style="font-size:9px;color:#22c55e;text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:4px">Development Intelligence</div>
+    <div id="devDirection" style="font-size:11px;font-weight:700;margin-bottom:4px">—</div>
+    <div id="devMeta" style="font-size:8px;color:#949494;margin-bottom:6px">—</div>
+    <!-- Priority focus card -->
+    <div id="devPriority" style="background:rgba(201,168,76,.06);border:1px solid #c9a84c33;border-radius:4px;padding:6px 8px;margin-bottom:6px"></div>
+    <!-- Top weaknesses -->
+    <div id="devWeaknesses"></div>
+    <!-- Storyline -->
+    <div id="devStoryline" style="margin-top:6px"></div>
+  </div>
   <div style="padding:8px 14px;border-top:1px solid #2a2a2a;font-size:8px;color:#666;line-height:1.4">
     Observed demand, not estimated surface grip.<br>
     Bronze tier: phone/GPS demand visualizer.
@@ -124,6 +182,34 @@
   <div class="xsection" id="xsection">
     <div class="xsection-title">Cross-section at <span id="xsS">—</span>m</div>
     <canvas id="xsCanvas"></canvas>
+  </div>
+</div>
+</div><!-- /main-row -->
+
+<!-- ═════ SESSION COMPARE STUDIO ═════ -->
+<div id="compareStudio" style="height:0;overflow:hidden;background:#0a0a0a;border-top:2px solid #c9a84c;transition:height .3s;position:relative">
+  <div style="display:flex;height:100%">
+    <!-- Speed + delta traces -->
+    <div style="flex:3;display:flex;flex-direction:column;border-right:1px solid #2a2a2a;min-width:0">
+      <div style="font-size:9px;color:#c9a84c;padding:6px 10px 2px;text-transform:uppercase;letter-spacing:.1em;font-weight:700;display:flex;justify-content:space-between;align-items:center">
+        <span>Session Compare Studio</span>
+        <span id="cmpLapNames" style="color:#949494;font-weight:400;text-transform:none">—</span>
+      </div>
+      <div style="flex:1;display:flex;min-height:0">
+        <canvas id="cmpSpeedCanvas" style="flex:1"></canvas>
+        <canvas id="cmpDeltaCanvas" style="width:180px;border-left:1px solid #1a1a1a"></canvas>
+      </div>
+    </div>
+    <!-- Corner cards + coaching -->
+    <div style="flex:2;overflow-y:auto;padding:6px 10px;min-width:240px">
+      <div style="font-size:9px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px;font-weight:700">Top 3 Fixes for Next Lap</div>
+      <div id="cmpFixes"></div>
+      <div style="font-size:9px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin:8px 0 4px;font-weight:700">All Corners</div>
+      <div id="cmpCorners"></div>
+      <div style="font-size:9px;color:#949494;margin-top:8px;line-height:1.3">
+        Attribution: <span id="cmpAttrib">—</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -146,9 +232,98 @@ async function loadData() {
     DATA = INLINE_DATA;
     document.getElementById('loadingMsg').style.display = 'none';
     buildScene();
+    // Populate Gold Lab panels now that DATA is available.
+    if (typeof goldLabInit === 'function') goldLabInit();
+    // Populate Development Intelligence panel.
+    if (typeof devIntelInit === 'function') devIntelInit();
   } else {
     document.getElementById('loadingMsg').textContent = 'Error: serve via HTTP (python -m http.server 8080)';
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GOLD LAB HUD
+// Renders the promotion-gate surface, engineering metrics, and zone
+// counts into the sidebar. Visibility of the full HUD depends on the
+// active mode — we only expand it for Gold-Lab-relevant modes so that
+// Bronze/Silver default viewing stays minimal.
+// ═══════════════════════════════════════════════════════════════════
+const GL_MODES = new Set(['bank', 'grade_elev', 'bank_corrected', 'bank_beta']);
+
+function goldLabInit() {
+  const gl = DATA && DATA.gold_lab;
+  const sec = document.getElementById('goldLabSection');
+  if (!sec) return;
+  if (!gl) {
+    sec.style.display = 'none';
+    return;
+  }
+  sec.style.display = 'block';
+  // Promotion gate surface (always visible when gold_lab is present)
+  const gate = gl.promotion_gate || {};
+  document.getElementById('glDecClass').textContent = gate.decision_class || '—';
+  document.getElementById('glDecClass').style.color =
+    gate.decision_class === 'STRONG_OPT_IN_CANDIDATE' ? '#22c55e' :
+    gate.decision_class === 'OPT_IN_CANDIDATE' ? '#8B5CF6' :
+    gate.decision_class === 'SHADOW_ONLY' ? '#c9a84c' : '#ff2a2a';
+  document.getElementById('glCanon').textContent =
+    gate.canonical_recommendation === true ? 'yes' : 'no';
+  document.getElementById('glBlocked').textContent =
+    (gate.blocked_strong_reason || '—');
+
+  // Engineering HUD (populated once; gated by goldLabHUDUpdate)
+  const beta = gl.candidate_products && gl.candidate_products.lat_demand_bank_corrected_beta;
+  if (beta) {
+    document.getElementById('glReco').textContent =
+      `${beta.threshold} / ${beta.correction_scale}`;
+    document.getElementById('glApplied').textContent =
+      (beta.applied_frac * 100).toFixed(1) + '%';
+  }
+  const cmp = gl.compare || {};
+  const gm = cmp.global_metrics;
+  if (gm) {
+    document.getElementById('glApplCW').textContent =
+      (gm.conf_weighted_applied * 100).toFixed(1) + '%';
+    document.getElementById('glCal').textContent =
+      `${gm.cal_raw.toFixed(3)} / ${gm.cal_cor.toFixed(3)}`;
+    document.getElementById('glRmse').textContent =
+      `${gm.rmse_raw_g.toFixed(3)} / ${gm.rmse_cor_g.toFixed(3)}`;
+  }
+  const sf = cmp.safety_flags;
+  if (sf) {
+    document.getElementById('glWins').textContent =
+      `${sf.regime_wins}/6`;
+    document.getElementById('glBestReg').textContent =
+      sf.best_regime ? `${sf.best_regime} +${sf.best_regime_gain.toFixed(3)}` : '—';
+    // Worst regime regression — taken from global_metrics.max_regime_regression
+    if (gm) {
+      document.getElementById('glWorstReg').textContent =
+        `${gm.max_regression_regime} ${gm.max_regime_regression >= 0 ? '+' : ''}${gm.max_regime_regression.toFixed(3)}`;
+    }
+    const warnings = [];
+    if (sf.broad_harm_triggered) warnings.push('broad harm');
+    if (sf.rmse_regression_triggered) warnings.push('rmse regression');
+    document.getElementById('glSafety').textContent =
+      warnings.length ? warnings.join(', ') : 'none';
+    document.getElementById('glSafety').style.color =
+      warnings.length ? '#FF2A2A' : '#22c55e';
+  }
+  // Zone counts
+  const zc = gl.zone_counts;
+  if (zc) {
+    document.getElementById('glZonePA').textContent = zc.high_conf_plausible_applied;
+    document.getElementById('glZoneSA').textContent = zc.high_conf_suspicious_applied;
+    document.getElementById('glZoneNA').textContent = zc.high_conf_neither_applied;
+    document.getElementById('glZoneLP').textContent = zc.low_conf_raw_passthrough;
+    document.getElementById('glZoneLS').textContent = zc.low_conf_suspicious;
+  }
+  goldLabHUDUpdate(state.mode);
+}
+
+function goldLabHUDUpdate(mode) {
+  const hud = document.getElementById('goldLabHUD');
+  if (!hud) return;
+  hud.style.display = GL_MODES.has(mode) ? 'block' : 'none';
 }
 
 // ─── Three.js setup ───────────────────────────────────────
@@ -219,6 +394,21 @@ function gripColor(mu) { // mu: 0-5, but useful range ~0.5-3.5
   } else {
     // Peak: green to bright white-green (extreme downforce grip)
     c.lerpColors(new THREE.Color(0x22c55e), new THREE.Color(0xaaffcc), (t - 0.7) / 0.3);
+  }
+  return c;
+}
+
+// gradeColor: diverging palette for signed grade (positive = uphill).
+// Teal for downhill, neutral chalk for flat, amber/orange for uphill.
+// Deliberately different from bankColor (blue/purple) so modes don't
+// visually collide.
+function gradeColor(gradeDeg, clampDeg = 6) {
+  const t = Math.max(-1, Math.min(1, gradeDeg / clampDeg));
+  const c = new THREE.Color();
+  if (t < 0) {
+    c.lerpColors(new THREE.Color(0x888888), new THREE.Color(0x14b8a6), Math.min(1, -t));
+  } else {
+    c.lerpColors(new THREE.Color(0x888888), new THREE.Color(0xf97316), Math.min(1, t));
   }
   return c;
 }
@@ -415,6 +605,104 @@ function buildScene() {
         col = elevColor(elevArr[i]||0, eMin, eMax);
       } else if(state.mode === 'curvature') {
         col = curvColor(kArr[i]||0);
+      } else if(state.mode === 'compare') {
+        // SESSION COMPARE: color the track by time-delta gradient.
+        // Green = candidate is faster (gaining), Red = candidate is slower (losing).
+        const sc = DATA.session_compare;
+        let delta = 0;
+        if (sc && sc.traces && sc.traces.delta_time_s && sc.traces.delta_time_s.length > 1) {
+          const dt = sc.traces.delta_time_s;
+          const sFrac = i / n;
+          const dIdx = Math.min(dt.length - 1, Math.max(0, Math.floor(sFrac * dt.length)));
+          // Use per-segment delta (not cumulative) for local color.
+          const prev = dIdx > 0 ? dt[dIdx - 1] : 0;
+          delta = dt[dIdx] - prev;
+        }
+        col = new THREE.Color();
+        // Normalize: ±0.05 s per segment = max saturation.
+        const t_d = Math.max(-1, Math.min(1, delta / 0.05));
+        if (t_d > 0) {
+          // Candidate slower (losing) → red
+          col.lerpColors(new THREE.Color(0x333333), new THREE.Color(0xFF2A2A), Math.min(1, t_d));
+        } else {
+          // Candidate faster (gaining) → green
+          col.lerpColors(new THREE.Color(0x333333), new THREE.Color(0x22C55E), Math.min(1, -t_d));
+        }
+      } else if(state.mode === 'grade_elev') {
+        // GOLD-ALPHA SHADOW: elevation-derived grade field. Additive to
+        // data.road_attitude_field. Does not affect demand.
+        let gDeg = 0, gConf = 0;
+        const raf = DATA.road_attitude_field;
+        if (raf && raf.grade_elevation_mean_deg && raf.grade_elevation_mean_deg.length > 0) {
+          const sFrac = i / n;
+          const gIdx = Math.min(raf.grade_elevation_mean_deg.length - 1,
+                                Math.max(0, Math.floor(sFrac * raf.grade_elevation_mean_deg.length)));
+          gDeg = raf.grade_elevation_mean_deg[gIdx] || 0;
+          gConf = (raf.grade_elevation_confidence && raf.grade_elevation_confidence[gIdx]) || 0;
+        }
+        col = gradeColor(gDeg, 6);
+        // Mute same way as bank mode so low-confidence zones look uncertain
+        // rather than "flat".
+        const grey = new THREE.Color(0x404040);
+        let muteFactor;
+        if (gConf >= 0.6)       muteFactor = 0.0;
+        else if (gConf >= 0.2)  muteFactor = (0.6 - gConf) / 0.4 * 0.55;
+        else                    muteFactor = 0.55 + (0.2 - gConf) / 0.2 * 0.30;
+        col.lerp(grey, Math.max(0, Math.min(0.85, muteFactor)));
+      } else if(state.mode === 'bank_beta') {
+        // GOLD LAB — Beta Candidate: bank-corrected lateral demand at
+        // threshold 0.50. Opt-in / non-canonical. Never overwrites Bronze.
+        let beta = null;
+        const gl = DATA.gold_lab;
+        if (gl && gl.candidate_products && gl.candidate_products.lat_demand_bank_corrected_beta) {
+          beta = gl.candidate_products.lat_demand_bank_corrected_beta;
+        }
+        let corrDemand = 0, appliedHere = false;
+        if (beta && beta.excited_p90 && beta.excited_p90.length > 0) {
+          const sFrac = i / n;
+          const bIdx = Math.min(beta.excited_p90.length - 1,
+                                Math.max(0, Math.floor(sFrac * beta.excited_p90.length)));
+          corrDemand = beta.excited_p90[bIdx] || 0;
+          appliedHere = beta.applied_mask ? !!beta.applied_mask[bIdx] : false;
+        }
+        col = gripColor(corrDemand);
+        // Zone-aware tint: suspicious-but-applied bins get a purple-tinted
+        // warning so operators can see where to be cautious.
+        if (gl && gl.zones_on_bronze_grid) {
+          const zl = gl.zones_on_bronze_grid.length;
+          const zIdx = Math.min(zl - 1, Math.max(0, Math.floor(i / n * zl)));
+          const zc = gl.zones_on_bronze_grid[zIdx];
+          if (zc === 'high_conf_suspicious_applied') {
+            col.lerp(new THREE.Color(0x8B5CF6), 0.18);
+          }
+        }
+        if (!appliedHere) {
+          col.lerp(new THREE.Color(0x2a2a2a), 0.35);
+        }
+      } else if(state.mode === 'bank_corrected') {
+        // GOLD-ALPHA SHADOW: bank-field-corrected lateral demand overlay.
+        // Reads from the separate JSON block only. Does not read or
+        // modify bronze 'lateral_demand' or silver 'lateral_demand_2d'.
+        // Falls back to gripColor(0) if the shadow block is missing.
+        const sh = DATA.lateral_demand_shadow_bank_corrected;
+        let corrDemand = 0;
+        let bankConfHere = 0;
+        let appliedHere = false;
+        if (sh && sh.excited_p90 && sh.excited_p90.length > 0) {
+          const sFrac = i / n;
+          const shIdx = Math.min(sh.excited_p90.length - 1,
+                                 Math.max(0, Math.floor(sFrac * sh.excited_p90.length)));
+          corrDemand = sh.excited_p90[shIdx] || 0;
+          bankConfHere = sh.bank_confidence_at_bin ? (sh.bank_confidence_at_bin[shIdx] || 0) : 0;
+          appliedHere = sh.applied_mask ? !!sh.applied_mask[shIdx] : false;
+        }
+        col = gripColor(corrDemand);
+        // Explicit visual "shadow" signal: desaturate slightly where correction
+        // was NOT applied, so viewers can see raw pass-through zones at a glance.
+        if (!appliedHere) {
+          const grey = new THREE.Color(0x2a2a2a);
+          col.lerp(grey, 0.35);
+        }
       } else if(state.mode === 'bank') {
         // GOLD-ALPHA SHADOW: track-space bank field (multi-lap aggregated).
         // Diagnostic physics overlay. Does not affect bronze/silver demand.
@@ -704,6 +992,68 @@ function updateLegend(){
     clarEl.innerHTML = 'Track-space bank estimate (shadow mode, multi-lap aggregated).<br>'
       + 'Greyed regions = low confidence. '
       + '<span style="color:#c9a84c">Diagnostic physics overlay. Does not currently affect demand.</span>';
+  }else if(state.mode==='compare'){
+    bar.style.background='linear-gradient(to right,#22c55e,#333333,#FF2A2A)';
+    t.textContent='Lap Delta — Session Compare Studio';
+    lo.textContent='Gaining';
+    mi.textContent='Even';
+    hi.textContent='Losing';
+    const sc = DATA && DATA.session_compare;
+    const gs = sc && sc.global_summary;
+    clarEl.innerHTML = gs
+      ? `Lap time delta: <b>${gs.lap_time_delta_s > 0 ? '+' : ''}${gs.lap_time_delta_s.toFixed(2)}s</b> `
+        + `(${gs.n_corners_detected} corners). Green = candidate faster. Red = candidate slower.`
+      : 'No compare data available.';
+  }else if(state.mode==='grade_elev'){
+    // Diverging palette: teal (downhill) → chalk (flat) → orange (uphill)
+    bar.style.background='linear-gradient(to right,#14b8a6,#888888,#f97316)';
+    t.textContent='Grade Angle (deg) — shadow mode';
+    lo.textContent='-6°';
+    mi.textContent='0°';
+    hi.textContent='+6°';
+    const raf = DATA && DATA.road_attitude_field;
+    const diag = raf && raf.grade_elevation_diagnostics;
+    const sigma = diag && diag.propagated_sigma_grade_deg != null
+      ? diag.propagated_sigma_grade_deg.toFixed(2)
+      : '—';
+    const win = diag && diag.smoothing_window_m != null
+      ? diag.smoothing_window_m.toFixed(0)
+      : '—';
+    clarEl.innerHTML = 'Elevation-derived grade estimate. '
+      + '<span style="color:#c9a84c">Diagnostic overlay only. Does not affect demand.</span><br>'
+      + `Source: smoothed altitude profile. Smoothing window ≈ ${win} m. `
+      + `Propagated σ ≈ ${sigma}°. Greyed regions = low confidence.`;
+  }else if(state.mode==='bank_beta'){
+    bar.style.background='linear-gradient(to right,#1a1a2e,#3b82f6,#facc15,#22c55e,#aaffcc)';
+    t.textContent='Lat Demand + Bank — Beta Candidate (opt-in, not canonical)';
+    lo.textContent='Straight';
+    mi.textContent='0.5G';
+    hi.textContent='1.2G+';
+    const gl = DATA && DATA.gold_lab;
+    const beta = gl && gl.candidate_products && gl.candidate_products.lat_demand_bank_corrected_beta;
+    const appliedPct = beta && beta.applied_frac != null ? (beta.applied_frac*100).toFixed(0) + '%' : '—';
+    const thresh = beta ? beta.threshold : 0.50;
+    const scale = beta ? beta.correction_scale : 1.00;
+    const dec = gl && gl.promotion_gate ? gl.promotion_gate.decision_class : 'unknown';
+    clarEl.innerHTML = `<span style="color:#8B5CF6">BETA CANDIDATE — ${dec}</span>. `
+      + `Threshold ≥ ${thresh}, scale ${scale}. Applied to ${appliedPct} of s-bins. `
+      + `<span style="color:#c9a84c">Experimental alternative to Bronze. Not an upgrade claim. Bronze remains canonical and default.</span> `
+      + 'Purple-tinted bins = correction applied in suspicious geometry zones.';
+  }else if(state.mode==='bank_corrected'){
+    // Same gradient as bronze lateral demand — the VALUE is still demand in G.
+    // Only the source differs (corrected vs. raw). The clarification text is
+    // what flags the shadow-only nature of this channel.
+    bar.style.background='linear-gradient(to right,#1a1a2e,#3b82f6,#facc15,#22c55e,#aaffcc)';
+    t.textContent='Lateral Demand + Bank Correction (shadow)';
+    lo.textContent='Straight';
+    mi.textContent='0.5G';
+    hi.textContent='1.2G+';
+    const sh = DATA && DATA.lateral_demand_shadow_bank_corrected;
+    const threshTxt = sh && sh.confidence_threshold != null ? sh.confidence_threshold : 0.60;
+    const appliedPct = sh && sh.applied_frac != null ? (sh.applied_frac * 100).toFixed(0) + '%' : '—';
+    clarEl.innerHTML = 'Confidence-gated bank-field correction. '
+      + '<span style="color:#c9a84c">Diagnostic overlay only. Canonical Bronze demand remains unchanged.</span><br>'
+      + `Threshold ≥ ${threshTxt}; applied to ${appliedPct} of s-bins. Darker zones = correction skipped (raw pass-through).`;
   }else{
     bar.style.background='linear-gradient(to right,#ff2a2a,#22c55e)';
     t.textContent='Throttle (%)';lo.textContent='0%';mi.textContent='50%';hi.textContent='100%';
@@ -777,6 +1127,220 @@ viewport.addEventListener('mousemove', e => {
 
   raycaster.setFromCamera(mouse, camera);
   const hits = raycaster.intersectObject(trackMesh);
+
+  if (hits.length > 0 && state.mode === 'bank_beta') {
+    // Gold Lab Beta Candidate tooltip: raw vs corrected, bank, confidence,
+    // applied flag, zone classification, explanation string.
+    const pt = hits[0].point;
+    const T = DATA.track;
+    const cx_arr = T.centerline_x, cy_arr = T.centerline_y.map(v => -v);
+    let bestI = 0, bestD2 = Infinity;
+    for (let k = 0; k < cx_arr.length; k++) {
+      const dx = cx_arr[k] - pt.x, dz = cy_arr[k] - pt.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; bestI = k; }
+    }
+    const gl = DATA.gold_lab;
+    const beta = gl && gl.candidate_products && gl.candidate_products.lat_demand_bank_corrected_beta;
+    const bronze = DATA.lateral_demand;
+    if (beta && beta.excited_p90 && bronze) {
+      const sWorld = (bestI / cx_arr.length) * T.length_m;
+      const bLen = beta.excited_p90.length;
+      const bIdx = Math.min(bLen - 1, Math.max(0, Math.floor(bestI / cx_arr.length * bLen)));
+      const brLen = bronze.excited_p90.length;
+      const brIdx = Math.min(brLen - 1, Math.max(0, Math.floor(bestI / cx_arr.length * brLen)));
+      const rawD = bronze.excited_p90[brIdx] || 0;
+      const corrD = beta.excited_p90[bIdx] || 0;
+      const dlt = corrD - rawD;
+      const bankD = (beta.bank_deg_at_bin && beta.bank_deg_at_bin[bIdx]) || 0;
+      const bankC = (beta.bank_confidence_at_bin && beta.bank_confidence_at_bin[bIdx]) || 0;
+      const applied = beta.applied_mask ? !!beta.applied_mask[bIdx] : false;
+      const zone = (gl.zones_on_bronze_grid && gl.zones_on_bronze_grid[bIdx]) || 'neutral_unclassified';
+      const prettyZone = ({
+        'high_conf_plausible_applied': 'Applied (plausible)',
+        'high_conf_suspicious_applied': 'Applied (suspicious)',
+        'high_conf_neither_applied': 'Applied (neutral)',
+        'low_conf_raw_passthrough': 'Raw pass-through',
+        'low_conf_suspicious': 'Skipped (suspicious)',
+        'neutral_unclassified': 'Neutral',
+      })[zone] || zone;
+      let explanation;
+      if (applied) {
+        if (zone === 'high_conf_plausible_applied')
+          explanation = 'correction applied: confidence above threshold, plausible zone';
+        else if (zone === 'high_conf_suspicious_applied')
+          explanation = 'correction applied: confidence above threshold, SUSPICIOUS geometry';
+        else
+          explanation = 'correction applied: confidence above threshold';
+      } else {
+        if (zone === 'low_conf_suspicious')
+          explanation = 'correction skipped: suspicious zone';
+        else
+          explanation = `correction skipped: confidence ${(bankC).toFixed(2)} below threshold ${(beta.threshold || 0.50).toFixed(2)}`;
+      }
+      const confPct = (bankC * 100).toFixed(0);
+      const confColor = bankC > 0.6 ? '#22c55e' : bankC > 0.3 ? '#c9a84c' : '#666';
+      tooltipEl.style.display = 'block';
+      tooltipEl.style.left = (e.clientX - rect.left + 14) + 'px';
+      tooltipEl.style.top = (e.clientY - rect.top - 10) + 'px';
+      tooltipEl.textContent = '';
+      const rows = [
+        ['Dist',         sWorld.toFixed(0) + 'm'],
+        ['Raw (Bronze)', rawD.toFixed(3) + ' G'],
+        ['Corrected',    corrD.toFixed(3) + ' G'],
+        ['Delta',        (dlt >= 0 ? '+' : '') + dlt.toFixed(3) + ' G'],
+        ['Bank mean',    bankD.toFixed(2) + '°'],
+        ['Bank conf.',   confPct + '%'],
+        ['Applied',      applied ? 'yes' : 'no (raw passthrough)'],
+        ['Zone',         prettyZone],
+        ['Why',          explanation],
+      ];
+      rows.forEach(([label, val]) => {
+        const row = document.createElement('div');
+        const lbl = document.createElement('span');
+        lbl.className = 'tl';
+        lbl.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'tv' + (label === 'Applied' ? (applied ? ' online' : ' offline') : '');
+        v.textContent = val;
+        if (label === 'Why') {
+          v.style.fontSize = '8px';
+          v.style.color = '#949494';
+          v.style.maxWidth = '280px';
+          v.style.whiteSpace = 'normal';
+        }
+        row.appendChild(lbl); row.appendChild(v);
+        if (label === 'Bank conf.') {
+          const b = document.createElement('span');
+          b.className = 'tconf';
+          b.style.background = 'linear-gradient(to right,' + confColor + ' ' + confPct + '%,#333 ' + confPct + '%)';
+          row.appendChild(b);
+        }
+        tooltipEl.appendChild(row);
+      });
+    }
+    return;
+  }
+
+  if (hits.length > 0 && state.mode === 'grade_elev') {
+    // Shadow-only tooltip: elevation-derived grade.
+    const pt = hits[0].point;
+    const T = DATA.track;
+    const cx_arr = T.centerline_x, cy_arr = T.centerline_y.map(v => -v);
+    let bestI = 0, bestD2 = Infinity;
+    for (let k = 0; k < cx_arr.length; k++) {
+      const dx = cx_arr[k] - pt.x, dz = cy_arr[k] - pt.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; bestI = k; }
+    }
+    const raf = DATA.road_attitude_field;
+    if (raf && raf.grade_elevation_mean_deg && raf.grade_elevation_mean_deg.length > 0) {
+      const sWorld = (bestI / cx_arr.length) * T.length_m;
+      const len = raf.grade_elevation_mean_deg.length;
+      const gIdx = Math.min(len - 1, Math.max(0, Math.floor(bestI / cx_arr.length * len)));
+      const gDeg = raf.grade_elevation_mean_deg[gIdx] || 0;
+      const gStd = (raf.grade_elevation_std_deg && raf.grade_elevation_std_deg[gIdx]) || 0;
+      const gConf = (raf.grade_elevation_confidence && raf.grade_elevation_confidence[gIdx]) || 0;
+      const source = (raf.grade_elevation_diagnostics && raf.grade_elevation_diagnostics.source) || 'unknown';
+      const confPct = (gConf * 100).toFixed(0);
+      const confColor = gConf > 0.6 ? '#22c55e' : gConf > 0.3 ? '#c9a84c' : '#666';
+
+      tooltipEl.style.display = 'block';
+      tooltipEl.style.left = (e.clientX - rect.left + 14) + 'px';
+      tooltipEl.style.top = (e.clientY - rect.top - 10) + 'px';
+      tooltipEl.textContent = '';
+      const lines = [
+        ['Dist',        sWorld.toFixed(0) + 'm'],
+        ['Grade mean',  gDeg.toFixed(2) + '°'],
+        ['Grade std',   gStd.toFixed(2) + '°'],
+        ['Confidence',  confPct + '%'],
+        ['Source',      source],
+      ];
+      lines.forEach(([label, val]) => {
+        const row = document.createElement('div');
+        const lbl = document.createElement('span');
+        lbl.className = 'tl';
+        lbl.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'tv';
+        v.textContent = val;
+        row.appendChild(lbl);
+        row.appendChild(v);
+        if (label === 'Confidence') {
+          const bar = document.createElement('span');
+          bar.className = 'tconf';
+          bar.style.background = 'linear-gradient(to right,' + confColor + ' ' + confPct + '%,#333 ' + confPct + '%)';
+          row.appendChild(bar);
+        }
+        tooltipEl.appendChild(row);
+      });
+    }
+    return;
+  }
+
+  if (hits.length > 0 && state.mode === 'bank_corrected') {
+    // Shadow-only tooltip: show raw (bronze) vs corrected at this s, plus
+    // bank, confidence, and whether correction is applied at this bin.
+    const pt = hits[0].point;
+    const T = DATA.track;
+    const cx_arr = T.centerline_x, cy_arr = T.centerline_y.map(v => -v);
+    let bestI = 0, bestD2 = Infinity;
+    for (let k = 0; k < cx_arr.length; k++) {
+      const dx = cx_arr[k] - pt.x, dz = cy_arr[k] - pt.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 < bestD2) { bestD2 = d2; bestI = k; }
+    }
+    const sh = DATA.lateral_demand_shadow_bank_corrected;
+    const bronze = DATA.lateral_demand;
+    if (sh && sh.excited_p90 && sh.excited_p90.length > 0 && bronze) {
+      const sWorld = (bestI / cx_arr.length) * T.length_m;
+      const shLen = sh.excited_p90.length;
+      const shIdx = Math.min(shLen - 1, Math.max(0, Math.floor(bestI / cx_arr.length * shLen)));
+      const brIdx = Math.min(bronze.excited_p90.length - 1,
+                             Math.max(0, Math.floor(bestI / cx_arr.length * bronze.excited_p90.length)));
+      const rawD = bronze.excited_p90[brIdx] || 0;
+      const corrD = sh.excited_p90[shIdx] || 0;
+      const dlt = corrD - rawD;
+      const bankD = (sh.bank_deg_at_bin && sh.bank_deg_at_bin[shIdx]) || 0;
+      const bankC = (sh.bank_confidence_at_bin && sh.bank_confidence_at_bin[shIdx]) || 0;
+      const applied = sh.applied_mask ? !!sh.applied_mask[shIdx] : false;
+      const confPct = (bankC * 100).toFixed(0);
+      const confColor = bankC > 0.6 ? '#22c55e' : bankC > 0.3 ? '#c9a84c' : '#666';
+
+      tooltipEl.style.display = 'block';
+      tooltipEl.style.left = (e.clientX - rect.left + 14) + 'px';
+      tooltipEl.style.top = (e.clientY - rect.top - 10) + 'px';
+      tooltipEl.textContent = '';
+      const lines = [
+        ['Dist',         sWorld.toFixed(0) + 'm'],
+        ['Raw demand',   rawD.toFixed(3) + ' G'],
+        ['Corrected',    corrD.toFixed(3) + ' G'],
+        ['Delta',        (dlt >= 0 ? '+' : '') + dlt.toFixed(3) + ' G'],
+        ['Bank mean',    bankD.toFixed(2) + '°'],
+        ['Bank conf.',   confPct + '%'],
+        ['Applied',      applied ? 'yes' : 'no (raw passthrough)'],
+      ];
+      lines.forEach(([label, val]) => {
+        const row = document.createElement('div');
+        const lbl = document.createElement('span');
+        lbl.className = 'tl';
+        lbl.textContent = label;
+        const v = document.createElement('span');
+        v.className = 'tv' + (label === 'Applied' ? (applied ? ' online' : ' offline') : '');
+        v.textContent = val;
+        row.appendChild(lbl);
+        row.appendChild(v);
+        if (label === 'Bank conf.') {
+          const bar = document.createElement('span');
+          bar.className = 'tconf';
+          bar.style.background = 'linear-gradient(to right,' + confColor + ' ' + confPct + '%,#333 ' + confPct + '%)';
+          row.appendChild(bar);
+        }
+        tooltipEl.appendChild(row);
+      });
+    }
+    return;
+  }
 
   if (hits.length > 0 && state.mode === 'bank') {
     // Bank-Field tooltip: show s, bank mean/std/confidence, evidence, laps.
@@ -1037,6 +1601,10 @@ origModeHandler.forEach(btn => {
     else if (m === 'elevation') hint = 'Track elevation';
     else if (m === 'curvature') hint = 'Track curvature';
     else if (m === 'bank') hint = 'Track-space bank estimate (shadow, multi-lap)';
+    else if (m === 'bank_corrected') hint = 'Bank-corrected lateral demand (shadow — Bronze unchanged)';
+    else if (m === 'grade_elev') hint = 'Elevation-derived grade (shadow, diagnostic)';
+    else if (m === 'bank_beta') hint = 'Beta Candidate — opt-in bank correction (Bronze unchanged)';
+    else if (m === 'compare') hint = 'Session Compare Studio — lap-vs-lap coaching analysis';
 
     if (hint) {
       modeHintEl.textContent = hint;
@@ -1045,11 +1613,25 @@ origModeHandler.forEach(btn => {
       hintTimeout = setTimeout(() => modeHintEl.classList.remove('show'), 1800);
     }
 
-    // Hide/show cross-section panel (silver only). Tooltip is used by both
-    // silver and bank modes, so only hide it when switching to a mode that
-    // doesn't use it.
+    // Hide/show cross-section panel (silver only). Tooltip is used by silver,
+    // bank, bank_corrected, and grade_elev modes; only hide it when
+    // switching to modes that don't use it.
     if (m !== 'silver') xsPanel.style.display = 'none';
-    if (m !== 'silver' && m !== 'bank') tooltipEl.style.display = 'none';
+    if (m !== 'silver' && m !== 'bank' && m !== 'bank_corrected' && m !== 'grade_elev' && m !== 'bank_beta') {
+      tooltipEl.style.display = 'none';
+    }
+    // Gold Lab engineering HUD visibility (see goldLabHUDUpdate below)
+    if (typeof goldLabHUDUpdate === 'function') goldLabHUDUpdate(m);
+    // Show/hide Session Compare Studio panel
+    const cmpEl = document.getElementById('compareStudio');
+    if (cmpEl) {
+      if (m === 'compare') {
+        cmpEl.style.height = '280px';
+        if (typeof compareStudioInit === 'function') compareStudioInit();
+      } else {
+        cmpEl.style.height = '0';
+      }
+    }
   });
 });
 
@@ -1123,6 +1705,236 @@ buildScene = function() {
   racingLineObj = new THREE.Mesh(tubeGeo, mat);
   scene.add(racingLineObj);
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// SESSION COMPARE STUDIO — rendering engine
+// ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// DEVELOPMENT INTELLIGENCE — sidebar rendering
+// ═══════════════════════════════════════════════════════════════════
+
+function devIntelInit() {
+  const di = DATA && DATA.development_intelligence;
+  const sec = document.getElementById('devIntelSection');
+  if (!sec) return;
+  if (!di || !di.version) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+
+  // Direction
+  const dirEl = document.getElementById('devDirection');
+  const dirMap = {
+    'improving': { text: 'Improving', color: '#22c55e' },
+    'consolidating': { text: 'Consolidating', color: '#c9a84c' },
+    'flat': { text: 'Flat', color: '#949494' },
+    'regressing': { text: 'Regressing', color: '#FF2A2A' },
+    'insufficient_data': { text: 'Insufficient Data', color: '#666' },
+  };
+  const dir = dirMap[di.overall_direction] || dirMap['insufficient_data'];
+  dirEl.textContent = dir.text;
+  dirEl.style.color = dir.color;
+
+  // Meta
+  document.getElementById('devMeta').textContent =
+    `${di.sessions_analyzed} sessions, ${di.laps_analyzed} laps at ${di.track_name || 'unknown track'} | `
+    + `Confidence: ${(di.analysis_confidence * 100).toFixed(0)}%`;
+
+  // Priority focus card
+  const priEl = document.getElementById('devPriority');
+  priEl.textContent = '';
+  if (di.priority_focuses && di.priority_focuses.length > 0) {
+    const f = di.priority_focuses[0];
+    priEl.innerHTML =
+      `<div style="font-size:8px;color:#c9a84c;text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px">Next Training Priority</div>`
+      + `<div style="font-size:10px;font-weight:700;color:#f0ede5">${f.label}</div>`
+      + `<div style="font-size:9px;color:#949494;margin-top:2px;line-height:1.4">${f.why_it_matters}</div>`
+      + `<div style="font-size:8px;color:#949494;margin-top:2px">Shows at: ${f.where_it_shows} | `
+      + `Target: ${f.success_next_session}</div>`;
+  }
+
+  // Top weaknesses (up to 3)
+  const weakEl = document.getElementById('devWeaknesses');
+  weakEl.textContent = '';
+  (di.recurring_weaknesses || []).slice(0, 3).forEach(w => {
+    const trendColor = w.trend === 'improving' ? '#22c55e' : w.trend === 'regressing' ? '#FF2A2A' : '#949494';
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:3px 0;border-bottom:1px solid #1a1a1a;font-size:9px';
+    card.innerHTML =
+      `<div style="display:flex;justify-content:space-between">`
+      + `<span style="color:#f0ede5">${w.label}</span>`
+      + `<span style="color:${trendColor};font-weight:600">${w.trend}</span>`
+      + `</div>`
+      + `<div style="font-size:8px;color:#949494">`
+      + `${w.occurrence_count} occ across ${w.sessions_observed.length} session(s) | `
+      + `~${Math.abs(w.estimated_time_cost_ms).toFixed(0)} ms/occ | conf ${(w.confidence*100).toFixed(0)}%`
+      + `</div>`;
+    weakEl.appendChild(card);
+  });
+
+  // Storyline
+  const storyEl = document.getElementById('devStoryline');
+  storyEl.textContent = '';
+  (di.storyline || []).forEach(st => {
+    const typeColors = { direction: '#22c55e', consistency: '#c9a84c', progress: '#22c55e',
+                         plateau: '#FF2A2A', priority: '#c9a84c', warning: '#949494' };
+    const row = document.createElement('div');
+    row.style.cssText = 'font-size:8px;line-height:1.4;margin-bottom:2px;color:#949494';
+    row.innerHTML = `<span style="color:${typeColors[st.type] || '#949494'};font-weight:600">`
+      + `[${st.type}]</span> ${st.text}`;
+    storyEl.appendChild(row);
+  });
+}
+
+function compareStudioInit() {
+  const sc = DATA && DATA.session_compare;
+  if (!sc || !sc.traces || !sc.traces.s_grid || sc.traces.s_grid.length < 10) {
+    document.getElementById('cmpFixes').innerHTML =
+      '<div style="color:#666;font-size:9px">No compare data available.</div>';
+    return;
+  }
+  const tr = sc.traces;
+  const gs = sc.global_summary || {};
+
+  // Lap names
+  document.getElementById('cmpLapNames').textContent =
+    `${sc.reference_lap_id || 'Ref'} vs ${sc.candidate_lap_id || 'Cand'}`;
+
+  // ── Top 3 fixes ──
+  const fixesEl = document.getElementById('cmpFixes');
+  fixesEl.textContent = '';
+  (sc.top_fixes || []).forEach((fix, idx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#141414;border:1px solid #2a2a2a;border-radius:4px;padding:6px 8px;margin-bottom:4px;cursor:pointer';
+    card.innerHTML = `<div style="font-size:10px;font-weight:700;color:#c9a84c;margin-bottom:2px">Fix ${idx+1}: Turn ${fix.corner_id} (${fix.time_delta_ms > 0 ? '+' : ''}${fix.time_delta_ms.toFixed(0)} ms)</div>`
+      + `<div style="font-size:9px;color:#f0ede5;line-height:1.4">${fix.coach_text}</div>`
+      + `<div style="font-size:8px;color:#949494;margin-top:2px">Confidence: ${(fix.confidence * 100).toFixed(0)}% | ${fix.primary_cause.replace(/_/g,' ')}</div>`;
+    fixesEl.appendChild(card);
+  });
+  if (!(sc.top_fixes || []).length) {
+    fixesEl.innerHTML = '<div style="color:#666;font-size:9px">No significant fixes identified.</div>';
+  }
+
+  // ── Corner cards ──
+  const cornersEl = document.getElementById('cmpCorners');
+  cornersEl.textContent = '';
+  (sc.corner_packets || []).forEach(pkt => {
+    const card = document.createElement('div');
+    const color = pkt.time_delta_ms > 5 ? '#FF2A2A' : pkt.time_delta_ms < -5 ? '#22C55E' : '#949494';
+    card.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #1a1a1a;font-size:9px';
+    card.innerHTML = `<span style="color:#f0ede5">T${pkt.corner_id}</span>`
+      + `<span style="color:${color};font-weight:600">${pkt.time_delta_ms > 0 ? '+' : ''}${pkt.time_delta_ms.toFixed(0)} ms</span>`
+      + `<span style="color:#949494">${pkt.primary_cause.replace(/_/g,' ')}</span>`
+      + `<span style="color:#949494">${(pkt.confidence * 100).toFixed(0)}%</span>`;
+    cornersEl.appendChild(card);
+  });
+
+  // ── Attribution ──
+  const att = gs.time_lost_by_phase;
+  if (att) {
+    document.getElementById('cmpAttrib').innerHTML =
+      `braking <b>${att.braking_s >= 0 ? '+' : ''}${att.braking_s.toFixed(2)}s</b> | `
+      + `corner <b>${att.corner_s >= 0 ? '+' : ''}${att.corner_s.toFixed(2)}s</b> | `
+      + `exit <b>${att.exit_traction_s >= 0 ? '+' : ''}${att.exit_traction_s.toFixed(2)}s</b> | `
+      + `straight <b>${att.straight_carry_s >= 0 ? '+' : ''}${att.straight_carry_s.toFixed(2)}s</b>`;
+  }
+
+  // ── Speed trace chart ──
+  drawSpeedCompare(tr);
+
+  // ── Delta accumulation chart ──
+  drawDeltaChart(tr);
+}
+
+function drawSpeedCompare(tr) {
+  const canvas = document.getElementById('cmpSpeedCanvas');
+  if (!canvas) return;
+  const dpr = devicePixelRatio || 1;
+  const w = canvas.parentElement.clientWidth - 180, h = 260;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, w, h);
+
+  const sg = tr.s_grid, rs = tr.ref_speed_kph, cs = tr.cand_speed_kph;
+  const n = sg.length;
+  if (n < 5) return;
+  const pad = {top: 20, right: 10, bottom: 20, left: 40};
+  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+  const sMax = sg[n - 1], vMax = Math.max(...rs, ...cs) * 1.05;
+  const xp = s => pad.left + (s / sMax) * pw;
+  const yp = v => pad.top + ph - (v / vMax) * ph;
+
+  // Grid
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 0.5;
+  for (let v = 0; v <= vMax; v += 20) {
+    ctx.beginPath(); ctx.moveTo(pad.left, yp(v)); ctx.lineTo(pad.left + pw, yp(v)); ctx.stroke();
+  }
+  // Reference (gold)
+  ctx.strokeStyle = '#C9A84C'; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = 0; i < n; i++) { i ? ctx.lineTo(xp(sg[i]), yp(rs[i])) : ctx.moveTo(xp(sg[i]), yp(rs[i])); }
+  ctx.stroke();
+  // Candidate (steel)
+  ctx.strokeStyle = '#949494'; ctx.lineWidth = 1.2; ctx.beginPath();
+  for (let i = 0; i < n; i++) { i ? ctx.lineTo(xp(sg[i]), yp(cs[i])) : ctx.moveTo(xp(sg[i]), yp(cs[i])); }
+  ctx.stroke();
+  // Labels
+  ctx.font = '8px monospace'; ctx.fillStyle = '#949494'; ctx.textAlign = 'left';
+  ctx.fillText('Speed (km/h)', pad.left + 4, pad.top + 10);
+  ctx.fillStyle = '#C9A84C'; ctx.fillText('Reference', pad.left + 80, pad.top + 10);
+  ctx.fillStyle = '#949494'; ctx.fillText('Candidate', pad.left + 140, pad.top + 10);
+  ctx.fillStyle = '#666'; ctx.textAlign = 'right';
+  ctx.fillText(sMax.toFixed(0) + 'm', pad.left + pw, h - 4);
+  ctx.textAlign = 'left'; ctx.fillText('0m', pad.left, h - 4);
+  ctx.textAlign = 'right';
+  for (let v = 0; v <= vMax; v += 40) { ctx.fillText(v.toFixed(0), pad.left - 4, yp(v) + 3); }
+}
+
+function drawDeltaChart(tr) {
+  const canvas = document.getElementById('cmpDeltaCanvas');
+  if (!canvas) return;
+  const dpr = devicePixelRatio || 1;
+  const w = 180, h = 260;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#0a0a0a'; ctx.fillRect(0, 0, w, h);
+
+  const sg = tr.s_grid, dt = tr.delta_time_s;
+  const n = sg.length;
+  if (n < 5) return;
+  const pad = {top: 20, right: 10, bottom: 20, left: 35};
+  const pw = w - pad.left - pad.right, ph = h - pad.top - pad.bottom;
+  const sMax = sg[n - 1];
+  const dtMax = Math.max(0.1, Math.max(...dt.map(Math.abs))) * 1.1;
+  const yp = d => pad.top + ph / 2 - (d / dtMax) * (ph / 2);
+  const xp = s => pad.left + (s / sMax) * pw;
+
+  // Zero line
+  ctx.strokeStyle = '#333'; ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(pad.left, yp(0)); ctx.lineTo(pad.left + pw, yp(0)); ctx.stroke();
+  // Delta curve — color segments
+  for (let i = 1; i < n; i++) {
+    ctx.strokeStyle = dt[i] > 0 ? '#FF2A2A' : '#22C55E';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(xp(sg[i - 1]), yp(dt[i - 1])); ctx.lineTo(xp(sg[i]), yp(dt[i])); ctx.stroke();
+  }
+  // Fill under curve
+  ctx.globalAlpha = 0.15;
+  ctx.beginPath(); ctx.moveTo(xp(sg[0]), yp(0));
+  for (let i = 0; i < n; i++) ctx.lineTo(xp(sg[i]), yp(dt[i]));
+  ctx.lineTo(xp(sg[n - 1]), yp(0)); ctx.closePath();
+  ctx.fillStyle = dt[n - 1] > 0 ? '#FF2A2A' : '#22C55E'; ctx.fill();
+  ctx.globalAlpha = 1.0;
+  // Labels
+  ctx.font = '8px monospace'; ctx.fillStyle = '#949494'; ctx.textAlign = 'left';
+  ctx.fillText('Delta (s)', pad.left + 2, pad.top + 10);
+  ctx.textAlign = 'right'; ctx.fillStyle = '#666';
+  ctx.fillText('+' + dtMax.toFixed(1), pad.left - 3, pad.top + 4);
+  ctx.fillText('-' + dtMax.toFixed(1), pad.left - 3, pad.top + ph - 2);
+  ctx.fillText((dt[n - 1] > 0 ? '+' : '') + dt[n - 1].toFixed(2) + 's', pad.left + pw, pad.top + 10);
+}
 </script>
 </body>
 </html>

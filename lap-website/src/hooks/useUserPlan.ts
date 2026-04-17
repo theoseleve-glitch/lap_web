@@ -36,7 +36,13 @@ export function useUserPlan() {
     queryFn: fetchUsage,
     staleTime: 60_000,        // 60s — re-fetch at most once per minute
     gcTime: 5 * 60_000,       // keep in cache 5 min after last subscriber
-    retry: 1,
+    retry: (failureCount, error) => {
+      // Don't retry auth failures — the user isn't logged in.
+      if (error && typeof error === 'object' && 'status' in error && (error as any).status === 401) {
+        return false;
+      }
+      return failureCount < 1;
+    },
     refetchOnWindowFocus: false,
   });
 
