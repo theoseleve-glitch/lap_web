@@ -109,62 +109,19 @@ class CornerFeatures:
 # ─────────────────────────────────────────────────────────────────
 
 
-# Named weakness/strength categories with detection logic
-BEHAVIOR_DEFS = {
-    'late_throttle_pickup': {
-        'label': 'Late throttle pickup on exits',
-        'test': lambda cf: (cf.throttle_pickup_delta_m or 0) > 5.0,
-        'metric_key': 'throttle_pickup_delta_m',
-        'direction': 'positive_is_bad',
-        'trainable': 0.9,
-    },
-    'early_braking': {
-        'label': 'Early braking on entry',
-        'test': lambda cf: (cf.brake_point_delta_m or 0) < -5.0,
-        'metric_key': 'brake_point_delta_m',
-        'direction': 'negative_is_bad',
-        'trainable': 0.85,
-    },
-    'low_minimum_speed': {
-        'label': 'Low minimum speed through apex',
-        'test': lambda cf: cf.min_speed_delta_kph < -3.0,
-        'metric_key': 'min_speed_delta_kph',
-        'direction': 'negative_is_bad',
-        'trainable': 0.8,
-    },
-    'weak_exit_build': {
-        'label': 'Weak exit speed build',
-        'test': lambda cf: cf.exit_speed_delta_kph < -3.0,
-        'metric_key': 'exit_speed_delta_kph',
-        'direction': 'negative_is_bad',
-        'trainable': 0.85,
-    },
-    'line_deviation': {
-        'label': 'Inconsistent line / path deviation',
-        'test': lambda cf: cf.line_deviation_m > 0.8,
-        'metric_key': 'line_deviation_m',
-        'direction': 'positive_is_bad',
-        'trainable': 0.7,
-    },
-    'strong_braking': {
-        'label': 'Strong braking consistency',
-        'test': lambda cf: (
-            cf.brake_point_delta_m is not None
-            and abs(cf.brake_point_delta_m) < 3.0
-            and cf.time_delta_ms < 50.0
-        ),
-        'metric_key': 'brake_point_delta_m',
-        'direction': 'neutral_is_good',
-        'trainable': 0.0,  # it's a strength, not a weakness
-    },
-    'strong_exit': {
-        'label': 'Above-reference exit build',
-        'test': lambda cf: cf.exit_speed_delta_kph > 2.0,
-        'metric_key': 'exit_speed_delta_kph',
-        'direction': 'positive_is_good',
-        'trainable': 0.0,
-    },
-}
+# Named weakness/strength categories with detection logic.
+#
+# Since v2.0.0 of the coaching library (see docs/coaching_ontology_migration.md)
+# this dict is reconstructed from ``track_surface.coaching_library`` at import
+# time. The library is now the single source of truth for pattern meaning,
+# trainability, and detection logic. Consumer-specific legacy keys such as
+# 'low_minimum_speed' (alias of canonical 'apex_low_speed') are preserved via
+# the library's ``consumer_keys`` mapping.
+from track_surface.coaching_library import (
+    behavior_defs_dict as _library_behavior_defs_dict,
+)
+
+BEHAVIOR_DEFS = _library_behavior_defs_dict(consumer='driver_development')
 
 
 @dataclass

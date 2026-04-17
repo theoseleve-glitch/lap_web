@@ -30,84 +30,20 @@ import numpy as np
 
 PHASES = ('entry', 'brake_release', 'apex', 'exit', 'straight')
 
-INTERVENTION_CLASSES = {
-    'entry_speed_surrender': {
-        'label': 'Entry speed surrendered too early',
-        'phase': 'entry',
-        'trainability': 0.85,
-        'detect': lambda ev: (
-            (ev.get('brake_point_delta_m') or 0) < -5.0
-            and (ev.get('min_speed_delta_kph') or 0) < -3.0
-        ),
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.5 * (1.0 if ev.get('brake_point_delta_m') is not None else 0.3)
-            + 0.3 * pkt.get('confidence', 0.5)
-            + 0.2 * (1.0 if abs(ev.get('min_speed_delta_kph', 0)) > 5 else 0.5)
-        ),
-    },
-    'conservative_brake_release': {
-        'label': 'Brake release too conservative',
-        'phase': 'brake_release',
-        'trainability': 0.9,
-        'detect': lambda ev: (
-            abs(ev.get('brake_point_delta_m') or 0) < 5.0
-            and (ev.get('min_speed_delta_kph') or 0) < -5.0
-        ),
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.4 * pkt.get('confidence', 0.5)
-            + 0.3 * (1.0 if abs(ev.get('min_speed_delta_kph', 0)) > 8 else 0.5)
-            + 0.3 * (1.0 if abs(ev.get('brake_point_delta_m') or 99) < 3 else 0.4)
-        ),
-    },
-    'apex_speed_deficit': {
-        'label': 'Apex minimum speed too low',
-        'phase': 'apex',
-        'trainability': 0.75,
-        'detect': lambda ev: (
-            (ev.get('min_speed_delta_kph') or 0) < -5.0
-            and abs(ev.get('throttle_pickup_delta_m') or 0) < 5.0
-            and abs(ev.get('brake_point_delta_m') or 0) < 5.0
-        ),
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.5 * pkt.get('confidence', 0.5)
-            + 0.5 * (1.0 if abs(ev.get('min_speed_delta_kph', 0)) > 8 else 0.5)
-        ),
-    },
-    'late_throttle_application': {
-        'label': 'Throttle application too late',
-        'phase': 'exit',
-        'trainability': 0.9,
-        'detect': lambda ev: (ev.get('throttle_pickup_delta_m') or 0) > 5.0,
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.4 * (1.0 if ev.get('throttle_pickup_delta_m') is not None else 0.3)
-            + 0.3 * pkt.get('confidence', 0.5)
-            + 0.3 * (1.0 if (ev.get('throttle_pickup_delta_m') or 0) > 8 else 0.5)
-        ),
-    },
-    'weak_exit_build': {
-        'label': 'Weak exit speed build',
-        'phase': 'exit',
-        'trainability': 0.85,
-        'detect': lambda ev: (
-            (ev.get('exit_speed_delta_kph') or 0) < -5.0
-            and abs(ev.get('throttle_pickup_delta_m') or 0) < 5.0
-        ),
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.5 * pkt.get('confidence', 0.5)
-            + 0.5 * (1.0 if abs(ev.get('exit_speed_delta_kph', 0)) > 8 else 0.5)
-        ),
-    },
-    'path_variance': {
-        'label': 'Path variance too high',
-        'phase': 'apex',
-        'trainability': 0.7,
-        'detect': lambda ev: (ev.get('line_deviation_rms_m') or 0) > 1.5,
-        'confidence_fn': lambda ev, pkt: min(1.0,
-            0.5 * pkt.get('confidence', 0.5)
-            + 0.5 * min(1.0, (ev.get('line_deviation_rms_m', 0)) / 3.0)
-        ),
-    },
-}
+# INTERVENTION_CLASSES is reconstructed from the canonical coaching library
+# at import time. The library is the single authoritative source of pattern
+# meaning, trainability, detection logic, and confidence functions. Legacy
+# keys ('apex_speed_deficit', 'late_throttle_application', 'path_variance')
+# are preserved via the library's consumer_keys mapping so downstream code
+# — and existing tests — continue to see the same interface.
+#
+# See docs/coaching_ontology_migration.md for the migration rationale and
+# the four-way additive compatibility story.
+from track_surface.coaching_library import (
+    intervention_classes_dict as _library_intervention_classes_dict,
+)
+
+INTERVENTION_CLASSES = _library_intervention_classes_dict(consumer='coaching_intelligence')
 
 
 # ─────────────────────────────────────────────────────────────────

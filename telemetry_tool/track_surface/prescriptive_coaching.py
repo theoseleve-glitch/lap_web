@@ -50,105 +50,45 @@ import numpy as np
 # Weakness taxonomy — playbook definitions
 # ─────────────────────────────────────────────────────────────────
 
-WEAKNESS_PLAYBOOK = {
-    'low_minimum_speed': {
-        'title': 'Low minimum speed through apex',
-        'phase': 'apex',
-        'likely_causes': [
-            'Over-rotating the kart before apex (too much steering input)',
-            'Releasing brake too abruptly instead of trailing',
-            'Turn-in point too early, tightening the radius mid-corner',
-            'Insufficient confidence in the loaded phase of the corner',
-        ],
-        'coaching_actions': [
-            'Protect minimum speed: aim to carry {target_kph} more through the middle of the corner',
-            'Use a later, more patient turn-in — let the kart arc naturally rather than forcing rotation',
-            'Trail the brake deeper: maintain light pressure past the initial turn-in point',
-        ],
-        'driver_cues': [
-            'Feel: the kart should feel "loaded" through mid-corner, not "falling" off speed',
-            'Look: pick up the exit reference earlier to give yourself confidence to carry speed',
-            'Sound: engine note should not dip as sharply between braking and acceleration',
-        ],
-        'sensor_note': 'Minimum speed measured from GPS speed trace (speed-derived, no wheel speed sensor)',
-    },
-    'early_braking': {
-        'title': 'Early braking on entry',
-        'phase': 'entry',
-        'likely_causes': [
-            'Braking reference point is too far from the corner',
-            'Defensive habit from an earlier session or unfamiliar track',
-            'Approaching the corner off-line, requiring earlier braking to make the geometry',
-        ],
-        'coaching_actions': [
-            'Move the braking reference closer by {brake_adjust_m} m (one kart-length at a time)',
-            'Use a fixed visual marker for the brake point, not a feeling',
-            'Keep the same peak brake force — the change is WHERE, not HOW HARD',
-        ],
-        'driver_cues': [
-            'Feel: the kart should require you to brake, not just slow down voluntarily',
-            'Look: identify a crack, kerb edge, or cone that is {brake_adjust_m} m closer than your current point',
-        ],
-        'sensor_note': 'Brake point derived from speed-based deceleration onset (no brake pressure sensor)',
-    },
-    'late_throttle_pickup': {
-        'title': 'Late throttle pickup on exits',
-        'phase': 'exit',
-        'likely_causes': [
-            'Waiting for the kart to be fully straight before applying throttle',
-            'Uncertainty about exit grip after a tight apex',
-            'Habit of "completing the corner" mentally before transitioning to power',
-        ],
-        'coaching_actions': [
-            'Begin partial throttle (30-50%) as soon as you start unwinding steering',
-            'Target: move throttle application {throttle_adjust_m} m earlier',
-            'Do NOT go to full throttle earlier — start with initial application point only',
-        ],
-        'driver_cues': [
-            'Feel: throttle should overlap with the last bit of steering unwind',
-            'Look: start thinking "power" when you see the apex, not when you see the exit',
-        ],
-        'sensor_note': 'Throttle proxy from GPS speed derivative (no CAN throttle position sensor)',
-    },
-    'weak_exit_build': {
-        'title': 'Weak exit speed build',
-        'phase': 'exit',
-        'likely_causes': [
-            'Exit line too tight — not using full track width on exit',
-            'Maintaining too much steering angle while accelerating (scrubbing speed)',
-            'Insufficient throttle commitment through the exit phase',
-        ],
-        'coaching_actions': [
-            'Open the exit: begin straightening the wheel {exit_adjust_m} m earlier',
-            'Use FULL track width on exit — every meter of straighter line adds exit speed',
-            'If the kart pushes wide, reduce speed earlier rather than tightening exit',
-        ],
-        'driver_cues': [
-            'Look: eyes to the exit kerb/edge EARLIER than you think you should',
-            'Feel: the kart should be pulling you toward the outside of the track on exit',
-        ],
-        'sensor_note': 'Exit speed from GPS speed at 30m after corner exit point',
-    },
-    'line_deviation': {
-        'title': 'Inconsistent line / path deviation',
-        'phase': 'apex',
-        'likely_causes': [
-            'No fixed reference points for turn-in, apex, and exit',
-            'Reacting to the kart instead of placing it deliberately',
-            'Different entry speed on each lap causing different geometry',
-        ],
-        'coaching_actions': [
-            'Pick ONE line and repeat it exactly for 5+ consecutive laps',
-            'Use fixed visual markers: turn-in point, apex kerb contact, exit target',
-            'Speed is secondary until the line is repeatable',
-        ],
-        'driver_cues': [
-            'Feel: same steering input, same load, same timing each lap',
-            'Look: same visual references every lap — track features, not feelings',
-        ],
-        'sensor_note': 'Line deviation = RMS of lateral offset difference from reference (GPS-derived)',
-    },
-}
+# WEAKNESS_PLAYBOOK is reconstructed from the canonical coaching library at
+# import time. The library is the single authoritative source of the
+# playbook content, phase tags, and sensor notes. The legacy key
+# 'low_minimum_speed' is preserved via the library's consumer_keys mapping
+# so downstream code — and the parity tests in test_prescriptive_patterns.py
+# — continue to see the same dict shape.
+#
+# See docs/coaching_ontology_migration.md for full migration rationale.
+# Note: this module is already deprecated (its public entry point is the
+# track_surface.prescriptive package). The WEAKNESS_PLAYBOOK export is
+# retained only as a parity anchor for downstream tests.
+from track_surface.coaching_library import (
+    weakness_playbook_dict as _library_weakness_playbook_dict,
+)
+
+
+def _legacy_list_shape(d: dict) -> dict:
+    """Cast library dict values (which use list types already) into the
+    exact legacy shape expected by pre-existing consumers / tests.
+
+    Library already returns lists; kept here as an explicit seam for any
+    future shape divergence (e.g. if the library switched to tuples).
+    """
+    return {
+        k: {
+            'title': v['title'],
+            'phase': v['phase'],
+            'likely_causes': list(v['likely_causes']),
+            'coaching_actions': list(v['coaching_actions']),
+            'driver_cues': list(v['driver_cues']),
+            'sensor_note': v['sensor_note'],
+        }
+        for k, v in d.items()
+    }
+
+
+WEAKNESS_PLAYBOOK = _legacy_list_shape(
+    _library_weakness_playbook_dict(consumer='prescriptive_coaching')
+)
 
 
 # ─────────────────────────────────────────────────────────────────
