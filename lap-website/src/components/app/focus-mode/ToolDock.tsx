@@ -12,14 +12,29 @@ export type ToolId =
   | 'brake-analysis'
   | 'corner-analysis'
   | 'stint-chart'
-  | 'fingerprint';
+  | 'fingerprint'
+  // Race overlays (strategy/live)
+  | 'pit-countdown'
+  | 'strategy-divergence'
+  | 'sector-delta';
+
+/**
+ * Overlay categories.
+ *
+ * Controls which tools appear in the default catalog:
+ *   - core_race:    always visible, essential for analysis + race
+ *   - coaching:     visible for coaching/analysis workflows
+ *   - optional:     hidden behind "More" or a streamer-pack flag
+ */
+export type OverlayCategory = 'core_race' | 'coaching' | 'optional';
 
 interface Tool {
   id: ToolId;
   label: string;
   shortcut: number;
   icon: ReactNode;
-  group: 'primary' | 'secondary' | 'meta';
+  group: 'primary' | 'secondary' | 'meta' | 'race';
+  category: OverlayCategory;
 }
 
 const TOOLS: Tool[] = [
@@ -29,6 +44,7 @@ const TOOLS: Tool[] = [
     label: 'Speed Trace',
     shortcut: 1,
     group: 'primary',
+    category: 'core_race',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <polyline points="2,14 5,8 8,11 11,4 14,9 16,6" strokeLinejoin="round" strokeLinecap="round" />
@@ -40,6 +56,7 @@ const TOOLS: Tool[] = [
     label: 'Track Map',
     shortcut: 2,
     group: 'primary',
+    category: 'core_race',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M3,14 C3,6 8,3 9,3 C10,3 15,6 15,14" strokeLinejoin="round" strokeLinecap="round" />
@@ -52,6 +69,7 @@ const TOOLS: Tool[] = [
     label: 'G-G Diagram',
     shortcut: 3,
     group: 'primary',
+    category: 'core_race',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <circle cx="9" cy="9" r="6" />
@@ -68,6 +86,7 @@ const TOOLS: Tool[] = [
     label: 'Lap Overlay',
     shortcut: 4,
     group: 'secondary',
+    category: 'coaching',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <polyline points="2,12 6,6 10,10 14,4 16,6" strokeLinejoin="round" strokeLinecap="round" />
@@ -80,6 +99,7 @@ const TOOLS: Tool[] = [
     label: 'Lap Progress',
     shortcut: 5,
     group: 'secondary',
+    category: 'coaching',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="3" y="10" width="3" height="6" rx="0.5" fill="currentColor" opacity="0.3" />
@@ -93,6 +113,7 @@ const TOOLS: Tool[] = [
     label: 'Distribution',
     shortcut: 6,
     group: 'secondary',
+    category: 'coaching',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M2,15 Q5,15 7,10 Q9,3 11,10 Q13,15 16,15" />
@@ -104,6 +125,7 @@ const TOOLS: Tool[] = [
     label: 'Brake Analysis',
     shortcut: 7,
     group: 'secondary',
+    category: 'coaching',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="4" y="3" width="10" height="12" rx="2" />
@@ -119,6 +141,7 @@ const TOOLS: Tool[] = [
     label: 'Corner Mastery',
     shortcut: 8,
     group: 'meta',
+    category: 'optional',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <path d="M3,15 L3,9 Q3,3 9,3 L15,3" strokeLinejoin="round" strokeLinecap="round" />
@@ -131,6 +154,7 @@ const TOOLS: Tool[] = [
     label: 'Stint Analysis',
     shortcut: 9,
     group: 'meta',
+    category: 'optional',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <rect x="2" y="4" width="4" height="10" rx="1" />
@@ -144,9 +168,54 @@ const TOOLS: Tool[] = [
     label: 'Fingerprint',
     shortcut: 0,
     group: 'meta',
+    category: 'optional',
     icon: (
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
         <polygon points="9,2 12,6 16,7 13,11 14,16 9,13 4,16 5,11 2,7 6,6" />
+      </svg>
+    ),
+  },
+
+  /* ── Race: live strategy + race-day overlays ── */
+  {
+    id: 'pit-countdown' as ToolId,
+    label: 'Pit Countdown',
+    shortcut: -1,  // no keyboard shortcut (use -1 for "none")
+    group: 'race' as const,
+    category: 'core_race' as OverlayCategory,
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="8" width="12" height="7" rx="1.5" />
+        <path d="M6 8V5a3 3 0 0 1 6 0v3" />
+        <line x1="9" y1="11" x2="9" y2="13" />
+      </svg>
+    ),
+  },
+  {
+    id: 'strategy-divergence' as ToolId,
+    label: 'Strategy Delta',
+    shortcut: -1,
+    group: 'race' as const,
+    category: 'core_race' as OverlayCategory,
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M2,14 L9,4 L16,14" strokeLinejoin="round" />
+        <line x1="9" y1="9" x2="9" y2="12" />
+        <circle cx="9" cy="13.5" r="0.5" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    id: 'sector-delta' as ToolId,
+    label: 'Sector Delta',
+    shortcut: -1,
+    group: 'race' as const,
+    category: 'coaching' as OverlayCategory,
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="2" y="3" width="4.5" height="12" rx="1" />
+        <rect x="6.75" y="3" width="4.5" height="12" rx="1" />
+        <rect x="11.5" y="3" width="4.5" height="12" rx="1" />
       </svg>
     ),
   },
@@ -180,7 +249,7 @@ function GroupDivider() {
 export function ToolDock({ activeTools, onToggle, onReset, dockVisible, style }: ToolDockProps) {
   if (!dockVisible) return null;
 
-  const groups = ['primary', 'secondary', 'meta'] as const;
+  const groups = ['primary', 'secondary', 'meta', 'race'] as const;
   const groupedTools = groups.map((g) => TOOLS.filter((t) => t.group === g));
 
   return (
@@ -212,9 +281,11 @@ export function ToolDock({ activeTools, onToggle, onReset, dockVisible, style }:
               >
                 {tool.icon}
                 {/* Shortcut: visible on hover only, positioned bottom-right */}
-                <span className="absolute bottom-0.5 right-1 text-[7px] font-telemetry text-steel/40 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {tool.shortcut}
-                </span>
+                {tool.shortcut >= 0 && (
+                  <span className="absolute bottom-0.5 right-1 text-[7px] font-telemetry text-steel/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                    {tool.shortcut}
+                  </span>
+                )}
               </button>
             );
           })}
