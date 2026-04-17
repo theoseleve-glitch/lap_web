@@ -100,6 +100,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
+    <QueryProvider>
     <div className="flex min-h-screen">
       <a
         href="#main-content"
@@ -210,7 +211,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* ═══ MAIN CONTENT ══════════════════════════════════════ */}
-      <QueryProvider>
         <AuthGuard>
           <main id="main-content" className="flex-1 flex flex-col overflow-y-auto bg-asphalt">
             <OfflineBanner />
@@ -253,8 +253,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         <CommandPalette />
         <UndoToastContainer />
         <GlobalGamificationOverlays />
-      </QueryProvider>
     </div>
+    </QueryProvider>
   );
 }
 
