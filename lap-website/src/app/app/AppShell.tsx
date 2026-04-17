@@ -25,6 +25,10 @@ import { UndoToastContainer } from '@/components/ui/UndoToast';
 import { UnitToggle } from '@/components/app/UnitToggle';
 import { LapMonogram } from '@/components/shared/LapMonogram';
 import { logout } from '@/lib/auth';
+import { useGamificationStore } from '@/stores/gamification-store';
+import { AchievementUnlockOverlay } from '@/components/app/gamification';
+import AchievementToast from '@/components/app/gamification/AchievementToast';
+import LevelUpModal from '@/components/app/gamification/LevelUpModal';
 
 const SIDEBAR_KEY = 'lap-sidebar-collapsed';
 
@@ -244,7 +248,48 @@ export function AppShell({ children }: { children: ReactNode }) {
         <KeyboardShortcuts />
         <CommandPalette />
         <UndoToastContainer />
+        <GlobalGamificationOverlays />
       </QueryProvider>
     </div>
+  );
+}
+
+/* ── Global gamification overlays (rendered once, triggered from anywhere) ── */
+
+function GlobalGamificationOverlays() {
+  const {
+    achievementToast,
+    dismissAchievementToast,
+    achievementOverlay,
+    dismissAchievementOverlay,
+    levelUp,
+    dismissLevelUp,
+  } = useGamificationStore();
+
+  return (
+    <>
+      {/* Achievement toast — slides in from top-right, auto-dismisses after 5s */}
+      <AchievementToast
+        achievement={achievementToast}
+        onDismiss={dismissAchievementToast}
+      />
+
+      {/* Achievement unlock overlay — fullscreen celebration */}
+      <AchievementUnlockOverlay
+        achievement={achievementOverlay}
+        onDismiss={dismissAchievementOverlay}
+      />
+
+      {/* Level-up modal — XP arc animation */}
+      {levelUp && (
+        <LevelUpModal
+          oldLevel={levelUp.oldLevel}
+          newLevel={levelUp.newLevel}
+          totalXp={levelUp.totalXp}
+          sessionXp={levelUp.sessionXp}
+          onClose={dismissLevelUp}
+        />
+      )}
+    </>
   );
 }

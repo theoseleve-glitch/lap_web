@@ -10,6 +10,9 @@ import { DriverAchievements } from '@/components/app/DriverAchievements';
 import { ActivationChecklist } from '@/components/app/ActivationChecklist';
 import { NpsSurvey } from '@/components/app/NpsSurvey';
 import { QuotaIndicator } from '@/components/app/plan';
+import XPProgressBar from '@/components/app/gamification/XPProgressBar';
+import { StreakTracker } from '@/components/app/gamification';
+import { ChallengeCard } from '@/components/app/gamification';
 
 /** Inline Sparkline — lightweight SVG replacement for deleted chart component */
 function Sparkline({ data, color = '#B6FF2E', height = 56 }: { data: number[]; color?: string; height?: number }) {
@@ -324,6 +327,47 @@ export default function DashboardPage() {
           trend={stats.avg_score != null && stats.avg_score >= 75 ? 'up' : stats.avg_score != null && stats.avg_score >= 50 ? 'neutral' : 'neutral'}
         />
       </div>
+
+      {/* ── Driver Progress & Challenges ─────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        {/* XP + Level progress */}
+        <div className="lg:col-span-2">
+          <XPProgressBar
+            totalXp={stats.total_xp ?? 0}
+            level={stats.level ?? 1}
+            xpForCurrentLevel={stats.xp_for_current_level ?? 0}
+            xpForNextLevel={stats.xp_for_next_level ?? 100}
+          />
+        </div>
+        {/* Streak */}
+        {stats.current_streak != null && (
+          <StreakTracker
+            currentStreak={stats.current_streak ?? 0}
+            longestStreak={stats.longest_streak ?? 0}
+            daysActive={stats.days_active ?? [false, false, false, false, false, false, false]}
+          />
+        )}
+      </div>
+
+      {/* Active challenges (if any) */}
+      {stats.challenges && stats.challenges.length > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+          {stats.challenges.slice(0, 3).map((ch: any) => (
+            <ChallengeCard
+              key={ch.id}
+              title={ch.title}
+              description={ch.description}
+              progress={ch.progress}
+              maxProgress={ch.max_progress}
+              reward={ch.reward_xp}
+              timeLeft={ch.time_left}
+              difficulty={ch.difficulty}
+              completed={ch.completed}
+              onAction={() => {}}
+            />
+          ))}
+        </div>
+      )}
 
       {/* Last session quick-access */}
       {stats.recent_sessions.length > 0 && (() => {
