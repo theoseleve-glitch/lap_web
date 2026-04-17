@@ -213,6 +213,36 @@ function ToolRenderer({
           <FingerprintChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} controlledLap className="w-full h-full" />
         </ChartErrorBoundary>
       );
+    case 'pit-countdown':
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+          <div className="text-3xl font-monument text-gold mb-2">PIT</div>
+          <p className="text-xs font-telemetry text-steel/60 uppercase tracking-wider">Countdown available in race mode</p>
+          <p className="text-[10px] font-body text-steel/40 mt-2 max-w-xs">
+            Start a race strategy session to see live pit window timing, fuel state, and pit-now recommendations.
+          </p>
+        </div>
+      );
+    case 'strategy-divergence':
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+          <div className="text-2xl font-monument text-marshal-yellow mb-2">PLAN vs ACTUAL</div>
+          <p className="text-xs font-telemetry text-steel/60 uppercase tracking-wider">Strategy delta available in race mode</p>
+          <p className="text-[10px] font-body text-steel/40 mt-2 max-w-xs">
+            During a race, shows where actual fuel burn, stint length, and pace diverge from the pre-race plan.
+          </p>
+        </div>
+      );
+    case 'sector-delta':
+      return (
+        <div className="flex flex-col items-center justify-center h-full text-center px-4">
+          <div className="text-2xl font-monument text-chalk mb-2">S1 · S2 · S3</div>
+          <p className="text-xs font-telemetry text-steel/60 uppercase tracking-wider">Sector delta overlay</p>
+          <p className="text-[10px] font-body text-steel/40 mt-2 max-w-xs">
+            Per-sector time delta vs reference lap. Available when sector boundaries are detected.
+          </p>
+        </div>
+      );
     default:
       return (
         <div className="flex items-center justify-center h-full text-steel/50 font-body text-sm">
