@@ -969,15 +969,16 @@ function UploadPage() {
                 }
               }}
               className={`
-                relative flex flex-col items-center justify-center p-8 rounded-lg border-2 border-dashed cursor-pointer transition-all duration-200
+                relative flex flex-col items-center justify-center p-8 rounded-xl border-2 border-dashed cursor-pointer transition-all duration-200
                 ${isDragOver
-                  ? 'border-acid-green bg-acid-green/5 scale-[1.01]'
+                  ? 'border-acid-green/60 scale-[1.005]'
                   : file
-                    ? 'border-acid-green/40 bg-acid-green/5'
-                    : 'border-steel/30 bg-concrete hover:border-steel/50 hover:bg-asphalt/50'
+                    ? 'border-acid-green/30'
+                    : 'border-steel/15 hover:border-steel/25'
                 }
                 ${isFormDisabled ? 'opacity-60 cursor-not-allowed' : ''}
               `}
+              style={{ background: isDragOver ? 'rgba(34,197,94,0.04)' : 'linear-gradient(180deg, #080808 0%, #040404 100%)' }}
             >
               <input
                 ref={fileInputRef}
@@ -1069,21 +1070,21 @@ function UploadPage() {
             </datalist>
             {sessionType !== 'endurance' && (
             <div>
-              <label htmlFor="driver-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="driver-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Driver Name <span className="text-safety-red">*</span>
               </label>
               <input id="driver-name" type="text" list="dl-drivers" value={driverName} onChange={(e) => setDriverName(e.target.value)}
                 disabled={isFormDisabled} required placeholder="e.g. Alex Rossi"
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             )}
             <div>
-              <label htmlFor="session-type" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">Session Type</label>
+              <label htmlFor="session-type" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">Session Type</label>
               <select id="session-type" value={sessionType} onChange={(e) => setSessionType(e.target.value)} disabled={isFormDisabled}
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 disabled:opacity-50 disabled:cursor-not-allowed">
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  focus:outline-none focus:border-gold/40 disabled:opacity-50 disabled:cursor-not-allowed">
                 {SESSION_TYPES.map((t) => (<option key={t.value} value={t.value}>{t.label}</option>))}
               </select>
             </div>
@@ -1170,65 +1171,65 @@ function UploadPage() {
               </div>
             )}
             <div>
-              <label htmlFor="track-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="track-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Track <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from GPS)</span>
               </label>
               <input id="track-name" type="text" list="dl-tracks" value={trackName} onChange={(e) => setTrackName(e.target.value)}
                 disabled={isFormDisabled} placeholder="Type or select track"
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
                   disabled:opacity-50 disabled:cursor-not-allowed" />
               <datalist id="dl-tracks">
                 {trackNames.map((t) => (<option key={t} value={t} />))}
               </datalist>
             </div>
             <div>
-              <label htmlFor="track-state" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">Track Condition</label>
+              <label htmlFor="track-state" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">Track Condition</label>
               <select id="track-state" value={trackState} onChange={(e) => setTrackState(e.target.value)} disabled={isFormDisabled}
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 disabled:opacity-50 disabled:cursor-not-allowed">
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  focus:outline-none focus:border-gold/40 disabled:opacity-50 disabled:cursor-not-allowed">
                 {TRACK_STATES.map((s) => (<option key={s.value} value={s.value}>{s.label}</option>))}
               </select>
             </div>
             <div>
-              <label htmlFor="kart-name" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="kart-name" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Kart <span className="text-steel/60 text-xs normal-case">(optional — type to create new)</span>
               </label>
               <input id="kart-name" type="text" list="dl-karts" value={kartName} onChange={(e) => setKartName(e.target.value)}
                 disabled={isFormDisabled} placeholder="Type or select kart"
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
                   disabled:opacity-50 disabled:cursor-not-allowed" />
               <datalist id="dl-karts">
                 {kartNames.map((k) => (<option key={k} value={k} />))}
               </datalist>
             </div>
             <div>
-              <label htmlFor="session-date" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="session-date" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Session Date <span className="text-steel/60 text-xs normal-case">(optional — auto-detected from CSV)</span>
               </label>
               <input id="session-date" type="date" value={sessionDate} onChange={(e) => setSessionDate(e.target.value)} disabled={isFormDisabled}
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50 disabled:opacity-50 disabled:cursor-not-allowed" />
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  focus:outline-none focus:border-gold/40 disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div>
-              <label htmlFor="lap-range" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="lap-range" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Lap Range <span className="text-steel/60 text-xs normal-case">(optional)</span>
               </label>
               <input id="lap-range" type="text" value={lapRange} onChange={(e) => setLapRange(e.target.value)} disabled={isFormDisabled}
                 placeholder="e.g. 3-15"
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
             <div className="sm:col-span-2">
-              <label htmlFor="exclude-laps" className="block text-sm font-telemetry text-steel mb-1.5 uppercase tracking-wider">
+              <label htmlFor="exclude-laps" className="block text-[11px] font-telemetry text-steel/80 mb-1.5 uppercase tracking-[0.12em]">
                 Exclude Laps <span className="text-steel/60 text-xs normal-case">(optional)</span>
               </label>
               <input id="exclude-laps" type="text" value={excludeLaps} onChange={(e) => setExcludeLaps(e.target.value)} disabled={isFormDisabled}
                 placeholder="e.g. 1,2,16"
-                className="w-full bg-concrete border border-steel/30 rounded px-3 py-2.5 text-chalk font-body text-sm
-                  placeholder:text-steel/60 focus:outline-none focus:border-pit-orange focus:ring-1 focus:ring-pit-orange/50
+                className="w-full border border-steel/12 rounded-lg px-3 py-2 text-chalk font-body text-sm
+                  placeholder:text-steel/50 focus:outline-none focus:border-gold/40
                   disabled:opacity-50 disabled:cursor-not-allowed" />
             </div>
 
