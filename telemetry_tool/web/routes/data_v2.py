@@ -206,6 +206,43 @@ def dashboard_stats() -> tuple[dict, int]:
         "recent_sessions": recent_sessions,
     }
 
+    # ── Gamification fields (XP, level, streak) ─────────────
+    try:
+        from gamification.xp import get_driver_progress
+        from gamification.queries import get_achievements
+        user_id = getattr(g, "current_user_id", None)
+        # Use driver_id = 1 as default (single-user model: one driver per user)
+        driver_id = 1
+        progress = get_driver_progress(conn, driver_id, ws_id)
+        result.update(progress)
+        # Days active (last 7 days) for streak tracker
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT DATE(session_date) AS d FROM sessions "
+                "WHERE session_date >= DATE('now', '-7 days') AND deleted_at IS NULL "
+                "ORDER BY d"
+            ).fetchall()
+            active_dates = {(r["d"] if isinstance(r, dict) else r[0]) for r in rows}
+            import datetime
+            today = datetime.date.today()
+            days_active = []
+            # Monday=0 to Sunday=6
+            monday = today - datetime.timedelta(days=today.weekday())
+            for i in range(7):
+                d = monday + datetime.timedelta(days=i)
+                days_active.append(d.isoformat() in active_dates)
+            result["days_active"] = days_active
+        except Exception:
+            result["days_active"] = [False] * 7
+        # Achievement count
+        try:
+            achievements = get_achievements(conn, driver_id, ws_id)
+            result["achievement_count"] = len(achievements)
+        except Exception:
+            result["achievement_count"] = 0
+    except Exception as exc:
+        logger.debug("Gamification data not available: %s", exc)
+
     # Cache for 60s, tagged by workspace for targeted invalidation
     try:
         from web.cache import api_cache

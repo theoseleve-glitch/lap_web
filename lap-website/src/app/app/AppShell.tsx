@@ -26,6 +26,7 @@ import { UnitToggle } from '@/components/app/UnitToggle';
 import { LapMonogram } from '@/components/shared/LapMonogram';
 import { logout } from '@/lib/auth';
 import { useGamificationStore } from '@/stores/gamification-store';
+import { useDriverProgress } from '@/hooks/useDriverProgress';
 import { AchievementUnlockOverlay } from '@/components/app/gamification';
 import AchievementToast from '@/components/app/gamification/AchievementToast';
 import LevelUpModal from '@/components/app/gamification/LevelUpModal';
@@ -260,21 +261,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 /* ── Sidebar XP mini-indicator ──────────────────────────────────────────── */
 
 function SidebarXPIndicator({ collapsed }: { collapsed: boolean }) {
-  // Read from the same useUserPlan hook the dashboard uses (cached 60s)
-  const { plan } = (() => {
-    try {
-      // eslint-disable-next-line react-hooks/rules-of-hooks
-      return require('@/hooks/useUserPlan').useUserPlan();
-    } catch {
-      return { plan: null };
-    }
-  })();
+  const { level, totalXp, xpForCurrentLevel, xpForNextLevel } = useDriverProgress();
 
-  // Fallback if no plan data yet
-  const level = (plan as any)?.level ?? 1;
-  const totalXp = (plan as any)?.total_xp ?? 0;
-  const xpCurrent = (plan as any)?.xp_for_current_level ?? 0;
-  const xpNext = (plan as any)?.xp_for_next_level ?? 100;
+  const xpCurrent = xpForCurrentLevel;
+  const xpNext = xpForNextLevel;
   const range = Math.max(1, xpNext - xpCurrent);
   const pct = Math.min(100, Math.max(0, ((totalXp - xpCurrent) / range) * 100));
 
