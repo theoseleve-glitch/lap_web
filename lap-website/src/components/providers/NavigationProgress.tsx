@@ -15,14 +15,29 @@ export function NavigationProgress() {
   const [phase, setPhase] = useState<'idle' | 'exit' | 'enter'>('idle');
   const prevPathRef = useRef(pathname);
 
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Only show the progress bar if navigation takes >300ms. Instant
+  // client-side transitions (the majority) complete silently. The bar
+  // only appears for genuinely slow loads — which is when it's useful.
   const start = useCallback(() => {
-    setLoading(true);
-    setProgress(20);
     setPhase('exit');
+    startTimerRef.current = setTimeout(() => {
+      setLoading(true);
+      setProgress(20);
+    }, 300);
   }, []);
 
   const finish = useCallback(() => {
-    setProgress(100);
+    // Cancel the delayed start — navigation completed before the bar appeared.
+    if (startTimerRef.current) {
+      clearTimeout(startTimerRef.current);
+      startTimerRef.current = null;
+    }
+    if (loading) {
+      // Bar was visible — animate to 100% then fade out.
+      setProgress(100);
+    }
     setPhase('enter');
     const timer = setTimeout(() => {
       setLoading(false);
@@ -30,7 +45,7 @@ export function NavigationProgress() {
       setPhase('idle');
     }, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [loading]);
 
   // Intercept link clicks to detect navigation start
   useEffect(() => {
