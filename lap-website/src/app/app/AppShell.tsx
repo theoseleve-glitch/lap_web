@@ -170,6 +170,9 @@ export function AppShell({ children }: { children: ReactNode }) {
           ))}
         </nav>
 
+        {/* XP mini-indicator */}
+        <SidebarXPIndicator collapsed={collapsed} />
+
         {/* Footer nav */}
         <div className="py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
           <Link
@@ -250,6 +253,66 @@ export function AppShell({ children }: { children: ReactNode }) {
         <UndoToastContainer />
         <GlobalGamificationOverlays />
       </QueryProvider>
+    </div>
+  );
+}
+
+/* ── Sidebar XP mini-indicator ──────────────────────────────────────────── */
+
+function SidebarXPIndicator({ collapsed }: { collapsed: boolean }) {
+  // Read from the same useUserPlan hook the dashboard uses (cached 60s)
+  const { plan } = (() => {
+    try {
+      // eslint-disable-next-line react-hooks/rules-of-hooks
+      return require('@/hooks/useUserPlan').useUserPlan();
+    } catch {
+      return { plan: null };
+    }
+  })();
+
+  // Fallback if no plan data yet
+  const level = (plan as any)?.level ?? 1;
+  const totalXp = (plan as any)?.total_xp ?? 0;
+  const xpCurrent = (plan as any)?.xp_for_current_level ?? 0;
+  const xpNext = (plan as any)?.xp_for_next_level ?? 100;
+  const range = Math.max(1, xpNext - xpCurrent);
+  const pct = Math.min(100, Math.max(0, ((totalXp - xpCurrent) / range) * 100));
+
+  // SVG ring parameters
+  const R = 14;
+  const C = Math.PI * 2 * R;
+  const offset = C - (pct / 100) * C;
+
+  return (
+    <div className="px-3 py-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+      <div className={`flex items-center ${collapsed ? 'justify-center' : 'gap-3'}`}>
+        {/* XP ring */}
+        <div className="relative w-9 h-9 shrink-0">
+          <svg width="36" height="36" viewBox="0 0 36 36" className="transform -rotate-90">
+            <circle cx="18" cy="18" r={R} fill="none" stroke="rgba(148,148,148,0.1)" strokeWidth="2.5" />
+            <circle
+              cx="18" cy="18" r={R} fill="none"
+              stroke="#C9A84C" strokeWidth="2.5"
+              strokeDasharray={C} strokeDashoffset={offset}
+              strokeLinecap="round"
+              className="transition-all duration-500"
+            />
+          </svg>
+          <span className="absolute inset-0 flex items-center justify-center text-[9px] font-monument text-gold">
+            {level}
+          </span>
+        </div>
+        {!collapsed && (
+          <div className="min-w-0">
+            <div className="text-[10px] font-telemetry text-steel/60 uppercase tracking-[0.15em]">
+              Level {level}
+            </div>
+            <div className="text-[9px] font-telemetry text-steel/40">
+              {totalXp} XP
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
