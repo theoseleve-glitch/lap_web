@@ -628,8 +628,25 @@ export default function SessionsPage() {
       setConfirmDelete(false);
       return { previous };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    onSuccess: (_result, ids) => {
+      // Remove the deleted sessions from ALL cached session-list variants
+      // (different filter/sort/offset combos). This prevents the "flash-back"
+      // where invalidateQueries triggers a refetch that briefly shows stale
+      // data before the fresh response arrives.
+      const idSet = new Set(ids);
+      queryClient.setQueriesData<ListResponse>(
+        { queryKey: ['sessions', 'list'] },
+        (old) => old ? {
+          ...old,
+          sessions: old.sessions.filter((s) => !idSet.has(s.session_id)),
+          total: Math.max(0, old.total - ids.length),
+        } : old,
+      );
+      // Invalidate related queries (dashboard stats, filter options) — but NOT
+      // the session list itself (the optimistic removal above is already correct;
+      // a refetch would flash stale data).
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'filter-options'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (err, ids, context) => {
       // Partial failure: only restore the sessions that failed to delete.
@@ -639,8 +656,21 @@ export default function SessionsPage() {
         (err as Error & { failedIds?: string[] }).failedIds ?? ids;
 
       if (context?.previous && failedIds.length < ids.length) {
-        // Partial failure — don't roll back, just refetch from server
-        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        // Partial failure — remove the successfully deleted ones from cache,
+        // restore only the failed ones. Then refetch to reconcile.
+        const failedSet = new Set(failedIds);
+        const succeededIds = ids.filter((id) => !failedSet.has(id));
+        if (succeededIds.length > 0) {
+          const succSet = new Set(succeededIds);
+          queryClient.setQueriesData<ListResponse>(
+            { queryKey: ['sessions', 'list'] },
+            (old) => old ? {
+              ...old,
+              sessions: old.sessions.filter((s) => !succSet.has(s.session_id)),
+              total: Math.max(0, old.total - succeededIds.length),
+            } : old,
+          );
+        }
       } else if (context?.previous) {
         // Total failure — roll back optimistic update
         queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
