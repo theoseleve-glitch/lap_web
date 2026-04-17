@@ -295,6 +295,7 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.seo_health',         'bp', 'seo_health_bp'),      # SEO health check endpoint
         ('.routes.track_surface_analysis', 'bp', 'track_surface_analysis_bp'),  # Track-surface analysis app layer
         ('.routes.bundles',                'bp', 'bundles_bp'),                 # Logger bundle intake boundary
+        ('.routes.coaching',               'bp', 'coaching_bp'),                # Prescriptive coaching engine endpoint
     ]
 
     import importlib

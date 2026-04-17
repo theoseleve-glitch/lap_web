@@ -1741,6 +1741,51 @@ try:
     except Exception as _ce:
         print(f'  Coaching Intelligence: failed ({type(_ce).__name__}: {_ce})')
 
+    # ── PRESCRIPTIVE COACHING ──
+    # Phase 3 swap: this block now uses the new track_surface.prescriptive
+    # package (registry-driven patterns, explicit Unregistered/Insufficient
+    # states). Output schema under data['prescriptive_coaching'] is identical
+    # to the legacy module for every key the HTML viewers consume; design
+    # deltas only ADD storyline entries (unregistered_weakness, per-weakness
+    # insufficient_data). Legacy module remains on disk for one cycle.
+    try:
+        from track_surface.prescriptive import (
+            generate_coaching_sheet,
+            to_json_dict as presc_to_json,
+        )
+        presc = generate_coaching_sheet(
+            corner_packets=[
+                {
+                    'corner_id': p.corner_id,
+                    'time_delta_ms': p.time_delta_ms,
+                    'primary_cause': p.primary_cause,
+                    'confidence': p.confidence,
+                    'evidence': p.evidence,
+                    's_entry_m': p.s_entry_m,
+                    's_exit_m': p.s_exit_m,
+                    's_apex_m': p.s_apex_m,
+                }
+                for p in compare_result.corner_packets
+            ],
+            weaknesses=data.get('development_intelligence', {}).get('recurring_weaknesses', []),
+            sessions_analyzed=dev_intel.sessions_analyzed if 'dev_intel' in dir() else 1,
+            laps_analyzed=dev_intel.laps_analyzed if 'dev_intel' in dir() else 0,
+        )
+        data['prescriptive_coaching'] = presc_to_json(presc)
+
+        print(f'\nPrescriptive Coaching:')
+        print(f'  Global focus: {len(presc.global_focus)} items')
+        print(f'  Playbook matches: {len(presc.weakness_playbook_matches)}')
+        print(f'  Next-run plan: {len(presc.next_run_plan)} items')
+        print(f'  Validation checks: {len(presc.validation_checks)}')
+        for gf in presc.global_focus:
+            print(f'    #{gf.rank}: {gf.title} | severity={gf.severity} '
+                  f'cost={gf.estimated_cost_ms}ms corners={list(gf.corners)[:4]}')
+        for sl in presc.storyline:
+            print(f'    [{sl.type}] {sl.text[:100]}')
+    except Exception as _pe:
+        print(f'  Prescriptive Coaching: failed ({type(_pe).__name__}: {_pe})')
+
 except Exception as _sce:
     print(f'\nSession Compare Studio: failed ({type(_sce).__name__}: {_sce})')
     import traceback; traceback.print_exc()
