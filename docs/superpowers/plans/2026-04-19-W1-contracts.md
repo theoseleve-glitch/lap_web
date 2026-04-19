@@ -1,6 +1,6 @@
 # W1 — Unified Contracts Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Ship the three canonical Pydantic v2 contracts (`SessionContract`, `CoachingContract`, `OptimizerContract`) plus capability enum, generated TypeScript types, Alembic migration for `sessions` table, and fixtures — the foundation that unblocks W2–W10.
 
@@ -96,7 +96,7 @@ No other files touched.
 - Create: `telemetry_tool/tests/test_contracts/__init__.py`
 - Create: `telemetry_tool/tests/test_contracts/test_capabilities.py`
 
-- [ ] **Step 1.1: Write failing test for ChannelTag enum**
+- [x] **Step 1.1: Write failing test for ChannelTag enum**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_capabilities.py
@@ -125,7 +125,7 @@ def test_session_capabilities_has_check():
     assert not caps.has(ChannelTag.THROTTLE)
 ```
 
-- [ ] **Step 1.2: Run test, confirm it fails**
+- [x] **Step 1.2: Run test, confirm it fails**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_capabilities.py -v
@@ -133,7 +133,7 @@ pytest telemetry_tool/tests/test_contracts/test_capabilities.py -v
 
 Expected: `ModuleNotFoundError` on the import.
 
-- [ ] **Step 1.3: Create package + ChannelTag**
+- [x] **Step 1.3: Create package + ChannelTag**
 
 ```python
 # telemetry_tool/web/schemas/contracts/__init__.py
@@ -204,7 +204,7 @@ class SessionCapabilities(BaseModel):
         return set(tags).issubset(self.channels)
 ```
 
-- [ ] **Step 1.4: Run tests to verify they pass**
+- [x] **Step 1.4: Run tests to verify they pass**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_capabilities.py -v
@@ -212,7 +212,7 @@ pytest telemetry_tool/tests/test_contracts/test_capabilities.py -v
 
 Expected: 3 passed.
 
-- [ ] **Step 1.5: Commit**
+- [x] **Step 1.5: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/__init__.py \
@@ -232,7 +232,7 @@ git commit -m "feat(contracts): ChannelTag enum + SessionCapabilities (W1.T1.1)"
 
 **Rationale:** Types shared by multiple contracts — avoid duplicating between `session.py`, `coaching.py`, `optimizer.py`.
 
-- [ ] **Step 2.1: Write failing test**
+- [x] **Step 2.1: Write failing test**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_common.py
@@ -276,7 +276,7 @@ def test_scores_range_0_100():
         Scores(pace=120.0, consistency=75.0, execution=90.0, robustness=82.0, overall=82.0)
 ```
 
-- [ ] **Step 2.2: Run test to see it fail**
+- [x] **Step 2.2: Run test to see it fail**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_common.py -v
@@ -284,7 +284,7 @@ pytest telemetry_tool/tests/test_contracts/test_common.py -v
 
 Expected: ImportError.
 
-- [ ] **Step 2.3: Implement common.py**
+- [x] **Step 2.3: Implement common.py**
 
 ```python
 # telemetry_tool/web/schemas/contracts/common.py
@@ -390,7 +390,7 @@ class SidecarRef(BaseModel):
     size_bytes: int | None = None
 ```
 
-- [ ] **Step 2.4: Run tests**
+- [x] **Step 2.4: Run tests**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_common.py -v
@@ -398,7 +398,7 @@ pytest telemetry_tool/tests/test_contracts/test_common.py -v
 
 Expected: 4 passed.
 
-- [ ] **Step 2.5: Commit**
+- [x] **Step 2.5: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/common.py \
@@ -415,7 +415,7 @@ git commit -m "feat(contracts): common primitives (SourceLiteral, TrajectorySamp
 - Create: `telemetry_tool/tests/test_contracts/test_session_contract.py`
 - Modify: `telemetry_tool/web/schemas/contracts/__init__.py` (add re-exports)
 
-- [ ] **Step 3.1: Write failing tests**
+- [x] **Step 3.1: Write failing tests**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_session_contract.py
@@ -489,7 +489,7 @@ def test_session_contract_capabilities_match_source_for_realife():
         )
 ```
 
-- [ ] **Step 3.2: Run to confirm failure**
+- [x] **Step 3.2: Run to confirm failure**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_session_contract.py -v
@@ -497,7 +497,7 @@ pytest telemetry_tool/tests/test_contracts/test_session_contract.py -v
 
 Expected: ImportError (`SessionContract` not defined).
 
-- [ ] **Step 3.3: Implement `session.py`**
+- [x] **Step 3.3: Implement `session.py`**
 
 ```python
 # telemetry_tool/web/schemas/contracts/session.py
@@ -582,7 +582,7 @@ class SessionContract(BaseModel):
         return self
 ```
 
-- [ ] **Step 3.4: Re-export from package `__init__`**
+- [x] **Step 3.4: Re-export from package `__init__`**
 
 ```python
 # telemetry_tool/web/schemas/contracts/__init__.py
@@ -626,7 +626,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 3.5: Run tests — expect green**
+- [x] **Step 3.5: Run tests — expect green**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_session_contract.py -v
@@ -634,7 +634,7 @@ pytest telemetry_tool/tests/test_contracts/test_session_contract.py -v
 
 Expected: 5 passed.
 
-- [ ] **Step 3.6: Commit**
+- [x] **Step 3.6: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/session.py \
@@ -654,7 +654,7 @@ git commit -m "feat(contracts): SessionContract + real_life capability guard (W1
 
 **Rationale:** The existing `track_surface/prescriptive/types.py` defines dataclasses that shape `prescriptive_coaching` in `track-surface-ok-data.json`. We rebuild the same shape as Pydantic here, matching field names 1:1 so the existing viewers (`lap-studio-live.html`, `ouest-karting-live.html`) keep working when consumers switch to the contract. `COACHING_SHEET_VERSION = "1.0"` is the frozen anchor.
 
-- [ ] **Step 4.1: Write failing tests**
+- [x] **Step 4.1: Write failing tests**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_coaching_contract.py
@@ -712,7 +712,7 @@ def test_corner_coaching_map_accepts_string_ids():
     assert c.not_evaluable_corners == ["5"]
 ```
 
-- [ ] **Step 4.2: Run to confirm failure**
+- [x] **Step 4.2: Run to confirm failure**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_coaching_contract.py -v
@@ -720,7 +720,7 @@ pytest telemetry_tool/tests/test_contracts/test_coaching_contract.py -v
 
 Expected: ImportError.
 
-- [ ] **Step 4.3: Implement `coaching.py`**
+- [x] **Step 4.3: Implement `coaching.py`**
 
 ```python
 # telemetry_tool/web/schemas/contracts/coaching.py
@@ -822,7 +822,7 @@ class CoachingContract(BaseModel):
     next_run: list[NextRunItem]
 ```
 
-- [ ] **Step 4.4: Extend `__init__.py` re-exports**
+- [x] **Step 4.4: Extend `__init__.py` re-exports**
 
 Append to `__all__` and imports:
 
@@ -844,7 +844,7 @@ from telemetry_tool.web.schemas.contracts.coaching import (
 
 Update `__all__` to include every new name.
 
-- [ ] **Step 4.5: Run tests**
+- [x] **Step 4.5: Run tests**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_coaching_contract.py -v
@@ -852,7 +852,7 @@ pytest telemetry_tool/tests/test_contracts/test_coaching_contract.py -v
 
 Expected: 4 passed.
 
-- [ ] **Step 4.6: Commit**
+- [x] **Step 4.6: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/coaching.py \
@@ -870,7 +870,7 @@ git commit -m "feat(contracts): CoachingContract harmonized with prescriptive (W
 - Create: `telemetry_tool/tests/test_contracts/test_optimizer_contract.py`
 - Modify: `telemetry_tool/web/schemas/contracts/__init__.py`
 
-- [ ] **Step 5.1: Write failing tests**
+- [x] **Step 5.1: Write failing tests**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_optimizer_contract.py
@@ -932,7 +932,7 @@ def test_corner_delta_fields():
     assert cd.time_loss_s == 0.42
 ```
 
-- [ ] **Step 5.2: Run to confirm failure**
+- [x] **Step 5.2: Run to confirm failure**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_optimizer_contract.py -v
@@ -940,7 +940,7 @@ pytest telemetry_tool/tests/test_contracts/test_optimizer_contract.py -v
 
 Expected: ImportError.
 
-- [ ] **Step 5.3: Implement `optimizer.py`**
+- [x] **Step 5.3: Implement `optimizer.py`**
 
 ```python
 # telemetry_tool/web/schemas/contracts/optimizer.py
@@ -1044,7 +1044,7 @@ class OptimizerContract(BaseModel):
         return self
 ```
 
-- [ ] **Step 5.4: Extend `__init__.py` re-exports**
+- [x] **Step 5.4: Extend `__init__.py` re-exports**
 
 Append to `__init__.py`:
 
@@ -1060,7 +1060,7 @@ from telemetry_tool.web.schemas.contracts.optimizer import (
 
 Update `__all__` accordingly.
 
-- [ ] **Step 5.5: Run tests**
+- [x] **Step 5.5: Run tests**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_optimizer_contract.py -v
@@ -1068,7 +1068,7 @@ pytest telemetry_tool/tests/test_contracts/test_optimizer_contract.py -v
 
 Expected: 4 passed.
 
-- [ ] **Step 5.6: Commit**
+- [x] **Step 5.6: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/optimizer.py \
@@ -1087,7 +1087,7 @@ git commit -m "feat(contracts): OptimizerContract with depth-gated invariants (W
 - Create: `telemetry_tool/web/schemas/contracts/_schemas/.gitkeep`
 - Create: `telemetry_tool/tests/test_contracts/test_schema_export.py`
 
-- [ ] **Step 6.1: Write failing test**
+- [x] **Step 6.1: Write failing test**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_schema_export.py
@@ -1120,7 +1120,7 @@ def test_committed_schemas_up_to_date():
     assert committed == fresh, "session.schema.json drifted — regenerate"
 ```
 
-- [ ] **Step 6.2: Run tests to confirm failure**
+- [x] **Step 6.2: Run tests to confirm failure**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_schema_export.py -v
@@ -1128,7 +1128,7 @@ pytest telemetry_tool/tests/test_contracts/test_schema_export.py -v
 
 Expected: ImportError.
 
-- [ ] **Step 6.3: Implement exporter**
+- [x] **Step 6.3: Implement exporter**
 
 ```python
 # telemetry_tool/web/schemas/contracts/_scripts/export_json_schema.py
@@ -1179,7 +1179,7 @@ if __name__ == "__main__":
 
 Also create `_schemas/.gitkeep` as an empty file so the directory is tracked.
 
-- [ ] **Step 6.4: Run exporter once, commit schemas**
+- [x] **Step 6.4: Run exporter once, commit schemas**
 
 ```bash
 python -m telemetry_tool.web.schemas.contracts._scripts.export_json_schema
@@ -1187,7 +1187,7 @@ python -m telemetry_tool.web.schemas.contracts._scripts.export_json_schema
 
 Verify three `.schema.json` files appeared in `_schemas/`.
 
-- [ ] **Step 6.5: Run tests**
+- [x] **Step 6.5: Run tests**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_schema_export.py -v
@@ -1195,7 +1195,7 @@ pytest telemetry_tool/tests/test_contracts/test_schema_export.py -v
 
 Expected: 2 passed.
 
-- [ ] **Step 6.6: Commit**
+- [x] **Step 6.6: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/_scripts/ \
@@ -1215,7 +1215,7 @@ git commit -m "feat(contracts): JSON Schema export + drift detection (W1.T1.4a)"
 
 **Approach:** Python-only JSON-Schema→TS converter. Handles the subset we use: named objects, enums, literals, arrays, primitives, optional fields, unions. No npm dep (F2 resolution).
 
-- [ ] **Step 7.1: Write failing test**
+- [x] **Step 7.1: Write failing test**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_ts_generation.py
@@ -1255,7 +1255,7 @@ def test_committed_ts_up_to_date():
     assert fresh == on_disk, "contracts.ts drifted — regenerate"
 ```
 
-- [ ] **Step 7.2: Run to confirm failure**
+- [x] **Step 7.2: Run to confirm failure**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_ts_generation.py -v
@@ -1263,7 +1263,7 @@ pytest telemetry_tool/tests/test_contracts/test_ts_generation.py -v
 
 Expected: ImportError.
 
-- [ ] **Step 7.3: Implement generator**
+- [x] **Step 7.3: Implement generator**
 
 ```python
 # telemetry_tool/web/schemas/contracts/_scripts/generate_ts.py
@@ -1406,7 +1406,7 @@ if __name__ == "__main__":
     print(f"wrote {p}")
 ```
 
-- [ ] **Step 7.4: Run the generator to produce `contracts.ts`**
+- [x] **Step 7.4: Run the generator to produce `contracts.ts`**
 
 ```bash
 python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts
@@ -1414,7 +1414,7 @@ python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts
 
 Verify: `lap-website/src/types/contracts.ts` exists, starts with `// AUTO-GENERATED`, contains three `export interface` declarations.
 
-- [ ] **Step 7.5: Verify frontend still type-checks**
+- [x] **Step 7.5: Verify frontend still type-checks**
 
 ```bash
 cd lap-website && npm run build 2>&1 | tail -20
@@ -1422,7 +1422,7 @@ cd lap-website && npm run build 2>&1 | tail -20
 
 Expected: build succeeds, no TS errors referencing `contracts.ts`.
 
-- [ ] **Step 7.6: Run tests**
+- [x] **Step 7.6: Run tests**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_ts_generation.py -v
@@ -1430,7 +1430,7 @@ pytest telemetry_tool/tests/test_contracts/test_ts_generation.py -v
 
 Expected: 2 passed.
 
-- [ ] **Step 7.7: Commit**
+- [x] **Step 7.7: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/_scripts/generate_ts.py \
@@ -1449,7 +1449,7 @@ git commit -m "feat(contracts): Python-only TS generator + contracts.ts (W1.T1.4
 
 **Blocker check:** Before writing the migration, verify current sessions schema matches assumptions.
 
-- [ ] **Step 8.1: Inspect current sessions table structure**
+- [x] **Step 8.1: Inspect current sessions table structure**
 
 ```bash
 alembic current
@@ -1463,7 +1463,7 @@ psql "$TELEMETRY_PG_URL" -c "\d sessions" | head -40
 
 Confirm `source`, `data_profile`, `capabilities` columns do NOT exist. If they do, stop and ask.
 
-- [ ] **Step 8.2: Write failing test**
+- [x] **Step 8.2: Write failing test**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_migration_022.py
@@ -1515,7 +1515,7 @@ def test_022_adds_expected_columns():
     assert rows.get("capabilities") == "jsonb"
 ```
 
-- [ ] **Step 8.3: Write migration**
+- [x] **Step 8.3: Write migration**
 
 ```python
 # alembic/versions/022_ws_w1_sessions_source_profile_caps.py
@@ -1586,7 +1586,7 @@ def downgrade():
     op.drop_column("sessions", "source")
 ```
 
-- [ ] **Step 8.4: Apply migration on local dev DB**
+- [x] **Step 8.4: Apply migration on local dev DB**
 
 ```bash
 alembic upgrade head
@@ -1594,7 +1594,7 @@ alembic upgrade head
 
 Expected: `021 -> 022` in output. No errors.
 
-- [ ] **Step 8.5: Verify + rollback cleanly**
+- [x] **Step 8.5: Verify + rollback cleanly**
 
 ```bash
 alembic downgrade 021
@@ -1603,13 +1603,13 @@ alembic upgrade 022
 
 Both must succeed.
 
-- [ ] **Step 8.6: Run migration tests (skipped locally unless TELEMETRY_PG_URL_TEST set)**
+- [x] **Step 8.6: Run migration tests (skipped locally unless TELEMETRY_PG_URL_TEST set)**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_migration_022.py -v
 ```
 
-- [ ] **Step 8.7: Commit**
+- [x] **Step 8.7: Commit**
 
 ```bash
 git add alembic/versions/022_ws_w1_sessions_source_profile_caps.py \
@@ -1633,7 +1633,7 @@ git commit -m "feat(db): migration 022 — sessions.source/data_profile/capabili
 
 **Rationale:** Wave 2 workstreams mock against these JSON files. Each fixture is one valid instance. They're loaded, validated, and round-tripped in the test.
 
-- [ ] **Step 9.1: Write fixtures loader + roundtrip test**
+- [x] **Step 9.1: Write fixtures loader + roundtrip test**
 
 ```python
 # telemetry_tool/web/schemas/contracts/fixtures/__init__.py
@@ -1685,7 +1685,7 @@ def test_fixture_validates_and_roundtrips(name, model):
     assert set(emitted.keys()) == set(raw.keys()), f"{name}: key drift"
 ```
 
-- [ ] **Step 9.2: Write the 6 fixture JSONs**
+- [x] **Step 9.2: Write the 6 fixture JSONs**
 
 Each fixture must validate against its contract. Build them by running the contracts' constructors with representative data, then serializing. Example for `session_realife.json`:
 
@@ -1722,7 +1722,7 @@ Save the printed JSON verbatim to the fixture file.
 - `optimizer_trajectory.json` — depth="trajectory_only", no reconstructed_inputs
 - `optimizer_fullfidelity.json` — depth="full_fidelity", includes `reconstructed_inputs` arrays (≥3 samples each for schema correctness)
 
-- [ ] **Step 9.3: Run the roundtrip test**
+- [x] **Step 9.3: Run the roundtrip test**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_fixtures_roundtrip.py -v
@@ -1730,7 +1730,7 @@ pytest telemetry_tool/tests/test_contracts/test_fixtures_roundtrip.py -v
 
 Expected: 6 passed.
 
-- [ ] **Step 9.4: Commit**
+- [x] **Step 9.4: Commit**
 
 ```bash
 git add telemetry_tool/web/schemas/contracts/fixtures/ \
@@ -1747,7 +1747,7 @@ git commit -m "feat(contracts): reference fixtures for downstream mocking (W1 de
 
 **Rationale:** Existing sessions predate the contract. Any routine that constructs a `SessionContract` from a legacy DB row must survive missing fields (use defaults). Acceptance requires backward-compat.
 
-- [ ] **Step 10.1: Write the back-compat test**
+- [x] **Step 10.1: Write the back-compat test**
 
 ```python
 # telemetry_tool/tests/test_contracts/test_backcompat.py
@@ -1814,7 +1814,7 @@ def test_optimizer_trajectory_only_from_legacy_real_life():
     assert o.reconstructed_inputs is None
 ```
 
-- [ ] **Step 10.2: Run**
+- [x] **Step 10.2: Run**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/test_backcompat.py -v
@@ -1822,7 +1822,7 @@ pytest telemetry_tool/tests/test_contracts/test_backcompat.py -v
 
 Expected: 3 passed.
 
-- [ ] **Step 10.3: Commit**
+- [x] **Step 10.3: Commit**
 
 ```bash
 git add telemetry_tool/tests/test_contracts/test_backcompat.py
@@ -1833,7 +1833,7 @@ git commit -m "test(contracts): backward-compat + empty-sheet validation (W1.T1.
 
 ### Task 11: Full suite green + update plan checklist
 
-- [ ] **Step 11.1: Run the whole new test module**
+- [x] **Step 11.1: Run the whole new test module**
 
 ```bash
 pytest telemetry_tool/tests/test_contracts/ -v
@@ -1841,7 +1841,7 @@ pytest telemetry_tool/tests/test_contracts/ -v
 
 Expected: all passing (approx 25–30 tests total across 8 files).
 
-- [ ] **Step 11.2: Regenerate artefacts to catch drift**
+- [x] **Step 11.2: Regenerate artefacts to catch drift**
 
 ```bash
 python -m telemetry_tool.web.schemas.contracts._scripts.export_json_schema
@@ -1851,16 +1851,16 @@ git diff --exit-code telemetry_tool/web/schemas/contracts/_schemas/ lap-website/
 
 Expected: no diff (schemas and TS already up to date). If diff: commit regeneration.
 
-- [ ] **Step 11.3: Update this plan file with checkbox status**
+- [x] **Step 11.3: Update this plan file with checkbox status**
 
-Mark every `- [ ]` → `- [x]` in this document and commit:
+Mark every `- [x]` → `- [x]` in this document and commit:
 
 ```bash
 git add docs/superpowers/plans/2026-04-19-W1-contracts.md
 git commit -m "docs(plan): W1 contracts — all tasks complete"
 ```
 
-- [ ] **Step 11.4: Announce handoff to downstream workstreams**
+- [x] **Step 11.4: Announce handoff to downstream workstreams**
 
 Post the following summary to the team channel / issue (human step, not a commit):
 
@@ -1894,3 +1894,32 @@ Downstream workstreams (W2 router, W3/W4 adapters, W6 coaches, W7 optimizer, W8 
 3. Consume generated TS types from `lap-website/src/types/contracts.ts`
 4. Do NOT re-define `ChannelTag`, `SourceLiteral`, or any contract field names
 5. Extensions require a new contract version + ADR, not silent field additions
+
+---
+
+## W1 Delivery Summary (completed 2026-04-19)
+
+**Branch:** `feat/ws-w1-contracts`
+
+**Final test count:** 44 passed, 2 skipped (0 failed). The 2 skipped tests require `TELEMETRY_PG_URL_TEST` for the Alembic migration and will run in CI.
+
+**Deliverables shipped:**
+- `telemetry_tool/web/schemas/contracts/` package — SessionContract, CoachingContract, OptimizerContract, ChannelTag/SessionCapabilities, plus common primitives and 4 Literal type aliases
+- `_schemas/*.schema.json` — drift-gated, parametrized across all 3 contracts
+- `lap-website/src/types/contracts.ts` — generated via Python-only converter, drift-gated, UTF-8 portable
+- `alembic/versions/022_ws_w1_sessions_source_profile_caps.py` — adds source, data_profile, capabilities to sessions with backfill; clean up+down
+- 6 reference fixtures in `fixtures/*.json` — two per contract (lite / full), validating against contracts and roundtripping via JSON
+
+**Decisions recorded during implementation:**
+- `session_id`/`workspace_id` narrowed from `UUID | str` to `str` due to Pydantic 2.12.5 smart-union roundtrip bug (union coerces str → UUID on deserialise, breaking equality).
+- Python-only TS generator chosen over npm `json-schema-to-typescript` to avoid modifying `lap-website/package.json` — generator handles current Pydantic-v2 output subset and raises loudly on unrecognised node shapes.
+- Fixtures use `contextlib.closing` for psycopg2 connection in migration test to avoid resource leaks.
+- Real-life sessions are validated at the contract boundary to forbid claiming THROTTLE/BRAKE/STEER/WHEEL_SPD/SHOCK_DEFL capabilities (these are inferred in real-life, not measured).
+- Symmetric depth/inputs guard on OptimizerContract: TRAJECTORY_ONLY rejects reconstructed_inputs; FULL_FIDELITY requires them.
+
+**Downstream (W2–W10) — how to consume:**
+- Import contracts from `telemetry_tool.web.schemas.contracts` (single barrel)
+- Load fixtures via `telemetry_tool.web.schemas.contracts.fixtures.load_fixture(name)` — see `fixtures/__init__.py`
+- Use generated TS types from `lap-website/src/types/contracts.ts`
+- If a Pydantic model changes, regenerate BOTH `_schemas/*.json` (via `export_json_schema`) and `contracts.ts` (via `generate_ts`). The drift gate tests will fail CI if either drifts.
+- Contract extensions require a new contract version + ADR — do not silently add fields.
