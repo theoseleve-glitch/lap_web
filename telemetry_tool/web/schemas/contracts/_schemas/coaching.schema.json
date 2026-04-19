@@ -1,0 +1,318 @@
+{
+  "$defs": {
+    "CornerCoachingItem": {
+      "description": "All cues that apply to one corner.",
+      "properties": {
+        "corner_id": {
+          "title": "Corner Id",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/CornerCueItem"
+          },
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "corner_id"
+      ],
+      "title": "CornerCoachingItem",
+      "type": "object"
+    },
+    "CornerCueItem": {
+      "description": "A single cue attached to a corner within ``corner_coaching``.",
+      "properties": {
+        "cost_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Ms"
+        },
+        "cue_text": {
+          "title": "Cue Text",
+          "type": "string"
+        },
+        "phase": {
+          "enum": [
+            "entry",
+            "brake_release",
+            "apex",
+            "exit",
+            "straight"
+          ],
+          "title": "Phase",
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "weakness_key": {
+          "title": "Weakness Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "weakness_key",
+        "phase",
+        "severity",
+        "cue_text"
+      ],
+      "title": "CornerCueItem",
+      "type": "object"
+    },
+    "FocusItem": {
+      "description": "One entry in ``global_focus`` \u2014 the top-3 ranked prescriptions.",
+      "properties": {
+        "corner_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Corner Ids",
+          "type": "array"
+        },
+        "cost_ms": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Ms"
+        },
+        "rank": {
+          "title": "Rank",
+          "type": "integer"
+        },
+        "severity": {
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ],
+          "title": "Severity",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "weakness_key": {
+          "title": "Weakness Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "weakness_key",
+        "title",
+        "severity"
+      ],
+      "title": "FocusItem",
+      "type": "object"
+    },
+    "NextRunItem": {
+      "description": "A structured next-run item (focus / metric / anti-overload).",
+      "properties": {
+        "body": {
+          "title": "Body",
+          "type": "string"
+        },
+        "item_type": {
+          "enum": [
+            "technical_focus",
+            "execution_focus",
+            "validation_metric",
+            "anti_overload"
+          ],
+          "title": "Item Type",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "weakness_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakness Key"
+        }
+      },
+      "required": [
+        "item_type",
+        "title",
+        "body"
+      ],
+      "title": "NextRunItem",
+      "type": "object"
+    },
+    "StorylineItem": {
+      "description": "One narrative line in the coaching storyline.",
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "headline": {
+          "title": "Headline",
+          "type": "string"
+        },
+        "state": {
+          "enum": [
+            "Detected",
+            "NotTriggered",
+            "Insufficient",
+            "Unregistered"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "weakness_key": {
+          "title": "Weakness Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "weakness_key",
+        "state",
+        "headline"
+      ],
+      "title": "StorylineItem",
+      "type": "object"
+    },
+    "ValidationCheck": {
+      "description": "A measurable target the driver can validate on the next run.",
+      "properties": {
+        "check_id": {
+          "title": "Check Id",
+          "type": "string"
+        },
+        "corner_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Corner Id"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "measurable_target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Measurable Target"
+        }
+      },
+      "required": [
+        "check_id",
+        "description"
+      ],
+      "title": "ValidationCheck",
+      "type": "object"
+    }
+  },
+  "description": "Published, frontend-facing coaching sheet.\n\nShape mirrors track_surface.prescriptive's ``prescriptive_coaching``\nnode \u2014 see module docstring.",
+  "properties": {
+    "corner_coaching": {
+      "additionalProperties": {
+        "$ref": "#/$defs/CornerCoachingItem"
+      },
+      "title": "Corner Coaching",
+      "type": "object"
+    },
+    "global_focus": {
+      "items": {
+        "$ref": "#/$defs/FocusItem"
+      },
+      "title": "Global Focus",
+      "type": "array"
+    },
+    "next_run": {
+      "items": {
+        "$ref": "#/$defs/NextRunItem"
+      },
+      "title": "Next Run",
+      "type": "array"
+    },
+    "not_evaluable_corners": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Not Evaluable Corners",
+      "type": "array"
+    },
+    "storyline": {
+      "items": {
+        "$ref": "#/$defs/StorylineItem"
+      },
+      "title": "Storyline",
+      "type": "array"
+    },
+    "validation_checks": {
+      "items": {
+        "$ref": "#/$defs/ValidationCheck"
+      },
+      "title": "Validation Checks",
+      "type": "array"
+    },
+    "version": {
+      "default": "1.0",
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "storyline",
+    "global_focus",
+    "corner_coaching",
+    "not_evaluable_corners",
+    "validation_checks",
+    "next_run"
+  ],
+  "title": "CoachingContract",
+  "type": "object"
+}

@@ -1,0 +1,192 @@
+{
+  "$defs": {
+    "CornerDelta": {
+      "description": "Per-corner time loss attribution.",
+      "properties": {
+        "coaching_text": {
+          "default": "",
+          "title": "Coaching Text",
+          "type": "string"
+        },
+        "corner_id": {
+          "title": "Corner Id",
+          "type": "string"
+        },
+        "phase": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phase"
+        },
+        "root_cause": {
+          "title": "Root Cause",
+          "type": "string"
+        },
+        "time_loss_s": {
+          "title": "Time Loss S",
+          "type": "number"
+        }
+      },
+      "required": [
+        "corner_id",
+        "time_loss_s",
+        "root_cause"
+      ],
+      "title": "CornerDelta",
+      "type": "object"
+    },
+    "OptimizerDepth": {
+      "enum": [
+        "trajectory_only",
+        "full_fidelity"
+      ],
+      "title": "OptimizerDepth",
+      "type": "string"
+    },
+    "ReconstructedInputs": {
+      "description": "Theoretical throttle/brake/steer traces (only available in FULL_FIDELITY).",
+      "properties": {
+        "brake": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Brake",
+          "type": "array"
+        },
+        "distance_m": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Distance M",
+          "type": "array"
+        },
+        "steer": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Steer",
+          "type": "array"
+        },
+        "throttle": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Throttle",
+          "type": "array"
+        }
+      },
+      "required": [
+        "distance_m",
+        "throttle",
+        "brake",
+        "steer"
+      ],
+      "title": "ReconstructedInputs",
+      "type": "object"
+    },
+    "TrajectoryDelta": {
+      "description": "Distance-indexed speed delta between driver and theoretical.",
+      "properties": {
+        "distance_m": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Distance M",
+          "type": "array"
+        },
+        "speed_delta_ms": {
+          "items": {
+            "type": "number"
+          },
+          "title": "Speed Delta Ms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "distance_m",
+        "speed_delta_ms"
+      ],
+      "title": "TrajectoryDelta",
+      "type": "object"
+    }
+  },
+  "description": "Unified optimizer result.",
+  "properties": {
+    "confidence": {
+      "description": "Overall result confidence, 0..1",
+      "title": "Confidence",
+      "type": "number"
+    },
+    "corner_deltas": {
+      "items": {
+        "$ref": "#/$defs/CornerDelta"
+      },
+      "title": "Corner Deltas",
+      "type": "array"
+    },
+    "depth": {
+      "$ref": "#/$defs/OptimizerDepth"
+    },
+    "method": {
+      "description": "Underlying solver identifier, e.g. 'qss_enhanced' or 'trajectory'",
+      "title": "Method",
+      "type": "string"
+    },
+    "reconstructed_inputs": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReconstructedInputs"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "theoretical_lap_time_s": {
+      "title": "Theoretical Lap Time S",
+      "type": "number"
+    },
+    "total_time_loss_s": {
+      "default": 0.0,
+      "title": "Total Time Loss S",
+      "type": "number"
+    },
+    "trajectory_delta": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TrajectoryDelta"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "validation": {
+      "additionalProperties": true,
+      "title": "Validation",
+      "type": "object"
+    },
+    "vehicle_model": {
+      "additionalProperties": true,
+      "description": "Identified model params, free-form until W5",
+      "title": "Vehicle Model",
+      "type": "object"
+    }
+  },
+  "required": [
+    "depth",
+    "method",
+    "theoretical_lap_time_s",
+    "confidence"
+  ],
+  "title": "OptimizerContract",
+  "type": "object"
+}

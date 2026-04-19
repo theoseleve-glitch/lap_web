@@ -1,0 +1,431 @@
+{
+  "$defs": {
+    "ChannelTag": {
+      "description": "Canonical identifier for a telemetry channel family.\n\nKept deliberately small. Add entries only when a detector needs a\ndistinction that cannot be inferred from an existing tag. Extending\nthis set is a contract-level change \u2014 version bump required.",
+      "enum": [
+        "gps",
+        "lat_g",
+        "lon_g",
+        "yaw_rate",
+        "throttle",
+        "brake",
+        "steer",
+        "wheel_spd",
+        "shock_defl"
+      ],
+      "title": "ChannelTag",
+      "type": "string"
+    },
+    "DriverRef": {
+      "properties": {
+        "driver_id": {
+          "title": "Driver Id",
+          "type": "integer"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "driver_id",
+        "name"
+      ],
+      "title": "DriverRef",
+      "type": "object"
+    },
+    "Event": {
+      "description": "A detected incident or coaching-relevant moment during the session.",
+      "properties": {
+        "detector": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detector"
+        },
+        "event_type": {
+          "title": "Event Type",
+          "type": "string"
+        },
+        "lap_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Lap Number"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        },
+        "s_m": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "S M"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "t_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "T S"
+        }
+      },
+      "required": [
+        "event_type"
+      ],
+      "title": "Event",
+      "type": "object"
+    },
+    "LapSummary": {
+      "description": "Per-lap summary. Detailed per-sample data lives in sidecar storage.",
+      "properties": {
+        "flags": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Flags",
+          "type": "array"
+        },
+        "is_best": {
+          "default": false,
+          "title": "Is Best",
+          "type": "boolean"
+        },
+        "is_valid": {
+          "default": true,
+          "title": "Is Valid",
+          "type": "boolean"
+        },
+        "lap_number": {
+          "title": "Lap Number",
+          "type": "integer"
+        },
+        "lap_time_s": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "None for incomplete laps",
+          "title": "Lap Time S"
+        }
+      },
+      "required": [
+        "lap_number"
+      ],
+      "title": "LapSummary",
+      "type": "object"
+    },
+    "Scores": {
+      "description": "Top-line session scoring. Each dimension is /100.",
+      "properties": {
+        "consistency": {
+          "title": "Consistency",
+          "type": "number"
+        },
+        "execution": {
+          "title": "Execution",
+          "type": "number"
+        },
+        "overall": {
+          "title": "Overall",
+          "type": "number"
+        },
+        "pace": {
+          "title": "Pace",
+          "type": "number"
+        },
+        "robustness": {
+          "title": "Robustness",
+          "type": "number"
+        }
+      },
+      "required": [
+        "pace",
+        "consistency",
+        "execution",
+        "robustness",
+        "overall"
+      ],
+      "title": "Scores",
+      "type": "object"
+    },
+    "SessionCapabilities": {
+      "description": "Flags describing which channels are present in a given session.\n\nThe set is populated by the data-profile detector (W2) at upload time.\nCoaches and optimizers consume this to pick the right analyzer subset.",
+      "properties": {
+        "channels": {
+          "items": {
+            "$ref": "#/$defs/ChannelTag"
+          },
+          "title": "Channels",
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "title": "SessionCapabilities",
+      "type": "object"
+    },
+    "SidecarRef": {
+      "description": "Pointer to a raw-channel Parquet sidecar kept outside the contract.",
+      "properties": {
+        "format": {
+          "default": "parquet",
+          "title": "Format",
+          "type": "string"
+        },
+        "object_key": {
+          "title": "Object Key",
+          "type": "string"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        },
+        "size_bytes": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Size Bytes"
+        }
+      },
+      "required": [
+        "object_key"
+      ],
+      "title": "SidecarRef",
+      "type": "object"
+    },
+    "SourceLiteral": {
+      "description": "Engine family that produced this session.",
+      "enum": [
+        "real_life",
+        "iracing",
+        "ac"
+      ],
+      "title": "SourceLiteral",
+      "type": "string"
+    },
+    "TrackRef": {
+      "properties": {
+        "layout": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layout"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "track_id",
+        "name"
+      ],
+      "title": "TrackRef",
+      "type": "object"
+    },
+    "VehicleRef": {
+      "properties": {
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "vehicle_class": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicle Class"
+        },
+        "vehicle_id": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vehicle Id"
+        }
+      },
+      "title": "VehicleRef",
+      "type": "object"
+    }
+  },
+  "description": "Unified, source-agnostic descriptor of one driven session.",
+  "properties": {
+    "capabilities": {
+      "$ref": "#/$defs/SessionCapabilities"
+    },
+    "contract_version": {
+      "default": "1.0",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "data_profile": {
+      "additionalProperties": true,
+      "description": "Free-form dict describing how the file was detected + parsed. Shape defined by W2 (profiler).",
+      "title": "Data Profile",
+      "type": "object"
+    },
+    "driver": {
+      "$ref": "#/$defs/DriverRef"
+    },
+    "duration_s": {
+      "title": "Duration S",
+      "type": "number"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/Event"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "laps": {
+      "items": {
+        "$ref": "#/$defs/LapSummary"
+      },
+      "title": "Laps",
+      "type": "array"
+    },
+    "scores": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Scores"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "session_id": {
+      "title": "Session Id",
+      "type": "string"
+    },
+    "session_start": {
+      "format": "date-time",
+      "title": "Session Start",
+      "type": "string"
+    },
+    "sidecar": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SidecarRef"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Pointer to raw-channel Parquet sidecar. Absent until W9 storage lands."
+    },
+    "source": {
+      "$ref": "#/$defs/SourceLiteral"
+    },
+    "track": {
+      "$ref": "#/$defs/TrackRef"
+    },
+    "vehicle": {
+      "$ref": "#/$defs/VehicleRef"
+    },
+    "workspace_id": {
+      "title": "Workspace Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "session_id",
+    "workspace_id",
+    "source",
+    "capabilities",
+    "driver",
+    "track",
+    "vehicle",
+    "session_start",
+    "duration_s"
+  ],
+  "title": "SessionContract",
+  "type": "object"
+}
