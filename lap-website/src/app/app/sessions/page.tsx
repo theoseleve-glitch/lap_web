@@ -629,10 +629,8 @@ export default function SessionsPage() {
       return { previous };
     },
     onSuccess: (_result, ids) => {
-      // Remove the deleted sessions from ALL cached session-list variants
-      // (different filter/sort/offset combos). This prevents the "flash-back"
-      // where invalidateQueries triggers a refetch that briefly shows stale
-      // data before the fresh response arrives.
+      // Step 1: Immediately remove deleted sessions from ALL cached list
+      // variants so the UI reflects the delete without a server round-trip.
       const idSet = new Set(ids);
       queryClient.setQueriesData<ListResponse>(
         { queryKey: ['sessions', 'list'] },
@@ -642,11 +640,18 @@ export default function SessionsPage() {
           total: Math.max(0, old.total - ids.length),
         } : old,
       );
-      // Invalidate related queries (dashboard stats, filter options) — but NOT
-      // the session list itself (the optimistic removal above is already correct;
-      // a refetch would flash stale data).
+
+      // Step 2: Invalidate dashboard + filter options immediately.
       queryClient.invalidateQueries({ queryKey: ['sessions', 'filter-options'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+
+      // Step 3: After 2s, invalidate the session list so it reconciles with
+      // the server. The delay prevents the "flash-back" where the refetch
+      // response briefly overwrites the optimistic removal. By 2s the DB
+      // commit is fully visible and the refetch returns the correct list.
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['sessions', 'list'] });
+      }, 2000);
     },
     onError: (err, ids, context) => {
       // Partial failure: only restore the sessions that failed to delete.
