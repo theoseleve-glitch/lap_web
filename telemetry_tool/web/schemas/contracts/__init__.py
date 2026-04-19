@@ -30,8 +30,8 @@ from telemetry_tool.web.schemas.contracts.common import (
     VehicleRef,
 )
 from telemetry_tool.web.schemas.contracts.session import (
-    CONTRACT_VERSION,
     SessionContract,
+    CONTRACT_VERSION,
 )
 
 __all__ = [

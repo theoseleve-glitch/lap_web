@@ -1,11 +1,23 @@
-"""CoachingContract — harmonized with track_surface.prescriptive.types.
+"""CoachingContract — published frontend-facing coaching sheet.
 
 Field names mirror the existing ``prescriptive_coaching`` node in
-``track-surface-ok-data.json`` so viewers that already consume that shape
-keep working when they switch to the contract-typed API.
+``track-surface-ok-data.json`` so viewers that already consume that
+shape (``lap-studio-live.html``, ``ouest-karting-live.html``) keep
+working when they switch to the contract-typed API.
 
 Version anchor mirrors ``track_surface.prescriptive.types.COACHING_SHEET_VERSION``.
 If that anchor changes, bump the one here in the same commit + ADR.
+
+Relationship to the domain layer
+--------------------------------
+The domain layer (``track_surface.prescriptive.types``) uses frozen
+dataclasses with ``tuple``/``int`` fields. This contract uses Pydantic
+models with ``list``/``str`` fields designed for JSON serialisation.
+The two are structurally distinct by design.
+
+The W6 coaching assembler is the conversion boundary between them.
+Adding a field here requires a matching change in the W6 assembler,
+and vice-versa — never modify one without the other.
 """
 from __future__ import annotations
 
