@@ -1,4 +1,4 @@
-// AUTO-GENERATED - DO NOT EDIT BY HAND.
+// AUTO-GENERATED — DO NOT EDIT BY HAND.
 // Source: telemetry_tool/web/schemas/contracts/_schemas/*.schema.json
 // Regenerate with:
 //   python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts

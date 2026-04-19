@@ -40,7 +40,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[5]
 TS_OUTPUT_PATH = _REPO_ROOT / "lap-website" / "src" / "types" / "contracts.ts"
 
 _HEADER = """\
-// AUTO-GENERATED - DO NOT EDIT BY HAND.
+// AUTO-GENERATED — DO NOT EDIT BY HAND.
 // Source: telemetry_tool/web/schemas/contracts/_schemas/*.schema.json
 // Regenerate with:
 //   python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts
@@ -85,8 +85,11 @@ def _resolve_type(node: dict[str, Any], root: dict[str, Any]) -> str:
                 return "Record<string, unknown>"
             return "Record<string, unknown>"
         return _ts_primitive(t)
-    # Fallback
-    return "unknown"
+    # No known shape — refuse to silently ship wrong types.
+    raise ValueError(
+        f"generate_ts: unrecognised JSON Schema node shape (no $ref/enum/const/anyOf/type): {node!r}. "
+        "Extend _resolve_type to handle this construct, or narrow the source Pydantic model."
+    )
 
 
 def _render_object(name: str, schema: dict[str, Any], root: dict[str, Any]) -> str:
@@ -111,34 +114,38 @@ def _render_enum(name: str, values: list[str]) -> str:
     return "\n".join(lines) + ";"
 
 
-def _emit_schema(schema: dict[str, Any]) -> list[str]:
-    """Emit top-level interface + every $def as an interface or enum."""
-    blocks: list[str] = []
+def _emit_schema_named(schema: dict[str, Any]) -> list[tuple[str, str]]:
+    """Emit (name, block) pairs for every $def + the top-level interface."""
+    out: list[tuple[str, str]] = []
     defs = schema.get("$defs", {})
     for name, sub in defs.items():
         if "enum" in sub and sub.get("type") == "string":
-            blocks.append(_render_enum(name, sub["enum"]))
+            out.append((name, _render_enum(name, sub["enum"])))
         else:
-            blocks.append(_render_object(name, sub, schema))
-    # Top-level
+            out.append((name, _render_object(name, sub, schema)))
     title = schema.get("title", "Unknown")
-    blocks.append(_render_object(title, schema, schema))
-    return blocks
+    out.append((title, _render_object(title, schema, schema)))
+    return out
 
 
 def generate_ts_string() -> str:
-    seen: set[str] = set()
-    blocks: list[str] = []
+    # Dedup by $def/top-level NAME. Collisions between schemas indicate a genuine
+    # problem (two models wanting the same name with potentially different shape)
+    # and should fail loudly, not silently drop one side.
+    emitted: dict[str, str] = {}  # name → rendered block
     for fname in sorted(SCHEMAS_DIR.glob("*.schema.json")):
         schema = json.loads(fname.read_text())
-        for block in _emit_schema(schema):
-            # Dedup by first line header
-            header = block.split("\n", 1)[0]
-            if header in seen:
+        for name, block in _emit_schema_named(schema):
+            if name in emitted:
+                if emitted[name] != block:
+                    raise ValueError(
+                        f"generate_ts: name collision for {name!r} across schemas "
+                        f"with different rendered shapes. Ensure $def names are globally unique."
+                    )
+                # Same shape under same name — safe skip (expected for shared $defs like ChannelTag).
                 continue
-            seen.add(header)
-            blocks.append(block)
-    return _HEADER + "\n\n".join(blocks) + "\n"
+            emitted[name] = block
+    return _HEADER + "\n\n".join(emitted.values()) + "\n"
 
 
 def generate_ts_file(out_path: Path = TS_OUTPUT_PATH) -> Path:
