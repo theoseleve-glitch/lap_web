@@ -1,0 +1,44 @@
+{
+  "depth": "trajectory_only",
+  "method": "trajectory",
+  "theoretical_lap_time_s": 59.1,
+  "confidence": 0.72,
+  "corner_deltas": [
+    {
+      "corner_id": "3",
+      "time_loss_s": 0.28,
+      "root_cause": "late_brake_release",
+      "coaching_text": "Brake released too late",
+      "phase": null
+    },
+    {
+      "corner_id": "7",
+      "time_loss_s": 0.18,
+      "root_cause": "late_brake_release",
+      "coaching_text": "Smoother trail-brake needed",
+      "phase": null
+    }
+  ],
+  "total_time_loss_s": 0.7,
+  "trajectory_delta": {
+    "distance_m": [
+      0.0,
+      100.0,
+      200.0,
+      300.0
+    ],
+    "speed_delta_ms": [
+      0.0,
+      -0.4,
+      -0.8,
+      -0.3
+    ]
+  },
+  "reconstructed_inputs": null,
+  "vehicle_model": {
+    "note": "unidentified — trajectory-only mode"
+  },
+  "validation": {
+    "method_notes": "GPS+IMU only; no driver input reconstruction"
+  }
+}

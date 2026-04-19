@@ -1,0 +1,73 @@
+{
+  "depth": "full_fidelity",
+  "method": "qss_enhanced",
+  "theoretical_lap_time_s": 137.8,
+  "confidence": 0.94,
+  "corner_deltas": [
+    {
+      "corner_id": "5",
+      "time_loss_s": 0.41,
+      "root_cause": "late_brake_release",
+      "coaching_text": "Release brake 12m earlier",
+      "phase": "brake_release"
+    },
+    {
+      "corner_id": "8",
+      "time_loss_s": 0.18,
+      "root_cause": "throttle_lift_exit",
+      "coaching_text": "Hold throttle through exit",
+      "phase": "exit"
+    }
+  ],
+  "total_time_loss_s": 0.7,
+  "trajectory_delta": {
+    "distance_m": [
+      0.0,
+      1000.0,
+      2000.0,
+      3000.0
+    ],
+    "speed_delta_ms": [
+      0.0,
+      -1.2,
+      -0.6,
+      0.1
+    ]
+  },
+  "reconstructed_inputs": {
+    "distance_m": [
+      0.0,
+      1000.0,
+      2000.0,
+      3000.0
+    ],
+    "throttle": [
+      1.0,
+      0.0,
+      0.5,
+      1.0
+    ],
+    "brake": [
+      0.0,
+      0.8,
+      0.0,
+      0.0
+    ],
+    "steer": [
+      0.0,
+      -0.3,
+      0.1,
+      0.0
+    ]
+  },
+  "vehicle_model": {
+    "pacejka_by": 14.0,
+    "cda_m2": 0.75,
+    "engine_peak_nm": 680,
+    "brake_max_g": 1.8
+  },
+  "validation": {
+    "iracing_optimal_delta_s": 0.12,
+    "confidence_notes": "Matched 94% of identified corners"
+  }
+}

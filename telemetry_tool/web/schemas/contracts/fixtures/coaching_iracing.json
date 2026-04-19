@@ -1,0 +1,90 @@
+{
+  "version": "1.0",
+  "storyline": [
+    {
+      "weakness_key": "late_brake_release",
+      "state": "Detected",
+      "headline": "Brake released 0.12s too late on average",
+      "detail": null
+    },
+    {
+      "weakness_key": "throttle_lift_exit",
+      "state": "Detected",
+      "headline": "Throttle lift on corner exit",
+      "detail": null
+    },
+    {
+      "weakness_key": "steering_smoothness",
+      "state": "Detected",
+      "headline": "Steering corrections mid-corner",
+      "detail": null
+    }
+  ],
+  "global_focus": [
+    {
+      "rank": 1,
+      "weakness_key": "late_brake_release",
+      "title": "Release brake earlier",
+      "severity": "high",
+      "corner_ids": [
+        "5"
+      ],
+      "cost_ms": 410.0
+    },
+    {
+      "rank": 2,
+      "weakness_key": "throttle_lift_exit",
+      "title": "Smoother throttle application",
+      "severity": "medium",
+      "corner_ids": [
+        "5",
+        "8"
+      ],
+      "cost_ms": 180.0
+    }
+  ],
+  "corner_coaching": {
+    "5": {
+      "corner_id": "5",
+      "items": [
+        {
+          "weakness_key": "late_brake_release",
+          "phase": "brake_release",
+          "severity": "high",
+          "cue_text": "Release brake 12m earlier",
+          "cost_ms": 260.0
+        },
+        {
+          "weakness_key": "throttle_lift_exit",
+          "phase": "exit",
+          "severity": "medium",
+          "cue_text": "Hold throttle through apex",
+          "cost_ms": 150.0
+        }
+      ]
+    }
+  },
+  "not_evaluable_corners": [],
+  "validation_checks": [
+    {
+      "check_id": "v1",
+      "description": "Match AI pace on T5 exit",
+      "measurable_target": "exit_speed_kmh >= 180",
+      "corner_id": "5"
+    }
+  ],
+  "next_run": [
+    {
+      "item_type": "technical_focus",
+      "title": "T5 brake release",
+      "body": "Mark your brake release 12m earlier at T5.",
+      "weakness_key": "late_brake_release"
+    },
+    {
+      "item_type": "validation_metric",
+      "title": "Exit speed target",
+      "body": "Target 180 km/h at T5 exit gate.",
+      "weakness_key": null
+    }
+  ]
+}
