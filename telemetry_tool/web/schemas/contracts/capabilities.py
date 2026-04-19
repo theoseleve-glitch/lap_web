@@ -44,4 +44,5 @@ class SessionCapabilities(BaseModel):
         return tag in self.channels
 
     def has_all(self, tags: Iterable[ChannelTag]) -> bool:
-        return set(tags).issubset(self.channels)
+        tag_set = set(tags)
+        return bool(tag_set) and tag_set.issubset(self.channels)

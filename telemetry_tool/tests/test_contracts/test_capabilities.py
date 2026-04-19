@@ -17,7 +17,23 @@ def test_session_capabilities_empty_default():
 
 
 def test_session_capabilities_has_check():
+    """has() returns True for channels that were set, False otherwise."""
     caps = SessionCapabilities(channels=frozenset({ChannelTag.GPS, ChannelTag.LAT_G}))
     assert caps.has(ChannelTag.GPS)
     assert caps.has(ChannelTag.LAT_G)
     assert not caps.has(ChannelTag.THROTTLE)
+
+
+def test_session_capabilities_has_all_rejects_empty_requirement():
+    """Empty requirements must NOT silently pass — guards against misconfigured detectors."""
+    caps = SessionCapabilities(channels=frozenset({ChannelTag.GPS}))
+    assert not caps.has_all([])
+    assert not caps.has_all(frozenset())
+
+
+def test_session_capabilities_has_all_subset_check():
+    """has_all returns True when every required tag is present, False if any missing."""
+    caps = SessionCapabilities(channels=frozenset({ChannelTag.GPS, ChannelTag.LAT_G, ChannelTag.LON_G}))
+    assert caps.has_all([ChannelTag.GPS, ChannelTag.LAT_G])
+    assert caps.has_all({ChannelTag.GPS})
+    assert not caps.has_all([ChannelTag.GPS, ChannelTag.THROTTLE])
