@@ -1425,19 +1425,19 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     conn = get_db_connection()
     ws_id = getattr(g, "workspace_id", None)
     user_id = getattr(g, "current_user_id", None)
-    logger.info("DELETE session %s — workspace=%s, role=%s, user=%s",
+    logger.error("DELETE-DIAG session %s — g.workspace=%s, g.role=%s, g.user=%s",
                 session_id, ws_id, getattr(g, "workspace_role", None), user_id)
 
-    # Check RLS context on the connection
+    # Check RLS context on the actual DB connection
     try:
         rls_row = conn.execute("SELECT current_setting('app.current_workspace_id', true) AS ws").fetchone()
         rls_ws = rls_row["ws"] if isinstance(rls_row, dict) else rls_row[0]
         rls_role = conn.execute("SELECT current_user AS u").fetchone()
         rls_u = rls_role["u"] if isinstance(rls_role, dict) else rls_role[0]
-        logger.info("DELETE session %s — RLS context: current_workspace=%s, current_user=%s",
+        logger.error("DELETE-DIAG session %s — DB RLS: workspace_id=%s, role=%s",
                      session_id, rls_ws, rls_u)
     except Exception as e:
-        logger.warning("DELETE session %s — Could not read RLS context: %s", session_id, e)
+        logger.error("DELETE-DIAG session %s — RLS query FAILED: %s", session_id, e)
 
     session = models.get_session_by_id(conn, session_id)
     if session is None:
