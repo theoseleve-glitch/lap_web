@@ -10,6 +10,23 @@ our Pydantic models:
 
 If Pydantic emits something outside this subset, the generator raises
 loudly rather than silently skipping, so the test suite catches drift.
+
+Regeneration
+------------
+Automatic (recommended): `pytest telemetry_tool/tests/test_contracts/` runs
+the drift gate, which compares fresh output against the committed
+``contracts.ts`` and prints a clear failure message if regeneration is needed.
+
+Manual: the ``python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts``
+invocation requires ``telemetry_tool/`` on ``sys.path`` because the
+sibling ``web.schemas.__init__`` barrel uses bare imports. From the
+repository root:
+
+    PYTHONPATH=telemetry_tool python -m telemetry_tool.web.schemas.contracts._scripts.generate_ts
+
+This is a project-wide pre-existing limitation that W1 intentionally does
+not touch. Fixing the barrel imports to be absolute would be a separate
+change outside W1's declared scope.
 """
 from __future__ import annotations
 
@@ -17,9 +34,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-# Compute SCHEMAS_DIR directly so this module stays import-clean when run as
-# `python -m ...` (avoids triggering the parent telemetry_tool/web/schemas/__init__.py
-# which has `from web.schemas.common import ...` that requires telemetry_tool/ on sys.path).
 SCHEMAS_DIR = Path(__file__).resolve().parent.parent / "_schemas"
 
 _REPO_ROOT = Path(__file__).resolve().parents[5]
