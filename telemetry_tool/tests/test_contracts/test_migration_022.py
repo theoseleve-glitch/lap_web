@@ -30,17 +30,18 @@ def test_022_upgrade_then_downgrade_is_clean():
 
 
 def test_022_adds_expected_columns():
+    import contextlib
     import psycopg2
     _alembic(["upgrade", "022"])
-    conn = psycopg2.connect(os.environ["TELEMETRY_PG_URL_TEST"])
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE table_name='sessions'
-              AND column_name IN ('source', 'data_profile', 'capabilities')
-        """)
-        rows = dict(cur.fetchall())
+    with contextlib.closing(psycopg2.connect(os.environ["TELEMETRY_PG_URL_TEST"])) as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_name='sessions'
+                  AND column_name IN ('source', 'data_profile', 'capabilities')
+            """)
+            rows = dict(cur.fetchall())
     assert rows.get("source") == "text"
     assert rows.get("data_profile") == "jsonb"
     assert rows.get("capabilities") == "jsonb"
