@@ -629,26 +629,20 @@ export default function SessionsPage() {
       return { previous };
     },
     onSuccess: (_result, ids) => {
-      // Remove deleted sessions from ALL cached session-list variants.
-      const idSet = new Set(ids);
-      queryClient.setQueriesData<ListResponse>(
-        { queryKey: ['sessions', 'list'] },
-        (old) => old ? {
-          ...old,
-          sessions: old.sessions.filter((s) => !idSet.has(s.session_id)),
-          total: Math.max(0, old.total - ids.length),
-        } : old,
-      );
+      // Nuclear cache clear: remove ALL session list cache entries entirely.
+      // This forces React Query to fetch fresh from the server on the next
+      // render cycle — there is no stale data to accidentally display.
+      queryClient.removeQueries({ queryKey: ['sessions', 'list'] });
 
-      // Mark session queries as stale WITHOUT triggering an immediate refetch.
-      // The next navigation, tab focus, or component mount will refetch fresh
-      // data from the server (where the session is gone). This avoids the
-      // "flash-back" caused by an immediate refetch racing with the optimistic
-      // update — refetchType:'none' is the key.
-      queryClient.invalidateQueries({
-        queryKey: ['sessions'],
-        refetchType: 'none',
+      // Then immediately refetch the current view so the user sees the
+      // updated list (without the deleted sessions) within milliseconds.
+      queryClient.fetchQuery({
+        queryKey: ['sessions', 'list', queryParams],
+        queryFn: () => api.get<ListResponse>(`/sessions?${queryParams}`),
       });
+
+      // Also refresh filter options and dashboard counts.
+      queryClient.invalidateQueries({ queryKey: ['sessions', 'filter-options'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (err, ids, context) => {
