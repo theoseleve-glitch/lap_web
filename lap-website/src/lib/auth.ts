@@ -127,8 +127,21 @@ const MAX_REFRESH_RETRIES = 1;
 const REFRESH_BACKOFF_MS = 1000;
 let _refreshAttempts = 0;
 
-export async function silentRefresh(): Promise<AuthUser | null> {
-  // Prevent infinite refresh loops
+// Dedup: only one silentRefresh can be in-flight at a time. Multiple
+// callers (useAuth on mount + api-client on 401) share the same promise.
+// Without this, parallel refreshes cause a race: the first rotates the
+// token, the second sends the now-invalidated old token → 401 → logout.
+let _silentRefreshPromise: Promise<AuthUser | null> | null = null;
+
+export function silentRefresh(): Promise<AuthUser | null> {
+  if (_silentRefreshPromise) return _silentRefreshPromise;
+  _silentRefreshPromise = _doSilentRefresh().finally(() => {
+    _silentRefreshPromise = null;
+  });
+  return _silentRefreshPromise;
+}
+
+async function _doSilentRefresh(): Promise<AuthUser | null> {
   if (_refreshAttempts > MAX_REFRESH_RETRIES) {
     _refreshAttempts = 0;
     clearAuthState();
@@ -138,16 +151,15 @@ export async function silentRefresh(): Promise<AuthUser | null> {
   try {
     _refreshAttempts++;
     const result = await authFetch<LoginResponse>('/refresh');
-    _refreshAttempts = 0; // Reset on success
+    _refreshAttempts = 0;
     setAccessToken(result.access_token);
     setUserProfile(result.user);
     broadcastTokenRefresh(result.access_token);
     return result.user;
   } catch {
     if (_refreshAttempts <= MAX_REFRESH_RETRIES) {
-      // Wait with backoff before retry
       await new Promise((r) => setTimeout(r, REFRESH_BACKOFF_MS * _refreshAttempts));
-      return silentRefresh();
+      return _doSilentRefresh();
     }
     _refreshAttempts = 0;
     clearAuthState();
