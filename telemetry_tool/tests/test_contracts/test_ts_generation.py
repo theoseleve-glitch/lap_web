@@ -9,7 +9,7 @@ from telemetry_tool.web.schemas.contracts._scripts.generate_ts import (
 def test_generator_writes_typescript(tmp_path: Path):
     out = tmp_path / "contracts.ts"
     generate_ts_file(out)
-    text = out.read_text()
+    text = out.read_text(encoding="utf-8")
 
     # Presence of the three top-level interfaces
     for name in ("SessionContract", "CoachingContract", "OptimizerContract"):
@@ -30,5 +30,5 @@ def test_committed_ts_up_to_date():
         generate_ts_string,
     )
     fresh = generate_ts_string()
-    on_disk = TS_OUTPUT_PATH.read_text()
+    on_disk = TS_OUTPUT_PATH.read_text(encoding="utf-8")
     assert fresh == on_disk, "contracts.ts drifted — regenerate"
