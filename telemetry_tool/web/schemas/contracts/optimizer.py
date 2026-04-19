@@ -92,7 +92,9 @@ class OptimizerContract(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def _full_fidelity_requires_inputs(self) -> "OptimizerContract":
+    def _depth_input_consistency(self) -> "OptimizerContract":
         if self.depth is OptimizerDepth.FULL_FIDELITY and self.reconstructed_inputs is None:
             raise ValueError("FULL_FIDELITY depth requires reconstructed_inputs")
+        if self.depth is OptimizerDepth.TRAJECTORY_ONLY and self.reconstructed_inputs is not None:
+            raise ValueError("TRAJECTORY_ONLY depth must not carry reconstructed_inputs")
         return self
