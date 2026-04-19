@@ -38,7 +38,7 @@ class SessionContract(BaseModel):
     """Unified, source-agnostic descriptor of one driven session."""
     model_config = ConfigDict(frozen=True)
 
-    contract_version: str = Field(default=CONTRACT_VERSION, frozen=True)
+    contract_version: str = Field(default=CONTRACT_VERSION)
 
     session_id: str
     workspace_id: str
@@ -67,7 +67,7 @@ class SessionContract(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _check_realife_capabilities(self) -> "SessionContract":
+    def _check_real_life_capabilities(self) -> "SessionContract":
         if self.source is SourceLiteral.REAL_LIFE:
             illegal = self.capabilities.channels & _REAL_LIFE_FORBIDDEN
             if illegal:

@@ -66,3 +66,20 @@ def test_session_contract_capabilities_match_source_for_realife():
             source=SourceLiteral.REAL_LIFE,
             capabilities=SessionCapabilities(channels=frozenset({ChannelTag.GPS, ChannelTag.THROTTLE})),
         )
+
+
+def test_session_contract_accepts_sim_with_driver_input_channels():
+    """Sim sources CAN claim THROTTLE/BRAKE/STEER — guard is real_life-only."""
+    s = _minimal_session(
+        source=SourceLiteral.IRACING,
+        capabilities=SessionCapabilities(
+            channels=frozenset({
+                ChannelTag.GPS,
+                ChannelTag.THROTTLE,
+                ChannelTag.BRAKE,
+                ChannelTag.STEER,
+            })
+        ),
+    )
+    assert ChannelTag.THROTTLE in s.capabilities.channels
+    assert s.source is SourceLiteral.IRACING
