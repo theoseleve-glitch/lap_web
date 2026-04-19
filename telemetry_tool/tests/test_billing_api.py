@@ -186,20 +186,20 @@ class TestEntitlementStateTransitions:
     def test_active_full_access(self):
         """Active subscription gets full plan entitlements."""
         ents = self._make_entitlements("active")
-        assert ents["reports_per_month"] == 10
+        assert ents["analyses_per_month"] == 10
         assert "_paused" not in ents
 
     def test_trialing_full_access(self):
         """Trialing subscription gets full plan entitlements."""
         ents = self._make_entitlements("trialing")
-        assert ents["reports_per_month"] == 10
+        assert ents["analyses_per_month"] == 10
         assert "_paused" not in ents
 
     def test_past_due_flagged(self):
         """Past due subscription gets full access but is flagged."""
         ents = self._make_entitlements("past_due")
         assert ents.get("_past_due") is True
-        assert ents["reports_per_month"] == 10
+        assert ents["analyses_per_month"] == 10
 
     def test_canceled_flagged(self):
         """Canceled subscription is flagged for grace period handling."""
@@ -210,8 +210,8 @@ class TestEntitlementStateTransitions:
         """Paused subscription blocks new reports."""
         ents = self._make_entitlements("paused")
         assert ents.get("_paused") is True
-        assert ents["reports_per_month"] == 0
-        assert ents["reports_remaining"] == 0
+        assert ents["analyses_per_month"] == 0
+        assert ents["analyses_remaining"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -272,8 +272,8 @@ class TestUsageEntitlements:
         conn.execute.return_value.fetchall.side_effect = [
             [],  # overrides
             [],  # workspace overrides
-            [{"event_type": "report_generated", "total": 7}],  # usage
+            [{"event_type": "analyses", "total": 7}],  # usage
         ]
         ents = get_user_entitlements(conn, 1, 1)
-        assert ents["reports_used"] == 7
-        assert ents["reports_remaining"] == 3
+        assert ents["analyses_used"] == 7
+        assert ents["analyses_remaining"] == 3

@@ -110,6 +110,7 @@ class RaceChronoAdapter(BaseAdapter):
     """Adapter for RaceChrono CSV exports."""
 
     FORMAT_NAME: str = "racechrono"
+    EXTENSIONS: list[str] = [".csv"]
 
     def __init__(self) -> None:
         self._channels: list[str] = []

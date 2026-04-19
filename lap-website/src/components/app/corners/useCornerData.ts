@@ -13,6 +13,12 @@ export interface HandlingEvent {
   corner_phase: 'entry' | 'mid' | 'exit';
   magnitude: number;
   time_cost_s?: number | null;
+  // New fields from multi-detector fusion
+  confidence?: number | null;
+  direction?: number | null;
+  n_voters?: number | null;
+  conflict?: boolean | null;
+  detector_votes?: Record<string, { direction: number; confidence: number }> | null;
 }
 
 export interface CornerActionable {

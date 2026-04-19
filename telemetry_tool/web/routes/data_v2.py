@@ -42,6 +42,7 @@ from flask import Blueprint, Response, g, request, send_file
 
 from web import models
 from web.api_utils import ErrorCode, api_error, api_response
+from web.chart_cache import chart_cached
 from web.db import get_db_connection
 from web.middleware.audit import audit_log
 from web.repos.delete_cascade import delete_entity_cascade, get_delete_impact
@@ -204,6 +205,43 @@ def dashboard_stats() -> tuple[dict, int]:
         "recent_times": recent_times,
         "recent_sessions": recent_sessions,
     }
+
+    # ── Gamification fields (XP, level, streak) ─────────────
+    try:
+        from gamification.xp import get_driver_progress
+        from gamification.queries import get_achievements
+        user_id = getattr(g, "current_user_id", None)
+        # Use driver_id = 1 as default (single-user model: one driver per user)
+        driver_id = 1
+        progress = get_driver_progress(conn, driver_id, ws_id)
+        result.update(progress)
+        # Days active (last 7 days) for streak tracker
+        try:
+            rows = conn.execute(
+                "SELECT DISTINCT DATE(session_date) AS d FROM sessions "
+                "WHERE session_date >= DATE('now', '-7 days') AND deleted_at IS NULL "
+                "ORDER BY d"
+            ).fetchall()
+            active_dates = {(r["d"] if isinstance(r, dict) else r[0]) for r in rows}
+            import datetime
+            today = datetime.date.today()
+            days_active = []
+            # Monday=0 to Sunday=6
+            monday = today - datetime.timedelta(days=today.weekday())
+            for i in range(7):
+                d = monday + datetime.timedelta(days=i)
+                days_active.append(d.isoformat() in active_dates)
+            result["days_active"] = days_active
+        except Exception:
+            result["days_active"] = [False] * 7
+        # Achievement count
+        try:
+            achievements = get_achievements(conn, driver_id, ws_id)
+            result["achievement_count"] = len(achievements)
+        except Exception:
+            result["achievement_count"] = 0
+    except Exception as exc:
+        logger.debug("Gamification data not available: %s", exc)
 
     # Cache for 60s, tagged by workspace for targeted invalidation
     try:
@@ -404,6 +442,7 @@ def get_laps(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/speed-trace", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_speed_trace(session_id: str) -> tuple[dict, int]:
     """Return speed vs distance arrays for a lap.
 
@@ -574,6 +613,7 @@ def get_speed_trace(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/gps-trace", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_gps_trace(session_id: str) -> tuple[dict, int]:
     """Return GPS coordinates and speed arrays for a lap.
 
@@ -650,6 +690,7 @@ def get_gps_trace(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/gg-data", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_gg_data(session_id: str) -> tuple[dict, int]:
     """Return lateral and longitudinal acceleration arrays for GG diagram.
 
@@ -753,6 +794,7 @@ def get_gg_data(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/scores", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_scores(session_id: str) -> tuple[dict, int]:
     """Return score breakdown for a session."""
     conn = get_db_connection()
@@ -879,6 +921,7 @@ def _merge_coaching_labels(conn: Any, session_id: str, corners: list[dict]) -> N
 
 @bp.route("/sessions/<session_id>/corners", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_corners(session_id: str) -> tuple[dict, int]:
     """Return corner boundaries merged with coaching metrics.
 
@@ -1061,6 +1104,93 @@ def get_corners(session_id: str) -> tuple[dict, int]:
         _ccv2 = _analysis.get("corner_coaching_v2") if _analysis else None
         if _ccv2:
             resp["corner_coaching_v2"] = _ccv2
+        # Include handling balance data — compute on-the-fly if missing
+        _hb = _analysis.get("handling_balance") if _analysis else None
+        if not _hb:
+            try:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                import numpy as np
+                # Build best_lap_df from GPS traces
+                _best_lap_num = None
+                _all_laps = models.get_laps_for_session(conn, session_id) or []
+                for _lap in _all_laps:
+                    if _lap.get("is_best"):
+                        _best_lap_num = _lap["lap_number"]
+                        break
+                if _best_lap_num is None and _all_laps:
+                    _best_lap_num = _all_laps[0]["lap_number"]
+
+                if _best_lap_num is not None:
+                    _trace = models.get_gps_trace(conn, session_id, _best_lap_num)
+                    if _trace and len(_trace.get("speeds", [])) > 50:
+                        import pandas as _pd
+
+                        def _to_list(v):
+                            """Handle both JSON strings and already-parsed lists."""
+                            if isinstance(v, str):
+                                return json.loads(v)
+                            return v if isinstance(v, list) else []
+
+                        _trace = {k: _to_list(v) if isinstance(v, (str, list)) else v
+                                  for k, v in _trace.items()}
+                        _n = len(_trace["speeds"])
+                        _bldf = _pd.DataFrame({
+                            "Speed (m/s)": _trace["speeds"],
+                            "Distance (m)": _trace.get("distances", list(range(_n))),
+                        })
+                        if "latitudes" in _trace:
+                            _bldf["Latitude (deg)"] = _trace["latitudes"]
+                            _bldf["Longitude (deg)"] = _trace["longitudes"]
+                        if "accel_lat" in _trace:
+                            _bldf["Lateral acceleration (G) *calc"] = _trace["accel_lat"]
+                        if "accel_long" in _trace:
+                            _bldf["Longitudinal acceleration (G) *calc"] = _trace["accel_long"]
+                        if "bearings" in _trace:
+                            _bldf["Bearing (deg)"] = _trace["bearings"]
+                        elif "latitudes" in _trace and "longitudes" in _trace:
+                            # Compute bearing from lat/lon changes
+                            _lats = np.array(_trace["latitudes"])
+                            _lons = np.array(_trace["longitudes"])
+                            _dlat = np.diff(_lats, prepend=_lats[0])
+                            _dlon = np.diff(_lons, prepend=_lons[0])
+                            _bear = np.degrees(np.arctan2(
+                                _dlon * np.cos(np.radians(_lats)),
+                                _dlat
+                            )) % 360
+                            _bldf["Bearing (deg)"] = _bear
+                        # Time: approximate from distance/speed
+                        _speeds = _bldf["Speed (m/s)"].values
+                        _dists = _bldf["Distance (m)"].values
+                        _dt = np.diff(_dists) / (np.abs(_speeds[:-1]) + 1e-6)
+                        _bldf["Time (s)"] = np.concatenate([[0], np.cumsum(_dt)])
+                        _bldf["Lap #"] = _best_lap_num
+
+                        from telemetry_tool.pipeline.stages import s10b_corners as _s10b
+                        _hb_result = _s10b.run_handling_analysis_v2(
+                            None, _bldf, set(_bldf.columns),
+                            best_lap_number=_best_lap_num,
+                        )
+                        if _hb_result and not _hb_result.get("legacy"):
+                            _hb = {
+                                "summary": _hb_result.get("summary"),
+                                "focus_corners": _hb_result.get("focus_corners"),
+                                "best_lap_mistakes": _hb_result.get("best_lap_mistakes"),
+                                "setup_recommendations": _hb_result.get("setup_recommendations"),
+                                "driving_tips": _hb_result.get("driving_tips"),
+                                "corner_positions": _hb_result.get("corner_positions"),
+                            }
+                            # Persist for next time
+                            if _analysis is not None:
+                                _analysis["handling_balance"] = _hb
+                                models.insert_analysis_json(conn, session_id, _analysis)
+                                conn.commit()
+            except Exception:
+                logger.warning("On-the-fly handling analysis failed", exc_info=True)
+        if _hb:
+            resp["handling_balance"] = _hb
         return api_response(resp)
 
     # -- 5. Fallback: no boundaries but coaching exists ------------------
@@ -1161,6 +1291,77 @@ def get_corners(session_id: str) -> tuple[dict, int]:
         _ccv2 = _analysis.get("corner_coaching_v2") if _analysis else None
         if _ccv2:
             resp["corner_coaching_v2"] = _ccv2
+        # Handling balance — same on-the-fly logic as path 4
+        _hb = _analysis.get("handling_balance") if _analysis else None
+        if not _hb:
+            try:
+                # Reset transaction state in case a previous query failed
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                import numpy as np
+                _best_lap_num = None
+                _all_laps = models.get_laps_for_session(conn, session_id) or []
+                for _lap in _all_laps:
+                    if _lap.get("is_best"):
+                        _best_lap_num = _lap["lap_number"]
+                        break
+                if _best_lap_num is None and _all_laps:
+                    _best_lap_num = _all_laps[0]["lap_number"]
+                if _best_lap_num is not None:
+                    _trace = models.get_gps_trace(conn, session_id, _best_lap_num)
+                    if _trace and len(_trace.get("speeds", [])) > 50:
+                        import pandas as _pd
+                        def _to_list2(v):
+                            if isinstance(v, str):
+                                return json.loads(v)
+                            return v if isinstance(v, list) else []
+                        _trace = {k: _to_list2(v) if isinstance(v, (str, list)) else v for k, v in _trace.items()}
+                        _n = len(_trace["speeds"])
+                        _bldf = _pd.DataFrame({
+                            "Speed (m/s)": _trace["speeds"],
+                            "Distance (m)": _trace.get("distances", list(range(_n))),
+                        })
+                        if "latitudes" in _trace:
+                            _bldf["Latitude (deg)"] = _trace["latitudes"]
+                            _bldf["Longitude (deg)"] = _trace["longitudes"]
+                        if "accel_lat" in _trace:
+                            _bldf["Lateral acceleration (G) *calc"] = _trace["accel_lat"]
+                        if "accel_long" in _trace:
+                            _bldf["Longitudinal acceleration (G) *calc"] = _trace["accel_long"]
+                        if "latitudes" in _trace and "longitudes" in _trace:
+                            _lats = np.array(_trace["latitudes"])
+                            _lons = np.array(_trace["longitudes"])
+                            _bldf["Bearing (deg)"] = np.degrees(np.arctan2(
+                                np.diff(_lons, prepend=_lons[0]) * np.cos(np.radians(_lats)),
+                                np.diff(_lats, prepend=_lats[0])
+                            )) % 360
+                        _speeds = np.array(_trace["speeds"])
+                        _dists = np.array(_trace.get("distances", list(range(_n))))
+                        _dt = np.diff(_dists) / (np.abs(_speeds[:-1]) + 1e-6)
+                        _bldf["Time (s)"] = np.concatenate([[0], np.cumsum(_dt)])
+                        _bldf["Lap #"] = _best_lap_num
+                        from telemetry_tool.pipeline.stages import s10b_corners as _s10b
+                        _hb_result = _s10b.run_handling_analysis_v2(
+                            None, _bldf, set(_bldf.columns), best_lap_number=_best_lap_num)
+                        if _hb_result and not _hb_result.get("legacy"):
+                            _hb = {
+                                "summary": _hb_result.get("summary"),
+                                "focus_corners": _hb_result.get("focus_corners"),
+                                "best_lap_mistakes": _hb_result.get("best_lap_mistakes"),
+                                "setup_recommendations": _hb_result.get("setup_recommendations"),
+                                "driving_tips": _hb_result.get("driving_tips"),
+                                "corner_positions": _hb_result.get("corner_positions"),
+                            }
+                            if _analysis is not None:
+                                _analysis["handling_balance"] = _hb
+                                models.insert_analysis_json(conn, session_id, _analysis)
+                                conn.commit()
+            except Exception:
+                logger.warning("On-the-fly handling analysis failed (path 5)", exc_info=True)
+        if _hb:
+            resp["handling_balance"] = _hb
         return api_response(resp)
 
     # -- 6. No data at all -----------------------------------------------
@@ -1229,6 +1430,10 @@ def delete_session(session_id: str) -> tuple[dict, int]:
     result = delete_entity_cascade(conn, "session", session_id)
     audit_log(conn, "session.delete", {"session_id": session_id, "impact": result["impact"]})
     conn.commit()
+
+    # Invalidate cached chart responses for this session.
+    from web.chart_cache import invalidate_session_cache
+    invalidate_session_cache(session_id)
 
     try:
         from web.rollups import refresh_rollups
@@ -2028,6 +2233,14 @@ _VALID_TRACK_STATES = {"dry", "wet", "damp", "mixed", "green", "rubbered", "dust
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
+def _strip_html(value: str | None) -> str | None:
+    """Strip HTML tags from user-provided text to prevent stored XSS."""
+    if value is None:
+        return None
+    import re
+    return re.sub(r"<[^>]+>", "", value).strip()
+
+
 def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
     """Validate PATCH body fields and return (errors, cleaned_body).
 
@@ -2035,33 +2248,35 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
     list of ``{"field": ..., "message": ...}`` dicts.  ``cleaned_body``
     contains only the recognised updatable keys from ``body`` (unknown
     keys are silently dropped).
+
+    All free-text string fields are HTML-stripped to prevent stored XSS.
     """
     errors: list[dict] = []
     cleaned: dict = {}
 
     for field, value in body.items():
         if field == "driver_name":
-            # driver_name is handled separately (upsert); just pass through.
+            # driver_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "driver_name", "message": "Must be a string."})
             else:
-                cleaned["driver_name"] = value
+                cleaned["driver_name"] = _strip_html(value)
             continue
 
         if field == "track_name":
-            # track_name is handled separately (upsert); just pass through.
+            # track_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "track_name", "message": "Must be a string."})
             else:
-                cleaned["track_name"] = value
+                cleaned["track_name"] = _strip_html(value)
             continue
 
         if field == "kart_name":
-            # kart_name is handled separately (upsert); just pass through.
+            # kart_name is handled separately (upsert); strip HTML.
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "kart_name", "message": "Must be a string."})
             else:
-                cleaned["kart_name"] = value
+                cleaned["kart_name"] = _strip_html(value)
             continue
 
         if field == "kart_details":
@@ -2161,7 +2376,7 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
             else:
                 cleaned[field] = value
 
-        # -- display_name length --
+        # -- display_name length + HTML strip --
         elif field == "display_name":
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "display_name", "message": "Must be a string."})
@@ -2171,9 +2386,9 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                     "message": "Must be at most 200 characters.",
                 })
             else:
-                cleaned[field] = value
+                cleaned[field] = _strip_html(value)
 
-        # -- notes length --
+        # -- notes length + HTML strip --
         elif field == "notes":
             if value is not None and not isinstance(value, str):
                 errors.append({"field": "notes", "message": "Must be a string."})
@@ -2183,7 +2398,7 @@ def _validate_patch_fields(conn: Any, body: dict) -> tuple[list[dict], dict]:
                     "message": "Must be at most 2000 characters.",
                 })
             else:
-                cleaned[field] = value
+                cleaned[field] = _strip_html(value)
 
     return errors, cleaned
 
@@ -2894,6 +3109,7 @@ def get_corner_metrics_summary(session_id: str) -> tuple[dict, int]:
 
 @bp.route("/sessions/<session_id>/delta", methods=["GET"])
 @_safe_api
+@chart_cached(ttl=3600)
 def get_delta(session_id: str) -> tuple[dict, int]:
     """Compute time delta between two laps on the fly.
 
@@ -2932,24 +3148,10 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "message": "GPS trace not found for one or both laps",
         })
 
-    def _cumulative_time(distances: list[float], speeds: list[float]) -> list[float]:
-        """Build cumulative time array using trapezoidal integration."""
-        t = [0.0]
-        for i in range(1, len(distances)):
-            ds = distances[i] - distances[i - 1]
-            v0 = speeds[i - 1] if speeds[i - 1] and speeds[i - 1] > 0 else 0
-            v1 = speeds[i] if speeds[i] and speeds[i] > 0 else 0
-            v_avg = (v0 + v1) / 2 if (v0 + v1) > 0 else 0
-            if v_avg > 0:
-                t.append(t[-1] + ds / v_avg)
-            else:
-                t.append(t[-1])
-        return t
-
     dist_a = trace_a.get("distances", [])
-    spd_a = trace_a.get("speeds", [])
+    spd_a  = trace_a.get("speeds", [])
     dist_b = trace_b.get("distances", [])
-    spd_b = trace_b.get("speeds", [])
+    spd_b  = trace_b.get("speeds", [])
 
     if not dist_a or not spd_a or not dist_b or not spd_b:
         return api_response({
@@ -2957,45 +3159,33 @@ def get_delta(session_id: str) -> tuple[dict, int]:
             "message": "Insufficient trace data for delta computation",
         })
 
-    # Normalize per-lap distances to 0-based (stored as session-cumulative)
-    if dist_a and dist_a[0] != 0:
-        _off = dist_a[0]
-        dist_a = [d - _off for d in dist_a]
-    if dist_b and dist_b[0] != 0:
-        _off = dist_b[0]
-        dist_b = [d - _off for d in dist_b]
+    # Canonical engine — trapezoidal, NaN-safe, no forward-fill. When both
+    # official lap times are known we anchor the cumulative curves so the
+    # final delta equals the true lap-time difference.
+    from telemetry_tool.deltas import cumulative_delta
+    result = cumulative_delta(
+        progress_a=dist_a,
+        speed_a=spd_a,
+        progress_b=dist_b,
+        speed_b=spd_b,
+        lap_time_a_s=real_time_a,
+        lap_time_b_s=real_time_b,
+        n_grid=min(500, len(dist_a)),
+        anchor_to_official=True,
+    )
 
-    time_a = _cumulative_time(dist_a, spd_a)
-    time_b = _cumulative_time(dist_b, spd_b)
-
-    # Scale cumulative times to match actual lap times so the final
-    # delta equals the true lap-time difference.
-    if real_time_a and time_a[-1] > 0:
-        scale_a = real_time_a / time_a[-1]
-        time_a = [t * scale_a for t in time_a]
-    if real_time_b and time_b[-1] > 0:
-        scale_b = real_time_b / time_b[-1]
-        time_b = [t * scale_b for t in time_b]
-
-    # Interpolate to common distance axis (use shorter lap)
-    import numpy as np
-    max_dist = min(dist_a[-1] if dist_a else 0, dist_b[-1] if dist_b else 0)
-    if max_dist <= 0:
+    if result.progress_m.size == 0:
         return api_response({
             "available": False, "reason_code": "no_valid_distance",
             "message": "No valid distance range for delta",
         })
 
-    common_dist = np.linspace(0, max_dist, min(500, len(dist_a)))
-    interp_a = np.interp(common_dist, dist_a, time_a)
-    interp_b = np.interp(common_dist, dist_b, time_b)
-    delta = (interp_b - interp_a).tolist()
-
     return api_response({
-        "distances": common_dist.tolist(),
-        "delta_s": delta,
-        "lap_a": lap_a,
-        "lap_b": lap_b,
+        "distances": result.progress_m.tolist(),
+        "delta_s":   result.delta_s.tolist(),
+        "lap_a":     lap_a,
+        "lap_b":     lap_b,
+        "anchored":  result.anchored,
     })
 
 
@@ -4948,6 +5138,1121 @@ def get_friction_envelope(session_id: str) -> tuple[dict, int]:
 
 
 # ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-surface
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-surface", methods=["GET"])
+@_safe_api
+def get_track_surface(session_id: str) -> tuple[dict, int]:
+    """Return the aggregate track surface model for this session's track.
+
+    The track surface is built incrementally from all sessions at the same
+    track.  Each distance bin contains aggregate grip (mu), longitudinal
+    limits, and provenance (session count, sample count).
+    """
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Track surface requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Get track_id from analysis_json or session metadata
+    analysis = models.get_analysis_json(conn, session_id)
+    track_id = None
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+    if not track_id and isinstance(session, dict):
+        track_id = session.get("track_id")
+    if not track_id:
+        # Try from pipeline summary stored in analysis_json
+        pipeline = analysis.get("pipeline", {}) if analysis else {}
+        track_id = pipeline.get("track_id")
+
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected for this session", status=404)
+
+    # Resolve vehicle_class and condition for partitioned lookup
+    vehicle_class = "car"
+    condition_state = "dry"
+    if isinstance(session, dict):
+        vehicle_class = session.get("vehicle_class", "car")
+    if analysis:
+        vehicle_class = analysis.get("vehicle_class", vehicle_class)
+        condition_state = analysis.get("track_state", analysis.get("condition", "dry"))
+
+    try:
+        from track_surface import get_track_surface as _get_ts
+        surface = _get_ts(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    if surface is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No aggregate track surface data for track '{track_id}' yet",
+            status=404,
+        )
+
+    return api_response(surface)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/optimal-line
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/optimal-line", methods=["GET"])
+@_safe_api
+def get_optimal_line(session_id: str) -> tuple[dict, int]:
+    """Return the optimal racing line with lateral offset and speed profile.
+
+    Requires the session's analysis_json to contain a track_surface_summary
+    (populated by pipeline stage s10d).
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Check for precomputed optimal line in pipeline summary
+    pipeline = analysis.get("pipeline", {})
+    optimal = pipeline.get("optimal_line")
+    if optimal is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Optimal line not computed for this session (requires boundaries + CasADi)",
+            status=404,
+        )
+
+    return api_response(optimal)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/line-delta
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/line-delta", methods=["GET"])
+@_safe_api
+def get_line_delta(session_id: str) -> tuple[dict, int]:
+    """Return the 2D line delta: actual vs optimal with per-corner decomposition.
+
+    Shows where time is lost from wrong line vs wrong speed, with spatial
+    coaching messages per corner.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    pipeline = analysis.get("pipeline", {})
+
+    line_delta_data = pipeline.get("line_delta")
+    corner_losses = pipeline.get("corner_line_losses", [])
+    spatial_coaching = pipeline.get("spatial_coaching", [])
+
+    if line_delta_data is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Line delta not computed (requires optimal line + position data)",
+            status=404,
+        )
+
+    return api_response({
+        "line_delta": line_delta_data,
+        "corner_coaching": corner_losses,
+        "spatial_coaching": spatial_coaching,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/pre-session
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/pre-session", methods=["GET"])
+@_safe_api
+def get_pre_session_briefing(track_id: str) -> tuple[dict, int]:
+    """Pre-session coach: generate a track briefing based on accumulated data.
+
+    Query params:
+        condition: dry|damp|wet|heavy_wet (default: dry)
+        vehicle_class: gt3|gt4|formula|kart|road (optional, for future keying)
+        best_lap_s: reference dry lap time in seconds (optional)
+        track_name: human-readable name (optional)
+    """
+    from flask import request as flask_request
+
+    condition = flask_request.args.get("condition", "dry")
+    best_lap_s = flask_request.args.get("best_lap_s", type=float)
+    track_name = flask_request.args.get("track_name", track_id)
+
+    # Load accumulated track model
+    try:
+        from track_surface.store import load_track_model
+        surface = load_track_model(track_id)
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    if surface is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No accumulated track model for '{track_id}' — drive at least one session first",
+            status=404,
+        )
+
+    # Try to load corners from any session at this track
+    corners = []
+    conn = get_db_connection()
+    try:
+        analysis = conn.execute(
+            "SELECT analysis_json FROM sessions WHERE track_id = %(tid)s "
+            "AND analysis_json IS NOT NULL LIMIT 1",
+            {"tid": track_id},
+        ).fetchone()
+        if analysis and analysis[0]:
+            import json
+            aj = json.loads(analysis[0]) if isinstance(analysis[0], str) else analysis[0]
+            corners = aj.get("corners", [])
+    except Exception:
+        pass
+
+    try:
+        from track_surface.pre_session import generate_pre_session_briefing
+        briefing = generate_pre_session_briefing(
+            surface,
+            condition=condition,
+            corners=corners,
+            best_dry_lap_s=best_lap_s,
+            track_name=track_name,
+        )
+        return api_response(briefing.to_dict())
+    except Exception as exc:
+        return api_error(ErrorCode.INTERNAL, f"Briefing generation failed: {exc}", status=500)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/model
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/model", methods=["GET"])
+@_safe_api
+def get_track_model(track_id: str) -> tuple[dict, int]:
+    """Return the full accumulated track model for 3D visualization.
+
+    Reads from the Parquet sidecar (not analysis_json), keyed by
+    vehicle_class and condition.
+
+    Query params:
+        vehicle_class: gt3|gt4|formula|kart|road|generic (default: generic)
+        condition: dry|damp|wet|heavy_wet (default: dry)
+    """
+    from flask import request as flask_request
+
+    v_class = flask_request.args.get("vehicle_class", "generic")
+    condition = flask_request.args.get("condition", "dry")
+
+    try:
+        from track_surface.store import load_track_model
+        surface = load_track_model(track_id, vehicle_class=v_class, condition=condition)
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    if surface is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No track model for '{track_id}' (class={v_class}, cond={condition})",
+            status=404,
+        )
+
+    result = surface.to_summary_dict()
+    # Add arrays for frontend 3D rendering
+    result["centerline_x"] = [round(float(v), 2) for v in surface.frenet.centerline_xy[:, 0]]
+    result["centerline_y"] = [round(float(v), 2) for v in surface.frenet.centerline_xy[:, 1]]
+    result["curvature"] = [round(float(v), 5) for v in surface.frenet.curvature_1pm]
+    if surface.has_elevation:
+        result["elevation_m"] = [round(float(v), 2) for v in surface.elevation_m]
+    if surface.has_boundaries:
+        result["width_left"] = [round(float(v), 2) for v in surface.width_left]
+        result["width_right"] = [round(float(v), 2) for v in surface.width_right]
+    if surface.has_vert_curvature:
+        result["vert_curvature"] = [round(float(v), 5) for v in surface.vert_curvature_1pm]
+    if surface.has_camber:
+        result["camber_rad"] = [round(float(v), 4) for v in surface.camber_rad]
+    if surface.curbs:
+        result["curbs"] = [c.to_dict() for c in surface.curbs]
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/drivers — multi-driver line comparison
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/drivers", methods=["GET"])
+@_safe_api
+def get_track_driver_lines(track_id: str) -> tuple[dict, int]:
+    """Compare multiple drivers' racing lines at the same track.
+
+    Returns Frenet (s, n) traces for each driver's best lap,
+    overlaid on the accumulated track model.
+
+    Query params:
+        session_ids: comma-separated session IDs to compare
+    """
+    from flask import request as flask_request
+    import json
+
+    session_ids = flask_request.args.get("session_ids", "")
+    if not session_ids:
+        return api_error(ErrorCode.VALIDATION, "session_ids query param required", status=400)
+
+    ids = [s.strip() for s in session_ids.split(",") if s.strip()]
+    if len(ids) < 1 or len(ids) > 10:
+        return api_error(ErrorCode.VALIDATION, "Provide 1-10 session IDs", status=400)
+
+    conn = get_db_connection()
+    drivers = []
+
+    for sid in ids:
+        session = models.get_session_by_id(conn, sid)
+        if session is None:
+            continue
+
+        analysis = models.get_analysis_json(conn, sid)
+        if not analysis or not isinstance(analysis, dict):
+            continue
+
+        # Get GPS trace for best lap
+        gps = models.get_gps_trace(conn, sid, lap_number=None)  # best lap
+        if not gps:
+            continue
+
+        driver_name = session.get("driver_name", "Unknown") if isinstance(session, dict) else "Unknown"
+        best_time = session.get("best_lap_time_s") if isinstance(session, dict) else None
+
+        drivers.append({
+            "session_id": sid,
+            "driver_name": driver_name,
+            "best_lap_time_s": best_time,
+            "latitudes": gps.get("latitudes", []),
+            "longitudes": gps.get("longitudes", []),
+            "distances": gps.get("distances", []),
+            "speeds": gps.get("speeds", []),
+        })
+
+    return api_response({
+        "track_id": track_id,
+        "driver_count": len(drivers),
+        "drivers": drivers,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-delta
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-delta", methods=["GET"])
+@_safe_api
+def get_track_delta(session_id: str) -> tuple[dict, int]:
+    """Return per-meter grip delta: session grip vs aggregate track surface.
+
+    For each distance bin, computes how this session's grip compares to the
+    aggregate across all sessions.  Positive delta = this session had MORE
+    grip than average (warmer tyres, better conditions).  Negative = less.
+
+    Query params:
+        lap : int — specific lap to compare (optional, defaults to best lap)
+    """
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Track delta requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Get grip map from analysis_json
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data for session", status=404)
+
+    session_gm = analysis.get("grip_map")
+    if not session_gm or not isinstance(session_gm, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No grip map for this session", status=404)
+
+    # Determine track_id
+    track_id = analysis.get("track_id")
+    if not track_id and isinstance(session, dict):
+        track_id = session.get("track_id")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected for this session", status=404)
+
+    # Resolve vehicle_class and condition for partitioned lookup
+    vehicle_class = "car"
+    condition_state = "dry"
+    if isinstance(session, dict):
+        vehicle_class = session.get("vehicle_class", "car")
+    if analysis:
+        vehicle_class = analysis.get("vehicle_class", vehicle_class)
+        condition_state = analysis.get("track_state", analysis.get("condition", "dry"))
+
+    # Get aggregate grip
+    try:
+        from track_surface import get_aggregate_grip
+        import numpy as np
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    aggregate = get_aggregate_grip(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+    if aggregate is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No aggregate surface data for track '{track_id}'",
+            status=404,
+        )
+
+    # Build per-bin delta
+    session_bins = session_gm.get("distance_bins", [])
+    session_p95 = session_gm.get("mu_p95", [])
+    if not session_bins or not session_p95 or len(session_bins) != len(session_p95):
+        return api_error(ErrorCode.NOT_FOUND, "Session grip map has no bin data", status=404)
+
+    delta_bins = []
+    for d, mu_session in zip(session_bins, session_p95):
+        mu_aggregate = aggregate.mu_at(float(d), "p95")
+        delta = round(mu_session - mu_aggregate, 4)
+        headroom_pct = round((mu_aggregate - mu_session) / mu_aggregate * 100, 1) if mu_aggregate > 0 else 0.0
+        delta_bins.append({
+            "distance_m": round(d, 1),
+            "mu_session": round(mu_session, 4),
+            "mu_aggregate": round(mu_aggregate, 4),
+            "delta": delta,
+            "headroom_pct": headroom_pct,
+        })
+
+    return api_response({
+        "track_id": track_id,
+        "session_id": session_id,
+        "aggregate_sessions": aggregate.session_count,
+        "bins": delta_bins,
+        "bin_count": len(delta_bins),
+        "summary": {
+            "mean_headroom_pct": round(
+                sum(b["headroom_pct"] for b in delta_bins) / max(len(delta_bins), 1), 1
+            ),
+            "max_headroom_pct": round(
+                max((b["headroom_pct"] for b in delta_bins), default=0.0), 1
+            ),
+            "bins_with_headroom": sum(1 for b in delta_bins if b["headroom_pct"] > 5),
+        },
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/physics-ceiling
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/physics-ceiling", methods=["GET"])
+@_safe_api
+def get_physics_ceiling(session_id: str) -> tuple[dict, int]:
+    """Return per-meter maximum speed from aggregate track surface grip."""
+    import os
+    import numpy as np
+
+    _G = 9.80665
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Physics ceiling requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data for session", status=404)
+
+    # Get track_id
+    track_id = analysis.get("track_id")
+    if not track_id and isinstance(session, dict):
+        track_id = session.get("track_id")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected for this session", status=404)
+
+    # Resolve vehicle_class and condition for partitioned lookup
+    vehicle_class = "car"
+    condition_state = "dry"
+    if isinstance(session, dict):
+        vehicle_class = session.get("vehicle_class", "car")
+    if analysis:
+        vehicle_class = analysis.get("vehicle_class", vehicle_class)
+        condition_state = analysis.get("track_state", analysis.get("condition", "dry"))
+
+    # Get aggregate grip
+    try:
+        from track_surface import get_aggregate_grip
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    aggregate = get_aggregate_grip(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+    if aggregate is None:
+        return api_error(ErrorCode.NOT_FOUND, "No aggregate surface data yet", status=404)
+
+    # Build distance + curvature arrays
+    distances = None
+    curvature = None
+
+    opt_v2 = analysis.get("optimal_v2")
+    if opt_v2 and isinstance(opt_v2, dict):
+        distances = opt_v2.get("distance_m")
+        curvature = opt_v2.get("curvature_1pm")
+
+    gm = analysis.get("grip_map")
+    if distances is None and gm and isinstance(gm, dict):
+        distances = gm.get("distance_bins")
+
+    if distances is None or not distances:
+        return api_error(ErrorCode.NOT_FOUND, "No distance data available", status=404)
+
+    dist_arr = np.array(distances, dtype=float)
+
+    if curvature is not None:
+        curv_arr = np.abs(np.array(curvature, dtype=float))
+    else:
+        curv_arr = np.full(len(dist_arr), 0.001)
+        corners = analysis.get("corners")
+        if corners and isinstance(corners, list):
+            for c in corners:
+                if isinstance(c, dict) and "s_start" in c and "s_end" in c:
+                    s_s = c.get("s_start", 0)
+                    s_e = c.get("s_end", 0)
+                    apex_k = c.get("curvature_1pm", 0.01)
+                    mask = (dist_arr >= s_s) & (dist_arr <= s_e)
+                    curv_arr[mask] = max(abs(apex_k), 0.001)
+
+    # Compute ceiling
+    mu_arr = np.array([aggregate.mu_at(float(d), "p95") for d in dist_arr])
+    kappa_safe = np.maximum(curv_arr, 1e-6)
+    v_max_mps = np.sqrt(mu_arr * _G / kappa_safe)
+    v_max_mps = np.clip(v_max_mps, 0, 100)
+
+    ceiling_kph = (v_max_mps * 3.6).tolist()
+    dist_list = dist_arr.tolist()
+
+    return api_response({
+        "distances": dist_list,
+        "ceiling_speeds_kph": ceiling_kph,
+        "aggregate_sessions": aggregate.session_count,
+        "track_id": track_id,
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/tracks/<track_id>/global-surface
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/tracks/<track_id>/global-surface", methods=["GET"])
+@_safe_api
+def get_global_surface(track_id: str) -> tuple[dict, int]:
+    """Return the global (cross-workspace) aggregate track surface."""
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Global surface requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+
+    # Resolve vehicle_class and condition from query params
+    vehicle_class = request.args.get("vehicle_class", "car")
+    condition_state = request.args.get("condition", "dry")
+
+    try:
+        from track_surface import get_global_aggregate_grip
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Track surface module not available", status=404)
+
+    aggregate = get_global_aggregate_grip(
+        conn, track_id, vehicle_class=vehicle_class, condition=condition_state,
+    )
+    if aggregate is None:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            f"No global surface data for track '{track_id}'",
+            status=404,
+        )
+
+    return api_response(aggregate.to_dict())
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/corner-coaching-v4
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/corner-coaching-v4", methods=["GET"])
+@_safe_api
+def get_corner_coaching_v4(session_id: str) -> tuple[dict, int]:
+    """Per-corner aggregate coaching with physics-based narratives."""
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Aggregate coaching requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Track ID
+    track_id = analysis.get("track_id")
+    if not track_id and isinstance(session, dict):
+        track_id = session.get("track_id")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected", status=404)
+
+    # Resolve vehicle_class and condition for partitioned lookup
+    vehicle_class = "car"
+    condition_state = "dry"
+    if isinstance(session, dict):
+        vehicle_class = session.get("vehicle_class", "car")
+    if analysis:
+        vehicle_class = analysis.get("vehicle_class", vehicle_class)
+        condition_state = analysis.get("track_state", analysis.get("condition", "dry"))
+
+    # Aggregate grip
+    try:
+        from track_surface import get_aggregate_grip
+        from corner_coaching_aggregate import compute_corner_coaching_v4
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Required modules not available", status=404)
+
+    aggregate = get_aggregate_grip(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+    if aggregate is None:
+        return api_error(ErrorCode.NOT_FOUND, "No aggregate surface data yet — upload more sessions", status=404)
+
+    # Corners from analysis_json
+    corners = analysis.get("corners", [])
+    if not corners:
+        return api_error(ErrorCode.NOT_FOUND, "No corners detected for this session", status=404)
+
+    # Speed trace — use get_gps_trace (returns distances + speeds)
+    lap_num = _get_lap_param(conn, session_id)
+    speed_data = {}
+    if lap_num is not None:
+        trace = models.get_gps_trace(conn, session_id, lap_num)
+        if trace:
+            dists = trace.get("distances", [])
+            spds = trace.get("speeds", [])
+            # Normalize per-lap distances to start from 0
+            if dists and len(dists) > 1 and dists[0] != 0:
+                d_off = dists[0]
+                dists = [d - d_off for d in dists]
+            if dists and spds:
+                speed_data = {"distances": dists, "speeds": spds}
+
+    if not speed_data.get("distances") or not speed_data.get("speeds"):
+        return api_error(ErrorCode.NOT_FOUND, "No speed trace data available", status=404)
+
+    # Handling events (optional)
+    handling = analysis.get("handling_events", [])
+
+    result = compute_corner_coaching_v4(
+        aggregate, corners, speed_data, handling_events=handling,
+    )
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-ribbon
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-ribbon", methods=["GET"])
+@_safe_api
+def get_track_ribbon(session_id: str) -> tuple[dict, int]:
+    """Return track centerline with normals and width for 2.5D ribbon rendering.
+
+    Each point has: lat, lon, distance, normal vector (perpendicular to heading),
+    width (from GPS scatter or default), grip mu, and headroom.
+    """
+    import numpy as np
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    # Get GPS trace for best lap
+    lap = request.args.get("lap", type=int)
+    try:
+        gps = models.get_gps_trace(conn, session_id, lap)
+    except Exception:
+        gps = None
+    if not gps or not gps.get("latitudes") or len(gps["latitudes"]) < 3:
+        return api_error(ErrorCode.NOT_FOUND, "No GPS trace data", status=404)
+
+    lats = np.array(gps["latitudes"], dtype=float)
+    lons = np.array(gps["longitudes"], dtype=float)
+    dists = np.array(gps.get("distances", []), dtype=float) if gps.get("distances") else np.arange(len(lats), dtype=float)
+    speeds = np.array(gps.get("speeds", []), dtype=float) if gps.get("speeds") else None
+
+    n = len(lats)
+    if n < 3:
+        return api_error(ErrorCode.NOT_FOUND, "Too few GPS points", status=404)
+
+    # Compute normals (perpendicular to heading at each point)
+    # Convert lat/lon to local meters
+    cos_lat = np.cos(np.radians(np.mean(lats)))
+    x_m = (lons - np.mean(lons)) * cos_lat * 111320  # approx meters
+    y_m = (lats - np.mean(lats)) * 111320
+
+    # Heading vector via finite differences
+    dx = np.gradient(x_m)
+    dy = np.gradient(y_m)
+    mag = np.sqrt(dx**2 + dy**2)
+    mag[mag < 1e-9] = 1e-9
+
+    # Normal = 90° rotation of tangent (pointing left)
+    nx = -dy / mag
+    ny = dx / mag
+
+    # Default width: 8m for a karting track, can be overridden by aggregate scatter
+    default_width_m = 8.0
+    widths = np.full(n, default_width_m)
+
+    # Try to get width from aggregate track surface (lateral_scatter_m)
+    analysis = models.get_analysis_json(conn, session_id)
+    track_id = None
+    vehicle_class = "car"
+    condition_state = "dry"
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+        vehicle_class = analysis.get("vehicle_class", "car")
+        condition_state = analysis.get("track_state", "dry")
+
+    grip_values = np.full(n, 0.0)
+    headroom_values = np.full(n, 0.0)
+    aggregate_sessions = 0
+
+    if track_id and track_id != "unknown_track":
+        import os
+        if os.environ.get("USE_PG", "0") == "1":
+            try:
+                from track_surface import get_track_surface
+                surface = get_track_surface(conn, track_id, vehicle_class=vehicle_class, condition=condition_state)
+                if surface and surface.get("bins"):
+                    bins = surface["bins"]
+                    aggregate_sessions = surface.get("total_sessions", 0)
+                    # Build lookup arrays from bins
+                    bin_dists = np.array([b["distance_m"] for b in bins])
+                    bin_widths = np.array([b.get("lateral_scatter_m") or default_width_m for b in bins])
+                    bin_mu = np.array([b["mu_lat_p95"] for b in bins])
+
+                    # Interpolate to GPS point distances
+                    if len(bin_dists) > 1 and len(dists) > 1:
+                        widths = np.interp(dists, bin_dists, bin_widths)
+                        # Clamp widths to reasonable range
+                        widths = np.clip(widths, 3.0, 20.0)
+                        # Scale up scatter to approximate full track width
+                        # lateral_scatter is 1-sigma of GPS spread, full width ≈ 4*sigma
+                        widths = np.maximum(widths * 4, 5.0)
+                        grip_values = np.interp(dists, bin_dists, bin_mu)
+            except Exception:
+                pass
+
+    # Subsample if too many points (target ~200 for smooth rendering)
+    max_pts = 300
+    if n > max_pts:
+        step = max(1, n // max_pts)
+        indices = np.arange(0, n, step)
+        # Always include last point
+        if indices[-1] != n - 1:
+            indices = np.append(indices, n - 1)
+        lats = lats[indices]
+        lons = lons[indices]
+        dists = dists[indices] if len(dists) == n else dists[indices] if len(dists) > max(indices) else np.arange(len(indices), dtype=float)
+        nx = nx[indices]
+        ny = ny[indices]
+        widths = widths[indices]
+        grip_values = grip_values[indices]
+        headroom_values = headroom_values[indices]
+        if speeds is not None and len(speeds) == n:
+            speeds = speeds[indices]
+        n = len(lats)
+
+    # Build response
+    # Physics assumption: grip is highest on the racing line (center),
+    # drops ~15% at track edges due to less rubber deposition
+    _EDGE_GRIP_FACTOR = 0.85  # edges have ~85% of centerline grip
+
+    points = []
+    for i in range(n):
+        pt = {
+            "lat": round(float(lats[i]), 7),
+            "lon": round(float(lons[i]), 7),
+            "distance_m": round(float(dists[i]), 1) if i < len(dists) else float(i),
+            "nx": round(float(nx[i]), 6),
+            "ny": round(float(ny[i]), 6),
+            "width_m": round(float(widths[i]), 1),
+            "mu_p95": round(float(grip_values[i]), 4) if grip_values[i] > 0 else None,
+        }
+        if grip_values[i] > 0:
+            pt["mu_center"] = round(float(grip_values[i]), 4)
+            pt["mu_left"] = round(float(grip_values[i] * _EDGE_GRIP_FACTOR), 4)
+            pt["mu_right"] = round(float(grip_values[i] * _EDGE_GRIP_FACTOR), 4)
+        if speeds is not None and i < len(speeds):
+            pt["speed_mps"] = round(float(speeds[i]), 2)
+        points.append(pt)
+
+    # Corner metadata
+    corner_list = []
+    if analysis and isinstance(analysis, dict):
+        for c in analysis.get("corners", []):
+            if isinstance(c, dict) and "s_start" in c:
+                corner_list.append({
+                    "corner_id": c.get("corner_id"),
+                    "corner_name": c.get("corner_name", f"T{c.get('corner_id', '?')}"),
+                    "direction": c.get("direction", "?"),
+                    "s_apex": c.get("s_apex"),
+                })
+
+    return api_response({
+        "points": points,
+        "corners": corner_list,
+        "aggregate_sessions": aggregate_sessions,
+        "track_id": track_id,
+        "point_count": len(points),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/track-evolution
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/track-evolution", methods=["GET"])
+@_safe_api
+def get_track_evolution(session_id: str) -> tuple[dict, int]:
+    """Return grip evolution timeline for this session's track.
+
+    Shows how the aggregate grip profile has changed over time,
+    with per-snapshot mu_p95 averages and session counts.
+    """
+    import os
+    import json
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Track evolution requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    track_id = None
+    vehicle_class = "car"
+    condition_state = "dry"
+    if analysis and isinstance(analysis, dict):
+        track_id = analysis.get("track_id")
+        vehicle_class = analysis.get("vehicle_class", "car")
+        condition_state = analysis.get("track_state", "dry")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected", status=404)
+
+    sql = """
+        SELECT snapshot_at, session_count, grip_profile, session_id
+        FROM track_surface_snapshots
+        WHERE track_id = %(track_id)s
+          AND vehicle_class = %(vehicle_class)s
+          AND condition = %(condition)s
+        ORDER BY snapshot_at ASC
+    """
+    try:
+        rows = conn.execute(sql, {
+            "track_id": track_id,
+            "vehicle_class": vehicle_class,
+            "condition": condition_state,
+        }).fetchall()
+    except Exception:
+        return api_error(ErrorCode.NOT_FOUND, "No evolution data", status=404)
+
+    if not rows:
+        return api_error(ErrorCode.NOT_FOUND, "No evolution snapshots yet", status=404)
+
+    snapshots = []
+    for r in rows:
+        profile = r[2] if isinstance(r[2], list) else json.loads(r[2]) if isinstance(r[2], str) else []
+        # Compute average mu_p95 across all bins
+        mu_values = [p.get("p95", 0) for p in profile if isinstance(p, dict)]
+        avg_mu = sum(mu_values) / len(mu_values) if mu_values else 0
+
+        snapshots.append({
+            "timestamp": str(r[0]),
+            "session_count": r[1],
+            "avg_mu_p95": round(avg_mu, 4),
+            "bin_count": len(profile),
+            "session_id": r[3],
+        })
+
+    return api_response({
+        "track_id": track_id,
+        "vehicle_class": vehicle_class,
+        "condition": condition_state,
+        "snapshots": snapshots,
+        "snapshot_count": len(snapshots),
+    })
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/surface-profile
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/surface-profile", methods=["GET"])
+@_safe_api
+def get_surface_profile(session_id: str) -> tuple[dict, int]:
+    """Return enriched track surface properties: elevation, slope, camber, roughness.
+
+    Reads from the pipeline's track_surface_summary stored in analysis_json.
+    """
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Try track_surface_summary first (from s10d pipeline stage)
+    surface_summary = analysis.get("track_surface_summary")
+    if not surface_summary or not isinstance(surface_summary, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No surface profile data — this session may not have enough laps", status=404)
+
+    # Extract available arrays
+    result: dict[str, Any] = {"available_layers": []}
+
+    # Distance grid
+    s_grid = surface_summary.get("s_grid")
+    if s_grid:
+        result["distance_m"] = s_grid
+
+    # Elevation
+    elevation = surface_summary.get("elevation_m")
+    if elevation:
+        result["elevation_m"] = elevation
+        result["available_layers"].append("elevation")
+
+    # Slope
+    slope = surface_summary.get("slope_pct")
+    if slope:
+        result["slope_pct"] = slope
+        result["available_layers"].append("slope")
+
+    # Camber
+    camber = surface_summary.get("camber_rad")
+    if camber:
+        result["camber_rad"] = camber
+        # Convert to degrees for frontend
+        result["camber_deg"] = [round(math.degrees(c), 2) if c is not None else None for c in camber]
+        result["available_layers"].append("camber")
+
+    # Vertical curvature (compressions and crests)
+    vert_curv = surface_summary.get("vert_curvature_1pm")
+    if vert_curv:
+        result["vert_curvature_1pm"] = vert_curv
+        result["available_layers"].append("vert_curvature")
+
+    # Width
+    width_left = surface_summary.get("width_left_m")
+    width_right = surface_summary.get("width_right_m")
+    if width_left and width_right:
+        result["width_left_m"] = width_left
+        result["width_right_m"] = width_right
+        result["total_width_m"] = [
+            round((l or 0) + (r or 0), 1)
+            for l, r in zip(width_left, width_right)
+        ]
+        result["available_layers"].append("width")
+
+    # Grip variance as roughness proxy (from grip_map bin stats)
+    grip_map = analysis.get("grip_map")
+    if grip_map and isinstance(grip_map, dict):
+        distance_bins = grip_map.get("distance_bins", [])
+        mu_p95 = grip_map.get("mu_p95", [])
+        mu_mean = grip_map.get("mu_mean", [])
+        if distance_bins and mu_p95 and mu_mean:
+            # Roughness proxy: difference between p95 and mean (higher = more variable surface)
+            roughness = [round(p - m, 4) for p, m in zip(mu_p95, mu_mean)]
+            result["roughness_mu_delta"] = roughness
+            result["roughness_distance_m"] = distance_bins
+            result["available_layers"].append("roughness")
+
+    if not result.get("available_layers"):
+        return api_error(ErrorCode.NOT_FOUND, "No surface enrichment data available", status=404)
+
+    result["track_id"] = analysis.get("track_id")
+    result["n_laps"] = surface_summary.get("n_laps", 0)
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
+# GET /api/v1/sessions/<id>/racing-line
+# ══════════════════════════════════════════════════════════════════
+
+
+@bp.route("/sessions/<session_id>/racing-line", methods=["GET"])
+@_safe_api
+def get_racing_line(session_id: str) -> tuple[dict, int]:
+    """Compute or return cached optimal racing line for this session's track.
+
+    Uses the CasADi OCP solver with the track surface model to find the
+    minimum-time path through the track, including lateral offset, speed,
+    throttle, brake, and steering at each point.
+    """
+    import os
+
+    if os.environ.get("USE_PG", "0") != "1":
+        return api_error(ErrorCode.NOT_FOUND, "Racing line requires PostgreSQL mode", status=404)
+
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    analysis = models.get_analysis_json(conn, session_id)
+    if not analysis or not isinstance(analysis, dict):
+        return api_error(ErrorCode.NOT_FOUND, "No analysis data", status=404)
+
+    # Check for cached result
+    cached = analysis.get("racing_line")
+    if cached and isinstance(cached, dict) and cached.get("distance_m"):
+        return api_response(cached)
+
+    # Need track surface with boundaries for the solver
+    track_id = analysis.get("track_id")
+    if not track_id or track_id == "unknown_track":
+        return api_error(ErrorCode.NOT_FOUND, "No track detected", status=404)
+
+    # Try to load the TrackSurface and solver bridge
+    try:
+        from track_surface.store import load_track_model
+        from track_surface.solver_bridge import solve_optimal_line
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "Solver modules not available", status=404)
+
+    surface = load_track_model(track_id)
+    if surface is None or not surface.has_boundaries:
+        return api_error(
+            ErrorCode.NOT_FOUND,
+            "Track surface needs boundaries (3+ sessions with GPS data) to compute racing line",
+            status=404,
+        )
+
+    # Resolve vehicle params
+    vehicle_params = None
+    try:
+        from lap_oracle.config import VehicleParams
+        # Try to get VehicleModel from the sim optimizer results in analysis_json
+        sim_vehicle = analysis.get("sim_optimizer_vehicle")
+        if sim_vehicle and isinstance(sim_vehicle, dict):
+            vehicle_params = VehicleParams.from_dict(sim_vehicle)
+    except Exception:
+        pass
+
+    if vehicle_params is None:
+        try:
+            from lap_oracle.config import VehicleParams
+            vehicle_class = analysis.get("vehicle_class", "car")
+            if vehicle_class == "kart":
+                vehicle_params = VehicleParams(
+                    mass_kg=180, wheelbase_m=1.05, cda=0.5, cla=0.0,
+                    max_power_w=20000, max_brake_decel=8.0,
+                )
+            else:
+                vehicle_params = VehicleParams()  # GT car defaults
+        except ImportError:
+            return api_error(ErrorCode.NOT_FOUND, "Vehicle config not available", status=404)
+
+    # Run the OCP solver with tight timeout
+    n_points = int(request.args.get("n_points", 100))
+    n_points = max(50, min(n_points, 300))
+    max_time = float(request.args.get("max_time", 20.0))
+    max_time = max(5.0, min(max_time, 60.0))
+
+    try:
+        solution = solve_optimal_line(
+            surface, vehicle_params,
+            n_points=n_points, max_time_s=max_time,
+        )
+    except ImportError:
+        return api_error(ErrorCode.NOT_FOUND, "CasADi solver not installed", status=404)
+    except Exception as exc:
+        logger.warning("Racing line solve failed: %s", exc)
+        return api_error(ErrorCode.NOT_FOUND, "Solver failed: %s" % exc, status=404)
+
+    if solution is None:
+        return api_error(ErrorCode.NOT_FOUND, "Solver produced no result", status=404)
+
+    # Build response
+    import numpy as np
+
+    result = {
+        "track_id": track_id,
+        "lap_time_s": round(solution.optimal_lap_time_s, 3),
+        "solver_status": solution.solver_status,
+        "solver_time_s": round(solution.solver_time_s, 2),
+        "n_points": len(solution.distance_m),
+        "distance_m": np.round(solution.distance_m, 2).tolist(),
+        "speed_mps": np.round(solution.speed_mps, 3).tolist(),
+        "speed_kph": np.round(solution.speed_mps * 3.6, 1).tolist(),
+        "lateral_offset_m": np.round(solution.lateral_offset_m, 3).tolist(),
+        "throttle": np.round(solution.throttle, 3).tolist(),
+        "brake": np.round(solution.brake, 3).tolist(),
+        "steering_rad": np.round(solution.steering_rad, 4).tolist(),
+    }
+
+    # Cache in analysis_json for future requests
+    try:
+        analysis["racing_line"] = result
+        models.insert_analysis_json(conn, session_id, analysis)
+        conn.commit()
+    except Exception:
+        pass  # Cache failure is non-fatal
+
+    return api_response(result)
+
+
+# ══════════════════════════════════════════════════════════════════
 # GET /api/v1/sessions/<id>/optimal-v2
 # ══════════════════════════════════════════════════════════════════
 
@@ -5435,6 +6740,7 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
     try:
         v2_handling = s10b_corners.run_handling_analysis_v2(
             v2_sections, best_lap_df, available_columns=avail_cols,
+            best_lap_number=best_lap_num,
         )
     except Exception:
         logger.exception("Handling analysis failed for session %s", session_id)
@@ -5457,6 +6763,15 @@ def recoach_session(session_id: str) -> tuple[dict, int]:
             analysis["mrp_events_v2"] = v2_mrp
         if v2_coaching:
             analysis["corner_coaching_v2"] = v2_coaching
+        if v2_handling and not v2_handling.get("legacy"):
+            analysis["handling_balance"] = {
+                "summary": v2_handling.get("summary"),
+                "focus_corners": v2_handling.get("focus_corners"),
+                "best_lap_mistakes": v2_handling.get("best_lap_mistakes"),
+                "setup_recommendations": v2_handling.get("setup_recommendations"),
+                "driving_tips": v2_handling.get("driving_tips"),
+                "corner_positions": v2_handling.get("corner_positions"),
+            }
         models.insert_analysis_json(conn, session_id, analysis)
         conn.commit()
     except Exception:
@@ -6089,6 +7404,340 @@ def set_endurance_anchor(session_id: str) -> tuple[dict, int]:
     upsert_race_anchor(conn, session_id, race_start_iso, lap_duration_s)
 
     return api_response({"ok": True}, status=201)
+
+
+# ── Reveal payload builder ────────────────────────────────────────
+
+
+def _build_reveal_payload(
+    session: dict,
+    scores: dict | None,
+    theo_data: dict | None,
+    analysis: dict | None,
+) -> dict:
+    """Assemble the reveal payload from pre-fetched data.
+
+    All inputs are dicts as returned by the repo functions.
+    Returns a dict matching the reveal API contract.
+    """
+    result: dict = {
+        "total_score": session.get("total_score"),
+        "grade": session.get("grade"),
+        "best_lap_s": session.get("best_lap_time_s"),
+        "n_laps": session.get("n_laps"),
+        "track_name": session.get("track_name"),
+        "session_date": session.get("session_date"),
+    }
+
+    # ── Top corners (from theoretical_data.corner_coaching) ──
+    corner_coaching = (theo_data or {}).get("corner_coaching", []) or []
+    # Filter corners with positive time loss, sort desc
+    lossy = [c for c in corner_coaching
+             if (c.get("time_loss_total_s") or 0) > 0]
+    lossy.sort(key=lambda c: c.get("time_loss_total_s", 0), reverse=True)
+
+    result["top_corners"] = []
+    for c in lossy[:3]:
+        hints = c.get("coaching_hints") or []
+        result["top_corners"].append({
+            "corner_id": c.get("corner_id"),
+            "direction": c.get("direction"),
+            "time_loss_s": round(c.get("time_loss_total_s", 0), 3),
+            "coaching_hint": hints[0] if hints else None,
+        })
+
+    result["recoverable_s"] = (
+        round(sum(c.get("time_loss_total_s", 0) for c in lossy), 3)
+        if lossy else None
+    )
+
+    # ── Focus areas (prefer coaching_v3 > coaching_v2 > scores.weaknesses) ──
+    analysis = analysis or {}
+    coaching = analysis.get("coaching_v3") or analysis.get("coaching_v2") or {}
+    raw_focus = coaching.get("focus_areas", []) if coaching else []
+
+    if raw_focus:
+        # Sort by time_loss_s desc if available, take top 3
+        sorted_fa = sorted(raw_focus, key=lambda f: f.get("time_loss_s", 0), reverse=True)
+        result["focus_areas"] = [
+            {"category": f.get("category", "general"), "summary": f.get("summary", "")}
+            for f in sorted_fa[:3]
+        ]
+    else:
+        # Fallback to scores.weaknesses (plain strings)
+        weaknesses = (scores or {}).get("weaknesses", []) or []
+        result["focus_areas"] = [
+            {"category": "general", "summary": w}
+            for w in weaknesses[:3]
+        ]
+
+    # ── Drills (prefer coaching_v3 > coaching_v2) ──
+    raw_drills = coaching.get("drills", []) if coaching else []
+    if raw_drills:
+        sorted_drills = sorted(raw_drills, key=lambda d: d.get("rank", 999))
+        result["drills"] = [
+            {"title": d.get("title", ""), "target_improvement": d.get("target_improvement", "")}
+            for d in sorted_drills[:3]
+        ]
+    else:
+        result["drills"] = []
+
+    # ── Confidence (from theoretical_metrics) ──
+    theo_metrics = (theo_data or {}).get("theoretical_metrics", {}) or {}
+    conf = theo_metrics.get("confidence")
+    if conf and isinstance(conf, dict):
+        result["confidence"] = {
+            "score": conf.get("confidence_score"),
+            "level": conf.get("confidence_level"),
+        }
+    else:
+        result["confidence"] = None
+
+    return result
+
+
+# ── GET /api/v1/sessions/<id>/reveal ──────────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/reveal", methods=["GET"])
+@_safe_api
+def get_reveal(session_id: str) -> tuple[dict, int]:
+    """Return a lightweight reveal payload for post-upload display."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    scores = models.get_score_details(conn, session_id)
+    theo_data = models.get_theoretical_data(conn, session_id)
+    analysis = models.get_analysis_json(conn, session_id)
+
+    payload = _build_reveal_payload(session, scores, theo_data, analysis)
+    return api_response(payload)
+
+
+# ── GET /api/v1/sessions/<id>/reference-candidates ────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/reference-candidates", methods=["GET"])
+@_safe_api
+def get_reference_candidates(session_id: str) -> tuple[dict, int]:
+    """Return sessions on the same track for the reference picker."""
+    conn = get_db_connection()
+    session = models.get_session_by_id(conn, session_id)
+    if session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    track_name = session.get("track_name")
+    if not track_name:
+        return api_response([])
+
+    try:
+        limit = max(1, min(int(request.args.get("limit", 20)), 50))
+    except (ValueError, TypeError):
+        limit = 20
+
+    rows = conn.execute(
+        """SELECT s.session_id, d.driver_name, s.session_date,
+                  s.best_lap_time_s, s.n_laps, s.session_type,
+                  (SELECT l.lap_number FROM laps l
+                   WHERE l.session_id = s.session_id AND l.is_best = 1
+                   LIMIT 1) AS best_lap_number
+           FROM sessions s
+           LEFT JOIN drivers d ON s.driver_id = d.driver_id
+           LEFT JOIN tracks t ON s.track_id = t.track_id
+           WHERE t.track_name = :track AND s.session_id != :sid
+                 AND s.deleted_at IS NULL
+           ORDER BY s.session_date DESC
+           LIMIT :lim""",
+        {"track": track_name, "sid": session_id, "lim": limit},
+    ).fetchall()
+
+    candidates = [
+        {
+            "session_id": r["session_id"],
+            "driver_name": r["driver_name"],
+            "session_date": r["session_date"],
+            "best_lap_time_s": r["best_lap_time_s"],
+            "best_lap_number": r["best_lap_number"],
+            "n_laps": r["n_laps"],
+            "session_type": r["session_type"],
+        }
+        for r in rows
+    ]
+    return api_response(candidates)
+
+
+# ── GET /api/v1/sessions/<id>/reference-data ──────────────────────────────────
+
+
+@bp.route("/sessions/<session_id>/reference-data", methods=["GET"])
+@_safe_api
+def get_reference_data(session_id: str) -> tuple[dict, int]:
+    """Return speed, GPS, and GG data for primary + reference lap on a common distance axis."""
+    ref_session_id = request.args.get("ref_session")
+    if not ref_session_id:
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "ref_session parameter is required", status=400)
+
+    try:
+        primary_lap = int(request.args.get("primary_lap", 0))
+        ref_lap = int(request.args.get("ref_lap", 0))
+    except (ValueError, TypeError):
+        return api_error(ErrorCode.VALIDATION_ERROR,
+                         "primary_lap and ref_lap must be integers", status=400)
+
+    conn = get_db_connection()
+
+    # Validate both sessions exist
+    primary_session = models.get_session_by_id(conn, session_id)
+    if primary_session is None:
+        return api_error(ErrorCode.NOT_FOUND, "Session not found", status=404)
+
+    ref_session = models.get_session_by_id(conn, ref_session_id)
+    if ref_session is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         f"Reference session {ref_session_id} not found", status=404)
+
+    # Validate both sessions are on the same track
+    primary_track_id = primary_session.get("track_id")
+    ref_track_id = ref_session.get("track_id")
+    if not primary_track_id or not ref_track_id or primary_track_id != ref_track_id:
+        return api_error(
+            ErrorCode.VALIDATION_ERROR,
+            "Sessions must be on the same track for reference overlay",
+            status=400,
+        )
+
+    # Resolve lap numbers (fall back to best/first if 0 or None provided)
+    if not primary_lap:
+        primary_lap = _resolve_lap_number(conn, session_id)
+    if not ref_lap:
+        ref_lap = _resolve_lap_number(conn, ref_session_id)
+
+    if primary_lap is None or ref_lap is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No laps found for one or both sessions", status=404)
+
+    # Fetch GPS traces
+    primary_trace = models.get_gps_trace(conn, session_id, primary_lap)
+    ref_trace = models.get_gps_trace(conn, ref_session_id, ref_lap)
+
+    if primary_trace is None or ref_trace is None:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "GPS trace not found for one or both sessions", status=404)
+
+    import numpy as np
+
+    dist_a = primary_trace.get("distances", [])
+    spd_a = primary_trace.get("speeds", [])
+    dist_b = ref_trace.get("distances", [])
+    spd_b = ref_trace.get("speeds", [])
+
+    if not dist_a or not spd_a or not dist_b or not spd_b:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "Insufficient trace data for reference overlay", status=404)
+
+    # Normalize to 0-based distances
+    if dist_a[0] != 0:
+        d0 = dist_a[0]
+        dist_a = [d - d0 for d in dist_a]
+    if dist_b[0] != 0:
+        d0 = dist_b[0]
+        dist_b = [d - d0 for d in dist_b]
+
+    # Common distance axis — use shorter lap's range, max 500 points
+    max_dist = min(dist_a[-1], dist_b[-1])
+    if max_dist <= 0:
+        return api_error(ErrorCode.NOT_FOUND,
+                         "No valid distance range for reference overlay", status=404)
+
+    n_points = min(500, min(len(dist_a), len(dist_b)))
+    common = np.linspace(0, max_dist, n_points)
+    common_list = common.tolist()
+
+    # Interpolate speed onto common axis
+    interp_spd_a = np.interp(common, dist_a, spd_a).tolist()
+    interp_spd_b = np.interp(common, dist_b, spd_b).tolist()
+
+    # Interpolate GPS onto common axis
+    lat_a = primary_trace.get("latitudes", [])
+    lon_a = primary_trace.get("longitudes", [])
+    lat_b = ref_trace.get("latitudes", [])
+    lon_b = ref_trace.get("longitudes", [])
+
+    interp_lat_a = np.interp(common, dist_a, lat_a).tolist() if lat_a else []
+    interp_lon_a = np.interp(common, dist_a, lon_a).tolist() if lon_a else []
+    interp_lat_b = np.interp(common, dist_b, lat_b).tolist() if lat_b else []
+    interp_lon_b = np.interp(common, dist_b, lon_b).tolist() if lon_b else []
+
+    # Interpolate GG data onto common axis (may be absent)
+    accel_lat_a = primary_trace.get("accel_lat", [])
+    accel_long_a = primary_trace.get("accel_long", [])
+    accel_lat_b = ref_trace.get("accel_lat", [])
+    accel_long_b = ref_trace.get("accel_long", [])
+
+    interp_accel_lat_a = np.interp(common, dist_a, accel_lat_a).tolist() if accel_lat_a else [0.0] * n_points
+    interp_accel_long_a = np.interp(common, dist_a, accel_long_a).tolist() if accel_long_a else [0.0] * n_points
+    interp_accel_lat_b = np.interp(common, dist_b, accel_lat_b).tolist() if accel_lat_b else [0.0] * n_points
+    interp_accel_long_b = np.interp(common, dist_b, accel_long_b).tolist() if accel_long_b else [0.0] * n_points
+
+    # Lap times from DB (needed before delta so we can anchor to official).
+    primary_lap_row = conn.execute(
+        "SELECT lap_time_s FROM laps WHERE session_id = :sid AND lap_number = :lap",
+        {"sid": session_id, "lap": primary_lap},
+    ).fetchone()
+    ref_lap_row = conn.execute(
+        "SELECT lap_time_s FROM laps WHERE session_id = :sid AND lap_number = :lap",
+        {"sid": ref_session_id, "lap": ref_lap},
+    ).fetchone()
+
+    primary_lap_time = primary_lap_row["lap_time_s"] if primary_lap_row else None
+    ref_lap_time = ref_lap_row["lap_time_s"] if ref_lap_row else None
+
+    # Canonical cumulative delta — trapezoidal, NaN-safe, no forward-fill.
+    # Anchored to the official lap-time difference when both times are known.
+    from telemetry_tool.deltas import cumulative_delta
+    delta_result = cumulative_delta(
+        progress_a=dist_a,
+        speed_a=spd_a,
+        progress_b=dist_b,
+        speed_b=spd_b,
+        lap_time_a_s=primary_lap_time,
+        lap_time_b_s=ref_lap_time,
+        n_grid=n_points,
+        anchor_to_official=True,
+    )
+    delta_s = delta_result.delta_s.tolist()
+
+    return api_response({
+        "primary": {
+            "session_id": session_id,
+            "lap_number": primary_lap,
+            "lap_time_s": primary_lap_time,
+        },
+        "reference": {
+            "session_id": ref_session_id,
+            "lap_number": ref_lap,
+            "lap_time_s": ref_lap_time,
+            "driver_name": ref_session.get("driver_name"),
+            "session_date": ref_session.get("session_date"),
+        },
+        "distances": common_list,
+        "speed": {
+            "primary": interp_spd_a,
+            "reference": interp_spd_b,
+            "delta_s": delta_s,
+        },
+        "gps": {
+            "primary": {"latitudes": interp_lat_a, "longitudes": interp_lon_a},
+            "reference": {"latitudes": interp_lat_b, "longitudes": interp_lon_b},
+        },
+        "gg": {
+            "primary": {"accel_lat": interp_accel_lat_a, "accel_long": interp_accel_long_a},
+            "reference": {"accel_lat": interp_accel_lat_b, "accel_long": interp_accel_long_b},
+        },
+    })
 
 
 # Dev-plans endpoints moved to api_v1_entities.py (Task 5).

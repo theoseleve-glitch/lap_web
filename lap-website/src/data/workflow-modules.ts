@@ -6,23 +6,10 @@ export interface WorkflowModule {
   summary: string;
   steps: string[];
   status: CapabilityStatus;
-  group: 'coaching' | 'strategy' | 'operations';
+  group: 'coaching' | 'strategy';
 }
 
 export const workflowModules: WorkflowModule[] = [
-  {
-    id: 'upload-analyze',
-    title: 'Upload and Analyze',
-    summary: 'Move from raw file to validated analysis with explicit operator checks.',
-    steps: [
-      'File select and format validation',
-      'Session metadata capture',
-      'Corner picker and segment review',
-      'Joker confirmation before final scoring',
-    ],
-    status: 'available_now',
-    group: 'coaching',
-  },
   {
     id: 'session-intelligence',
     title: 'Session Intelligence',
@@ -52,7 +39,7 @@ export const workflowModules: WorkflowModule[] = [
       'Assigned practice plans',
       'Progress scoring and notes',
     ],
-    status: 'available_now',
+    status: 'coming_soon',
     group: 'coaching',
   },
   {
@@ -69,6 +56,18 @@ export const workflowModules: WorkflowModule[] = [
     group: 'coaching',
   },
   {
+    id: 'ai-lap-optimizer',
+    title: 'AI Lap Time Optimizer',
+    summary: 'Use AI models to find the optimal racing line and lap time.',
+    steps: [
+      'Optimal line computation',
+      'Braking and throttle suggestions',
+      'Sector-by-sector improvement targets',
+    ],
+    status: 'coming_soon',
+    group: 'coaching',
+  },
+  {
     id: 'strategy-control-room',
     title: 'Race Strategy Control Room',
     summary: 'Use live dashboards for event operations and race planning.',
@@ -82,40 +81,39 @@ export const workflowModules: WorkflowModule[] = [
     group: 'strategy',
   },
   {
-    id: 'data-management',
-    title: 'Data Management',
-    summary: 'Maintain clean entities for tracks, karts, drivers, and weekends.',
+    id: 'live-timing-api',
+    title: 'Live Timing API Integration',
+    summary: 'Connect to live timing feeds for real-time position and gap data.',
     steps: [
-      'Track library and layout management',
-      'Kart profiles and setup records',
-      'Driver roster and availability',
-      'Weekend event grouping',
+      'Live timing data ingestion',
+      'Real-time gap and interval tracking',
+      'Position change alerts',
     ],
-    status: 'available_now',
-    group: 'operations',
+    status: 'coming_soon',
+    group: 'strategy',
   },
   {
-    id: 'account-team',
-    title: 'Account and Team',
-    summary: 'Manage identities, OAuth providers, and role-based access.',
+    id: 'meteo-radar',
+    title: 'Meteo Radar',
+    summary: 'Track weather conditions and forecasts to inform strategy calls.',
     steps: [
-      'Email auth and OAuth login',
-      'Workspace and team setup',
-      'Role and permission controls',
+      'Live weather overlay on track map',
+      'Rain probability timeline',
+      'Tire strategy recommendations',
     ],
-    status: 'enterprise_on_request',
-    group: 'operations',
+    status: 'coming_soon',
+    group: 'strategy',
   },
   {
-    id: 'data-rights',
-    title: 'Data Rights',
-    summary: 'Control data lifecycle and user rights workflows.',
+    id: 'dynamic-strategy',
+    title: 'Dynamic Strategy',
+    summary: 'Adaptive race strategy that recalculates based on live conditions.',
     steps: [
-      'Self-serve export requests',
-      'Deletion requests and processing',
-      'Retention policy controls',
+      'Real-time pit window recalculation',
+      'Fuel and tire degradation modeling',
+      'Scenario simulation and what-if analysis',
     ],
-    status: 'available_now',
-    group: 'operations',
+    status: 'coming_soon',
+    group: 'strategy',
   },
 ];

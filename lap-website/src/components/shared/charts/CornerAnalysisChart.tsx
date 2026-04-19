@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface CornerMetric {
   corner_id: number;
@@ -24,8 +25,15 @@ interface CornerAnalysisChartProps {
   sessionId: string; gpsLaps: number[]; bestLap: number | null; className?: string; controlledLap?: boolean;
 }
 
-const FONT = '10px "JetBrains Mono", monospace';
-const COL = { entry: '#3b82f6', min: '#b4ff39', exit: '#f59e0b', text: '#c4c4c4', grid: 'rgba(255,255,255,0.08)', whisker: '#c4c4c4' };
+const FONT = '10px "Space Mono", monospace';
+const COL = {
+  entry: chartColor.palette[3],
+  min: chartColor.series.positive,
+  exit: chartColor.series.warning,
+  text: chartColor.textSecondary,
+  grid: chartColor.grid,
+  whisker: chartColor.textSecondary,
+};
 const MS_KMH = 3.6;
 
 export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '' }: CornerAnalysisChartProps) {
@@ -71,7 +79,7 @@ export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '
     ctx.clearRect(0, 0, w, h);
 
     if (!corners.length) {
-      ctx.fillStyle = COL.text; ctx.font = '13px "JetBrains Mono", monospace';
+      ctx.fillStyle = COL.text; ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText('No corner data available', w / 2, h / 2);
       return;
@@ -184,8 +192,8 @@ export function CornerAnalysisChart({ sessionId, gpsLaps, bestLap, className = '
   return (
     <div ref={containerRef} className={className} role="img" aria-label="Corner analysis chart showing entry, minimum, and exit speeds per corner">
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
-        {loading && <span className="text-xs text-[#c4c4c4] animate-pulse">Loading corner data...</span>}
-        {error && !loading && <span className="text-xs text-red-400">{error}</span>}
+        {loading && <span className="text-xs text-steel animate-pulse">Loading corner data...</span>}
+        {error && !loading && <span className="text-xs text-safety-red">{error}</span>}
       </div>
       <div className="relative" style={{ width: '100%' }}>
         <canvas ref={canvasRef} style={{ width: '100%', height: '280px', display: 'block' }} />

@@ -694,69 +694,115 @@ def run_handling_analysis_v2(
     sections: Optional[list[dict[str, Any]]],
     best_lap_df: Optional[pd.DataFrame],
     available_columns: Optional[set[str]] = None,
-) -> Optional[dict[int, list[dict[str, Any]]]]:
-    """Step 10g3: Detect understeer/oversteer with causal chains."""
-    hd_mod = lazy_import("handling_detector")
-    if hd_mod is None or sections is None or best_lap_df is None:
+    best_lap_number: Optional[int] = None,
+) -> Optional[dict[str, Any]]:
+    """Step 10g3: Detect understeer/oversteer with 17-detector Bayesian fusion.
+
+    Uses the full handling detection system (telemetry_tool.handling.runner)
+    with per-session calibration, 17 detectors, and Bayesian fusion.
+    Falls back to the legacy single-detector method if the new system fails.
+    """
+    if best_lap_df is None or len(best_lap_df) < 50:
         return None
 
-    result = {}
+    # Try new multi-detector system first
+    try:
+        from telemetry_tool.handling.runner import run_handling_analysis
+
+        # Find columns (support both raw and canonical names)
+        def _col(candidates, df=best_lap_df):
+            for c in candidates:
+                if c in df.columns:
+                    return df[c].values
+            return None
+
+        time_s = _col(["Time (s)", "time_s"])
+        dist_m = _col(["Distance (m)", "distance_m"])
+        speed = _col(["Speed (m/s)", "speed_mps", "Speed (m/s) *calc"])
+        a_lat = _col(["Lateral acceleration (G) *calc", "accel_lat_mps2", "Lateral acceleration (G)"])
+        a_lon = _col(["Longitudinal acceleration (G) *calc", "accel_long_mps2", "Longitudinal acceleration (G)"])
+        bearing = _col(["Bearing (deg)", "heading_deg"])
+        lat_deg = _col(["Latitude (deg)", "lat_deg"])
+        lon_deg = _col(["Longitude (deg)", "lon_deg"])
+        lap_col = _col(["Lap #", "lap_number"])
+
+        # Convert accel from m/s2 to G if needed
+        if a_lat is not None and np.nanmax(np.abs(a_lat)) > 5:
+            a_lat = a_lat / 9.80665
+        if a_lon is not None and np.nanmax(np.abs(a_lon)) > 5:
+            a_lon = a_lon / 9.80665
+
+        required = [time_s, dist_m, speed, a_lat, a_lon, bearing, lat_deg, lon_deg]
+        if any(x is None for x in required):
+            logger.debug("Missing columns for new handling analysis, falling back to legacy")
+            return _legacy_handling_analysis(sections, best_lap_df)
+
+        if best_lap_number is None:
+            best_lap_number = 1
+        if lap_col is None:
+            lap_col = np.ones(len(time_s))
+
+        result = run_handling_analysis(
+            time_s=time_s, dist_m=dist_m, speed_mps=speed,
+            a_lat_g=a_lat, a_lon_g=a_lon, bearing_deg=bearing,
+            lat_deg=lat_deg, lon_deg=lon_deg, lap_col=lap_col,
+            best_lap=best_lap_number,
+            wheelbase_m=1.0, vehicle_class="kart",
+        )
+
+        # Add setup recommendations
+        from telemetry_tool.handling.setup_recommender import recommend_setup_changes
+        result["setup_recommendations"] = recommend_setup_changes(result.get("events", []))
+
+        logger.info("New handling analysis: %d corners, %d events, tendency=%s",
+                     result.get("summary", {}).get("n_corners", 0),
+                     result.get("summary", {}).get("n_events", 0),
+                     result.get("summary", {}).get("tendency", "?"))
+        return result
+
+    except Exception:
+        logger.warning("New handling analysis failed, falling back to legacy", exc_info=True)
+        return _legacy_handling_analysis(sections, best_lap_df)
+
+
+def _legacy_handling_analysis(sections, best_lap_df):
+    """Fallback to the original single-detector handling analysis."""
+    hd_mod = lazy_import("handling_detector")
+    if hd_mod is None or sections is None:
+        return None
+
+    events_by_corner = {}
     for sd in sections:
         if sd.get("section_type") != "corner":
             continue
         try:
-            # Extract section data
-            dist_col = None
-            for c in ("Distance (m)", "distance_m"):
-                if c in best_lap_df.columns:
-                    dist_col = c
-                    break
-            if dist_col is None:
+            dist_col = next((c for c in ("Distance (m)", "distance_m") if c in best_lap_df.columns), None)
+            speed_col = next((c for c in ("Speed (m/s)", "speed_mps") if c in best_lap_df.columns), None)
+            if not dist_col or not speed_col:
                 continue
-
             mask = (best_lap_df[dist_col] >= sd["s_start"]) & (best_lap_df[dist_col] <= sd["s_end"])
-            section_df = best_lap_df[mask]
-            if len(section_df) < 5:
+            sec = best_lap_df[mask]
+            if len(sec) < 5:
                 continue
-
-            distances = section_df[dist_col].values
-
-            speed_col = None
-            for c in ("Speed (m/s)", "speed_mps"):
-                if c in section_df.columns:
-                    speed_col = c
-                    break
-            if speed_col is None:
-                continue
-            speeds = section_df[speed_col].values
-
-            # Compute reference curvature and actual headings
-            # Simple curvature estimate from speed + lateral accel
-            curvature = np.ones_like(distances) * 0.01  # placeholder
-            headings = np.cumsum(curvature * np.diff(np.concatenate([[0], distances])))
-
+            curvature = np.ones(len(sec)) * 0.01
+            headings = np.cumsum(curvature * np.diff(np.concatenate([[0], sec[dist_col].values])))
             accel_long = None
             for c in ("accel_long_mps2", "Longitudinal acceleration (G) *calc"):
-                if c in section_df.columns:
-                    accel_long = section_df[c].values
+                if c in sec.columns:
+                    accel_long = sec[c].values
                     break
-
-            events = hd_mod.detect_handling(
-                corner_id=sd["section_id"],
-                distances=distances,
-                speeds=speeds,
-                reference_curvature=curvature,
-                actual_headings=headings,
-                accel_long=accel_long,
+            evts = hd_mod.detect_handling(
+                corner_id=sd["section_id"], distances=sec[dist_col].values,
+                speeds=sec[speed_col].values, reference_curvature=curvature,
+                actual_headings=headings, accel_long=accel_long,
                 geometric_apex_m=sd.get("geometric_apex"),
             )
-            if events:
-                result[sd["section_id"]] = [e.__dict__ if hasattr(e, '__dict__') else e for e in events]
+            if evts:
+                events_by_corner[sd["section_id"]] = [e.__dict__ if hasattr(e, "__dict__") else e for e in evts]
         except Exception:
-            logger.debug("Handling analysis failed for section %s", sd.get("section_id"), exc_info=True)
+            pass
 
-    logger.info("Handling analysis: %d corners with events", len(result))
-    return result
+    return {"events_by_corner": events_by_corner, "legacy": True}
 
 
 def run_coaching_v2(

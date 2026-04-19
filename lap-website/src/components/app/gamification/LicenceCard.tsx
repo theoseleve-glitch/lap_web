@@ -1,21 +1,21 @@
 'use client';
 
 const TIER_COLORS: Record<string, string> = {
-  rookie: '#888888',
-  club: '#B6FF2E',
-  national: '#00d4ff',
-  pro: '#D946EF',
-  elite: '#FFD400',
-  legend: '#FF3B6B',
+  rookie: '#949494',    // steel
+  club: '#22C55E',      // acid-green
+  national: '#C9A84C',  // gold
+  pro: '#8B5CF6',       // racing-purple
+  elite: '#FACC15',     // marshal-yellow
+  legend: '#FF2A2A',    // safety-red
 };
 
 const ALL_TIERS = [
-  { tier: 'rookie', color: '#888888' },
-  { tier: 'club', color: '#B6FF2E' },
-  { tier: 'national', color: '#00d4ff' },
-  { tier: 'pro', color: '#D946EF' },
-  { tier: 'elite', color: '#FFD400' },
-  { tier: 'legend', color: '#FF3B6B' },
+  { tier: 'rookie', color: '#949494' },
+  { tier: 'club', color: '#22C55E' },
+  { tier: 'national', color: '#C9A84C' },
+  { tier: 'pro', color: '#8B5CF6' },
+  { tier: 'elite', color: '#FACC15' },
+  { tier: 'legend', color: '#FF2A2A' },
 ];
 
 interface ProgressPair {
@@ -71,12 +71,12 @@ export function LicenceCard({
         <div className="flex items-start justify-between">
           <div>
             <p
-              className="font-mono text-[10px] uppercase tracking-widest"
+              className="font-telemetry text-[10px] uppercase tracking-widest"
               style={{ color: tierColor }}
             >
               Current Licence
             </p>
-            <p className="text-2xl font-black text-white capitalize mt-0.5">
+            <p className="font-monument text-2xl font-black text-chalk capitalize mt-0.5">
               {tier}
             </p>
           </div>
@@ -86,7 +86,7 @@ export function LicenceCard({
               background: `linear-gradient(135deg, ${tierColor}, ${adjustBrightness(tierColor, -40)})`,
             }}
           >
-            <span className="text-white text-2xl font-black leading-none">
+            <span className="text-chalk text-2xl font-black leading-none">
               {letter}
             </span>
           </div>
@@ -95,7 +95,7 @@ export function LicenceCard({
         {/* Progress section */}
         {nextTier && progress && (
           <div className="space-y-2">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-steel/60">
+            <p className="font-telemetry text-[10px] uppercase tracking-wider text-steel/60">
               Progress to{' '}
               <span className="capitalize" style={{ color: nColor }}>
                 {nextTier}
@@ -146,7 +146,7 @@ export function LicenceCard({
                 }}
               >
                 <span
-                  className="font-mono capitalize block"
+                  className="font-telemetry capitalize block"
                   style={{
                     fontSize: '8px',
                     lineHeight: '12px',
@@ -185,10 +185,10 @@ function ProgressRow({
   return (
     <div className="space-y-0.5">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-[10px] text-steel/50 uppercase">
+        <span className="font-telemetry text-[10px] text-steel/50 uppercase">
           {label}
         </span>
-        <span className="font-mono text-[10px] text-steel/70">
+        <span className="font-telemetry text-[10px] text-steel/70">
           {current} / {required} {unit}
         </span>
       </div>

@@ -206,19 +206,18 @@ export function computeCornerValues(curvature: number): { yaw: number; bank: num
 // ── Scroll-to-track mapping ────────────────────
 
 // Non-linear mapping: corners get more track length (more scroll time at interesting parts).
-// 11 chapters → 18 control points → track t ∈ [0,1]
+// 10 rooms → 18 control points → track t ∈ [0,1]
 const CHAPTER_TRACK_T: number[] = [
-  0.00,  // ch0: start grid
-  0.08,  // ch1: turn 1 (wider range)
-  0.18,  // ch2: back straight
-  0.30,  // ch3: turn 2 (wider range)
-  0.42,  // ch4: mid straight
-  0.52,  // ch5: turn 3 (wider range)
-  0.64,  // ch6: return straight
-  0.74,  // ch7: turn 4 (wider range)
-  0.82,  // ch8: pit lane
-  0.90,  // ch9: garage
-  0.98,  // ch10: podium
+  0.00,  // ch0: start-grid
+  0.10,  // ch1: session-proof
+  0.20,  // ch2: s1-pain
+  0.32,  // ch3: s2-versus
+  0.46,  // ch4: s3-product (pinned — wider range)
+  0.58,  // ch5: sim-first
+  0.68,  // ch6: premium
+  0.80,  // ch7: garage
+  0.90,  // ch8: pit-stop
+  0.98,  // ch9: podium
 ];
 
 export function scrollToTrackT(globalProgress: number, currentChapter: number): number {

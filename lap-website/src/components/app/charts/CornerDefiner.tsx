@@ -40,7 +40,7 @@ interface CornerDefinerProps {
 /* ── Colors ─────────────────────────────────── */
 
 const C = {
-  bg: '#0B0C0F',
+  bg: '#000000',
   track: '#30363d',
   trackHighlight: '#58a6ff',
   entry: '#00ff64',      // green

@@ -58,7 +58,7 @@ export default function AdminAuditPage() {
             setAction(e.target.value);
             setOffset(0);
           }}
-          className="w-48 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-[#B6FF2E]/50"
+          className="w-48 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-acid-green/50 focus:ring-1 focus:ring-acid-green/20"
         />
         <input
           type="text"
@@ -68,7 +68,7 @@ export default function AdminAuditPage() {
             setUserId(e.target.value);
             setOffset(0);
           }}
-          className="w-32 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-[#B6FF2E]/50"
+          className="w-32 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-acid-green/50 focus:ring-1 focus:ring-acid-green/20"
         />
       </div>
 

@@ -1286,7 +1286,20 @@ def data_summary():
     stats_d = dict(stats) if not isinstance(stats, dict) else stats
     sessions_count = stats_d.get("cnt", 0)
     oldest = stats_d.get("oldest")
-    total_storage_mb = 0  # file_size_bytes not tracked in current schema
+    # Sum file_size from ingestion_jobs for this workspace
+    try:
+        storage_row = conn.execute(
+            text(
+                "SELECT COALESCE(SUM(file_size), 0) AS total_bytes "
+                "FROM ingestion_jobs "
+                "WHERE workspace_id = :ws AND status = 'completed'"
+            ),
+            {"ws": workspace_id},
+        ).fetchone()
+        storage_d = dict(storage_row) if not isinstance(storage_row, dict) else storage_row
+        total_storage_mb = round(storage_d["total_bytes"] / (1024 * 1024), 1)
+    except Exception:
+        total_storage_mb = 0  # fallback if ingestion_jobs not available
 
     # Get retention info from entitlements
     ents = get_user_entitlements(conn, user_id, workspace_id)
@@ -1773,6 +1786,58 @@ def get_usage():
     snapshot = get_usage_snapshot(conn, workspace_id, plan)
 
     return api_response(snapshot)
+
+
+# ---------------------------------------------------------------------------
+# GET /progress — gamification progress (XP, level, streak, achievements)
+# ---------------------------------------------------------------------------
+
+@bp.route("/progress", methods=["GET"])
+@rate_limit(tier="read")
+def get_progress():
+    """Return the authenticated user's gamification progress.
+
+    Returns: total_xp, level, xp thresholds, streak, achievements list.
+    Used by the sidebar XP ring, dashboard, and useUserPlan hook.
+    """
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is None:
+        return api_error(ErrorCode.FORBIDDEN, "Authentication required", status=403)
+
+    workspace_id = getattr(g, "workspace_id", None)
+    conn = get_pg_connection()
+
+    try:
+        from gamification.xp import get_driver_progress
+        from gamification.queries import get_achievements
+        # Single-user model: driver_id = 1 (personal default driver)
+        driver_id = 1
+        progress = get_driver_progress(conn, driver_id, workspace_id or "default")
+        achievements = get_achievements(conn, driver_id, workspace_id or "default")
+        progress["achievements"] = [
+            {
+                "key": a["achievement_key"],
+                "unlocked_at": a.get("unlocked_at"),
+                "session_id": a.get("session_id"),
+            }
+            for a in achievements
+        ]
+        progress["achievement_count"] = len(achievements)
+        return api_response(progress)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).debug("Gamification progress error: %s", exc)
+        # Graceful fallback — gamification tables may not exist yet
+        return api_response({
+            "total_xp": 0,
+            "level": 0,
+            "xp_for_current_level": 0,
+            "xp_for_next_level": 100,
+            "current_streak": 0,
+            "longest_streak": 0,
+            "achievements": [],
+            "achievement_count": 0,
+        })
 
 
 # ---------------------------------------------------------------------------

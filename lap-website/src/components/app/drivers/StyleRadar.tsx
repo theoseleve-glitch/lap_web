@@ -5,12 +5,13 @@ import {
   PolarAngleAxis, PolarRadiusAxis,
 } from 'recharts';
 import type { DriverStyleEntry } from '@/lib/api-types';
+import { colors } from '@/lib/tokens';
 
 const STYLE_COLORS: Record<string, string> = {
   Aggressive: 'bg-safety-red/10 text-safety-red',
   Smooth: 'bg-acid-green/10 text-acid-green',
   Balanced: 'bg-marshal-yellow/10 text-marshal-yellow',
-  Conservative: 'bg-blue-400/10 text-blue-400',
+  Conservative: 'bg-racing-purple/10 text-racing-purple',
 };
 
 interface Props {
@@ -58,10 +59,10 @@ export function StyleRadar({ latest, history }: Props) {
         </div>
         <ResponsiveContainer width="100%" height={280}>
           <RadarChart data={radarData}>
-            <PolarGrid stroke="rgba(148,163,184,0.15)" />
-            <PolarAngleAxis dataKey="axis" tick={{ fill: '#94a3b8', fontSize: 9 }} />
+            <PolarGrid stroke="rgba(148, 148, 148, 0.15)" />
+            <PolarAngleAxis dataKey="axis" tick={{ fill: colors.steel, fontSize: 9 }} />
             <PolarRadiusAxis domain={[0, 1]} tick={false} axisLine={false} />
-            <Radar dataKey="value" stroke="#a3e635" fill="#a3e635" fillOpacity={0.15} strokeWidth={2} />
+            <Radar dataKey="value" stroke={colors.acidGreen} fill={colors.acidGreen} fillOpacity={0.15} strokeWidth={2} />
           </RadarChart>
         </ResponsiveContainer>
       </div>

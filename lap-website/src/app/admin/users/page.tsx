@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api-client";
 
@@ -69,7 +70,7 @@ export default function AdminUsersPage() {
             setSearch(e.target.value);
             setOffset(0);
           }}
-          className="w-full max-w-sm rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-[#B6FF2E]/50"
+          className="w-full max-w-sm rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-white placeholder-white/30 outline-none focus:border-acid-green/50 focus:ring-1 focus:ring-acid-green/20"
         />
       </div>
 
@@ -103,9 +104,9 @@ export default function AdminUsersPage() {
                     <span
                       className={`inline-block rounded-full px-2 py-0.5 text-xs ${
                         user.suspended_at
-                          ? "bg-red-500/20 text-red-400"
+                          ? "border border-safety-red/20 bg-safety-red/15 text-safety-red"
                           : user.subscription_status === "active"
-                            ? "bg-green-500/20 text-green-400"
+                            ? "border border-acid-green/20 bg-acid-green/15 text-acid-green"
                             : "bg-white/10 text-white/50"
                       }`}
                     >
@@ -119,13 +120,19 @@ export default function AdminUsersPage() {
                       ? new Date(user.created_at).toLocaleDateString()
                       : "—"}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 flex items-center gap-2">
+                    <Link
+                      href={`/admin/users/${user.id}`}
+                      className="rounded px-2 py-1 text-xs text-white/50 hover:bg-white/10 hover:text-white"
+                    >
+                      View
+                    </Link>
                     {user.suspended_at ? (
                       <button
                         type="button"
                         onClick={() => unsuspendMut.mutate(user.id)}
                         disabled={unsuspendMut.isPending}
-                        className="rounded px-2 py-1 text-xs text-green-400 hover:bg-green-500/10 disabled:opacity-50"
+                        className="rounded px-2 py-1 text-xs text-acid-green hover:bg-acid-green/10 disabled:opacity-50"
                       >
                         Unsuspend
                       </button>
@@ -138,7 +145,7 @@ export default function AdminUsersPage() {
                             suspendMut.mutate({ userId: user.id, reason });
                         }}
                         disabled={suspendMut.isPending}
-                        className="rounded px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                        className="rounded px-2 py-1 text-xs text-safety-red hover:bg-safety-red/10 disabled:opacity-50"
                       >
                         Suspend
                       </button>

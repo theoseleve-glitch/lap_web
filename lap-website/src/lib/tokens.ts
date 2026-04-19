@@ -11,7 +11,7 @@ export const colors = {
   asphalt: '#000000',
   concrete: '#141414',
   chalk: '#F0EDE5',
-  steel: '#888888',
+  steel: '#949494',
   acidGreen: '#22C55E',
   safetyRed: '#FF2A2A',
   marshalYellow: '#FACC15',
@@ -162,24 +162,23 @@ export const roomAccents: Record<string, string> = {
 
 export const rooms = [
   { id: 'start-grid', label: 'START', sector: '—' },
+  { id: 'session-proof', label: 'PROOF', sector: 'S1' },
   { id: 's1-pain', label: 'S1', sector: 'S1' },
-  { id: 's1-deep', label: 'S1', sector: 'S1' },
-  { id: 's2-pipeline', label: 'S2', sector: 'S2' },
-  { id: 's2-proof', label: 'S2', sector: 'S2' },
+  { id: 's2-versus', label: 'S2', sector: 'S2' },
   { id: 's3-product', label: 'S3', sector: 'S3' },
-  { id: 's4-workflows', label: 'S4', sector: 'S4' },
-  { id: 's5-personas', label: 'S5', sector: 'S5' },
-  { id: 'pit-stop', label: 'PIT', sector: 'PIT' },
+  { id: 'sim-first', label: 'SIM', sector: 'S3' },
+  { id: 'premium', label: 'PRO', sector: 'S4' },
   { id: 'garage', label: 'GAR', sector: 'GAR' },
+  { id: 'pit-stop', label: 'PIT', sector: 'PIT' },
   { id: 'podium', label: 'POD', sector: 'POD' },
 ] as const;
 
 export const sectorGates: Record<number, string> = {
-  1: 'S1',
+  2: 'S1',
   3: 'S2',
-  5: 'S3',
+  4: 'S3',
   8: 'PIT',
-  10: 'FINISH',
+  9: 'FINISH',
 } as const;
 
 export const sectorTabs = [

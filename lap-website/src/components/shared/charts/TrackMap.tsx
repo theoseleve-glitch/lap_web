@@ -3,7 +3,7 @@
  *
  * Renders GPS trace as a speed-colored polyline with an isometric
  * camera tilt (~25°) giving a racing-game overhead view.
- * Dark background (#0B0C0F) — pure racing line, no map tiles.
+ * Dark background (#000000) — pure racing line, no map tiles.
  * Depth cues: shadow underneath, line width varies with depth,
  * subtle ground grid for spatial reference.
  *
@@ -13,9 +13,11 @@
  */
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────────────────── */
 
@@ -49,6 +51,10 @@ interface TrackMapProps {
   distRange?: [number, number] | null;
   /** When set, fetches and draws a second lap trace for comparison. */
   compareLap?: number | null;
+  /** Color mode: "speed" (default), "grip" (headroom heatmap), or "ribbon" (filled 2.5D width). */
+  colorMode?: "speed" | "grip" | "ribbon";
+  /** When true, fetches and overlays the optimal racing line. */
+  showRacingLine?: boolean;
 }
 
 /* ── Speed → Color (blue → cyan → green → yellow → red) ── */
@@ -72,6 +78,27 @@ function speedToColor(t: number): string {
   }
 
   return `rgb(${r},${g},${b})`;
+}
+
+/* ── Grip headroom → Color (red → gold → green) ────────── */
+
+function gripHeadroomColor(headroom_pct: number): string {
+  if (headroom_pct > 15) return chartColor.series.positive;
+  if (headroom_pct > 5) {
+    const t = (headroom_pct - 5) / 10;
+    const r = Math.round(201 * (1 - t) + 34 * t);
+    const g = Math.round(168 * (1 - t) + 197 * t);
+    const b = Math.round(76 * (1 - t) + 94 * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  if (headroom_pct > 0) {
+    const t = headroom_pct / 5;
+    const r = Math.round(255 * (1 - t) + 201 * t);
+    const g = Math.round(42 * (1 - t) + 168 * t);
+    const b = Math.round(42 * (1 - t) + 76 * t);
+    return `rgb(${r},${g},${b})`;
+  }
+  return chartColor.series.negative;
 }
 
 /* ── 2.5D Isometric projection ──────────────────────────── */
@@ -236,6 +263,12 @@ function drawTrack(
   hoverIndex?: number,
   distRange?: [number, number] | null,
   compareTrace?: TrackMapData | null,
+  colorMode: "speed" | "grip" | "ribbon" = "speed",
+  gripDelta?: { distance_m: number; headroom_pct: number }[] | null,
+  ribbonData?: { points: { lat: number; lon: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[]; aggregate_sessions: number } | null,
+  racingLine?: { distance_m: number[]; lateral_offset_m: number[]; speed_kph: number[]; lap_time_s: number; solver_status: string } | null,
+  crossRefTrace?: { latitudes: number[]; longitudes: number[]; distances: number[] } | null,
+  hoverDistance?: number | null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -252,7 +285,7 @@ function drawTrack(
   ctx.clearRect(0, 0, w, h);
 
   // Dark background
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = chartColor.surface;
   ctx.fillRect(0, 0, w, h);
 
   const { latitudes: lats, longitudes: lons, speeds } = trace;
@@ -330,7 +363,7 @@ function drawTrack(
         const t = (cSpeeds[i] - cMinSpd) / cSpdRange;
         ctx.strokeStyle = speedToColor(t);
       } else {
-        ctx.strokeStyle = '#F0EDE5';
+        ctx.strokeStyle = chartColor.text;
       }
       ctx.beginPath();
       ctx.moveTo(cProj.pxs[i], cProj.pys[i]);
@@ -339,6 +372,29 @@ function drawTrack(
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
+  }
+
+  // ── Cross-session reference GPS path (dashed racing-purple) ──
+  if (crossRefTrace && crossRefTrace.latitudes && crossRefTrace.latitudes.length > 1 && proj.toXY) {
+    const rLats = crossRefTrace.latitudes;
+    const rLons = crossRefTrace.longitudes;
+    ctx.save();
+    ctx.strokeStyle = chartColor.series.reference;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < rLats.length; i++) {
+      const [px, py] = proj.toXY(rLats[i], rLons[i]);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+    ctx.restore();
   }
 
   // ── Shadow pass (dark, blurred, offset below track) ──
@@ -355,6 +411,263 @@ function drawTrack(
   }
   ctx.stroke();
 
+  // ── Ribbon mode: filled quads with width ──
+  if (colorMode === 'ribbon' && ribbonData && ribbonData.points.length > 2) {
+    // Project ribbon points and compute edges
+    const rPts = ribbonData.points;
+    const rProj = buildProjection(
+      rPts.map(p => p.lat),
+      rPts.map(p => p.lon),
+      w, h, 30,
+    );
+
+    // Compute screen-space normals and edge points
+    const leftXs: number[] = [];
+    const leftYs: number[] = [];
+    const rightXs: number[] = [];
+    const rightYs: number[] = [];
+
+    for (let i = 0; i < rPts.length; i++) {
+      const cx = rProj.pxs[i];
+      const cy = rProj.pys[i];
+
+      // Compute screen-space tangent from projected points
+      let tx: number, ty: number;
+      if (i === 0) {
+        tx = rProj.pxs[1] - rProj.pxs[0];
+        ty = rProj.pys[1] - rProj.pys[0];
+      } else if (i === rPts.length - 1) {
+        tx = rProj.pxs[i] - rProj.pxs[i - 1];
+        ty = rProj.pys[i] - rProj.pys[i - 1];
+      } else {
+        tx = rProj.pxs[i + 1] - rProj.pxs[i - 1];
+        ty = rProj.pys[i + 1] - rProj.pys[i - 1];
+      }
+      const tMag = Math.sqrt(tx * tx + ty * ty) || 1;
+      // Normal = 90 deg rotation of tangent
+      const nnx = -ty / tMag;
+      const nny = tx / tMag;
+
+      // Width in pixels: approximate by using the projection scale
+      // Use half-width of 4px as base, scale with actual track width
+      const halfW = Math.max(3, Math.min(20, rPts[i].width_m * 0.4));
+
+      leftXs.push(cx + nnx * halfW);
+      leftYs.push(cy + nny * halfW);
+      rightXs.push(cx - nnx * halfW);
+      rightYs.push(cy - nny * halfW);
+    }
+
+    // Draw shadow first
+    ctx.save();
+    ctx.globalAlpha = 0.15;
+    ctx.fillStyle = chartColor.surface;
+    ctx.beginPath();
+    ctx.moveTo(leftXs[0], leftYs[0] + 4);
+    for (let i = 1; i < leftXs.length; i++) ctx.lineTo(leftXs[i], leftYs[i] + 4);
+    for (let i = rightXs.length - 1; i >= 0; i--) ctx.lineTo(rightXs[i], rightYs[i] + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Grip mu -> color mapping
+    const gripMuColor = (muVal: number): string => {
+      if (muVal > 1.2) return chartColor.series.positive;
+      if (muVal > 0.9) {
+        const t = (muVal - 0.9) / 0.3;
+        const r = Math.round(201 * (1 - t) + 34 * t);
+        const g = Math.round(168 * (1 - t) + 197 * t);
+        const b = Math.round(76 * (1 - t) + 94 * t);
+        return `rgb(${r},${g},${b})`;
+      }
+      const t = Math.max(0, muVal / 0.9);
+      const r = Math.round(255 * (1 - t) + 201 * t);
+      const g = Math.round(42 * (1 - t) + 168 * t);
+      const b = Math.round(42 * (1 - t) + 76 * t);
+      return `rgb(${r},${g},${b})`;
+    };
+
+    // Draw filled ribbon — per-segment split quads with lateral grip coloring
+    for (let i = 0; i < rPts.length - 1; i++) {
+      const mu = rPts[i].mu_p95;
+      let color: string;
+      if (mu != null && mu > 0) {
+        color = gripMuColor(mu);
+      } else {
+        // No aggregate data — use speed coloring or neutral
+        const spd = rPts[i].speed_mps;
+        if (spd != null) {
+          const maxSpd2 = 40; // rough max for karts
+          const t = Math.min(1, spd / maxSpd2);
+          color = speedToColor(t);
+        } else {
+          color = chartColor.text;
+        }
+      }
+
+      // Compute center points for split rendering
+      const midX0 = (leftXs[i] + rightXs[i]) / 2;
+      const midY0 = (leftYs[i] + rightYs[i]) / 2;
+      const midX1 = (leftXs[i + 1] + rightXs[i + 1]) / 2;
+      const midY1 = (leftYs[i + 1] + rightYs[i + 1]) / 2;
+
+      // Left half (uses mu_left if available)
+      const muLeft = rPts[i].mu_left ?? mu;
+      ctx.fillStyle = muLeft != null && muLeft > 0 ? gripMuColor(muLeft) : color;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.moveTo(leftXs[i], leftYs[i]);
+      ctx.lineTo(leftXs[i + 1], leftYs[i + 1]);
+      ctx.lineTo(midX1, midY1);
+      ctx.lineTo(midX0, midY0);
+      ctx.closePath();
+      ctx.fill();
+
+      // Right half (uses mu_right if available)
+      const muRight = rPts[i].mu_right ?? mu;
+      ctx.fillStyle = muRight != null && muRight > 0 ? gripMuColor(muRight) : color;
+      ctx.beginPath();
+      ctx.moveTo(midX0, midY0);
+      ctx.lineTo(midX1, midY1);
+      ctx.lineTo(rightXs[i + 1], rightYs[i + 1]);
+      ctx.lineTo(rightXs[i], rightYs[i]);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    // Draw edge lines (subtle border)
+    ctx.globalAlpha = 0.3;
+    ctx.strokeStyle = chartColor.text;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(leftXs[0], leftYs[0]);
+    for (let i = 1; i < leftXs.length; i++) ctx.lineTo(leftXs[i], leftYs[i]);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(rightXs[0], rightYs[0]);
+    for (let i = 1; i < rightXs.length; i++) ctx.lineTo(rightXs[i], rightYs[i]);
+    ctx.stroke();
+
+    // Centerline (thin dashed chalk)
+    ctx.globalAlpha = 0.2;
+    ctx.strokeStyle = chartColor.text;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    for (let i = 0; i < rPts.length; i++) {
+      if (i === 0) ctx.moveTo(rProj.pxs[i], rProj.pys[i]);
+      else ctx.lineTo(rProj.pxs[i], rProj.pys[i]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1.0;
+
+    // ── Racing line overlay (gold, offset from centerline) ──
+    if (racingLine && racingLine.distance_m.length > 2 && ribbonData) {
+      const rlDist = racingLine.distance_m;
+      const rlOffset = racingLine.lateral_offset_m;
+
+      ctx.save();
+
+      // Draw the racing line as a thick gold line
+      ctx.strokeStyle = chartColor.series.primary;
+      ctx.lineWidth = 2.5;
+      ctx.globalAlpha = 0.9;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+
+      let rlStarted = false;
+      for (let ri = 0; ri < rlDist.length; ri++) {
+        // Find nearest ribbon point by distance
+        const targetDist = rlDist[ri];
+        let bestRi = 0;
+        let bestDD = Infinity;
+        for (let j = 0; j < rPts.length; j++) {
+          const dd = Math.abs((rPts[j].distance_m ?? j) - targetDist);
+          if (dd < bestDD) { bestDD = dd; bestRi = j; }
+        }
+
+        // Get center position and normal at this point
+        const cx = rProj.pxs[bestRi];
+        const cy = rProj.pys[bestRi];
+
+        // Compute screen-space normal (same as ribbon edge computation)
+        let tx: number, ty: number;
+        if (bestRi === 0) {
+          tx = rProj.pxs[1] - rProj.pxs[0];
+          ty = rProj.pys[1] - rProj.pys[0];
+        } else if (bestRi === rPts.length - 1) {
+          tx = rProj.pxs[bestRi] - rProj.pxs[bestRi - 1];
+          ty = rProj.pys[bestRi] - rProj.pys[bestRi - 1];
+        } else {
+          tx = rProj.pxs[bestRi + 1] - rProj.pxs[bestRi - 1];
+          ty = rProj.pys[bestRi + 1] - rProj.pys[bestRi - 1];
+        }
+        const tMag = Math.sqrt(tx * tx + ty * ty) || 1;
+        const nnx = -ty / tMag;
+        const nny = tx / tMag;
+
+        // Offset by lateral_offset_m (scaled to screen pixels)
+        // Use the same scale as ribbon width
+        const pixelScale = rPts[bestRi].width_m > 0
+          ? (Math.max(3, Math.min(20, rPts[bestRi].width_m * 0.4)) * 2) / rPts[bestRi].width_m
+          : 0.4;
+        const offsetPx = rlOffset[ri] * pixelScale;
+
+        const lx = cx + nnx * offsetPx;
+        const ly = cy + nny * offsetPx;
+
+        if (!rlStarted) { ctx.moveTo(lx, ly); rlStarted = true; }
+        else { ctx.lineTo(lx, ly); }
+      }
+      ctx.stroke();
+
+      // Racing line label
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = chartColor.series.primary;
+      ctx.font = '9px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const statusLabel = racingLine.solver_status === 'optimal' ? '' : ' (approx)';
+      ctx.fillText(
+        `Optimal: ${racingLine.lap_time_s.toFixed(2)}s${statusLabel}`,
+        8, 8,
+      );
+
+      ctx.restore();
+    }
+
+    // Grip legend
+    const legX = w - 20;
+    const legY = 16;
+    const legH = 60;
+    const legW = 8;
+    const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
+    grad.addColorStop(0, chartColor.series.positive);
+    grad.addColorStop(0.5, chartColor.series.primary);
+    grad.addColorStop(1, chartColor.series.negative);
+    ctx.fillStyle = grad;
+    ctx.fillRect(legX - legW, legY, legW, legH);
+    ctx.fillStyle = chartColor.textSecondary;
+    ctx.font = '8px "Space Mono", monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Grip', legX - legW - 4, legY);
+    ctx.fillText('High', legX - legW - 4, legY + 12);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('Low', legX - legW - 4, legY + legH);
+
+    // Session count badge
+    if (ribbonData.aggregate_sessions > 0) {
+      ctx.fillStyle = chartColor.textSecondary;
+      ctx.font = '8px "Space Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText(`${ribbonData.aggregate_sessions} sessions`, 8, h - 16);
+    }
+  }
+
+  if (colorMode !== 'ribbon' || !ribbonData) {
   // ── Main track (speed-colored segments) ──
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -374,11 +687,19 @@ function drawTrack(
     ctx.lineWidth = inRange ? 1.5 : 0.5;
     ctx.globalAlpha = inRange ? 1.0 : 0.15;
 
-    if (speeds && speeds.length === lats.length) {
+    if (colorMode === 'grip' && gripDelta && dists) {
+      let bestIdx = 0;
+      let bestDist = Infinity;
+      for (let j = 0; j < gripDelta.length; j++) {
+        const dd = Math.abs(gripDelta[j].distance_m - (dists[i] ?? 0));
+        if (dd < bestDist) { bestDist = dd; bestIdx = j; }
+      }
+      ctx.strokeStyle = inRange ? gripHeadroomColor(gripDelta[bestIdx].headroom_pct) : chartColor.borderStrong;
+    } else if (speeds && speeds.length === lats.length) {
       const t = (speeds[i] - minSpd) / spdRange;
-      ctx.strokeStyle = inRange ? speedToColor(t) : '#444';
+      ctx.strokeStyle = inRange ? speedToColor(t) : chartColor.borderStrong;
     } else {
-      ctx.strokeStyle = inRange ? '#F0EDE5' : '#333';
+      ctx.strokeStyle = inRange ? chartColor.text : chartColor.border;
     }
 
     ctx.beginPath();
@@ -387,6 +708,7 @@ function drawTrack(
     ctx.stroke();
   }
   ctx.globalAlpha = 1.0;
+  } // end non-ribbon track draw
 
   // ── Start/finish marker ──
   const sx = proj.pxs[0];
@@ -397,7 +719,7 @@ function drawTrack(
   ctx.arc(sx, sy, 8, 0, Math.PI * 2);
   ctx.fill();
   // Inner dot
-  ctx.fillStyle = '#F0EDE5';
+  ctx.fillStyle = chartColor.text;
   ctx.beginPath();
   ctx.arc(sx, sy, 4, 0, Math.PI * 2);
   ctx.fill();
@@ -413,7 +735,7 @@ function drawTrack(
 
   // ── Corner labels ──
   if (corners && corners.length > 0) {
-    ctx.font = '600 10px "Space Mono", "IBM Plex Mono", monospace';
+    ctx.font = '600 10px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
@@ -482,10 +804,82 @@ function drawTrack(
     ctx.fill();
 
     // Inner dot
-    ctx.fillStyle = '#C9A84C';
+    ctx.fillStyle = chartColor.series.primary;
     ctx.beginPath();
     ctx.arc(hx, hy, 4, 0, Math.PI * 2);
     ctx.fill();
+
+    // ── Dual hover marker: reference position (hollow purple circle) ──
+    if (crossRefTrace && crossRefTrace.latitudes.length > 1 && proj.toXY && hoverDistance != null) {
+      const rDists = crossRefTrace.distances;
+      let rIdx = 0;
+      if (rDists && rDists.length > 1) {
+        let lo = 0, hi = rDists.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (rDists[mid] < hoverDistance) lo = mid + 1;
+          else hi = mid;
+        }
+        rIdx = lo;
+      }
+      const [rpx, rpy] = proj.toXY(crossRefTrace.latitudes[rIdx], crossRefTrace.longitudes[rIdx]);
+      ctx.save();
+      ctx.strokeStyle = chartColor.series.reference;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      ctx.arc(rpx, rpy, 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // ── Racing line overlay for line modes (speed/grip) ──
+  if (colorMode !== 'ribbon' && racingLine && racingLine.distance_m.length > 2) {
+    ctx.save();
+    ctx.strokeStyle = chartColor.series.primary;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.6;
+    ctx.setLineDash([6, 3]);
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < lats.length; i++) {
+      const x = proj.pxs[i];
+      const y = proj.pys[i];
+      if (!started) { ctx.moveTo(x, y); started = true; }
+      else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = chartColor.series.primary;
+    ctx.font = '9px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`Optimal: ${racingLine.lap_time_s.toFixed(2)}s`, 8, 8);
+    ctx.restore();
+  }
+
+  // ── Grip headroom legend ──
+  if (colorMode === 'grip') {
+    const legX = w - 20;
+    const legY = 16;
+    const legH = 60;
+    const legW = 8;
+    const grad = ctx.createLinearGradient(legX, legY, legX, legY + legH);
+    grad.addColorStop(0, chartColor.series.positive);
+    grad.addColorStop(0.5, chartColor.series.primary);
+    grad.addColorStop(1, chartColor.series.negative);
+    ctx.fillStyle = grad;
+    ctx.fillRect(legX - legW, legY, legW, legH);
+    ctx.fillStyle = chartColor.textSecondary;
+    ctx.font = '8px "Space Mono", monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    ctx.fillText('Headroom', legX - legW - 4, legY);
+    ctx.fillText('+15%', legX - legW - 4, legY + 12);
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('0%', legX - legW - 4, legY + legH);
   }
 
   // Store projection on canvas for hit-testing
@@ -528,7 +922,20 @@ export function TrackMap(props: TrackMapProps) {
     controlledLap = false,
     distRange,
     compareLap = null,
+    colorMode = 'speed',
+    showRacingLine = false,
   } = props;
+
+  const { referenceData } = useReferenceOverlay();
+
+  const crossRefTrace = useMemo(() => {
+    if (!referenceData?.gps?.reference?.latitudes?.length) return null;
+    return {
+      latitudes: referenceData.gps.reference.latitudes,
+      longitudes: referenceData.gps.reference.longitudes,
+      distances: referenceData.distances,
+    };
+  }, [referenceData]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [trace, setTrace] = useState<TrackMapData | null>(preFetchedData ?? null);
@@ -537,6 +944,18 @@ export function TrackMap(props: TrackMapProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [gripDelta, setGripDelta] = useState<{ distance_m: number; headroom_pct: number }[] | null>(null);
+  const [ribbonData, setRibbonData] = useState<{
+    points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[];
+    aggregate_sessions: number;
+  } | null>(null);
+  const [racingLine, setRacingLine] = useState<{
+    distance_m: number[];
+    lateral_offset_m: number[];
+    speed_kph: number[];
+    lap_time_s: number;
+    solver_status: string;
+  } | null>(null);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -601,11 +1020,80 @@ export function TrackMap(props: TrackMapProps) {
     return () => { cancelled = true; };
   }, [sessionId, compareLap]);
 
+  // ── Fetch grip delta data ─────────────────────────────────
+  useEffect(() => {
+    if (colorMode !== 'grip' || !sessionId) {
+      setGripDelta(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ bins: { distance_m: number; headroom_pct: number }[] }>(
+          `/sessions/${encodeURIComponent(sessionId)}/track-delta`,
+        );
+        if (!cancelled && res?.bins) setGripDelta(res.bins);
+      } catch {
+        if (!cancelled) setGripDelta(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [colorMode, sessionId]);
+
+  // ── Fetch ribbon data ───────────────────────────────────
+  useEffect(() => {
+    if (colorMode !== 'ribbon' || !sessionId) {
+      setRibbonData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ points: { lat: number; lon: number; distance_m: number; nx: number; ny: number; width_m: number; mu_p95: number | null; mu_left?: number | null; mu_center?: number | null; mu_right?: number | null; speed_mps?: number }[]; aggregate_sessions: number }>(
+          `/sessions/${encodeURIComponent(sessionId)}/track-ribbon`,
+        );
+        if (!cancelled && res?.points) setRibbonData(res);
+      } catch {
+        if (!cancelled) setRibbonData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [colorMode, sessionId]);
+
+  // ── Fetch racing line data ─────────────────────────────
+  useEffect(() => {
+    if (!showRacingLine || !sessionId) {
+      setRacingLine(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{
+          distance_m: number[];
+          lateral_offset_m: number[];
+          speed_kph: number[];
+          lap_time_s: number;
+          solver_status: string;
+        }>(
+          `/sessions/${encodeURIComponent(sessionId)}/racing-line`,
+        );
+        if (!cancelled && res?.distance_m) setRacingLine(res);
+      } catch {
+        if (!cancelled) setRacingLine(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showRacingLine, sessionId]);
+
   // ── Draw on canvas ──────────────────────────────────────
   const draw = useCallback(() => {
     if (!trace || !canvasRef.current) return;
-    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace);
-  }, [trace, compareTrace, corners, hoverIdx, distRange]);
+    const hoverDist = (hoverIdx != null && trace.distances && trace.distances[hoverIdx] != null)
+      ? trace.distances[hoverIdx]
+      : null;
+    drawTrack(canvasRef.current, trace, corners, hoverIdx ?? undefined, distRange, compareTrace, colorMode, gripDelta, ribbonData, racingLine, crossRefTrace, hoverDist);
+  }, [trace, compareTrace, corners, hoverIdx, distRange, colorMode, gripDelta, ribbonData, racingLine, crossRefTrace]);
 
   useEffect(() => { draw(); }, [draw]);
 
@@ -696,7 +1184,7 @@ export function TrackMap(props: TrackMapProps) {
     <div className={`flex flex-col ${className}`}>
       <div
         className="relative flex-1 min-h-0 rounded-lg border border-steel/10"
-        style={{ width: '100%', background: '#0B0C0F', ...(!className.includes('h-full') ? { minHeight: '300px' } : {}) }}
+        style={{ width: '100%', background: 'var(--asphalt)', ...(!className.includes('h-full') ? { minHeight: '300px' } : {}) }}
       >
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -753,7 +1241,7 @@ export function TrackMap(props: TrackMapProps) {
             <select
               value={activeLap ?? ''}
               onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-[#C9A84C] focus:outline-none"
+              className="bg-concrete text-chalk text-sm font-telemetry rounded px-2 py-1 border border-steel/20 focus:border-pit-orange focus:outline-none"
             >
               {gpsLaps.map((l) => (
                 <option key={l} value={l}>

@@ -60,7 +60,7 @@ function DrillStatusIcon({ execution }: { execution: DrillExecution | undefined 
     return (
       <span
         className="inline-block w-5 h-5 rounded-full border-2 flex-shrink-0"
-        style={{ borderColor: '#94a3b8' }}
+        style={{ borderColor: '#949494' }}
       />
     );
   }
@@ -69,7 +69,7 @@ function DrillStatusIcon({ execution }: { execution: DrillExecution | undefined 
     return (
       <span
         className="inline-flex items-center justify-center w-5 h-5 rounded-full flex-shrink-0"
-        style={{ backgroundColor: '#a3e635' }}
+        style={{ backgroundColor: '#22C55E' }}
       >
         <svg
           width="12"
@@ -80,7 +80,7 @@ function DrillStatusIcon({ execution }: { execution: DrillExecution | undefined 
         >
           <path
             d="M2.5 6L5 8.5L9.5 3.5"
-            stroke="#1a1a2e"
+            stroke="#141414"
             strokeWidth="1.5"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -114,7 +114,7 @@ function DrillStatusIcon({ execution }: { execution: DrillExecution | undefined 
   return (
     <span
       className="inline-block w-5 h-5 rounded-full flex-shrink-0"
-      style={{ backgroundColor: 'rgba(148, 163, 184, 0.3)', border: '1.5px solid #94a3b8' }}
+      style={{ backgroundColor: 'rgba(148, 148, 148, 0.3)', border: '1.5px solid #949494' }}
     />
   );
 }
@@ -139,15 +139,15 @@ export default function PlanProgressTimeline({
               <div
                 className="w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0"
                 style={{
-                  borderColor: weekComplete ? '#a3e635' : '#94a3b8',
+                  borderColor: weekComplete ? '#22C55E' : '#949494',
                   backgroundColor: weekComplete
-                    ? 'rgba(163, 230, 53, 0.2)'
-                    : 'rgba(148, 163, 184, 0.1)',
+                    ? 'rgba(34, 197, 94, 0.2)'
+                    : 'rgba(148, 148, 148, 0.1)',
                 }}
               >
                 <span
                   className="font-telemetry text-xs font-bold"
-                  style={{ color: weekComplete ? '#a3e635' : '#94a3b8' }}
+                  style={{ color: weekComplete ? '#22C55E' : '#949494' }}
                 >
                   {week.week_number}
                 </span>
@@ -158,7 +158,7 @@ export default function PlanProgressTimeline({
                 <div
                   className="flex-1 w-0.5 min-h-[24px]"
                   style={{
-                    backgroundColor: weekComplete ? '#a3e635' : '#94a3b8',
+                    backgroundColor: weekComplete ? '#22C55E' : '#949494',
                     opacity: weekComplete ? 0.6 : 0.3,
                   }}
                 />
@@ -175,7 +175,7 @@ export default function PlanProgressTimeline({
                 <span
                   className="font-telemetry text-xs"
                   style={{
-                    color: completion.percent === 100 ? '#a3e635' : '#94a3b8',
+                    color: completion.percent === 100 ? '#22C55E' : '#949494',
                   }}
                 >
                   {completion.percent}%
@@ -193,7 +193,7 @@ export default function PlanProgressTimeline({
                         <p
                           className="text-sm font-body"
                           style={{
-                            color: ex?.status === 'completed' ? '#e2e8f0' : '#94a3b8',
+                            color: ex?.status === 'completed' ? '#F0EDE5' : '#949494',
                           }}
                         >
                           {drill.name}

@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import Optional
+from typing import Iterator, Optional
 
 import pandas as pd
 
@@ -27,6 +27,8 @@ class BaseAdapter(abc.ABC):
     """Abstract base class for all telemetry format adapters."""
 
     FORMAT_NAME: str = "unknown"
+    EXTENSIONS: list[str] = []
+    MAGIC_BYTES: bytes | None = None
 
     # ------------------------------------------------------------------
     # Abstract interface
@@ -101,3 +103,33 @@ class BaseAdapter(abc.ABC):
         if not channels:
             return 0
         return detect_data_tier(channels)
+
+    def stream(
+        self,
+        file_path: str,
+        *,
+        config: Optional[object] = None,
+        progress_cb: Optional[object] = None,
+    ) -> Iterator[pd.DataFrame]:
+        """Yield DataFrames in chunks.
+
+        The default implementation calls ``parse()`` and yields the full
+        result as a single chunk.  Subclasses that support true streaming
+        should override this to yield incremental chunks and keep memory
+        bounded.
+
+        Parameters
+        ----------
+        file_path:
+            Path to the telemetry file.
+        config:
+            Optional ingestion configuration.
+        progress_cb:
+            Optional progress callback.
+        """
+        yield self.parse(file_path, progress_cb=progress_cb)
+
+    @property
+    def supports_streaming(self) -> bool:
+        """Return True if this adapter overrides ``stream()``."""
+        return type(self).stream is not BaseAdapter.stream

@@ -1,83 +1,91 @@
 'use client';
 
-import { Fragment, useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { BreadcrumbJsonLd } from '@/components/seo/BreadcrumbJsonLd';
+import { PageJsonLd } from '@/components/seo/PageJsonLd';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { PricingTable } from '@/components/ui/PricingTable';
-import { StampButton } from '@/components/ui/StampButton';
 import { ChartTooltip } from '@/components/ui/ChartTooltip';
-import { PromoCountdown } from '@/components/marketing/PromoCountdown';
 import { RelatedPages } from '@/components/marketing/RelatedPages';
-import { venueCard } from '@/data/pricing';
-import { trackCtaClick, trackPricingToggle } from '@/lib/analytics';
+import { trackCtaClick, trackPricingToggle, trackB2CFunnel } from '@/lib/analytics';
 import { useTranslation } from '@/i18n';
 import { useCurrency } from '@/hooks/useCurrency';
 
 /** Brief explanations for feature matrix rows */
 const FEATURE_TIPS: Record<string, string> = {
   'pricing.matrix.uploadAnalyze': 'Upload a CSV from RaceChrono, RaceBox, AiM, or MoTeC and receive a full coaching report within seconds.',
+  'pricing.matrix.strategyDashboard': 'Real-time race strategy view with pit windows, stint pacing, and degradation trends.',
+  'pricing.matrix.vizWorkspace': 'Interactive visualization workspace with chart theming, annotations, and custom overlays.',
+  'pricing.matrix.rawRetention': 'How long your original uploaded CSV files are stored before automatic cleanup.',
+  'pricing.matrix.reportRetention': 'Processed coaching reports stored for 5 years (GDPR compliant).',
   'pricing.matrix.fourPillar': 'Scores your driving across Pace, Consistency, Execution, and Robustness — each out of 25 for a total out of 100.',
   'pricing.matrix.cornerCoaching': 'Per-corner analysis showing time loss, coaching hints, and direction-specific feedback.',
   'pricing.matrix.sessionTabs': 'Speed traces, G-G diagrams, pedal traces, sector analysis, and more in a unified session view.',
   'pricing.matrix.comparisonProgress': 'Compare two sessions side-by-side to see exactly where you improved or lost time.',
   'pricing.matrix.coachingDrills': 'Targeted practice drills generated from your weaknesses to accelerate improvement.',
-  'pricing.matrix.vizWorkspace': 'Interactive visualization workspace with chart theming, annotations, and custom overlays.',
-  'pricing.matrix.strategyDashboard': 'Real-time race strategy view with pit windows, stint pacing, and degradation trends.',
   'pricing.matrix.livePace': 'Live telemetry monitoring during a race — see pace deltas and stint performance as they happen.',
   'pricing.matrix.pitPlanning': 'Optimal pit stop timing based on tire degradation, fuel, and race position.',
   'pricing.matrix.incidentAlert': 'Automated alerts for safety car, red flags, and unusual pace drops.',
   'pricing.matrix.trackManagement': 'Manage your tracks, drivers, and karts in one workspace.',
   'pricing.matrix.pdfReports': 'Download professional PDF reports to share with coaches, sponsors, or team engineers.',
   'pricing.matrix.apiAccess': 'Programmatic access to your telemetry data for custom integrations and dashboards.',
-  'pricing.matrix.rawRetention': 'How long your original uploaded CSV files are stored before automatic cleanup.',
-  'pricing.matrix.reportRetention': 'Processed coaching reports are lightweight and stored indefinitely on all plans.',
 };
 
 interface MatrixRow {
   featureKey: string;
-  group: 'coaching' | 'strategy' | 'data';
+  group: 'core' | 'detail';
   demoKey: string;
   racerKey: string;
   worldClassKey: string;
 }
 
-const featureMatrix: MatrixRow[] = [
-  // COACHING
-  { featureKey: 'pricing.matrix.uploadAnalyze', group: 'coaching', demoKey: 'pricing.matrix.1report', racerKey: 'pricing.matrix.10mo', worldClassKey: 'pricing.value.unlimited' },
-  { featureKey: 'pricing.matrix.fourPillar', group: 'coaching', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.cornerCoaching', group: 'coaching', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.sessionTabs', group: 'coaching', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.comparisonProgress', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.coachingDrills', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.vizWorkspace', group: 'coaching', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  // STRATEGY
-  { featureKey: 'pricing.matrix.strategyDashboard', group: 'strategy', demoKey: 'pricing.matrix.3hLimit', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.livePace', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.pitPlanning', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.incidentAlert', group: 'strategy', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  // DATA & OPS
-  { featureKey: 'pricing.matrix.trackManagement', group: 'data', demoKey: 'pricing.matrix.basic', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
-  { featureKey: 'pricing.matrix.rawRetention', group: 'data', demoKey: 'pricing.value.1month', racerKey: 'pricing.value.3months', worldClassKey: 'pricing.value.12months' },
-  { featureKey: 'pricing.matrix.reportRetention', group: 'data', demoKey: 'pricing.value.indefinite', racerKey: 'pricing.value.indefinite', worldClassKey: 'pricing.value.indefinite' },
+/**
+ * Core rows: always visible — race strategy, reports, visualization, retention.
+ * Values cross-checked against PLAN_ENTITLEMENTS in telemetry_tool/auth/entitlements.py
+ */
+const coreRows: MatrixRow[] = [
+  // free: 1 report/mo | racer: 10/mo | world_class: unlimited
+  { featureKey: 'pricing.matrix.uploadAnalyze', group: 'core', demoKey: 'pricing.matrix.1report', racerKey: 'pricing.matrix.10mo', worldClassKey: 'pricing.value.unlimited' },
+  // free: 4h_basic | racer: 24h_complex | world_class: unlimited
+  { featureKey: 'pricing.matrix.strategyDashboard', group: 'core', demoKey: 'pricing.matrix.3hLimit', racerKey: 'pricing.matrix.24hLimit', worldClassKey: 'pricing.value.unlimited' },
+  // free: False | racer: True | world_class: True
+  { featureKey: 'pricing.matrix.vizWorkspace', group: 'core', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: 30d | racer: 90d | world_class: 365d
+  { featureKey: 'pricing.matrix.rawRetention', group: 'core', demoKey: 'pricing.value.1month', racerKey: 'pricing.value.3months', worldClassKey: 'pricing.value.12months' },
+  // all plans: 5 years (GDPR)
+  { featureKey: 'pricing.matrix.reportRetention', group: 'core', demoKey: 'pricing.value.indefinite', racerKey: 'pricing.value.indefinite', worldClassKey: 'pricing.value.indefinite' },
 ];
 
-const GROUP_ORDER: Array<'coaching' | 'strategy' | 'data'> = ['coaching', 'strategy', 'data'];
-const GROUP_LABEL_KEYS: Record<string, string> = {
-  coaching: 'pricing.groupCoaching',
-  strategy: 'pricing.groupStrategy',
-  data: 'pricing.groupData',
-};
-
-const USE_CASES = [
-  { id: 'hobby', label: 'Hobby Driver', description: 'Track day enthusiast, a few sessions per year', recommended: 'demo' },
-  { id: 'club', label: 'Club Racer', description: 'Regular race weekends, improving lap by lap', recommended: 'racer' },
-  { id: 'pro', label: 'Pro / Academy', description: 'Professional driver or coaching academy', recommended: 'world-class' },
-  { id: 'team', label: 'Racing Team', description: 'Multi-driver team with engineer support', recommended: 'world-class' },
-] as const;
+/**
+ * Detail rows: revealed on expand.
+ * Values cross-checked against PLAN_ENTITLEMENTS in telemetry_tool/auth/entitlements.py
+ */
+const detailRows: MatrixRow[] = [
+  // All plans: scoring always available
+  { featureKey: 'pricing.matrix.fourPillar', group: 'detail', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.cornerCoaching', group: 'detail', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.sessionTabs', group: 'detail', demoKey: 'pricing.value.full', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: False | racer: True | world_class: True
+  { featureKey: 'pricing.matrix.comparisonProgress', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: False | racer: True | world_class: True
+  { featureKey: 'pricing.matrix.coachingDrills', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: ["equal"] | racer: ["equal"] | world_class: ["equal","performance"]
+  { featureKey: 'pricing.matrix.optimizer', group: 'detail', demoKey: 'pricing.value.equalOnly', racerKey: 'pricing.value.equalOnly', worldClassKey: 'pricing.value.allModes' },
+  // free: False | racer: True | world_class: True
+  { featureKey: 'pricing.matrix.livePace', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  { featureKey: 'pricing.matrix.pitPlanning', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: "basic" | racer: "full" | world_class: "full"
+  { featureKey: 'pricing.matrix.trackManagement', group: 'detail', demoKey: 'pricing.matrix.basic', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: no pdf | racer: pdf | world_class: pdf
+  { featureKey: 'pricing.matrix.pdfReports', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.full', worldClassKey: 'pricing.value.full' },
+  // free: False | racer: False | world_class: True
+  { featureKey: 'pricing.matrix.apiAccess', group: 'detail', demoKey: 'pricing.value.none', racerKey: 'pricing.value.none', worldClassKey: 'pricing.value.full' },
+];
 
 export default function PricingPage() {
   const [billing, setBilling] = useState<'monthly' | 'annual'>('annual');
-  const [useCase, setUseCase] = useState<string | null>(null);
+  const [matrixExpanded, setMatrixExpanded] = useState(false);
   const { t } = useTranslation();
   const { localizedPlans } = useCurrency();
 
@@ -86,6 +94,7 @@ export default function PricingPage() {
   useEffect(() => {
     const match = document.cookie.match(/(?:^|;\s*)lap_exp_cta=([^;]+)/);
     if (match) setCtaVariant(match[1]);
+    trackB2CFunnel('pricing_visit');
   }, []);
 
   const toggleBilling = useCallback(() => {
@@ -94,14 +103,20 @@ export default function PricingPage() {
     trackPricingToggle(next);
   }, [billing]);
 
-  const groupedRows = GROUP_ORDER.map((group) => ({
-    group,
-    labelKey: GROUP_LABEL_KEYS[group],
-    rows: featureMatrix.filter((r) => r.group === group),
-  }));
-
   return (
     <>
+    <BreadcrumbJsonLd pathname="/pricing" />
+    <PageJsonLd
+      type="FAQPage"
+      title="Pricing"
+      description="Choose the right LAP plan for your racing programme."
+      pathname="/pricing"
+      faqItems={[
+        { question: 'What file formats does LAP support?', answer: 'RaceChrono CSV, RaceBox CSV, AiM CSV, and MoTeC CSV with GPS data.' },
+        { question: 'Can I switch plans?', answer: 'Yes, you can upgrade or downgrade at any time. Changes take effect on your next billing cycle.' },
+        { question: 'Is there a free trial?', answer: 'The Demo tier is free forever with 3 analyses per month. No credit card required.' },
+      ]}
+    />
     <JsonLd
       pathname="/pricing"
       faqItems={[
@@ -110,7 +125,7 @@ export default function PricingPage() {
         { question: 'Which GPS loggers are supported?', answer: 'RaceChrono, RaceBox, AiM, MoTeC, VBOX, and any logger that exports standard CSV with GPS coordinates.' },
         { question: 'Is my data private?', answer: 'Yes. All data is isolated per workspace using row-level security. Your telemetry is never shared with other users.' },
         { question: 'Can I use LAP for karts?', answer: 'Absolutely. LAP supports both kart and car telemetry with dedicated analysis pipelines for each.' },
-        { question: 'Do you offer team or circuit plans?', answer: 'Yes. Contact our sales team for B2B plans with multi-seat access, API integration, and dedicated support.' },
+        { question: 'Do you offer team or circuit plans?', answer: 'Yes — venue and team plans are available separately. See the For Venues & Teams page for details.' },
       ]}
     />
     <main className="mx-auto max-w-6xl px-4 py-10 md:py-14">
@@ -119,30 +134,6 @@ export default function PricingPage() {
         title={t('pricing.title')}
         subtitle={t('pricing.description')}
       />
-      {/* Promotional countdown — set endsAt to activate a time-limited offer */}
-      <PromoCountdown endsAt="2026-04-01T00:00:00Z" label="Launch pricing ends in" className="mb-6" />
-
-      {/* Use-case selector */}
-      <section className="mb-8">
-        <p className="text-center text-steel text-sm mb-3">I am a&hellip;</p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-w-2xl mx-auto">
-          {USE_CASES.map((uc) => (
-            <button
-              key={uc.id}
-              type="button"
-              onClick={() => setUseCase(useCase === uc.id ? null : uc.id)}
-              className={`p-3 border rounded text-left transition-all ${
-                useCase === uc.id
-                  ? 'border-acid-green bg-acid-green/5 text-chalk'
-                  : 'border-steel/20 text-steel hover:border-steel/40 hover:text-chalk'
-              }`}
-            >
-              <span className="block font-monument text-xs mb-0.5">{uc.label}</span>
-              <span className="block text-[11px] leading-tight opacity-70">{uc.description}</span>
-            </button>
-          ))}
-        </div>
-      </section>
 
       {/* Billing toggle */}
       <div className="flex items-center justify-center gap-3 mb-8">
@@ -171,56 +162,27 @@ export default function PricingPage() {
         >
           {t('pricing.toggleAnnual')}
         </span>
-        {billing === 'annual' && (
-          <span className="inline-flex items-center px-2 py-0.5 bg-acid-green/10 border border-acid-green/30 rounded text-acid-green text-[10px] font-telemetry uppercase tracking-wider animate-pulse">
-            Save 20%
-          </span>
-        )}
       </div>
 
-      {/* Pricing Table + Venue card */}
-      <section className="mb-10 grid grid-cols-1 lg:grid-cols-[3fr_1fr] gap-0">
+      {/* SEO-visible, visually hidden heading */}
+      <h2 className="sr-only">Plans</h2>
+
+      {/* Pricing Table */}
+      <section className="mb-10">
         <PricingTable
           plans={localizedPlans}
           billingPeriod={billing}
           onCtaClick={(planName) => trackCtaClick(planName, 'pricing', 'b2c')}
           ctaVariant={ctaVariant}
-          recommendedSlug={useCase ? USE_CASES.find((uc) => uc.id === useCase)?.recommended : null}
         />
-
-        {/* Venue card */}
-        <div className="p-6 bg-concrete border border-steel/20 lg:border-l-0">
-          <p className="font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase mb-2">
-            {t('pricing.b2bLabel')}
-          </p>
-          <h3 className="font-monument text-[var(--text-h3)] mb-4">{t('pricing.b2b.name')}</h3>
-          <ul className="space-y-2 mb-6">
-            {[
-              t('pricing.b2b.feature1'),
-              t('pricing.b2b.feature2'),
-              t('pricing.b2b.feature3'),
-              t('pricing.b2b.feature4'),
-              t('pricing.b2b.feature5'),
-            ].map((feature) => (
-              <li key={feature} className="flex items-start gap-2 font-body text-sm text-steel">
-                <span className="text-pit-orange mt-0.5 shrink-0">&bull;</span>
-                {feature}
-              </li>
-            ))}
-          </ul>
-          <StampButton
-            href={venueCard.ctaHref}
-            onClick={() => trackCtaClick('contact_sales', 'pricing', 'b2b')}
-            className="w-full"
-          >
-            {t('cta.contactSales')}
-          </StampButton>
-        </div>
       </section>
 
-      {/* Feature Eligibility Matrix */}
+      {/* SEO-visible, visually hidden heading */}
+      <h2 className="sr-only">Features</h2>
+
+      {/* Feature Eligibility Matrix — core features always visible, details in collapsible */}
       <section className="mb-10 overflow-x-auto">
-        <h2 className="font-monument text-[var(--text-h2)] mb-4">{t('pricing.matrixTitle')}</h2>
+        <h3 className="font-monument text-[var(--text-h2)] mb-4">{t('pricing.matrixTitle')}</h3>
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-concrete">
@@ -231,77 +193,60 @@ export default function PricingPage() {
             </tr>
           </thead>
           <tbody>
-            {groupedRows.map(({ group, labelKey, rows }) => (
-              <Fragment key={group}>
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="bg-asphalt/60 font-monument text-xs tracking-[0.12em] uppercase p-2 text-chalk border border-steel/20"
-                  >
-                    {t(labelKey)}
-                  </td>
-                </tr>
-                {rows.map((row) => (
-                  <tr key={row.featureKey}>
-                    <td className="border border-steel/20 p-2 text-steel">
-                      <span className="inline-flex items-center gap-1.5">
-                        {t(row.featureKey)}
-                        {FEATURE_TIPS[row.featureKey] && (
-                          <ChartTooltip title={t(row.featureKey)} description={FEATURE_TIPS[row.featureKey]} />
-                        )}
-                      </span>
-                    </td>
-                    <td className="border border-steel/20 p-2 text-chalk">{t(row.demoKey)}</td>
-                    <td className="border border-steel/20 p-2 text-chalk">{t(row.racerKey)}</td>
-                    <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
-                  </tr>
-                ))}
-              </Fragment>
+            {/* Core rows — always visible */}
+            {coreRows.map((row) => (
+              <tr key={row.featureKey}>
+                <td className="border border-steel/20 p-2 text-steel">
+                  <span className="inline-flex items-center gap-1.5">
+                    {t(row.featureKey)}
+                    {FEATURE_TIPS[row.featureKey] && (
+                      <ChartTooltip title={t(row.featureKey)} description={FEATURE_TIPS[row.featureKey]} />
+                    )}
+                  </span>
+                </td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.demoKey)}</td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.racerKey)}</td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
+              </tr>
             ))}
+
+            {/* Detail rows — collapsible */}
+            {matrixExpanded && detailRows.map((row) => (
+              <tr key={row.featureKey} className="bg-concrete/20 animate-in fade-in">
+                <td className="border border-steel/20 p-2 text-steel">
+                  <span className="inline-flex items-center gap-1.5">
+                    {t(row.featureKey)}
+                    {FEATURE_TIPS[row.featureKey] && (
+                      <ChartTooltip title={t(row.featureKey)} description={FEATURE_TIPS[row.featureKey]} />
+                    )}
+                  </span>
+                </td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.demoKey)}</td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.racerKey)}</td>
+                <td className="border border-steel/20 p-2 text-chalk">{t(row.worldClassKey)}</td>
+              </tr>
+            ))}
+
+            {/* Expand/collapse row inside table */}
+            <tr>
+              <td colSpan={4} className="border border-steel/20 p-0">
+                <button
+                  type="button"
+                  className="w-full py-3 font-telemetry text-[11px] tracking-[0.12em] uppercase text-steel hover:text-chalk hover:bg-concrete/40 transition-colors duration-300 flex items-center justify-center gap-2"
+                  onClick={() => setMatrixExpanded(!matrixExpanded)}
+                >
+                  {matrixExpanded ? 'Show key features' : 'See all features'}
+                  <span
+                    className="inline-block transition-transform duration-300"
+                    style={{ transform: matrixExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}
+                  >
+                    &#9662;
+                  </span>
+                </button>
+              </td>
+            </tr>
           </tbody>
         </table>
-      </section>
-
-      {/* Quick Comparison Checkmarks */}
-      <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-4">Quick Comparison</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-concrete">
-                <th className="border border-steel/20 p-3 text-left text-steel w-1/2">Feature</th>
-                <th className="border border-steel/20 p-3 text-center text-steel">Demo</th>
-                <th className="border border-steel/20 p-3 text-center text-pit-orange font-monument">Racer</th>
-                <th className="border border-steel/20 p-3 text-center text-steel">World-Class</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { feature: 'Upload & Analyze', demo: 'partial', racer: true, worldClass: true },
-                { feature: '4-Pillar Scoring', demo: true, racer: true, worldClass: true },
-                { feature: 'Corner Coaching', demo: true, racer: true, worldClass: true },
-                { feature: 'Speed Trace & G-G Diagram', demo: true, racer: true, worldClass: true },
-                { feature: 'Coaching Drills', demo: false, racer: true, worldClass: true },
-                { feature: 'Visualization Workspace', demo: false, racer: true, worldClass: true },
-                { feature: 'Session Comparison', demo: false, racer: false, worldClass: true },
-                { feature: 'Race Strategy Dashboard', demo: 'partial', racer: true, worldClass: true },
-                { feature: 'Live Monitoring', demo: false, racer: true, worldClass: true },
-                { feature: 'Priority Support', demo: false, racer: false, worldClass: true },
-              ].map((row) => (
-                <tr key={row.feature} className="hover:bg-concrete/40 transition-colors">
-                  <td className="border border-steel/20 p-3 text-chalk">{row.feature}</td>
-                  {([row.demo, row.racer, row.worldClass] as (boolean | string)[]).map((val, i) => (
-                    <td key={i} className="border border-steel/20 p-3 text-center">
-                      {val === true && <span className="text-acid-green text-lg">&#10003;</span>}
-                      {val === false && <span className="text-steel/30">&mdash;</span>}
-                      {val === 'partial' && <span className="text-marshal-yellow text-xs font-telemetry">Limited</span>}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       </section>
 
       {/* FAQ */}
@@ -316,7 +261,7 @@ export default function PricingPage() {
             { q: 'Which GPS loggers are supported?', a: 'RaceChrono, RaceBox, AiM, MoTeC, VBOX, and any logger that exports standard CSV with GPS coordinates.' },
             { q: 'Is my data private?', a: 'Yes. All data is isolated per workspace using row-level security. Your telemetry is never shared with other users.' },
             { q: 'Can I use LAP for karts?', a: 'Absolutely. LAP supports both kart and car telemetry with dedicated analysis pipelines for each.' },
-            { q: 'Do you offer team or circuit plans?', a: 'Yes. Contact our sales team for B2B plans with multi-seat access, API integration, and dedicated support.' },
+            { q: 'Do you offer team or circuit plans?', a: 'Yes — venue and team plans are available separately. See the For Venues & Teams page in the footer for details.' },
           ].map(({ q, a }) => (
             <details key={q} className="group border border-steel/20 bg-concrete/40">
               <summary className="flex items-center justify-between cursor-pointer p-4 font-body text-sm text-chalk hover:text-acid-green transition-colors">
@@ -372,17 +317,20 @@ export default function PricingPage() {
         </div>
       </section>
 
+      {/* SEO-visible, visually hidden heading */}
+      <h2 className="sr-only">Lifecycle</h2>
+
       {/* Data Lifecycle Transparency */}
       <section className="mb-10">
-        <h2 className="font-monument text-[var(--text-h2)] mb-4">
+        <h3 className="font-monument text-[var(--text-h2)] mb-4">
           {t('pricing.dataLifecycleTitle')}
-        </h2>
+        </h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {/* Raw Telemetry */}
           <article className="border border-steel/20 bg-concrete/40 p-5">
-            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+            <h4 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
               {t('pricing.lifecycle.rawTelemetry')}
-            </h3>
+            </h4>
             <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.rawDesc')}</p>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm font-body">
@@ -403,9 +351,9 @@ export default function PricingPage() {
 
           {/* Processed Reports */}
           <article className="border border-steel/20 bg-concrete/40 p-5">
-            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+            <h4 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
               {t('pricing.lifecycle.processedReports')}
-            </h3>
+            </h4>
             <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.processedDesc')}</p>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm font-body">
@@ -422,9 +370,9 @@ export default function PricingPage() {
 
           {/* Live Event Data */}
           <article className="border border-steel/20 bg-concrete/40 p-5">
-            <h3 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
+            <h4 className="font-monument text-xs tracking-[0.12em] uppercase text-chalk mb-1">
               {t('pricing.lifecycle.liveEvent')}
-            </h3>
+            </h4>
             <p className="text-steel text-sm mb-4">{t('pricing.lifecycle.liveDesc')}</p>
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm font-body">

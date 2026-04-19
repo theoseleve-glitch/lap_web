@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "saved_at": "2026-04-15T11:06:22+00:00",
+  "profiles": [
+    {
+      "profile_id": "mclaren570sgt4_v1",
+      "vehicle_key": "mclaren570sgt4",
+      "vehicle_class": "GT4",
+      "calibration_version": 1,
+      "active": true,
+      "deprecated": false,
+      "created_at": "2026-04-15T11:06:22+00:00",
+      "updated_at": "2026-04-15T11:06:22+00:00",
+      "notes": "Calibrated against the Daytona 74-lap McLaren 570S GT4 session.",
+      "tire": {
+        "d1_lat": 2.8,
+        "d1_long": 2.7,
+        "d2_lat": -0.0001,
+        "d2_long": -0.0001,
+        "k_lat_scale": 1.0,
+        "fit_quality": {
+          "n_samples": 30810,
+          "residual": 1500.0,
+          "fit_std": 0.03,
+          "notes": "Daytona baseline \u2014 74-lap McLaren GT4 session"
+        }
+      },
+      "road_state": {
+        "roll_compliance_rad_per_mps2": 0.005,
+        "pitch_compliance_rad_per_mps2": 0.003,
+        "smooth_window": 60,
+        "transition_threshold": 0.008,
+        "fit_quality": {
+          "n_samples": 30000,
+          "residual": 0.005,
+          "fit_std": null,
+          "notes": "Daytona-derived"
+        }
+      },
+      "provenance": {
+        "session_id": "daytona_mclaren570sgt4",
+        "fit_method": "frozen_baseline",
+        "harness_version": "validation_v1",
+        "fit_date": "2026-04-15T11:06:22+00:00",
+        "n_samples": 30810
+      }
+    }
+  ]
+}

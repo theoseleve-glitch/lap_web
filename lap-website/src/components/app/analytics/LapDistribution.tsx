@@ -1,9 +1,42 @@
+/**
+ * LapDistribution — histogram of lap times across the session.
+ *
+ * Native React + TypeScript chart built entirely on the shared chart kit.
+ * Shows:
+ *   - histogram bars (primary gold) with the best-lap bin in acid-green
+ *   - mean and median as dashed vertical reference lines
+ *   - hover tooltip: bin range + count + % of session
+ *   - legend with mean, median, and standard-deviation inline metadata
+ *
+ * Owns its ChartCard — render directly, no outer wrapper.
+ */
+
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '@/lib/api-client';
+import {
+  ChartCard,
+  ChartHeader,
+  ChartBody,
+  ChartLegend,
+  ChartTooltip,
+  ChartLoadingState,
+  ChartErrorState,
+  ChartEmptyState,
+  chartColor,
+  plotPadding,
+  createLinearScale,
+  niceTicks,
+  drawAxis,
+  drawGrid,
+  drawReferenceLine,
+  useChartCanvas,
+  type LinearScale,
+  type PlotRect,
+} from '@/components/shared/chart-kit';
 
-/* ── Types ──────────────────────────────────── */
+/* ── Types ─────────────────────────────────── */
 
 interface LapData {
   lap_number: number;
@@ -14,27 +47,23 @@ interface LapData {
 
 interface LapDistributionProps {
   sessionId: string;
+  /** Accepted for backward compatibility; ignored. */
   apiBase?: string;
-  className?: string;
 }
 
-/* ── Colors ─────────────────────────────────── */
+interface Bounds {
+  plot: PlotRect;
+  xScale: LinearScale;
+  yScale: LinearScale;
+  nBins: number;
+  binWidth: number;
+  minT: number;
+}
 
-const C = {
-  bg: '#0B0C0F',
-  grid: '#30363d',
-  text: '#888',
-  bright: '#F0EDE5',
-  bar: '#58a6ff',
-  barBest: '#00ff64',
-  barInvalid: '#ff3c3c50',
-  median: '#d29922',
-  mean: '#ff6b35',
-};
-
-/* ── Helpers ────────────────────────────────── */
+/* ── Helpers ───────────────────────────────── */
 
 function formatTime(s: number): string {
+  if (!Number.isFinite(s)) return '—';
   if (s >= 60) {
     const m = Math.floor(s / 60);
     const sec = s - m * 60;
@@ -43,178 +72,9 @@ function formatTime(s: number): string {
   return `${s.toFixed(2)}s`;
 }
 
-/* ── Draw ───────────────────────────────────── */
+/* ── Component ─────────────────────────────── */
 
-function draw(
-  canvas: HTMLCanvasElement,
-  laps: LapData[],
-) {
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  const w = rect.width, h = rect.height;
-  if (w === 0 || h === 0) return;
-  canvas.width = w * dpr;
-  canvas.height = h * dpr;
-  ctx.scale(dpr, dpr);
-  ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = C.bg;
-  ctx.fillRect(0, 0, w, h);
-
-  const valid = laps.filter((l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0);
-  if (valid.length < 2) {
-    ctx.fillStyle = C.text;
-    ctx.font = '13px "Space Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('Not enough laps for distribution', w / 2, h / 2);
-    return;
-  }
-
-  const times = valid.map((l) => l.lap_time_s!);
-  const bestIdx = valid.findIndex((l) => l.is_best);
-  const sorted = [...times].sort((a, b) => a - b);
-  const minT = sorted[0];
-  const maxT = sorted[sorted.length - 1];
-  const range = maxT - minT;
-  const mean = times.reduce((s, t) => s + t, 0) / times.length;
-  const median = sorted.length % 2 === 0
-    ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-    : sorted[Math.floor(sorted.length / 2)];
-
-  // Histogram bins
-  const nBins = Math.min(Math.max(Math.ceil(Math.sqrt(times.length)), 4), 15);
-  const binWidth = range > 0 ? range / nBins : 1;
-  const bins: number[] = new Array(nBins).fill(0);
-  const binLaps: number[][] = Array.from({ length: nBins }, () => []);
-
-  for (let i = 0; i < times.length; i++) {
-    let bi = Math.floor((times[i] - minT) / binWidth);
-    if (bi >= nBins) bi = nBins - 1;
-    bins[bi]++;
-    binLaps[bi].push(i);
-  }
-
-  const maxCount = Math.max(...bins);
-
-  // Layout
-  const pad = { top: 20, right: 20, bottom: 50, left: 50 };
-  const pW = w - pad.left - pad.right;
-  const pH = h - pad.top - pad.bottom;
-
-  // Scales
-  const xToPixel = (t: number) => pad.left + ((t - minT) / (range || 1)) * pW;
-  const yToPixel = (c: number) => pad.top + pH - (c / (maxCount * 1.15)) * pH;
-
-  // Grid
-  ctx.strokeStyle = C.grid;
-  ctx.lineWidth = 0.5;
-  for (let i = 1; i <= maxCount; i++) {
-    const y = yToPixel(i);
-    ctx.beginPath();
-    ctx.moveTo(pad.left, y);
-    ctx.lineTo(pad.left + pW, y);
-    ctx.stroke();
-  }
-
-  // Bars
-  const barW = Math.max(2, pW / nBins - 2);
-  for (let i = 0; i < nBins; i++) {
-    if (bins[i] === 0) continue;
-    const binStart = minT + i * binWidth;
-    const x = xToPixel(binStart + binWidth / 2) - barW / 2;
-    const y = yToPixel(bins[i]);
-    const barH = yToPixel(0) - y;
-
-    // Color: check if best lap is in this bin
-    const hasBest = binLaps[i].some((li) => li === bestIdx);
-    ctx.fillStyle = hasBest ? C.barBest : C.bar;
-    ctx.globalAlpha = 0.7;
-    ctx.beginPath();
-    ctx.roundRect(x, y, barW, barH, 2);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    // Count label
-    if (bins[i] > 0) {
-      ctx.fillStyle = C.bright;
-      ctx.font = '10px "Space Mono", monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(String(bins[i]), x + barW / 2, y - 2);
-    }
-  }
-
-  // Mean line
-  const meanX = xToPixel(mean);
-  ctx.strokeStyle = C.mean;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([6, 3]);
-  ctx.beginPath();
-  ctx.moveTo(meanX, pad.top);
-  ctx.lineTo(meanX, pad.top + pH);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // Median line
-  const medX = xToPixel(median);
-  ctx.strokeStyle = C.median;
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.moveTo(medX, pad.top);
-  ctx.lineTo(medX, pad.top + pH);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // X-axis labels
-  ctx.fillStyle = C.text;
-  ctx.font = '10px "Space Mono", monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  const nTicks = Math.min(6, nBins);
-  for (let i = 0; i <= nTicks; i++) {
-    const t = minT + (range * i) / nTicks;
-    ctx.fillText(formatTime(t), xToPixel(t), pad.top + pH + 6);
-  }
-
-  // Y-axis
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'middle';
-  for (let i = 1; i <= maxCount; i++) {
-    ctx.fillText(String(i), pad.left - 6, yToPixel(i));
-  }
-
-  // Axis title
-  ctx.textAlign = 'center';
-  ctx.fillText('Lap Time', pad.left + pW / 2, pad.top + pH + 28);
-
-  // Legend
-  ctx.font = '10px "Space Mono", monospace';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  let lx = pad.left + 8, ly = pad.top + 4;
-
-  ctx.fillStyle = C.mean;
-  ctx.fillText(`--- Mean: ${formatTime(mean)}`, lx, ly);
-  ly += 13;
-  ctx.fillStyle = C.median;
-  ctx.fillText(`... Median: ${formatTime(median)}`, lx, ly);
-  ly += 13;
-
-  // Std dev
-  const variance = times.reduce((s, t) => s + (t - mean) ** 2, 0) / times.length;
-  const stdDev = Math.sqrt(variance);
-  ctx.fillStyle = C.text;
-  ctx.fillText(`σ ${stdDev.toFixed(3)}s`, lx, ly);
-}
-
-/* ── Component ──────────────────────────────── */
-
-export function LapDistribution({ sessionId, className = '' }: LapDistributionProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export function LapDistribution({ sessionId }: LapDistributionProps) {
   const [laps, setLaps] = useState<LapData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,51 +82,345 @@ export function LapDistribution({ sessionId, className = '' }: LapDistributionPr
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setError(null);
     (async () => {
       try {
-        const res = await api.get<{ laps: LapData[] }>(`/sessions/${sessionId}/laps`);
+        const res = await api.get<{ laps: LapData[] }>(
+          `/sessions/${sessionId}/laps`,
+        );
         if (!cancelled) setLaps(res.laps ?? []);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load');
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : 'Failed to load laps');
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sessionId]);
 
-  const render = useCallback(() => {
-    if (!canvasRef.current || laps.length === 0) return;
-    draw(canvasRef.current, laps);
+  const stats = useMemo(() => {
+    const valid = laps.filter(
+      (l) => l.is_valid && l.lap_time_s != null && l.lap_time_s > 0,
+    );
+    if (valid.length < 3) return null;
+
+    const times = valid.map((l) => l.lap_time_s as number);
+    const sorted = [...times].sort((a, b) => a - b);
+    const minT = sorted[0];
+    const maxT = sorted[sorted.length - 1];
+    const range = maxT - minT || 1;
+    const mean = times.reduce((s, t) => s + t, 0) / times.length;
+    const median =
+      sorted.length % 2 === 0
+        ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+        : sorted[Math.floor(sorted.length / 2)];
+    const variance =
+      times.reduce((s, t) => s + (t - mean) ** 2, 0) / times.length;
+    const stdDev = Math.sqrt(variance);
+
+    // Sturges + sqrt rule for bin count, capped
+    const nBins = Math.min(
+      Math.max(Math.ceil(Math.sqrt(times.length)), 4),
+      15,
+    );
+    const binWidth = range / nBins;
+    const bins: number[] = new Array(nBins).fill(0);
+    const binHasBest: boolean[] = new Array(nBins).fill(false);
+    const bestIdx = valid.findIndex((l) => l.is_best);
+
+    for (let i = 0; i < times.length; i++) {
+      let bi = Math.floor((times[i] - minT) / binWidth);
+      if (bi >= nBins) bi = nBins - 1;
+      bins[bi]++;
+      if (i === bestIdx) binHasBest[bi] = true;
+    }
+
+    const maxCount = Math.max(...bins);
+
+    return {
+      total: times.length,
+      minT,
+      maxT,
+      mean,
+      median,
+      stdDev,
+      bins,
+      binHasBest,
+      nBins,
+      binWidth,
+      maxCount,
+    };
   }, [laps]);
 
-  useEffect(() => { render(); }, [render]);
-  useEffect(() => {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ro = new ResizeObserver(() => render());
-    ro.observe(c);
-    return () => ro.disconnect();
-  }, [render]);
+  const { containerRef, canvasRef, ready, width, height, dpr } = useChartCanvas({
+    minWidth: 40,
+    minHeight: 100,
+  });
 
-  if (error) {
-    return <div className={`text-red-400 p-4 text-sm ${className}`}>{error}</div>;
-  }
+  const [hoverBin, setHoverBin] = useState<number | null>(null);
+  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  const boundsRef = useRef<Bounds | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !ready || !stats) return;
+    const handleMove = (e: PointerEvent) => {
+      const bounds = boundsRef.current;
+      if (!bounds) return;
+      const rect = canvas.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const inside =
+        px >= bounds.plot.left &&
+        px <= bounds.plot.left + bounds.plot.width &&
+        py >= bounds.plot.top &&
+        py <= bounds.plot.top + bounds.plot.height;
+      if (!inside) {
+        setHoverBin(null);
+        setHoverPos(null);
+        return;
+      }
+      const domainValue = bounds.xScale.fromPixel(px);
+      const binIdx = Math.min(
+        bounds.nBins - 1,
+        Math.max(0, Math.floor((domainValue - bounds.minT) / bounds.binWidth)),
+      );
+      setHoverBin(binIdx);
+      const binCenter =
+        bounds.minT + (binIdx + 0.5) * bounds.binWidth;
+      setHoverPos({
+        x: bounds.xScale.toPixel(binCenter),
+        y: bounds.yScale.toPixel(stats.bins[binIdx]),
+      });
+    };
+    const handleLeave = () => {
+      setHoverBin(null);
+      setHoverPos(null);
+    };
+    canvas.addEventListener('pointermove', handleMove);
+    canvas.addEventListener('pointerleave', handleLeave);
+    return () => {
+      canvas.removeEventListener('pointermove', handleMove);
+      canvas.removeEventListener('pointerleave', handleLeave);
+    };
+  }, [canvasRef, ready, stats]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || !ready || !stats) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+
+    const pad = plotPadding.comfortable;
+    const plot: PlotRect = {
+      left: pad.left,
+      top: pad.top,
+      width: width - pad.left - pad.right,
+      height: height - pad.top - pad.bottom,
+    };
+
+    const xScale = createLinearScale(
+      [stats.minT, stats.maxT],
+      [plot.left, plot.left + plot.width],
+    );
+    // Y-scale: count on top, 0 at bottom, 15% headroom
+    const yScale = createLinearScale(
+      [stats.maxCount * 1.15, 0],
+      [plot.top, plot.top + plot.height],
+    );
+    boundsRef.current = {
+      plot,
+      xScale,
+      yScale,
+      nBins: stats.nBins,
+      binWidth: stats.binWidth,
+      minT: stats.minT,
+    };
+
+    // ── Grid ──
+    const yTicks = niceTicks(0, stats.maxCount, 4).filter((t) => t > 0);
+    drawGrid(ctx, {
+      plot,
+      y: { scale: yScale, ticks: yTicks },
+    });
+
+    // ── Bars ──
+    const binPixelWidth = plot.width / stats.nBins;
+    const barWidth = Math.max(2, binPixelWidth - 2);
+
+    for (let i = 0; i < stats.nBins; i++) {
+      const count = stats.bins[i];
+      if (count === 0) continue;
+      const binStart = stats.minT + i * stats.binWidth;
+      const centerX = xScale.toPixel(binStart + stats.binWidth / 2);
+      const x = centerX - barWidth / 2;
+      const y = yScale.toPixel(count);
+      const barH = yScale.toPixel(0) - y;
+
+      const color = stats.binHasBest[i]
+        ? chartColor.series.positive
+        : chartColor.series.primary;
+      const isHover = hoverBin === i;
+
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.globalAlpha = isHover ? 0.95 : 0.7;
+      ctx.beginPath();
+      ctx.roundRect(x, y, barWidth, barH, 2);
+      ctx.fill();
+      ctx.restore();
+
+      // Count label above each bar (only if bar is tall enough)
+      if (barH > 16) {
+        ctx.save();
+        ctx.fillStyle = chartColor.text;
+        ctx.globalAlpha = isHover ? 1 : 0.8;
+        ctx.font = '10px "Space Mono", monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(String(count), centerX, y - 3);
+        ctx.restore();
+      }
+    }
+
+    // ── Reference lines (mean, median) ──
+    drawReferenceLine(ctx, {
+      orientation: 'vertical',
+      plot,
+      scale: xScale,
+      value: stats.mean,
+      color: chartColor.palette[4],
+      dashed: true,
+    });
+    drawReferenceLine(ctx, {
+      orientation: 'vertical',
+      plot,
+      scale: xScale,
+      value: stats.median,
+      color: chartColor.series.warning,
+      dashed: true,
+    });
+
+    // ── Axes ──
+    drawAxis(ctx, {
+      orientation: 'y',
+      plot,
+      scale: yScale,
+      ticks: yTicks,
+      format: (v) => String(Math.round(v)),
+    });
+    drawAxis(ctx, {
+      orientation: 'x',
+      plot,
+      scale: xScale,
+      tickCount: 6,
+      format: (v) => formatTime(v),
+    });
+  }, [canvasRef, ready, stats, width, height, dpr, hoverBin]);
+
+  const isEmpty = !loading && !error && (!stats || stats.total < 3);
 
   return (
-    <div className={`relative ${className}`} style={{ minHeight: '220px' }}>
-      {loading && (
-        <div className="absolute inset-0 flex items-center justify-center z-10">
-          <div className="w-5 h-5 border-2 border-steel/30 border-t-chalk rounded-full animate-spin" />
-        </div>
-      )}
-      <canvas
-        ref={canvasRef}
-        className="w-full h-full cursor-default"
-        style={{ display: 'block', minHeight: '220px' }}
-        role="img"
-        aria-label="Lap time distribution histogram"
+    <ChartCard>
+      <ChartHeader
+        title="Lap Distribution"
+        subtitle={stats ? `${stats.total} laps` : undefined}
+        info="Histogram of lap times. Dashed lines mark mean and median. Tighter distribution = more consistent pace."
       />
-    </div>
+      <ChartBody
+        layout="fixed"
+        height={260}
+        aria-label="Histogram of lap times across the session"
+      >
+        <div ref={containerRef} className="relative w-full h-full">
+          <canvas ref={canvasRef} />
+          {loading && <ChartLoadingState />}
+          {!loading && error && <ChartErrorState message={error} />}
+          {isEmpty && (
+            <ChartEmptyState
+              message="Not enough laps"
+              hint="Need at least 3 valid laps for a distribution."
+            />
+          )}
+          {stats && hoverBin != null && hoverPos && stats.bins[hoverBin] > 0 && (
+            <ChartTooltip
+              x={hoverPos.x}
+              y={hoverPos.y}
+              containerWidth={width}
+              title={`${formatTime(
+                stats.minT + hoverBin * stats.binWidth,
+              )} – ${formatTime(
+                stats.minT + (hoverBin + 1) * stats.binWidth,
+              )}`}
+              rows={[
+                {
+                  label: 'Laps',
+                  value: String(stats.bins[hoverBin]),
+                  color: stats.binHasBest[hoverBin]
+                    ? chartColor.series.positive
+                    : chartColor.series.primary,
+                },
+                {
+                  label: 'Share',
+                  value: `${((stats.bins[hoverBin] / stats.total) * 100).toFixed(0)}%`,
+                },
+                ...(stats.binHasBest[hoverBin]
+                  ? [
+                      {
+                        label: '★ Contains best',
+                        value: '',
+                        color: chartColor.series.positive,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+          )}
+        </div>
+      </ChartBody>
+      <ChartLegend
+        items={
+          stats
+            ? [
+                {
+                  label: 'Lap bin',
+                  color: chartColor.series.primary,
+                  symbol: 'bar',
+                },
+                {
+                  label: 'Best lap bin',
+                  color: chartColor.series.positive,
+                  symbol: 'bar',
+                },
+                {
+                  label: 'Mean',
+                  color: chartColor.palette[4],
+                  symbol: 'dashed',
+                  meta: formatTime(stats.mean),
+                },
+                {
+                  label: 'Median',
+                  color: chartColor.series.warning,
+                  symbol: 'dashed',
+                  meta: formatTime(stats.median),
+                },
+                {
+                  label: 'σ',
+                  color: chartColor.series.neutral,
+                  symbol: 'line',
+                  meta: `${stats.stdDev.toFixed(3)}s`,
+                },
+              ]
+            : []
+        }
+      />
+    </ChartCard>
   );
 }

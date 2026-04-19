@@ -11,7 +11,7 @@ Usage::
 
     ents = get_user_entitlements(conn, user_id, workspace_id)
     allowed, ctx = authorize_feature(conn, user_id, "comparison")
-    allowed, ctx = check_quota(conn, user_id, workspace_id, "reports", cost=1)
+    allowed, ctx = check_quota(conn, user_id, workspace_id, "analyses", cost=1)
 """
 from __future__ import annotations
 
@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 PLAN_ENTITLEMENTS: dict[str, dict] = {
     "free": {
-        "reports_per_month": 1,
-        "uploads_per_month": 1,
+        "analyses_per_month": 1,
+        "upload_volume_mb_per_month": 150,
         "max_upload_size_mb": 150,
         "max_session_data_mb": 150,
         "raw_retention_days": 30,
@@ -50,15 +50,18 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "api_access": False,
         "track_management": "basic",
         "max_workspace_members": 1,
+        "device_sync": False,
+        "auto_analyze_on_sync": False,
+        "max_linked_devices": 0,
     },
     "racer": {
-        "reports_per_month": 10,
-        "uploads_per_month": 10,
+        "analyses_per_month": 10,
+        "upload_volume_mb_per_month": 2500,
         "max_upload_size_mb": 2500,
         "max_session_data_mb": 2500,
         "raw_retention_days": 90,
         "report_retention": "indefinite",
-        "comparison_progress": False,
+        "comparison_progress": True,
         "coaching_drills": True,
         "viz_workspace": True,
         "badge_share_card": True,
@@ -73,10 +76,13 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "api_access": False,
         "track_management": "full",
         "max_workspace_members": 1,
+        "device_sync": True,
+        "auto_analyze_on_sync": False,
+        "max_linked_devices": 2,
     },
     "world_class": {
-        "reports_per_month": -1,  # unlimited
-        "uploads_per_month": -1,
+        "analyses_per_month": -1,  # unlimited
+        "upload_volume_mb_per_month": -1,  # unlimited
         "max_upload_size_mb": -1,  # unlimited
         "max_session_data_mb": -1,
         "raw_retention_days": 365,
@@ -96,6 +102,9 @@ PLAN_ENTITLEMENTS: dict[str, dict] = {
         "api_access": True,
         "track_management": "full",
         "max_workspace_members": 5,
+        "device_sync": True,
+        "auto_analyze_on_sync": True,
+        "max_linked_devices": 3,
     },
 }
 
@@ -114,8 +123,8 @@ def normalize_tier(tier: str | None) -> str:
 
 # Maps metric names to entitlement keys for usage limit checks
 METRIC_TO_ENTITLEMENT: dict[str, str] = {
-    "reports": "reports_per_month",
-    "uploads": "uploads_per_month",
+    "analyses": "analyses_per_month",
+    "upload_volume_mb": "upload_volume_mb_per_month",
 }
 
 
@@ -157,11 +166,13 @@ _BOOLEAN_FEATURES = {
     "live_monitoring": "live_monitoring",
     "gamification": "gamification",
     "badge_share_card": "badge_share_card",
+    "device_sync": "device_sync",
+    "auto_analyze_on_sync": "auto_analyze_on_sync",
 }
 
 # ── Feature keys that map to non-boolean plan columns ──────────────────
 _LIMIT_FEATURES = {
-    "reports_per_month": "reports_per_month",
+    "analyses_per_month": "analyses_per_month",
     "max_upload_size_mb": "max_upload_size_mb",
     "telemetry_retention_days": "telemetry_retention_days",
     "max_concurrent_jobs": "max_concurrent_jobs",
@@ -171,7 +182,7 @@ _LIMIT_FEATURES = {
 # ── Upgrade path: which tier unlocks a feature ─────────────────────────
 _UPGRADE_TIERS = {
     "api_access": "world-class",
-    "comparison": "world-class",
+    "comparison": "racer",
     "coaching_plans": "racer",
     "visualization": "racer",
     "gamification": "racer",
@@ -180,11 +191,14 @@ _UPGRADE_TIERS = {
     "race_strategy": "racer",
     "race_strategy_full": "world-class",
     "optimizer_performance": "world-class",
+    "device_sync": "racer",
+    "auto_analyze_on_sync": "world-class",
 }
 
 # ── Meter keys that map to quota columns ───────────────────────────────
 _METER_TO_QUOTA = {
-    "reports": "reports_per_month",
+    "analyses": "analyses_per_month",
+    "upload_volume_mb": "upload_volume_mb_per_month",
 }
 
 
@@ -318,7 +332,7 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
     entitlements = {
         "plan_tier": plan_tier,
         "subscription_status": sub_status,
-        "reports_per_month": plan.get("reports_per_month"),
+        "analyses_per_month": plan.get("reports_per_month") or py_defaults.get("analyses_per_month", 1),
         "max_upload_size_mb": plan.get("max_upload_size_mb") or py_defaults.get("max_upload_size_mb", 500),
         "max_session_data_mb": py_defaults.get("max_session_data_mb", 150),
         "telemetry_retention_days": plan.get("telemetry_retention_days"),
@@ -333,6 +347,9 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
         "badge_share_card": py_defaults.get("badge_share_card", True),
         "gamification": py_defaults.get("gamification", False),
         "live_monitoring": plan.get("live_monitoring", False),
+        "device_sync": py_defaults.get("device_sync", False),
+        "auto_analyze_on_sync": py_defaults.get("auto_analyze_on_sync", False),
+        "max_linked_devices": py_defaults.get("max_linked_devices", 0),
         "export_formats": _parse_json_or_default(plan.get("export_formats"), ["csv"]),
         "max_concurrent_jobs": plan.get("max_concurrent_jobs", 1),
         "rate_multiplier": plan.get("rate_multiplier", 1.0),
@@ -350,16 +367,27 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
     # Add usage data if workspace is available
     if workspace_id is not None:
         usage = _get_current_month_usage(conn, workspace_id)
-        reports_limit = entitlements.get("reports_per_month")
-        reports_used = usage.get("report_generated", 0)
-        entitlements["reports_used"] = reports_used
-        entitlements["reports_remaining"] = (
-            None if reports_limit is None or reports_limit == -1
-            else max(0, reports_limit - reports_used)
+
+        analyses_limit = entitlements.get("analyses_per_month")
+        analyses_used = usage.get("analyses", 0)
+        entitlements["analyses_used"] = analyses_used
+        entitlements["analyses_remaining"] = (
+            None if analyses_limit is None or analyses_limit == -1
+            else max(0, analyses_limit - analyses_used)
+        )
+
+        volume_limit = entitlements.get("upload_volume_mb_per_month")
+        volume_used = usage.get("upload_volume_mb", 0)
+        entitlements["upload_volume_mb_used"] = volume_used
+        entitlements["upload_volume_mb_remaining"] = (
+            None if volume_limit is None or volume_limit == -1
+            else max(0, volume_limit - volume_used)
         )
     else:
-        entitlements["reports_used"] = 0
-        entitlements["reports_remaining"] = entitlements.get("reports_per_month")
+        entitlements["analyses_used"] = 0
+        entitlements["analyses_remaining"] = entitlements.get("analyses_per_month")
+        entitlements["upload_volume_mb_used"] = 0
+        entitlements["upload_volume_mb_remaining"] = entitlements.get("upload_volume_mb_per_month")
 
     # Handle subscription status impact on entitlements
     # | active/trialing  | Full per plan           |
@@ -369,8 +397,8 @@ def get_user_entitlements(conn, user_id: int, workspace_id: int | None = None) -
     if sub_status == "paused":
         # Paused: read-only access, block new uploads and analyses
         entitlements["_paused"] = True
-        entitlements["reports_per_month"] = 0
-        entitlements["reports_remaining"] = 0
+        entitlements["analyses_per_month"] = 0
+        entitlements["analyses_remaining"] = 0
     elif sub_status == "canceled":
         # Canceled: grace period features kept, but flag for downstream
         entitlements["_cancel_pending"] = True
@@ -577,6 +605,7 @@ def check_and_record_quota(conn, user_id: int, workspace_id: int,
         }
 
     # Record the usage within the same transaction (row is locked)
+    # record_usage also increments usage_counters for the frontend dashboard
     record_usage(conn, user_id, workspace_id, meter_key, cost, metadata)
 
     return True, {
@@ -592,7 +621,8 @@ def record_usage(conn, user_id: int, workspace_id: int,
                  event_type: str, cost: int = 1, metadata: dict | None = None):
     """Record a usage event and update monthly aggregate.
 
-    Inserts into usage_events and upserts usage_monthly.
+    Inserts into usage_events, upserts usage_monthly, and increments
+    usage_counters (for the frontend dashboard).
     """
     meta_json = json.dumps(metadata) if metadata else None
 
@@ -613,6 +643,13 @@ def record_usage(conn, user_id: int, workspace_id: int,
         {"wsid": workspace_id, "period": first_of_month,
          "etype": event_type, "cost": cost},
     )
+
+    # Also increment usage_counters (used by the frontend usage dashboard)
+    try:
+        from auth.usage import increment_usage
+        increment_usage(conn, workspace_id, event_type, cost)
+    except Exception:
+        logger.warning("Failed to increment usage_counters for %s", event_type)
 
 
 def log_audit_event(conn, action: str, details: dict | None = None,

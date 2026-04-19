@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { BadgeHex } from './BadgeHex';
-import { ParticleBurst } from './ParticleBurst';
-import type { BadgeIcon, BadgeTier } from './BadgeHex';
+
+/* ── Types ────────────────────────────────────────────────── */
 
 interface AchievementData {
   key: string;
@@ -18,36 +17,35 @@ interface AchievementUnlockOverlayProps {
   onDismiss: () => void;
 }
 
-const TIER_COLORS: Record<string, string> = {
-  gold: '#FFD700',
-  silver: '#C0C0C0',
-  bronze: '#CD7F32',
-  locked: '#555555',
+const tierColors: Record<string, string> = {
+  bronze: '#C9A84C',
+  silver: '#949494',
+  gold: '#FACC15',
+};
+
+const tierLabels: Record<string, string> = {
+  bronze: 'Pit Orange Tier',
+  silver: 'Steel Tier',
+  gold: 'Marshal Yellow Tier',
 };
 
 const TIER_ORDER = ['bronze', 'silver', 'gold'] as const;
 
-const VALID_ICONS = new Set<string>(['helmet', 'trophy', 'stopwatch', 'wheel', 'shield', 'lock']);
-const VALID_TIERS = new Set<string>(['gold', 'silver', 'bronze', 'locked']);
-
-function resolveIcon(icon: string): BadgeIcon {
-  return VALID_ICONS.has(icon) ? (icon as BadgeIcon) : 'trophy';
+function resolveTier(tier: string): 'bronze' | 'silver' | 'gold' {
+  if (tier === 'gold' || tier === 'silver' || tier === 'bronze') return tier;
+  return 'bronze';
 }
 
-function resolveTier(tier: string): BadgeTier {
-  return VALID_TIERS.has(tier) ? (tier as BadgeTier) : 'bronze';
-}
+/* ── Component ────────────────────────────────────────────── */
 
 export function AchievementUnlockOverlay({
   achievement,
   onDismiss,
 }: AchievementUnlockOverlayProps) {
   const [phase, setPhase] = useState<'hidden' | 'backdrop' | 'card' | 'badge' | 'text' | 'done'>('hidden');
-  const [particles, setParticles] = useState(false);
 
   const dismiss = useCallback(() => {
     setPhase('hidden');
-    setParticles(false);
     const timer = setTimeout(onDismiss, 300);
     return () => clearTimeout(timer);
   }, [onDismiss]);
@@ -55,18 +53,15 @@ export function AchievementUnlockOverlay({
   useEffect(() => {
     if (!achievement) {
       setPhase('hidden');
-      setParticles(false);
       return;
     }
 
     setPhase('backdrop');
-
     const timers = [
-      setTimeout(() => setParticles(true), 300),
-      setTimeout(() => setPhase('card'), 300),
-      setTimeout(() => setPhase('badge'), 500),
-      setTimeout(() => setPhase('text'), 800),
-      setTimeout(() => setPhase('done'), 1500),
+      setTimeout(() => setPhase('card'), 200),
+      setTimeout(() => setPhase('badge'), 400),
+      setTimeout(() => setPhase('text'), 700),
+      setTimeout(() => setPhase('done'), 1200),
     ];
 
     return () => timers.forEach(clearTimeout);
@@ -75,9 +70,7 @@ export function AchievementUnlockOverlay({
   if (!achievement && phase === 'hidden') return null;
 
   const tier = resolveTier(achievement?.tier ?? 'bronze');
-  const icon = resolveIcon(achievement?.icon ?? 'trophy');
-  const tierColor = TIER_COLORS[tier] ?? TIER_COLORS.bronze;
-  const tierIndex = TIER_ORDER.indexOf(tier as typeof TIER_ORDER[number]);
+  const accent = tierColors[tier];
 
   const phaseGte = (target: typeof phase): boolean => {
     const order = ['hidden', 'backdrop', 'card', 'badge', 'text', 'done'];
@@ -85,173 +78,226 @@ export function AchievementUnlockOverlay({
   };
 
   return (
-    <>
-      <ParticleBurst active={particles} color={tierColor} count={30} />
-
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{
+        opacity: phaseGte('backdrop') ? 1 : 0,
+        transition: 'opacity 0.3s ease',
+      }}
+    >
       {/* Backdrop */}
+      <div className="absolute inset-0 bg-asphalt/[0.92]" onClick={dismiss} />
+
+      {/* Scanline grid overlay */}
       <div
-        onClick={dismiss}
+        className="absolute inset-0 pointer-events-none opacity-[0.03]"
         style={{
-          position: 'fixed',
-          inset: 0,
-          zIndex: 100,
-          backgroundColor: 'rgba(0, 0, 0, 0.88)',
-          opacity: phaseGte('backdrop') ? 1 : 0,
-          transition: 'opacity 0.3s ease',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'pointer',
+          backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 3px, ${accent} 3px, ${accent} 4px)`,
+        }}
+      />
+
+      {/* Radial glow */}
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background: `radial-gradient(ellipse 500px 400px at 50% 42%, ${accent}0D 0%, transparent 70%)`,
+        }}
+      />
+
+      {/* Card */}
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-[480px] max-w-[92vw] rounded-[28px] overflow-hidden"
+        style={{
+          background: '#141414',
+          border: '1px solid rgba(240,237,229,0.06)',
+          transform: phaseGte('card') ? 'scale(1) translateY(0)' : 'scale(0.92) translateY(20px)',
+          opacity: phaseGte('card') ? 1 : 0,
+          transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease',
         }}
         role="dialog"
         aria-modal="true"
         aria-label="Achievement unlocked"
       >
-        {/* Card */}
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            maxWidth: '28rem',
-            width: '90%',
-            borderRadius: '1rem',
-            padding: '2.5rem 2rem 2rem',
-            background: `linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)`,
-            border: `1px solid ${tierColor}33`,
-            textAlign: 'center',
-            cursor: 'default',
-            transform: phaseGte('card') ? 'scale(1)' : 'scale(0)',
-            opacity: phaseGte('card') ? 1 : 0,
-            transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease',
-          }}
-        >
-          {/* Badge */}
+        {/* Top accent bar */}
+        <div className="h-[2px]" style={{ background: `linear-gradient(90deg, transparent, ${accent}, transparent)` }} />
+
+        {/* Corner grid marks */}
+        <div className="absolute top-4 left-5 flex gap-[3px] opacity-20">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="w-[3px] h-[3px] rounded-[0.5px]" style={{ backgroundColor: accent }} />
+          ))}
+        </div>
+        <div className="absolute top-4 right-5 flex gap-[3px] opacity-20">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="w-[3px] h-[3px] rounded-[0.5px]" style={{ backgroundColor: accent }} />
+          ))}
+        </div>
+
+        <div className="flex flex-col items-center px-10 pt-12 pb-10">
+          {/* Hexagonal badge frame */}
           <div
+            className="relative w-[140px] h-[156px] mb-8"
             style={{
-              display: 'flex',
-              justifyContent: 'center',
-              marginBottom: '1.5rem',
-              transform: phaseGte('badge') ? 'scale(1)' : 'scale(0)',
-              transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              transform: phaseGte('badge') ? 'scale(1)' : 'scale(0.7)',
+              opacity: phaseGte('badge') ? 1 : 0,
+              transition: 'transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s ease',
             }}
           >
-            <BadgeHex
-              icon={icon}
-              tier={tier}
-              size={120}
-              glow={true}
-              animate={true}
-            />
+            {/* Outer hex glow */}
+            <svg
+              viewBox="0 0 140 156"
+              className="absolute inset-0 w-full h-full"
+              style={{ filter: 'blur(12px)' }}
+            >
+              <path
+                d="M70 6 L130 38 L130 118 L70 150 L10 118 L10 38 Z"
+                fill="none"
+                stroke={accent}
+                strokeWidth="2"
+                opacity="0.4"
+              />
+            </svg>
+
+            {/* Dashed hex border */}
+            <svg viewBox="0 0 140 156" className="absolute inset-0 w-full h-full">
+              <path
+                d="M70 6 L130 38 L130 118 L70 150 L10 118 L10 38 Z"
+                fill={`${accent}06`}
+                stroke={accent}
+                strokeWidth="1.5"
+                strokeDasharray="10 6"
+                strokeLinejoin="round"
+                opacity="0.6"
+              />
+            </svg>
+
+            {/* Inner solid hex */}
+            <svg viewBox="0 0 140 156" className="absolute inset-0 w-full h-full">
+              <path
+                d="M70 26 L112 48 L112 108 L70 130 L28 108 L28 48 Z"
+                fill={`${accent}0A`}
+                stroke={accent}
+                strokeWidth="1"
+                opacity="0.3"
+              />
+            </svg>
+
+            {/* Trophy icon */}
+            <div className="absolute inset-0 flex items-center justify-center">
+              <svg width="44" height="44" viewBox="0 0 24 24" fill="none">
+                <path d="M8 7v5a4 4 0 008 0V7H8z" fill={accent} opacity="0.15" />
+                <path d="M6 2l2 5h8l2-5" stroke={accent} strokeWidth="1.2" strokeLinejoin="round" />
+                <path d="M8 7v5a4 4 0 008 0V7" stroke={accent} strokeWidth="1.2" />
+                <path d="M4 7h4M16 7h4" stroke={accent} strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M4 7c-1 0-2 1-2 3s1 3 2 3" stroke={accent} strokeWidth="1" />
+                <path d="M20 7c1 0 2 1 2 3s-1 3-2 3" stroke={accent} strokeWidth="1" />
+                <path d="M10 17v2h4v-2" stroke={accent} strokeWidth="1.2" />
+                <path d="M8 21h8" stroke={accent} strokeWidth="1.2" strokeLinecap="round" />
+              </svg>
+            </div>
           </div>
 
-          {/* "ACHIEVEMENT UNLOCKED" label */}
+          {/* Micro label */}
           <p
+            className="font-telemetry text-[10px] uppercase tracking-[0.18em] mb-3"
             style={{
-              fontFamily: 'monospace',
-              fontSize: '0.7rem',
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              letterSpacing: '0.2em',
-              color: tierColor,
-              marginBottom: '0.5rem',
+              color: accent,
               opacity: phaseGte('text') ? 1 : 0,
-              transform: phaseGte('text') ? 'translateY(0)' : 'translateY(10px)',
+              transform: phaseGte('text') ? 'translateY(0)' : 'translateY(8px)',
               transition: 'opacity 0.4s ease, transform 0.4s ease',
-              transitionDelay: '0s',
             }}
           >
-            ACHIEVEMENT UNLOCKED
+            Achievement Unlocked
           </p>
 
-          {/* Title */}
+          {/* Badge name */}
           <h2
+            className="font-monument text-[26px] font-bold text-chalk uppercase tracking-tight mb-2 text-center"
             style={{
-              fontSize: '1.5rem',
-              fontWeight: 900,
-              color: '#f0f0f0',
-              marginBottom: '0.5rem',
-              margin: '0 0 0.5rem 0',
               opacity: phaseGte('text') ? 1 : 0,
-              transform: phaseGte('text') ? 'translateY(0)' : 'translateY(10px)',
+              transform: phaseGte('text') ? 'translateY(0)' : 'translateY(8px)',
               transition: 'opacity 0.4s ease 0.1s, transform 0.4s ease 0.1s',
             }}
           >
             {achievement?.label}
           </h2>
 
+          {/* Divider */}
+          <div
+            className="w-16 h-[1px] mb-4"
+            style={{
+              background: `linear-gradient(90deg, transparent, ${accent}80, transparent)`,
+              transform: phaseGte('text') ? 'scaleX(1)' : 'scaleX(0)',
+              transition: 'transform 0.5s ease 0.15s',
+            }}
+          />
+
           {/* Description */}
           <p
+            className="font-body text-[13px] text-steel text-center max-w-[340px] leading-relaxed mb-8"
             style={{
-              fontFamily: 'monospace',
-              fontSize: '0.85rem',
-              color: '#9ca3af',
-              marginBottom: '1.25rem',
-              lineHeight: 1.5,
               opacity: phaseGte('text') ? 1 : 0,
-              transform: phaseGte('text') ? 'translateY(0)' : 'translateY(10px)',
-              transition: 'opacity 0.4s ease 0.2s, transform 0.4s ease 0.2s',
+              transition: 'opacity 0.4s ease 0.2s',
             }}
           >
             {achievement?.description}
           </p>
 
-          {/* Tier dots */}
+          {/* Tier indicator */}
           <div
+            className="flex items-center gap-4 mb-8"
             style={{
-              display: 'flex',
-              justifyContent: 'center',
-              gap: '0.5rem',
-              marginBottom: '1.5rem',
               opacity: phaseGte('done') ? 1 : 0,
               transition: 'opacity 0.4s ease',
             }}
           >
-            {TIER_ORDER.map((t, i) => (
-              <div
-                key={t}
-                style={{
-                  width: 10,
-                  height: 10,
-                  borderRadius: '50%',
-                  backgroundColor: i <= tierIndex ? TIER_COLORS[t] : '#333',
-                  boxShadow: i <= tierIndex ? `0 0 6px ${TIER_COLORS[t]}80` : 'none',
-                  transition: 'background-color 0.3s ease, box-shadow 0.3s ease',
-                }}
-                title={t}
-              />
-            ))}
+            <div className="h-[1px] w-8" style={{ backgroundColor: `${accent}30` }} />
+            <div className="flex items-center gap-2.5">
+              {TIER_ORDER.map((t) => (
+                <div key={t} className="flex flex-col items-center gap-1.5">
+                  <div
+                    className="w-2 h-2 rounded-full transition-all"
+                    style={{
+                      backgroundColor: tierColors[t],
+                      opacity: t === tier ? 1 : 0.2,
+                      boxShadow: t === tier ? `0 0 10px ${tierColors[t]}60` : 'none',
+                    }}
+                  />
+                  {t === tier && (
+                    <span
+                      className="font-telemetry text-[7px] uppercase tracking-[0.1em]"
+                      style={{ color: accent }}
+                    >
+                      {tierLabels[t]}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="h-[1px] w-8" style={{ backgroundColor: `${accent}30` }} />
           </div>
 
           {/* Continue button */}
           <button
             type="button"
             onClick={dismiss}
+            className="px-10 py-3 rounded-[14px] font-telemetry text-[10px] uppercase tracking-[0.15em] cursor-pointer transition-all hover:brightness-110"
             style={{
-              padding: '0.6rem 2rem',
-              borderRadius: '0.5rem',
-              border: `1px solid ${tierColor}66`,
-              backgroundColor: 'transparent',
-              color: tierColor,
-              fontFamily: 'monospace',
-              fontSize: '0.85rem',
-              fontWeight: 600,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              cursor: 'pointer',
+              color: '#000000',
+              backgroundColor: accent,
               opacity: phaseGte('done') ? 1 : 0,
-              transform: phaseGte('done') ? 'translateY(0)' : 'translateY(10px)',
-              transition: 'opacity 0.4s ease, transform 0.4s ease, background-color 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              (e.target as HTMLButtonElement).style.backgroundColor = `${tierColor}1a`;
-            }}
-            onMouseLeave={(e) => {
-              (e.target as HTMLButtonElement).style.backgroundColor = 'transparent';
+              transform: phaseGte('done') ? 'translateY(0)' : 'translateY(8px)',
+              transition: 'opacity 0.4s ease, transform 0.4s ease, filter 0.2s ease',
             }}
           >
             Continue
           </button>
         </div>
+
+        {/* Bottom accent bar */}
+        <div className="h-[1px]" style={{ background: `linear-gradient(90deg, transparent, ${accent}30, transparent)` }} />
       </div>
-    </>
+    </div>
   );
 }

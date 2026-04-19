@@ -1358,6 +1358,50 @@ def api_set_driver(race_id: int):
     return jsonify({"ok": True, "snapshot": engine.snapshot()})
 
 
+@bp.route("/<int:race_id>/api/reorder-stints", methods=["POST"])
+def api_reorder_stints(race_id: int):
+    """Swap two adjacent stints and re-cascade fuel/ballast/pit stops."""
+    import sys
+    sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[2]))
+    from race_state_engine import RaceStateEngine
+    conn = get_db_connection()
+    data = request.get_json(silent=True) or {}
+    stint_order = data.get("stint_order")
+    direction = data.get("direction")  # "up" or "down"
+    if not stint_order or direction not in ("up", "down"):
+        return api_error(ErrorCode.VALIDATION_ERROR, "stint_order and direction (up/down) required", status=400)
+    engine = RaceStateEngine.load(conn, race_id)
+
+    order_a = int(stint_order)
+    order_b = order_a - 1 if direction == "up" else order_a + 1
+
+    stint_a = engine._get_stint(order_a)
+    stint_b = engine._get_stint(order_b)
+    if not stint_a or not stint_b:
+        return api_error(ErrorCode.VALIDATION_ERROR, "Cannot move stint in that direction", status=400)
+
+    # Swap driver assignments and durations, keep timeline positions
+    stint_a.driver_id, stint_b.driver_id = stint_b.driver_id, stint_a.driver_id
+    stint_a.driver_name, stint_b.driver_name = stint_b.driver_name, stint_a.driver_name
+    stint_a.planned_duration_s, stint_b.planned_duration_s = stint_b.planned_duration_s, stint_a.planned_duration_s
+
+    # Rebuild timeline from the earlier stint
+    pit_time = engine.config.get("min_pit_stop_s") or 60
+    first_order = min(order_a, order_b)
+    cursor = stint_b.planned_start_s if first_order == order_b else stint_a.planned_start_s
+    for s in engine.stints:
+        if s.stint_order < first_order:
+            continue
+        s.planned_start_s = cursor
+        s.planned_end_s = cursor + s.planned_duration_s
+        cursor = s.planned_end_s + pit_time
+
+    # Re-cascade fuel, ballast, pit stops from the earlier stint
+    engine._cascade_from(first_order)
+    engine.save(conn, race_id)
+    return jsonify({"ok": True, "snapshot": engine.snapshot()})
+
+
 @bp.route("/<int:race_id>/api/set-duration", methods=["POST"])
 def api_set_duration(race_id: int):
     """Edit stint duration. Triggers cascade."""

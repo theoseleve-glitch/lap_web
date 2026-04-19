@@ -270,5 +270,39 @@
       "sample_count": 150,
       "lap_count": 3
     }
+  },
+  {
+    "track_id": "6e862d59-34ed-4b20-b096-01d06748acac",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 391.4,
+      "bbox": {
+        "lat_min": 47.3877668,
+        "lat_max": 47.3886052,
+        "lon_min": 0.7884243,
+        "lon_max": 0.7893868
+      },
+      "start_lat": 47.388294,
+      "start_lon": 0.78887,
+      "sample_count": 26526,
+      "lap_count": 18
+    }
+  },
+  {
+    "track_id": "be030585-9018-43a8-8acf-c0d92357d5a6",
+    "track_name": "Unknown Track",
+    "fingerprint": {
+      "lap_length_m": 391.2,
+      "bbox": {
+        "lat_min": 47.387908359795084,
+        "lat_max": 47.388566162931056,
+        "lon_min": 0.7883008740952643,
+        "lon_max": 0.7894169627602339
+      },
+      "start_lat": 47.38832,
+      "start_lon": 0.788881,
+      "sample_count": 24573,
+      "lap_count": 17
+    }
   }
 ]

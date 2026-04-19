@@ -51,10 +51,12 @@ Design principles
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Final
 
 import numpy as np
 import pandas as pd
+from numpy.typing import ArrayLike, NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +213,265 @@ def _safe_var(arr: np.ndarray) -> float:
     return float(finite.var()) if len(finite) > 1 else float("nan")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Canonical cumulative-delta engine
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Every lap-to-lap time-delta computation in the product routes through
+# `cumulative_delta()`. The DataFrame wrappers (`compute_cumulative_time`,
+# `compute_delta_curve`) and the web/sim/line-delta consumers are all thin
+# adapters on top of this function.
+#
+# Design rules (non-negotiable):
+#   1. Trapezoidal integration of ∫ ds/v. No rectangle.
+#   2. Invalid samples (v ≤ 0, non-finite, or explicit mask) DO NOT contribute.
+#      We never forward-fill a prior speed to invent motion through dropouts.
+#   3. Sign convention: positive delta ⇒ lap B is slower than lap A at that
+#      progress. Documented once, enforced everywhere.
+#   4. Optional endpoint anchoring to official lap times for UI consistency.
+#      When used it scales the curves proportionally; intermediate shape is
+#      preserved. Never used to hide bad raw integration.
+#
+
+
+@dataclass(frozen=True)
+class CumulativeDeltaResult:
+    """Result of a canonical cumulative lap-delta computation.
+
+    All arrays have the same length: ``len(progress_m)``.
+
+    Attributes
+    ----------
+    progress_m:
+        Shared progress grid in metres, starting at 0.
+    time_a_s:
+        Cumulative time along lap A at each progress point, in seconds.
+    time_b_s:
+        Cumulative time along lap B at each progress point, in seconds.
+    delta_s:
+        ``time_b_s - time_a_s``. Positive ⇒ lap B is slower than lap A at
+        that progress.
+    valid_mask:
+        Boolean array; True where both laps had valid speed samples bracketing
+        that progress point. Use this to suppress rendering in dropout regions.
+    anchored:
+        True iff the curves were scaled to match provided official lap times.
+    """
+
+    progress_m: NDArray[np.float64]
+    time_a_s:   NDArray[np.float64]
+    time_b_s:   NDArray[np.float64]
+    delta_s:    NDArray[np.float64]
+    valid_mask: NDArray[np.bool_]
+    anchored:   bool
+
+
+class DeltaInputError(ValueError):
+    """Raised when cumulative-delta inputs are structurally invalid."""
+
+
+def _to_1d(name: str, arr: ArrayLike) -> NDArray[np.float64]:
+    a = np.asarray(arr, dtype=np.float64).ravel()
+    return a
+
+
+def _normalize_progress(progress: NDArray[np.float64]) -> NDArray[np.float64]:
+    """Shift so the first sample is at 0. Per-sample spacing is preserved."""
+    if progress.size == 0:
+        return progress
+    return progress - progress[0]
+
+
+def _sample_validity_mask(
+    speed: NDArray[np.float64],
+    explicit: NDArray[np.bool_] | None,
+) -> NDArray[np.bool_]:
+    """True where the sample has a usable speed.
+
+    A sample is invalid if speed is non-finite, zero, or negative, or if the
+    optional explicit mask marks it False.
+    """
+    mask = np.isfinite(speed) & (speed > 0.0)
+    if explicit is not None:
+        if explicit.shape != speed.shape:
+            raise DeltaInputError(
+                f"valid mask shape {explicit.shape} != speed shape {speed.shape}"
+            )
+        mask &= explicit.astype(bool)
+    return mask
+
+
+def _cumulative_time_on_grid(
+    progress_src: NDArray[np.float64],
+    speed_src:    NDArray[np.float64],
+    valid_src:    NDArray[np.bool_],
+    grid:         NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray[np.bool_]]:
+    """Interpolate one lap onto ``grid`` and return cumulative time + validity.
+
+    Uses trapezoidal integration of ∫ ds/v. Any grid segment whose bracketing
+    source samples were not both valid contributes zero — the cumulative curve
+    freezes across dropout regions rather than inventing motion.
+    """
+    n = grid.size
+    if progress_src.size < 2 or n < 2:
+        return np.zeros(n, dtype=np.float64), np.zeros(n, dtype=bool)
+
+    # Speed on the shared grid
+    speed_on_grid = np.interp(grid, progress_src, speed_src)
+
+    # Validity on the shared grid: a grid point is valid iff it falls between
+    # two valid source samples. Interpolating the mask as float and requiring
+    # ≈ 1.0 achieves this (any False source sample drags the value < 1).
+    mask_src_f = valid_src.astype(np.float64)
+    mask_on_grid = np.interp(grid, progress_src, mask_src_f) >= (1.0 - 1e-9)
+    # Belt-and-braces: also require positive, finite speed post-interpolation.
+    mask_on_grid &= np.isfinite(speed_on_grid) & (speed_on_grid > 0.0)
+
+    # Trapezoidal per-segment integration.
+    ds = np.diff(grid)
+    inv_v = np.zeros_like(speed_on_grid)
+    np.divide(1.0, speed_on_grid, out=inv_v, where=mask_on_grid)
+
+    # A segment is only time-contributing if BOTH its endpoints are valid.
+    seg_valid = mask_on_grid[:-1] & mask_on_grid[1:]
+    dt = np.where(seg_valid, 0.5 * (inv_v[:-1] + inv_v[1:]) * ds, 0.0)
+
+    cum = np.concatenate([[0.0], np.cumsum(dt)])
+    return cum, mask_on_grid
+
+
+def cumulative_delta(
+    progress_a:    ArrayLike,
+    speed_a:       ArrayLike,
+    progress_b:    ArrayLike,
+    speed_b:       ArrayLike,
+    *,
+    lap_time_a_s:  float | None = None,
+    lap_time_b_s:  float | None = None,
+    valid_a:       ArrayLike | None = None,
+    valid_b:       ArrayLike | None = None,
+    n_grid:        int = 500,
+    anchor_to_official: bool = False,
+) -> CumulativeDeltaResult:
+    """Canonical cumulative time delta between two laps.
+
+    Both laps are integrated using ∫ ds/v with the trapezoidal rule, on a
+    single shared progress grid spanning the overlap [0, min(max_a, max_b)].
+
+    Sign convention
+    ---------------
+    Positive ``delta_s[i]`` means lap B is slower than lap A by ``delta_s[i]``
+    seconds at progress ``progress_m[i]``.
+
+    Invalid regions
+    ---------------
+    Any sample with non-finite, zero, or negative speed — or marked False by
+    the optional ``valid_a`` / ``valid_b`` mask — is treated as a dropout.
+    The cumulative time freezes across dropouts; it does not extrapolate from
+    the previous valid speed.
+
+    Anchoring
+    ---------
+    When ``anchor_to_official=True`` and both ``lap_time_*_s`` are provided
+    and the raw integrations yielded non-zero times, each curve is scaled
+    proportionally so its endpoint equals the official lap time. This makes
+    the endpoint delta agree with the recorded lap-time difference, which is
+    what UIs expect. It is a proportional stretch, not a fudge — the shape
+    of gains and losses is preserved.
+
+    Parameters
+    ----------
+    progress_a, progress_b:
+        Per-sample distance along each lap, metres, monotonically
+        non-decreasing. Internally shifted to start at 0.
+    speed_a, speed_b:
+        Per-sample speed, metres-per-second.
+    lap_time_a_s, lap_time_b_s:
+        Official lap times for optional anchoring (see above).
+    valid_a, valid_b:
+        Optional per-sample boolean masks. False = ignore this sample.
+    n_grid:
+        Shared-grid resolution. Default 500 points.
+    anchor_to_official:
+        See Anchoring above. Default False.
+
+    Returns
+    -------
+    CumulativeDeltaResult
+    """
+    pa = _to_1d("progress_a", progress_a)
+    pb = _to_1d("progress_b", progress_b)
+    sa = _to_1d("speed_a",    speed_a)
+    sb = _to_1d("speed_b",    speed_b)
+
+    if pa.shape != sa.shape:
+        raise DeltaInputError(
+            f"progress_a/speed_a length mismatch: {pa.shape} vs {sa.shape}"
+        )
+    if pb.shape != sb.shape:
+        raise DeltaInputError(
+            f"progress_b/speed_b length mismatch: {pb.shape} vs {sb.shape}"
+        )
+
+    va = None if valid_a is None else np.asarray(valid_a, dtype=bool).ravel()
+    vb = None if valid_b is None else np.asarray(valid_b, dtype=bool).ravel()
+
+    pa = _normalize_progress(pa)
+    pb = _normalize_progress(pb)
+
+    max_common = min(
+        float(pa[-1]) if pa.size else 0.0,
+        float(pb[-1]) if pb.size else 0.0,
+    )
+
+    if max_common <= 0.0 or pa.size < 2 or pb.size < 2:
+        empty = np.zeros(0, dtype=np.float64)
+        return CumulativeDeltaResult(
+            progress_m=empty,
+            time_a_s=empty,
+            time_b_s=empty,
+            delta_s=empty,
+            valid_mask=np.zeros(0, dtype=bool),
+            anchored=False,
+        )
+
+    n = max(2, int(n_grid))
+    grid = np.linspace(0.0, max_common, n)
+
+    mask_a = _sample_validity_mask(sa, va)
+    mask_b = _sample_validity_mask(sb, vb)
+
+    time_a, grid_valid_a = _cumulative_time_on_grid(pa, sa, mask_a, grid)
+    time_b, grid_valid_b = _cumulative_time_on_grid(pb, sb, mask_b, grid)
+
+    anchored = False
+    if (
+        anchor_to_official
+        and lap_time_a_s is not None
+        and lap_time_b_s is not None
+        and lap_time_a_s > 0
+        and lap_time_b_s > 0
+        and time_a[-1] > 0
+        and time_b[-1] > 0
+    ):
+        time_a = time_a * (float(lap_time_a_s) / time_a[-1])
+        time_b = time_b * (float(lap_time_b_s) / time_b[-1])
+        anchored = True
+
+    delta = time_b - time_a
+    valid_mask = grid_valid_a & grid_valid_b
+
+    return CumulativeDeltaResult(
+        progress_m=grid,
+        time_a_s=time_a,
+        time_b_s=time_b,
+        delta_s=delta,
+        valid_mask=valid_mask,
+        anchored=anchored,
+    )
+
+
 # -- -
 
 # 1. Cumulative time
@@ -317,43 +578,46 @@ def compute_delta_curve(
                     f"Column {col!r} absent from {name} lap."
                 )
 
-    ref_with_t  = compute_cumulative_time(reference_lap)
-    comp_with_t = compute_cumulative_time(comparison_lap)
+    ref_dist  = _col_values(reference_lap,  _COL_DIST)
+    ref_speed = _col_values(reference_lap,  _COL_SPEED)
+    cmp_dist  = _col_values(comparison_lap, _COL_DIST)
+    cmp_speed = _col_values(comparison_lap, _COL_SPEED)
 
-    # Shared distance grid: [max of both mins, min of both maxes]
+    if ref_dist.size < 2 or cmp_dist.size < 2:
+        raise DeltaError("Both laps must contain at least 2 distance samples.")
 
-    d_min = max(
-        float(pd.to_numeric(reference_lap[_COL_DIST],  errors="coerce").min()),
-        float(pd.to_numeric(comparison_lap[_COL_DIST], errors="coerce").min()),
+    # Canonical engine: trapezoidal, NaN-safe, no forward-fill, no anchoring.
+    result = cumulative_delta(
+        progress_a=ref_dist,
+        speed_a=ref_speed,
+        progress_b=cmp_dist,
+        speed_b=cmp_speed,
+        n_grid=n_grid,
+        anchor_to_official=False,
     )
-    d_max = min(
-        float(pd.to_numeric(reference_lap[_COL_DIST],  errors="coerce").max()),
-        float(pd.to_numeric(comparison_lap[_COL_DIST], errors="coerce").max()),
-    )
 
-    if d_max <= d_min:
-        raise DeltaError(
-            f"No overlapping distance range between laps "
-            f"(ref: {d_min:.1f}–{d_max:.1f} m)."
-        )
+    if result.progress_m.size == 0:
+        raise DeltaError("No overlapping distance range between laps.")
 
-    grid = np.linspace(d_min, d_max, n_grid)
-
-    ref_time  = _interpolate_to_grid(ref_with_t,  "cumulative_time_s", grid)
-    comp_time = _interpolate_to_grid(comp_with_t, "cumulative_time_s", grid)
-    delta     = comp_time - ref_time
+    # Preserve the legacy "distance_m" column semantics: the pipeline used to
+    # share distance in absolute session terms, so we shift back to align with
+    # the reference lap's minimum distance for backwards compatibility.
+    d_min = float(ref_dist.min())
+    grid  = result.progress_m + d_min
+    delta = result.delta_s
 
     logger.debug(
         "Delta curve: d=%.1f–%.1f m  final_delta=%.3f s  grid=%d pts",
-        d_min, d_max, float(np.nansum(np.where(np.isfinite(delta), delta, 0.0))),
+        d_min, d_min + float(result.progress_m[-1]),
+        float(np.nansum(np.where(np.isfinite(delta), delta, 0.0))),
         n_grid,
     )
 
     return pd.DataFrame({
         "distance_m":      grid,
         "delta_s":         delta,
-        "ref_cum_time_s":  ref_time,
-        "comp_cum_time_s": comp_time,
+        "ref_cum_time_s":  result.time_a_s,
+        "comp_cum_time_s": result.time_b_s,
     })
 
 

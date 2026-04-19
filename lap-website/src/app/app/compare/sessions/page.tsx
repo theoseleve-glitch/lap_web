@@ -1,11 +1,14 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, type ReactNode } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api-client';
+import { trackEvent } from '@/hooks/useTrackEvent';
 import { formatLapTime, formatDate, mpsToKmh } from '@/lib/format-utils';
 import { CompareChartPanel } from '@/components/app/compare';
 import { ScoreRadarChart } from '@/components/app/compare/ScoreRadarChart';
+import { ReferenceOverlayProvider, useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -74,12 +77,12 @@ interface ComparisonData {
 // ── Helpers ──────────────────────────────────────────────────────
 
 const GRADE_COLORS: Record<string, string> = {
-  S: 'text-yellow-400',
-  A: 'text-green-400',
-  B: 'text-cyan-400',
-  C: 'text-yellow-500',
-  D: 'text-orange-400',
-  F: 'text-red-500',
+  S: 'text-acid-green',
+  A: 'text-acid-green',
+  B: 'text-pit-orange',
+  C: 'text-marshal-yellow',
+  D: 'text-pit-orange',
+  F: 'text-safety-red',
 };
 
 function gradeColor(grade: string | null): string {
@@ -91,9 +94,9 @@ function gradeColor(grade: string | null): string {
 function deltaColor(delta: number, lowerIsBetter = false): string {
   if (delta === 0) return 'text-steel';
   if (lowerIsBetter) {
-    return delta < 0 ? 'text-green-400' : 'text-red-400';
+    return delta < 0 ? 'text-acid-green' : 'text-safety-red';
   }
-  return delta > 0 ? 'text-green-400' : 'text-red-400';
+  return delta > 0 ? 'text-acid-green' : 'text-safety-red';
 }
 
 function formatDelta(delta: number | null, decimals = 1): string {
@@ -212,10 +215,30 @@ function ScoreCompareCard({
   );
 }
 
+// ── Compare Auto Reference ──────────────────────────────────────
+
+function CompareAutoReference({
+  sessionBId,
+  lapB,
+  children,
+}: {
+  sessionBId: string;
+  lapB: number;
+  children: ReactNode;
+}) {
+  const { setReference, referenceSession } = useReferenceOverlay();
+  useEffect(() => {
+    if (sessionBId && lapB && referenceSession !== sessionBId) {
+      setReference(sessionBId, lapB);
+    }
+  }, [sessionBId, lapB, setReference, referenceSession]);
+  return <>{children}</>;
+}
+
 // ── Main Page ───────────────────────────────────────────────────
 
-const COLOR_A = '#3ddc84'; // acid-green
-const COLOR_B = '#ff8c00'; // pit-orange
+const COLOR_A = chartColor.series.positive;
+const COLOR_B = chartColor.series.primary;
 
 export default function CompareSessionsPage() {
   const searchParams = useSearchParams();
@@ -282,6 +305,7 @@ export default function CompareSessionsPage() {
         );
         if (!cancelled) {
           setComparison(res);
+          trackEvent('compare.run', { session_a: sessionAId, session_b: sessionBId });
         }
       } catch (err) {
         if (!cancelled) {
@@ -449,7 +473,7 @@ export default function CompareSessionsPage() {
               {templates.map((tpl, i) => (
                 <div
                   key={`${tpl.sessionA}-${tpl.sessionB}`}
-                  className="flex items-center gap-1 bg-zinc-800 rounded px-2 py-1 text-xs font-body group"
+                  className="flex items-center gap-1 bg-concrete rounded px-2 py-1 text-xs font-body group"
                 >
                   <button
                     type="button"
@@ -629,8 +653,25 @@ export default function CompareSessionsPage() {
             );
           })()}
 
-          {/* ── Chart Panel (Speed / GPS / Sectors / Corners) ── */}
-          <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+          {/* ── Chart Panel (Speed / GPS / Sectors / Corners / GG) ── */}
+          {(() => {
+            const primaryLap = comparison.session_a.laps.find((l) => l.is_best)?.lap_number ?? null;
+            const lapB = comparison.session_b.laps.find((l) => l.is_best)?.lap_number ?? null;
+            return (
+              <ReferenceOverlayProvider
+                sessionId={sessionAId}
+                primaryLap={primaryLap}
+              >
+                {lapB != null ? (
+                  <CompareAutoReference sessionBId={sessionBId} lapB={lapB}>
+                    <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+                  </CompareAutoReference>
+                ) : (
+                  <CompareChartPanel sessionAId={sessionAId} sessionBId={sessionBId} />
+                )}
+              </ReferenceOverlayProvider>
+            );
+          })()}
 
           {/* ── Lap-by-Lap Comparison ────────────────────────── */}
           <div>
@@ -932,7 +973,7 @@ function LapTimesTable({
                         {lap.invalid_reason || 'Invalid'}
                       </span>
                     ) : (
-                      <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-telemetry uppercase bg-green-500/10 text-green-400 border border-green-500/20">
+                      <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-telemetry uppercase border border-acid-green/20 bg-acid-green/10 text-acid-green">
                         Valid
                       </span>
                     )}

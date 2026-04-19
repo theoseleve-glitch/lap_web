@@ -27,20 +27,22 @@ export function ReversibleCard({ title, description, className = '' }: Reversibl
       aria-label={`Flip card for ${title}`}
     >
       <div
-        className="relative min-h-[120px] transition-transform duration-[620ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+        className="relative transition-transform duration-[620ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
         style={{
           transformStyle: 'preserve-3d',
           transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
         }}
       >
-        <div className="absolute inset-0 flex flex-col items-center justify-center text-center" style={{ backfaceVisibility: 'hidden' }}>
+        {/* Front face — relative so it establishes the card's dimensions */}
+        <div className="flex flex-col items-center justify-center text-center py-6" style={{ backfaceVisibility: 'hidden' }}>
           <p className="font-monument text-[var(--text-h3)] leading-[0.9]">{title}</p>
           <p className="mt-3 font-telemetry text-[10px] tracking-[0.12em] text-steel uppercase">
             Click to reveal
           </p>
         </div>
+        {/* Back face — absolute overlay, same size as front */}
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center text-center text-steel"
+          className="absolute inset-0 flex flex-col items-center justify-center text-center text-steel px-4"
           style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
         >
           <p className="text-sm md:text-base leading-relaxed">{description}</p>

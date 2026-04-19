@@ -10,9 +10,12 @@ import { create } from 'zustand';
 export interface Entitlements {
   planTier: 'demo' | 'racer' | 'world-class' | 'b2b';
   subscriptionStatus: 'free' | 'active' | 'past_due' | 'canceled' | 'trialing';
-  reportsPerMonth: number | null;
-  reportsUsed: number;
-  reportsRemaining: number | null;
+  analysesPerMonth: number | null;
+  analysesUsed: number;
+  analysesRemaining: number | null;
+  uploadVolumeMbPerMonth: number | null;
+  uploadVolumeMbUsed: number;
+  uploadVolumeMbRemaining: number | null;
   apiAccess: boolean;
   comparisonEnabled: boolean;
   coachingPlansEnabled: boolean;
@@ -30,6 +33,9 @@ export interface Entitlements {
   maxSessionDataMb: number;
   maxConcurrentJobs: number;
   rateMultiplier: number;
+  deviceSync: boolean;
+  autoAnalyzeOnSync: boolean;
+  maxLinkedDevices: number;
 }
 
 interface EntitlementsState {
@@ -54,11 +60,13 @@ const FEATURE_MAP: Record<string, keyof Entitlements> = {
   visualization: 'visualizationEnabled',
   live_monitoring: 'liveMonitoring',
   gamification: 'gamification',
+  device_sync: 'deviceSync',
+  auto_analyze_on_sync: 'autoAnalyzeOnSync',
 };
 
 /** Which tier unlocks each feature (for upgrade prompts). */
 const UPGRADE_TIERS: Record<string, { tier: string; url: string }> = {
-  comparison: { tier: 'world-class', url: '/pricing?plan=WORLD-CLASS' },
+  comparison: { tier: 'racer', url: '/pricing?plan=RACER' },
   api_access: { tier: 'world-class', url: '/pricing?plan=WORLD-CLASS' },
   coaching_plans: { tier: 'racer', url: '/pricing?plan=RACER' },
   visualization: { tier: 'racer', url: '/pricing?plan=RACER' },
@@ -111,7 +119,8 @@ export function getRemainingQuota(key: string): number | null {
   const ent = useEntitlementsStore.getState().entitlements;
   if (!ent) return null;
 
-  if (key === 'reports') return ent.reportsRemaining;
+  if (key === 'analyses') return ent.analysesRemaining;
+  if (key === 'upload_volume_mb') return ent.uploadVolumeMbRemaining;
   return null;
 }
 

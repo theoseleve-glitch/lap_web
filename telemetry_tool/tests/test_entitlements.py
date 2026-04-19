@@ -28,7 +28,7 @@ def _make_plan_row(tier="demo", **overrides):
         "max_upload_size_mb": {"demo": 500, "racer": 2000, "world-class": 5000, "b2b": 10000}.get(tier, 500),
         "telemetry_retention_days": {"demo": 30, "racer": 90, "world-class": 365, "b2b": None}.get(tier),
         "api_access": tier in ("world-class", "b2b"),
-        "comparison_enabled": tier in ("world-class", "b2b"),
+        "comparison_enabled": tier in ("racer", "world-class", "b2b"),
         "coaching_plans_enabled": tier in ("racer", "world-class", "b2b"),
         "visualization_enabled": tier in ("racer", "world-class", "b2b"),
         "race_strategy_limit": "4h_basic" if tier == "demo" else ("24h_complex" if tier == "racer" else "unlimited"),
@@ -123,8 +123,8 @@ class TestGetUserEntitlements:
         ents = get_user_entitlements(conn, 1, workspace_id=1)
 
         assert ents["plan_tier"] == "demo"
-        assert ents["reports_per_month"] == 1
-        assert ents["reports_remaining"] == 1
+        assert ents["analyses_per_month"] == 1
+        assert ents["analyses_remaining"] == 1
         assert ents["api_access"] is False
         assert ents["comparison_enabled"] is False
         assert ents["visualization_enabled"] is False
@@ -144,8 +144,8 @@ class TestGetUserEntitlements:
         ents = get_user_entitlements(conn, 1, workspace_id=1)
 
         assert ents["plan_tier"] == "world-class"
-        assert ents["reports_per_month"] is None  # unlimited
-        assert ents["reports_remaining"] is None
+        assert ents["analyses_per_month"] == -1  # unlimited
+        assert ents["analyses_remaining"] is None
         assert ents["api_access"] is True
         assert ents["comparison_enabled"] is True
         assert ents["visualization_enabled"] is True
@@ -158,13 +158,13 @@ class TestGetUserEntitlements:
             [{"plan_tier": "demo"}],
             [{"subscription_status": "free"}],
             [_make_plan_row("demo")],
-            [{"override_key": "reports_per_month",
+            [{"override_key": "analyses_per_month",
               "override_value": json.dumps({"value": 5})}],  # user override
             [],  # ws overrides
             [],  # usage
         ])
         ents = get_user_entitlements(conn, 1, workspace_id=1)
-        assert ents["reports_per_month"] == 5
+        assert ents["analyses_per_month"] == 5
 
     def test_expired_override_ignored(self):
         """Expired overrides should not be returned by _get_active_overrides."""
@@ -180,7 +180,7 @@ class TestGetUserEntitlements:
             [],  # usage
         ])
         ents = get_user_entitlements(conn, 1, workspace_id=1)
-        assert ents["reports_per_month"] == 1  # default demo
+        assert ents["analyses_per_month"] == 1  # default demo
 
     def test_usage_counted_correctly(self):
         from auth.entitlements import get_user_entitlements
@@ -190,12 +190,12 @@ class TestGetUserEntitlements:
             [_make_plan_row("racer")],
             [],  # overrides user
             [],  # overrides ws
-            [{"event_type": "report_generated", "total": 7}],  # usage
+            [{"event_type": "analyses", "total": 7}],  # usage
         ])
         ents = get_user_entitlements(conn, 1, workspace_id=1)
-        assert ents["reports_per_month"] == 10
-        assert ents["reports_used"] == 7
-        assert ents["reports_remaining"] == 3
+        assert ents["analyses_per_month"] == 10
+        assert ents["analyses_used"] == 7
+        assert ents["analyses_remaining"] == 3
 
     def test_paused_subscription_sets_flag(self):
         from auth.entitlements import get_user_entitlements
@@ -228,7 +228,7 @@ class TestAuthorizeFeature:
             conn = self._setup_conn("demo")
             allowed, ctx = authorize_feature(conn, 1, "comparison")
             assert allowed is False
-            assert ctx["upgrade_tier"] == "world-class"
+            assert ctx["upgrade_tier"] == "racer"
 
     def test_worldclass_allowed_comparison(self):
         from auth.entitlements import authorize_feature
@@ -331,7 +331,7 @@ class TestAuthorizeFeature:
 # ── Tests: check_quota ───────────────────────────────────────────────
 
 class TestCheckQuota:
-    def test_demo_quota_allows_first_report(self):
+    def test_demo_quota_allows_first_analysis(self):
         from auth.entitlements import check_quota
         conn = _mock_conn([
             [{"plan_tier": "demo"}],
@@ -339,26 +339,26 @@ class TestCheckQuota:
             [_make_plan_row("demo")],
             [], [], [],  # overrides + usage (0 used)
         ])
-        allowed, ctx = check_quota(conn, 1, 1, "reports", cost=1)
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
         assert allowed is True
         assert ctx["remaining"] == 0  # 1 limit - 0 used - 1 cost = 0 remaining after
         assert ctx["limit"] == 1
 
-    def test_demo_quota_blocks_second_report(self):
+    def test_demo_quota_blocks_second_analysis(self):
         from auth.entitlements import check_quota
         conn = _mock_conn([
             [{"plan_tier": "demo"}],
             [{"subscription_status": "active"}],
             [_make_plan_row("demo")],
             [], [],
-            [{"event_type": "report_generated", "total": 1}],  # 1 already used
+            [{"event_type": "analyses", "total": 1}],  # 1 already used
         ])
-        allowed, ctx = check_quota(conn, 1, 1, "reports", cost=1)
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
         assert allowed is False
         assert ctx["remaining"] == 0
         assert ctx["used"] == 1
 
-    def test_worldclass_unlimited_reports(self):
+    def test_worldclass_unlimited(self):
         from auth.entitlements import check_quota
         conn = _mock_conn([
             [{"plan_tier": "world-class"}],
@@ -366,7 +366,7 @@ class TestCheckQuota:
             [_make_plan_row("world-class")],
             [], [], [],
         ])
-        allowed, ctx = check_quota(conn, 1, 1, "reports", cost=1)
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
         assert allowed is True
         assert ctx["remaining"] is None
         assert ctx["limit"] is None
@@ -378,9 +378,9 @@ class TestCheckQuota:
             [{"subscription_status": "active"}],
             [_make_plan_row("racer")],
             [], [],
-            [{"event_type": "report_generated", "total": 5}],
+            [{"event_type": "analyses", "total": 5}],
         ])
-        allowed, ctx = check_quota(conn, 1, 1, "reports", cost=1)
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
         assert allowed is True
         assert ctx["remaining"] == 4  # 10 - 5 - 1 = 4
         assert ctx["limit"] == 10
@@ -403,9 +403,9 @@ class TestCheckQuota:
             [{"subscription_status": "active"}],
             [_make_plan_row("demo")],
             [], [],
-            [{"event_type": "report_generated", "total": 1}],
+            [{"event_type": "analyses", "total": 1}],
         ])
-        allowed, ctx = check_quota(conn, 1, 1, "reports", cost=1)
+        allowed, ctx = check_quota(conn, 1, 1, "analyses", cost=1)
         # Should have a resets_at date
         resets = date.fromisoformat(ctx["resets_at"])
         assert resets.day == 1
@@ -419,10 +419,11 @@ class TestRecordUsage:
         from auth.entitlements import record_usage
         conn = MagicMock()
         record_usage(conn, user_id=1, workspace_id=1,
-                     event_type="report_generated", cost=1,
+                     event_type="analyses", cost=1,
                      metadata={"session_id": "s1"})
-        # Should have 2 execute calls: INSERT usage_events + UPSERT usage_monthly
-        assert conn.execute.call_count == 2
+        # Should have 4 execute calls: INSERT usage_events + UPSERT usage_monthly
+        # + UPSERT usage_counters + SELECT usage_counters (from increment_usage)
+        assert conn.execute.call_count == 4
 
         # First call: INSERT INTO usage_events
         first_call = conn.execute.call_args_list[0]
@@ -433,12 +434,16 @@ class TestRecordUsage:
         assert "usage_monthly" in second_call[0][0]
         assert "ON CONFLICT" in second_call[0][0]
 
+        # Third call: UPSERT usage_counters
+        third_call = conn.execute.call_args_list[2]
+        assert "usage_counters" in third_call[0][0]
+
     def test_null_metadata_works(self):
         from auth.entitlements import record_usage
         conn = MagicMock()
         record_usage(conn, user_id=1, workspace_id=1,
                      event_type="csv_uploaded")
-        assert conn.execute.call_count == 2
+        assert conn.execute.call_count == 4
 
 
 # ── Tests: log_audit_event ───────────────────────────────────────────
@@ -501,15 +506,15 @@ class TestRequireFeatureDecorator:
 
         with app.test_request_context():
             g.current_user_id = 1
-            ctx = {"reason": "comparison requires world-class", "upgrade_tier": "world-class",
-                   "upgrade_url": "/billing?plan=WORLD-CLASS", "current_tier": "demo"}
+            ctx = {"reason": "comparison requires racer plan or higher", "upgrade_tier": "racer",
+                   "upgrade_url": "/billing?plan=RACER", "current_tier": "demo"}
             with patch("auth.entitlements.authorize_feature", return_value=(False, ctx)):
                 with patch("auth.entitlements._get_conn"):
                     resp, status = test_route()
                     data = resp.get_json()
                     assert status == 403
                     assert data["error"]["code"] == "PLAN_REQUIRED"
-                    assert data["error"]["required_plan"] == "world-class"
+                    assert data["error"]["required_plan"] == "racer"
 
     def test_requires_auth(self):
         from auth.entitlements import require_feature
@@ -536,7 +541,7 @@ class TestRequireQuotaDecorator:
         app.config["USE_PG"] = True
 
         @app.route("/test")
-        @require_quota("reports", cost=1)
+        @require_quota("analyses", cost=1)
         def test_route():
             return {"ok": True}
 
@@ -555,7 +560,7 @@ class TestRequireQuotaDecorator:
         app.config["USE_PG"] = True
 
         @app.route("/test")
-        @require_quota("reports", cost=1)
+        @require_quota("analyses", cost=1)
         def test_route():
             return {"ok": True}
 
@@ -623,7 +628,7 @@ class TestFeatureGatingMatrix:
         },
         "racer": {
             "api_access": False,
-            "comparison": False,
+            "comparison": True,
             "coaching_plans": True,
             "visualization": True,
             "live_monitoring": True,
@@ -672,20 +677,20 @@ class TestFeatureGatingMatrix:
 class TestPlanEntitlements:
     """Tests for the static PLAN_ENTITLEMENTS dict and helpers."""
 
-    def test_free_plan_has_one_report(self):
+    def test_free_plan_has_one_analysis(self):
         from auth.entitlements import get_plan_entitlements
         ent = get_plan_entitlements("free")
-        assert ent["reports_per_month"] == 1
+        assert ent["analyses_per_month"] == 1
 
-    def test_racer_plan_has_ten_reports(self):
+    def test_racer_plan_has_ten_analyses(self):
         from auth.entitlements import get_plan_entitlements
         ent = get_plan_entitlements("racer")
-        assert ent["reports_per_month"] == 10
+        assert ent["analyses_per_month"] == 10
 
-    def test_world_class_has_unlimited_reports(self):
+    def test_world_class_has_unlimited_analyses(self):
         from auth.entitlements import get_plan_entitlements
         ent = get_plan_entitlements("world_class")
-        assert ent["reports_per_month"] == -1
+        assert ent["analyses_per_month"] == -1
 
     def test_unknown_plan_falls_back_to_free(self):
         from auth.entitlements import get_plan_entitlements
@@ -695,7 +700,7 @@ class TestPlanEntitlements:
     def test_all_plans_have_required_keys(self):
         from auth.entitlements import KNOWN_PLANS, PLAN_ENTITLEMENTS
         required = {
-            "reports_per_month", "uploads_per_month", "raw_retention_days",
+            "analyses_per_month", "raw_retention_days",
             "report_retention", "comparison_progress", "coaching_drills",
             "viz_workspace", "strategy_dashboard", "live_pace", "pit_planning",
             "pdf_reports", "api_access", "track_management", "max_workspace_members",
@@ -726,7 +731,7 @@ class TestPlanEntitlements:
         assert ent["viz_workspace"] is True
         assert ent["live_pace"] is True
         assert ent["api_access"] is False
-        assert ent["comparison_progress"] is False
+        assert ent["comparison_progress"] is True
         assert ent["strategy_dashboard"] == "24h_complex"
 
     def test_world_class_all_features_enabled(self):
@@ -744,7 +749,7 @@ class TestCheckUsageLimit:
 
     def test_under_limit_allowed(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="racer", metric="reports", current_count=5)
+        ok, info = check_usage_limit(plan="racer", metric="analyses", current_count=5)
         assert ok is True
         assert info["limit"] == 10
         assert info["used"] == 5
@@ -752,26 +757,26 @@ class TestCheckUsageLimit:
 
     def test_at_limit_blocked(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="racer", metric="reports", current_count=10)
+        ok, info = check_usage_limit(plan="racer", metric="analyses", current_count=10)
         assert ok is False
         assert info["remaining"] == 0
 
     def test_over_limit_blocked(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="racer", metric="reports", current_count=15)
+        ok, info = check_usage_limit(plan="racer", metric="analyses", current_count=15)
         assert ok is False
 
     def test_unlimited_always_allowed(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="world_class", metric="reports", current_count=99999)
+        ok, info = check_usage_limit(plan="world_class", metric="analyses", current_count=99999)
         assert ok is True
         assert info["remaining"] == -1  # unlimited sentinel
 
-    def test_free_plan_single_upload(self):
+    def test_free_plan_single_analysis(self):
         from auth.entitlements import check_usage_limit
-        ok, _ = check_usage_limit(plan="free", metric="uploads", current_count=0)
+        ok, _ = check_usage_limit(plan="free", metric="analyses", current_count=0)
         assert ok is True
-        ok, _ = check_usage_limit(plan="free", metric="uploads", current_count=1)
+        ok, _ = check_usage_limit(plan="free", metric="analyses", current_count=1)
         assert ok is False
 
     def test_unknown_metric_defaults_blocked(self):
@@ -782,12 +787,45 @@ class TestCheckUsageLimit:
 
     def test_zero_count_under_limit(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="free", metric="reports", current_count=0)
+        ok, info = check_usage_limit(plan="free", metric="analyses", current_count=0)
         assert ok is True
         assert info["remaining"] == 1
 
     def test_demo_alias_works_in_limit_check(self):
         from auth.entitlements import check_usage_limit
-        ok, info = check_usage_limit(plan="demo", metric="reports", current_count=0)
+        ok, info = check_usage_limit(plan="demo", metric="analyses", current_count=0)
         assert ok is True
         assert info["limit"] == 1
+
+
+class TestDeviceSyncEntitlements:
+    """Tests for device_sync, auto_analyze_on_sync, max_linked_devices."""
+
+    def test_device_sync_entitlement_demo(self):
+        from auth.entitlements import get_plan_entitlements
+        ents = get_plan_entitlements("demo")
+        assert ents["device_sync"] is False
+        assert ents["auto_analyze_on_sync"] is False
+        assert ents["max_linked_devices"] == 0
+
+    def test_device_sync_entitlement_racer(self):
+        from auth.entitlements import get_plan_entitlements
+        ents = get_plan_entitlements("racer")
+        assert ents["device_sync"] is True
+        assert ents["auto_analyze_on_sync"] is False
+        assert ents["max_linked_devices"] == 2
+
+    def test_device_sync_entitlement_world_class(self):
+        from auth.entitlements import get_plan_entitlements
+        ents = get_plan_entitlements("world_class")
+        assert ents["device_sync"] is True
+        assert ents["auto_analyze_on_sync"] is True
+        assert ents["max_linked_devices"] == 3
+
+    def test_device_sync_alias_consistency(self):
+        """world-class alias must see the same keys as world_class."""
+        from auth.entitlements import get_plan_entitlements
+        wc = get_plan_entitlements("world_class")
+        wc_alias = get_plan_entitlements("world-class")
+        assert wc["device_sync"] == wc_alias["device_sync"]
+        assert wc["auto_analyze_on_sync"] == wc_alias["auto_analyze_on_sync"]

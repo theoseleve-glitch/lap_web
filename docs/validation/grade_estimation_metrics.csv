@@ -1,0 +1,6 @@
+option,description,coverage_frac,median_std_deg,p95_mag_deg,implementation_cost,verdict
+current_imu_grade,Track-space grade from IMU longitudinal residual. Current shadow-only channel.,0.6721991701244814,4.5855,4.857749999999998,none (already built),insufficient for active use
+relaxed_gating,"Same IMU path but grade_max_transient_g=0.5, min_orientation_quality=0.2.",0.659919028340081,10.681628160639706,1.8648286322543177,"small (config change, 1 line)",likely not enough improvement to justify
+elevation_derived,grade(s) = arctan(dz/ds) from the smoothed altitude profile.,1.0,1.0,2.6474523071571823,small (~20 lines in build_ok_raw.py),primary candidate for Gold-beta
+fused_imu_elevation,Weighted combination of IMU grade and elevation-derived grade.,0.6721991701244814,2.79275,3.75260115357859,"medium (~100 lines, calibration and weight tuning)",not worth the complexity
+drop,Remove grade from the near-term Gold roadmap.,0.0,0.0,0.0,none (remove grade_* JSON keys and viewer rows in a later cleanup PR),defensible if we want focus; does not block Gold-beta bank work

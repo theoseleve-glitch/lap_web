@@ -136,6 +136,7 @@ class GenericCSVAdapter(BaseAdapter):
     """Catch-all adapter for any CSV with recognizable telemetry columns."""
 
     FORMAT_NAME: str = "generic_csv"
+    EXTENSIONS: list[str] = [".csv", ".txt"]
 
     def __init__(self) -> None:
         self._channels: list[str] = []

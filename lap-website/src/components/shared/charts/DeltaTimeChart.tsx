@@ -13,6 +13,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface DeltaData {
   distances: number[];
@@ -25,6 +27,8 @@ interface DeltaTimeChartProps {
   sessionId: string;
   gpsLaps: number[];
   bestLap: number | null;
+  /** Optional external compare lap — drives lapB when provided. */
+  compareLap?: number | null;
   className?: string;
   controlledLap?: boolean;
   distRange?: [number, number] | null;
@@ -34,6 +38,7 @@ export function DeltaTimeChart({
   sessionId,
   gpsLaps,
   bestLap,
+  compareLap,
   className = '',
   controlledLap = false,
   distRange,
@@ -45,6 +50,8 @@ export function DeltaTimeChart({
     xMin: number; xMax: number; yMin: number; yMax: number;
     plotX: number; plotY: number; plotW: number; plotH: number;
   } | null>(null);
+
+  const { referenceData } = useReferenceOverlay();
 
   const safeLaps = gpsLaps ?? [];
   const [lapA, setLapA] = useState<number>(bestLap ?? safeLaps[0] ?? 0);
@@ -61,6 +68,11 @@ export function DeltaTimeChart({
   useEffect(() => {
     if (controlledLap && bestLap != null) setLapA(bestLap);
   }, [controlledLap, bestLap]);
+
+  // External compareLap drives lapB. When null, keep user's local selection.
+  useEffect(() => {
+    if (compareLap != null) setLapB(compareLap);
+  }, [compareLap]);
 
   // ── Fetch delta data ──────────────────────────────────────────
   useEffect(() => {
@@ -113,12 +125,12 @@ export function DeltaTimeChart({
     const pW = w - pad.left - pad.right;
     const pH = h - pad.top - pad.bottom;
 
-    // Background — matches SpeedTraceChart (#141414)
-    ctx.fillStyle = '#141414';
+    // Background
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#888888';
+      ctx.fillStyle = chartColor.textSecondary;
       ctx.font = '13px "Space Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -134,13 +146,24 @@ export function DeltaTimeChart({
     const dists = data.distances;
     const deltas = data.delta_s;
 
-    // Compute ranges
+    // Cross-session reference delta (if active)
+    const refDists = referenceData?.distances ?? null;
+    const refDeltas = referenceData?.speed?.delta_s ?? null;
+    const hasRef = !!(refDists && refDeltas && refDists.length > 1);
+
+    // Compute ranges (including reference if present)
     const xMin = distRange ? distRange[0] : 0;
     const xMax = distRange ? distRange[1] : (dists[dists.length - 1] || 1);
     let maxAbs = 0;
     for (let i = 0; i < deltas.length; i++) {
       const a = Math.abs(deltas[i]);
       if (a > maxAbs) maxAbs = a;
+    }
+    if (hasRef) {
+      for (let i = 0; i < refDeltas!.length; i++) {
+        const a = Math.abs(refDeltas![i]);
+        if (a > maxAbs) maxAbs = a;
+      }
     }
     if (maxAbs < 0.05) maxAbs = 0.1;
     maxAbs = Math.ceil(maxAbs * 20) / 20; // round up to nearest 0.05
@@ -154,7 +177,7 @@ export function DeltaTimeChart({
     const yToPixel = (v: number) => pad.top + pH / 2 - (v / maxAbs) * (pH / 2);
 
     // Grid
-    ctx.strokeStyle = '#30363d';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
 
     // Y grid — symmetric around zero
@@ -180,7 +203,7 @@ export function DeltaTimeChart({
     }
 
     // Zero line (bold)
-    ctx.strokeStyle = '#6e7681';
+    ctx.strokeStyle = chartColor.axis;
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(pad.left, yToPixel(0));
@@ -188,7 +211,7 @@ export function DeltaTimeChart({
     ctx.stroke();
 
     // Y axis labels — use consistent decimal places per step size
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '11px "Space Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
@@ -207,7 +230,7 @@ export function DeltaTimeChart({
     }
 
     // Axis titles
-    ctx.fillStyle = '#888888';
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '12px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
@@ -231,7 +254,7 @@ export function DeltaTimeChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.2)';
+    ctx.fillStyle = `${chartColor.series.positive}33`;
     ctx.fill();
 
     // Red fill (negative = lap A slower)
@@ -242,11 +265,11 @@ export function DeltaTimeChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+    ctx.fillStyle = `${chartColor.series.negative}33`;
     ctx.fill();
 
-    // Delta line
-    ctx.strokeStyle = '#F0EDE5';
+    // Delta line (intra-session)
+    ctx.strokeStyle = chartColor.text;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -257,6 +280,24 @@ export function DeltaTimeChart({
     }
     ctx.stroke();
 
+    // Cross-session reference delta line (dashed racing-purple)
+    if (hasRef) {
+      ctx.save();
+      ctx.strokeStyle = chartColor.series.reference;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
+      ctx.globalAlpha = 0.85;
+      ctx.beginPath();
+      for (let i = 0; i < refDists!.length; i++) {
+        const x = xToPixel(refDists![i]);
+        const y = yToPixel(refDeltas![i]);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
     ctx.restore(); // unclip
 
     // ── Final delta annotation (in right margin) ───────────
@@ -264,7 +305,7 @@ export function DeltaTimeChart({
     const rightCol = pad.left + pW + 10; // right margin start
     if (Math.abs(finalDelta) > 0.001) {
       const sign = finalDelta > 0 ? '+' : '';
-      const color = finalDelta > 0 ? '#10b981' : '#ef4444';
+      const color = finalDelta > 0 ? chartColor.series.positive : chartColor.series.negative;
       ctx.fillStyle = color;
       ctx.font = 'bold 12px "Space Mono", monospace';
       ctx.textAlign = 'left';
@@ -278,7 +319,7 @@ export function DeltaTimeChart({
       const hx = xToPixel(hoverDist);
 
       // Vertical crosshair
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -296,16 +337,16 @@ export function DeltaTimeChart({
         // Dot
         ctx.beginPath();
         ctx.arc(hx, py, 5, 0, Math.PI * 2);
-        ctx.fillStyle = d >= 0 ? '#10b981' : '#ef4444';
+        ctx.fillStyle = d >= 0 ? chartColor.series.positive : chartColor.series.negative;
         ctx.fill();
-        ctx.strokeStyle = '#F0EDE5';
+        ctx.strokeStyle = chartColor.text;
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         // Tooltip
         const sign = d >= 0 ? '+' : '';
         const label = sign + d.toFixed(3) + 's @ ' + hoverDist.toFixed(0) + 'm';
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = chartColor.tooltipBg;
         ctx.font = '11px "Space Mono", monospace';
         const metrics = ctx.measureText(label);
         const tipW = metrics.width + 12;
@@ -313,10 +354,24 @@ export function DeltaTimeChart({
         let tipX = hx + 10;
         if (tipX + tipW > w - 10) tipX = hx - tipW - 10;
         ctx.fillRect(tipX, py - tipH / 2, tipW, tipH);
-        ctx.fillStyle = '#F0EDE5';
+        ctx.fillStyle = chartColor.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
         ctx.fillText(label, tipX + 6, py);
+      }
+    }
+
+    // ── Final reference delta annotation (purple, below intra-session) ──
+    if (hasRef && refDeltas!.length > 0) {
+      const finalRefDelta = refDeltas![refDeltas!.length - 1];
+      if (Math.abs(finalRefDelta) > 0.001) {
+        const sign = finalRefDelta > 0 ? '+' : '';
+        ctx.fillStyle = chartColor.series.reference;
+        ctx.font = 'bold 12px "Space Mono", monospace';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const labelY = Math.max(pad.top + 22, Math.min(pad.top + pH - 8, yToPixel(finalRefDelta)));
+        ctx.fillText(`${sign}${finalRefDelta.toFixed(3)}s`, rightCol, labelY);
       }
     }
 
@@ -326,12 +381,16 @@ export function DeltaTimeChart({
     ctx.textBaseline = 'top';
 
     // Green/red legend items at bottom of right margin
-    const legendY = pad.top + pH - 28;
-    ctx.fillStyle = '#10b981';
+    const legendY = hasRef ? pad.top + pH - 42 : pad.top + pH - 28;
+    ctx.fillStyle = chartColor.series.positive;
     ctx.fillText(`▲ Lap ${lapA} faster`, rightCol, legendY);
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = chartColor.series.negative;
     ctx.fillText(`▼ Lap ${lapA} slower`, rightCol, legendY + 14);
-  }, [lapA, lapB, distRange]);
+    if (hasRef) {
+      ctx.fillStyle = chartColor.series.reference;
+      ctx.fillText(`- - vs reference`, rightCol, legendY + 28);
+    }
+  }, [lapA, lapB, distRange, referenceData]);
 
   // ── Redraw when data changes ──────────────────────────────
   useEffect(() => {

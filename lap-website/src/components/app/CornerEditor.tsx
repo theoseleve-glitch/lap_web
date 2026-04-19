@@ -209,7 +209,7 @@ function drawEditorMap(
   const speeds = layout.speeds ?? [];
   if (lats.length < 2) return null;
 
-  ctx.fillStyle = '#0B0C0F';
+  ctx.fillStyle = '#000000';
   ctx.fillRect(0, 0, w, h);
 
   const proj = buildProjection(lats, lons, w, h, 24);

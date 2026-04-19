@@ -675,15 +675,27 @@ def create_weekend():
     name = body.get("name")
     if not name:
         return api_error(ErrorCode.VALIDATION_ERROR, "name is required", status=400)
-    cur = conn.execute(Q.INSERT_WEEKEND, {
-        "name": name,
-        "track_id": body.get("track_id"),
-        "start_date": body.get("start_date"),
-        "end_date": body.get("end_date"),
-        "notes": body.get("notes"),
-    })
-    row = cur.fetchone()
-    conn.commit()
+    track_id = body.get("track_id")
+    if track_id is not None:
+        track_id = str(track_id)
+        exists = conn.execute(
+            "SELECT 1 FROM tracks WHERE track_id = :tid", {"tid": track_id}
+        ).fetchone()
+        if not exists:
+            track_id = None
+    try:
+        cur = conn.execute(Q.INSERT_WEEKEND, {
+            "name": name,
+            "track_id": track_id,
+            "start_date": body.get("start_date"),
+            "end_date": body.get("end_date"),
+            "notes": body.get("notes"),
+        })
+        row = cur.fetchone()
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create weekend", status=500)
     if row is None:
         return api_error(ErrorCode.INTERNAL_ERROR, "Failed to create weekend", status=500)
     wid = row[0] if not isinstance(row, dict) else row.get("weekend_id")
@@ -753,6 +765,221 @@ def weekend_delete_impact(weekend_id):
         return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
     result = get_delete_impact(conn, "weekend", weekend_id)
     return api_response(result)
+
+
+@bp.route("/weekends/<int:weekend_id>/report", methods=["GET"])
+def weekend_report(weekend_id):
+    """Weekend-wide report: progression, scoring breakdown, session comparison."""
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+
+    # All sessions in this weekend with scores
+    sessions = conn.execute(
+        "SELECT s.session_id, s.csv_filename, s.session_date, s.session_type, "
+        "       s.n_laps, s.best_lap_time_s, s.mean_lap_time_s, s.total_score, s.grade, "
+        "       d.driver_name, t.track_name, ws.session_order "
+        "FROM weekend_sessions ws "
+        "JOIN sessions s ON ws.session_id = s.session_id "
+        "LEFT JOIN drivers d ON s.driver_id = d.driver_id "
+        "LEFT JOIN tracks t ON s.track_id = t.track_id "
+        "WHERE ws.weekend_id = :weekend_id AND s.deleted_at IS NULL "
+        "ORDER BY ws.session_order, s.session_date",
+        {"weekend_id": weekend_id},
+    ).fetchall()
+
+    if not sessions:
+        return api_response({
+            "sessions": [],
+            "summary": None,
+            "progression": [],
+            "pillar_breakdown": [],
+        })
+
+    session_list = []
+    progression = []
+    pillar_breakdown = []
+
+    for s in sessions:
+        sd = dict(s)
+        sid = sd["session_id"]
+
+        # Fetch per-pillar scores
+        score_row = conn.execute(
+            "SELECT pace_score, pace_max, consistency_score, consistency_max, "
+            "       execution_score, execution_max, robustness_score, robustness_max, "
+            "       adaptation_score "
+            "FROM score_details WHERE session_id = :sid",
+            {"sid": sid},
+        ).fetchone()
+
+        pillars = None
+        if score_row:
+            sr = dict(score_row)
+            pillars = {
+                "pace": sr.get("pace_score"),
+                "pace_max": sr.get("pace_max"),
+                "consistency": sr.get("consistency_score"),
+                "consistency_max": sr.get("consistency_max"),
+                "execution": sr.get("execution_score"),
+                "execution_max": sr.get("execution_max"),
+                "robustness": sr.get("robustness_score"),
+                "robustness_max": sr.get("robustness_max"),
+                "adaptation": sr.get("adaptation_score"),
+            }
+            pillar_breakdown.append({
+                "session_id": sid,
+                "order": sd.get("session_order", 0),
+                "label": sd.get("display_name") or sd.get("csv_filename", sid),
+                **pillars,
+            })
+
+        # Lap times for this session
+        laps = conn.execute(
+            "SELECT lap_number, lap_time_s FROM laps "
+            "WHERE session_id = :sid ORDER BY lap_number",
+            {"sid": sid},
+        ).fetchall()
+        lap_times = [{"lap": l["lap_number"], "time": l["lap_time_s"]} for l in laps if l["lap_time_s"]]
+
+        entry = {
+            "id": sid,
+            "order": sd.get("session_order", 0),
+            "date": sd.get("session_date"),
+            "type": sd.get("session_type"),
+            "driver_name": sd.get("driver_name"),
+            "track_name": sd.get("track_name"),
+            "laps": sd.get("n_laps") or 0,
+            "best_time": sd.get("best_lap_time_s"),
+            "mean_time": sd.get("mean_lap_time_s"),
+            "score": sd.get("total_score"),
+            "grade": sd.get("grade"),
+            "pillars": pillars,
+            "lap_times": lap_times,
+        }
+        session_list.append(entry)
+
+        progression.append({
+            "order": sd.get("session_order", 0),
+            "session_id": sid,
+            "label": sd.get("session_type", "session").title(),
+            "score": sd.get("total_score"),
+            "best_time": sd.get("best_lap_time_s"),
+            "mean_time": sd.get("mean_lap_time_s"),
+            "laps": sd.get("n_laps") or 0,
+        })
+
+    # Weekend-wide summary
+    scored = [s for s in session_list if s["score"] is not None]
+    timed = [s for s in session_list if s["best_time"] is not None]
+    total_laps = sum(s["laps"] for s in session_list)
+    best_overall = min((s["best_time"] for s in timed), default=None)
+    avg_score = round(sum(s["score"] for s in scored) / len(scored), 1) if scored else None
+    best_score = max((s["score"] for s in scored), default=None)
+    worst_score = min((s["score"] for s in scored), default=None)
+
+    # Score trend: first scored vs last scored
+    score_delta = None
+    if len(scored) >= 2:
+        score_delta = round(scored[-1]["score"] - scored[0]["score"], 1)
+
+    # Best time trend
+    time_delta = None
+    if len(timed) >= 2:
+        time_delta = round(timed[-1]["best_time"] - timed[0]["best_time"], 3)
+
+    # Grade distribution
+    grade_counts = {}
+    for s in scored:
+        g = s.get("grade", "?")
+        grade_counts[g] = grade_counts.get(g, 0) + 1
+
+    summary = {
+        "total_sessions": len(session_list),
+        "total_laps": total_laps,
+        "best_time": best_overall,
+        "avg_score": avg_score,
+        "best_score": best_score,
+        "worst_score": worst_score,
+        "score_delta": score_delta,
+        "time_delta": time_delta,
+        "grade_counts": grade_counts,
+    }
+
+    return api_response({
+        "sessions": session_list,
+        "summary": summary,
+        "progression": progression,
+        "pillar_breakdown": pillar_breakdown,
+    })
+
+
+@bp.route("/weekends/<int:weekend_id>/sessions", methods=["POST"])
+def add_session_to_weekend(weekend_id):
+    """Add a session to a weekend."""
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    body = request.get_json(silent=True) or {}
+    session_id = body.get("session_id")
+    if not session_id:
+        return api_error(ErrorCode.VALIDATION_ERROR, "session_id is required", status=400)
+    # Get current max order
+    max_order = conn.execute(
+        "SELECT COALESCE(MAX(session_order), -1) as mx FROM weekend_sessions WHERE weekend_id = :wid",
+        {"wid": weekend_id},
+    ).fetchone()
+    order = (max_order["mx"] if max_order else -1) + 1
+    try:
+        conn.execute(
+            "INSERT INTO weekend_sessions (weekend_id, session_id, session_order) "
+            "VALUES (:wid, :sid, :ord) ON CONFLICT DO NOTHING",
+            {"wid": weekend_id, "sid": str(session_id), "ord": order},
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to add session", status=500)
+    return api_response({"message": "ok", "session_order": order})
+
+
+@bp.route("/weekends/<int:weekend_id>/sessions/<session_id>", methods=["DELETE"])
+def remove_session_from_weekend(weekend_id, session_id):
+    """Remove a session from a weekend."""
+    conn = _get_conn()
+    conn.execute(
+        "DELETE FROM weekend_sessions WHERE weekend_id = :wid AND session_id = :sid",
+        {"wid": weekend_id, "sid": session_id},
+    )
+    conn.commit()
+    return api_response({"message": "ok"})
+
+
+@bp.route("/weekends/<int:weekend_id>/reorder", methods=["POST"])
+def reorder_weekend_sessions_api(weekend_id):
+    """Reorder sessions in a weekend. Body: { session_ids: [id1, id2, ...] }"""
+    conn = _get_conn()
+    existing = conn.execute(Q.SELECT_WEEKEND_BY_ID, {"weekend_id": weekend_id}).fetchone()
+    if not existing:
+        return api_error(ErrorCode.NOT_FOUND, "Weekend not found", status=404)
+    body = request.get_json(silent=True) or {}
+    session_ids = body.get("session_ids", [])
+    if not session_ids:
+        return api_error(ErrorCode.VALIDATION_ERROR, "session_ids is required", status=400)
+    try:
+        for i, sid in enumerate(session_ids):
+            conn.execute(
+                "UPDATE weekend_sessions SET session_order = :ord "
+                "WHERE weekend_id = :wid AND session_id = :sid",
+                {"ord": i, "wid": weekend_id, "sid": str(sid)},
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        return api_error(ErrorCode.INTERNAL_ERROR, "Failed to reorder sessions", status=500)
+    return api_response({"message": "ok"})
 
 
 # ══════════════════════════════════════════════════════════════════

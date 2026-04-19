@@ -15,7 +15,7 @@ export const FAQ_REGISTRY: FaqEntry[] = [
   {
     id: 'faq-payment-methods',
     question: 'What payment methods do you accept?',
-    answer: 'Card via Stripe. Bank transfer for venue and team annual plans.',
+    answer: 'Card via Stripe.',
     scope: 'pricing',
     canonicalPage: '/pricing',
   },

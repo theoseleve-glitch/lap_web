@@ -30,6 +30,12 @@ class HandlingEvent:
     cause_detail: str
     time_cost_s: Optional[float]
     corner_phase: str         # "entry" | "mid" | "exit"
+    # New fields from multi-detector fusion (Phase 5, optional for backward compat)
+    confidence: Optional[float] = None           # 0-1, from Bayesian fusion
+    direction: Optional[float] = None            # -1 (OS) to +1 (US)
+    n_voters: Optional[int] = None               # number of detectors that voted
+    conflict: Optional[bool] = None              # True if detectors disagree
+    detector_votes: Optional[dict] = None        # {name: {direction, confidence}}
 
 
 # ---------------------------------------------------------------------------

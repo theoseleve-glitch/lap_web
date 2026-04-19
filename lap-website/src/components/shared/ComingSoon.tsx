@@ -16,7 +16,7 @@ export function ComingSoon({ title, description, backHref, backLabel = 'Back to 
         </div>
         <h1 className="text-2xl font-bold text-zinc-100 mb-2">{title}</h1>
         {description && <p className="text-zinc-400 mb-6">{description}</p>}
-        <Link href={backHref} className="text-sm text-[#3ddc84] hover:underline">
+        <Link href={backHref} className="text-sm text-acid-green hover:underline">
           {backLabel}
         </Link>
       </div>

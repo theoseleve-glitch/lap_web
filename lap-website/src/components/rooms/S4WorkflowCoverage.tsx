@@ -9,11 +9,6 @@ import { TrackCard } from '@/components/ui/TrackCard';
 import { useTranslation } from '@/i18n';
 
 const WORKFLOW_TRANSLATION_MAP: Record<string, { titleKey: string; summaryKey: string; stepKeys: string[] }> = {
-  'upload-analyze': {
-    titleKey: 'workflow.uploadAnalyze.title',
-    summaryKey: 'workflow.uploadAnalyze.summary',
-    stepKeys: ['workflow.uploadAnalyze.step1', 'workflow.uploadAnalyze.step2', 'workflow.uploadAnalyze.step3', 'workflow.uploadAnalyze.step4'],
-  },
   'session-intelligence': {
     titleKey: 'workflow.sessionIntelligence.title',
     summaryKey: 'workflow.sessionIntelligence.summary',
@@ -39,33 +34,16 @@ const WORKFLOW_TRANSLATION_MAP: Record<string, { titleKey: string; summaryKey: s
     summaryKey: 'workflow.strategyRoom.summary',
     stepKeys: ['workflow.strategyRoom.step1', 'workflow.strategyRoom.step2', 'workflow.strategyRoom.step3', 'workflow.strategyRoom.step4'],
   },
-  'data-management': {
-    titleKey: 'workflow.dataManagement.title',
-    summaryKey: 'workflow.dataManagement.summary',
-    stepKeys: ['workflow.dataManagement.step1', 'workflow.dataManagement.step2', 'workflow.dataManagement.step3', 'workflow.dataManagement.step4'],
-  },
-  'account-team': {
-    titleKey: 'workflow.accountTeam.title',
-    summaryKey: 'workflow.accountTeam.summary',
-    stepKeys: ['workflow.accountTeam.step1', 'workflow.accountTeam.step2', 'workflow.accountTeam.step3'],
-  },
-  'data-rights': {
-    titleKey: 'workflow.dataRights.title',
-    summaryKey: 'workflow.dataRights.summary',
-    stepKeys: ['workflow.dataRights.step1', 'workflow.dataRights.step2', 'workflow.dataRights.step3'],
-  },
 };
 
+/* Homepage shows coaching only — full list lives on /product */
 const GROUP_ORDER: WorkflowModule['group'][] = [
   'coaching',
-  'strategy',
-  'operations',
 ];
 
 const GROUP_LABEL_KEYS: Record<WorkflowModule['group'], { labelKey: string; color: string }> = {
   coaching: { labelKey: 'home.workflow.groupCoaching', color: 'text-chalk' },
   strategy: { labelKey: 'home.workflow.groupStrategy', color: 'text-gold' },
-  operations: { labelKey: 'home.workflow.groupOperations', color: 'text-steel' },
 };
 
 export function S4WorkflowCoverage() {
@@ -79,17 +57,19 @@ export function S4WorkflowCoverage() {
       aria-label="Workflow coverage"
     >
       <div className="grid-lap">
-        <div className="col-span-full mb-8">
+        <div className="col-span-full mb-8 text-center">
           <h2 className="font-monument text-[clamp(42px,7vw,76px)] leading-[0.9]">
             {t('home.workflow.heading1')}
             <br />
             {t('home.workflow.heading2')}
           </h2>
-          <ReversibleCard
-            title={t('home.workflow.cardTitle')}
-            description={t('home.workflow.cardDescription')}
-            className="max-w-2xl mt-4"
-          />
+          <div className="flex justify-center">
+            <ReversibleCard
+              title={t('home.workflow.cardTitle')}
+              description={t('home.workflow.cardDescription')}
+              className="max-w-2xl mt-4"
+            />
+          </div>
         </div>
 
         {GROUP_ORDER.map((group) => {

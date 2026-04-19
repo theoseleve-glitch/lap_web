@@ -16,15 +16,14 @@ interface UsageMetric {
 }
 
 interface UsageData {
-  reports: UsageMetric;
-  uploads: UsageMetric;
+  analyses: UsageMetric;
+  upload_volume_mb: UsageMetric;
 }
 
 interface EntitlementsData {
   plan: string;
   entitlements: {
-    reports_per_month: number;
-    uploads_per_month: number;
+    analyses_per_month: number;
     raw_retention_days: number;
     report_retention: string;
     comparison_progress: boolean;
@@ -179,17 +178,19 @@ export default function UsagePage() {
         ) : usage ? (
           <div className="space-y-5">
             <UsageBar
-              label="Reports"
-              used={usage.reports.used}
-              limit={usage.reports.limit}
-              resets={usage.reports.resets}
+              label="Analyses"
+              used={usage.analyses.used}
+              limit={usage.analyses.limit}
+              resets={usage.analyses.resets}
             />
-            <UsageBar
-              label="Uploads"
-              used={usage.uploads.used}
-              limit={usage.uploads.limit}
-              resets={usage.uploads.resets}
-            />
+            {usage.upload_volume_mb && usage.upload_volume_mb.limit !== null && (
+              <UsageBar
+                label="Upload Volume (MB)"
+                used={usage.upload_volume_mb.used}
+                limit={usage.upload_volume_mb.limit}
+                resets={usage.upload_volume_mb.resets}
+              />
+            )}
           </div>
         ) : (
           <p className="text-steel text-sm font-body">Unable to load usage data</p>
@@ -208,12 +209,8 @@ export default function UsagePage() {
         ) : entitlements ? (
           <div>
             <FeatureRow
-              label="Reports per month"
-              value={entitlements.entitlements.reports_per_month}
-            />
-            <FeatureRow
-              label="Uploads per month"
-              value={entitlements.entitlements.uploads_per_month}
+              label="Analyses per month"
+              value={entitlements.entitlements.analyses_per_month}
             />
             <FeatureRow
               label="Data retention"

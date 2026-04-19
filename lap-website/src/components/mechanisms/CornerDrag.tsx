@@ -117,7 +117,7 @@ export function CornerDrag({ onDeltaChange, className = '' }: CornerDragProps) {
       ctx.globalAlpha = 1;
 
       // Label
-      ctx.font = '10px "IBM Plex Mono"';
+      ctx.font = '10px "Space Mono"';
       ctx.fillStyle = colors.chalk;
       ctx.textAlign = 'center';
       ctx.fillText(LABELS[i], x, y - POINT_RADIUS - 6);

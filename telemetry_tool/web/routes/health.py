@@ -126,16 +126,16 @@ def healthz():
 def healthz_detail():
     """Return detailed health with DB stats. Requires auth in production."""
     if current_app.config.get("AUTH_REQUIRED"):
-        from flask import request as req
-
-        from web.middleware.auth import _decode_token, _extract_token
-        token = _extract_token(req)
-        if not token:
-            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
         try:
-            _decode_token(token)
+            from web.middleware.auth import _extract_token
+            from auth.service import decode_access_token
+            token = _extract_token()
+            if not token:
+                return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
+            secret = current_app.config.get("JWT_SECRET", "")
+            decode_access_token(token, secret)
         except Exception:
-            return api_error(ErrorCode.UNAUTHORIZED, "Invalid token", status=401)
+            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
 
     checks: dict = {"status": "ok", "db": "unknown", "redis": "unknown", "celery": "unknown"}
 
@@ -232,16 +232,16 @@ def startup_diagnostics():
     Requires authentication in production to avoid leaking security posture.
     """
     if current_app.config.get("AUTH_REQUIRED"):
-        from flask import request as req
-
-        from web.middleware.auth import _decode_token, _extract_token
-        token = _extract_token(req)
-        if not token:
-            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
         try:
-            _decode_token(token)
+            from web.middleware.auth import _extract_token
+            from auth.service import decode_access_token
+            token = _extract_token()
+            if not token:
+                return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
+            secret = current_app.config.get("JWT_SECRET", "")
+            decode_access_token(token, secret)
         except Exception:
-            return api_error(ErrorCode.UNAUTHORIZED, "Invalid token", status=401)
+            return api_error(ErrorCode.UNAUTHORIZED, "Authentication required", status=401)
 
     summary = dict(current_app.config.get("HARDENING_SUMMARY", {}))
     status = "hardened"

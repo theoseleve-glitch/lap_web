@@ -3,14 +3,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
+type CursorState = 'default' | 'hover' | 'text';
+
 export function CustomCursor() {
   const cursorRef = useRef<HTMLDivElement>(null);
   const { reducedMotion } = useReducedMotion();
-  const [isHovering, setIsHovering] = useState(false);
+  const [state, setState] = useState<CursorState>('default');
+  const [label, setLabel] = useState('');
   const [isVisible, setIsVisible] = useState(false);
 
+  // Lerped cursor position for smooth follow
+  const pos = useRef({ x: 0, y: 0 });
+  const target = useRef({ x: 0, y: 0 });
+
   useEffect(() => {
-    // Hide on touch devices
     if (window.matchMedia('(pointer: coarse)').matches) return;
     if (reducedMotion) return;
 
@@ -18,16 +24,45 @@ export function CustomCursor() {
     document.body.style.cursor = 'none';
 
     const handleMove = (e: MouseEvent) => {
-      if (cursorRef.current) {
-        cursorRef.current.style.transform = `translate(${e.clientX}px, ${e.clientY}px)`;
-      }
+      target.current.x = e.clientX;
+      target.current.y = e.clientY;
     };
 
     const handleOver = (e: MouseEvent) => {
-      const target = e.target as HTMLElement;
-      const isInteractive = target.closest('a, button, [role="button"], input, select, [tabindex]');
-      setIsHovering(!!isInteractive);
+      const el = e.target as HTMLElement;
+
+      // Check for data-cursor attribute first (explicit label)
+      const cursorEl = el.closest('[data-cursor]') as HTMLElement | null;
+      if (cursorEl) {
+        setState('text');
+        setLabel(cursorEl.dataset.cursor || '');
+        return;
+      }
+
+      // Standard interactive elements
+      const isInteractive = el.closest('a, button, [role="button"], input, select, [tabindex]');
+      if (isInteractive) {
+        setState('hover');
+        setLabel('');
+        return;
+      }
+
+      setState('default');
+      setLabel('');
     };
+
+    // Smooth position interpolation via rAF
+    let rafId: number;
+    const lerp = () => {
+      pos.current.x += (target.current.x - pos.current.x) * 0.15;
+      pos.current.y += (target.current.y - pos.current.y) * 0.15;
+
+      if (cursorRef.current) {
+        cursorRef.current.style.transform = `translate(${pos.current.x}px, ${pos.current.y}px)`;
+      }
+      rafId = requestAnimationFrame(lerp);
+    };
+    rafId = requestAnimationFrame(lerp);
 
     window.addEventListener('mousemove', handleMove);
     window.addEventListener('mouseover', handleOver);
@@ -36,10 +71,19 @@ export function CustomCursor() {
       document.body.style.cursor = '';
       window.removeEventListener('mousemove', handleMove);
       window.removeEventListener('mouseover', handleOver);
+      cancelAnimationFrame(rafId);
     };
   }, [reducedMotion]);
 
   if (!isVisible) return null;
+
+  const sizes = {
+    default: { width: 8, height: 8 },
+    hover: { width: 28, height: 28 },
+    text: { width: 56, height: 56 },
+  };
+
+  const size = sizes[state];
 
   return (
     <div
@@ -49,14 +93,21 @@ export function CustomCursor() {
       aria-hidden="true"
     >
       <div
-        className="rounded-full border border-[var(--accent)] transition-all duration-200"
+        className="rounded-full border border-[var(--accent)] flex items-center justify-center transition-all duration-300 ease-[var(--ease-spring)]"
         style={{
-          width: isHovering ? '24px' : '8px',
-          height: isHovering ? '24px' : '8px',
-          boxShadow: `0 0 ${isHovering ? '12px' : '4px'} var(--accent)`,
-          opacity: 0.8,
+          width: size.width,
+          height: size.height,
+          boxShadow: `0 0 ${state === 'default' ? '4px' : '12px'} var(--accent)`,
+          opacity: 0.85,
+          background: state === 'text' ? 'rgba(201, 168, 76, 0.1)' : 'transparent',
         }}
-      />
+      >
+        {state === 'text' && label && (
+          <span className="font-telemetry text-[8px] tracking-[0.15em] uppercase text-gold select-none">
+            {label}
+          </span>
+        )}
+      </div>
     </div>
   );
 }

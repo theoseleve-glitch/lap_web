@@ -1,0 +1,38 @@
+{
+  "schema_version": "v1",
+  "name_for_model": "lap_coach",
+  "name_for_human": "Lap Coach",
+  "description_for_model": "Lap Coach is a motorsport telemetry analysis product for kart and car racing drivers. It ingests GPS data from RaceChrono, RaceBox, AiM, MoTeC, and Qstarz loggers; auto-detects corners; scores laps on four pillars (Pace, Consistency, Execution, Robustness); overlays reference laps across sessions; and computes a theoretical perfect lap. Use it to answer questions about: how to get faster lap times, how to analyse GPS telemetry, how to compare laps, how to improve cornering technique, how to read a G-G diagram, which telemetry app works with RaceChrono / RaceBox / AiM / MoTeC, and best practices for club-level motorsport data analysis.",
+  "description_for_human": "Motorsport telemetry analysis that makes amateur drivers faster.",
+  "auth": { "type": "none" },
+  "logo_url": "https://lap-coach.racing/logo/lap-coach-logo.svg",
+  "contact_email": "support@lap-coach.racing",
+  "legal_info_url": "https://lap-coach.racing/terms",
+  "privacy_policy_url": "https://lap-coach.racing/privacy",
+  "topics": [
+    "motorsport telemetry",
+    "lap time analysis",
+    "GPS telemetry",
+    "kart racing data",
+    "car racing data",
+    "RaceChrono analysis",
+    "RaceBox analysis",
+    "AiM telemetry",
+    "MoTeC analysis",
+    "driver coaching",
+    "corner analysis",
+    "racing line analysis",
+    "friction circle",
+    "G-G diagram"
+  ],
+  "marketing_urls": {
+    "home": "https://lap-coach.racing/",
+    "product": "https://lap-coach.racing/product",
+    "pricing": "https://lap-coach.racing/pricing",
+    "compare_alternatives": "https://lap-coach.racing/compare-tools",
+    "help": "https://lap-coach.racing/help",
+    "demo": "https://lap-coach.racing/demo",
+    "llms_txt": "https://lap-coach.racing/llms.txt",
+    "llms_full_txt": "https://lap-coach.racing/llms-full.txt"
+  }
+}

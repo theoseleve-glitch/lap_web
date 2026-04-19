@@ -103,7 +103,7 @@ export function AnalyzerTrackMap({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Background
-    ctx.fillStyle = '#0B0C0F';
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, w, h);
 
     const { lat, lon, speed, distance } = trace;
@@ -244,7 +244,7 @@ export function AnalyzerTrackMap({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div ref={containerRef} className="relative w-full h-full min-h-[250px]" style={{ background: '#0B0C0F' }}>
+    <div ref={containerRef} className="relative w-full h-full min-h-[250px]" style={{ background: 'var(--asphalt)' }}>
       <canvas ref={canvasRef} className="w-full h-full" />
       <div className="absolute top-2 left-3">
         <span className="text-steel/50 font-telemetry text-[9px] uppercase tracking-wider">Track Map</span>

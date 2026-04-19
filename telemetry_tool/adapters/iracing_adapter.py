@@ -158,6 +158,7 @@ class IRacingAdapter(BaseAdapter):
     """Adapter for iRacing CSV telemetry exports."""
 
     FORMAT_NAME: str = "iracing"
+    EXTENSIONS: list[str] = [".csv", ".txt"]
 
     def __init__(self) -> None:
         self._channels: list[str] = []

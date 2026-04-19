@@ -14,6 +14,7 @@ const config: Config = {
         'marshal-yellow': 'var(--marshal-yellow)',
         'pit-orange': 'var(--pit-orange)',
         'racing-purple': 'var(--racing-purple)',
+        'racing-red': 'var(--racing-red)',
         gold: 'var(--pit-orange)',
         success: 'var(--color-success)',
         warning: 'var(--color-warning)',

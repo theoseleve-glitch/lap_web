@@ -1,6 +1,16 @@
 'use client';
 
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useCallback } from 'react';
+import { RacingBadge } from './RacingBadge';
+
+/* ── Types ────────────────────────────────────────────────── */
+
+interface Badge {
+  title: string;
+  description: string;
+  unlocked: boolean;
+  category?: 'progress' | 'technique' | 'consistency' | 'learning' | 'endurance';
+}
 
 interface ShareCardCanvasProps {
   sessionData: {
@@ -15,25 +25,20 @@ interface ShareCardCanvasProps {
     cvPct?: number | null;
     badges?: { id: string; tier: string }[];
   };
+  /** Optional structured badges for RacingBadge display */
+  racingBadges?: Badge[];
+  licenseLevel?: 'N' | 'D' | 'C' | 'B' | 'A' | 'S';
   className?: string;
 }
 
-const CANVAS_W = 1200;
-const CANVAS_H = 630;
-
-const GRADE_COLORS: Record<string, string> = {
-  'A+': '#B6FF2E',
-  A: '#B6FF2E',
-  B: '#00d4ff',
-  C: '#FFD400',
-  D: '#FF6A00',
-  F: '#FF3B6B',
+const licenseLevelColors: Record<string, string> = {
+  N: '#22C55E',   // acid-green
+  D: '#C9A84C',   // gold
+  C: '#FACC15',   // marshal-yellow
+  B: '#8B5CF6',   // racing-purple
+  A: '#FF2A2A',   // safety-red
+  S: '#F0EDE5',   // chalk
 };
-
-function gradeColor(grade: string | null | undefined): string {
-  if (!grade) return '#555';
-  return GRADE_COLORS[grade.toUpperCase()] ?? '#555';
-}
 
 function formatLapTime(seconds: number | null | undefined): string {
   if (seconds == null || seconds <= 0) return '--:--.---';
@@ -44,316 +49,235 @@ function formatLapTime(seconds: number | null | undefined): string {
   return `${mins}:${String(wholeS).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
 }
 
-const TIER_HEX_COLORS: Record<string, [string, string]> = {
-  gold: ['#FFD700', '#FFA500'],
-  silver: ['#E0E0E0', '#A0A0A0'],
-  bronze: ['#CD7F32', '#8B4513'],
-};
+/* ── Component ────────────────────────────────────────────── */
 
-const BADGE_LABELS: Record<string, string> = {
-  pace_master: 'Pace',
-  consistency_champion: 'Consistency',
-  execution_expert: 'Execution',
-  endurance_warrior: 'Endurance',
-  adaptor: 'Adaptation',
-  flow_state: 'Flow State',
-};
+export function ShareCardCanvas({ sessionData, racingBadges, licenseLevel = 'N', className }: ShareCardCanvasProps) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const licenseColor = licenseLevelColors[licenseLevel] ?? '#22C55E';
 
-function drawHexBadge(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, tier: string) {
-  const [c1, c2] = TIER_HEX_COLORS[tier] || TIER_HEX_COLORS.bronze;
-  const r = size / 2;
-  const pts: [number, number][] = [];
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 3) * i - Math.PI / 2;
-    pts.push([cx + r * Math.cos(angle), cy + r * Math.sin(angle)]);
-  }
-  // Outer hex (gradient stroke)
-  const grad = ctx.createLinearGradient(cx - r, cy - r, cx + r, cy + r);
-  grad.addColorStop(0, c1);
-  grad.addColorStop(1, c2);
-  ctx.beginPath();
-  pts.forEach(([x, y], i) => i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y));
-  ctx.closePath();
-  ctx.strokeStyle = grad;
-  ctx.lineWidth = 2.5;
-  ctx.stroke();
-  // Inner fill
-  const ir = r * 0.85;
-  ctx.beginPath();
-  for (let i = 0; i < 6; i++) {
-    const angle = (Math.PI / 3) * i - Math.PI / 2;
-    const px = cx + ir * Math.cos(angle);
-    const py = cy + ir * Math.sin(angle);
-    i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-  ctx.fillStyle = '#0B0C0F';
-  ctx.fill();
-  // Star inside
-  ctx.font = `${Math.round(size * 0.35)}px sans-serif`;
-  ctx.fillStyle = c1;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('\u2605', cx, cy + 1);
-}
+  const driver = sessionData.driverName || 'Driver';
+  const track = sessionData.trackName || 'Unknown Track';
+  const sessionType = (sessionData.sessionType || 'practice').charAt(0).toUpperCase() + (sessionData.sessionType || 'practice').slice(1);
 
-function drawCard(
-  ctx: CanvasRenderingContext2D,
-  data: ShareCardCanvasProps['sessionData'],
-) {
-  const w = CANVAS_W;
-  const h = CANVAS_H;
-  const pad = 48;
-  const cornerR = 32;
-
-  // -- Clip to rounded rect --
-  ctx.save();
-  ctx.beginPath();
-  ctx.roundRect(0, 0, w, h, cornerR);
-  ctx.clip();
-
-  // -- Background: metallic gradient --
-  const bg = ctx.createLinearGradient(0, 0, w, h);
-  bg.addColorStop(0, '#0D0E12');
-  bg.addColorStop(0.3, '#14161E');
-  bg.addColorStop(0.5, '#1A1C28');
-  bg.addColorStop(0.7, '#14161E');
-  bg.addColorStop(1, '#0D0E12');
-  ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, w, h);
-
-  // -- Metallic shimmer (diagonal light streak) --
-  const shimmer = ctx.createLinearGradient(0, 0, w * 0.8, h * 0.5);
-  shimmer.addColorStop(0, 'rgba(255,255,255,0)');
-  shimmer.addColorStop(0.4, 'rgba(255,255,255,0.015)');
-  shimmer.addColorStop(0.5, 'rgba(255,255,255,0.04)');
-  shimmer.addColorStop(0.6, 'rgba(255,255,255,0.015)');
-  shimmer.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = shimmer;
-  ctx.fillRect(0, 0, w, h);
-
-  // -- Corner glow (top-right, acid green) --
-  const glow = ctx.createRadialGradient(w - 100, 100, 0, w - 100, 100, 500);
-  glow.addColorStop(0, 'rgba(182, 255, 46, 0.05)');
-  glow.addColorStop(1, 'rgba(182, 255, 46, 0)');
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, w, h);
-
-  // -- Bottom-left warm glow --
-  const glow2 = ctx.createRadialGradient(100, h - 80, 0, 100, h - 80, 400);
-  glow2.addColorStop(0, 'rgba(255, 165, 0, 0.03)');
-  glow2.addColorStop(1, 'rgba(255, 165, 0, 0)');
-  ctx.fillStyle = glow2;
-  ctx.fillRect(0, 0, w, h);
-
-  // -- Subtle border (metallic edge) --
-  ctx.beginPath();
-  ctx.roundRect(1, 1, w - 2, h - 2, cornerR);
-  const borderGrad = ctx.createLinearGradient(0, 0, w, h);
-  borderGrad.addColorStop(0, 'rgba(182, 255, 46, 0.15)');
-  borderGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.08)');
-  borderGrad.addColorStop(1, 'rgba(182, 255, 46, 0.1)');
-  ctx.strokeStyle = borderGrad;
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  // -- Top-left: branding --
-  ctx.font = '600 16px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#B6FF2E';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText('LAP COACH', pad, pad);
-
-  // -- Session title --
-  const driver = data.driverName || 'Driver';
-  const typeCap = (data.sessionType || 'practice').charAt(0).toUpperCase() + (data.sessionType || 'practice').slice(1);
-  ctx.font = '800 36px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#F0EDE5';
-  ctx.fillText(`${driver}`, pad, pad + 36);
-
-  // -- Track / date --
-  const track = data.trackName || 'Unknown Track';
-  const rawDate = data.sessionDate || '';
-  let displayDate = rawDate;
+  let displayDate = sessionData.sessionDate || '';
   try {
-    if (rawDate) {
-      const d = new Date(rawDate);
+    if (displayDate) {
+      const d = new Date(displayDate);
       displayDate = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
     }
   } catch { /* keep raw */ }
-  ctx.font = '500 18px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#888888';
-  ctx.fillText(`${track}  \u00B7  ${displayDate}  \u00B7  ${typeCap}`, pad, pad + 82);
 
-  // -- Grade badge (top-right) --
-  const grade = data.grade ?? null;
-  const gc = gradeColor(grade);
-  const bx = w - pad - 80;
-  const by = pad;
-  const bSize = 80;
-  ctx.beginPath();
-  ctx.roundRect(bx, by, bSize, bSize, 16);
-  const gradeFill = ctx.createLinearGradient(bx, by, bx + bSize, by + bSize);
-  gradeFill.addColorStop(0, gc + '18');
-  gradeFill.addColorStop(1, gc + '08');
-  ctx.fillStyle = gradeFill;
-  ctx.fill();
-  ctx.strokeStyle = gc + '60';
-  ctx.lineWidth = 2;
-  ctx.stroke();
-  if (grade) {
-    ctx.font = '900 42px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = gc;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(grade.toUpperCase(), bx + bSize / 2, by + bSize / 2 + 2);
-  }
+  const bestLap = formatLapTime(sessionData.bestLapTime);
+  const score = sessionData.totalScore != null ? Math.round(sessionData.totalScore) : null;
+  const nLaps = sessionData.nLaps ?? null;
+  const cvPct = sessionData.cvPct != null ? Math.round(sessionData.cvPct) : null;
 
-  // -- Stats row --
-  const statY = 220;
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
+  const handleDownload = useCallback(async () => {
+    const card = cardRef.current;
+    if (!card) return;
 
-  const stats = [
-    { label: 'Best Lap', value: formatLapTime(data.bestLapTime), color: '#B6FF2E' },
-    { label: 'Score', value: data.totalScore != null ? String(Math.round(data.totalScore)) : '--', color: '#F0EDE5', suffix: '/100', suffixColor: '#555' },
-    { label: 'Laps', value: data.nLaps != null ? String(data.nLaps) : '--', color: '#F0EDE5' },
-    { label: 'Consistency', value: data.cvPct != null ? `${data.cvPct.toFixed(1)}%` : '--', color: '#00d4ff' },
-  ];
-
-  const statSpacing = (w - pad * 2) / stats.length;
-  for (let i = 0; i < stats.length; i++) {
-    const sx = pad + i * statSpacing;
-    const s = stats[i];
-    ctx.font = '500 14px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#666';
-    ctx.fillText(s.label, sx, statY);
-    ctx.font = '800 38px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = s.color;
-    ctx.fillText(s.value, sx, statY + 26);
-    if (s.suffix) {
-      const valW = ctx.measureText(s.value).width;
-      ctx.font = '500 22px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = s.suffixColor ?? '#555';
-      ctx.fillText(s.suffix, sx + valW + 4, statY + 36);
+    // Use html2canvas if available, otherwise fallback
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const mod = await (Function('return import("html2canvas")')() as Promise<{ default: (el: HTMLElement, opts: Record<string, unknown>) => Promise<HTMLCanvasElement> }>);
+      const html2canvas = mod.default;
+      const canvas = await html2canvas(card, {
+        backgroundColor: '#000000',
+        scale: 2,
+        width: 1200,
+        height: 630,
+        useCORS: true,
+      });
+      canvas.toBlob((blob: Blob | null) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `lap-coach-${driver.replace(/\s+/g, '-')}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      }, 'image/png');
+    } catch {
+      alert('Download requires html2canvas. Install with: npm install html2canvas');
     }
-  }
-
-  // -- Separator --
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(pad, statY + 100);
-  ctx.lineTo(w - pad, statY + 100);
-  ctx.stroke();
-
-  // -- Badges row --
-  const badges = data.badges || [];
-  const badgeY = statY + 130;
-  if (badges.length > 0) {
-    ctx.font = '500 12px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#555';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('Badges Earned', pad, badgeY);
-
-    const hexSize = 42;
-    const hexGap = 56;
-    for (let i = 0; i < badges.length; i++) {
-      const bCx = pad + 24 + i * hexGap;
-      const bCy = badgeY + 50;
-      drawHexBadge(ctx, bCx, bCy, hexSize, badges[i].tier || 'bronze');
-      // Label below hex
-      ctx.font = '500 10px "Segoe UI", system-ui, sans-serif';
-      ctx.fillStyle = (TIER_HEX_COLORS[badges[i].tier] || TIER_HEX_COLORS.bronze)[0];
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.fillText(BADGE_LABELS[badges[i].id] || '', bCx, bCy + hexSize / 2 + 6);
-    }
-  } else {
-    ctx.font = '500 13px "Segoe UI", system-ui, sans-serif';
-    ctx.fillStyle = '#444';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('Keep pushing to earn badges', pad, badgeY + 10);
-  }
-
-  // -- Bottom-right: URL --
-  ctx.textAlign = 'right';
-  ctx.textBaseline = 'bottom';
-  ctx.font = '600 15px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#B6FF2E';
-  ctx.fillText('lap-coach.racing', w - pad, h - pad + 4);
-
-  // -- Bottom-left: thin tagline --
-  ctx.textAlign = 'left';
-  ctx.font = '400 12px "Segoe UI", system-ui, sans-serif';
-  ctx.fillStyle = '#444';
-  ctx.fillText('Motorsport Telemetry Analysis', pad, h - pad + 4);
-
-  ctx.restore();
-}
-
-export function ShareCardCanvas({ sessionData, className }: ShareCardCanvasProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    drawCard(ctx, sessionData);
-  }, [sessionData]);
-
-  const handleDownload = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    canvas.toBlob((blob) => {
-      if (!blob) return;
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      const driver = sessionData.driverName?.replace(/\s+/g, '-') || 'session';
-      a.download = `lap-coach-${driver}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 'image/png');
-  }, [sessionData.driverName]);
+  }, [driver]);
 
   return (
     <div className={className}>
-      {/* Full-res canvas scaled down via CSS for preview, full 1200x630 for download */}
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_W}
-        height={CANVAS_H}
-        className="w-full max-w-lg rounded-lg border border-white/10"
-      />
-
-      <button
-        type="button"
-        onClick={handleDownload}
-        className="mt-3 inline-flex items-center gap-2 rounded-md bg-[#B6FF2E] px-4 py-2 text-sm font-semibold text-black transition-colors hover:bg-[#a3e629]"
+      {/* Main Card — optimized for social sharing (1200x630 aspect) */}
+      <div
+        ref={cardRef}
+        className="relative rounded-3xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(135deg, #0a0a0a, #1a1a1a, #000000)',
+          width: '100%',
+          maxWidth: '600px',
+          aspectRatio: '1200/630',
+          boxShadow: '0 8px 60px rgba(0,0,0,0.7)',
+        }}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        {/* Grid pattern background */}
+        <div
+          className="absolute inset-0 opacity-5"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(240,237,229,0.5) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(240,237,229,0.5) 1px, transparent 1px)
+            `,
+            backgroundSize: '40px 40px',
+          }}
+        />
+
+        {/* Gradient overlay */}
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            background: `radial-gradient(circle at top right, ${licenseColor}40, transparent 50%)`,
+          }}
+        />
+
+        <div className="relative h-full p-6 sm:p-8 flex flex-col">
+          {/* Header */}
+          <div className="flex items-start justify-between mb-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="font-telemetry text-[10px] text-steel uppercase tracking-[0.2em]">LAP COACH</span>
+                <div className="h-3 w-px bg-steel" />
+                <span className="font-telemetry text-[10px] text-steel uppercase tracking-wider">{sessionType}</span>
+              </div>
+              <h2 className="font-monument text-2xl sm:text-3xl font-bold text-chalk mb-1">{driver}</h2>
+              <div className="font-body text-sm text-steel">
+                <span className="uppercase tracking-wide">{track}</span>
+                <span className="mx-2">•</span>
+                <span>{displayDate}</span>
+              </div>
+            </div>
+
+            {/* License badge */}
+            <div
+              className="w-14 h-14 sm:w-16 sm:h-16 rounded-xl flex items-center justify-center border-2 font-monument text-2xl sm:text-3xl font-bold shrink-0"
+              style={{
+                borderColor: licenseColor,
+                backgroundColor: `${licenseColor}15`,
+                color: licenseColor,
+                boxShadow: `0 0 30px ${licenseColor}40`,
+              }}
+            >
+              {licenseLevel}
+            </div>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-4 gap-3 sm:gap-4 mb-4">
+            <div>
+              <div className="font-telemetry text-[9px] text-steel uppercase tracking-wider mb-1">Best Lap</div>
+              <div
+                className="font-telemetry text-lg sm:text-2xl font-bold tracking-tight"
+                style={{
+                  color: '#22C55E',
+                  textShadow: '0 0 20px rgba(34,197,94,0.4)',
+                }}
+              >
+                {bestLap}
+              </div>
+            </div>
+            <div>
+              <div className="font-telemetry text-[9px] text-steel uppercase tracking-wider mb-1">Score</div>
+              <div className="font-telemetry text-lg sm:text-2xl font-bold text-chalk">
+                {score ?? '--'}
+                <span className="text-sm text-steel">/100</span>
+              </div>
+            </div>
+            <div>
+              <div className="font-telemetry text-[9px] text-steel uppercase tracking-wider mb-1">Laps</div>
+              <div className="font-telemetry text-lg sm:text-2xl font-bold text-chalk">{nLaps ?? '--'}</div>
+            </div>
+            <div>
+              <div className="font-telemetry text-[9px] text-steel uppercase tracking-wider mb-1">Consistency</div>
+              <div
+                className="font-telemetry text-lg sm:text-2xl font-bold"
+                style={{
+                  color: '#22C55E',
+                  textShadow: '0 0 15px rgba(34,197,94,0.3)',
+                }}
+              >
+                {cvPct != null ? `${cvPct}%` : '--'}
+              </div>
+            </div>
+          </div>
+
+          {/* Badges showcase */}
+          {racingBadges && racingBadges.filter((b) => b.unlocked).length > 0 && (
+            <div className="mt-auto">
+              <div className="font-telemetry text-[9px] text-steel uppercase tracking-wider mb-2">Achievement Highlights</div>
+              <div className="flex gap-2 overflow-hidden">
+                {racingBadges
+                  .filter((b) => b.unlocked)
+                  .slice(0, 4)
+                  .map((badge, i) => (
+                    <div key={i} className="scale-[0.6] origin-top-left -mr-8">
+                      <RacingBadge {...badge} />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Footer branding */}
+          <div className="absolute bottom-4 right-6 font-telemetry text-[9px] text-steel tracking-[0.3em] uppercase">
+            lap-coach.racing
+          </div>
+        </div>
+
+        {/* Accent lines */}
+        <div
+          className="absolute top-0 left-0 right-0 h-1"
+          style={{ background: `linear-gradient(90deg, transparent, ${licenseColor}, transparent)` }}
+        />
+        <div
+          className="absolute bottom-0 left-0 right-0 h-1"
+          style={{ background: `linear-gradient(90deg, transparent, ${licenseColor}, transparent)` }}
+        />
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-3 mt-4 max-w-md">
+        <button
+          type="button"
+          onClick={handleDownload}
+          className="flex-1 inline-flex items-center justify-center gap-2 bg-gold text-white font-telemetry text-sm uppercase tracking-wider px-5 py-3 rounded hover:bg-gold/80 transition-colors"
+          style={{ boxShadow: '0 0 20px rgba(201,168,76,0.3)' }}
         >
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-          <polyline points="7 10 12 15 17 10" />
-          <line x1="12" y1="15" x2="12" y2="3" />
-        </svg>
-        Download Card
-      </button>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download Card
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            if (navigator.share) {
+              navigator.share({ title: `${driver} - Lap Coach`, text: `${driver} at ${track}: ${bestLap}`, url: window.location.href });
+            }
+          }}
+          className="flex-1 inline-flex items-center justify-center gap-2 bg-acid-green text-white font-telemetry text-sm uppercase tracking-wider px-5 py-3 rounded hover:bg-acid-green/80 transition-colors"
+          style={{ boxShadow: '0 0 20px rgba(34,197,94,0.3)' }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="18" cy="5" r="3" />
+            <circle cx="6" cy="12" r="3" />
+            <circle cx="18" cy="19" r="3" />
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+            <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+          </svg>
+          Share
+        </button>
+      </div>
     </div>
   );
 }

@@ -901,7 +901,44 @@ def main(argv: Optional[list[str]] = None) -> int:
     else:
         print("\n  All analyses completed successfully.")
 
-    _wait_for_keypress()
+    # ── Cloud sync hook (never blocks finalization) ─────────
+    try:
+        from desktop_sync.hooks import on_session_finalized
+        on_session_finalized(results, csv_path, session_info)
+    except ImportError:
+        pass   # desktop_sync not available (minimal install)
+    except Exception as exc:
+        logger.debug("[SYNC] Hook import/call failed: %s", exc)
+
+    # ── Show sync panel if Tkinter is available (Beta) ────────
+    _show_sync_panel = False
+    try:
+        from desktop_sync.hooks import _get_config
+        cfg = _get_config()
+        if cfg.get("device_token"):
+            _show_sync_panel = True
+    except (ImportError, Exception):
+        pass
+
+    if _show_sync_panel:
+        try:
+            from desktop_sync.ui_sync_panel import launch_sync_panel
+            launch_sync_panel()   # blocks until user closes the window
+        except ImportError:
+            _wait_for_keypress()
+        except Exception as exc:
+            logger.debug("[SYNC] Panel failed: %s", exc)
+            _wait_for_keypress()
+    else:
+        _wait_for_keypress()
+
+    # ── Gracefully stop sync worker before exit ─────────────
+    try:
+        from desktop_sync.hooks import shutdown_worker
+        shutdown_worker(timeout=3.0)
+    except (ImportError, Exception):
+        pass
+
     return 1 if any_failures else 0
 
 

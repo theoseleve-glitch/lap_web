@@ -46,7 +46,7 @@ export default function EntitlementsPage() {
         <AdminTable
           columns={[
             { key: 'tier', label: 'Tier' },
-            { key: 'reports_per_month', label: 'Reports/mo' },
+            { key: 'reports_per_month', label: 'Analyses/mo' },
             { key: 'max_upload_size_mb', label: 'Max Upload MB' },
             { key: 'rate_multiplier', label: 'Rate Multiplier' },
           ]}
@@ -87,7 +87,7 @@ export default function EntitlementsPage() {
             <label htmlFor="ent-user-id" className="sr-only">User ID</label>
             <input id="ent-user-id" type="number" placeholder="User ID" value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })} disabled={createMutation.isPending} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed" />
             <label htmlFor="ent-key" className="sr-only">Override key</label>
-            <input id="ent-key" placeholder="Key (e.g. reports_per_month)" value={form.override_key} onChange={(e) => setForm({ ...form, override_key: e.target.value })} disabled={createMutation.isPending} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed" />
+            <input id="ent-key" placeholder="Key (e.g. analyses_per_month)" value={form.override_key} onChange={(e) => setForm({ ...form, override_key: e.target.value })} disabled={createMutation.isPending} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed" />
             <label htmlFor="ent-value" className="sr-only">Override value</label>
             <input id="ent-value" placeholder="Value" value={form.override_value} onChange={(e) => setForm({ ...form, override_value: e.target.value })} disabled={createMutation.isPending} className="mb-2 w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-sm text-chalk placeholder-white/30 disabled:opacity-60 disabled:cursor-not-allowed" />
             <label htmlFor="ent-reason" className="sr-only">Reason</label>

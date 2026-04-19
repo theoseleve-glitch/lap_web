@@ -230,7 +230,7 @@
         });
 
         // Labels
-        ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         labels.forEach(function (label, i) {

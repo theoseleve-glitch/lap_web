@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rotation Motion Law Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Fira+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #020617;
+    --panel: rgba(15, 23, 42, 0.84);
+    --panel-soft: rgba(15, 23, 42, 0.68);
+    --border: rgba(148, 163, 184, 0.18);
+    --border-soft: rgba(148, 163, 184, 0.12);
+    --muted: #94a3b8;
+    --text: #e2e8f0;
+    --title: #f8fafc;
+    --grid: rgba(148, 163, 184, 0.1);
+    --move-fill: rgba(34, 197, 94, 0.06);
+    --accent: #22c55e;
+    --step: #22c55e;
+    --triangular: #38bdf8;
+    --trapezoidal: #f59e0b;
+    --scurve: #f43f5e;
+    --shadow: 0 22px 64px rgba(2, 6, 23, 0.44);
+    --radius: 24px;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Fira Sans", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 34%),
+      radial-gradient(circle at top right, rgba(244, 63, 94, 0.12), transparent 28%),
+      linear-gradient(180deg, #020617 0%, #081220 100%);
+    padding: 32px 20px 80px;
+  }
+
+  main {
+    width: min(1360px, 100%);
+    margin: 0 auto;
+  }
+
+  .hero,
+  .chart-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--panel);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(18px);
+  }
+
+  .hero {
+    padding: 36px;
+    margin-bottom: 24px;
+  }
+
+  .hero::before,
+  .chart-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      linear-gradient(135deg, rgba(255, 255, 255, 0.05), transparent 45%),
+      linear-gradient(220deg, rgba(34, 197, 94, 0.05), transparent 36%);
+  }
+
+  .eyebrow {
+    margin: 0 0 12px;
+    color: var(--accent);
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0 0 12px;
+    color: var(--title);
+    font-size: clamp(2.2rem, 4vw, 4rem);
+    line-height: 0.98;
+    font-weight: 800;
+  }
+
+  .lede {
+    max-width: 78ch;
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 1.02rem;
+    line-height: 1.6;
+  }
+
+  .chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .chip {
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.62);
+    min-width: 156px;
+  }
+
+  .chip span {
+    display: block;
+    font-family: "Fira Code", monospace;
+    font-size: 0.72rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .chip strong {
+    display: block;
+    margin-top: 8px;
+    color: var(--title);
+    font-size: 1.15rem;
+    font-weight: 700;
+  }
+
+  .assumptions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .assumption {
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    background: rgba(15, 23, 42, 0.54);
+  }
+
+  .assumption h2 {
+    margin: 0 0 6px;
+    font-size: 1rem;
+    color: var(--title);
+  }
+
+  .assumption p {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 0.92rem;
+    line-height: 1.5;
+  }
+
+  .section-note {
+    margin: 24px 0 14px;
+    color: #cbd5e1;
+    font-size: 0.96rem;
+    line-height: 1.55;
+  }
+
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .chart-card {
+    padding: 24px;
+  }
+
+  .chart-top {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: start;
+    margin-bottom: 14px;
+  }
+
+  .law-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .law-dot {
+    width: 14px;
+    height: 14px;
+    border-radius: 999px;
+    box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+  }
+
+  .chart-top h2 {
+    margin: 0;
+    color: var(--title);
+    font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+    line-height: 1.05;
+  }
+
+  .chart-top p {
+    margin: 8px 0 0;
+    color: #cbd5e1;
+    max-width: 46ch;
+    line-height: 1.5;
+  }
+
+  .axis-badge {
+    padding: 10px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.72);
+    font-family: "Fira Code", monospace;
+    font-size: 0.76rem;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .chart-shell {
+    padding: 16px;
+    border-radius: 20px;
+    border: 1px solid var(--border-soft);
+    background: rgba(2, 6, 23, 0.4);
+  }
+
+  svg {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .chart-bg {
+    fill: rgba(15, 23, 42, 0.86);
+    stroke: rgba(148, 163, 184, 0.12);
+  }
+
+  .move-window {
+    fill: var(--move-fill);
+  }
+
+  .grid-line {
+    stroke: var(--grid);
+    stroke-width: 1;
+  }
+
+  .axis-line {
+    stroke: rgba(226, 232, 240, 0.22);
+    stroke-width: 1.2;
+  }
+
+  .axis-label,
+  .tick-label,
+  .target-label {
+    fill: var(--muted);
+    font-family: "Fira Code", monospace;
+    font-size: 12px;
+  }
+
+  .target-label {
+    fill: #cbd5e1;
+  }
+
+  .series {
+    fill: none;
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.08));
+  }
+
+  .series.step {
+    stroke-dasharray: 0;
+  }
+
+  .series.triangular {
+    stroke-dasharray: 10 8;
+  }
+
+  .series.trapezoidal {
+    stroke-dasharray: 14 6 3 6;
+  }
+
+  .series.scurve {
+    stroke-dasharray: 0;
+  }
+
+  .law-legend {
+    display: grid;
+    gap: 12px;
+    margin-top: 14px;
+  }
+
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .metric {
+    padding: 10px;
+    border-radius: 14px;
+    background: rgba(2, 6, 23, 0.42);
+    border: 1px solid rgba(148, 163, 184, 0.1);
+  }
+
+  .metric span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-family: "Fira Code", monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .metric strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--title);
+    font-size: 0.98rem;
+    line-height: 1.2;
+  }
+
+  .legend-note {
+    margin: 0;
+    color: #cbd5e1;
+    font-size: 0.86rem;
+    line-height: 1.5;
+  }
+
+  .reveal {
+    opacity: 0;
+    transform: translateY(18px);
+    animation: rise 700ms ease forwards;
+  }
+
+  .reveal:nth-of-type(2) { animation-delay: 80ms; }
+  .reveal:nth-of-type(3) { animation-delay: 140ms; }
+  .reveal:nth-of-type(4) { animation-delay: 200ms; }
+  .reveal:nth-of-type(5) { animation-delay: 260ms; }
+
+  @keyframes rise {
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (max-width: 980px) {
+    .chart-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 720px) {
+    body {
+      padding: 18px 12px 52px;
+    }
+
+    .hero,
+    .chart-card {
+      padding: 18px;
+      border-radius: 20px;
+    }
+
+    .metric-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .chip {
+      min-width: 0;
+      flex: 1 1 150px;
+    }
+
+    .axis-badge {
+      white-space: normal;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .reveal {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+  }
+</style>
+</head>
+<body>
+<main>
+  <section class="hero reveal">
+    <p class="eyebrow">New Subject / Motion Profile Study</p>
+    <h1>Four speed charts for the same 90 deg move in 100 ms</h1>
+    <p class="lede">
+      Each chart shows output speed versus time for one motion law. The average output speed stays fixed at
+      150 RPM because the move angle and move duration are fixed, while the peak speed depends on the law.
+    </p>
+    <div class="chip-row">
+      <div class="chip">
+        <span>Target angle</span>
+        <strong>90 deg</strong>
+      </div>
+      <div class="chip">
+        <span>Move duration</span>
+        <strong>100 ms</strong>
+      </div>
+      <div class="chip">
+        <span>Average speed</span>
+        <strong>150 RPM</strong>
+      </div>
+      <div class="chip">
+        <span>Output</span>
+        <strong>4 separate charts</strong>
+      </div>
+    </div>
+    <div class="assumptions">
+      <article class="assumption">
+        <h2>Step</h2>
+        <p>Ideal constant speed during the move with instantaneous start and stop. It is useful as a reference shape rather than a directly physical command law.</p>
+      </article>
+      <article class="assumption">
+        <h2>Triangular</h2>
+        <p>Symmetric linear ramp up and ramp down over 50 ms each. This gives the highest peak speed among the finite-acceleration profiles here.</p>
+      </article>
+      <article class="assumption">
+        <h2>Trapezoidal</h2>
+        <p>Symmetric 25 ms acceleration, 50 ms cruise, and 25 ms deceleration. It trades lower peak speed for steeper ramps than the triangle.</p>
+      </article>
+      <article class="assumption">
+        <h2>S-curve</h2>
+        <p>Smooth minimum-jerk quintic law. It removes acceleration discontinuities while still requiring an elevated peak speed for the same 100 ms move.</p>
+      </article>
+    </div>
+  </section>
+
+  <p class="section-note">
+    All four charts use the same axes so the shapes can be compared directly. The dashed horizontal line marks the fixed 150 RPM average speed; the shaded region is the active 0 to 100 ms move window.
+  </p>
+
+  <section class="chart-grid">
+    <article class="chart-card reveal">
+      <div class="chart-top">
+        <div>
+          <div class="law-tag">
+            <span class="law-dot" style="background: var(--step);"></span>
+            <p class="eyebrow" style="margin:0;">Chart 1</p>
+          </div>
+          <h2>Step law</h2>
+          <p>Constant speed through the whole move. The speed demand is simple, but the idealized start and stop are not physically finite.</p>
+        </div>
+        <div class="axis-badge">Speed [RPM] vs time [ms]</div>
+      </div>
+      <div class="chart-shell">
+        <svg id="chart-step" viewBox="0 0 620 320" aria-labelledby="stepTitle stepDesc" role="img">
+          <title id="stepTitle">Step speed profile</title>
+          <desc id="stepDesc">Constant 150 RPM during the 100 millisecond move with vertical start and stop edges.</desc>
+        </svg>
+      </div>
+      <div class="law-legend" aria-label="Step chart legend">
+        <div class="metric-grid" id="metrics-step"></div>
+        <p class="legend-note">This ideal profile holds a constant 150 RPM throughout the active move window.</p>
+      </div>
+    </article>
+
+    <article class="chart-card reveal">
+      <div class="chart-top">
+        <div>
+          <div class="law-tag">
+            <span class="law-dot" style="background: var(--triangular);"></span>
+            <p class="eyebrow" style="margin:0;">Chart 2</p>
+          </div>
+          <h2>Triangular law</h2>
+          <p>Linear acceleration to the midpoint, then linear deceleration. The shorter high-speed dwell drives the peak speed up to 300 RPM.</p>
+        </div>
+        <div class="axis-badge">Speed [RPM] vs time [ms]</div>
+      </div>
+      <div class="chart-shell">
+        <svg id="chart-triangular" viewBox="0 0 620 320" aria-labelledby="triTitle triDesc" role="img">
+          <title id="triTitle">Triangular speed profile</title>
+          <desc id="triDesc">Linearly increasing then decreasing speed, peaking at 300 RPM at mid-move.</desc>
+        </svg>
+      </div>
+      <div class="law-legend" aria-label="Triangular chart legend">
+        <div class="metric-grid" id="metrics-triangular"></div>
+        <p class="legend-note">The symmetric ramp shape concentrates more of the motion near mid-stroke, which pushes the peak speed highest.</p>
+      </div>
+    </article>
+
+    <article class="chart-card reveal">
+      <div class="chart-top">
+        <div>
+          <div class="law-tag">
+            <span class="law-dot" style="background: var(--trapezoidal);"></span>
+            <p class="eyebrow" style="margin:0;">Chart 3</p>
+          </div>
+          <h2>Trapezoidal law</h2>
+          <p>Faster ramps to a lower peak speed, followed by a cruise segment. This example uses a 25 / 50 / 25 ms split.</p>
+        </div>
+        <div class="axis-badge">Speed [RPM] vs time [ms]</div>
+      </div>
+      <div class="chart-shell">
+        <svg id="chart-trapezoidal" viewBox="0 0 620 320" aria-labelledby="trapTitle trapDesc" role="img">
+          <title id="trapTitle">Trapezoidal speed profile</title>
+          <desc id="trapDesc">Ramp up, cruise, and ramp down with a 200 RPM plateau.</desc>
+        </svg>
+      </div>
+      <div class="law-legend" aria-label="Trapezoidal chart legend">
+        <div class="metric-grid" id="metrics-trapezoidal"></div>
+        <p class="legend-note">The 200 RPM plateau lowers the peak speed compared with the triangular law by spending more time at cruise.</p>
+      </div>
+    </article>
+
+    <article class="chart-card reveal">
+      <div class="chart-top">
+        <div>
+          <div class="law-tag">
+            <span class="law-dot" style="background: var(--scurve);"></span>
+            <p class="eyebrow" style="margin:0;">Chart 4</p>
+          </div>
+          <h2>S-curve law</h2>
+          <p>Smooth minimum-jerk profile with a rounded crest. It softens the transitions, but it does not minimize the absolute peak values under the same timing constraint.</p>
+        </div>
+        <div class="axis-badge">Speed [RPM] vs time [ms]</div>
+      </div>
+      <div class="chart-shell">
+        <svg id="chart-scurve" viewBox="0 0 620 320" aria-labelledby="scTitle scDesc" role="img">
+          <title id="scTitle">S-curve speed profile</title>
+          <desc id="scDesc">Smooth rounded speed profile peaking near 281.3 RPM.</desc>
+        </svg>
+      </div>
+      <div class="law-legend" aria-label="S-curve chart legend">
+        <div class="metric-grid" id="metrics-scurve"></div>
+        <p class="legend-note">Here the S-curve is a quintic minimum-jerk law with a rounded crest and smoother transitions into and out of motion.</p>
+      </div>
+    </article>
+  </section>
+</main>
+
+<script>
+  const move = {
+    angleDeg: 90,
+    durationMs: 100,
+    durationS: 0.1,
+    avgRpm: 150,
+    xDomain: [-5, 105],
+    yDomain: [0, 320],
+  };
+
+  const trapezoidRampFraction = 0.25;
+  const triangularPeakRpm = 2 * move.avgRpm;
+  const trapezoidalPeakRpm = move.avgRpm / (1 - trapezoidRampFraction);
+  const triangularPeakAccel = triangularPeakRpm / (0.5 * move.durationS);
+  const trapezoidalPeakAccel = trapezoidalPeakRpm / (trapezoidRampFraction * move.durationS);
+  const scurvePeakRpm = move.avgRpm * 1.875;
+  const scurvePeakAccel = (move.avgRpm / move.durationS) * (10 / Math.sqrt(3));
+
+  const profiles = [
+    {
+      id: "step",
+      svgId: "chart-step",
+      metricsId: "metrics-step",
+      color: getCss("--step"),
+      dashClass: "step",
+      peakSpeedRpm: move.avgRpm,
+      peakAccelRpmPerS: Number.POSITIVE_INFINITY,
+      speedRpm(ms) {
+        return (ms >= 0 && ms < move.durationMs) ? move.avgRpm : 0;
+      },
+    },
+    {
+      id: "triangular",
+      svgId: "chart-triangular",
+      metricsId: "metrics-triangular",
+      color: getCss("--triangular"),
+      dashClass: "triangular",
+      peakSpeedRpm: triangularPeakRpm,
+      peakAccelRpmPerS: triangularPeakAccel,
+      speedRpm(ms) {
+        const tau = normalizedTime(ms);
+        if (tau <= 0 || tau >= 1) return 0;
+        return tau <= 0.5 ? 4 * move.avgRpm * tau : 4 * move.avgRpm * (1 - tau);
+      },
+    },
+    {
+      id: "trapezoidal",
+      svgId: "chart-trapezoidal",
+      metricsId: "metrics-trapezoidal",
+      color: getCss("--trapezoidal"),
+      dashClass: "trapezoidal",
+      peakSpeedRpm: trapezoidalPeakRpm,
+      peakAccelRpmPerS: trapezoidalPeakAccel,
+      speedRpm(ms) {
+        const tau = normalizedTime(ms);
+        if (tau <= 0 || tau >= 1) return 0;
+        if (tau < trapezoidRampFraction) return trapezoidalPeakRpm * (tau / trapezoidRampFraction);
+        if (tau <= 1 - trapezoidRampFraction) return trapezoidalPeakRpm;
+        return trapezoidalPeakRpm * ((1 - tau) / trapezoidRampFraction);
+      },
+    },
+    {
+      id: "scurve",
+      svgId: "chart-scurve",
+      metricsId: "metrics-scurve",
+      color: getCss("--scurve"),
+      dashClass: "scurve",
+      peakSpeedRpm: scurvePeakRpm,
+      peakAccelRpmPerS: scurvePeakAccel,
+      speedRpm(ms) {
+        const tau = normalizedTime(ms);
+        if (tau <= 0 || tau >= 1) return 0;
+        return move.avgRpm * (30 * tau * tau - 60 * tau * tau * tau + 30 * Math.pow(tau, 4));
+      },
+    },
+  ];
+
+  profiles.forEach((profile) => {
+    drawChart(profile);
+    populateMetrics(profile);
+  });
+
+  function drawChart(profile) {
+    const svg = document.getElementById(profile.svgId);
+    const width = 620;
+    const height = 320;
+    const margin = { top: 18, right: 16, bottom: 42, left: 62 };
+    const plot = {
+      left: margin.left,
+      right: width - margin.right,
+      top: margin.top,
+      bottom: height - margin.bottom,
+      width: width - margin.left - margin.right,
+      height: height - margin.top - margin.bottom,
+    };
+    const xTicks = [0, 20, 40, 60, 80, 100];
+    const yTicks = [0, 50, 100, 150, 200, 250, 300];
+    const sampleTimes = buildSamples(move.xDomain[0], move.xDomain[1], 0.5);
+
+    const xScale = (value) => plot.left + ((value - move.xDomain[0]) / (move.xDomain[1] - move.xDomain[0])) * plot.width;
+    const yScale = (value) => plot.bottom - ((value - move.yDomain[0]) / (move.yDomain[1] - move.yDomain[0])) * plot.height;
+
+    const pieces = [];
+    pieces.push(`<rect class="chart-bg" x="${plot.left}" y="${plot.top}" width="${plot.width}" height="${plot.height}" rx="18"></rect>`);
+    pieces.push(`<rect class="move-window" x="${xScale(0)}" y="${plot.top}" width="${xScale(100) - xScale(0)}" height="${plot.height}" rx="16"></rect>`);
+
+    yTicks.forEach((tick) => {
+      const y = yScale(tick);
+      pieces.push(`<line class="grid-line" x1="${plot.left}" y1="${y}" x2="${plot.right}" y2="${y}"></line>`);
+      pieces.push(`<text class="tick-label" x="${plot.left - 10}" y="${y + 4}" text-anchor="end">${tick}</text>`);
+    });
+
+    xTicks.forEach((tick) => {
+      const x = xScale(tick);
+      pieces.push(`<line class="grid-line" x1="${x}" y1="${plot.top}" x2="${x}" y2="${plot.bottom}"></line>`);
+      pieces.push(`<text class="tick-label" x="${x}" y="${plot.bottom + 24}" text-anchor="middle">${tick}</text>`);
+    });
+
+    pieces.push(`<line class="axis-line" x1="${plot.left}" y1="${plot.bottom}" x2="${plot.right}" y2="${plot.bottom}"></line>`);
+    pieces.push(`<line class="axis-line" x1="${plot.left}" y1="${plot.top}" x2="${plot.left}" y2="${plot.bottom}"></line>`);
+    pieces.push(`<text class="axis-label" x="${plot.left}" y="${plot.top - 8}">Speed [RPM]</text>`);
+    pieces.push(`<text class="axis-label" x="${plot.right}" y="${plot.bottom + 34}" text-anchor="end">Time [ms]</text>`);
+
+    const avgY = yScale(move.avgRpm);
+    pieces.push(`<line class="axis-line" x1="${plot.left}" y1="${avgY}" x2="${plot.right}" y2="${avgY}" stroke-dasharray="6 8" opacity="0.7"></line>`);
+    pieces.push(`<text class="target-label" x="${plot.right - 6}" y="${avgY - 10}" text-anchor="end">150 RPM average</text>`);
+
+    const endX = xScale(100);
+    pieces.push(`<line class="axis-line" x1="${endX}" y1="${plot.top}" x2="${endX}" y2="${plot.bottom}" stroke-dasharray="6 8" opacity="0.6"></line>`);
+    pieces.push(`<text class="target-label" x="${endX - 6}" y="${plot.top + 18}" text-anchor="end">move end</text>`);
+
+    const path = sampleTimes
+      .map((ms, index) => {
+        const x = xScale(ms).toFixed(2);
+        const y = yScale(profile.speedRpm(ms)).toFixed(2);
+        return `${index === 0 ? "M" : "L"} ${x} ${y}`;
+      })
+      .join(" ");
+
+    pieces.push(`<path class="series ${profile.dashClass}" d="${path}" stroke="${profile.color}"></path>`);
+    svg.innerHTML = pieces.join("");
+  }
+
+  function populateMetrics(profile) {
+    const metrics = document.getElementById(profile.metricsId);
+    metrics.innerHTML = [
+      metricCard("Average speed", `${trimZero(move.avgRpm)} RPM`),
+      metricCard("Peak speed", `${trimZero(round1(profile.peakSpeedRpm))} RPM`),
+    ].join("");
+  }
+
+  function metricCard(label, value) {
+    return `
+      <div class="metric">
+        <span>${label}</span>
+        <strong>${value}</strong>
+      </div>
+    `;
+  }
+
+  function buildSamples(start, end, step) {
+    const values = [];
+    for (let current = start; current <= end + 1e-9; current += step) {
+      values.push(Number(current.toFixed(3)));
+    }
+    return values;
+  }
+
+  function normalizedTime(ms) {
+    return ms / move.durationMs;
+  }
+
+  function round1(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  function trimZero(value) {
+    return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+  }
+
+  function getCss(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+</script>
+</body>
+</html>

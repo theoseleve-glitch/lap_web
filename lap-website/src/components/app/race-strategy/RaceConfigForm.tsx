@@ -260,8 +260,8 @@ export function RaceConfigForm({
   const fieldId = useId();
   const [error, setError] = useState('');
 
-  const isSimple = raceStrategyLimit === '4h_simple';
-  const isComplex = !raceStrategyLimit || raceStrategyLimit !== '4h_simple';
+  const isDemo = raceStrategyLimit === '4h_basic';
+  const isComplex = raceStrategyLimit === '24h_complex' || raceStrategyLimit === 'unlimited';
 
   /* ---- form state ---- */
   const [raceName, setRaceName] = useState('');
@@ -592,19 +592,19 @@ export function RaceConfigForm({
 
       <form onSubmit={handleSubmit}>
         {/* Upgrade banners */}
-        {isSimple && (
+        {isDemo && (
           <div className="mb-4">
             <UpgradeBanner
-              feature="race_strategy_full"
-              context="Simple plan: races limited to 4 hours, basic features only. Upgrade for advanced optimization, tech stops, and endurance support."
+              feature="race_strategy_complex"
+              context="Demo plan: races up to 4 hours. Upgrade for 24-hour races and advanced features."
             />
           </div>
         )}
-        {raceStrategyLimit === '12h_complex' && (
+        {isComplex && raceStrategyLimit !== 'unlimited' && (
           <div className="mb-4">
             <UpgradeBanner
-              feature="race_strategy_unlimited"
-              context="Complex plan: races up to 12 hours. Upgrade for unlimited duration."
+              feature="race_strategy_full"
+              context="Racer plan: races up to 24 hours. Upgrade to World-Class for unlimited duration."
             />
           </div>
         )}
@@ -744,10 +744,7 @@ export function RaceConfigForm({
                     <label className={labelCls}>Avg Lap Time (s)</label>
                     <input aria-label={`Driver ${i + 1} avg lap time`} className={inputCls} value={d.avg_lap_time_s} onChange={(e) => updateDriver(i, 'avg_lap_time_s', e.target.value)} placeholder="e.g. 62.5" type="number" step="0.1" />
                   </div>
-                  <div>
-                    <label className={labelCls}>Rain Pace (%)</label>
-                    <input aria-label={`Driver ${i + 1} rain pace`} className={inputCls} value={d.wet_confidence} onChange={(e) => updateDriver(i, 'wet_confidence', e.target.value)} placeholder="100 = same as dry" type="number" min="0" max="100" step="5" title="100% = same speed in wet, 50% = half speed" />
-                  </div>
+                  {/* Rain Pace hidden until V2 */}
                 </div>
                 {d.showConstraints && (
                   <>

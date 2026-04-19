@@ -10,7 +10,7 @@ describe('Token system', () => {
     expect(colors.asphalt).toBe('#000000');
     expect(colors.concrete).toBe('#141414');
     expect(colors.chalk).toBe('#F0EDE5');
-    expect(colors.steel).toBe('#888888');
+    expect(colors.steel).toBe('#949494');
   });
 
   it('exports all accent colors matching tokens.css', () => {

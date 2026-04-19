@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LAP Driver Development Studio</title>
+<style>
+:root{--bg:#000;--s1:#080808;--s2:#0e0e0e;--s3:#141414;--bd:#1a1a1a;--bd2:#252525;
+--c:#F0EDE5;--c2:#B0ADA6;--st:#7a7a7a;--dm:#444;--gd:#C9A84C;--gn:#22C55E;--rd:#FF2A2A;
+--pr:#8B5CF6;--bl:#3B82F6;--am:#F59E0B;
+--f:'SF Mono','Cascadia Code','Consolas',monospace;
+--fb:-apple-system,'Segoe UI',Arial,sans-serif;--r:5px}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:var(--bg);color:var(--c);font-family:var(--f);overflow:hidden}
+/* ── GRID ── */
+.app{display:grid;height:100vh;
+  grid-template-rows:44px 1fr 140px;
+  grid-template-columns:260px 1fr 280px;
+  grid-template-areas:"bar bar bar" "rail stage evidence" "strip strip strip"}
+@media(max-width:1100px){.app{grid-template-columns:220px 1fr 0;grid-template-areas:"bar bar bar" "rail stage stage" "strip strip strip"}.evidence{display:none}}}
+@media(max-width:768px){.app{grid-template-columns:1fr;grid-template-rows:44px auto 1fr 140px;grid-template-areas:"bar" "rail" "stage" "strip"}.rail{max-height:30vh;overflow-y:auto}.evidence{display:none}}}
+/* ── TOP BAR ── */
+.bar{grid-area:bar;display:flex;align-items:center;gap:16px;padding:0 16px;background:var(--s1);border-bottom:1px solid var(--bd)}
+.logo{font-family:var(--fb);font-weight:800;font-size:16px;letter-spacing:.14em;color:var(--gd)}
+.meta{font-size:10px;color:var(--st);display:flex;gap:12px;flex:1}
+.meta b{color:var(--c2);font-weight:600}
+.pill{font-size:8px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:99px;line-height:1.4}
+.pill-c{color:var(--gn);background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.15)}
+.pill-b{color:var(--pr);background:rgba(139,92,246,.08);border:1px solid rgba(139,92,246,.15)}
+.pill-d{color:var(--am);background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.12)}
+.osel{display:flex;gap:3px}
+.osel button{font-family:var(--f);font-size:9px;padding:3px 9px;border:1px solid var(--bd2);background:transparent;color:var(--st);cursor:pointer;border-radius:var(--r);transition:.15s}
+.osel button:hover{color:var(--c2);border-color:var(--st)}
+.osel button.on{color:var(--gd);border-color:var(--gd);background:rgba(201,168,76,.05)}
+/* ── LEFT RAIL ── */
+.rail{grid-area:rail;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;border-right:1px solid var(--bd)}
+.hd{font-size:8px;text-transform:uppercase;letter-spacing:.12em;font-weight:700;margin-bottom:5px}
+.hd-g{color:var(--gd)}.hd-s{color:var(--st)}
+.dir{font-family:var(--fb);font-size:22px;font-weight:800;letter-spacing:-.03em;line-height:1.1}
+.sub{font-size:10px;color:var(--st);margin-top:2px}
+.stline{font-family:var(--fb);font-size:11px;line-height:1.55;color:var(--st);margin-bottom:3px;cursor:pointer;transition:.15s;padding:2px 0;border-left:2px solid transparent}
+.stline:hover{color:var(--c2);border-left-color:var(--gd);padding-left:6px}
+.fcard{background:var(--s2);border:1px solid var(--gd);border-radius:var(--r);padding:10px;cursor:pointer;transition:.2s}
+.fcard:hover{background:var(--s3)}
+.fcard .fk{font-size:8px;color:var(--gd);text-transform:uppercase;letter-spacing:.1em;font-weight:700;margin-bottom:3px}
+.fcard .fl{font-family:var(--fb);font-size:13px;font-weight:700;margin-bottom:3px}
+.fcard .fm{font-size:10px;color:var(--st);line-height:1.45}
+.wr{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid var(--bd);font-size:10px;cursor:pointer;transition:.12s}
+.wr:hover{padding-left:4px;border-left:2px solid var(--gd)}
+.wr:last-child{border-bottom:none}
+.wr .nm{flex:1;color:var(--c2)}
+.wr .ct{color:var(--st);font-size:9px}
+.tp{font-size:8px;font-weight:700;padding:1px 5px;border-radius:99px;letter-spacing:.04em}
+.t-i{color:var(--gn);background:rgba(34,197,94,.07)}.t-f{color:var(--st);background:rgba(148,148,148,.07)}.t-r{color:var(--rd);background:rgba(255,42,42,.07)}
+/* ── CENTER STAGE ── */
+.stage{grid-area:stage;position:relative;overflow:hidden;background:var(--bg)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%}
+#cursor{position:absolute;width:10px;height:10px;border-radius:50%;background:var(--gd);box-shadow:0 0 8px rgba(201,168,76,.5);pointer-events:none;z-index:6;display:none;transform:translate(-50%,-50%);transition:left .04s,top .04s}
+/* ── RIGHT RAIL ── */
+.evidence{grid-area:evidence;overflow-y:auto;padding:14px;border-left:1px solid var(--bd);display:flex;flex-direction:column;gap:8px}
+.cc{background:var(--s1);border:1px solid var(--bd);border-radius:var(--r);padding:7px 9px;cursor:pointer;transition:.15s;display:flex;justify-content:space-between;align-items:center}
+.cc:hover{border-color:var(--st);background:var(--s2)}
+.cc.sel{border-color:var(--gd);background:var(--s2)}
+.cc .cid{font-size:10px;font-weight:700}.cc .cd{font-size:12px;font-weight:700}
+.cd.loss{color:var(--rd)}.cd.gain{color:var(--gn)}.cd.even{color:var(--st)}
+.dossier{background:var(--s2);border:1px solid var(--bd2);border-radius:var(--r);padding:10px;display:none}
+.dossier.open{display:block}
+.coach{font-family:var(--fb);font-size:11px;color:var(--c2);line-height:1.55;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--bd)}
+.erow{display:flex;justify-content:space-between;font-size:10px;padding:2px 0}
+.erow .el{color:var(--st)}.erow .ev{color:var(--c);font-weight:600}
+/* ── BOTTOM STRIP ── */
+.strip{grid-area:strip;display:flex;border-top:1px solid var(--bd);background:var(--s1);position:relative}
+.strip-sec{flex:1;padding:8px 12px;border-right:1px solid var(--bd);position:relative;overflow:hidden}
+.strip-sec:last-child{border-right:none}
+.strip-sec canvas{width:100%;height:100%}
+.strip-title{font-size:8px;text-transform:uppercase;letter-spacing:.1em;color:var(--gd);font-weight:700;margin-bottom:4px}
+#scrubLine{position:absolute;top:0;bottom:0;width:1px;background:var(--gd);opacity:.5;pointer-events:none;z-index:5;display:none}
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:2px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="bar">
+    <div class="logo">LAP</div>
+    <div class="meta"><span><b id="bTk">--</b></span><span><b id="bSe">--</b> sessions</span><span><b id="bLa">--</b> laps</span><span id="bBe">--</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="pill pill-c" id="pCan">Canonical</span>
+      <span class="pill pill-b" id="pBet" style="display:none">Beta</span>
+      <span class="pill pill-d" id="pDia" style="display:none">Diagnostic</span>
+    </div>
+    <div class="osel" id="osel"></div>
+  </div>
+  <div class="rail" id="rail"></div>
+  <div class="stage" id="stage">
+    <canvas id="trkC"></canvas>
+    <div id="cursor"></div>
+  </div>
+  <div class="evidence" id="evid"></div>
+  <div class="strip" id="strip">
+    <div id="scrubLine"></div>
+  </div>
+</div>
+
+<script>
+const INLINE_DATA = null;
+
+'use strict';
+const D = INLINE_DATA;
+if (!D) { document.body.textContent = 'No data. Run build_ok_raw.py'; }
+
+/* ═══════════════════════════════════════════════════
+   SHARED STATE BUS
+   ═══════════════════════════════════════════════════ */
+const S = {
+  overlay: 'delta',
+  hoveredS: -1,
+  pinnedS: -1,
+  selectedCorner: null,
+  selectedWeakness: null,
+  productLayer: 'canonical',
+};
+const listeners = [];
+function on(fn) { listeners.push(fn); }
+function set(patch) {
+  Object.assign(S, patch);
+  listeners.forEach(fn => fn(S));
+}
+
+/* ═══════════════════════════════════════════════════
+   DATA SHORTCUTS — must be declared before boot()
+   ═══════════════════════════════════════════════════ */
+const T = D ? D.track : {}, DI = D ? (D.development_intelligence || {}) : {},
+      SC = D ? (D.session_compare || {}) : {}, GL = D ? (D.gold_lab || {}) : {},
+      ST = D ? (D.stats || {}) : {}, TR = SC.traces || {};
+const CX = T.centerline_x || [], CY = T.centerline_y || [], NP = CX.length;
+const PKTS = SC.corner_packets || [];
+const FIXES = SC.top_fixes || [];
+const WEAK = DI.recurring_weaknesses || [];
+const STRONG = DI.recurring_strengths || [];
+const FOCUSES = DI.priority_focuses || [];
+const SESSIONS = DI.session_summaries || [];
+
+if (D) { try { boot(); } catch(e) { document.body.textContent = 'ERROR: ' + e.message + ' at ' + e.stack; } }
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════ */
+function el(tag, cls, txt) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (txt !== undefined) e.textContent = txt;
+  return e;
+}
+function fmt(v, nd) { return v != null ? (typeof v === 'number' ? v.toFixed(nd || 1) : String(v)) : '--'; }
+
+/* Track geometry helpers — declared early so renderTrack can use them */
+var trkBounds = null, trkScale = 1, trkOx = 0, trkOy = 0;
+function computeTrackTransform(w, h) {
+  let xMn = Infinity, xMx = -Infinity, yMn = Infinity, yMx = -Infinity;
+  for (let i = 0; i < NP; i++) {
+    if (CX[i] < xMn) xMn = CX[i]; if (CX[i] > xMx) xMx = CX[i];
+    if (CY[i] < yMn) yMn = CY[i]; if (CY[i] > yMx) yMx = CY[i];
+  }
+  const pad = 50;
+  const sx = (w - pad * 2) / (xMx - xMn || 1);
+  const sy = (h - pad * 2) / (yMx - yMn || 1);
+  trkScale = Math.min(sx, sy);
+  trkOx = pad + (w - pad * 2 - (xMx - xMn) * trkScale) / 2;
+  trkOy = pad + (h - pad * 2 - (yMx - yMn) * trkScale) / 2;
+  trkBounds = { xMn, xMx, yMn, yMx };
+}
+function txp(x) { return trkOx + (x - trkBounds.xMn) * trkScale; }
+function typ(y) { return trkOy + (trkBounds.yMx - y) * trkScale; }
+
+function sToTrackIndex(s) {
+  return Math.min(NP - 1, Math.max(0, Math.round(s / (T.length_m || 1200) * NP)));
+}
+function traceIndexFromS(s) {
+  const sg = TR.s_grid;
+  if (!sg || sg.length < 2) return 0;
+  return Math.min(sg.length - 1, Math.max(0, Math.round(s / sg[sg.length - 1] * (sg.length - 1))));
+}
+function cornerAtS(s) {
+  for (const p of PKTS) {
+    if (s >= p.s_entry_m - 10 && s <= p.s_exit_m + 10) return p;
+  }
+  return null;
+}
+
+/* ═══════════════════════════════════════════════════
+   BOOT
+   ═══════════════════════════════════════════════════ */
+function boot() {
+  buildBar();
+  buildRail();
+  buildEvidence();
+  buildStrip();
+  // State listeners
+  on(renderTrack);
+  on(renderCursor);
+  on(renderScrubLine);
+  on(renderEvidenceSelection);
+  // Initial render
+  set({ overlay: 'delta' });
+  // Resize
+  window.addEventListener('resize', () => set({}));
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') set({ pinnedS: -1, selectedCorner: null, selectedWeakness: null });
+    if (e.key === 'ArrowRight' && S.selectedCorner) {
+      const idx = PKTS.indexOf(S.selectedCorner);
+      if (idx < PKTS.length - 1) set({ selectedCorner: PKTS[idx + 1], pinnedS: PKTS[idx + 1].s_apex_m });
+    }
+    if (e.key === 'ArrowLeft' && S.selectedCorner) {
+      const idx = PKTS.indexOf(S.selectedCorner);
+      if (idx > 0) set({ selectedCorner: PKTS[idx - 1], pinnedS: PKTS[idx - 1].s_apex_m });
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   TOP BAR
+   ═══════════════════════════════════════════════════ */
+function buildBar() {
+  document.getElementById('bTk').textContent = T.name || '--';
+  document.getElementById('bSe').textContent = DI.sessions_analyzed || '--';
+  document.getElementById('bLa').textContent = DI.laps_analyzed || ST.n_laps_total || '--';
+  document.getElementById('bBe').textContent = 'Best: ' + (ST.best_lap_time_s || 0).toFixed(2) + 's';
+  if (GL.candidate_products && GL.candidate_products.lat_demand_bank_corrected_beta) {
+    document.getElementById('pBet').style.display = '';
+  }
+  const osel = document.getElementById('osel');
+  [['delta','Delta'],['demand','Bronze'],['speed','Speed'],['beta','Beta'],['bank','Bank']].forEach(([k, l]) => {
+    const b = el('button', 'osel-btn' + (k === 'delta' ? ' on' : ''), l);
+    b.dataset.ov = k;
+    b.onclick = () => {
+      osel.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      const layer = k === 'beta' ? 'beta' : k === 'bank' ? 'diagnostic' : 'canonical';
+      document.getElementById('pBet').style.display = k === 'beta' ? '' : 'none';
+      document.getElementById('pDia').style.display = k === 'bank' ? '' : 'none';
+      set({ overlay: k, productLayer: layer });
+    };
+    osel.appendChild(b);
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   LEFT RAIL
+   ═══════════════════════════════════════════════════ */
+function buildRail() {
+  const r = document.getElementById('rail');
+  const dirMap = { improving: { t: 'Improving', c: 'var(--gn)' }, flat: { t: 'Flat', c: 'var(--st)' },
+    regressing: { t: 'Regressing', c: 'var(--rd)' }, consolidating: { t: 'Consolidating', c: 'var(--gd)' },
+    insufficient_data: { t: 'Insufficient Data', c: 'var(--dm)' } };
+  const dir = dirMap[DI.overall_direction] || dirMap.insufficient_data;
+
+  // Direction
+  const dEl = el('div', 'dir', dir.t); dEl.style.color = dir.c;
+  r.appendChild(dEl);
+  const sub = el('div', 'sub', (DI.sessions_analyzed || 0) + ' sessions at ' + (DI.track_name || '') + ' | ' + ((DI.analysis_confidence || 0) * 100).toFixed(0) + '% confidence');
+  r.appendChild(sub);
+
+  // Storyline
+  const stW = el('div'); stW.appendChild(el('div', 'hd hd-s', 'Story'));
+  (DI.storyline || []).forEach(st => {
+    const row = el('div', 'stline');
+    const colors = { direction: 'var(--gn)', consistency: 'var(--gd)', progress: 'var(--gn)', plateau: 'var(--rd)', priority: 'var(--gd)', warning: 'var(--st)' };
+    const sp = el('span', '', st.type.toUpperCase() + ' '); sp.style.cssText = 'color:' + (colors[st.type] || 'var(--st)') + ';font-weight:600;font-size:9px';
+    row.appendChild(sp);
+    row.appendChild(document.createTextNode(st.text));
+    stW.appendChild(row);
+  });
+  r.appendChild(stW);
+
+  // Primary focus
+  if (FOCUSES.length) {
+    const f = FOCUSES[0];
+    const fw = el('div'); fw.appendChild(el('div', 'hd hd-g', 'Work This First'));
+    const fc = el('div', 'fcard');
+    fc.appendChild(el('div', 'fk', '#1 Priority'));
+    fc.appendChild(el('div', 'fl', f.label));
+    const fm = el('div', 'fm'); fm.textContent = f.why_it_matters;
+    fc.appendChild(fm);
+    const fs = el('div', 'fm'); fs.textContent = 'Shows at: ' + f.where_it_shows;
+    fc.appendChild(fs);
+    fc.onclick = () => {
+      set({ selectedWeakness: f.behavior_id });
+      // Highlight first associated corner
+      const assocCorners = (WEAK.find(w => w.behavior_id === f.behavior_id) || {}).corners_observed || [];
+      if (assocCorners.length) {
+        const pkt = PKTS.find(p => p.corner_id === assocCorners[0]);
+        if (pkt) set({ selectedCorner: pkt, pinnedS: pkt.s_apex_m });
+      }
+    };
+    fw.appendChild(fc);
+    r.appendChild(fw);
+  }
+
+  // Queue
+  if (FOCUSES.length > 1) {
+    const qw = el('div'); qw.appendChild(el('div', 'hd hd-s', 'Training Queue'));
+    FOCUSES.slice(1).forEach(f => {
+      const row = el('div', 'wr');
+      row.appendChild(Object.assign(el('span', 'nm', '#' + f.rank + ' ' + f.label), {}));
+      row.appendChild(el('span', '', '~' + Math.abs(f.time_cost_ms).toFixed(0) + 'ms'));
+      row.style.cssText += ';font-size:10px';
+      row.children[1].style.cssText = 'color:var(--gd);font-weight:600;font-size:9px';
+      qw.appendChild(row);
+    });
+    r.appendChild(qw);
+  }
+
+  // Weaknesses
+  const ww = el('div'); ww.appendChild(el('div', 'hd hd-s', 'Weaknesses'));
+  WEAK.forEach(w => {
+    const row = el('div', 'wr');
+    row.appendChild(el('span', 'nm', w.label));
+    row.appendChild(el('span', 'ct', w.occurrence_count + ''));
+    const tc = w.trend === 'improving' ? 't-i' : w.trend === 'regressing' ? 't-r' : 't-f';
+    row.appendChild(el('span', 'tp ' + tc, w.trend));
+    row.onclick = () => set({ selectedWeakness: w.behavior_id });
+    ww.appendChild(row);
+  });
+  r.appendChild(ww);
+
+  // Strengths
+  if (STRONG.length) {
+    const sw = el('div'); sw.appendChild(el('div', 'hd hd-s', 'Strengths'));
+    STRONG.forEach(s => {
+      const row = el('div', ''); row.style.cssText = 'font-size:10px;padding:3px 0;color:var(--gn)';
+      row.textContent = '\u2713 ' + s.label + ' (' + s.occurrence_count + ')';
+      sw.appendChild(row);
+    });
+    r.appendChild(sw);
+  }
+
+  // Footer
+  const ft = el('div', '', 'All coaching from canonical Bronze signals only.');
+  ft.style.cssText = 'margin-top:auto;padding-top:10px;border-top:1px solid var(--bd);font-size:8px;color:var(--dm);line-height:1.5';
+  r.appendChild(ft);
+}
+
+/* ═══════════════════════════════════════════════════
+   RIGHT RAIL — Evidence Inspector
+   ═══════════════════════════════════════════════════ */
+function buildEvidence() {
+  const r = document.getElementById('evid');
+  r.appendChild(el('div', 'hd hd-g', 'Corner Evidence'));
+  PKTS.forEach(pkt => {
+    const c = el('div', 'cc'); c.dataset.cid = pkt.corner_id;
+    c.appendChild(el('span', 'cid', 'T' + pkt.corner_id));
+    const cls = pkt.time_delta_ms > 5 ? 'cd loss' : pkt.time_delta_ms < -5 ? 'cd gain' : 'cd even';
+    c.appendChild(el('span', cls, (pkt.time_delta_ms > 0 ? '+' : '') + pkt.time_delta_ms.toFixed(0) + 'ms'));
+    c.onclick = () => set({ selectedCorner: pkt, pinnedS: pkt.s_apex_m });
+    c.onmouseenter = () => { if (!S.selectedCorner) set({ hoveredS: pkt.s_apex_m }); };
+    c.onmouseleave = () => { if (!S.selectedCorner) set({ hoveredS: -1 }); };
+    r.appendChild(c);
+  });
+  // Dossier
+  const dos = el('div', 'dossier'); dos.id = 'dossier';
+  r.appendChild(dos);
+}
+
+function renderEvidenceSelection() {
+  // Highlight selected corner card
+  document.querySelectorAll('.cc').forEach(c => {
+    c.classList.toggle('sel', S.selectedCorner && parseInt(c.dataset.cid) === S.selectedCorner.corner_id);
+  });
+  // Build dossier
+  const dos = document.getElementById('dossier');
+  if (!S.selectedCorner) { dos.className = 'dossier'; return; }
+  dos.className = 'dossier open';
+  dos.textContent = '';
+  const pkt = S.selectedCorner, ev = pkt.evidence || {};
+  dos.appendChild(el('div', 'hd hd-g', 'Turn ' + pkt.corner_id + ' Evidence'));
+  const coach = el('div', 'coach', pkt.coach_text || '--');
+  dos.appendChild(coach);
+  const rows = [
+    ['Min speed ref', fmt(ev.min_speed_ref_kph) + ' kph', null],
+    ['Min speed cand', fmt(ev.min_speed_cand_kph) + ' kph', null],
+    ['Speed delta', fmt(ev.min_speed_delta_kph) + ' kph', (ev.min_speed_delta_kph || 0) < 0 ? 'var(--rd)' : 'var(--gn)'],
+    ['Brake point', ev.brake_point_delta_m != null ? ev.brake_point_delta_m + 'm' : '--', null],
+    ['Throttle pickup', ev.throttle_pickup_delta_m != null ? ev.throttle_pickup_delta_m + 'm' : '--', null],
+    ['Exit speed', fmt(ev.exit_speed_delta_kph) + ' kph', (ev.exit_speed_delta_kph || 0) < 0 ? 'var(--rd)' : 'var(--gn)'],
+    ['Line dev.', fmt(ev.line_deviation_rms_m) + ' m', null],
+    ['Confidence', (pkt.confidence * 100).toFixed(0) + '%', null],
+  ];
+  rows.forEach(([l, v, c]) => {
+    const row = el('div', 'erow');
+    row.appendChild(el('span', 'el', l));
+    const ve = el('span', 'ev', v);
+    if (c) ve.style.color = c;
+    row.appendChild(ve);
+    dos.appendChild(row);
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   CENTER STAGE — Track Canvas
+   ═══════════════════════════════════════════════════ */
+function renderTrack() {
+  const canvas = document.getElementById('trkC');
+  const stage = document.getElementById('stage');
+  if (!canvas || !stage) return;
+  const dpr = devicePixelRatio || 1;
+  const w = stage.clientWidth, h = stage.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  computeTrackTransform(w, h);
+
+  // Track outline (dark, wide)
+  ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < NP; i++) { i ? ctx.lineTo(txp(CX[i]), typ(CY[i])) : ctx.moveTo(txp(CX[0]), typ(CY[0])); }
+  ctx.stroke();
+
+  // Track colored segments
+  ctx.lineWidth = 8; ctx.lineCap = 'round';
+  for (let i = 1; i < NP; i++) {
+    ctx.strokeStyle = getSegColor(i);
+    ctx.beginPath();
+    ctx.moveTo(txp(CX[i - 1]), typ(CY[i - 1]));
+    ctx.lineTo(txp(CX[i]), typ(CY[i]));
+    ctx.stroke();
+  }
+
+  // Corner labels
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  PKTS.forEach(pkt => {
+    const si = sToTrackIndex(pkt.s_apex_m);
+    const px = txp(CX[si]), py = typ(CY[si]);
+    const isSel = S.selectedCorner && S.selectedCorner.corner_id === pkt.corner_id;
+    const isHov = !isSel && S.hoveredS >= 0 && cornerAtS(S.hoveredS) === pkt;
+    ctx.font = (isSel || isHov ? 'bold ' : '') + '9px monospace';
+    const txt = 'T' + pkt.corner_id;
+    const tw = ctx.measureText(txt).width + 8;
+    const bg = isSel ? 'rgba(201,168,76,.95)' : isHov ? 'rgba(201,168,76,.5)' : pkt.time_delta_ms > 50 ? 'rgba(255,42,42,.55)' : pkt.time_delta_ms < -50 ? 'rgba(34,197,94,.55)' : 'rgba(100,100,100,.4)';
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(px - tw / 2, py - 7, tw, 14, 3);
+    else ctx.rect(px - tw / 2, py - 7, tw, 14);
+    ctx.fill();
+    ctx.fillStyle = isSel ? '#000' : '#fff';
+    ctx.fillText(txt, px, py);
+  });
+}
+
+function getSegColor(i) {
+  const f = i / NP, ov = S.overlay;
+  if (ov === 'delta') {
+    const dt = TR.delta_time_s; if (!dt || dt.length < 2) return '#222';
+    const di = Math.min(dt.length - 1, Math.max(0, Math.floor(f * dt.length)));
+    const prev = di > 0 ? dt[di - 1] : 0, d = dt[di] - prev;
+    const t = Math.max(-1, Math.min(1, d / 0.04));
+    return t > 0 ? 'rgba(255,42,42,' + Math.min(1, t * 2.5 + .15) + ')' : 'rgba(34,197,94,' + Math.min(1, -t * 2.5 + .15) + ')';
+  }
+  if (ov === 'demand') {
+    const ld = D.lateral_demand; if (!ld || !ld.excited_p90) return '#222';
+    const v = ld.excited_p90[Math.min(ld.excited_p90.length - 1, Math.floor(f * ld.excited_p90.length))];
+    const t = Math.min(1, v / 1.5);
+    return t < .25 ? 'rgba(26,26,46,' + (.4 + t) + ')' : t < .5 ? 'rgba(59,130,246,' + (.3 + t) + ')' : t < .75 ? 'rgba(250,204,21,' + (.3 + t) + ')' : 'rgba(34,197,94,' + (.3 + t) + ')';
+  }
+  if (ov === 'speed') {
+    const drv = D.drivers.hamilton; if (!drv) return '#222';
+    const v = drv.speed_kph[Math.min(drv.speed_kph.length - 1, Math.floor(f * drv.speed_kph.length))];
+    const t = Math.min(1, v / 80);
+    return t < .4 ? 'rgba(255,42,42,' + (.2 + t) + ')' : t < .7 ? 'rgba(250,204,21,' + (.2 + t) + ')' : 'rgba(34,197,94,' + (.2 + t) + ')';
+  }
+  if (ov === 'beta') {
+    const beta = GL.candidate_products && GL.candidate_products.lat_demand_bank_corrected_beta;
+    if (!beta || !beta.excited_p90) return '#222';
+    const v = beta.excited_p90[Math.min(beta.excited_p90.length - 1, Math.floor(f * beta.excited_p90.length))];
+    return 'rgba(139,92,246,' + (.15 + Math.min(.7, v / 1.5 * .6)) + ')';
+  }
+  if (ov === 'bank') {
+    const raf = D.road_attitude_field; if (!raf || !raf.bank_mean_deg) return '#222';
+    const b = raf.bank_mean_deg[Math.min(raf.bank_mean_deg.length - 1, Math.floor(f * raf.bank_mean_deg.length))];
+    const t = Math.max(-1, Math.min(1, b / 8));
+    return t < 0 ? 'rgba(59,130,246,' + (.15 + Math.min(.7, -t * .6)) + ')' : 'rgba(139,92,246,' + (.15 + Math.min(.7, t * .6)) + ')';
+  }
+  return '#222';
+}
+
+/* ═══════════════════════════════════════════════════
+   CURSOR — follows hovered/pinned S on the track
+   ═══════════════════════════════════════════════════ */
+function renderCursor() {
+  const cur = document.getElementById('cursor');
+  const s = S.pinnedS >= 0 ? S.pinnedS : S.hoveredS;
+  if (s < 0 || !trkBounds) { cur.style.display = 'none'; return; }
+  cur.style.display = 'block';
+  const si = sToTrackIndex(s);
+  cur.style.left = txp(CX[si]) + 'px';
+  cur.style.top = typ(CY[si]) + 'px';
+}
+
+/* ═══════════════════════════════════════════════════
+   BOTTOM STRIP
+   ═══════════════════════════════════════════════════ */
+function buildStrip() {
+  const strip = document.getElementById('strip');
+
+  // Session timeline
+  const s1 = el('div', 'strip-sec');
+  s1.appendChild(el('div', 'strip-title', 'Sessions'));
+  const worst = Math.max(...SESSIONS.map(s => s.median_lap_time_s), 1);
+  const best_ = Math.min(...SESSIONS.map(s => s.best_lap_time_s), worst);
+  const range = Math.max(worst - best_, 1);
+  SESSIONS.forEach(ss => {
+    const pct = Math.max(5, (worst - ss.best_lap_time_s) / range * 100);
+    const row = el('div', ''); row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:1px 0;font-size:9px';
+    row.appendChild(Object.assign(el('span', '', ss.session_id), { style: { cssText: 'width:50px;color:var(--st)' } }));
+    const barW = el('div', ''); barW.style.cssText = 'flex:1;height:3px;background:var(--bd);border-radius:2px;position:relative';
+    const barF = el('div'); barF.style.cssText = 'position:absolute;top:0;left:0;height:100%;border-radius:2px;background:var(--gd);width:' + pct + '%';
+    barW.appendChild(barF);
+    row.appendChild(barW);
+    row.appendChild(Object.assign(el('span', '', ss.best_lap_time_s.toFixed(1) + 's'), { style: { cssText: 'width:45px;text-align:right;color:var(--gd);font-weight:600' } }));
+    s1.appendChild(row);
+  });
+  strip.appendChild(s1);
+
+  // Speed compare
+  const s2 = el('div', 'strip-sec'); s2.id = 'speedSec';
+  s2.appendChild(el('div', 'strip-title', 'Speed'));
+  const spC = el('canvas'); spC.id = 'spC';
+  s2.appendChild(spC);
+  s2.addEventListener('mousemove', e => {
+    const rect = s2.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const sg = TR.s_grid;
+    if (sg && sg.length > 1) set({ hoveredS: frac * sg[sg.length - 1] });
+  });
+  s2.addEventListener('mouseleave', () => { if (S.pinnedS < 0) set({ hoveredS: -1 }); });
+  s2.addEventListener('click', e => {
+    const rect = s2.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const sg = TR.s_grid;
+    if (sg && sg.length > 1) {
+      const s = frac * sg[sg.length - 1];
+      const c = cornerAtS(s);
+      set({ pinnedS: s, selectedCorner: c });
+    }
+  });
+  strip.appendChild(s2);
+
+  // Delta trace
+  const s3 = el('div', 'strip-sec'); s3.id = 'deltaSec';
+  s3.appendChild(el('div', 'strip-title', 'Delta'));
+  const dtC = el('canvas'); dtC.id = 'dtC';
+  s3.appendChild(dtC);
+  s3.addEventListener('mousemove', e => {
+    const rect = s3.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    const sg = TR.s_grid;
+    if (sg && sg.length > 1) set({ hoveredS: frac * sg[sg.length - 1] });
+  });
+  s3.addEventListener('mouseleave', () => { if (S.pinnedS < 0) set({ hoveredS: -1 }); });
+  strip.appendChild(s3);
+
+  // Attribution
+  const s4 = el('div', 'strip-sec');
+  s4.appendChild(el('div', 'strip-title', 'Attribution'));
+  const att = (SC.global_summary || {}).time_lost_by_phase;
+  if (att) {
+    const total = Math.max(Math.abs(att.total_s), .01);
+    [['Braking', att.braking_s, 'var(--rd)'], ['Corner', att.corner_s, 'var(--gd)'],
+     ['Exit', att.exit_traction_s, 'var(--gn)'], ['Straight', att.straight_carry_s, 'var(--bl)']].forEach(([l, v, c]) => {
+      const row = el('div', 'erow');
+      row.appendChild(el('span', 'el', l));
+      const ve = el('span', 'ev', (v >= 0 ? '+' : '') + v.toFixed(2) + 's');
+      ve.style.color = c;
+      row.appendChild(ve);
+      s4.appendChild(row);
+    });
+  }
+  strip.appendChild(s4);
+
+  // Initial draw
+  requestAnimationFrame(() => { drawSpeedChart(); drawDeltaChart(); });
+  on(drawSpeedChart);
+  on(drawDeltaChart);
+}
+
+function drawSpeedChart() {
+  const c = document.getElementById('spC'); if (!c) return;
+  const sec = document.getElementById('speedSec'); if (!sec) return;
+  const dpr = devicePixelRatio || 1;
+  const w = sec.clientWidth - 24, h = sec.clientHeight - 24;
+  if (w < 20 || h < 20) return;
+  c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px';
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const sg = TR.s_grid, rs = TR.ref_speed_kph, cs = TR.cand_speed_kph;
+  if (!sg || sg.length < 5) return;
+  const n = sg.length, vM = Math.max(...rs, ...cs) * 1.05;
+  // Ref
+  ctx.strokeStyle = 'rgba(201,168,76,.7)'; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = 0; i < n; i++) { const x = i / n * w, y = h - rs[i] / vM * h; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+  // Cand
+  ctx.strokeStyle = 'rgba(148,148,148,.4)'; ctx.lineWidth = 1; ctx.beginPath();
+  for (let i = 0; i < n; i++) { const x = i / n * w, y = h - cs[i] / vM * h; i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+  ctx.stroke();
+  // Scrub cursor
+  if (S.hoveredS >= 0 || S.pinnedS >= 0) {
+    const s = S.pinnedS >= 0 ? S.pinnedS : S.hoveredS;
+    const maxS = sg[sg.length - 1];
+    const x = (s / maxS) * w;
+    ctx.strokeStyle = 'rgba(201,168,76,.4)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+}
+
+function drawDeltaChart() {
+  const c = document.getElementById('dtC'); if (!c) return;
+  const sec = document.getElementById('deltaSec'); if (!sec) return;
+  const dpr = devicePixelRatio || 1;
+  const w = sec.clientWidth - 24, h = sec.clientHeight - 24;
+  if (w < 20 || h < 20) return;
+  c.width = w * dpr; c.height = h * dpr; c.style.width = w + 'px'; c.style.height = h + 'px';
+  const ctx = c.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  const dt = TR.delta_time_s, sg = TR.s_grid;
+  if (!dt || dt.length < 5) return;
+  const n = dt.length, dM = Math.max(.1, ...dt.map(Math.abs)) * 1.1;
+  // Zero
+  ctx.strokeStyle = 'rgba(42,42,42,.5)'; ctx.lineWidth = .5;
+  ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+  // Fill
+  ctx.beginPath(); ctx.moveTo(0, h / 2);
+  for (let i = 0; i < n; i++) ctx.lineTo(i / n * w, h / 2 - dt[i] / dM * (h / 2));
+  ctx.lineTo(w, h / 2); ctx.closePath();
+  ctx.fillStyle = dt[n - 1] > 0 ? 'rgba(255,42,42,.08)' : 'rgba(34,197,94,.08)'; ctx.fill();
+  // Line
+  for (let i = 1; i < n; i++) {
+    ctx.strokeStyle = dt[i] > 0 ? 'rgba(255,42,42,.5)' : 'rgba(34,197,94,.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo((i - 1) / n * w, h / 2 - dt[i - 1] / dM * (h / 2));
+    ctx.lineTo(i / n * w, h / 2 - dt[i] / dM * (h / 2)); ctx.stroke();
+  }
+  // End label
+  ctx.font = 'bold 9px monospace'; ctx.textAlign = 'right';
+  ctx.fillStyle = dt[n - 1] > 0 ? '#FF2A2A' : '#22C55E';
+  ctx.fillText((dt[n - 1] > 0 ? '+' : '') + dt[n - 1].toFixed(2) + 's', w - 2, 10);
+  // Scrub cursor
+  if (S.hoveredS >= 0 || S.pinnedS >= 0) {
+    const s = S.pinnedS >= 0 ? S.pinnedS : S.hoveredS;
+    const maxS = sg[sg.length - 1];
+    const x = (s / maxS) * w;
+    ctx.strokeStyle = 'rgba(201,168,76,.4)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+  }
+}
+
+function renderScrubLine() {
+  // No-op for now (cursors are drawn inline in chart renderers)
+}
+
+/* ═══════════════════════════════════════════════════
+   TRACK STAGE — mouse interaction
+   ═══════════════════════════════════════════════════ */
+document.getElementById('stage').addEventListener('mousemove', e => {
+  if (!trkBounds) return;
+  const rect = document.getElementById('stage').getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  // Find nearest centerline point
+  let bestD2 = Infinity, bestI = 0;
+  for (let i = 0; i < NP; i++) {
+    const dx = txp(CX[i]) - mx, dy = typ(CY[i]) - my;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; bestI = i; }
+  }
+  if (bestD2 < 2500) { // within ~50px
+    const s = bestI / NP * (T.length_m || 1200);
+    set({ hoveredS: s });
+  } else {
+    if (S.pinnedS < 0) set({ hoveredS: -1 });
+  }
+});
+document.getElementById('stage').addEventListener('mouseleave', () => {
+  if (S.pinnedS < 0) set({ hoveredS: -1 });
+});
+document.getElementById('stage').addEventListener('click', e => {
+  if (!trkBounds) return;
+  const rect = document.getElementById('stage').getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  let bestD2 = Infinity, bestI = 0;
+  for (let i = 0; i < NP; i++) {
+    const dx = txp(CX[i]) - mx, dy = typ(CY[i]) - my;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) { bestD2 = d2; bestI = i; }
+  }
+  const s = bestI / NP * (T.length_m || 1200);
+  const c = cornerAtS(s);
+  set({ pinnedS: s, selectedCorner: c });
+});
+</script>
+</body>
+</html>

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '@/lib/api-client';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface DrivingStyleFeature {
   name: string;
@@ -54,7 +55,7 @@ function drawRadar(
   const angleStep = (2 * Math.PI) / n;
 
   // Draw rings
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 1;
   for (let ring = 1; ring <= 4; ring++) {
     const r = (ring / 4) * R;
@@ -79,8 +80,8 @@ function drawRadar(
   }
 
   // Draw data polygon
-  ctx.fillStyle = 'rgba(182, 255, 46, 0.15)';
-  ctx.strokeStyle = '#B6FF2E';
+  ctx.fillStyle = `${chartColor.series.positive}26`;
+  ctx.strokeStyle = chartColor.series.positive;
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (let i = 0; i <= n; i++) {
@@ -97,8 +98,8 @@ function drawRadar(
   ctx.stroke();
 
   // Draw labels
-  ctx.fillStyle = 'rgba(255,255,255,0.6)';
-  ctx.font = '10px system-ui, sans-serif';
+  ctx.fillStyle = `${chartColor.text}99`;
+  ctx.font = '10px "Inter", "Segoe UI", sans-serif';
   ctx.textAlign = 'center';
   for (let i = 0; i < n; i++) {
     const angle = i * angleStep - Math.PI / 2;
@@ -210,7 +211,7 @@ export function DrivingStyleSection({ sessionId }: { sessionId: string }) {
           {/* Strengths/Weaknesses from driving style */}
           {data.strengths?.length > 0 && (
             <div className="pt-2">
-              <h4 className="text-xs text-green-400 font-body mb-1">Style Strengths</h4>
+              <h4 className="text-xs text-acid-green font-body mb-1">Style Strengths</h4>
               <ul className="space-y-0.5">
                 {data.strengths.map((s, i) => (
                   <li key={i} className="text-xs text-chalk/80 font-body">+ {s}</li>
@@ -220,7 +221,7 @@ export function DrivingStyleSection({ sessionId }: { sessionId: string }) {
           )}
           {data.weaknesses?.length > 0 && (
             <div className="pt-2">
-              <h4 className="text-xs text-red-400 font-body mb-1">Style Weaknesses</h4>
+              <h4 className="text-xs text-safety-red font-body mb-1">Style Weaknesses</h4>
               <ul className="space-y-0.5">
                 {data.weaknesses.map((w, i) => (
                   <li key={i} className="text-xs text-chalk/80 font-body">- {w}</li>

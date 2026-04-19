@@ -14,17 +14,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
-
-// ── Design tokens ────────────────────────────────────────────────
-const COLORS = {
-  bg: '#141414',
-  grid: '#30363d',
-  text: '#888888',
-  textBright: '#F0EDE5',
-  accent: '#ff6b35',
-  yellow: '#d29922',
-  cyan: '#58a6ff',
-};
+import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 // ── Types ────────────────────────────────────────────────────────
 interface SpeedTraceData {
@@ -55,6 +46,10 @@ interface SpeedTraceChartProps {
   distRange?: [number, number] | null;
   /** Callback when user drag-selects a distance range on the chart. */
   onDistRangeChange?: (range: [number, number] | null) => void;
+  /** When true, fetches and overlays the theoretical optimal speed profile */
+  showTheoretical?: boolean;
+  /** When true, fetches and overlays the aggregate physics ceiling */
+  showPhysicsCeiling?: boolean;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -115,6 +110,8 @@ interface DrawOptions {
   speeds: number[];       // m/s
   avgSpeeds?: number[];   // m/s
   refSpeeds?: number[];   // m/s
+  theoreticalSpeeds?: { distances: number[]; speeds: number[] } | null; // kph, own distance axis
+  ceilingSpeeds?: { distances: number[]; speeds: number[]; sessions: number } | null;
   hoverDistanceM: number | null;
   /** When set, ref line legend shows "Lap N" instead of "Theoretical" */
   refLapLabel?: string | null;
@@ -124,6 +121,11 @@ interface DrawOptions {
   distRange?: [number, number] | null;
   /** Pixel range of active drag selection [startPx, endPx] */
   dragSelection?: [number, number] | null;
+  /** Cross-session reference overlay data */
+  crossRefDistances?: number[] | null;
+  crossRefSpeeds?: number[] | null;   // m/s
+  crossRefDeltaS?: number[] | null;   // delta_s: positive = ref slower = primary faster
+  crossRefLabel?: string | null;
 }
 
 function drawSpeedTrace(
@@ -133,12 +135,12 @@ function drawSpeedTrace(
   opts: DrawOptions,
 ): { xMin: number; xMax: number; yMin: number; yMax: number; plotX: number; plotY: number; plotW: number; plotH: number } | null {
   ctx.clearRect(0, 0, w, h);
-  ctx.fillStyle = COLORS.bg;
+  ctx.fillStyle = chartColor.surface;
   ctx.fillRect(0, 0, w, h);
 
   const { distances, speeds, avgSpeeds, refSpeeds, hoverDistanceM } = opts;
   if (!distances || distances.length < 2) {
-    ctx.fillStyle = COLORS.text;
+    ctx.fillStyle = chartColor.textSecondary;
     ctx.font = '13px "Space Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -187,6 +189,18 @@ function drawSpeedTrace(
     const avgMax = safeMax(avgSpeeds) * 3.6 * 1.1;
     if (avgMax > yMax) yMax = avgMax;
   }
+  if (opts.theoreticalSpeeds && opts.theoreticalSpeeds.speeds.length > 0) {
+    const theoMax = safeMax(opts.theoreticalSpeeds.speeds) * 1.1; // already kph
+    if (theoMax > yMax) yMax = theoMax;
+  }
+  if (opts.ceilingSpeeds && opts.ceilingSpeeds.speeds.length > 0) {
+    const ceilMax = safeMax(opts.ceilingSpeeds.speeds) * 1.1;
+    if (ceilMax > yMax) yMax = ceilMax;
+  }
+  if (opts.crossRefSpeeds && opts.crossRefSpeeds.length > 0) {
+    const xRefMax = safeMax(opts.crossRefSpeeds) * 3.6 * 1.1;
+    if (xRefMax > yMax) yMax = xRefMax;
+  }
   if (yMax <= yMin) yMax = yMin + 1;
 
   const bounds = { xMin, xMax, yMin, yMax, plotX: pad.left, plotY: pad.top, plotW: pW, plotH: pH };
@@ -195,7 +209,7 @@ function drawSpeedTrace(
   const yToPixel = (v: number) => pad.top + pH - (v - yMin) / (yMax - yMin) * pH;
 
   // Grid lines
-  ctx.strokeStyle = COLORS.grid;
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 0.5;
   const yTicks = niceRange(yMin, yMax, 5);
   for (const tick of yTicks) {
@@ -215,7 +229,7 @@ function drawSpeedTrace(
   }
 
   // Y-axis labels
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '11px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -231,12 +245,12 @@ function drawSpeedTrace(
   }
 
   // Axis titles
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '12px "Space Mono", monospace';
   ctx.textAlign = 'center';
   // Compact unit labels — no full axis titles (tick labels are self-explanatory)
   ctx.font = '10px "Space Mono", monospace';
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.textAlign = 'left';
   ctx.fillText('km/h', pad.left + 2, pad.top - 4);
   ctx.textAlign = 'right';
@@ -251,9 +265,96 @@ function drawSpeedTrace(
   ctx.rect(pad.left, pad.top, pW, pH);
   ctx.clip();
 
-  // Reference line (dashed gold)
+  // Theoretical optimal speed (dashed chalk — drawn first so it sits behind actual)
+  if (opts.theoreticalSpeeds && opts.theoreticalSpeeds.distances.length > 0) {
+    const td = opts.theoreticalSpeeds.distances;
+    const ts = opts.theoreticalSpeeds.speeds; // already kph
+    ctx.save();
+    ctx.setLineDash([6, 4]);
+    ctx.strokeStyle = 'rgba(240, 237, 229, 0.6)'; // chalk at 60%
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < td.length; i++) {
+      const x = xToPixel(td[i]);
+      const y = yToPixel(ts[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      if (!started) { ctx.moveTo(x, y); started = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = chartColor.text;
+    ctx.globalAlpha = 0.6;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('- - Theoretical', pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
+
+  // Physics ceiling from aggregate track surface (dashed gold, filled area)
+  if (opts.ceilingSpeeds && opts.ceilingSpeeds.distances.length > 0) {
+    const cd = opts.ceilingSpeeds.distances;
+    const cs = opts.ceilingSpeeds.speeds;
+
+    // Fill area between actual speed and ceiling
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = chartColor.series.primary;
+    ctx.beginPath();
+    let fillStarted = false;
+    for (let i = 0; i < cd.length; i++) {
+      const x = xToPixel(cd[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      const y = yToPixel(cs[i]);
+      if (!fillStarted) { ctx.moveTo(x, y); fillStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    if (fillStarted && distances.length > 0) {
+      for (let i = cd.length - 1; i >= 0; i--) {
+        const x = xToPixel(cd[i]);
+        if (x < pad.left || x > pad.left + pW) continue;
+        const idx = closestIndex(distances, cd[i]);
+        const actualKph = (speeds[idx] ?? 0) * 3.6;
+        const y = yToPixel(actualKph);
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // Dashed gold ceiling line
+    ctx.save();
+    ctx.setLineDash([8, 4]);
+    ctx.strokeStyle = chartColor.series.primary;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    let ceilStarted = false;
+    for (let i = 0; i < cd.length; i++) {
+      const x = xToPixel(cd[i]);
+      if (x < pad.left || x > pad.left + pW) continue;
+      const y = yToPixel(cs[i]);
+      if (!ceilStarted) { ctx.moveTo(x, y); ceilStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Legend
+    ctx.fillStyle = chartColor.series.primary;
+    ctx.globalAlpha = 0.7;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`- - Track Limit (${opts.ceilingSpeeds.sessions} sessions)`, pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
+
+  // Reference line (dashed marshal-yellow)
   if (refSpeeds && refSpeeds.length > 0) {
-    ctx.strokeStyle = COLORS.yellow;
+    ctx.strokeStyle = chartColor.series.warning;
     ctx.lineWidth = 2;
     ctx.setLineDash([8, 4]);
     ctx.beginPath();
@@ -267,7 +368,7 @@ function drawSpeedTrace(
     }
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = COLORS.yellow;
+    ctx.fillStyle = chartColor.series.warning;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -275,9 +376,9 @@ function drawSpeedTrace(
     legendY += 12;
   }
 
-  // Average pace (dotted cyan)
+  // Average pace (dotted blue)
   if (avgSpeeds && avgSpeeds.length > 0) {
-    ctx.strokeStyle = COLORS.cyan;
+    ctx.strokeStyle = chartColor.palette[3];
     ctx.lineWidth = 1.5;
     ctx.setLineDash([4, 4]);
     ctx.globalAlpha = 0.6;
@@ -293,7 +394,7 @@ function drawSpeedTrace(
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.globalAlpha = 1.0;
-    ctx.fillStyle = COLORS.cyan;
+    ctx.fillStyle = chartColor.palette[3];
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -303,7 +404,7 @@ function drawSpeedTrace(
 
   // Primary lap label
   if (opts.primaryLapLabel) {
-    ctx.fillStyle = COLORS.accent;
+    ctx.fillStyle = chartColor.series.primary;
     ctx.font = '10px "Space Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -326,13 +427,44 @@ function drawSpeedTrace(
     ctx.stroke();
   }
 
+  // Cross-session reference speed line (dashed racing-purple)
+  if (opts.crossRefDistances && opts.crossRefSpeeds && opts.crossRefDistances.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = chartColor.series.reference;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.7;
+    ctx.beginPath();
+    let xRefStarted = false;
+    const xRefDist = opts.crossRefDistances;
+    const xRefSpd = opts.crossRefSpeeds;
+    for (let i = 0; i < Math.min(xRefDist.length, xRefSpd.length); i++) {
+      const d = xRefDist[i]!, rs = xRefSpd[i]!;
+      if (d == null || rs == null || !isFinite(rs)) continue;
+      const x = xToPixel(d);
+      const y = yToPixel(rs * 3.6);
+      if (!xRefStarted) { ctx.moveTo(x, y); xRefStarted = true; } else { ctx.lineTo(x, y); }
+    }
+    ctx.stroke();
+    ctx.restore();
+    // Legend entry
+    ctx.fillStyle = chartColor.series.reference;
+    ctx.globalAlpha = 0.9;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(opts.crossRefLabel ? `- - ${opts.crossRefLabel}` : '- - Ref Session', pad.left + 8, legendY);
+    ctx.globalAlpha = 1.0;
+    legendY += 12;
+  }
+
   // End plot-area clip
   ctx.restore();
 
   // Hover crosshair
   if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
     const hx = xToPixel(hoverDistanceM);
-    ctx.strokeStyle = COLORS.textBright + '60';
+    ctx.strokeStyle = chartColor.crosshair;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -351,7 +483,7 @@ function drawSpeedTrace(
       // Speed dot
       ctx.beginPath();
       ctx.arc(hx, speedY, 4, 0, Math.PI * 2);
-      ctx.fillStyle = COLORS.accent;
+      ctx.fillStyle = chartColor.series.primary;
       ctx.fill();
 
       // Tooltip background
@@ -359,11 +491,11 @@ function drawSpeedTrace(
       const tw = ctx.measureText(label).width + 12;
       const tx = Math.min(hx + 8, w - pad.right - tw);
       const ty = Math.max(pad.top, speedY - 24);
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.beginPath();
       ctx.roundRect(tx, ty, tw, 20, 4);
       ctx.fill();
-      ctx.fillStyle = COLORS.textBright;
+      ctx.fillStyle = chartColor.text;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx + 6, ty + 10);
@@ -376,11 +508,59 @@ function drawSpeedTrace(
     const left = Math.max(pad.left, Math.min(sx, ex));
     const right = Math.min(pad.left + pW, Math.max(sx, ex));
     if (right > left) {
-      ctx.fillStyle = 'rgba(182, 255, 46, 0.08)';
+      ctx.fillStyle = 'rgba(34, 197, 94, 0.08)';
       ctx.fillRect(left, pad.top, right - left, pH);
-      ctx.strokeStyle = 'rgba(182, 255, 46, 0.5)';
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.5)';
       ctx.lineWidth = 1;
       ctx.strokeRect(left, pad.top, right - left, pH);
+    }
+  }
+
+  // ── Cross-session delta bar ───────────────────────────────
+  if (opts.crossRefDistances && opts.crossRefDeltaS && opts.crossRefDistances.length > 1) {
+    const barH = 10;
+    const barY = pad.top + pH - barH; // sits at the very bottom of the plot area
+    const xRefDist = opts.crossRefDistances;
+    const deltaS = opts.crossRefDeltaS;
+    ctx.save();
+    for (let i = 0; i < Math.min(xRefDist.length, deltaS.length) - 1; i++) {
+      const d0 = xRefDist[i]!, d1 = xRefDist[i + 1]!;
+      const dv = deltaS[i]!;
+      if (d0 == null || d1 == null || dv == null) continue;
+      const x0 = xToPixel(d0);
+      const x1 = xToPixel(d1);
+      if (x1 < pad.left || x0 > pad.left + pW) continue;
+      // delta_s > 0 means ref is slower → primary is faster → green
+      ctx.fillStyle = dv > 0 ? 'rgba(34,197,94,0.3)' : 'rgba(255,42,42,0.3)';
+      ctx.fillRect(Math.max(pad.left, x0), barY, Math.min(x1, pad.left + pW) - Math.max(pad.left, x0), barH);
+    }
+    ctx.restore();
+  }
+
+  // ── Cross-session hover marker ────────────────────────────
+  if (
+    hoverDistanceM !== null &&
+    hoverDistanceM >= xMin &&
+    hoverDistanceM <= xMax &&
+    opts.crossRefDistances &&
+    opts.crossRefSpeeds &&
+    opts.crossRefDistances.length > 0
+  ) {
+    const xRefIdx = closestIndex(opts.crossRefDistances, hoverDistanceM);
+    if (xRefIdx >= 0 && xRefIdx < opts.crossRefSpeeds.length) {
+      const rs = opts.crossRefSpeeds[xRefIdx];
+      if (rs != null && isFinite(rs)) {
+        const hx = xToPixel(hoverDistanceM);
+        const hy = yToPixel(rs * 3.6);
+        ctx.save();
+        ctx.strokeStyle = chartColor.series.reference;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
     }
   }
 
@@ -388,38 +568,29 @@ function drawSpeedTrace(
 }
 
 // ── Delta time drawing ──────────────────────────────────────────
-/** Compute cumulative time delta between primary and ref speeds.
- *  Uses trapezoidal integration, then scales to match actual lap time diff.
- *  Positive = primary is slower (losing time). */
-function computeDeltaTime(
-  distances: number[],
-  primarySpeeds: number[],
-  refSpeeds: number[],
-  actualDeltaS: number | null,
-): number[] {
-  const n = Math.min(distances.length, primarySpeeds.length, refSpeeds.length);
-  const delta: number[] = [0];
-  const MIN_SPEED = 0.5; // m/s floor to avoid div-by-zero
-  for (let i = 1; i < n; i++) {
-    const ds = distances[i] - distances[i - 1];
-    if (ds <= 0) { delta.push(delta[delta.length - 1]); continue; }
-    // Trapezoidal: average speed over segment
-    const sp = Math.max(MIN_SPEED, (primarySpeeds[i - 1] + primarySpeeds[i]) / 2);
-    const sr = Math.max(MIN_SPEED, (refSpeeds[i - 1] + refSpeeds[i]) / 2);
-    const dt = ds / sp - ds / sr;
-    delta.push(delta[delta.length - 1] + dt);
+//
+// Delta is computed on the backend by the canonical cumulative_delta
+// engine (telemetry_tool/deltas.py) and fetched via /sessions/:id/delta.
+// The client only projects that anchored curve onto this chart's x-axis
+// via `linearInterp` below — no integration, no scaling, no forward-fill.
+
+/** Piecewise-linear interpolation. Mirrors numpy.interp's clamping
+ *  behaviour: values outside `xs` clamp to the boundary y. */
+function linearInterp(x: number, xs: number[], ys: number[]): number {
+  const n = xs.length;
+  if (n === 0) return 0;
+  if (x <= xs[0]) return ys[0];
+  if (x >= xs[n - 1]) return ys[n - 1];
+  // Binary search for the bracket
+  let lo = 0;
+  let hi = n - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (xs[mid] <= x) lo = mid;
+    else hi = mid;
   }
-  // Scale to match actual lap time difference if available
-  if (actualDeltaS != null && delta.length > 1) {
-    const rawFinal = delta[delta.length - 1];
-    if (Math.abs(rawFinal) > 0.001) {
-      const scale = actualDeltaS / rawFinal;
-      for (let i = 1; i < delta.length; i++) {
-        delta[i] *= scale;
-      }
-    }
-  }
-  return delta;
+  const t = (x - xs[lo]) / (xs[hi] - xs[lo]);
+  return ys[lo] + t * (ys[hi] - ys[lo]);
 }
 
 function drawDeltaChart(
@@ -441,7 +612,7 @@ function drawDeltaChart(
   const oy = y0 + pad.top;
 
   // Separator line
-  ctx.strokeStyle = COLORS.grid;
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x0, y0);
@@ -449,7 +620,7 @@ function drawDeltaChart(
   ctx.stroke();
 
   // Background
-  ctx.fillStyle = '#0d0d0d';
+  ctx.fillStyle = chartColor.surfaceMuted;
   ctx.fillRect(x0, y0, w, h);
 
   if (distances.length < 2 || deltaSeconds.length < 2) return;
@@ -473,7 +644,7 @@ function drawDeltaChart(
 
   // Zero line
   const zeroY = yToPixel(0);
-  ctx.strokeStyle = '#555';
+  ctx.strokeStyle = chartColor.axis;
   ctx.lineWidth = 0.5;
   ctx.setLineDash([4, 3]);
   ctx.beginPath();
@@ -483,7 +654,7 @@ function drawDeltaChart(
   ctx.setLineDash([]);
 
   // Y-axis ticks
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '10px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.textBaseline = 'middle';
@@ -492,7 +663,7 @@ function drawDeltaChart(
     const ty = yToPixel(tick);
     ctx.fillText(`${tick > 0 ? '+' : ''}${tick.toFixed(1)}s`, ox - 6, ty);
     if (tick !== 0) {
-      ctx.strokeStyle = COLORS.grid;
+      ctx.strokeStyle = chartColor.grid;
       ctx.lineWidth = 0.3;
       ctx.beginPath();
       ctx.moveTo(ox, ty);
@@ -519,7 +690,7 @@ function drawDeltaChart(
   // Line colored by sign
   for (let i = 0; i < n - 1; i++) {
     const d = deltaSeconds[i];
-    ctx.strokeStyle = d <= 0 ? '#00ff64' : '#ff3c3c';
+    ctx.strokeStyle = d <= 0 ? chartColor.series.positive : chartColor.series.negative;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(xToPixel(distances[i]), yToPixel(deltaSeconds[i]));
@@ -528,7 +699,7 @@ function drawDeltaChart(
   }
 
   // Label
-  ctx.fillStyle = COLORS.text;
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '9px "Space Mono", monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
@@ -537,7 +708,7 @@ function drawDeltaChart(
   // Final delta value
   const finalDelta = deltaSeconds[n - 1];
   const sign = finalDelta <= 0 ? '' : '+';
-  ctx.fillStyle = finalDelta <= 0 ? '#00ff64' : '#ff3c3c';
+  ctx.fillStyle = finalDelta <= 0 ? chartColor.series.positive : chartColor.series.negative;
   ctx.font = '11px "Space Mono", monospace';
   ctx.textAlign = 'right';
   ctx.fillText(`${sign}${finalDelta.toFixed(3)}s`, ox + pW - 4, oy + 2);
@@ -545,7 +716,7 @@ function drawDeltaChart(
   // Hover crosshair
   if (hoverDistanceM !== null && hoverDistanceM >= xMin && hoverDistanceM <= xMax) {
     const hx = xToPixel(hoverDistanceM);
-    ctx.strokeStyle = COLORS.textBright + '60';
+    ctx.strokeStyle = chartColor.crosshair;
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 3]);
     ctx.beginPath();
@@ -564,11 +735,11 @@ function drawDeltaChart(
       const tw = ctx.measureText(label).width + 8;
       const tx = Math.min(hx + 6, x0 + w - pad.right - tw);
       const ty = Math.max(oy, yToPixel(dt) - 14);
-      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillStyle = chartColor.tooltipBg;
       ctx.beginPath();
       ctx.roundRect(tx, ty, tw, 16, 3);
       ctx.fill();
-      ctx.fillStyle = dt <= 0 ? '#00ff64' : '#ff3c3c';
+      ctx.fillStyle = dt <= 0 ? chartColor.series.positive : chartColor.series.negative;
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, tx + 4, ty + 8);
@@ -590,6 +761,8 @@ export function SpeedTraceChart({
   controlledLap = false,
   distRange = null,
   onDistRangeChange,
+  showTheoretical = false,
+  showPhysicsCeiling = false,
 }: SpeedTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const boundsRef = useRef<ReturnType<typeof drawSpeedTrace>>(null);
@@ -603,10 +776,14 @@ export function SpeedTraceChart({
   const [selectedLap, setSelectedLap] = useState<number | null>(null);
   const dragRef = useRef<{ startX: number; currentX: number } | null>(null);
   const [dragSelection, setDragSelection] = useState<[number, number] | null>(null);
+  const [theoreticalData, setTheoreticalData] = useState<{ distances: number[]; speeds: number[] } | null>(null);
+  const [ceilingData, setCeilingData] = useState<{ distances: number[]; speeds: number[]; sessions: number } | null>(null);
 
   const hoverDistance = useChartHoverStore((s) => s.hoverDistance);
   const setHover = useChartHoverStore((s) => s.setHover);
   const clearHover = useChartHoverStore((s) => s.clearHover);
+
+  const { referenceData } = useReferenceOverlay();
 
   // Sync selectedLap when controlled externally (e.g. Focus Mode unified selector)
   useEffect(() => {
@@ -676,16 +853,108 @@ export function SpeedTraceChart({
     return () => { cancelled = true; };
   }, [sessionId, activeLap, compareLap]);
 
-  // ── Draw ────────────────────────────────────────────────────
-  // Compute delta time when ref data is available
-  const actualDelta = (primaryLapTime != null && compareLapTime != null)
-    ? primaryLapTime - compareLapTime
-    : null;
+  // ── Fetch theoretical optimal speed profile ─────────────────
+  useEffect(() => {
+    if (!showTheoretical || !sessionId) {
+      setTheoreticalData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{ speed_profile?: { distance_m: number[]; speed_kph: number[] } }>(
+          `/sessions/${encodeURIComponent(sessionId)}/theoretical`,
+        );
+        if (cancelled) return;
+        if (res?.speed_profile) {
+          setTheoreticalData({
+            distances: res.speed_profile.distance_m,
+            speeds: res.speed_profile.speed_kph,
+          });
+        }
+      } catch {
+        // Theoretical data is optional — silently skip on 404 or error
+        if (!cancelled) setTheoreticalData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showTheoretical, sessionId]);
 
+  // ── Fetch physics ceiling ────────────────────────────────────
+  useEffect(() => {
+    if (!showPhysicsCeiling || !sessionId) {
+      setCeilingData(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.get<{
+          ceiling_speeds_kph: number[];
+          distances: number[];
+          aggregate_sessions: number;
+        }>(`/sessions/${encodeURIComponent(sessionId)}/physics-ceiling`);
+        if (cancelled) return;
+        if (res?.ceiling_speeds_kph) {
+          setCeilingData({
+            distances: res.distances,
+            speeds: res.ceiling_speeds_kph,
+            sessions: res.aggregate_sessions,
+          });
+        }
+      } catch {
+        if (!cancelled) setCeilingData(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [showPhysicsCeiling, sessionId]);
+
+  // ── Fetch canonical anchored delta from backend ───────────────
+  //
+  // Every delta curve in the product routes through the canonical
+  // cumulative_delta engine (telemetry_tool/deltas.py). This fetch pulls
+  // the anchored delta for primary vs compare laps — same path the
+  // separate "Time Delta" card uses — so the two deltas agree.
+  //
+  // Sign from backend: positive = lap_b slower than lap_a.
+  // Sign this chart expects: positive = primary slower (losing time).
+  // With lap_a=primary, lap_b=compare we need to negate.
+  const [backendDelta, setBackendDelta] = useState<{ distances: number[]; delta_s: number[] } | null>(null);
+  useEffect(() => {
+    if (!sessionId || activeCompareLap == null || activeLap == null || activeLap === activeCompareLap) {
+      setBackendDelta(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<{ distances: number[]; delta_s: number[] }>(
+        `/sessions/${encodeURIComponent(sessionId)}/delta?lap_a=${activeLap}&lap_b=${activeCompareLap}`,
+      )
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.distances && data?.delta_s) {
+          setBackendDelta({ distances: data.distances, delta_s: data.delta_s });
+        } else {
+          setBackendDelta(null);
+        }
+      })
+      .catch(() => { if (!cancelled) setBackendDelta(null); });
+    return () => { cancelled = true; };
+  }, [sessionId, activeLap, activeCompareLap]);
+
+  // Project the backend delta (on its own uniform grid) onto the speed
+  // trace's distance axis so the two sub-charts align vertically.
   const deltaSeconds = useMemo(() => {
-    if (!chartData?.distances || !chartData?.speeds || !refSpeeds) return null;
-    return computeDeltaTime(chartData.distances, chartData.speeds, refSpeeds, actualDelta);
-  }, [chartData, refSpeeds, actualDelta]);
+    if (!chartData?.distances || !backendDelta) return null;
+    const xs = backendDelta.distances;
+    const ys = backendDelta.delta_s;
+    if (xs.length < 2 || ys.length < 2) return null;
+    return chartData.distances.map((d) => {
+      // Flip sign: backend's delta_s is (compare - primary);
+      // this chart's delta is (primary - compare).
+      return -linearInterp(d, xs, ys);
+    });
+  }, [chartData, backendDelta]);
 
   const render = useCallback(() => {
     const canvas = canvasRef.current;
@@ -714,16 +983,27 @@ export function SpeedTraceChart({
     const speedH = hasDelta ? Math.round(rect.height * 0.65) : rect.height;
     const deltaH = hasDelta ? rect.height - speedH : 0;
 
+    // Build cross-session reference label
+    const crossRefLabel = referenceData
+      ? `${referenceData.reference.driver_name} L${referenceData.reference.lap_number}`
+      : null;
+
     boundsRef.current = drawSpeedTrace(ctx, rect.width, speedH, {
       distances: chartData.distances,
       speeds: chartData.speeds,
       refSpeeds: refSpeeds ?? chartData.ref_speeds,
       avgSpeeds: !refSpeeds ? (avgSpeeds ?? chartData.avg_speeds) : undefined,
+      theoreticalSpeeds: theoreticalData,
+      ceilingSpeeds: ceilingData,
       hoverDistanceM: hoverDistance,
       refLapLabel: activeCompareLap != null ? `Lap ${activeCompareLap}` : null,
       primaryLapLabel: activeCompareLap != null ? `Lap ${activeLap}` : null,
       distRange,
       dragSelection,
+      crossRefDistances: referenceData?.distances ?? null,
+      crossRefSpeeds: referenceData?.speed.reference ?? null,
+      crossRefDeltaS: referenceData?.speed.delta_s ?? null,
+      crossRefLabel,
     });
 
     if (hasDelta && deltaSeconds) {
@@ -733,7 +1013,7 @@ export function SpeedTraceChart({
         hoverDistance, activeLap!, activeCompareLap!,
       );
     }
-  }, [chartData, avgSpeeds, refSpeeds, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection]);
+  }, [chartData, avgSpeeds, refSpeeds, theoreticalData, ceilingData, deltaSeconds, activeCompareLap, hoverDistance, distRange, dragSelection, referenceData]);
 
   useEffect(() => {
     render();
@@ -851,7 +1131,7 @@ export function SpeedTraceChart({
       <div className={`flex items-center justify-center rounded-lg border border-steel/10 bg-concrete ${className}`} style={{ minHeight: '250px' }}>
         <div className="text-steel p-4 text-sm text-center">
           <p className="font-telemetry text-chalk mb-1">Speed Trace</p>
-          <p className="text-red-400 text-xs">{error}</p>
+          <p className="text-safety-red text-xs">{error}</p>
         </div>
       </div>
     );

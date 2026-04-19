@@ -1,30 +1,51 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 
 /**
- * Thin progress bar at the top of the viewport during page navigation.
- * Detects route changes via usePathname() and shows a CSS-animated bar.
+ * Page transition system: gold progress bar + full-page wipe on navigation.
+ * Exit: gold bar fills + content fades out (300ms).
+ * Enter: content fades in (400ms).
  */
 export function NavigationProgress() {
   const pathname = usePathname();
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
+  const [phase, setPhase] = useState<'idle' | 'exit' | 'enter'>('idle');
+  const prevPathRef = useRef(pathname);
 
+  const startTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Only show the progress bar if navigation takes >300ms. Instant
+  // client-side transitions (the majority) complete silently. The bar
+  // only appears for genuinely slow loads — which is when it's useful.
   const start = useCallback(() => {
-    setLoading(true);
-    setProgress(20);
+    setPhase('exit');
+    startTimerRef.current = setTimeout(() => {
+      setLoading(true);
+      setProgress(20);
+    }, 300);
   }, []);
 
   const finish = useCallback(() => {
-    setProgress(100);
+    // Cancel the delayed start — navigation completed before the bar appeared.
+    if (startTimerRef.current) {
+      clearTimeout(startTimerRef.current);
+      startTimerRef.current = null;
+    }
+    if (loading) {
+      // Bar was visible — animate to 100% then fade out.
+      setProgress(100);
+    }
+    setPhase('enter');
     const timer = setTimeout(() => {
       setLoading(false);
       setProgress(0);
-    }, 300);
+      setPhase('idle');
+    }, 500);
     return () => clearTimeout(timer);
-  }, []);
+  }, [loading]);
 
   // Intercept link clicks to detect navigation start
   useEffect(() => {
@@ -41,7 +62,10 @@ export function NavigationProgress() {
 
   // Finish on route change
   useEffect(() => {
-    finish();
+    if (pathname !== prevPathRef.current) {
+      prevPathRef.current = pathname;
+      finish();
+    }
   }, [pathname, finish]);
 
   // Trickle progress while loading
@@ -56,18 +80,57 @@ export function NavigationProgress() {
     return () => clearInterval(timer);
   }, [loading]);
 
-  if (!loading && progress === 0) return null;
-
   return (
-    <div
-      className="fixed top-0 left-0 right-0 z-[9999] h-0.5 pointer-events-none"
-      role="progressbar"
-      aria-valuenow={Math.round(progress)}
-    >
-      <div
-        className="h-full bg-pit-orange transition-all duration-300 ease-out"
-        style={{ width: `${progress}%`, opacity: progress >= 100 ? 0 : 1 }}
-      />
-    </div>
+    <>
+      {/* Progress bar */}
+      {(loading || progress > 0) && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[9999] h-0.5 pointer-events-none"
+          role="progressbar"
+          aria-valuenow={Math.round(progress)}
+        >
+          <div
+            className="h-full bg-gold transition-all duration-300 ease-out"
+            style={{ width: `${progress}%`, opacity: progress >= 100 ? 0 : 1 }}
+          />
+        </div>
+      )}
+
+      {/* Page content transition — subtle opacity only, no blur.
+          Blur was causing the "blurry flash" the user sees on every
+          link click. A clean opacity dip is premium; blur is jarring. */}
+      <style>{`
+        @media (prefers-reduced-motion: no-preference) {
+          .page-transition-exit main {
+            opacity: 0.6;
+            transition: opacity 200ms ease-out;
+          }
+          .page-transition-enter main {
+            animation: pageEnter 300ms ease-out forwards;
+          }
+          @keyframes pageEnter {
+            from { opacity: 0.6; }
+            to   { opacity: 1; }
+          }
+        }
+      `}</style>
+
+      {/* Apply class to body for transition phases */}
+      <TransitionClassApplier phase={phase} />
+    </>
   );
+}
+
+function TransitionClassApplier({ phase }: { phase: 'idle' | 'exit' | 'enter' }) {
+  useEffect(() => {
+    const body = document.body;
+    body.classList.remove('page-transition-exit', 'page-transition-enter');
+    if (phase === 'exit') body.classList.add('page-transition-exit');
+    if (phase === 'enter') body.classList.add('page-transition-enter');
+    return () => {
+      body.classList.remove('page-transition-exit', 'page-transition-enter');
+    };
+  }, [phase]);
+
+  return null;
 }

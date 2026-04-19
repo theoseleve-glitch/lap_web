@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface PedalData {
   distances: number[];
@@ -24,12 +25,20 @@ interface PedalData {
   available: boolean;
 }
 
+interface TheoreticalInputs {
+  distances: number[];
+  throttle: number[];
+  brake: number[];
+  steering: number[];
+}
+
 interface PedalTraceChartProps {
   sessionId: string;
   gpsLaps: number[];
   bestLap: number | null;
   className?: string;
   controlledLap?: boolean;
+  showTheoretical?: boolean;
 }
 
 export function PedalTraceChart({
@@ -38,6 +47,7 @@ export function PedalTraceChart({
   bestLap,
   className = '',
   controlledLap = false,
+  showTheoretical = false,
 }: PedalTraceChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -51,6 +61,8 @@ export function PedalTraceChart({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fetchVersionRef = useRef(0);
+  const [theoreticalInputs, setTheoreticalInputs] = useState<TheoreticalInputs | null>(null);
+  const theoVersionRef = useRef(0);
 
   useEffect(() => {
     if (controlledLap && bestLap != null) setSelectedLap(bestLap);
@@ -80,6 +92,39 @@ export function PedalTraceChart({
     })();
   }, [sessionId, selectedLap]);
 
+  // -- Fetch theoretical inputs ------------------------------------------
+  useEffect(() => {
+    if (!showTheoretical || !sessionId) {
+      setTheoreticalInputs(null);
+      return;
+    }
+    const ver = ++theoVersionRef.current;
+    (async () => {
+      try {
+        const res = await apiFetch<{
+          speed_profile?: {
+            distance_m: number[];
+            throttle_pct: number[];
+            brake_pct: number[];
+            steering_deg: number[];
+          };
+        }>(`/sessions/${encodeURIComponent(sessionId)}/theoretical`);
+        if (ver !== theoVersionRef.current) return;
+        if (res?.speed_profile) {
+          setTheoreticalInputs({
+            distances: res.speed_profile.distance_m,
+            throttle: res.speed_profile.throttle_pct,
+            brake: res.speed_profile.brake_pct,
+            steering: res.speed_profile.steering_deg,
+          });
+        }
+      } catch {
+        // Silently skip — theoretical data is optional (404 is expected)
+        if (ver === theoVersionRef.current) setTheoreticalInputs(null);
+      }
+    })();
+  }, [showTheoretical, sessionId]);
+
   // -- Draw chart -------------------------------------------------------
   const draw = useCallback((hoverDist: number | null = null) => {
     const canvas = canvasRef.current;
@@ -103,12 +148,12 @@ export function PedalTraceChart({
     const pH = h - pad.top - pad.bottom;
 
     // Background
-    ctx.fillStyle = '#1a1f2e';
+    ctx.fillStyle = chartColor.surface;
     ctx.fillRect(0, 0, w, h);
 
     if (!data || !data.distances || data.distances.length < 2) {
-      ctx.fillStyle = '#8b949e';
-      ctx.font = '13px -apple-system, sans-serif';
+      ctx.fillStyle = chartColor.textSecondary;
+      ctx.font = '13px "Inter", "Segoe UI", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText('No pedal data available', w / 2, h / 2);
@@ -141,7 +186,7 @@ export function PedalTraceChart({
     const ySteerToPixel = (v: number) => pad.top + pH / 2 - (v / maxSteer) * (pH / 2);
 
     // Grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.strokeStyle = chartColor.grid;
     ctx.lineWidth = 0.5;
 
     // Y grid (pedal 0-100%)
@@ -165,8 +210,8 @@ export function PedalTraceChart({
     }
 
     // Left Y axis labels (pedal %)
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.fillStyle = chartColor.textSecondary;
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'middle';
     for (let v = 0; v <= 100; v += 25) {
@@ -189,7 +234,7 @@ export function PedalTraceChart({
     }
 
     // Axis titles
-    ctx.font = '11px -apple-system, sans-serif';
+    ctx.font = '11px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Distance (m)', pad.left + pW / 2, h - 4);
     ctx.save();
@@ -227,11 +272,11 @@ export function PedalTraceChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yPedalToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(16, 185, 129, 0.25)';
+    ctx.fillStyle = 'rgba(34, 197, 94, 0.25)';
     ctx.fill();
 
     // Throttle outline
-    ctx.strokeStyle = '#10b981';
+    ctx.strokeStyle = chartColor.series.positive;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -250,11 +295,11 @@ export function PedalTraceChart({
     }
     ctx.lineTo(xToPixel(dists[dists.length - 1]), yPedalToPixel(0));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(239, 68, 68, 0.25)';
+    ctx.fillStyle = 'rgba(255, 42, 42, 0.25)';
     ctx.fill();
 
     // Brake outline
-    ctx.strokeStyle = '#ef4444';
+    ctx.strokeStyle = chartColor.series.negative;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -266,7 +311,7 @@ export function PedalTraceChart({
     ctx.stroke();
 
     // Steering line (blue)
-    ctx.strokeStyle = '#60a5fa';
+    ctx.strokeStyle = chartColor.palette[3];
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < dists.length; i++) {
@@ -278,7 +323,7 @@ export function PedalTraceChart({
     ctx.stroke();
 
     // Steering zero reference (thin dashed)
-    ctx.strokeStyle = 'rgba(96, 165, 250, 0.3)';
+    ctx.strokeStyle = `${chartColor.palette[3]}4D`;
     ctx.lineWidth = 0.5;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -286,6 +331,71 @@ export function PedalTraceChart({
     ctx.lineTo(w - pad.right, ySteerToPixel(0));
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // -- Theoretical input overlays (dashed lines) -------------------------
+    if (theoreticalInputs && theoreticalInputs.distances.length >= 2) {
+      const theoDists = theoreticalInputs.distances;
+      const theoMaxDist = theoDists[theoDists.length - 1] || 1;
+
+      /**
+       * Interpolate a value from the theoretical arrays at a given distance.
+       * Uses linear interpolation between nearest bracketing points.
+       */
+      const interpTheo = (dist: number, arr: number[], dArr: number[]): number => {
+        if (dist <= dArr[0]) return arr[0];
+        if (dist >= dArr[dArr.length - 1]) return arr[arr.length - 1];
+        // Binary search for left bracket
+        let lo = 0, hi = dArr.length - 1;
+        while (lo < hi - 1) {
+          const mid = (lo + hi) >> 1;
+          if (dArr[mid] <= dist) lo = mid; else hi = mid;
+        }
+        const t = (dist - dArr[lo]) / (dArr[hi] - dArr[lo] || 1);
+        return arr[lo] + t * (arr[hi] - arr[lo]);
+      };
+
+      /**
+       * Draw a dashed trace line mapping theoretical values onto the plot.
+       * yMap converts a value to pixel Y coordinate.
+       */
+      const drawDashedTrace = (
+        values: number[],
+        dArr: number[],
+        yMap: (v: number) => number,
+      ) => {
+        ctx.beginPath();
+        // Sample at actual data distances for smooth alignment
+        const sampleDists = dists.length > 0 ? dists : theoDists;
+        const maxD = Math.min(xMax, theoMaxDist);
+        for (let i = 0; i < sampleDists.length; i++) {
+          const d = sampleDists[i];
+          if (d > maxD) break;
+          const val = interpTheo(d, values, dArr);
+          const px = xToPixel(d);
+          const py = yMap(val);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.stroke();
+      };
+
+      ctx.save();
+      ctx.setLineDash([4, 3]);
+      ctx.lineWidth = 1.5;
+
+      // Theoretical throttle — dashed acid-green
+      ctx.strokeStyle = 'rgba(34, 197, 94, 0.7)';
+      drawDashedTrace(theoreticalInputs.throttle, theoDists, yPedalToPixel);
+
+      // Theoretical brake — dashed safety-red
+      ctx.strokeStyle = 'rgba(255, 42, 42, 0.7)';
+      drawDashedTrace(theoreticalInputs.brake, theoDists, yPedalToPixel);
+
+      // Theoretical steering — dashed chalk
+      ctx.strokeStyle = 'rgba(240, 237, 229, 0.5)';
+      drawDashedTrace(theoreticalInputs.steering, theoDists, ySteerToPixel);
+
+      ctx.restore();
+    }
 
     ctx.restore(); // unclip
 
@@ -295,7 +405,7 @@ export function PedalTraceChart({
       const idx = closestIdx(dists, hoverDist);
 
       // Vertical crosshair
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = chartColor.crosshair;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath();
@@ -311,16 +421,16 @@ export function PedalTraceChart({
 
         // Dots
         const dots: Array<{ y: number; color: string }> = [
-          { y: yPedalToPixel(tVal), color: '#10b981' },
-          { y: yPedalToPixel(bVal), color: '#ef4444' },
-          { y: ySteerToPixel(sVal), color: '#60a5fa' },
+          { y: yPedalToPixel(tVal), color: chartColor.series.positive },
+          { y: yPedalToPixel(bVal), color: chartColor.series.negative },
+          { y: ySteerToPixel(sVal), color: chartColor.palette[3] },
         ];
         for (const dot of dots) {
           ctx.beginPath();
           ctx.arc(hx, dot.y, 4, 0, Math.PI * 2);
           ctx.fillStyle = dot.color;
           ctx.fill();
-          ctx.strokeStyle = '#e6edf3';
+          ctx.strokeStyle = chartColor.text;
           ctx.lineWidth = 1;
           ctx.stroke();
         }
@@ -332,7 +442,7 @@ export function PedalTraceChart({
           `Steering: ${sVal.toFixed(1)}\u00b0`,
           `@ ${hoverDist.toFixed(0)}m`,
         ];
-        ctx.font = '11px -apple-system, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         let maxLineW = 0;
         for (const line of lines) {
           const lw = ctx.measureText(line).width;
@@ -344,12 +454,12 @@ export function PedalTraceChart({
         if (tipX + tipW > w - 10) tipX = hx - tipW - 12;
         let tipY = pad.top + 10;
 
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillStyle = chartColor.tooltipBg;
         ctx.beginPath();
         ctx.roundRect(tipX, tipY, tipW, tipH, 4);
         ctx.fill();
 
-        ctx.fillStyle = '#e6edf3';
+        ctx.fillStyle = chartColor.text;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
         for (let i = 0; i < lines.length; i++) {
@@ -359,17 +469,41 @@ export function PedalTraceChart({
     }
 
     // -- Legend ------------------------------------------------------------
-    ctx.fillStyle = '#8b949e';
-    ctx.font = '10px -apple-system, sans-serif';
+    ctx.font = '10px "Inter", "Segoe UI", sans-serif';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#10b981';
+    ctx.fillStyle = chartColor.series.positive;
     ctx.fillText('\u25a0 Throttle', w - pad.right - 120, pad.top + 2);
-    ctx.fillStyle = '#ef4444';
+    ctx.fillStyle = chartColor.series.negative;
     ctx.fillText('\u25a0 Brake', w - pad.right - 60, pad.top + 2);
-    ctx.fillStyle = '#60a5fa';
+    ctx.fillStyle = chartColor.palette[3];
     ctx.fillText('\u2014 Steering', w - pad.right, pad.top + 2);
-  }, [selectedLap]);
+
+    // Theoretical legend (second row, only when data loaded)
+    if (theoreticalInputs && theoreticalInputs.distances.length >= 2) {
+      const legendY = pad.top + 14;
+
+      // Draw dashed line indicator + label for each
+      const drawDashedLegend = (label: string, color: string, xEnd: number) => {
+        const textW = ctx.measureText(label).width;
+        const lineX = xEnd - textW - 18;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(lineX, legendY + 5);
+        ctx.lineTo(lineX + 14, legendY + 5);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = color;
+        ctx.fillText(label, xEnd, legendY);
+      };
+
+      drawDashedLegend('Theo. Thr', 'rgba(34, 197, 94, 0.7)', w - pad.right - 120);
+      drawDashedLegend('Theo. Brk', 'rgba(255, 42, 42, 0.7)', w - pad.right - 50);
+      drawDashedLegend('Theo. Str', 'rgba(240, 237, 229, 0.5)', w - pad.right + 14);
+    }
+  }, [selectedLap, theoreticalInputs]);
 
   // -- Redraw when data changes ------------------------------------------
   useEffect(() => {
@@ -448,12 +582,12 @@ export function PedalTraceChart({
       {/* Lap selector */}
       <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
         {!controlledLap && (
-          <label className="flex items-center gap-1.5 text-gray-400">
+          <label className="flex items-center gap-1.5 text-steel">
             Lap:
             <select
               value={selectedLap}
               onChange={(e) => setSelectedLap(Number(e.target.value))}
-              className="bg-gray-800 text-white text-sm rounded px-2 py-1 border border-gray-700"
+              className="bg-concrete text-chalk text-sm rounded px-2 py-1 border border-steel/20"
             >
               {gpsLaps.map((l) => (
                 <option key={l} value={l}>
@@ -464,7 +598,7 @@ export function PedalTraceChart({
           </label>
         )}
         {loading && <span className="text-xs text-steel animate-pulse">Loading...</span>}
-        {error && <span className="text-xs text-red-400">{error}</span>}
+        {error && <span className="text-xs text-safety-red">{error}</span>}
       </div>
 
       {/* Chart canvas */}

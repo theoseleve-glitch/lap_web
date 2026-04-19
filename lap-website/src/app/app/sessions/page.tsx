@@ -9,6 +9,7 @@ import { api } from '@/lib/api-client';
 import { formatLapTime, formatDate, scoreColor } from '@/lib/format-utils';
 import { StatCard, DataTable, QueryError, SkeletonTableRows } from '@/components/app';
 import { PageIntro } from '@/components/ui/PageIntro';
+import { EmptyState } from '@/components/ui/EmptyState';
 import type { ContextAction } from '@/components/app/DataTable';
 import { canPrefetch, markPrefetched, incrementInFlight, decrementInFlight } from '@/lib/prefetch';
 
@@ -627,8 +628,28 @@ export default function SessionsPage() {
       setConfirmDelete(false);
       return { previous };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    onSuccess: (_result, ids) => {
+      // Remove deleted sessions from ALL cached session-list variants.
+      const idSet = new Set(ids);
+      queryClient.setQueriesData<ListResponse>(
+        { queryKey: ['sessions', 'list'] },
+        (old) => old ? {
+          ...old,
+          sessions: old.sessions.filter((s) => !idSet.has(s.session_id)),
+          total: Math.max(0, old.total - ids.length),
+        } : old,
+      );
+
+      // Mark session queries as stale WITHOUT triggering an immediate refetch.
+      // The next navigation, tab focus, or component mount will refetch fresh
+      // data from the server (where the session is gone). This avoids the
+      // "flash-back" caused by an immediate refetch racing with the optimistic
+      // update — refetchType:'none' is the key.
+      queryClient.invalidateQueries({
+        queryKey: ['sessions'],
+        refetchType: 'none',
+      });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (err, ids, context) => {
       // Partial failure: only restore the sessions that failed to delete.
@@ -638,8 +659,21 @@ export default function SessionsPage() {
         (err as Error & { failedIds?: string[] }).failedIds ?? ids;
 
       if (context?.previous && failedIds.length < ids.length) {
-        // Partial failure — don't roll back, just refetch from server
-        queryClient.invalidateQueries({ queryKey: ['sessions'] });
+        // Partial failure — remove the successfully deleted ones from cache,
+        // restore only the failed ones. Then refetch to reconcile.
+        const failedSet = new Set(failedIds);
+        const succeededIds = ids.filter((id) => !failedSet.has(id));
+        if (succeededIds.length > 0) {
+          const succSet = new Set(succeededIds);
+          queryClient.setQueriesData<ListResponse>(
+            { queryKey: ['sessions', 'list'] },
+            (old) => old ? {
+              ...old,
+              sessions: old.sessions.filter((s) => !succSet.has(s.session_id)),
+              total: Math.max(0, old.total - succeededIds.length),
+            } : old,
+          );
+        }
       } else if (context?.previous) {
         // Total failure — roll back optimistic update
         queryClient.setQueryData(['sessions', 'list', queryParams], context.previous);
@@ -1114,25 +1148,17 @@ export default function SessionsPage() {
         <QueryError message="Couldn't load sessions." onRetry={() => refetch()} />
       ) : sessions.length === 0 && !hasActiveFilters ? (
         /* Rich empty state */
-        <div className="bg-concrete rounded-lg border border-steel/20 p-12 text-center">
-          <div className="text-5xl mb-4" aria-hidden="true">🏁</div>
-          <h2 className="font-monument text-xl text-chalk mb-2">No sessions yet</h2>
-          <p className="text-steel font-body text-sm max-w-md mx-auto mb-6">
-            This is where all your analyzed sessions will appear. Each session
-            gets a score, grade, and detailed breakdown. Upload a RaceChrono or
-            RaceBox CSV to get started.
-          </p>
-          <Link
-            href="/app/sessions/upload"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-gold text-white font-monument text-sm rounded-lg hover:bg-gold/90 transition-colors"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true" focusable="false">
-              <line x1="8" y1="2" x2="8" y2="14" />
-              <line x1="2" y1="8" x2="14" y2="8" />
+        <EmptyState
+          icon={
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+              <line x1="4" y1="22" x2="4" y2="15" />
             </svg>
-            Upload Session
-          </Link>
-        </div>
+          }
+          title="No sessions yet"
+          hint="Upload a RaceChrono, RaceBox, or MoTeC CSV to get your first analysis — score, grade, and per-corner coaching."
+          action={{ label: 'Upload Session', href: '/app/sessions/upload' }}
+        />
       ) : sessions.length === 0 && hasActiveFilters ? (
         /* No results for filters */
         <div className="bg-concrete rounded-lg border border-steel/20 p-8 text-center">

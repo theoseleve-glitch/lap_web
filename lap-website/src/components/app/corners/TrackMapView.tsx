@@ -95,7 +95,7 @@ function interpolateCornerPositions(
 /* ── Time-loss color coding ─────────────────────────── */
 
 function timeLossColor(tl: number | null | undefined): string {
-  if (tl == null) return '#888888';
+  if (tl == null) return '#949494';
   if (tl < 0.05) return '#C6F135';
   if (tl < 0.15) return '#F5C518';
   if (tl < 0.3) return '#FF6B2B';

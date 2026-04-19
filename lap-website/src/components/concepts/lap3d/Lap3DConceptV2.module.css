@@ -1,0 +1,627 @@
+.page {
+  --lap-progress: 0;
+  --lap-red: #b9362d;
+  --lap-red-soft: rgba(185, 54, 45, 0.12);
+  --lap-panel: rgba(8, 8, 10, 0.7);
+  --lap-panel-strong: rgba(9, 9, 11, 0.86);
+  --lap-line: rgba(240, 237, 229, 0.12);
+  --lap-copy: rgba(240, 237, 229, 0.74);
+  --lap-shadow: 0 32px 120px rgba(0, 0, 0, 0.5);
+  position: relative;
+  min-height: 100vh;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 24% 12%, rgba(255, 255, 255, 0.05), transparent 32%),
+    radial-gradient(circle at 82% 18%, rgba(185, 54, 45, 0.12), transparent 28%),
+    linear-gradient(180deg, #020202 0%, #040404 26%, #050505 100%);
+  color: var(--chalk);
+}
+
+.page::before,
+.page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.page::before {
+  background:
+    linear-gradient(rgba(240, 237, 229, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 237, 229, 0.025) 1px, transparent 1px);
+  background-size: 90px 90px;
+  mask-image: radial-gradient(circle at 50% 24%, black 34%, transparent 84%);
+}
+
+.page::after {
+  background:
+    linear-gradient(132deg, transparent 0%, rgba(255, 255, 255, 0.02) 42%, transparent 68%),
+    radial-gradient(circle at 50% 100%, rgba(185, 54, 45, 0.12), transparent 36%);
+}
+
+.worldShell {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.worldCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.worldVeil {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 42%, transparent 0%, rgba(4, 4, 4, 0.18) 46%, rgba(4, 4, 4, 0.82) 100%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.32) 0%, transparent 18%, transparent 78%, rgba(0, 0, 0, 0.76) 100%);
+}
+
+.utilityBar,
+.telemetryDeck {
+  position: fixed;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid rgba(240, 237, 229, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 56%),
+    rgba(0, 0, 0, 0.48);
+  box-shadow: 0 22px 80px rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(18px);
+}
+
+.utilityBar {
+  inset: 28px auto auto 28px;
+}
+
+.utilityLabel,
+.telemetryLabel,
+.eyebrow,
+.cardEyebrow {
+  font-family: var(--font-mono);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.utilityLabel {
+  font-size: 0.64rem;
+  color: rgba(240, 237, 229, 0.76);
+}
+
+.utilityLinks {
+  display: flex;
+  gap: 12px;
+}
+
+.utilityLink {
+  color: rgba(240, 237, 229, 0.78);
+  text-decoration: none;
+  font-size: 0.82rem;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    transform 200ms ease;
+}
+
+.utilityLink:hover,
+.utilityLink:focus-visible {
+  color: white;
+  border-color: rgba(240, 237, 229, 0.7);
+  transform: translateY(-1px);
+}
+
+.telemetryDeck {
+  inset: 28px 236px auto auto;
+  gap: 18px;
+}
+
+.telemetryReadout {
+  display: grid;
+  gap: 5px;
+}
+
+.telemetryLabel,
+.eyebrow,
+.cardEyebrow {
+  font-size: 0.62rem;
+  color: rgba(240, 237, 229, 0.5);
+}
+
+.telemetryValue,
+.signalValue {
+  font-family: var(--font-body);
+  font-size: 0.88rem;
+  line-height: 1.35;
+  color: rgba(240, 237, 229, 0.92);
+}
+
+.main {
+  position: relative;
+  z-index: 2;
+}
+
+.section {
+  position: relative;
+  min-height: 185svh;
+  padding-inline: clamp(28px, 5vw, 84px);
+}
+
+.heroSection {
+  min-height: 180svh;
+}
+
+.pipelineSection {
+  min-height: 260svh;
+}
+
+.stickyStage {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100svh;
+  padding-block: 118px 92px;
+}
+
+.sectionShell,
+.heroLayout {
+  position: relative;
+  width: min(1220px, 100%);
+  margin-inline: auto;
+}
+
+.heroLayout {
+  display: grid;
+  align-items: end;
+  gap: clamp(26px, 4vw, 42px);
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.74fr);
+}
+
+.heroCopyBlock,
+.heroSignalCard,
+.sectionIntro,
+.flowStage,
+.differenceStatement,
+.finalPanel,
+.finalMeta,
+.tensionCard,
+.coachCard,
+.proofCard {
+  position: relative;
+  border: 1px solid var(--lap-line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 34%),
+    var(--lap-panel);
+  box-shadow: var(--lap-shadow);
+  backdrop-filter: blur(22px);
+}
+
+.heroCopyBlock,
+.heroSignalCard,
+.sectionIntro,
+.differenceStatement,
+.finalPanel,
+.finalMeta {
+  padding: clamp(24px, 3vw, 38px);
+}
+
+.heroHalo,
+.cornerWave,
+.pipelineGlow,
+.coachingAura,
+.differenceField,
+.ctaGlow {
+  position: absolute;
+  pointer-events: none;
+  filter: blur(54px);
+  opacity: 0.86;
+}
+
+.heroHalo {
+  inset: 12% auto auto 8%;
+  width: min(44vw, 640px);
+  height: 36vh;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.11), transparent 68%);
+}
+
+.cornerWave {
+  inset: 20% 10% auto auto;
+  width: min(30vw, 480px);
+  height: 34vh;
+  background:
+    radial-gradient(circle at 40% 45%, rgba(185, 54, 45, 0.18), transparent 56%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 80%);
+}
+
+.pipelineGlow {
+  inset: 22% auto auto 30%;
+  width: min(56vw, 880px);
+  height: 44vh;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.08), transparent 66%);
+}
+
+.coachingAura {
+  inset: 18% 12% auto auto;
+  width: min(42vw, 660px);
+  height: 36vh;
+  background: radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.12), transparent 64%);
+}
+
+.differenceField {
+  inset: 16% auto auto 16%;
+  width: min(44vw, 720px);
+  height: 42vh;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.07), transparent 62%),
+    radial-gradient(circle at 70% 50%, rgba(185, 54, 45, 0.11), transparent 62%);
+}
+
+.ctaGlow {
+  inset: auto auto 14% 14%;
+  width: min(32vw, 420px);
+  height: 28vh;
+  background: radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.18), transparent 66%);
+}
+
+.heroMotif,
+.brakingMotif,
+.pipelineMotif,
+.coachingMotif {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.heroMotif {
+  width: min(84vw, 1180px);
+  inset: 50% auto auto 58%;
+}
+
+.brakingMotif {
+  width: min(74vw, 960px);
+  inset: 54% auto auto 50%;
+}
+
+.pipelineMotif {
+  width: min(82vw, 1060px);
+  inset: 56% auto auto 52%;
+}
+
+.coachingMotif {
+  width: min(72vw, 960px);
+  inset: 48% auto auto 50%;
+}
+
+.eyebrow,
+.cardEyebrow {
+  margin: 0 0 18px;
+}
+
+.finishMarker {
+  width: 188px;
+  height: 12px;
+  margin-bottom: 26px;
+  background:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.96) 0 50%, rgba(10, 10, 12, 0.98) 50% 100%);
+  background-size: 24px 12px;
+}
+
+.heroTitle,
+.sectionTitle,
+.cardTitle,
+.flowTitle,
+.tensionValue {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: var(--ls-display);
+  text-wrap: balance;
+}
+
+.heroTitle {
+  font-size: clamp(3.8rem, 7.5vw, 8rem);
+  line-height: 0.9;
+  max-width: 9ch;
+}
+
+.sectionTitle {
+  font-size: clamp(2.6rem, 4.7vw, 4.8rem);
+  line-height: 0.94;
+  max-width: 12ch;
+}
+
+.cardTitle,
+.flowTitle {
+  font-size: clamp(1.2rem, 1.6vw, 1.8rem);
+  line-height: 1.04;
+}
+
+.sectionCopy,
+.cardCopy {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--lap-copy);
+}
+
+.sectionCopy {
+  max-width: 58ch;
+  font-size: clamp(1rem, 1.22vw, 1.12rem);
+  line-height: 1.72;
+}
+
+.cardCopy {
+  font-size: 0.94rem;
+  line-height: 1.68;
+}
+
+.actionRow,
+.finalActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 50px;
+  padding: 0 20px;
+  text-decoration: none;
+  border: 1px solid transparent;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease,
+    color 220ms ease;
+}
+
+.primaryAction {
+  background: var(--lap-red);
+  border-color: rgba(185, 54, 45, 0.5);
+  color: white;
+}
+
+.secondaryAction {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(240, 237, 229, 0.14);
+  color: rgba(240, 237, 229, 0.92);
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible,
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  transform: translateY(-2px);
+}
+
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(240, 237, 229, 0.34);
+}
+
+.heroSignalCard {
+  align-self: stretch;
+}
+
+.signalList {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.signalItem,
+.finalMetaRow {
+  display: grid;
+  gap: 6px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(240, 237, 229, 0.1);
+}
+
+.sectionShell {
+  display: grid;
+  gap: 26px;
+}
+
+.sectionIntro {
+  max-width: min(760px, 100%);
+}
+
+.brakeGrid,
+.coachingBoard,
+.proofGrid {
+  display: grid;
+  gap: clamp(18px, 2.2vw, 24px);
+}
+
+.brakeGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tensionCard,
+.coachCard,
+.proofCard {
+  padding: 22px 22px 24px;
+}
+
+.tensionValue {
+  margin: 10px 0 10px;
+  font-size: clamp(1.95rem, 2.8vw, 3rem);
+  line-height: 0.95;
+}
+
+.flowStage {
+  min-height: 480px;
+  overflow: hidden;
+  perspective: 1600px;
+}
+
+.flowRail {
+  position: absolute;
+  inset: auto auto 18% 7%;
+  width: 84%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(240, 237, 229, 0.82), rgba(185, 54, 45, 0.7));
+  transform: rotate(-14deg);
+  transform-origin: left center;
+}
+
+.flowCard {
+  position: absolute;
+  width: min(320px, 28vw);
+  padding: 22px 22px 24px;
+  border: 1px solid rgba(240, 237, 229, 0.1);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 36%),
+    var(--lap-panel-strong);
+  box-shadow: var(--lap-shadow);
+  transform-style: preserve-3d;
+}
+
+.flowCard:nth-of-type(1) {
+  left: 5%;
+  bottom: 14%;
+}
+
+.flowCard:nth-of-type(2) {
+  left: 24%;
+  bottom: 33%;
+}
+
+.flowCard:nth-of-type(3) {
+  left: 48%;
+  bottom: 52%;
+}
+
+.flowCard:nth-of-type(4) {
+  right: 5%;
+  top: 10%;
+}
+
+.coachingBoard {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.proofGrid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.differenceStatement {
+  max-width: min(840px, 100%);
+}
+
+.finalPanel,
+.finalMeta {
+  max-width: min(820px, 100%);
+}
+
+.finalMeta {
+  width: min(420px, 100%);
+  justify-self: end;
+}
+
+.ctaSection .sectionShell {
+  grid-template-columns: minmax(0, 1.04fr) minmax(320px, 0.56fr);
+  align-items: start;
+}
+
+@media (max-width: 1280px) {
+  .telemetryDeck {
+    right: 28px;
+    top: 92px;
+  }
+}
+
+@media (max-width: 1180px) {
+  .heroLayout,
+  .ctaSection .sectionShell,
+  .brakeGrid,
+  .coachingBoard,
+  .proofGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .heroSignalCard,
+  .finalMeta {
+    justify-self: start;
+    width: 100%;
+  }
+
+  .flowStage {
+    min-height: 620px;
+  }
+
+  .flowCard {
+    width: min(360px, 72vw);
+  }
+}
+
+@media (max-width: 900px) {
+  .utilityBar,
+  .telemetryDeck {
+    position: absolute;
+    inset: 18px 18px auto 18px;
+    display: grid;
+    justify-content: start;
+  }
+
+  .telemetryDeck {
+    top: 88px;
+  }
+
+  .section,
+  .heroSection,
+  .pipelineSection {
+    min-height: auto;
+    padding-inline: 18px;
+  }
+
+  .stickyStage {
+    position: relative;
+    min-height: auto;
+    padding-block: 132px 64px;
+  }
+
+  .flowStage {
+    min-height: auto;
+    display: grid;
+    gap: 16px;
+    padding: 20px;
+  }
+
+  .flowRail,
+  .heroHalo,
+  .cornerWave,
+  .pipelineGlow,
+  .coachingAura,
+  .differenceField,
+  .ctaGlow,
+  .heroMotif,
+  .brakingMotif,
+  .pipelineMotif,
+  .coachingMotif,
+  .worldShell {
+    display: none;
+  }
+
+  .flowCard {
+    position: relative;
+    inset: auto;
+    width: 100%;
+  }
+}

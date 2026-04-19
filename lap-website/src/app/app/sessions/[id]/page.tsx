@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef, lazy, Suspense } from 'react';
 import { useParams } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { api, BACKEND_URL } from '@/lib/api-client';
 import { useEntityDelete } from '@/hooks/useEntityDelete';
@@ -12,6 +13,7 @@ import { SkeletonSessionDetail } from '@/components/app/Skeleton';
 import { AnimatedCounter } from '@/components/ui/AnimatedCounter';
 import { exportCanvasAsPNG } from '@/lib/export-chart';
 import { ChartSyncToggle } from '@/components/app/ChartSyncToggle';
+import { trackEvent } from '@/hooks/useTrackEvent';
 
 // Lazy-loaded tab content — only fetched when the user activates each tab/section
 const AnalyticsTab = lazy(() => import('@/components/app/analytics').then(m => ({ default: m.AnalyticsTab })));
@@ -30,6 +32,12 @@ const AchievementUnlockOverlay = lazy(() =>
 );
 
 const DrivingAnalyzer = lazy(() => import('@/components/app/driving-analyzer/DrivingAnalyzer'));
+const HandlingBalanceCard = lazy(() => import('@/components/app/HandlingBalanceCard').then(m => ({ default: m.HandlingBalanceCard })));
+
+const TrackSurfacePanel = dynamic(
+  () => import('@/components/app/track-surface').then(m => ({ default: m.default })),
+  { ssr: false, loading: () => <div className="h-64 bg-concrete rounded-lg animate-pulse" /> }
+);
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -314,6 +322,8 @@ export default function SessionDetailPage() {
   const [laps, setLaps] = useState<LapData[]>([]);
   const [scores, setScores] = useState<ScoreData | null>(null);
   const [corners, setCorners] = useState<CornerData[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [handlingBalance, setHandlingBalance] = useState<any>(null);
   const [conditionPhases, setConditionPhases] = useState<ConditionPhase[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -361,7 +371,7 @@ export default function SessionDetailPage() {
         const [lapsRes, scoresRes, cornersRes, phasesRes] = await Promise.allSettled([
           api.get<{ laps: LapData[] }>(`/sessions/${sessionId}/laps`),
           api.get<ScoreData>(`/sessions/${sessionId}/scores`),
-          api.get<{ corners: CornerData[] }>(`/sessions/${sessionId}/corners`),
+          api.get<{ corners: CornerData[]; handling_balance?: any }>(`/sessions/${sessionId}/corners`),
           api.get<{ phases: ConditionPhase[] }>(`/sessions/${sessionId}/condition-phases`),
         ]);
 
@@ -375,6 +385,9 @@ export default function SessionDetailPage() {
         }
         if (cornersRes.status === 'fulfilled') {
           setCorners(cornersRes.value.corners || []);
+          if (cornersRes.value.handling_balance) {
+            setHandlingBalance(cornersRes.value.handling_balance);
+          }
         }
         if (phasesRes.status === 'fulfilled') {
           setConditionPhases(phasesRes.value.phases || []);
@@ -392,6 +405,12 @@ export default function SessionDetailPage() {
     return () => {
       cancelled = true;
     };
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (sessionId) {
+      trackEvent('session.view', { session_id: sessionId });
+    }
   }, [sessionId]);
 
   // Trigger gamification UI once when scores load
@@ -432,7 +451,8 @@ export default function SessionDetailPage() {
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab);
-  }, []);
+    trackEvent('session.tab_switch', { tab, session_id: sessionId });
+  }, [sessionId]);
 
   // Close export dropdown on outside click or Escape
   useEffect(() => {
@@ -619,7 +639,7 @@ export default function SessionDetailPage() {
 
       {/* Tab content */}
       {activeTab === 'overview' && (
-        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} onSessionUpdate={setSession} />
+        <OverviewTab session={session} scores={scores} laps={laps} bestLap={bestLap} sessionId={sessionId} corners={corners} handlingBalance={handlingBalance} onSessionUpdate={setSession} />
       )}
       {activeTab === 'timeline' && <TimelineTab sessionId={sessionId} />}
       {activeTab === 'analytics' && (
@@ -654,8 +674,8 @@ export default function SessionDetailPage() {
 
       {/* Share card modal */}
       {shareOpen && session && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8" onClick={() => setShareOpen(false)}>
-          <div className="bg-concrete rounded-2xl border border-steel/20 p-6 max-w-2xl w-full" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-8 animate-[fadeIn_300ms_ease-out]" onClick={() => setShareOpen(false)}>
+          <div className="bg-concrete rounded-2xl border border-acid-green/20 p-6 max-w-2xl w-full shadow-[0_0_60px_-10px_rgba(182,255,46,0.15)] animate-[cardReveal_500ms_cubic-bezier(0.16,1,0.3,1)]" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-monument text-chalk">Share Session</h3>
               <button type="button" onClick={() => setShareOpen(false)} className="text-steel hover:text-chalk text-sm">Close</button>
@@ -667,15 +687,18 @@ export default function SessionDetailPage() {
                 sessionDate: session.session_date || undefined,
                 sessionType: session.session_type || undefined,
                 bestLapTime: session.best_lap_time_s,
-                totalScore: session.total_score,
+                totalScore: scores ? (() => {
+                  const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
+                  return dims.reduce<number>((s, v) => s + (v ?? 0), 0);
+                })() : session.total_score,
                 grade: scores ? (() => {
                   const dims = [scores.pace_score, scores.consistency_score, scores.execution_score, scores.robustness_score, scores.adaptation_score];
-                  const t = dims.reduce((s, v) => s + (v ?? 0), 0);
+                  const t = dims.reduce<number>((s, v) => s + (v ?? 0), 0);
                   return t >= 90 ? 'A+' : t >= 80 ? 'A' : t >= 65 ? 'B' : t >= 50 ? 'C' : t >= 35 ? 'D' : 'F';
                 })() : session.grade,
                 nLaps: session.n_laps,
                 cvPct: scores?.consistency_score != null && scores?.consistency_max
-                  ? Math.round((scores.consistency_score / scores.consistency_max) * 100) / 10
+                  ? Math.round((scores.consistency_score / scores.consistency_max) * 100)
                   : undefined,
                 badges: scores?.badges,
               }} />
@@ -837,6 +860,7 @@ function OverviewTab({
   bestLap,
   sessionId,
   corners,
+  handlingBalance,
   onSessionUpdate,
 }: {
   session: SessionData;
@@ -845,6 +869,8 @@ function OverviewTab({
   bestLap: number | null;
   sessionId: string;
   corners: CornerData[];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handlingBalance: any;
   onSessionUpdate: (s: SessionData) => void;
 }) {
   const bestLapData = laps.find((l) => l.is_best);
@@ -1268,6 +1294,18 @@ function OverviewTab({
       <div className="lg:col-span-3 space-y-8">
         <Suspense fallback={<div className="py-8 text-center text-steel text-sm">Loading analysis&hellip;</div>}>
           <DrivingStyleSection sessionId={sessionId} />
+          {handlingBalance && (
+            <HandlingBalanceCard
+              sessionId={sessionId}
+              bestLap={bestLap}
+              summary={handlingBalance.summary}
+              focusCorners={handlingBalance.focus_corners}
+              bestLapMistakes={handlingBalance.best_lap_mistakes}
+              drivingTips={handlingBalance.driving_tips}
+              cornerPositions={handlingBalance.corner_positions}
+              recommendations={handlingBalance.setup_recommendations}
+            />
+          )}
           <SessionDebrief
             totalScore={session.total_score}
             grade={session.grade}
@@ -1277,6 +1315,11 @@ function OverviewTab({
           />
           <AchievementsBadges badges={scores?.badges} />
         </Suspense>
+
+        <section className="space-y-4">
+          <h2 className="font-monument text-lg text-chalk">Track Surface</h2>
+          <TrackSurfacePanel sessionId={sessionId} />
+        </section>
       </div>
     </div>
   );
@@ -1706,7 +1749,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
       const isPit = lap.invalid_reason === 'Pitted lap';
 
       if (isBest) {
-        ctx.fillStyle = '#3ddc84';
+        ctx.fillStyle = '#22C55E';
       } else if (isJoker) {
         ctx.fillStyle = 'rgba(255,214,0,0.35)';
       } else if (isPit) {
@@ -1732,7 +1775,7 @@ function LapDataTab({ laps, conditionPhases }: { laps: LapData[]; conditionPhase
     ctx.textAlign = 'left';
     const legendY = 14;
     // Best
-    ctx.fillStyle = '#3ddc84';
+    ctx.fillStyle = '#22C55E';
     ctx.fillRect(pad.left, legendY - 4, 10, 8);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Best', pad.left + 14, legendY + 2);
@@ -2187,7 +2230,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
       const barH = pad.top + cH - y;
       const isBest = times[i] === bestTime;
 
-      ctx.fillStyle = isBest ? '#3ddc84' : 'rgba(255,255,255,0.25)';
+      ctx.fillStyle = isBest ? '#22C55E' : 'rgba(255,255,255,0.25)';
       ctx.fillRect(x, y, barWidth, barH);
 
       // Lap number label
@@ -2198,7 +2241,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     }
 
     // Rolling average line
-    ctx.strokeStyle = '#ff8c00';
+    ctx.strokeStyle = '#C9A84C';
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < n; i++) {
@@ -2228,7 +2271,7 @@ function TimelineTab({ sessionId }: { sessionId: string }) {
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'left';
     const legendY = 14;
-    ctx.fillStyle = '#ff8c00';
+    ctx.fillStyle = '#C9A84C';
     ctx.fillRect(pad.left, legendY - 4, 12, 2);
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.fillText('Rolling Avg', pad.left + 16, legendY);

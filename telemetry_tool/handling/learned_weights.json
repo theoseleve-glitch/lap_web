@@ -1,0 +1,42 @@
+{
+  "description": "Detector weights learned from TUMFTM ground truth via linear regression",
+  "n_samples": 365,
+  "r_squared": 0.4192,
+  "bias": 0.0051,
+  "per_detector_correlation": {
+    "apex_timing": 0.117,
+    "corner_balance": 0.4047,
+    "speed_recovery": 0.0247,
+    "lat_g_jerk": -0.0529,
+    "trail_braking": 0.0,
+    "gg_shape": -0.4193,
+    "path_divergence": 0.0,
+    "yaw_residual": 0.0,
+    "heading_accel": -0.3386,
+    "friction_asymmetry": 0.3903,
+    "speed_scrub": 0.3579,
+    "throttle_response": 0.0203,
+    "steering_corrections": -0.064,
+    "lat_g_plateau": -0.4453,
+    "braking_distance": 0.2678,
+    "line_variation": 0.0
+  },
+  "weights": {
+    "apex_timing": 0.831,
+    "corner_balance": 1.029,
+    "speed_recovery": 0.142,
+    "lat_g_jerk": 0.481,
+    "trail_braking": 0.0,
+    "gg_shape": 0.493,
+    "path_divergence": 0.0,
+    "yaw_residual": 0.0,
+    "heading_accel": 0.505,
+    "friction_asymmetry": 2.169,
+    "speed_scrub": 2.329,
+    "throttle_response": 0.265,
+    "steering_corrections": 1.675,
+    "lat_g_plateau": 0.328,
+    "braking_distance": 1.354,
+    "line_variation": 0.0
+  }
+}

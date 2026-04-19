@@ -7,12 +7,12 @@ import { topNavLinks } from '@/data/navigation';
 import { trackNavRouteClick } from '@/lib/analytics';
 import { LocaleSwitcher } from '@/components/site/LocaleSwitcher';
 import { MobileDrawer } from '@/components/site/MobileDrawer';
+import { LapMonogram } from '@/components/shared/LapMonogram';
 import { useTranslation } from '@/i18n';
 
 const navLabelKey: Record<string, string> = {
   Product: 'nav.product',
   Pricing: 'nav.pricing',
-  'For Venues': 'nav.venues',
   Demo: 'nav.demo',
   Contact: 'nav.contact',
 };
@@ -52,17 +52,18 @@ export function SiteHeader() {
   return (
     <>
       <header
-        className="sticky top-0 z-[60] border-b border-chalk/15 bg-asphalt/95 backdrop-blur transition-transform duration-300"
+        className="sticky top-0 z-[60] border-b border-chalk/8 bg-asphalt/90 backdrop-blur-xl transition-transform duration-300"
         style={{ transform: visible || drawerOpen ? 'translateY(0)' : 'translateY(-100%)' }}
       >
         <div className="mx-auto max-w-6xl px-4 py-2 flex items-center justify-between gap-3">
           {/* Logo */}
           <Link
             href="/"
-            className="group relative font-monument text-2xl border-2 border-chalk/70 px-3 py-1.5 leading-none tracking-tight hover:border-pit-orange transition-colors duration-200 min-h-[44px] flex items-center"
+            className="group flex items-center gap-2 min-h-[44px] px-1"
             onClick={() => trackNavRouteClick('/', 'header')}
           >
-            <span className="text-chalk group-hover:text-pit-orange transition-colors duration-200">LAP</span>
+            <LapMonogram size={28} color="currentColor" className="text-chalk group-hover:text-pit-orange transition-colors duration-200" />
+            <span className="font-monument text-xl text-chalk group-hover:text-pit-orange transition-colors duration-200 tracking-tight">LAP</span>
           </Link>
 
           {/* Desktop nav — hidden on mobile */}
@@ -73,10 +74,10 @@ export function SiteHeader() {
                 <Link
                   key={link.href}
                   href={link.href}
-                  className={`inline-flex items-center min-h-[44px] px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase transition-colors duration-200 cursor-pointer ${
+                  className={`link-reveal inline-flex items-center min-h-[44px] px-3 py-2 text-xs font-telemetry tracking-[0.12em] uppercase transition-colors duration-200 cursor-pointer ${
                     active
-                      ? 'border-pit-orange text-chalk'
-                      : 'border-chalk/20 text-steel hover:text-chalk hover:border-steel'
+                      ? 'text-chalk'
+                      : 'text-steel hover:text-chalk'
                   }`}
                   onClick={() => trackNavRouteClick(link.href, 'header')}
                 >
@@ -91,10 +92,10 @@ export function SiteHeader() {
 
             <Link
               href="/login"
-              className={`inline-flex items-center min-h-[44px] px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase transition-colors duration-200 cursor-pointer ${
+              className={`link-reveal inline-flex items-center min-h-[44px] px-3 py-2 text-xs font-telemetry tracking-[0.12em] uppercase transition-colors duration-200 cursor-pointer ${
                 pathname === '/login'
-                  ? 'border-pit-orange text-chalk'
-                  : 'border-chalk/20 text-steel hover:text-chalk hover:border-steel'
+                  ? 'text-chalk'
+                  : 'text-steel hover:text-chalk'
               }`}
               onClick={() => trackNavRouteClick('/login', 'header')}
             >
@@ -102,7 +103,7 @@ export function SiteHeader() {
             </Link>
             <Link
               href="/register"
-              className="inline-flex items-center min-h-[44px] px-3 py-2 border text-xs font-telemetry tracking-[0.12em] uppercase bg-pit-orange border-pit-orange text-white hover:bg-[#D4B35A] transition-colors duration-200 cursor-pointer"
+              className="cta-glow inline-flex items-center min-h-[44px] px-3 py-2 text-xs font-telemetry tracking-[0.12em] uppercase bg-gold text-white hover:brightness-110 transition-all duration-300 cursor-pointer"
               onClick={() => trackNavRouteClick('/register', 'header')}
             >
               {t('nav.signup')}

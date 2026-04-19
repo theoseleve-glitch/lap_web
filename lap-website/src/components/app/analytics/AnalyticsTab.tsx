@@ -1,6 +1,26 @@
 'use client';
 
-import { BACKEND_URL } from '@/lib/api-client';
+/**
+ * AnalyticsTab — telemetry analytics page, 5-tier layout.
+ *
+ * Information architecture:
+ *   01 / LAP REVIEW          — what happened in the lap (Track + Speed + GG)
+ *   02 / PACE & PROGRESSION  — how pace changed (Delta + Lap Progress/Distribution + Overlay)
+ *   03 / VEHICLE DYNAMICS    — how the car was driven (Pedals, RPM, Tires, Brakes, Fuel, Friction)
+ *   04 / ANALYSIS & COACHING — where time was lost and how to find it (Sectors, Corners, Drills)
+ *   05 / CONTEXT             — reference data (Surface, cross-session)
+ *
+ * Every chart sits inside a chart-kit ChartCard with a ChartHeader.
+ * No more bare bg-concrete wrappers, no more inconsistent titles.
+ */
+
+import { useEffect, useMemo, useState } from 'react';
+import { api, BACKEND_URL } from '@/lib/api-client';
+import {
+  ChartCard,
+  ChartHeader,
+  SectionHeader,
+} from '@/components/shared/chart-kit';
 import { GpsTrace, SpeedTraceZoom, GGExplorer } from '@/components/app/charts';
 import { SectorPanel, SpeedTraceMiniMap } from '@/components/shared/charts';
 import { DeltaTimeChart } from '@/components/shared/charts/DeltaTimeChart';
@@ -11,15 +31,22 @@ import { TireHeatmapChart } from '@/components/shared/charts/TireHeatmapChart';
 import { WheelSlipChart } from '@/components/shared/charts/WheelSlipChart';
 import { BrakeAnalysisChart } from '@/components/shared/charts/BrakeAnalysisChart';
 import { FuelStrategyChart } from '@/components/shared/charts/FuelStrategyChart';
+import { TheoreticalDeltaChart } from '@/components/shared/charts/TheoreticalDeltaChart';
+import { CornerCoachingTable } from '@/components/shared/charts/CornerCoachingTable';
+import { CornerCoachingV4 } from '@/components/shared/charts/CornerCoachingV4';
+import { SurfaceProfileChart } from '@/components/shared/charts/SurfaceProfileChart';
 import { useSessionChannels } from '@/hooks/useSessionChannels';
 import { LapSpeedOverlay } from './LapSpeedOverlay';
 import { LapDistribution } from './LapDistribution';
 import { LapProgressTracker } from './LapProgressTracker';
 import { SessionComparison } from './SessionComparison';
 import { DevelopmentDrills } from './DevelopmentDrills';
+import { LapSelector } from './LapSelector';
 import { ChartThemePicker } from '@/components/app/ChartThemePicker';
 import { ChartAnnotations } from '@/components/app/ChartAnnotations';
-import { ChartTooltip } from '@/components/ui/ChartTooltip';
+import { ReferenceOverlayProvider, ReferenceFAB } from '@/components/app/reference';
+
+/* ── Types ──────────────────────────────────── */
 
 interface CornerData {
   corner_id: number;
@@ -52,6 +79,41 @@ interface AnalyticsTabProps {
   trackName: string | null;
 }
 
+/* ── Track-colour toggle (tier-01 speed-map control) ────────── */
+
+interface TrackColorToggleProps {
+  value: 'speed' | 'grip' | 'ribbon';
+  onChange: (v: 'speed' | 'grip' | 'ribbon') => void;
+}
+
+function TrackColorToggle({ value, onChange }: TrackColorToggleProps) {
+  const options: Array<{ key: TrackColorToggleProps['value']; label: string }> = [
+    { key: 'speed', label: 'Speed' },
+    { key: 'grip', label: 'Grip' },
+    { key: 'ribbon', label: 'Surface' },
+  ];
+  return (
+    <div className="flex items-center gap-0.5">
+      {options.map((o) => (
+        <button
+          key={o.key}
+          type="button"
+          onClick={() => onChange(o.key)}
+          className={`px-2 py-0.5 text-[10px] font-telemetry uppercase tracking-wider rounded transition-colors ${
+            value === o.key
+              ? 'text-chalk bg-steel/15'
+              : 'text-steel hover:text-chalk'
+          }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Component ──────────────────────────────── */
+
 export function AnalyticsTab({
   sessionId,
   gpsLaps,
@@ -61,6 +123,45 @@ export function AnalyticsTab({
   trackName,
 }: AnalyticsTabProps) {
   const apiBase = BACKEND_URL;
+  const [trackColorMode, setTrackColorMode] = useState<'speed' | 'grip' | 'ribbon'>('speed');
+
+  // Session-level lap selection — drives every chart in the tab.
+  // Primary defaults to the session best lap (from parent). Compare is opt-in.
+  const [primaryLap, setPrimaryLap] = useState<number | null>(bestLap);
+  const [compareLap, setCompareLap] = useState<number | null>(null);
+
+  // Keep primaryLap in sync if bestLap resolves later (laps loaded after mount).
+  useEffect(() => {
+    if (primaryLap == null && bestLap != null) {
+      setPrimaryLap(bestLap);
+    }
+  }, [bestLap, primaryLap]);
+
+  // Fetch lap metadata once so we can pass official lap times into charts
+  // that need anchored deltas (e.g. SpeedTrace's embedded delta panel).
+  interface LapMeta { lap_number: number; lap_time_s: number | null; is_best: number; is_valid: number; }
+  const [lapsMeta, setLapsMeta] = useState<LapMeta[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get<{ laps: LapMeta[] }>(`/sessions/${sessionId}/laps`)
+      .then((res) => { if (!cancelled) setLapsMeta(res.laps ?? []); })
+      .catch(() => { /* silent — downstream charts fall back gracefully */ });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  const primaryLapTime = useMemo(() => {
+    if (primaryLap == null) return null;
+    const row = lapsMeta.find((l) => l.lap_number === primaryLap);
+    return row?.lap_time_s ?? null;
+  }, [lapsMeta, primaryLap]);
+
+  const compareLapTime = useMemo(() => {
+    if (compareLap == null) return null;
+    const row = lapsMeta.find((l) => l.lap_number === compareLap);
+    return row?.lap_time_s ?? null;
+  }, [lapsMeta, compareLap]);
+
   const { channels } = useSessionChannels(sessionId);
 
   const hasControls = channels.throttle || channels.brake;
@@ -70,226 +171,496 @@ export function AnalyticsTab({
   const hasBrakeTemps = channels.brake_temp;
   const hasFuel = channels.fuel;
 
+  const hasDynamics =
+    hasControls || hasTireTemps || hasWheelSlip || hasBrakeTemps || hasFuel;
+  const hasDynamicsPairTop = hasControls && hasRpmGear;
+  const hasDynamicsPairMid = !!hasTireTemps || !!hasWheelSlip;
+  const hasDynamicsPairBottom = !!hasBrakeTemps || !!hasFuel;
+
   return (
-    <div className="space-y-6">
-      {/* Chart color theme selector */}
-      <div className="flex justify-end">
-        <ChartThemePicker />
+    <ReferenceOverlayProvider sessionId={sessionId} primaryLap={bestLap}>
+      {/* ── Page controls strip (quiet, not a "tier") ── */}
+      <div className="flex items-center justify-between gap-3 pb-2 flex-wrap">
+        <LapSelector
+          sessionId={sessionId}
+          primaryLap={primaryLap}
+          compareLap={compareLap}
+          onPrimaryChange={(l) => {
+            setPrimaryLap(l);
+            // if user picks the same lap as compare, drop compare
+            if (l != null && l === compareLap) setCompareLap(null);
+          }}
+          onCompareChange={setCompareLap}
+        />
+        <div className="flex items-center gap-3">
+          <ReferenceFAB sessionId={sessionId} />
+          <ChartThemePicker />
+        </div>
       </div>
-      {/* ── Row 1: Track Map + Speed Trace + GG Diagram ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-1">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4 h-full flex flex-col">
-            <div className="flex items-center gap-2 mb-3 shrink-0">
-              <h3 className="text-sm font-monument text-chalk">GPS Track Map</h3>
-              <ChartTooltip
-                title="GPS Track Map"
-                description="Shows the GPS trace of your laps on the track. The best lap is highlighted. Hover to sync with the speed trace."
-                tips={['Click a point to see its distance on the speed trace', 'Use the lap dropdown to change which lap is displayed']}
+
+      <div className="space-y-12">
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* 01 / LAP REVIEW — the hero tier. Primary pace + spatial + grip */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <section className="space-y-5">
+          <SectionHeader
+            index="01"
+            title="Lap Review"
+            description="What happened in your fastest lap — speed, line, and grip usage."
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+            {/* Track map — left column (1/3 width), natural height */}
+            <div className="lg:col-span-1">
+              <ChartCard>
+                <ChartHeader
+                  title="Track Map"
+                  info="GPS trace of the selected lap. Hover to sync with the speed trace."
+                  actions={
+                    <TrackColorToggle
+                      value={trackColorMode}
+                      onChange={setTrackColorMode}
+                    />
+                  }
+                />
+                <div
+                  className="chart-enter w-full"
+                  style={{ height: 420 }}
+                  role="img"
+                  aria-label="GPS track map showing the racing line"
+                >
+                  <GpsTrace
+                    sessionId={sessionId}
+                    apiBase={apiBase}
+                    gpsLaps={gpsLaps}
+                    bestLap={primaryLap}
+                    compareLap={compareLap}
+                    controlledLap
+                    className="w-full h-full"
+                    colorMode={trackColorMode}
+                  />
+                </div>
+              </ChartCard>
+            </div>
+
+            {/* Speed trace + GG stacked, 2/3 width */}
+            <div className="lg:col-span-2 flex flex-col gap-5">
+              <ChartCard tone="primary">
+                <ChartHeader
+                  title="Speed Trace"
+                  subtitle="km/h vs distance"
+                  info="Speed across the lap. Dashed = theoretical optimal; dotted = your average pace; racing-purple dashed = cross-session reference."
+                  actions={
+                    <ChartAnnotations sessionId={sessionId} canvasId="speed-chart" />
+                  }
+                />
+                <SpeedTraceMiniMap sessionId={sessionId} bestLap={primaryLap} size={80} />
+                <div
+                  className="chart-enter"
+                  role="img"
+                  aria-label="Speed trace chart showing speed versus distance"
+                >
+                  <SpeedTraceZoom
+                    sessionId={sessionId}
+                    apiBase={apiBase}
+                    gpsLaps={gpsLaps}
+                    bestLap={primaryLap}
+                    compareLap={compareLap}
+                    primaryLapTime={primaryLapTime}
+                    compareLapTime={compareLapTime}
+                    controlledLap
+                    className="w-full"
+                    showPhysicsCeiling
+                  />
+                </div>
+              </ChartCard>
+
+              <ChartCard>
+                <ChartHeader
+                  title="G-G Diagram"
+                  subtitle="lat × long acceleration"
+                  info="Grip usage envelope. Points outside the friction circle mean grip was exceeded."
+                />
+                <div
+                  className="chart-enter"
+                  role="img"
+                  aria-label="G-G diagram showing lateral versus longitudinal acceleration"
+                >
+                  <GGExplorer
+                    sessionId={sessionId}
+                    apiBase={apiBase}
+                    gpsLaps={gpsLaps}
+                    bestLap={primaryLap}
+                    controlledLap
+                    className="w-full"
+                  />
+                </div>
+              </ChartCard>
+            </div>
+          </div>
+        </section>
+
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* 02 / PACE & PROGRESSION — cross-lap narrative                 */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <section className="space-y-5">
+          <SectionHeader
+            index="02"
+            title="Pace & Progression"
+            description="How pace shifted within the lap and across the session."
+          />
+
+          <ChartCard>
+            <ChartHeader
+              title="Time Delta"
+              subtitle="cumulative time vs reference lap"
+              info="Green where you gained time, red where you lost it. Purple dashed shows the cross-session reference delta."
+            />
+            <div
+              className="chart-enter"
+              role="img"
+              aria-label="Cumulative time delta versus best lap"
+            >
+              <DeltaTimeChart
+                sessionId={sessionId}
+                gpsLaps={gpsLaps}
+                bestLap={primaryLap}
+                compareLap={compareLap}
+                controlledLap
+                className="w-full"
               />
             </div>
-            <div className="chart-enter flex-1 min-h-0" role="img" aria-label="GPS track map showing the racing line for the selected lap">
-              <GpsTrace
+          </ChartCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            {/* LapProgressTracker owns its own ChartCard — do not wrap */}
+            <div className="chart-enter">
+              <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
+            </div>
+            {/* LapDistribution owns its ChartCard — do not wrap */}
+            <div className="chart-enter">
+              <LapDistribution sessionId={sessionId} apiBase={apiBase} />
+            </div>
+          </div>
+
+          <ChartCard>
+            <ChartHeader
+              title="Lap Speed Overlay"
+              subtitle="every lap, one chart"
+              info="All enabled laps drawn together, best lap emphasised. Use the legend to toggle individual laps."
+            />
+            <div
+              className="chart-enter"
+              role="img"
+              aria-label="Overlay of multiple lap speed traces on one chart"
+            >
+              <LapSpeedOverlay
                 sessionId={sessionId}
                 apiBase={apiBase}
                 gpsLaps={gpsLaps}
-                bestLap={bestLap}
-                className="w-full h-full"
+                bestLap={primaryLap}
               />
             </div>
-          </div>
-        </div>
-        <div className="lg:col-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4 relative">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-monument text-chalk">Speed Trace</h3>
-                <ChartTooltip
-                  title="Speed Trace"
-                  description="Speed vs distance for the selected lap. The dashed gold line is the theoretical optimal. The dotted cyan line is your average pace across all laps."
-                  tips={['Double-click to add an annotation', 'Hover to see speed at any distance point', 'Zoom with mouse wheel']}
+          </ChartCard>
+        </section>
+
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* 03 / VEHICLE DYNAMICS — conditional, quieter                  */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        {hasDynamics ? (
+          <section className="space-y-5">
+            <SectionHeader
+              index="03"
+              title="Vehicle Dynamics"
+              description="How the car was driven — inputs, rotations, tyre + brake behaviour."
+            />
+
+            {/* Pedals + RPM/Gear */}
+            {hasControls && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                <ChartCard density="compact">
+                  <ChartHeader
+                    title="Pedal Traces"
+                    subtitle="throttle × brake vs distance"
+                  />
+                  <div
+                    className="chart-enter"
+                    role="img"
+                    aria-label="Pedal trace chart showing throttle and brake input"
+                  >
+                    <PedalTraceChart
+                      sessionId={sessionId}
+                      gpsLaps={gpsLaps}
+                      bestLap={primaryLap}
+                      controlledLap
+                      className="w-full"
+                    />
+                  </div>
+                </ChartCard>
+                {hasRpmGear ? (
+                  <ChartCard density="compact">
+                    <ChartHeader title="RPM & Gear" subtitle="engine speed and gear selection" />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="RPM and gear selection chart"
+                    >
+                      <RPMGearChart
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                ) : (
+                  <ChartCard density="compact">
+                    <ChartHeader
+                      title="Friction Circle"
+                      subtitle="real-time grip usage"
+                    />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="Live friction circle showing real-time grip usage"
+                    >
+                      <LiveFrictionCircle
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                )}
+              </div>
+            )}
+
+            {/* Standalone friction circle when BOTH controls and RPM exist */}
+            {hasDynamicsPairTop && (
+              <ChartCard density="compact">
+                <ChartHeader
+                  title="Friction Circle"
+                  subtitle="grip usage as the lap progresses"
+                />
+                <div
+                  className="chart-enter"
+                  role="img"
+                  aria-label="Live friction circle"
+                >
+                  <LiveFrictionCircle
+                    sessionId={sessionId}
+                    gpsLaps={gpsLaps}
+                    bestLap={primaryLap}
+                    controlledLap
+                    className="w-full"
+                  />
+                </div>
+              </ChartCard>
+            )}
+
+            {/* Tires + wheel slip */}
+            {hasDynamicsPairMid && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {hasTireTemps && (
+                  <ChartCard density="compact">
+                    <ChartHeader
+                      title="Tire Temperatures"
+                      subtitle="all four corners"
+                    />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="Tire temperature heatmap"
+                    >
+                      <TireHeatmapChart
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                )}
+                {hasWheelSlip && (
+                  <ChartCard density="compact">
+                    <ChartHeader
+                      title="Wheel Slip"
+                      subtitle="traction-loss events across the lap"
+                    />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="Wheel slip chart"
+                    >
+                      <WheelSlipChart
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                )}
+              </div>
+            )}
+
+            {/* Brake analysis + fuel strategy */}
+            {hasDynamicsPairBottom && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {hasBrakeTemps && (
+                  <ChartCard density="compact">
+                    <ChartHeader
+                      title="Brake Analysis"
+                      subtitle="temperature and pressure"
+                    />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="Brake temperature and pressure analysis"
+                    >
+                      <BrakeAnalysisChart
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                )}
+                {hasFuel && (
+                  <ChartCard density="compact">
+                    <ChartHeader
+                      title="Fuel Strategy"
+                      subtitle="consumption across the session"
+                    />
+                    <div
+                      className="chart-enter"
+                      role="img"
+                      aria-label="Fuel consumption and strategy chart"
+                    >
+                      <FuelStrategyChart
+                        sessionId={sessionId}
+                        gpsLaps={gpsLaps}
+                        bestLap={primaryLap}
+                        controlledLap
+                        className="w-full"
+                      />
+                    </div>
+                  </ChartCard>
+                )}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* 04 / ANALYSIS & COACHING — where time was lost, what to do   */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <section className="space-y-5">
+          <SectionHeader
+            index="04"
+            title="Analysis & Coaching"
+            description="Where time was lost and where to focus next."
+          />
+
+          <ChartCard>
+            <ChartHeader title="Sector Analysis" subtitle="time split by sector" />
+            <SectorPanel sessionId={sessionId} className="!bg-transparent !border-0 !rounded-none !p-0" />
+          </ChartCard>
+
+          <ChartCard>
+            <ChartHeader
+              title="Corner Coaching"
+              subtitle="multi-session proven envelope"
+              info="Corners where your inputs deviate from the aggregate proven line across all your sessions on this track."
+            />
+            <div className="chart-enter">
+              <CornerCoachingV4 sessionId={sessionId} className="w-full" />
+            </div>
+          </ChartCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <ChartCard>
+              <ChartHeader
+                title="Theoretical Delta"
+                subtitle="vs perfect-lap solver"
+                info="Cumulative time loss compared to the sim-optimizer's theoretical perfect lap from identified physics."
+              />
+              <div className="chart-enter">
+                <TheoreticalDeltaChart
+                  sessionId={sessionId}
+                  bestLap={primaryLap}
+                  className="w-full"
                 />
               </div>
-              <ChartAnnotations sessionId={sessionId} canvasId="speed-chart" />
-            </div>
-            <SpeedTraceMiniMap sessionId={sessionId} bestLap={bestLap} size={90} />
-            <div className="chart-enter" role="img" aria-label="Speed trace chart showing speed versus distance for the selected lap">
-              <SpeedTraceZoom
-                sessionId={sessionId}
-                apiBase={apiBase}
-                gpsLaps={gpsLaps}
-                bestLap={bestLap}
-                className="w-full"
+            </ChartCard>
+            <ChartCard>
+              <ChartHeader
+                title="Corner-by-Corner"
+                subtitle="ranked by time loss"
               />
-            </div>
+              <div className="chart-enter">
+                <CornerCoachingTable sessionId={sessionId} className="w-full" />
+              </div>
+            </ChartCard>
           </div>
-        </div>
-        <div className="lg:col-span-2">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <div className="flex items-center gap-2 mb-3">
-              <h3 className="text-sm font-monument text-chalk">G-G Diagram</h3>
-              <ChartTooltip
-                title="G-G Diagram"
-                description="Plots lateral vs longitudinal G-forces. The dashed circle is the friction limit. Points outside mean you exceeded grip. Use the play button to animate through the lap."
-                tips={['Switch between All/Single/Compare modes', 'Click a point to highlight it on the map', 'Scroll to zoom in/out']}
-              />
-            </div>
-            <div className="chart-enter" role="img" aria-label="G-G diagram plotting lateral versus longitudinal G-forces">
-              <GGExplorer
-                sessionId={sessionId}
-                apiBase={apiBase}
-                gpsLaps={gpsLaps}
-                bestLap={bestLap}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Row 2: Delta Time Chart ── */}
-      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-        <h3 className="text-sm font-monument text-chalk mb-3">Time Delta</h3>
-        <div className="chart-enter" role="img" aria-label="Time delta chart showing cumulative time gained or lost versus the best lap">
-        <DeltaTimeChart
-          sessionId={sessionId}
-          gpsLaps={gpsLaps}
-          bestLap={bestLap}
-          className="w-full"
-        />
-        </div>
-      </div>
+          <ChartCard>
+            <ChartHeader
+              title="Development Drills"
+              subtitle="what to work on before the next session"
+            />
+            <div className="chart-enter">
+              <DevelopmentDrills scores={scores} corners={corners} />
+            </div>
+          </ChartCard>
+        </section>
 
-      {/* ── Row 3: Pedal Traces + RPM/Gear (if controls data available) ── */}
-      {hasControls && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-            <h3 className="text-sm font-monument text-chalk mb-3">Pedal Traces</h3>
-            <div className="chart-enter" role="img" aria-label="Pedal trace chart showing throttle and brake input versus distance">
-              <PedalTraceChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-            </div>
-          </div>
-          {hasRpmGear ? (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">RPM &amp; Gear</h3>
-              <div className="chart-enter" role="img" aria-label="RPM and gear selection chart versus distance for the selected lap">
-                <RPMGearChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          ) : (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">Live Friction Circle</h3>
-              <div className="chart-enter" role="img" aria-label="Live friction circle showing real-time grip usage as the lap progresses">
-                <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {!hasControls && (
-        <div className="text-steel/60 text-sm text-center p-6 border border-dashed border-steel/20 rounded-lg">
-          <p className="font-telemetry text-chalk mb-1">Pedal Traces &amp; RPM</p>
-          <p>Requires throttle, brake, RPM data — available in iRacing, ACC, and MoTeC formats</p>
-        </div>
-      )}
-
-      {/* ── Row 3b: Live Friction Circle (if both controls + RPM available) ── */}
-      {hasControls && hasRpmGear && (
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">Live Friction Circle</h3>
-          <div className="chart-enter" role="img" aria-label="Live friction circle showing real-time grip usage as the lap progresses">
-            <LiveFrictionCircle sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-          </div>
-        </div>
-      )}
-
-      {/* ── Row 3c: Tire Heatmap + Wheel Slip (if tire data available) ── */}
-      {(hasTireTemps || hasWheelSlip) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {hasTireTemps && (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">Tire Temperatures</h3>
-              <div className="chart-enter" role="img" aria-label="Tire temperature heatmap showing heat distribution across all four tires">
-                <TireHeatmapChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          )}
-          {hasWheelSlip && (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">Wheel Slip</h3>
-              <div className="chart-enter" role="img" aria-label="Wheel slip chart showing traction loss events across the lap">
-                <WheelSlipChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Row 3d: Brake Analysis + Fuel Strategy ── */}
-      {(hasBrakeTemps || hasFuel) && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {hasBrakeTemps && (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">Brake Analysis</h3>
-              <div className="chart-enter" role="img" aria-label="Brake temperature and pressure analysis chart for the selected lap">
-                <BrakeAnalysisChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          )}
-          {hasFuel && (
-            <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-              <h3 className="text-sm font-monument text-chalk mb-3">Fuel Strategy</h3>
-              <div className="chart-enter" role="img" aria-label="Fuel consumption and strategy chart showing fuel level over the session">
-                <FuelStrategyChart sessionId={sessionId} gpsLaps={gpsLaps} bestLap={bestLap} className="w-full" />
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Row 4: Sector Analysis ── */}
-      <SectorPanel sessionId={sessionId} className="bg-concrete rounded-xl border border-steel/10" />
-
-      {/* ── Row 4: Lap Speed Overlay ── */}
-      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-        <h3 className="text-sm font-monument text-chalk mb-3">Lap Speed Overlay</h3>
-        <div className="chart-enter" role="img" aria-label="Lap speed overlay comparing speed traces of multiple laps on one chart">
-          <LapSpeedOverlay
-            sessionId={sessionId}
-            apiBase={apiBase}
-            gpsLaps={gpsLaps}
-            bestLap={bestLap}
+        {/* ════════════════════════════════════════════════════════════ */}
+        {/* 05 / CONTEXT — quiet references                              */}
+        {/* ════════════════════════════════════════════════════════════ */}
+        <section className="space-y-5">
+          <SectionHeader
+            index="05"
+            title="Context"
+            description="Track characteristics and cross-session comparisons."
           />
-        </div>
-      </div>
 
-      {/* ── Row 5: Distribution + Progress ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">Lap Distribution</h3>
-          <div className="chart-enter" role="img" aria-label="Lap time distribution histogram showing the spread of lap times in this session">
-            <LapDistribution sessionId={sessionId} apiBase={apiBase} />
-          </div>
-        </div>
-        <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-          <h3 className="text-sm font-monument text-chalk mb-3">Lap Progress</h3>
-          <div className="chart-enter" role="img" aria-label="Lap progress tracker showing lap time trend over the session">
-            <LapProgressTracker sessionId={sessionId} apiBase={apiBase} />
-          </div>
-        </div>
-      </div>
+          <ChartCard density="compact">
+            <ChartHeader
+              title="Track Surface"
+              subtitle="elevation, slope, camber, roughness"
+            />
+            <div className="chart-enter">
+              <SurfaceProfileChart sessionId={sessionId} className="w-full" />
+            </div>
+          </ChartCard>
 
-      {/* ── Row 6: Session Comparison ── */}
-      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-        <h3 className="text-sm font-monument text-chalk mb-3">Session Comparison</h3>
-        <SessionComparison sessionId={sessionId} trackName={trackName} />
-      </div>
+          <ChartCard density="compact">
+            <ChartHeader
+              title="Session Comparison"
+              subtitle="this session against your history"
+            />
+            <div className="chart-enter">
+              <SessionComparison sessionId={sessionId} trackName={trackName} />
+            </div>
+          </ChartCard>
+        </section>
 
-      {/* ── Row 7: Development Drills ── */}
-      <div className="bg-concrete rounded-xl border border-steel/10 p-4">
-        <h3 className="text-sm font-monument text-chalk mb-3">Development Drills</h3>
-        <DevelopmentDrills scores={scores} corners={corners} />
+        {/* Empty-data advisory (tier 03 fallback) */}
+        {!hasDynamics && (
+          <p className="text-[11px] font-telemetry text-steel/60 italic">
+            Vehicle dynamics require throttle / brake / RPM / tyre / fuel channels —
+            available in iRacing, ACC, and MoTeC exports.
+          </p>
+        )}
       </div>
-    </div>
+    </ReferenceOverlayProvider>
   );
 }

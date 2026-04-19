@@ -5,6 +5,7 @@ import {
   CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import type { DriverProgression } from '@/lib/api-types';
+import { colors } from '@/lib/tokens';
 
 interface Props {
   data: DriverProgression[];
@@ -37,14 +38,15 @@ export function ProgressionChart({ data }: Props) {
         <h4 className="font-telemetry text-xs text-steel/60 uppercase mb-3">Score Trend</h4>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
-            <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-            <YAxis domain={[0, 100]} tick={{ fill: '#94a3b8', fontSize: 10 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 148, 148, 0.12)" />
+            <XAxis dataKey="date" tick={{ fill: colors.steel, fontSize: 10 }} />
+            <YAxis domain={[0, 100]} tick={{ fill: colors.steel, fontSize: 10 }} />
             <Tooltip
-              contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 8 }}
-              labelStyle={{ color: '#e2e8f0' }}
+              contentStyle={{ backgroundColor: colors.concrete, border: '1px solid rgba(148, 148, 148, 0.2)', borderRadius: 8 }}
+              labelStyle={{ color: colors.chalk }}
+              itemStyle={{ color: colors.chalk }}
             />
-            <Line type="monotone" dataKey="score" stroke="#a3e635" strokeWidth={2} dot={{ r: 3 }} name="Score" />
+            <Line type="monotone" dataKey="score" stroke={colors.acidGreen} strokeWidth={2} dot={{ r: 3 }} name="Score" />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -52,14 +54,15 @@ export function ProgressionChart({ data }: Props) {
         <h4 className="font-telemetry text-xs text-steel/60 uppercase mb-3">Consistency (CV%)</h4>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.1)" />
-            <XAxis dataKey="date" tick={{ fill: '#94a3b8', fontSize: 10 }} />
-            <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 148, 148, 0.12)" />
+            <XAxis dataKey="date" tick={{ fill: colors.steel, fontSize: 10 }} />
+            <YAxis tick={{ fill: colors.steel, fontSize: 10 }} />
             <Tooltip
-              contentStyle={{ backgroundColor: '#1a1a2e', border: '1px solid rgba(148,163,184,0.2)', borderRadius: 8 }}
-              labelStyle={{ color: '#e2e8f0' }}
+              contentStyle={{ backgroundColor: colors.concrete, border: '1px solid rgba(148, 148, 148, 0.2)', borderRadius: 8 }}
+              labelStyle={{ color: colors.chalk }}
+              itemStyle={{ color: colors.chalk }}
             />
-            <Line type="monotone" dataKey="consistency" stroke="#fb923c" strokeWidth={2} dot={{ r: 3 }} name="CV %" />
+            <Line type="monotone" dataKey="consistency" stroke={colors.pitOrange} strokeWidth={2} dot={{ r: 3 }} name="CV %" />
           </LineChart>
         </ResponsiveContainer>
       </div>

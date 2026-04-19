@@ -1,0 +1,773 @@
+.page {
+  --lap-progress: 0;
+  --lap-red: #b9362d;
+  --lap-panel: rgba(10, 10, 12, 0.78);
+  --lap-panel-strong: rgba(13, 13, 16, 0.92);
+  --lap-line: rgba(240, 237, 229, 0.15);
+  --lap-shadow: 0 32px 100px rgba(0, 0, 0, 0.5);
+  position: relative;
+  min-height: 100vh;
+  overflow-x: clip;
+  background:
+    radial-gradient(circle at 18% 8%, rgba(255, 255, 255, 0.07), transparent 28%),
+    radial-gradient(circle at 82% 24%, rgba(185, 54, 45, 0.1), transparent 26%),
+    linear-gradient(180deg, #020202 0%, #050505 24%, #080808 100%);
+  color: var(--chalk);
+}
+
+.page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(rgba(240, 237, 229, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 237, 229, 0.03) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at 50% 28%, black 35%, transparent 85%);
+  pointer-events: none;
+}
+
+.page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background:
+    linear-gradient(120deg, transparent 0%, rgba(255, 255, 255, 0.02) 38%, transparent 62%),
+    radial-gradient(circle at 50% 100%, rgba(185, 54, 45, 0.08), transparent 40%);
+  pointer-events: none;
+}
+
+.utilityBar {
+  position: fixed;
+  inset: 28px auto auto 28px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--lap-line);
+  background: rgba(0, 0, 0, 0.56);
+  backdrop-filter: blur(18px);
+}
+
+.utilityLabel {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 229, 0.78);
+}
+
+.utilityLink {
+  color: var(--chalk);
+  text-decoration: none;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  border-bottom: 1px solid transparent;
+  transition:
+    color 220ms ease,
+    border-color 220ms ease;
+}
+
+.utilityLink:hover,
+.utilityLink:focus-visible {
+  color: white;
+  border-color: rgba(240, 237, 229, 0.7);
+}
+
+.progressRail {
+  position: fixed;
+  inset: 50% 30px auto auto;
+  z-index: 4;
+  width: 196px;
+  transform: translateY(-50%);
+}
+
+.progressEyebrow {
+  margin: 0 0 14px;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 229, 0.56);
+}
+
+.progressTrack {
+  position: relative;
+  padding-left: 28px;
+}
+
+.progressTrackLine,
+.progressTrackFill {
+  position: absolute;
+  inset: 8px auto 8px 6px;
+  width: 1px;
+  border-radius: 999px;
+}
+
+.progressTrackLine {
+  background: rgba(240, 237, 229, 0.12);
+}
+
+.progressTrackFill {
+  background: linear-gradient(180deg, rgba(240, 237, 229, 0.84), var(--lap-red));
+  height: calc((100% - 16px) * var(--lap-progress));
+  transform-origin: top;
+}
+
+.progressMarker {
+  position: absolute;
+  inset: calc(8px + ((100% - 24px) * var(--lap-progress))) auto auto 0;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(240, 237, 229, 0.36);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(240, 237, 229, 0.96) 0 28%, transparent 31%),
+    radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.66), rgba(185, 54, 45, 0.12));
+  box-shadow:
+    0 0 0 10px rgba(185, 54, 45, 0.08),
+    0 0 22px rgba(185, 54, 45, 0.36);
+  transform: translateY(-50%);
+}
+
+.progressList {
+  list-style: none;
+  display: grid;
+  gap: 24px;
+  margin: 0;
+  padding: 0;
+}
+
+.progressItem {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  color: rgba(240, 237, 229, 0.42);
+  transition: color 240ms ease;
+}
+
+.progressItemActive {
+  color: rgba(240, 237, 229, 0.94);
+}
+
+.progressDot {
+  position: absolute;
+  inset: 5px auto auto -26px;
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.progressLabel,
+.progressTitle {
+  display: block;
+}
+
+.progressLabel {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.progressTitle {
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.main {
+  position: relative;
+  z-index: 1;
+}
+
+.section {
+  position: relative;
+  min-height: 180svh;
+  padding-inline: clamp(28px, 6vw, 84px);
+}
+
+.heroSection {
+  min-height: 170svh;
+}
+
+.problemSection {
+  isolation: isolate;
+}
+
+.pipelineSection {
+  min-height: 250svh;
+}
+
+.ctaSection {
+  isolation: isolate;
+}
+
+.stickyStage {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  min-height: 100svh;
+  padding-block: 110px 84px;
+}
+
+.sectionWash,
+.sectionGrid,
+.heroOrb,
+.problemCurve,
+.finishGlow {
+  position: absolute;
+  pointer-events: none;
+}
+
+.sectionWash {
+  inset: 12% 10% auto;
+  height: 72%;
+  border-radius: 999px;
+  filter: blur(64px);
+  opacity: 0.7;
+}
+
+.heroWash {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.11), transparent 62%);
+}
+
+.problemWash {
+  background: radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.1), transparent 62%);
+}
+
+.pipelineWash {
+  background: radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.06), transparent 68%);
+}
+
+.ctaWash {
+  background: radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.14), transparent 60%);
+}
+
+.sectionGrid {
+  inset: 14% 0 auto auto;
+  width: min(48vw, 700px);
+  height: 60vh;
+  border: 1px solid rgba(240, 237, 229, 0.05);
+  background:
+    linear-gradient(rgba(240, 237, 229, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(240, 237, 229, 0.03) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: linear-gradient(180deg, transparent, black 24%, black 78%, transparent);
+}
+
+.heroGrid {
+  transform: perspective(1000px) rotateY(-16deg);
+}
+
+.heroOrb {
+  top: 24%;
+  right: 16%;
+  width: clamp(220px, 30vw, 460px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.3), transparent 32%),
+    radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.24), rgba(185, 54, 45, 0));
+  filter: blur(10px);
+  opacity: 0.52;
+}
+
+.problemCurve {
+  inset: 22% auto auto 52%;
+  width: min(40vw, 520px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(240, 237, 229, 0.1);
+  border-top-color: rgba(185, 54, 45, 0.34);
+  border-left-color: rgba(185, 54, 45, 0.2);
+  border-radius: 44% 56% 72% 28%;
+  filter: blur(1px);
+}
+
+.finishGlow {
+  inset: auto auto 10% 4%;
+  width: min(30vw, 380px);
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: radial-gradient(circle at 50% 50%, rgba(185, 54, 45, 0.26), transparent 72%);
+  filter: blur(44px);
+}
+
+.trackMotif {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: min(76vw, 980px);
+  height: auto;
+  transform: translate(-50%, -50%);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.heroMotif {
+  inset: 48% auto auto 56%;
+  width: min(84vw, 1180px);
+}
+
+.problemMotif {
+  inset: 48% auto auto 52%;
+  width: min(78vw, 960px);
+}
+
+.pipelineMotif {
+  inset: 54% auto auto 50%;
+  width: min(82vw, 1040px);
+}
+
+.ctaMotif {
+  inset: 46% auto auto 50%;
+  width: min(76vw, 960px);
+}
+
+.trackBase,
+.trackAccent,
+.trackDash {
+  fill: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.trackBase {
+  stroke: rgba(240, 237, 229, 0.14);
+  stroke-width: 54;
+  stroke-linecap: round;
+}
+
+.trackAccent {
+  stroke: rgba(240, 237, 229, 0.42);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.trackDash {
+  stroke: rgba(185, 54, 45, 0.82);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 6 15 18 28;
+  opacity: 0.75;
+}
+
+.panel {
+  position: relative;
+  border: 1px solid var(--lap-line);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 30%),
+    var(--lap-panel);
+  box-shadow: var(--lap-shadow);
+  backdrop-filter: blur(20px);
+}
+
+.heroPanel {
+  width: min(760px, 100%);
+  padding: clamp(28px, 4vw, 52px);
+}
+
+.eyebrow {
+  margin: 0 0 18px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 229, 0.56);
+}
+
+.startFinishMark {
+  width: 176px;
+  height: 10px;
+  margin-bottom: 28px;
+  background: repeating-linear-gradient(90deg, rgba(240, 237, 229, 0.94) 0 12px, transparent 12px 24px);
+}
+
+.heroTitle,
+.sectionTitle,
+.ctaTitle {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: var(--ls-display);
+  text-wrap: balance;
+}
+
+.heroTitle {
+  font-size: clamp(3.4rem, 8vw, 7.9rem);
+  line-height: 0.92;
+  max-width: 10ch;
+}
+
+.sectionTitle {
+  font-size: clamp(2.6rem, 4.8vw, 4.7rem);
+  line-height: 0.96;
+  max-width: 12ch;
+}
+
+.ctaTitle {
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 1;
+}
+
+.heroCopy,
+.sectionCopy,
+.problemQuote,
+.ctaCopy,
+.deltaCopy,
+.pipelineCopy,
+.differentiatorCopy {
+  font-family: var(--font-body);
+  color: rgba(240, 237, 229, 0.8);
+}
+
+.heroCopy,
+.sectionCopy,
+.ctaCopy {
+  max-width: 60ch;
+  font-size: clamp(1.02rem, 1.3vw, 1.2rem);
+  line-height: 1.75;
+}
+
+.heroCopy {
+  margin: 26px 0 0;
+}
+
+.metricRow {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 30px;
+}
+
+.metricChip,
+.pipelineMetric {
+  display: grid;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid rgba(240, 237, 229, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.metricLabel {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 229, 0.5);
+}
+
+.metricValue {
+  font-family: var(--font-body);
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: rgba(240, 237, 229, 0.9);
+}
+
+.actionRow,
+.actionStack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 30px;
+}
+
+.primaryAction,
+.secondaryAction {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid transparent;
+  text-decoration: none;
+  transition:
+    transform 220ms ease,
+    border-color 220ms ease,
+    background-color 220ms ease,
+    color 220ms ease;
+}
+
+.primaryAction {
+  background: var(--lap-red);
+  border-color: rgba(185, 54, 45, 0.4);
+  color: white;
+}
+
+.secondaryAction {
+  border-color: rgba(240, 237, 229, 0.16);
+  color: var(--chalk);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.primaryAction:hover,
+.primaryAction:focus-visible,
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  transform: translateY(-2px);
+}
+
+.secondaryAction:hover,
+.secondaryAction:focus-visible {
+  border-color: rgba(240, 237, 229, 0.44);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.problemGrid,
+.ctaGrid {
+  display: grid;
+  gap: clamp(24px, 3vw, 40px);
+  grid-template-columns: minmax(0, 1.02fr) minmax(0, 0.98fr);
+  width: 100%;
+}
+
+.problemPanel,
+.ctaNarrative {
+  padding: clamp(24px, 3vw, 38px);
+}
+
+.problemQuote {
+  margin: 30px 0 0;
+  padding-top: 24px;
+  border-top: 1px solid rgba(240, 237, 229, 0.12);
+  font-size: 0.98rem;
+  line-height: 1.75;
+}
+
+.deltaStack {
+  display: grid;
+  align-content: center;
+  gap: 18px;
+}
+
+.deltaCard {
+  padding: 20px 22px 22px;
+  border: 1px solid rgba(240, 237, 229, 0.12);
+  background:
+    linear-gradient(180deg, rgba(185, 54, 45, 0.08), transparent 24%),
+    rgba(12, 12, 14, 0.8);
+  box-shadow: var(--lap-shadow);
+}
+
+.deltaLabel,
+.pipelineStep,
+.ctaOverline {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(240, 237, 229, 0.56);
+}
+
+.deltaValue {
+  margin: 10px 0 8px;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 3vw, 3rem);
+  line-height: 0.94;
+  color: #f6f1ea;
+}
+
+.deltaCopy,
+.pipelineCopy,
+.differentiatorCopy {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.pipelineHeader {
+  position: absolute;
+  inset: 110px auto auto 0;
+  max-width: min(700px, 92%);
+}
+
+.pipelinePanel {
+  width: 100%;
+  margin-top: 180px;
+  padding: clamp(24px, 3vw, 38px);
+}
+
+.pipelineLane {
+  position: relative;
+  min-height: 470px;
+  overflow: hidden;
+  border: 1px solid rgba(240, 237, 229, 0.08);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 42%),
+    rgba(6, 6, 8, 0.74);
+  perspective: 1400px;
+}
+
+.pipelineLine {
+  position: absolute;
+  inset: auto auto 16% 8%;
+  width: 82%;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(240, 237, 229, 0.92), rgba(185, 54, 45, 0.65));
+  transform: rotate(-17deg);
+  transform-origin: left center;
+}
+
+.pipelinePulse {
+  position: absolute;
+  inset: auto auto 15.6% 8%;
+  width: 18%;
+  height: 10px;
+  background: linear-gradient(90deg, rgba(185, 54, 45, 0), rgba(185, 54, 45, 0.95), rgba(240, 237, 229, 0));
+  filter: blur(14px);
+  transform: rotate(-17deg);
+  transform-origin: left center;
+}
+
+.pipelineBlock {
+  position: absolute;
+  width: clamp(220px, 18vw, 280px);
+  padding: 20px 22px 24px;
+  border: 1px solid rgba(240, 237, 229, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 34%),
+    var(--lap-panel-strong);
+  box-shadow: var(--lap-shadow);
+  transform-style: preserve-3d;
+}
+
+.pipelineBlock1 {
+  left: 3%;
+  top: 57%;
+}
+
+.pipelineBlock2 {
+  left: 26%;
+  top: 38%;
+}
+
+.pipelineBlock3 {
+  left: 52%;
+  top: 19%;
+}
+
+.pipelineBlock4 {
+  right: 3%;
+  top: 6%;
+}
+
+.pipelineTitle,
+.differentiatorTitle {
+  margin: 12px 0 10px;
+  font-family: var(--font-display);
+  font-size: 1.28rem;
+  line-height: 1.02;
+  color: var(--chalk);
+}
+
+.pipelineMetrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.differentiatorList {
+  display: grid;
+  gap: 14px;
+  margin-top: 28px;
+}
+
+.differentiatorCard {
+  padding: 18px 18px 20px;
+  border: 1px solid rgba(240, 237, 229, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ctaPanel {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  padding: clamp(26px, 3vw, 36px);
+}
+
+.ctaCopy {
+  margin: 0;
+}
+
+.checkerBar {
+  width: 100%;
+  height: 12px;
+  margin-top: 10px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92) 0 50%, rgba(12, 12, 14, 0.9) 50% 100%);
+  background-size: 24px 12px;
+}
+
+@media (max-width: 1180px) {
+  .progressRail {
+    display: none;
+  }
+
+  .problemGrid,
+  .ctaGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .pipelineMetrics,
+  .metricRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
+  .utilityBar {
+    inset: 16px 16px auto 16px;
+    justify-content: space-between;
+  }
+
+  .section {
+    min-height: auto;
+    padding-inline: 20px;
+  }
+
+  .pipelineSection {
+    min-height: auto;
+  }
+
+  .stickyStage {
+    position: relative;
+    min-height: auto;
+    padding-block: 110px 72px;
+  }
+
+  .pipelineHeader {
+    position: relative;
+    inset: auto;
+    margin-bottom: 24px;
+  }
+
+  .pipelinePanel {
+    margin-top: 0;
+  }
+
+  .pipelineLane {
+    min-height: auto;
+    display: grid;
+    gap: 16px;
+    padding: 22px;
+  }
+
+  .pipelineLine,
+  .pipelinePulse,
+  .heroOrb,
+  .sectionGrid,
+  .problemCurve {
+    display: none;
+  }
+
+  .pipelineBlock {
+    position: relative;
+    inset: auto;
+    width: 100%;
+  }
+}

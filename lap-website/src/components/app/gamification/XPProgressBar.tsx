@@ -33,17 +33,8 @@ export default function XPProgressBar({
   return (
     <div className={`flex items-center gap-4 ${className}`}>
       {/* Level circle */}
-      <div
-        className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full border-2"
-        style={{
-          borderColor: '#a3e635',
-          backgroundColor: 'rgba(163, 230, 53, 0.1)',
-        }}
-      >
-        <span
-          className="font-monument text-lg font-bold"
-          style={{ color: '#a3e635' }}
-        >
+      <div className="flex-shrink-0 flex items-center justify-center w-12 h-12 rounded-full border-2 border-acid-green bg-acid-green/10">
+        <span className="font-monument text-lg font-bold text-acid-green">
           {level}
         </span>
       </div>
@@ -55,17 +46,14 @@ export default function XPProgressBar({
         </p>
 
         {/* Bar track */}
-        <div
-          className="w-full h-3 rounded-full overflow-hidden"
-          style={{ backgroundColor: '#1a1a2e' }}
-        >
+        <div className="w-full h-3 rounded-full overflow-hidden bg-concrete">
           {/* Bar fill */}
           <div
-            className="h-full rounded-full"
+            className="h-full rounded-full bg-acid-green"
             style={{
               width: `${progressPercent}%`,
-              backgroundColor: '#a3e635',
               transition: 'width 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+              boxShadow: '0 0 8px rgba(34, 197, 94, 0.4)',
             }}
           />
         </div>

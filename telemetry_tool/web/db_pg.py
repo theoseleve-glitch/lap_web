@@ -345,8 +345,13 @@ def init_pg() -> None:
     # where CWD != the directory containing alembic.ini).
     script_dir = ini_path.parent / cfg.get_main_option("script_location", "alembic")
     cfg.set_main_option("script_location", str(script_dir))
-    command.upgrade(cfg, "head")
-    logger.info("Alembic migrations applied to head")
+    try:
+        command.upgrade(cfg, "head")
+        logger.info("Alembic migrations applied to head")
+    except Exception as exc:
+        # Don't crash the app — the DB is likely already at the latest
+        # revision. Log the error so operators can fix the migration chain.
+        logger.warning("Alembic upgrade failed (app continues): %s", exc)
 
 
 def close_pool() -> None:

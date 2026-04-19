@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { api } from '@/lib/api-client';
+import { useReferenceOverlay } from '@/components/app/reference';
+import { chartColor } from '@/components/shared/chart-kit';
 
 /* ── Types ──────────────────────────────────── */
 
@@ -21,16 +23,13 @@ interface LapSpeedOverlayProps {
 
 /* ── Colors ─────────────────────────────────── */
 
-const PALETTE = [
-  '#00ff64', '#58a6ff', '#ff6b35', '#d29922', '#ff3c8e',
-  '#8b5cf6', '#06b6d4', '#eab308', '#f87171', '#34d399',
-];
+const PALETTE = chartColor.palette;
 
 const C = {
-  bg: '#0B0C0F',
-  grid: '#30363d',
-  text: '#888',
-  bright: '#F0EDE5',
+  bg: chartColor.surfaceMuted,
+  grid: chartColor.grid,
+  text: chartColor.textSecondary,
+  bright: chartColor.text,
 };
 
 /* ── Helpers ────────────────────────────────── */
@@ -55,11 +54,18 @@ function niceRange(lo: number, hi: number, count: number): number[] {
 
 /* ── Draw ───────────────────────────────────── */
 
+interface RefOverlayDraw {
+  distances: number[];
+  speeds: number[];  // m/s
+  label: string;
+}
+
 function draw(
   canvas: HTMLCanvasElement,
   traces: Map<number, SpeedTraceData>,
   enabledLaps: Set<number>,
   bestLap: number | null,
+  refOverlay: RefOverlayDraw | null = null,
 ) {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -84,13 +90,21 @@ function draw(
     return;
   }
 
-  // Find data ranges across all enabled laps
+  // Find data ranges across all enabled laps (and reference if present)
   let maxDist = 0, maxSpeed = 0;
   for (const [lap, data] of traces) {
     if (!enabledLaps.has(lap) || !data.distances || data.distances.length < 2) continue;
     const d = data.distances[data.distances.length - 1];
     if (d > maxDist) maxDist = d;
     for (const s of data.speeds) {
+      const kmh = s * 3.6;
+      if (kmh > maxSpeed) maxSpeed = kmh;
+    }
+  }
+  if (refOverlay && refOverlay.distances.length > 1) {
+    const d = refOverlay.distances[refOverlay.distances.length - 1];
+    if (d > maxDist) maxDist = d;
+    for (const s of refOverlay.speeds) {
       const kmh = s * 3.6;
       if (kmh > maxSpeed) maxSpeed = kmh;
     }
@@ -177,6 +191,30 @@ function draw(
     ctx.fillText(`── ${label}`, pad.left + 8, legendY);
     legendY += 13;
   }
+
+  // ── Cross-session reference overlay (dashed racing-purple) ──
+  if (refOverlay && refOverlay.distances.length > 1) {
+    ctx.save();
+    ctx.strokeStyle = chartColor.series.reference;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.globalAlpha = 0.85;
+    ctx.beginPath();
+    for (let i = 0; i < refOverlay.distances.length; i++) {
+      const x = xToPixel(refOverlay.distances[i]);
+      const y = yToPixel(refOverlay.speeds[i] * 3.6);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // Legend entry for reference
+    ctx.fillStyle = chartColor.series.reference;
+    ctx.font = '10px "Space Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(`- - ${refOverlay.label}`, pad.left + 8, legendY);
+  }
 }
 
 /* ── Component ──────────────────────────────── */
@@ -191,6 +229,7 @@ export function LapSpeedOverlay({
   const [traces, setTraces] = useState<Map<number, SpeedTraceData>>(new Map());
   const [enabledLaps, setEnabledLaps] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
+  const { referenceData } = useReferenceOverlay();
 
   // Initialize: enable best lap + first 2 others
   useEffect(() => {
@@ -262,8 +301,20 @@ export function LapSpeedOverlay({
 
   const render = useCallback(() => {
     if (!canvasRef.current) return;
-    draw(canvasRef.current, traces, enabledLaps, bestLap);
-  }, [traces, enabledLaps, bestLap]);
+    let refOverlay: RefOverlayDraw | null = null;
+    if (referenceData?.distances?.length && referenceData.speed?.reference?.length) {
+      const ref = referenceData.reference;
+      const dateStr = ref.session_date
+        ? new Date(ref.session_date).toLocaleDateString('en-GB', { month: 'short', day: 'numeric' })
+        : 'Reference';
+      refOverlay = {
+        distances: referenceData.distances,
+        speeds: referenceData.speed.reference,
+        label: `${dateStr} L${ref.lap_number} (Ref)`,
+      };
+    }
+    draw(canvasRef.current, traces, enabledLaps, bestLap, refOverlay);
+  }, [traces, enabledLaps, bestLap, referenceData]);
 
   useEffect(() => { render(); }, [render]);
   useEffect(() => {

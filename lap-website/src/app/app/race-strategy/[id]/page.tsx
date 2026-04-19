@@ -167,6 +167,12 @@ export default function RaceDetailPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
   });
 
+  const reorderStintMut = useMutation({
+    mutationFn: (vars: { stint_order: number; direction: 'up' | 'down' }) =>
+      api.post<unknown>(`/race-strategy/${raceId}/reorder-stints`, vars),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['race-strategy', raceId] }),
+  });
+
   const [showGoLiveConfirm, setShowGoLiveConfirm] = useState(false);
 
   const del = useEntityDelete({
@@ -486,6 +492,9 @@ export default function RaceDetailPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-steel/20">
+                {stints.length > 1 && editable && (
+                  <th scope="col" className="px-2 py-3 text-steel font-telemetry text-xs uppercase tracking-wider w-10">Order</th>
+                )}
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">#</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Driver</th>
                 <th scope="col" className="text-left px-4 py-3 text-steel font-telemetry text-xs uppercase tracking-wider">Start</th>
@@ -500,13 +509,37 @@ export default function RaceDetailPage() {
               </tr>
             </thead>
             <tbody>
-              {stints.map((s) => {
+              {stints.map((s, idx) => {
                 const sCfg = stintStatusConfig[s.status] || stintStatusConfig.planned;
                 const dur = s.actual_duration_s ?? s.planned_duration_s ?? 0;
                 const durMm = Math.floor(dur / 60);
                 const durSs = dur % 60;
                 return (
                   <tr key={s.stint_id} className="border-b border-steel/10">
+                    {stints.length > 1 && editable && (
+                      <td className="px-2 py-3">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() => reorderStintMut.mutate({ stint_order: s.stint_order, direction: 'up' })}
+                            disabled={idx === 0 || reorderStintMut.isPending}
+                            className="text-steel hover:text-gold disabled:opacity-20 font-telemetry text-xs leading-none px-1"
+                            title="Move up"
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => reorderStintMut.mutate({ stint_order: s.stint_order, direction: 'down' })}
+                            disabled={idx === stints.length - 1 || reorderStintMut.isPending}
+                            className="text-steel hover:text-gold disabled:opacity-20 font-telemetry text-xs leading-none px-1"
+                            title="Move down"
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-chalk font-body text-sm">{s.stint_order}</td>
                     <td className="px-4 py-3 text-chalk font-body text-sm">
                       {editable ? (
@@ -578,7 +611,7 @@ export default function RaceDetailPage() {
               })}
               {stints.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-6 text-center text-steel font-body text-sm">
+                  <td colSpan={12} className="px-4 py-6 text-center text-steel font-body text-sm">
                     No stints planned yet. Run Optimize to generate a plan.
                   </td>
                 </tr>

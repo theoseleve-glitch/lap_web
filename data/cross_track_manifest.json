@@ -1,0 +1,292 @@
+{
+  "version": 1,
+  "_documentation": {
+    "purpose": "Cross-track validation manifest for the friction estimation pipeline.",
+    "groups": {
+      "A_banked": "Banked oval / road-course (Daytona-like) — the validated baseline",
+      "B_flat_low_speed": "Flat tight circuit — tests transfer to non-banked geometry",
+      "C_flat_high_speed": "Flat fast flowing circuit — tests transfer at higher excitation",
+      "D_different_car": "Different car class on a flat track — tests vehicle-spec transfer",
+      "E_short_circuit": "Short technical track — tests behavior with limited lap diversity"
+    },
+    "vehicle_spec_provenance": "Seed values from public sim setups + iRacing official specs. The frozen-pass test will expose any per-car miscalibration."
+  },
+  "datasets": [
+    {
+      "id": "daytona_mclaren570sgt4",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/mclaren570sgt4_daytona 2011 road 2026-01-09 23-40-48.ibt",
+      "group": "A_banked",
+      "track": {
+        "name": "Daytona Road Course",
+        "layout": "2011_road",
+        "regime": "banked",
+        "expected_max_bank_deg": 31.0,
+        "track_length_m": 5729.0,
+        "notes": "Trioval banking + infield road course — Daytona baseline"
+      },
+      "vehicle": {
+        "name": "McLaren 570S GT4",
+        "class": "GT4",
+        "drive_layout": "RWD",
+        "mass_kg": 1222.5,
+        "wheelbase_m": 2.67,
+        "track_front_m": 1.666,
+        "track_rear_m": 1.627,
+        "weight_dist_front": 0.435,
+        "aero_cla": 1.46,
+        "cg_height_m": 0.15,
+        "brake_bias_front": 0.49,
+        "steer_ratio": 14.0,
+        "camber_front_deg": -4.0,
+        "camber_rear_deg": -2.8,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "74-lap session — original calibration anchor"
+      },
+      "expected": {
+        "lambda_band": [0.9, 1.6],
+        "min_observability_pct": 50.0,
+        "racing_line_lift_min": 0.0,
+        "min_field_coverage_pct": 15.0,
+        "max_lap_to_lap_std": 0.10,
+        "max_fy_residual_std": 2500.0,
+        "notes": "Tight expectations — this is the calibrated baseline"
+      }
+    },
+    {
+      "id": "daytona_mclaren570sgt4_session2",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/mclaren570sgt4_daytona 2011 road 2026-01-09 22-26-40.ibt",
+      "group": "A_banked",
+      "track": {
+        "name": "Daytona Road Course",
+        "layout": "2011_road",
+        "regime": "banked",
+        "expected_max_bank_deg": 31.0,
+        "track_length_m": 5729.0,
+        "notes": "Second McLaren GT4 Daytona session — used for accumulator demo"
+      },
+      "vehicle": {
+        "name": "McLaren 570S GT4",
+        "class": "GT4",
+        "drive_layout": "RWD",
+        "mass_kg": 1222.5,
+        "wheelbase_m": 2.67,
+        "track_front_m": 1.666,
+        "track_rear_m": 1.627,
+        "weight_dist_front": 0.435,
+        "aero_cla": 1.46,
+        "cg_height_m": 0.15,
+        "brake_bias_front": 0.49,
+        "steer_ratio": 14.0,
+        "camber_front_deg": -4.0,
+        "camber_rear_deg": -2.8,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "Same car / track as the calibrated baseline — should accumulate cleanly"
+      },
+      "expected": {
+        "lambda_band": [0.9, 1.6],
+        "min_observability_pct": 30.0,
+        "racing_line_lift_min": -0.02,
+        "min_field_coverage_pct": 8.0,
+        "max_lap_to_lap_std": 0.15,
+        "max_fy_residual_std": 2500.0,
+        "notes": "Accumulator-merge target: must match session1 fingerprint + profile"
+      }
+    },
+    {
+      "id": "spa_bmwm2csr",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/bmwm2csr_spa 2024 up 2025-12-17 21-28-34.ibt",
+      "group": "C_flat_high_speed",
+      "track": {
+        "name": "Spa-Francorchamps",
+        "layout": "2024_up",
+        "regime": "flat",
+        "expected_max_bank_deg": 5.0,
+        "track_length_m": 7004.0,
+        "notes": "High-speed flowing flat circuit with elevation changes"
+      },
+      "vehicle": {
+        "name": "BMW M2 CSR",
+        "class": "TouringCar",
+        "drive_layout": "RWD",
+        "mass_kg": 1500.0,
+        "wheelbase_m": 2.69,
+        "track_front_m": 1.585,
+        "track_rear_m": 1.588,
+        "weight_dist_front": 0.50,
+        "aero_cla": 0.4,
+        "cg_height_m": 0.30,
+        "brake_bias_front": 0.55,
+        "steer_ratio": 16.0,
+        "camber_front_deg": -3.0,
+        "camber_rear_deg": -2.0,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "Transfer test: different car + non-banked + high speed"
+      },
+      "expected": {
+        "lambda_band": [0.7, 1.5],
+        "min_observability_pct": 30.0,
+        "racing_line_lift_min": -0.02,
+        "min_field_coverage_pct": 10.0,
+        "max_lap_to_lap_std": 0.15,
+        "max_fy_residual_std": 3500.0,
+        "notes": "Wider band acknowledges car/track mismatch with Daytona calibration"
+      }
+    },
+    {
+      "id": "okayama_audirs3lms",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/audirs3lms_okayama full 2025-09-30 20-47-05.ibt",
+      "group": "B_flat_low_speed",
+      "track": {
+        "name": "Okayama International Circuit",
+        "layout": "full",
+        "regime": "flat",
+        "expected_max_bank_deg": 3.0,
+        "track_length_m": 3703.0,
+        "notes": "Tight, short flat circuit — low banking, technical"
+      },
+      "vehicle": {
+        "name": "Audi RS3 LMS",
+        "class": "TCR",
+        "drive_layout": "FWD",
+        "mass_kg": 1265.0,
+        "wheelbase_m": 2.63,
+        "track_front_m": 1.580,
+        "track_rear_m": 1.580,
+        "weight_dist_front": 0.62,
+        "aero_cla": 0.5,
+        "cg_height_m": 0.32,
+        "brake_bias_front": 0.65,
+        "steer_ratio": 14.0,
+        "camber_front_deg": -3.5,
+        "camber_rear_deg": -2.5,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "FWD car on a flat tight track — strong transfer test"
+      },
+      "expected": {
+        "lambda_band": [0.6, 1.5],
+        "min_observability_pct": 25.0,
+        "racing_line_lift_min": -0.03,
+        "min_field_coverage_pct": 10.0,
+        "max_lap_to_lap_std": 0.18,
+        "max_fy_residual_std": 4000.0,
+        "notes": "FWD layout violates the drive_rear_only assumption — expect tire-model mismatch"
+      }
+    },
+    {
+      "id": "roadamerica_audirs3lms",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/audirs3lms_roadamerica full 2024-12-17 00-45-11.ibt",
+      "group": "C_flat_high_speed",
+      "track": {
+        "name": "Road America",
+        "layout": "full",
+        "regime": "flat",
+        "expected_max_bank_deg": 3.0,
+        "track_length_m": 6515.0,
+        "notes": "Long, fast flowing flat circuit"
+      },
+      "vehicle": {
+        "name": "Audi RS3 LMS",
+        "class": "TCR",
+        "drive_layout": "FWD",
+        "mass_kg": 1265.0,
+        "wheelbase_m": 2.63,
+        "track_front_m": 1.580,
+        "track_rear_m": 1.580,
+        "weight_dist_front": 0.62,
+        "aero_cla": 0.5,
+        "cg_height_m": 0.32,
+        "brake_bias_front": 0.65,
+        "steer_ratio": 14.0,
+        "camber_front_deg": -3.5,
+        "camber_rear_deg": -2.5,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "Transfer test: same car as Okayama, flat-fast vs flat-tight"
+      },
+      "expected": {
+        "lambda_band": [0.6, 1.5],
+        "min_observability_pct": 30.0,
+        "racing_line_lift_min": -0.03,
+        "min_field_coverage_pct": 10.0,
+        "max_lap_to_lap_std": 0.15,
+        "max_fy_residual_std": 4000.0,
+        "notes": "Pairs with Okayama session to isolate track-vs-car factors"
+      }
+    },
+    {
+      "id": "summit_bmwm2csr",
+      "ibt_path": "C:/Users/Admin/Documents/iRacing/telemetry/bmwm2csr_summit summit raceway 2026-02-03 21-28-53.ibt",
+      "group": "E_short_circuit",
+      "track": {
+        "name": "Summit Point",
+        "layout": "summit_raceway",
+        "regime": "flat",
+        "expected_max_bank_deg": 3.0,
+        "track_length_m": 3273.0,
+        "notes": "Short technical track — lots of laps in a session"
+      },
+      "vehicle": {
+        "name": "BMW M2 CSR",
+        "class": "TouringCar",
+        "drive_layout": "RWD",
+        "mass_kg": 1500.0,
+        "wheelbase_m": 2.69,
+        "track_front_m": 1.585,
+        "track_rear_m": 1.588,
+        "weight_dist_front": 0.50,
+        "aero_cla": 0.4,
+        "cg_height_m": 0.30,
+        "brake_bias_front": 0.55,
+        "steer_ratio": 16.0,
+        "camber_front_deg": -3.0,
+        "camber_rear_deg": -2.0,
+        "tire_d1_lat_default": 2.8,
+        "tire_d1_long_default": 2.7
+      },
+      "session": {
+        "type": "practice",
+        "kappa_available": false,
+        "ride_height_available": true,
+        "notes": "Short circuit — tests bucket density and per-lap stability"
+      },
+      "expected": {
+        "lambda_band": [0.6, 1.5],
+        "min_observability_pct": 25.0,
+        "racing_line_lift_min": -0.03,
+        "min_field_coverage_pct": 8.0,
+        "max_lap_to_lap_std": 0.20,
+        "max_fy_residual_std": 4000.0,
+        "notes": "Short track lap-to-lap variation expected to be higher"
+      }
+    }
+  ]
+}

@@ -62,6 +62,17 @@ class ErrorCode:
     NOT_READY = "NOT_READY"
     NOT_IMPLEMENTED = "NOT_IMPLEMENTED"
     DATA_UNAVAILABLE = "DATA_UNAVAILABLE"
+    SUPPORT_TIER_REFUSED = "SUPPORT_TIER_REFUSED"
+    BUNDLE_FILE_MISSING = "BUNDLE_FILE_MISSING"
+    BUNDLE_SIZE_EXCEEDED = "BUNDLE_SIZE_EXCEEDED"
+    BUNDLE_CONTENT_INVALID = "BUNDLE_CONTENT_INVALID"
+    BUNDLE_MANIFEST_MISSING = "BUNDLE_MANIFEST_MISSING"
+    BUNDLE_MANIFEST_INVALID = "BUNDLE_MANIFEST_INVALID"
+    BUNDLE_SCHEMA_VERSION_UNSUPPORTED = "BUNDLE_SCHEMA_VERSION_UNSUPPORTED"
+    BUNDLE_CHECKSUM_MISMATCH = "BUNDLE_CHECKSUM_MISMATCH"
+    BUNDLE_INNER_CHECKSUM_MISMATCH = "BUNDLE_INNER_CHECKSUM_MISMATCH"
+    BUNDLE_DUPLICATE = "BUNDLE_DUPLICATE"
+    READINESS_NOT_MET = "READINESS_NOT_MET"
 
 
 class ReasonCode:
@@ -109,6 +120,17 @@ ERROR_CATALOG: dict[str, dict[str, Any]] = {
     ErrorCode.NOT_READY:            {"status": 503, "message": "Service is starting up"},
     ErrorCode.NOT_IMPLEMENTED:      {"status": 501, "message": "Not implemented"},
     ErrorCode.DATA_UNAVAILABLE:     {"status": 404, "message": "Requested data is not available"},
+    ErrorCode.SUPPORT_TIER_REFUSED: {"status": 451, "message": "Output unavailable at current support tier"},
+    ErrorCode.BUNDLE_FILE_MISSING: {"status": 400, "message": "Upload did not include a bundle file"},
+    ErrorCode.BUNDLE_SIZE_EXCEEDED: {"status": 413, "message": "Bundle exceeds size limit"},
+    ErrorCode.BUNDLE_CONTENT_INVALID: {"status": 415, "message": "Bundle is not a valid archive"},
+    ErrorCode.BUNDLE_MANIFEST_MISSING: {"status": 422, "message": "Bundle archive is missing manifest.json"},
+    ErrorCode.BUNDLE_MANIFEST_INVALID: {"status": 422, "message": "Bundle manifest.json failed validation"},
+    ErrorCode.BUNDLE_SCHEMA_VERSION_UNSUPPORTED: {"status": 422, "message": "Bundle schema version is not supported"},
+    ErrorCode.BUNDLE_CHECKSUM_MISMATCH: {"status": 422, "message": "Declared checksum does not match uploaded bytes"},
+    ErrorCode.BUNDLE_INNER_CHECKSUM_MISMATCH: {"status": 422, "message": "An inner bundle file failed checksum verification"},
+    ErrorCode.BUNDLE_DUPLICATE: {"status": 409, "message": "This bundle was already uploaded in this workspace"},
+    ErrorCode.READINESS_NOT_MET: {"status": 409, "message": "Bundle is not analyzable at its current readiness level"},
 }
 
 

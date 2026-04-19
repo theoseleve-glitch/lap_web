@@ -197,7 +197,7 @@
 
         // Title
         ctx.fillStyle = C.textSecondary;
-        ctx.font = 'bold 14px system-ui, sans-serif';
+        ctx.font = 'bold 14px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('Track Map — ' + selectedLaps.length + ' Lap' +
             (selectedLaps.length !== 1 ? 's' : ''), w / 2, 22);
@@ -240,7 +240,7 @@
                 ctx.lineWidth = 2;
                 ctx.stroke();
                 ctx.fillStyle = C.textPrimary;
-                ctx.font = 'bold 10px system-ui, sans-serif';
+                ctx.font = 'bold 10px "Inter", "Segoe UI", sans-serif';
                 ctx.textAlign = 'left';
                 ctx.fillText('S/F', sf.x + 10, sf.y + 4);
             }
@@ -265,7 +265,7 @@
 
         // Axis labels
         ctx.fillStyle = C.textMuted;
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText('← West  |  East →', w / 2, h - 8);
         ctx.save();
@@ -323,7 +323,7 @@
 
             // Label
             ctx.fillStyle = C.textPrimary;
-            ctx.font = 'bold 10px system-ui, sans-serif';
+            ctx.font = 'bold 10px "Inter", "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('C' + c.corner_id, p.x, p.y);
@@ -340,7 +340,7 @@
 
         // Label
         ctx.fillStyle = C.textSecondary;
-        ctx.font = '11px system-ui, sans-serif';
+        ctx.font = '11px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.save();
         ctx.translate(legX + legW + 18, legY + legH / 2);
@@ -363,7 +363,7 @@
 
         // Tick labels
         ctx.fillStyle = C.textSecondary;
-        ctx.font = '10px system-ui, sans-serif';
+        ctx.font = '10px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'left';
         var maxKmh = (maxSpd * 3.6).toFixed(0);
         var minKmh = (minSpd * 3.6).toFixed(0);
@@ -386,7 +386,7 @@
         ctx.fillStyle = C.bgCard;
         ctx.fillRect(0, 0, w, 200);
         ctx.fillStyle = C.textMuted;
-        ctx.font = '14px system-ui, sans-serif';
+        ctx.font = '14px "Inter", "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(msg, w / 2, 100);
     }

@@ -44,6 +44,7 @@ from web.models import (
     upsert_session,
     upsert_track,
 )
+from telemetry_tool.adapters.registry import supported_extensions as _supported_extensions
 from web.rate_limit import rate_limit
 
 logger = logging.getLogger(__name__)
@@ -51,7 +52,10 @@ logger = logging.getLogger(__name__)
 bp = Blueprint("sessions_v2", __name__, url_prefix="/api/v1")
 
 # File extensions accepted for upload.
-_ALLOWED_EXTENSIONS = {".csv", ".txt", ".ibt", ".ld", ".ldx", ".vbo", ".xrk", ".drk"}
+# _STATIC_ALLOWED covers plain-text formats that are always accepted;
+# supported_extensions() adds all extensions from registered adapters.
+_STATIC_ALLOWED = {".csv", ".txt"}
+_ALLOWED_EXTENSIONS = _STATIC_ALLOWED | _supported_extensions()
 
 # ── Tier limits ────────────────────────────────────────────────────────────
 
@@ -90,6 +94,24 @@ def _check_tier_limits(f: BinaryIO, conn: sqlite3.Connection, workspace_id: str,
             f"File size ({file_size // (1024 * 1024)} MB) exceeds your plan limit "
             f"({max_mb} MB)."
         )
+    # Monthly upload volume check (atomic — locks row to prevent race conditions)
+    user_id = getattr(g, "current_user_id", None)
+    if user_id is not None:
+        try:
+            from auth.entitlements import check_and_record_quota
+            file_size_mb = max(1, file_size // (1024 * 1024))  # at least 1 MB
+            allowed, ctx = check_and_record_quota(
+                conn, user_id, int(workspace_id), "upload_volume_mb", cost=file_size_mb,
+            )
+            if not allowed:
+                limit_mb = ctx.get("limit", 0)
+                used_mb = ctx.get("used", 0)
+                return (
+                    f"Monthly upload volume exceeded ({used_mb} MB / {limit_mb} MB). "
+                    f"Resets {ctx.get('resets_at', 'next month')}."
+                )
+        except Exception:
+            logger.warning("Volume quota check failed — allowing upload", exc_info=True)
     # Session count check
     max_sessions = limits.get("max_sessions")
     if max_sessions is not None:
@@ -367,11 +389,26 @@ def upload_session() -> tuple[Response, int]:
 
     ext = Path(f.filename).suffix.lower()
     if ext not in _ALLOWED_EXTENSIONS:
-        return api_error(
-            ErrorCode.UNSUPPORTED_FORMAT,
-            f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
-            status=400,
-        )
+        # Return structured import error for unsupported extensions
+        try:
+            from import_errors import ImportErrorCode, ImportFailure, make_support_ref
+            failure = ImportFailure.from_code(
+                ImportErrorCode.UNSUPPORTED_FILE_EXTENSION,
+                support_ref=make_support_ref(),
+                message_override=f"File type '{ext}' is not supported. Accepted: CSV, TXT, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK (AiM).",
+            )
+            return api_error(
+                ErrorCode.UNSUPPORTED_FORMAT,
+                failure.message,
+                details=[{"import_error": failure.to_dict()}],
+                status=400,
+            )
+        except ImportError:
+            return api_error(
+                ErrorCode.UNSUPPORTED_FORMAT,
+                f"Unsupported file type '{ext}'. Accepted: CSV, IBT (iRacing), LD/LDX (MoTeC), VBO (VBOX), XRK/DRK.",
+                status=400,
+            )
 
     # ── 2. Tier limit check ───────────────────────────────────────
     plan_tier = getattr(g, "plan_tier", "demo")
@@ -399,6 +436,30 @@ def upload_session() -> tuple[Response, int]:
         f.save(str(tmp_path))
         logger.info("Saved upload to temp path: %s (%d bytes)",
                      tmp_path, tmp_path.stat().st_size)
+
+        # ── 3b. Preflight validation (fast, in-request) ───────────
+        try:
+            from preflight import run_preflight
+            preflight_result = run_preflight(str(tmp_path))
+            if not preflight_result.ok and preflight_result.failure:
+                failure = preflight_result.failure
+                logger.info(
+                    "Preflight failed: code=%s support_ref=%s file=%s",
+                    failure.code, failure.support_ref, f.filename,
+                )
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return api_error(
+                    ErrorCode.VALIDATION_ERROR,
+                    failure.message,
+                    details=[{"import_error": failure.to_dict()}],
+                    status=422,
+                )
+        except ImportError:
+            logger.debug("Preflight module not available — skipping")
+        except Exception:
+            # Preflight is best-effort; don't block upload on preflight bugs
+            logger.warning("Preflight validation raised — continuing", exc_info=True)
 
         # ── 4. Build session metadata ─────────────────────────────
         _VALID_SESSION_TYPES = {"practice", "qualifying", "race", "test", "endurance", "heat", "final"}
@@ -581,8 +642,22 @@ def upload_session() -> tuple[Response, int]:
             shutil.rmtree(tmp_dir, ignore_errors=True)
         except Exception:
             pass
-        return api_error(
-            ErrorCode.ANALYSIS_FAILED,
-            "Failed to accept upload. Please try again or contact support.",
-            status=500,
-        )
+        # Try to return a structured error
+        try:
+            from import_errors import ImportErrorCode, ImportFailure, make_support_ref
+            failure = ImportFailure.from_code(
+                ImportErrorCode.PIPELINE_INTERNAL_ERROR,
+                support_ref=make_support_ref(),
+            )
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                failure.message,
+                details=[{"import_error": failure.to_dict()}],
+                status=500,
+            )
+        except ImportError:
+            return api_error(
+                ErrorCode.ANALYSIS_FAILED,
+                "Failed to accept upload. Please try again or contact support.",
+                status=500,
+            )

@@ -24,6 +24,10 @@ export function BackgroundScene() {
     cam.updateProjectionMatrix();
   }, [camera, size]);
 
-  // Pure black background — all 3D elements disabled
-  return null;
+  return (
+    <>
+      <TrackRibbon />
+      <SpeedStreaks />
+    </>
+  );
 }

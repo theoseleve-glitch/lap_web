@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface SpeedOverlayData {
   distances: number[];
@@ -109,18 +110,18 @@ export default function SpeedOverlayPanel({
 
   if (loading) {
     return (
-      <div className="bg-zinc-900 rounded-lg p-4 flex items-center justify-center py-12">
+      <div className="bg-concrete rounded-lg p-4 flex items-center justify-center py-12">
         <div className="w-5 h-5 border-2 border-acid-green border-t-transparent rounded-full animate-spin mr-3" />
-        <p className="text-zinc-500 text-sm">Loading speed overlay...</p>
+        <p className="text-steel text-sm">Loading speed overlay...</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-zinc-900 rounded-lg p-4">
-        <h3 className="text-sm font-medium text-zinc-300 mb-2">Speed Overlay</h3>
-        <p className="text-zinc-500 text-sm">{error}</p>
+      <div className="bg-concrete rounded-lg p-4">
+        <h3 className="text-sm font-medium text-chalk mb-2">Speed Overlay</h3>
+        <p className="text-steel text-sm">{error}</p>
       </div>
     );
   }
@@ -128,9 +129,9 @@ export default function SpeedOverlayPanel({
   if (!overlay) return null;
 
   return (
-    <div className="bg-zinc-900 rounded-lg p-4">
+    <div className="bg-concrete rounded-lg p-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-zinc-300">Speed Overlay</h3>
+        <h3 className="text-sm font-medium text-chalk">Speed Overlay</h3>
         <div className="flex items-center gap-4 text-xs font-body">
           <span className="flex items-center gap-1.5">
             <span className="w-3 h-0.5 rounded" style={{ backgroundColor: colorA }} />
@@ -216,7 +217,7 @@ function drawSpeedCanvas(
   const yScale = (s: number) => pad.top + cH - ((s * 3.6 - minSpeed) / speedRange) * cH;
 
   // Grid
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.strokeStyle = chartColor.grid;
   ctx.lineWidth = 1;
   const nGridY = 5;
   for (let i = 0; i <= nGridY; i++) {
@@ -228,7 +229,7 @@ function drawSpeedCanvas(
   }
 
   // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '10px monospace';
   ctx.textAlign = 'right';
   for (let i = 0; i <= nGridY; i++) {
@@ -250,7 +251,7 @@ function drawSpeedCanvas(
   ctx.translate(12, pad.top + cH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.fillStyle = chartColor.textMuted;
   ctx.font = '10px sans-serif';
   ctx.fillText('km/h', 0, 0);
   ctx.restore();
@@ -313,7 +314,7 @@ function drawDeltaCanvas(
   const yScale = (d: number) => pad.top + cH / 2 - (d / absMax) * (cH / 2);
 
   // Zero line
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.strokeStyle = chartColor.axis;
   ctx.lineWidth = 1;
   ctx.beginPath();
   const zeroY = pad.top + cH / 2;
@@ -339,7 +340,7 @@ function drawDeltaCanvas(
   }
 
   // Delta line
-  ctx.strokeStyle = '#e6edf3';
+  ctx.strokeStyle = chartColor.text;
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let i = 0; i < distances.length; i++) {
@@ -350,7 +351,7 @@ function drawDeltaCanvas(
   ctx.stroke();
 
   // Y-axis labels
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.fillStyle = chartColor.textSecondary;
   ctx.font = '9px monospace';
   ctx.textAlign = 'right';
   ctx.fillText(`+${absMax.toFixed(2)}s`, pad.left - 5, pad.top + 8);

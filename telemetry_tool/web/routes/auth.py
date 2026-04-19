@@ -176,7 +176,7 @@ def register():
     try:
         user = register_user(conn, email, password, display_name or email.split("@")[0])
         secret = current_app.config["JWT_SECRET"]
-        access_token = create_access_token(user["id"], secret)
+        access_token = create_access_token(user["id"], secret, email_verified=False)
         refresh_token = create_refresh_token()
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=current_app.config.get("JWT_REFRESH_EXPIRY_DAYS", 30)
@@ -210,7 +210,6 @@ def register():
 
         result = {
             "access_token": access_token,
-            "refresh_token": refresh_token,
             "user": user,
         }
         resp = make_response(api_response(result, status=201))
@@ -283,9 +282,10 @@ def login():
                    {"ip": ip}, ip_address=ip, user_agent=ua)
         _check_login_anomaly(conn, result["user"]["id"], ip, ua)
 
+        refresh_token = result.pop("refresh_token", None)
         resp = make_response(api_response(result))
-        if result.get("refresh_token"):
-            _set_refresh_cookie(resp, result["refresh_token"])
+        if refresh_token:
+            _set_refresh_cookie(resp, refresh_token)
         set_csrf_cookie(resp, generate_csrf_token())
         return resp
     except AuthError as e:
@@ -399,9 +399,14 @@ def refresh():
             {"id": old_token_id},
         )
 
-        # Issue new token pair
+        # Issue new token pair — query actual email_verified state from DB
         secret = current_app.config["JWT_SECRET"]
-        new_access = create_access_token(user_id, secret)
+        ev_row = conn.execute(
+            "SELECT email_verified FROM users WHERE id = %(uid)s",
+            {"uid": user_id},
+        ).fetchone()
+        email_verified = bool((ev_row or {}).get("email_verified", False))
+        new_access = create_access_token(user_id, secret, email_verified=email_verified)
         new_refresh = create_refresh_token()
         expires_at = datetime.now(timezone.utc) + timedelta(
             days=current_app.config.get("JWT_REFRESH_EXPIRY_DAYS", 30)
@@ -423,7 +428,6 @@ def refresh():
 
         result = {
             "access_token": new_access,
-            "refresh_token": new_refresh,
             "user": dict(user) if user else {},
         }
         resp = make_response(api_response(result))

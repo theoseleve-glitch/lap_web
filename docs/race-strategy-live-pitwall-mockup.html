@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Race Strategy Live Mockup</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700;800&display=swap');
+    :root {
+      --bg: #06080b;
+      --panel: #10151c;
+      --panel-2: #0c1117;
+      --line: #202833;
+      --line-2: #2b3642;
+      --text: #eef3f8;
+      --muted: #8ea0b3;
+      --green: #53f28a;
+      --amber: #f4bf52;
+      --red: #ff6b6b;
+      --blue: #4ea2ff;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font-family: Inter, sans-serif; }
+    .app { min-height: 100vh; display: grid; grid-template-rows: auto auto 1fr; }
+    .topbar, .statusbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); }
+    .topbar { background: #0b1016; }
+    .brand, .mono, .btn, .pill, .table th, .log .time, .label { font-family: "IBM Plex Mono", monospace; }
+    .brand { font-size: 28px; font-weight: 600; letter-spacing: -0.04em; }
+    .top-actions, .session-actions, .chip-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .btn, .pill { border: 1px solid var(--line-2); background: #10161e; color: var(--text); padding: 10px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .btn.primary { background: #14351f; color: var(--green); border-color: #215b34; }
+    .btn.warn { color: var(--amber); }
+    .btn.danger { color: var(--red); }
+    .statusbar { background: #08110a; }
+    .headline { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .headline h1 { margin: 0; font-size: 30px; }
+    .sub { color: var(--muted); font-size: 14px; }
+    .live { padding: 6px 10px; background: #123120; color: var(--green); border: 1px solid #225235; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; }
+    .board { display: grid; grid-template-columns: 320px 1.4fr 420px; gap: 14px; padding: 14px; min-height: 0; }
+    .col, .center-grid { display: grid; gap: 14px; min-height: 0; }
+    .center-grid { grid-template-rows: auto 1fr auto; }
+    .panel { background: linear-gradient(180deg, var(--panel), var(--panel-2)); border: 1px solid var(--line); min-height: 0; }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .panel-body { padding: 14px; }
+    .metric-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+    .metric { padding: 14px; border: 1px solid var(--line); background: #0d1319; }
+    .metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    .metric .value { margin-top: 8px; font-size: 34px; font-weight: 800; letter-spacing: -0.05em; }
+    .metric .detail { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    .track-wrap { display: grid; grid-template-columns: 1fr 160px; gap: 14px; height: 100%; }
+    .track-box { position: relative; min-height: 360px; background: #090d12; border: 1px solid var(--line); overflow: hidden; }
+    .track-svg { width: 100%; height: 100%; display: block; }
+    .floating { position: absolute; left: 12px; top: 12px; background: rgba(6, 8, 11, 0.9); border: 1px solid var(--line-2); padding: 8px 10px; font-size: 12px; }
+    .weather-stack { display: grid; gap: 10px; }
+    .mini { padding: 12px; border: 1px solid var(--line); background: #0b1016; }
+    .mini strong { display: block; font-size: 24px; margin-top: 6px; }
+    .tower table, .log table { width: 100%; border-collapse: collapse; }
+    .table th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .table td { padding: 10px 12px; border-bottom: 1px solid #18202a; font-size: 13px; }
+    .table tr.active { background: rgba(83, 242, 138, 0.06); }
+    .driver-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 8px; vertical-align: middle; }
+    .timeline { display: grid; gap: 10px; }
+    .lane { display: grid; grid-template-columns: 120px 1fr 56px; gap: 10px; align-items: center; font-size: 13px; }
+    .bar { height: 14px; background: #0b1016; border: 1px solid var(--line); position: relative; overflow: hidden; }
+    .bar span { position: absolute; inset: 0 auto 0 0; }
+    .a { width: 31%; background: #4583e6; }
+    .b { width: 52%; background: #f24f4f; }
+    .c { width: 43%; background: #1ec58f; }
+    .d { width: 25%; background: #f4bf52; }
+    .command-grid { display: grid; gap: 10px; }
+    .command-grid .btn { width: 100%; text-align: left; }
+    .log-list { display: grid; gap: 8px; max-height: 260px; overflow: auto; }
+    .log { padding: 10px 12px; border: 1px solid var(--line); background: #0b1016; font-size: 13px; }
+    .log .time { color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .footer-strip { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; }
+    .progress { height: 16px; background: #0a0e13; border: 1px solid var(--line); position: relative; overflow: hidden; }
+    .progress span { display: block; height: 100%; width: 78%; background: linear-gradient(90deg, var(--green), #7bf2c4); }
+    @media (max-width: 1220px) {
+      .board { grid-template-columns: 1fr; }
+      .track-wrap, .footer-strip { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="headline">
+        <div class="brand">LAP</div>
+        <div>
+          <div class="sub">Race Strategy Wall</div>
+          <h1>24H Open Kart</h1>
+        </div>
+        <div class="live">Live stint control</div>
+      </div>
+      <div class="top-actions">
+        <div class="pill">CIK Le Mans</div>
+        <div class="pill">Track dry</div>
+        <div class="pill">Grid synced</div>
+      </div>
+    </div>
+
+    <div class="statusbar">
+      <div class="session-actions">
+        <button class="btn">View config</button>
+        <button class="btn primary">Pit in</button>
+        <button class="btn primary">Re-optimize</button>
+        <button class="btn warn">Tech stop</button>
+        <button class="btn danger">Penalty</button>
+        <button class="btn danger">Finish race</button>
+      </div>
+      <div class="chip-row">
+        <div class="pill">Elapsed 12:43:11</div>
+        <div class="pill">Remaining 11:16:49</div>
+        <div class="pill">Fuel 6.4 kg</div>
+      </div>
+    </div>
+
+    <div class="board">
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><h2>Race control</h2><span class="label">Phase 4</span></div>
+          <div class="panel-body metric-grid">
+            <div class="metric"><div class="label">Current driver</div><div class="value">Theo</div><div class="detail">Stint 17 · ballast 0 kg</div></div>
+            <div class="metric"><div class="label">Next driver</div><div class="value">William</div><div class="detail">Pit lap 134</div></div>
+            <div class="metric"><div class="label">Autonomy</div><div class="value">1:56</div><div class="detail">Fuel margin +2 laps</div></div>
+            <div class="metric"><div class="label">Risk</div><div class="value" style="color: var(--amber);">Medium</div><div class="detail">Traffic spike in 9 min</div></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Stint timeline</h2><span class="label">Wide workspace</span></div>
+          <div class="panel-body timeline">
+            <div class="lane"><span>Theo</span><div class="bar"><span class="a"></span></div><span>31m</span></div>
+            <div class="lane"><span>William</span><div class="bar"><span class="b"></span></div><span>52m</span></div>
+            <div class="lane"><span>Baptiste</span><div class="bar"><span class="c"></span></div><span>43m</span></div>
+            <div class="lane"><span>Arnaud</span><div class="bar"><span class="d"></span></div><span>25m</span></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Command stack</h2><span class="label">Always visible</span></div>
+          <div class="panel-body command-grid">
+            <button class="btn primary">Call clean pit stop next lap</button>
+            <button class="btn">Hold one extra lap if clear air persists</button>
+            <button class="btn">Swap to ballast 25 kg for William</button>
+            <button class="btn warn">Protect against yellow-flag window</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="center-grid">
+        <div class="panel">
+          <div class="panel-head"><h2>Track + telemetry wall</h2><span class="label">Inspired by Pitwall density</span></div>
+          <div class="panel-body track-wrap">
+            <div class="track-box">
+              <div class="floating mono">Wind 3.3 kph</div>
+              <svg class="track-svg" viewBox="0 0 700 420" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M120 340C80 340 76 320 110 312H250L318 108C332 66 378 54 398 88C410 110 398 144 370 148C338 153 329 117 355 105C390 89 450 103 538 118C593 128 600 150 560 164C518 179 466 168 418 168C390 168 374 196 386 226C394 245 418 272 408 300C397 333 359 338 324 330L286 326C280 326 276 330 278 338L284 364C286 374 280 380 266 380H102C76 380 72 358 120 340Z" stroke="#183028" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M120 340C80 340 76 320 110 312H250L318 108C332 66 378 54 398 88C410 110 398 144 370 148C338 153 329 117 355 105C390 89 450 103 538 118C593 128 600 150 560 164C518 179 466 168 418 168C390 168 374 196 386 226C394 245 418 272 408 300C397 333 359 338 324 330L286 326C280 326 276 330 278 338L284 364C286 374 280 380 266 380H102C76 380 72 358 120 340Z" stroke="#2cf27a" stroke-opacity=".55" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+                <circle cx="270" cy="228" r="8" fill="#f4bf52"/>
+                <circle cx="547" cy="165" r="8" fill="#4ea2ff"/>
+                <circle cx="287" cy="364" r="8" fill="#ff6b6b"/>
+              </svg>
+            </div>
+            <div class="weather-stack">
+              <div class="mini mono"><div class="label">Track</div><strong>19.9°C</strong><span class="sub">grip stable</span></div>
+              <div class="mini mono"><div class="label">Rain</div><strong>0%</strong><span class="sub">next 25 min clear</span></div>
+              <div class="mini mono"><div class="label">Traffic</div><strong style="color: var(--amber);">Rising</strong><span class="sub">turn 7 cluster</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="footer-strip">
+          <div class="panel tower">
+            <div class="panel-head"><h2>Timing tower</h2><span class="label">Top 6</span></div>
+            <table class="table">
+              <thead><tr><th>Pos</th><th>Driver</th><th>Best</th><th>Gap</th></tr></thead>
+              <tbody>
+                <tr class="active"><td>1</td><td><span class="driver-dot" style="background:#4583e6"></span>THE</td><td>1:35.275</td><td>-</td></tr>
+                <tr><td>2</td><td><span class="driver-dot" style="background:#f24f4f"></span>WIL</td><td>1:35.400</td><td>+0.125</td></tr>
+                <tr><td>3</td><td><span class="driver-dot" style="background:#1ec58f"></span>BAP</td><td>1:36.092</td><td>+0.817</td></tr>
+                <tr><td>4</td><td><span class="driver-dot" style="background:#f4bf52"></span>ARN</td><td>1:36.505</td><td>+1.230</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Fuel forecast</h2><span class="label">Window</span></div>
+            <div class="panel-body">
+              <div class="metric"><div class="label">Current fuel</div><div class="value">6.4 kg</div><div class="detail">Burn 0.06 kg/min</div></div>
+              <div class="progress" style="margin-top: 12px;"><span></span></div>
+              <p class="sub" style="margin: 10px 0 0;">Safe to hold until lap 134. Emergency pit if safety car extends beyond 14 min.</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="panel-head"><h2>Strategy note</h2><span class="label">Recommendation</span></div>
+            <div class="panel-body">
+              <div class="metric"><div class="label">Best move now</div><div class="value" style="font-size: 24px; color: var(--green);">Pit clean next lap</div><div class="detail">Avoid yellow-flag compression and hand over to William in clear air.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col">
+        <div class="panel">
+          <div class="panel-head"><h2>Race messages</h2><span class="label">Control</span></div>
+          <div class="panel-body log-list">
+            <div class="log"><div class="time">13:17:08</div>Track surface slippery in sector 4.</div>
+            <div class="log"><div class="time">13:18:22</div>Yellow flag in sector 7. Clear in 24 seconds.</div>
+            <div class="log"><div class="time">13:19:44</div>Traffic model updated. Pit loss worsens by +1.2s after lap 135.</div>
+            <div class="log"><div class="time">13:20:31</div>Ballast switch ready for William. Crew acknowledged.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Pit checklist</h2><span class="label">Ops</span></div>
+          <div class="panel-body log-list">
+            <div class="log">Fuel hose staged and green-lit.</div>
+            <div class="log">Ballast pack 25 kg confirmed.</div>
+            <div class="log">Driver swap order: Theo out, William in.</div>
+            <div class="log">Penalty exposure: none open.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h2>Next stint</h2><span class="label">Preview</span></div>
+          <div class="panel-body metric-grid">
+            <div class="metric"><div class="label">Driver</div><div class="value">William</div><div class="detail">41:19 planned</div></div>
+            <div class="metric"><div class="label">Refuel</div><div class="value">Yes</div><div class="detail">Target 7.0 kg</div></div>
+            <div class="metric"><div class="label">Ballast</div><div class="value">25</div><div class="detail">kg</div></div>
+            <div class="metric"><div class="label">Confidence</div><div class="value" style="color: var(--green);">88%</div><div class="detail">clear-air entry</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

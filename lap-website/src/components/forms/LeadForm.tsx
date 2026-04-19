@@ -243,25 +243,6 @@ export function LeadForm({ type, submitLabel, className = '' }: LeadFormProps) {
         </div>
       )}
 
-      <div>
-        <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-persona`}>
-          {t('form.persona')}
-        </label>
-        <select
-          id={`${type}-persona`}
-          value={form.persona}
-          onChange={(event) => setForm((prev) => ({ ...prev, persona: event.target.value }))}
-          onBlur={() => trackFormFieldBlur(type, 'persona')}
-          className="w-full bg-concrete border border-steel/30 px-3 py-2 text-chalk"
-        >
-          <option value="">{t('form.personaPlaceholder')}</option>
-          <option value="drivers">{t('form.personaDrivers')}</option>
-          <option value="circuits">{t('form.personaCircuits')}</option>
-          <option value="teams">{t('form.personaTeams')}</option>
-          <option value="endurance">{t('form.personaEndurance')}</option>
-        </select>
-      </div>
-
       {showPreferredDate && (
         <div>
           <label className="block font-telemetry text-steel mb-1" htmlFor={`${type}-date`}>

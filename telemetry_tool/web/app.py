@@ -290,6 +290,12 @@ def create_app(config: Config | None = None) -> Flask:
         ('.routes.api_v1_entities',    'bp', 'api_v1_entities_bp'), # Entity CRUD (drivers, tracks)
         ('.routes.api_changelog',      'bp', 'api_changelog_bp'),  # API changelog endpoint
         ('.routes.api_rss',            'bp', 'api_rss_bp'),        # RSS feed endpoint
+        ('.routes.theoretical',        'bp', 'theoretical_bp'),    # Sim optimizer theoretical lap endpoints
+        ('.routes.events',             'bp', 'events_bp'),          # Engagement tracking + usage dashboard
+        ('.routes.seo_health',         'bp', 'seo_health_bp'),      # SEO health check endpoint
+        ('.routes.track_surface_analysis', 'bp', 'track_surface_analysis_bp'),  # Track-surface analysis app layer
+        ('.routes.bundles',                'bp', 'bundles_bp'),                 # Logger bundle intake boundary
+        ('.routes.coaching',               'bp', 'coaching_bp'),                # Prescriptive coaching engine endpoint
     ]
 
     import importlib
@@ -334,15 +340,13 @@ def create_app(config: Config | None = None) -> Flask:
             app.before_request(entitlement_middleware)
             app.after_request(record_successful_usage)
             logger.debug("Registered entitlement middleware")
-            from .routes.teams import bp as teams_bp
-            from .routes.teams import invitations_bp
             from .routes.workspaces import bp as workspaces_bp
             app.register_blueprint(workspaces_bp)
-            app.register_blueprint(teams_bp)
-            app.register_blueprint(invitations_bp)
+            # Teams/invitations blueprints intentionally not registered —
+            # single-user model, no collaborative team features.
             from .routes.admin import bp as admin_bp
             app.register_blueprint(admin_bp)
-            logger.debug("Registered workspace, team, and admin blueprints")
+            logger.debug("Registered workspace and admin blueprints")
             # Initialize Celery with Flask app context
             from celery_app import make_celery
             celery_inst = make_celery(app)
@@ -389,6 +393,15 @@ def create_app(config: Config | None = None) -> Flask:
             from .routes.endurance_upload import bp as endurance_upload_bp
             app.register_blueprint(endurance_upload_bp)
             logger.debug("Registered endurance_upload blueprint")
+
+            # Device pairing and sync endpoints
+            from .routes.devices import bp as devices_bp
+            app.register_blueprint(devices_bp)
+            logger.debug("Registered devices blueprint")
+
+            from .routes.sync_upload import bp as sync_upload_bp
+            app.register_blueprint(sync_upload_bp)
+            logger.debug("Registered sync_upload blueprint")
         except Exception as exc:
             logger.error("Failed to register auth blueprints: %s", exc)
 

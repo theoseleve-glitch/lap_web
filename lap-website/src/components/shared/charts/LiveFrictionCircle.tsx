@@ -15,6 +15,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { apiFetch } from '@/lib/api-client';
 import { useChartHoverStore } from '@/lib/chart-hover-store';
+import { chartColor } from '@/components/shared/chart-kit';
 
 interface GGData {
   distances: number[];
@@ -37,16 +38,16 @@ interface LiveFrictionCircleProps {
 }
 
 const COLORS = {
-  throttle: '#22c55e',  // green
-  brake: '#ef4444',     // red
-  overlap: '#eab308',   // yellow
-  coast: '#3b82f6',     // blue
-  bg: '#1a1a2e',
-  grid: 'rgba(255,255,255,0.08)',
-  text: '#e0e0e0',
-  textDim: 'rgba(255,255,255,0.4)',
-  circle: 'rgba(255,255,255,0.15)',
-  highlight: '#ffffff',
+  throttle: chartColor.series.positive,
+  brake: chartColor.series.negative,
+  overlap: chartColor.series.warning,
+  coast: chartColor.palette[3],
+  bg: chartColor.surface,
+  grid: chartColor.grid,
+  text: chartColor.text,
+  textDim: chartColor.textMuted,
+  circle: chartColor.borderStrong,
+  highlight: chartColor.text,
 };
 
 export function LiveFrictionCircle({
@@ -239,7 +240,7 @@ export function LiveFrictionCircle({
         const lat = gg.accel_lat[highlightIdx];
         const lng = gg.accel_long[highlightIdx];
         if (lat != null && lng != null) {
-          ctx.fillStyle = 'rgba(0,0,0,0.8)';
+          ctx.fillStyle = chartColor.tooltipBg;
           const txt = `Lat: ${lat.toFixed(2)}G  Long: ${lng.toFixed(2)}G`;
           ctx.font = '11px monospace';
           const tw = ctx.measureText(txt).width;

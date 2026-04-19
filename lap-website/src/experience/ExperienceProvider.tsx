@@ -23,7 +23,7 @@ export function ExperienceProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <Suspense fallback={<div className="min-h-screen bg-asphalt" />}>
+    <Suspense fallback={<>{children}</>}>
       <ExperienceShellLazy>{children}</ExperienceShellLazy>
     </Suspense>
   );

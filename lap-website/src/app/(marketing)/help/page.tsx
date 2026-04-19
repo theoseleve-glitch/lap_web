@@ -1,5 +1,9 @@
 import Link from 'next/link';
 import { JsonLd } from '@/components/seo/JsonLd';
+import { BreadcrumbJsonLd } from '@/components/seo/BreadcrumbJsonLd';
+import { PageJsonLd } from '@/components/seo/PageJsonLd';
+import { EntityGlossary } from '@/components/seo/EntityGlossary';
+import { RelatedPages as SeoRelatedPages } from '@/components/seo/RelatedPages';
 import { PageIntro } from '@/components/ui/PageIntro';
 import { generateSeoMetadata } from '@/lib/seo';
 import { RelatedPages } from '@/components/marketing/RelatedPages';
@@ -39,6 +43,18 @@ const faq = [
 export default function HelpPage() {
   return (
     <>
+    <BreadcrumbJsonLd pathname="/help" />
+    <PageJsonLd
+      type="FAQPage"
+      title="Help"
+      description="Find answers to common questions about LAP."
+      pathname="/help"
+      faqItems={[
+        { question: 'How do I upload telemetry data?', answer: 'Go to Upload in the dashboard, select your CSV file from RaceChrono or RaceBox, and click Upload. Analysis starts automatically.' },
+        { question: 'Which data loggers are supported?', answer: 'LAP supports RaceChrono, RaceBox, AiM, and MoTeC CSV exports. Any CSV with GPS latitude, longitude, and speed columns.' },
+        { question: 'How is the performance score calculated?', answer: 'Four pillars scored out of 25 each: Pace (speed vs best), Consistency (lap variation), Execution (corner technique), Robustness (pace maintenance).' },
+      ]}
+    />
     <JsonLd
       pathname="/help"
       faqItems={[
@@ -117,6 +133,8 @@ export default function HelpPage() {
       </section>
 
       <RelatedPages pathname="/help" />
+      <EntityGlossary />
+      <SeoRelatedPages currentPath="/help" />
     </main>
     </>
   );

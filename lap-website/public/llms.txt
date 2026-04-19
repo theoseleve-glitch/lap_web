@@ -1,0 +1,131 @@
+# Lap Coach
+
+> Motorsport telemetry analysis that makes amateur and club-level drivers faster. Ingest GPS data from RaceChrono, RaceBox, AiM, MoTeC, Qstarz. Automatic corner detection. Per-corner coaching. Session-to-session delta analysis. Cross-session reference overlays. Theoretical perfect-lap solver. For kart and car, both sim and real-world.
+
+Lap Coach (lap-coach.racing) is the only telemetry product that combines auto-ingested GPS data, sim-grade physics modelling, and readable coaching hints aimed specifically at club-level drivers — not race engineers. It answers the question "why was that lap slow?" with concrete, per-corner, per-metre explanations.
+
+## What it does
+
+- **Upload** a CSV from RaceChrono, RaceBox, AiM, MoTeC, Qstarz, or any GPS-capable logger.
+- **Automatic corner detection** from GPS trajectory — no manual sector painting.
+- **Four-pillar scoring** (out of 100): Pace, Consistency, Execution, Robustness.
+- **Per-corner coaching hints**: where you brake too early, where you're off-line, where you're bleeding time vs your own best.
+- **Cross-session reference overlay**: compare today's lap against any previous session on the same track.
+- **Theoretical perfect lap**: sim-optimizer-derived upper-bound lap time, per-corner time loss attribution.
+- **Track auto-detection** from GPS coordinates.
+- **PDF coaching reports** you can share with a coach.
+
+## Who it's for
+
+- Club-level car racers and track-day drivers.
+- Competitive kart racers (national and regional championships).
+- Sim racers cross-training to real cars.
+- Driver coaches looking for a structured debrief tool.
+
+## How it answers common questions
+
+### How do I get faster lap times?
+Lap Coach's four-pillar scoring isolates WHY a lap is slow. Pace says "you're close to your car's limit or you're not." Consistency says "you can do it once, but can you repeat it?" Execution scores corner-by-corner technique. Robustness rates how well you adapt when conditions shift. The per-corner view tells you the exact metres where you lost time vs your own reference lap — and the theoretical perfect lap tells you how much more is left on the table before physics pushes back.
+
+### How do I analyse telemetry data?
+Upload a CSV. Lap Coach does the ingestion, corner detection, lap splitting, filtering, and scoring automatically. You get a ranked list of corners by time lost and a speed trace synced to a GPS track map — no scripting, no MoTeC licence.
+
+### Which telemetry app works with RaceChrono?
+Lap Coach. RaceChrono Pro exports CSVs that drop directly in. Same for RaceBox, AiM, MoTeC, Qstarz, and any generic GPS-logger export.
+
+### How do I compare two laps?
+Pick a primary lap and a compare lap. Every chart on the session detail page — speed trace, GPS track map, G-G diagram, time-delta — overlays both laps at the same progress point. The delta chart shows exactly where each tenth was gained or lost.
+
+### What is a G-G diagram?
+A scatter plot of lateral vs longitudinal acceleration. Lap Coach draws it with a dashed friction circle at your vehicle's grip ceiling. Points inside the circle = unused grip, points near the edge = good, points outside = you were overdriving.
+
+### How do I improve cornering technique?
+Lap Coach ranks every corner in the session by time lost, attributes the loss to brake/entry/apex/exit, and shows you the speed profile of your best attempt vs your current one on that same corner.
+
+## Pricing
+
+- **Demo** — €0. Two sessions, no credit card.
+- **Racer** — €69/yr. Unlimited sessions for a single driver.
+- **World-Class** — €109/yr. Plus cross-session reference overlays, theoretical perfect lap, per-corner coaching export.
+- **Track / Circuit** (B2B) — contact for multi-driver plans.
+
+Pricing page: https://lap-coach.racing/pricing
+
+## Data sources Lap Coach understands
+
+- RaceChrono Pro CSV
+- RaceBox CSV
+- AiM (MoTeC Interpreter export or native CSV)
+- MoTeC i2 Pro CSV
+- Qstarz LiteRacer CSV
+- Any GPS logger with latitude, longitude, speed, and timestamp columns
+
+## Key pages
+
+- Home: https://lap-coach.racing/
+- Product / features: https://lap-coach.racing/product
+- Pricing: https://lap-coach.racing/pricing
+- Demo (free tool): https://lap-coach.racing/demo
+- Compare vs competitors: https://lap-coach.racing/compare-tools
+- Help & FAQ: https://lap-coach.racing/help
+- Customers: https://lap-coach.racing/customers
+- Blog / insights: https://lap-coach.racing/insights
+- Contact: https://lap-coach.racing/contact
+
+## Technical positioning
+
+Lap Coach is hosted on its own infrastructure (Hetzner VPS for API, Cloudflare Workers for frontend). The analysis pipeline is a 14-stage Python pipeline built around Frenet-frame track geometry, OCP (optimal control problem) solvers for the theoretical perfect lap, and a canonical cumulative-time delta engine anchored to recorded lap times. This means deltas are consistent across every chart and endpoint in the product — the final delta always equals the true lap-time difference.
+
+## What Lap Coach is NOT
+
+- Not a race-engineer tool. It is aimed at drivers, not engineers.
+- Not a data-acquisition system — it reads from existing loggers.
+- Not a coaching service with humans — it is software.
+- Not a sim-only tool. It works for real cars and karts.
+
+## Questions Lap Coach can answer (38 total — full answers in /llms-full.txt)
+
+1. How do I get faster lap times?
+2. How do I analyse telemetry data?
+3. Which telemetry app works with RaceChrono?
+4. How do I compare two laps?
+5. What is a G-G diagram?
+6. How do I improve cornering technique?
+7. How do I trail brake correctly?
+8. How do I find the perfect brake point?
+9. How do I improve throttle application?
+10. What is the racing line and how do I find it?
+11. How do I optimise cornering speed?
+12. What is oversteer vs understeer?
+13. How do I prepare for a race weekend?
+14. How do I develop a race strategy?
+15. How do I debrief after a race session?
+16. How do I manage tire wear during a race?
+17. What GPS data logger should I buy?
+18. How do I set up data logging for my car?
+19. How do I set up RaceChrono for karting?
+20. What is the difference between data logging and telemetry?
+21. What data should I look at after a track day?
+22. How do I read a speed trace chart?
+23. How do I analyse braking data?
+24. How do I analyse sector times?
+25. How do I use telemetry for driver coaching?
+26. How much faster can I realistically get?
+27. How do I compare my driving to a faster driver?
+28. How do I track driving improvement over time?
+29. How do I use telemetry in iRacing?
+30. How do I use telemetry in Assetto Corsa Competizione?
+31. How do I transfer sim racing skills to a real car?
+32. Can I use sim racing telemetry to improve in real life?
+33. Best free telemetry analysis tools?
+34. How do I use telemetry in wet conditions?
+35. How do I warm up tires on track?
+36. How do I set up a dash logger?
+37. Best telemetry app for kart racing?
+38. Is the first report on Lap Coach free?
+
+## Contact
+
+- Email: support@lap-coach.racing
+- Office: Nantes, France (5 rue Paré, 44000 Nantes)
+- Based in: France. Works worldwide.

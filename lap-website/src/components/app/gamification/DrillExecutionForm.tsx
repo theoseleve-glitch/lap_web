@@ -22,9 +22,9 @@ interface DrillExecutionFormProps {
 type DrillStatus = 'attempted' | 'completed' | 'skipped';
 
 const STATUS_OPTIONS: { value: DrillStatus; label: string; color: string }[] = [
-  { value: 'completed', label: 'Completed', color: '#a3e635' },
+  { value: 'completed', label: 'Completed', color: '#22C55E' },
   { value: 'attempted', label: 'Attempted', color: '#f59e0b' },
-  { value: 'skipped', label: 'Skipped', color: '#94a3b8' },
+  { value: 'skipped', label: 'Skipped', color: '#949494' },
 ];
 
 export default function DrillExecutionForm({
@@ -93,8 +93,8 @@ export default function DrillExecutionForm({
           }
           className="w-full rounded-lg px-3 py-2 text-sm font-body text-chalk border transition-colors focus:outline-none focus:ring-1"
           style={{
-            backgroundColor: '#1a1a2e',
-            borderColor: '#94a3b8',
+            backgroundColor: '#141414',
+            borderColor: '#949494',
           }}
         >
           <option value="">-- No session --</option>
@@ -126,7 +126,7 @@ export default function DrillExecutionForm({
               <span
                 className="w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors"
                 style={{
-                  borderColor: status === opt.value ? opt.color : '#94a3b8',
+                  borderColor: status === opt.value ? opt.color : '#949494',
                 }}
               >
                 {status === opt.value && (
@@ -138,7 +138,7 @@ export default function DrillExecutionForm({
               </span>
               <span
                 className="text-sm font-body"
-                style={{ color: status === opt.value ? opt.color : '#94a3b8' }}
+                style={{ color: status === opt.value ? opt.color : '#949494' }}
               >
                 {opt.label}
               </span>
@@ -163,8 +163,8 @@ export default function DrillExecutionForm({
           placeholder="How did it go?"
           className="w-full rounded-lg px-3 py-2 text-sm font-body text-chalk border resize-none transition-colors focus:outline-none focus:ring-1"
           style={{
-            backgroundColor: '#1a1a2e',
-            borderColor: '#94a3b8',
+            backgroundColor: '#141414',
+            borderColor: '#949494',
           }}
         />
       </div>
@@ -178,7 +178,7 @@ export default function DrillExecutionForm({
 
       {/* XP result */}
       {xpGained !== null && (
-        <p className="text-sm font-telemetry font-semibold" style={{ color: '#a3e635' }}>
+        <p className="text-sm font-telemetry font-semibold" style={{ color: '#22C55E' }}>
           +{xpGained} XP earned!
         </p>
       )}
@@ -189,8 +189,8 @@ export default function DrillExecutionForm({
         disabled={submitting}
         className="w-full py-2.5 px-4 rounded-lg font-monument text-sm font-bold uppercase tracking-wider transition-opacity disabled:opacity-50"
         style={{
-          backgroundColor: '#a3e635',
-          color: '#1a1a2e',
+          backgroundColor: '#22C55E',
+          color: '#141414',
         }}
       >
         {submitting ? 'Submitting...' : 'Log Drill'}
