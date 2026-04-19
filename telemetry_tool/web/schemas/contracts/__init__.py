@@ -5,6 +5,19 @@ from telemetry_tool.web.schemas.contracts.capabilities import (
     ChannelTag,
     SessionCapabilities,
 )
+from telemetry_tool.web.schemas.contracts.coaching import (
+    COACHING_SHEET_VERSION,
+    CoachingContract,
+    CornerCoachingItem,
+    CornerCueItem,
+    FocusItem,
+    NextRunItem,
+    PhaseTag,
+    Severity,
+    StorylineItem,
+    StorylineState,
+    ValidationCheck,
+)
 from telemetry_tool.web.schemas.contracts.common import (
     DriverRef,
     Event,
@@ -24,6 +37,17 @@ from telemetry_tool.web.schemas.contracts.session import (
 __all__ = [
     "ChannelTag",
     "SessionCapabilities",
+    "COACHING_SHEET_VERSION",
+    "CoachingContract",
+    "CornerCoachingItem",
+    "CornerCueItem",
+    "FocusItem",
+    "NextRunItem",
+    "PhaseTag",
+    "Severity",
+    "StorylineItem",
+    "StorylineState",
+    "ValidationCheck",
     "DriverRef",
     "Event",
     "LapSummary",
