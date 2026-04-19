@@ -19,7 +19,7 @@
       "phase": "exit"
     }
   ],
-  "total_time_loss_s": 0.7,
+  "total_time_loss_s": 0.59,
   "trajectory_delta": {
     "distance_m": [
       0.0,
@@ -68,6 +68,9 @@
   },
   "validation": {
     "iracing_optimal_delta_s": 0.12,
-    "confidence_notes": "Matched 94% of identified corners"
+    "confidence_notes": "Matched 94% of identified corners",
+    "gap_to_theoretical_s": 0.7,
+    "attributed_loss_s": 0.59,
+    "unattributed_loss_s": 0.11
   }
 }

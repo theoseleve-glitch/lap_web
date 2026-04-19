@@ -5,15 +5,15 @@
   "source": "real_life",
   "capabilities": {
     "channels": [
-      "lat_g",
       "yaw_rate",
+      "lat_g",
       "lon_g",
       "gps"
     ]
   },
   "data_profile": {
     "parser": "racechrono",
-    "columns_detected": 14,
+    "channels_detected": 14,
     "sample_hz": 10
   },
   "driver": {

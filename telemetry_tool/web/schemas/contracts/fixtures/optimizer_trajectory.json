@@ -19,7 +19,7 @@
       "phase": null
     }
   ],
-  "total_time_loss_s": 0.7,
+  "total_time_loss_s": 0.46,
   "trajectory_delta": {
     "distance_m": [
       0.0,
@@ -36,9 +36,12 @@
   },
   "reconstructed_inputs": null,
   "vehicle_model": {
-    "note": "unidentified — trajectory-only mode"
+    "note": "unidentified - trajectory-only mode"
   },
   "validation": {
-    "method_notes": "GPS+IMU only; no driver input reconstruction"
+    "method_notes": "GPS+IMU only; no driver input reconstruction",
+    "gap_to_theoretical_s": 0.7,
+    "attributed_loss_s": 0.46,
+    "unattributed_loss_s": 0.24
   }
 }

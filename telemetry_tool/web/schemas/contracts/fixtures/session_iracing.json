@@ -5,15 +5,15 @@
   "source": "iracing",
   "capabilities": {
     "channels": [
-      "throttle",
-      "lon_g",
-      "yaw_rate",
+      "steer",
       "gps",
       "wheel_spd",
-      "brake",
-      "steer",
+      "yaw_rate",
+      "shock_defl",
+      "throttle",
       "lat_g",
-      "shock_defl"
+      "lon_g",
+      "brake"
     ]
   },
   "data_profile": {
@@ -40,17 +40,105 @@
   "laps": [
     {
       "lap_number": 1,
+      "lap_time_s": null,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "out_lap"
+      ]
+    },
+    {
+      "lap_number": 2,
+      "lap_time_s": 139.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 3,
       "lap_time_s": 139.2,
       "is_valid": true,
       "is_best": false,
       "flags": []
     },
     {
-      "lap_number": 2,
+      "lap_number": 4,
+      "lap_time_s": 138.7,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 5,
       "lap_time_s": 138.5,
       "is_valid": true,
       "is_best": true,
       "flags": []
+    },
+    {
+      "lap_number": 6,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 7,
+      "lap_time_s": 139.4,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 8,
+      "lap_time_s": 139.1,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 9,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 10,
+      "lap_time_s": 139.6,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 11,
+      "lap_time_s": 138.9,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 12,
+      "lap_time_s": 139.0,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 13,
+      "lap_time_s": 138.8,
+      "is_valid": true,
+      "is_best": false,
+      "flags": []
+    },
+    {
+      "lap_number": 14,
+      "lap_time_s": null,
+      "is_valid": false,
+      "is_best": false,
+      "flags": [
+        "in_lap"
+      ]
     }
   ],
   "events": [],

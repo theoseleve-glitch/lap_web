@@ -62,6 +62,18 @@
           "cost_ms": 150.0
         }
       ]
+    },
+    "8": {
+      "corner_id": "8",
+      "items": [
+        {
+          "weakness_key": "throttle_lift_exit",
+          "phase": "exit",
+          "severity": "medium",
+          "cue_text": "Delay throttle lift 0.2s",
+          "cost_ms": 30.0
+        }
+      ]
     }
   },
   "not_evaluable_corners": [],
