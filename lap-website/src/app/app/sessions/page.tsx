@@ -628,20 +628,11 @@ export default function SessionsPage() {
       setConfirmDelete(false);
       return { previous };
     },
-    onSuccess: (_result, ids) => {
-      // Nuclear cache clear: remove ALL session list cache entries entirely.
-      // This forces React Query to fetch fresh from the server on the next
-      // render cycle — there is no stale data to accidentally display.
-      queryClient.removeQueries({ queryKey: ['sessions', 'list'] });
-
-      // Then immediately refetch the current view so the user sees the
-      // updated list (without the deleted sessions) within milliseconds.
-      queryClient.fetchQuery({
-        queryKey: ['sessions', 'list', queryParams],
-        queryFn: () => api.get<ListResponse>(`/sessions?${queryParams}`),
-      });
-
-      // Also refresh filter options and dashboard counts.
+    onSuccess: () => {
+      // The optimistic removal in onMutate already updated the UI.
+      // Just invalidate dashboard counts + filter options.
+      // Do NOT touch the session list cache — the optimistic state IS the
+      // correct state (the DELETE committed on the server).
       queryClient.invalidateQueries({ queryKey: ['sessions', 'filter-options'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
     },
