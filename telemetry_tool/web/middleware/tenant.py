@@ -56,26 +56,36 @@ def tenant_middleware() -> Response | tuple | None:
         except Exception:
             logger.warning("Failed to auto-create workspace for user %s", user_id, exc_info=True)
 
-    if ws_id:
-        set_workspace_context(conn, ws_id)
-        g.workspace_id = ws_id
-        g.workspace_role = "owner"
-    else:
-        # Last resort: set a safe default so downstream code doesn't crash.
-        g.workspace_id = "default"
-        g.workspace_role = "owner"
+    if not ws_id:
+        # Cannot resolve or auto-create a workspace. Returning a safe error
+        # is preferable to setting a bogus string like "default" — downstream
+        # code calls ``int(g.workspace_id)`` (see data_v2.refresh_rollups)
+        # and leaves RLS session state unset, which would either 500 or leak
+        # data across tenants.
+        logger.error(
+            "Cannot resolve workspace_id for user %s — refusing request", user_id
+        )
+        from web.api_utils import ErrorCode, api_error
+        return api_error(
+            ErrorCode.SERVICE_UNAVAILABLE,
+            "Workspace unavailable. Please try again.",
+            status=503,
+        )
+
+    set_workspace_context(conn, ws_id)
+    g.workspace_id = ws_id
+    g.workspace_role = "owner"
 
     # Resolve plan tier (used by rate limiter and feature gating)
-    if ws_id:
-        try:
-            from auth.entitlements import get_user_plan_tier
-            g.plan_tier = get_user_plan_tier(conn, user_id)
-        except Exception as exc:
-            logger.warning(
-                "Failed to resolve plan_tier for user %s: %s: %s",
-                user_id, type(exc).__name__, exc,
-            )
-            g.plan_tier = "demo"
+    try:
+        from auth.entitlements import get_user_plan_tier
+        g.plan_tier = get_user_plan_tier(conn, user_id)
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve plan_tier for user %s: %s: %s",
+            user_id, type(exc).__name__, exc,
+        )
+        g.plan_tier = "demo"
 
     return None
 

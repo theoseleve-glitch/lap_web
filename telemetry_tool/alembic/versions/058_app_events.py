@@ -5,13 +5,13 @@ to a workspace. Uses RANGE partitioning on created_at for efficient
 time-based queries and retention management. RLS enforces workspace
 isolation using the same app.workspace_id pattern as all other tables.
 
-Revision ID: 052
-Revises: 051
+Revision ID: 058
+Revises: 057
 """
 from alembic import op
 
-revision = "052"
-down_revision = "051"
+revision = "058"
+down_revision = "057"
 branch_labels = None
 depends_on = None
 
@@ -46,6 +46,13 @@ def upgrade():
         CREATE TABLE app_events_2026_05
             PARTITION OF app_events
             FOR VALUES FROM ('2026-05-01') TO ('2026-06-01')
+        """
+    )
+    op.execute(
+        """
+        CREATE TABLE app_events_2026_06
+            PARTITION OF app_events
+            FOR VALUES FROM ('2026-06-01') TO ('2026-07-01')
         """
     )
 
