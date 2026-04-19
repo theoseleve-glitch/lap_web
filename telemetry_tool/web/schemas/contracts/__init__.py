@@ -29,6 +29,13 @@ from telemetry_tool.web.schemas.contracts.common import (
     TrajectorySample,
     VehicleRef,
 )
+from telemetry_tool.web.schemas.contracts.optimizer import (
+    CornerDelta,
+    OptimizerContract,
+    OptimizerDepth,
+    ReconstructedInputs,
+    TrajectoryDelta,
+)
 from telemetry_tool.web.schemas.contracts.session import (
     SessionContract,
     CONTRACT_VERSION,
@@ -57,6 +64,11 @@ __all__ = [
     "TrackRef",
     "TrajectorySample",
     "VehicleRef",
+    "CornerDelta",
+    "OptimizerContract",
+    "OptimizerDepth",
+    "ReconstructedInputs",
+    "TrajectoryDelta",
     "SessionContract",
     "CONTRACT_VERSION",
 ]
